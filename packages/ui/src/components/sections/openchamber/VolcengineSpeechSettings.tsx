@@ -75,8 +75,7 @@ export function VolcengineSpeechSettings({ mode, form }: { mode: 'tts' | 'asr'; 
         if (mode === 'asr') {
             setTestOpen(true);
         } else {
-            const { speechRate, speechPitch, speechVolume } = confirmed;
-            void speak(t('settings.voice.page.preview.voiceLine', { voiceName: 'OpenChamber' }), { provider: 'volcengine', speed: speechRate, pitch: speechPitch, volume: speechVolume });
+            void speak(t('settings.voice.page.preview.voiceLine', { voiceName: 'OpenChamber' }));
         }
     };
 

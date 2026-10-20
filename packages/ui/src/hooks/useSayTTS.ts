@@ -102,10 +102,6 @@ export interface UseSayTTSReturn {
 }
 
 interface SpeakOptions {
-  /** Voice to use (defaults to Samantha) */
-  voice?: string;
-  /** Speech rate in words per minute (defaults to 200) */
-  rate?: number;
   /** Callback when playback starts */
   onStart?: () => void;
   /** Callback when playback ends */
@@ -229,8 +225,6 @@ export function useSayTTS(options: UseSayTTSOptions = {}): UseSayTTSReturn {
         },
         body: JSON.stringify({
           text: text.trim(),
-          voice: options?.voice || 'Samantha',
-          rate: options?.rate || 200,
         }),
         signal: abortControllerRef.current.signal,
       });

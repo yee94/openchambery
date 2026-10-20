@@ -69,8 +69,9 @@ describe('/btw composer contract', () => {
   });
 
   test('all production submit entrances claim btw before busy/flight/queue and transcript work', () => {
-    const submit = source.slice(source.indexOf('const handleSubmit = async'), source.indexOf('// Update ref with latest handleSubmit'));
+    const submit = source.slice(source.indexOf('const handleSubmit ='), source.indexOf('const handlePrimaryAction ='));
     const claim = submit.indexOf('submitBtwCommand(');
+    expect(claim).toBeGreaterThan(0);
     for (const guard of ['claimedByEstablishingFollowUp()', 'isSubmissionInFlight()', 'captureSubmission()', 'queueMessageFromEvent()', 'shouldOptimisticPrimarySend(']) {
       expect(claim).toBeLessThan(submit.indexOf(guard));
     }

@@ -108,6 +108,7 @@ Prefer indexes keyed by stable IDs. Keep high-frequency runtime state out of met
 ## React And Store Hot Paths
 
 - Subscribe to leaf values, not broad collections.
+- For callback props and subscription handlers on hot paths, follow `.agents/skills/ui-api-decoupling/SKILL.md#callback-boundaries-on-high-frequency-paths`; verify the production boundary's operation counts, not just stable callback identity.
 - Preserve references for unaffected entities and buckets.
 - Keep streaming state out of broadly consumed stores.
 - Never rely on `React.memo`, `useMemo`, or Zustand equality to prevent selector execution upstream.

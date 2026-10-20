@@ -25,7 +25,7 @@ import { SettingsGroup, SettingsRow } from '@/components/sections/shared/Setting
 import { VolcengineSpeechSettings } from './VolcengineSpeechSettings';
 import { useSpeechSettingsQuery } from '@/queries/speechSettingsQueries';
 import { getRuntimeGeneration, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
-import type { SpeechSettings } from '@/lib/voice/speechSettings';
+import { speechDefaults, type SpeechSettings } from '@/lib/voice/speechSettings';
 import { useSpeechSettingsForm } from './useSpeechSettingsForm';
 import { useEvent } from '@reactuses/core';
 
@@ -405,7 +405,7 @@ function VoiceSettingsHost() {
         {query.isError && <SettingsRow label={t('settings.voice.volcengine.loadFailed')}>
             <Button variant="outline" size="sm" onClick={() => void query.refetch()}>{t('settings.voice.volcengine.retry')}</Button>
         </SettingsRow>}
-        {query.data ? <VoiceSettingsContent settings={query.data} /> : query.isPending ? <span>{t('common.loading')}</span> : null}
+        <VoiceSettingsContent settings={query.data ?? speechDefaults} />
     </>;
 }
 
@@ -450,10 +450,7 @@ const VoiceSettingsContent = ({ settings }: { settings: SpeechSettings }) => {
         if (!await tts.save()) return;
         const voiceLabel = KOKORO_VOICE_OPTIONS.find((v) => v.id === localTtsVoiceId)?.label
             ?? String(localTtsVoiceId);
-        void speakLocalTts(t('settings.voice.page.preview.voiceLine', { voiceName: voiceLabel }), {
-            speakerId: localTtsVoiceId,
-            speed: speechRate,
-        });
+        void speakLocalTts(t('settings.voice.page.preview.voiceLine', { voiceName: voiceLabel }));
     });
     // STT settings
 
@@ -608,8 +605,6 @@ const VoiceSettingsContent = ({ settings }: { settings: SpeechSettings }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     text: t('settings.voice.page.preview.voiceLine', { voiceName: sayVoice }),
-                    voice: sayVoice,
-                    rate: Math.round(100 + (speechRate - 0.5) * 200),
                 }),
             });
 
@@ -663,9 +658,6 @@ const VoiceSettingsContent = ({ settings }: { settings: SpeechSettings }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     text: t('settings.voice.page.preview.voiceLine', { voiceName: openaiVoice }),
-                    voice: openaiVoice,
-                    speed: speechRate,
-                    provider: 'openai',
                 }),
             });
 
@@ -724,11 +716,6 @@ const VoiceSettingsContent = ({ settings }: { settings: SpeechSettings }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     text: t('settings.voice.page.preview.customServerLine'),
-                    voice: openaiCompatibleVoice,
-                    model: openaiCompatibleTtsModel || undefined,
-                    speed: speechRate,
-                    baseURL: openaiCompatibleUrl,
-                    provider: 'openai-compatible',
                 }),
             });
 

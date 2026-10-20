@@ -84,8 +84,10 @@ Returns object with:
 Returns Buffer containing MP3 audio data.
 
 ## API key resolution
-Explicit request API key/custom base URL remains supported. Otherwise the host
-reads the current OpenCode credential API (`openai`, `codex`, `chatgpt` aliases),
+Speech routes read credentials, provider, model, voice and rate exclusively from
+Host speech settings at request time. Request body/header configuration overrides
+are ignored. For OpenAI without a saved speech key, the host reads the current
+OpenCode credential API (`openai`, `codex`, `chatgpt` aliases),
 using API `key` or OAuth `access`. There is no host-local environment/file fallback
 that could substitute another account for a remote service. A credential read
 failure propagates; selected-account changes replace the client and logout clears it.
@@ -164,10 +166,13 @@ delivery instruction, not a separate official “recommended emotional voice” 
 Custom/cloned speakers do not inherit this speaker-specific instruction.
 Custom speaker/resource pairs must belong to the same enabled model/service.
 
-`POST /api/tts/speak` accepts `{provider: 'volcengine', text, apiKey?, resourceId?,
-voice?, speed?, stream?}`. Missing key/resource/voice values resolve from the Host
-at request time. Existing clients may still supply explicit overrides.
-With `stream: true`, the adapter requests mono PCM
+`POST /api/tts/speak` accepts `{text}`. The Host selects Volcengine, OpenAI or
+OpenAI-compatible synthesis from its saved configuration. Local Kokoro and macOS
+Say retain their existing routes, also accepting only `{text}` and reading their
+voice/rate from the Host. No route accepts synthesis configuration overrides.
+The response's `X-Speech-Pitch` and `X-Speech-Volume` carry Host-selected playback
+values for Web Audio; they are exposed through CORS and forwarded through Relay.
+With `Accept: application/x-ndjson`, the Volcengine adapter requests mono PCM
 (signed 16-bit little-endian, 24 kHz), incrementally parses upstream JSON and
 forwards `application/x-ndjson` frames: `{type:'audio',data:<base64>}`, then
 `{type:'done'}` only after terminal upstream success. Each audio frame is at most
@@ -198,14 +203,14 @@ than respecting the Ring/Silent switch (WebKit bug 237322, comment 6).
 Unsupported engines retain their existing behavior. Physical iOS silent-mode
 playback still requires device validation; unit tests only verify API selection.
 
-Existing clients without `stream: true` still receive complete MP3 bytes after
+Clients without the NDJSON Accept header receive complete MP3 bytes after
 terminal success, and new clients can play MP3 from older Hosts during upgrades.
 Speed 0.5–2 maps to upstream -50–100; pitch and volume remain client-side.
 
-`POST /api/stt/transcribe` accepts raw WAV/MP3/OGG (20 MB maximum) with
-`X-Speech-Provider: volcengine` and optional `X-Speech-Api-Key` (otherwise the
-Host-saved key). Runtime Authorization
-remains independent. ASR uses the flash endpoint with base64 audio and resource
+`POST /api/stt/transcribe` accepts raw audio (20 MB maximum) and its Content-Type.
+The Host reads the saved ASR provider, key, model, URL and language; configuration
+headers cannot override them. Runtime Authorization is never a provider key.
+Volcengine ASR uses the flash endpoint with base64 audio and resource
 `volc.bigasr.auc_turbo`; only explicit silence returns an empty transcript.
 The Settings microphone tester uses the live dictation route instead of this file API.
 Normal microphone input uses the dictation session adapter described in

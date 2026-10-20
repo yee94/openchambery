@@ -20,8 +20,10 @@ const containerRef = { current: null as HTMLFormElement | null };
 const onHintChange = vi.fn();
 const onInsert = vi.fn();
 const onSend = vi.fn();
+const onRelease = vi.fn();
+const onError = vi.fn();
 const render = async () => {
-    await act(async () => root.render(<HoldToTalkComposer containerRef={containerRef} disabled={false} onInsert={onInsert} onSend={onSend} onHintChange={onHintChange} />));
+    await act(async () => root.render(<HoldToTalkComposer containerRef={containerRef} disabled={false} onInsert={onInsert} onSend={onSend} onRelease={onRelease} onError={onError} onHintChange={onHintChange} />));
     button = containerRef.current!.querySelector('textarea')!;
     button.setPointerCapture = vi.fn();
 };
@@ -294,12 +296,28 @@ it.each(['idle', 'recording', 'failed'])('dismisses a %s error on release withou
     expect(document.querySelector('.oc-speech-overlay')).toBeNull();
 });
 
-it('dismisses an error arriving after release by clicking anywhere on the overlay', async () => {
+it('does not reopen the overlay for an error arriving after release', async () => {
     speech.error = 'Microphone unavailable';
-    speech.discardFailedDictation.mockImplementation(() => { speech.error = null; speech.status = 'idle'; });
-    await render();
-    await act(async () => document.querySelector('.oc-speech-overlay')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-    expect(speech.discardFailedDictation).toHaveBeenCalledTimes(1);
     await render();
     expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+});
+
+it.each(['send', 'edit'])('dismisses immediately on %s release while finalization is pending', async (intent) => {
+    let finish!: () => void;
+    speech.confirmDictation.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    await pointer('pointerdown');
+    speech.status = 'recording';
+    speech.partialTranscript = '待整理的文字';
+    await render();
+    if (intent === 'edit') await pointer('pointermove', 290);
+    await pointer('pointerup');
+    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(onRelease).toHaveBeenCalledExactlyOnceWith('待整理的文字');
+    expect(onHintChange).toHaveBeenLastCalledWith('processing');
+    speech.status = 'uploading';
+    await render();
+    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(document.body.textContent).not.toContain('chat.dictation.cancel');
+    await act(async () => finish());
+    expect(onHintChange).toHaveBeenLastCalledWith(null);
 });

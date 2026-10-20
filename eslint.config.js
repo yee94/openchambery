@@ -52,4 +52,16 @@ export default tseslint.config([
     files: ['**/lib/pathNormalization.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
+  {
+    files: ['packages/ui/src/components/chat/ChatInput.tsx', 'packages/ui/src/components/chat/useComposerTextareaAutosize.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{ name: 'react', importNames: ['useCallback'], message: 'Use @reactuses/core useEvent for event callbacks; useMemo or ordinary functions for render-time selectors and factories.' }],
+      }],
+      'no-restricted-properties': ['error', {
+        property: 'useCallback',
+        message: 'Use @reactuses/core useEvent for event callbacks; useMemo or ordinary functions for render-time selectors and factories.',
+      }],
+    },
+  },
 ])

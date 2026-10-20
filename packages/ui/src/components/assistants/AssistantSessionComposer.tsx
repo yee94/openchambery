@@ -21,6 +21,12 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { SessionIndexSnapshot } from '@/lib/session-index-api';
 import { sessionIndexSnapshotQueryOptions } from '@/queries/sessionIndexQueries';
+import { HoldToTalkComposer } from '@/components/dictation/HoldToTalkComposer';
+import { useHoldToTalkInput } from '@/components/dictation/useHoldToTalkInput';
+import { toast } from '@/components/ui';
+
+const ignoreDictationRelease = () => {};
+const MemoHoldToTalkComposer = React.memo(HoldToTalkComposer);
 
 const selectSessions = (snapshot: SessionIndexSnapshot | null) => snapshot?.directories.flatMap(({ directory, sessions }) => (
   directory
@@ -116,10 +122,17 @@ type Props = Omit<React.ComponentProps<typeof ChatPromptComposer>, 'onChange'> &
   active: boolean;
   working?: boolean;
   onChange: (value: string) => void;
+  onVoiceSend?: (text: string) => void;
 };
 
-export const AssistantSessionComposer = ({ active, working = false, onChange, ...props }: Props) => {
+export const AssistantSessionComposer = ({ active, working = false, onChange, onVoiceSend, ...props }: Props) => {
   const { t } = useI18n();
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const { enabled: holdToTalkEnabled, hint: dictationHint, onHintChange: setDictationHint } = useHoldToTalkInput({
+    available: active && Boolean(props.isMobile) && Boolean(onVoiceSend),
+  });
+  const placeholder = dictationHint === null ? props.placeholder
+    : t(dictationHint === 'recording' ? 'chat.dictation.releaseSend' : dictationHint === 'cancelling' ? 'chat.dictation.releaseCancel' : dictationHint === 'editing' ? 'chat.dictation.releaseEdit' : 'chat.dictation.processing');
   const [localDocument, setLocalDocument] = React.useState<{ canonical: string; document: ComposerDocument }>(() => ({
     canonical: props.value, document: materializeSessionMentionTokens(props.value, new Map()),
   }));
@@ -170,6 +183,21 @@ export const AssistantSessionComposer = ({ active, working = false, onChange, ..
     setDismissed(true);
     commit(inserted.document, caret);
   });
+  const insertDictation = useEvent((text: string) => {
+    if (!active || props.pending || props.disabled || !text.trim()) return;
+    const value = document.text ? `${document.text} ${text}` : text;
+    const next = reconcileComposerDocument(document, value, value.length, value.length);
+    commit(next.document, next.caret);
+    setDismissed(true);
+  });
+  const sendDictation = useEvent((text: string) => {
+    if (!active || props.pending || props.disabled || !text.trim()) return;
+    // Preserve text authored while final recognition was in flight.
+    if (document.text) { insertDictation(text); return; }
+    onChange(text);
+    onVoiceSend?.(text);
+  });
+  const reportDictationError = useEvent((error: Error) => toast.error(error.message));
   const copyReferenceSelection = useEvent((event: React.ClipboardEvent<HTMLTextAreaElement>, cut: boolean) => {
     const input = event.currentTarget;
     if (input.selectionStart === input.selectionEnd || !event.clipboardData
@@ -192,7 +220,13 @@ export const AssistantSessionComposer = ({ active, working = false, onChange, ..
   })))?.map((part, index) => <span key={`${index}-${part.text.length}`} className={part.className}>
     {part.visual ? <ComposerTriggerIconMark visual={part.visual} text={part.text} /> : part.text}
   </span>), [document]);
-  return <ChatPromptComposer {...props} value={document.text} pending={props.pending || working}
+  return <div ref={containerRef} className="oc-hold-to-talk-container"
+    data-hold-to-talk-empty={holdToTalkEnabled && document.text.length === 0 ? 'true' : undefined}>
+    {holdToTalkEnabled && <MemoHoldToTalkComposer containerRef={containerRef} disabled={Boolean(props.pending || props.disabled)}
+      onInsert={insertDictation} onSend={sendDictation} onRelease={ignoreDictationRelease}
+      onError={reportDictationError} onHintChange={setDictationHint} />}
+    <ChatPromptComposer {...props} value={document.text} pending={props.pending || working}
+    placeholder={placeholder}
     disableInputWhilePending={props.pending === true} inputRef={inputRef}
     highlightedContent={highlighted} highlightRef={highlightRef}
     textLayoutClassName={cn('whitespace-pre-wrap break-words overflow-hidden px-3 typography-markdown md:typography-ui-label', props.layout === 'inline' ? 'py-3 leading-6' : 'pt-4 pb-2', props.textLayoutClassName)}
@@ -241,5 +275,5 @@ export const AssistantSessionComposer = ({ active, working = false, onChange, ..
     }}
   >
     {mention ? <SessionMentionPicker ref={pickerRef} query={mention.query} isMobile={props.isMobile ?? false} listId={listId} onHighlightChange={setActiveOptionId} onSelect={select} onClose={close} /> : null}
-  </ChatPromptComposer>;
+  </ChatPromptComposer></div>;
 };

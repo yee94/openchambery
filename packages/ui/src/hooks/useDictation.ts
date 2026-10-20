@@ -11,10 +11,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useEvent } from '@reactuses/core';
 import { useI18n } from '@/lib/i18n';
 
-import { dictationClient, type DictationStartOptions } from '@/lib/dictation/dictation-client';
+import { dictationClient } from '@/lib/dictation/dictation-client';
 import { DictationStreamSender } from '@/lib/dictation/dictation-stream-sender';
 import { useDictationAudioSource } from '@/lib/dictation/use-dictation-audio-source';
-import { useConfigStore } from '@/stores/useConfigStore';
 
 export type DictationStatus = 'idle' | 'recording' | 'uploading' | 'failed';
 
@@ -47,25 +46,6 @@ const DURATION_TICK_MS = 1000;
 const toError = (value: unknown): Error =>
     value instanceof Error ? value : new Error(String(value));
 
-const getDictationStartOptions = (): DictationStartOptions => {
-    const state = useConfigStore.getState();
-    const language = state.sttLanguage?.trim();
-    if (state.sttProvider === 'volcengine') {
-        return { provider: 'volcengine' };
-    }
-    if (state.sttProvider === 'openai-compatible') {
-        return {
-            provider: 'openai-compatible',
-            ...(language ? { language } : {}),
-        };
-    }
-    return {
-        provider: 'local',
-        ...(language ? { language } : {}),
-        localModel: state.sttLocalModel,
-    };
-};
-
 export function useDictation(options: UseDictationOptions = {}): UseDictationResult {
     const { t } = useI18n();
     const { onTranscript, onError, canStart } = options;
@@ -97,7 +77,6 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
     if (!senderRef.current) {
         senderRef.current = new DictationStreamSender({
             client: dictationClient,
-            getStartOptions: getDictationStartOptions,
         });
     }
 

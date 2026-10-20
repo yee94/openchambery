@@ -1,6 +1,7 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { onlineManager } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtime = vi.hoisted(() => ({
@@ -66,9 +67,21 @@ beforeEach(() => {
     });
     container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); queryClient.clear(); vi.restoreAllMocks(); localStorage.clear(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); queryClient.clear(); onlineManager.setOnline(true); vi.restoreAllMocks(); localStorage.clear(); });
 
 describe('Host-backed speech settings', () => {
+    it('renders the settings immediately and attempts Host reads even when the mobile browser reports offline', async () => {
+        onlineManager.setOnline(false);
+        let complete!: (response: Response) => void;
+        runtime.fetch.mockImplementationOnce(() => new Promise<Response>((resolve) => { complete = resolve; }));
+        await mount();
+        expect(section('tts')).not.toBeNull();
+        expect(section('asr')).not.toBeNull();
+        expect(button('tts').disabled).toBe(false);
+        expect(runtime.fetch).toHaveBeenCalledWith('/api/voice/settings', expect.anything());
+        await act(async () => complete(Response.json(saved))); await flush();
+        expect((section('tts').querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(true);
+    });
     it('loads both enabled sections from the Host and ignores obsolete local values', async () => {
         localStorage.setItem('showMessageTTSButtons', 'false');
         localStorage.setItem('voiceProvider', 'browser');

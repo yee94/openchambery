@@ -15,10 +15,6 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { prepareSpeechPlayback } from '@/lib/voice/audio-session';
 
 export interface LocalTTSSpeakOptions {
-    /** Kokoro speaker id (0-10) */
-    speakerId?: number;
-    /** Playback speed multiplier (1.0 = normal) */
-    speed?: number;
     onStart?: () => void;
     onEnd?: () => void;
     onError?: (error: string) => void;
@@ -179,8 +175,6 @@ export function useLocalTTS(): UseLocalTTSReturn {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     text: chunk,
-                    ...(typeof options?.speakerId === 'number' ? { speakerId: options.speakerId } : {}),
-                    ...(typeof options?.speed === 'number' ? { speed: options.speed } : {}),
                 }),
                 signal: session.abort.signal,
             });

@@ -62,24 +62,14 @@ export function useMessageTTS(options: { enabled?: boolean } = {}): UseMessageTT
     const speechRate = useConfigStore((state) => state.speechRate);
     const speechPitch = useConfigStore((state) => state.speechPitch);
     const speechVolume = useConfigStore((state) => state.speechVolume);
-    const sayVoice = useConfigStore((state) => state.sayVoice);
-    const localTtsVoiceId = useConfigStore((state) => state.localTtsVoiceId);
     const browserVoice = useConfigStore((state) => state.browserVoice);
-    const openaiVoice = useConfigStore((state) => state.openaiVoice);
-    const openaiCompatibleVoice = useConfigStore((state) => state.openaiCompatibleVoice);
-    const openaiCompatibleUrl = useConfigStore((state) => state.openaiCompatibleUrl);
-    const openaiCompatibleTtsModel = useConfigStore((state) => state.openaiCompatibleTtsModel);
     const showMessageTTSButtons = useConfigStore((state) => state.showMessageTTSButtons);
     const ttsInputMode = useConfigStore((state) => state.ttsInputMode);
 
     const isServerProvider = voiceProvider === 'openai' || voiceProvider === 'openai-compatible' || voiceProvider === 'volcengine';
-    const shouldCheckOpenAIAvailability = (options.enabled ?? showMessageTTSButtons) && isServerProvider && voiceProvider !== 'volcengine';
     const shouldCheckSayAvailability = (options.enabled ?? showMessageTTSButtons) && voiceProvider === 'say';
 
-    const { speak: speakServerTTS, stop: stopServerTTS, unlockAudio, isAvailable: isServerTTSAvailable } = useServerTTS({
-        enabled: shouldCheckOpenAIAvailability,
-        availabilityMode: voiceProvider === 'openai-compatible' ? 'openai-compatible' : 'openai',
-    });
+    const { speak: speakServerTTS, stop: stopServerTTS, unlockAudio } = useServerTTS({ enabled: false });
     const { speak: speakSayTTS, stop: stopSayTTS, unlockAudio: unlockSayAudio, isAvailable: isSayTTSAvailable } = useSayTTS({
         enabled: shouldCheckSayAvailability,
     });
@@ -145,38 +135,18 @@ export function useMessageTTS(options: { enabled?: boolean } = {}): UseMessageTT
             const textToSpeak = shouldUseRaw ? sourceText : sanitizedText;
             if (!textToSpeak.trim()) { finish(); return; }
             
-            if (voiceProvider === 'volcengine') {
+            if (isServerProvider) {
                 await speakServerTTS(textToSpeak, {
-                    provider: 'volcengine', speed: speechRate, pitch: speechPitch, volume: speechVolume,
-                    onEnd: () => finish(), onError: fail,
-                });
-            } else if (isServerProvider && isServerTTSAvailable) {
-                const voice = voiceProvider === 'openai-compatible' ? openaiCompatibleVoice : openaiVoice;
-                const baseURL = voiceProvider === 'openai-compatible' ? openaiCompatibleUrl : undefined;
-                const model = voiceProvider === 'openai-compatible' ? openaiCompatibleTtsModel : undefined;
-                await speakServerTTS(textToSpeak, {
-                    voice,
-                    model,
-                    speed: speechRate,
-                    pitch: speechPitch,
-                    volume: speechVolume,
-                    summarize: false,
-                    baseURL,
                     onEnd: () => finish(),
                     onError: fail,
                 });
             } else if (voiceProvider === 'local') {
                 await speakLocalTTS(sanitizedText, {
-                    speakerId: localTtsVoiceId,
-                    speed: speechRate,
                     onEnd: () => finish(),
                     onError: fail,
                 });
             } else if (voiceProvider === 'say' && isSayTTSAvailable) {
-                const wordsPerMinute = Math.round(100 + (speechRate - 0.5) * 200);
                 await speakSayTTS(sanitizedText, {
-                    voice: sayVoice,
-                    rate: wordsPerMinute,
                     onEnd: () => finish(),
                     onError: fail,
                 });

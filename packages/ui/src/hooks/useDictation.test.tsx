@@ -5,7 +5,7 @@ import { useDictation, type UseDictationResult } from './useDictation';
 
 const mock = vi.hoisted(() => ({
     provider: 'local',
-    getStartOptions: () => ({} as { provider?: string }),
+    senderOptions: {} as Record<string, unknown>,
     audio: { start: vi.fn(), stop: vi.fn(), volume: 0 },
     sender: { clearAll: vi.fn(), cancel: vi.fn(), restartStream: vi.fn(), getDictationId: vi.fn(),
         getFinalSeq: vi.fn(), finish: vi.fn(), hasSegments: vi.fn(), resetStreamForReplay: vi.fn(), enqueueSegment: vi.fn() },
@@ -16,8 +16,8 @@ vi.mock('@/lib/dictation/dictation-client', () => ({ dictationClient: {
     onPartial: () => () => {}, subscribeConnectionStatus: () => () => {},
 } }));
 vi.mock('@/lib/dictation/dictation-stream-sender', () => ({ DictationStreamSender: class {
-    constructor(options: { getStartOptions: () => { provider?: string } }) {
-        mock.getStartOptions = options.getStartOptions;
+    constructor(options: Record<string, unknown>) {
+        mock.senderOptions = options;
         return mock.sender;
     }
 } }));
@@ -43,7 +43,7 @@ it('starts Volcengine with Host-owned settings and no local key or resource over
     mock.provider = 'volcengine';
     await act(async () => current.startDictation());
     expect(mock.sender.restartStream).toHaveBeenCalledOnce();
-    expect(mock.getStartOptions()).toEqual({ provider: 'volcengine' });
+    expect(Object.keys(mock.senderOptions)).toEqual(['client']);
 });
 
 it('explains a missing microphone in both visible state and error notifications', async () => {

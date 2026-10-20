@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/stores/useConfigStore', () => ({ useConfigStore: Object.assign(
     (selector: (state: typeof mocks.config) => unknown) => selector(mocks.config), { getState: () => mocks.config },
 ) }));
-vi.mock('./useServerTTS', () => ({ useServerTTS: () => ({ speak: mocks.speak, stop: mocks.stop, unlockAudio: mocks.unlock, isAvailable: true }) }));
+vi.mock('./useServerTTS', () => ({ useServerTTS: () => ({ speak: mocks.speak, stop: mocks.stop, unlockAudio: mocks.unlock, isAvailable: false }) }));
 vi.mock('./useSayTTS', () => ({ useSayTTS: () => ({ stop: () => {}, unlockAudio: async () => {} }) }));
 vi.mock('./useLocalTTS', () => ({ useLocalTTS: () => ({ stop: () => {}, unlockAudio: mocks.localUnlock }) }));
 vi.mock('@/lib/voice/browserVoiceService', () => ({ browserVoiceService: { cancelSpeech: () => {}, resumeAudioContext: async () => {} } }));
@@ -25,6 +25,13 @@ beforeEach(async () => {
     await act(async () => root.render(<Probe />));
 });
 afterEach(async () => { await act(async () => root.unmount()); });
+
+it.each(['volcengine', 'openai', 'openai-compatible'])('delegates %s playback to the Host without cached capability gating or configuration', async (provider) => {
+    mocks.config.voiceProvider = provider;
+    await act(async () => root.render(<Probe />));
+    await act(async () => current.play('你好'));
+    expect(mocks.speak).toHaveBeenCalledWith('你好', { onEnd: expect.any(Function), onError: expect.any(Function) });
+});
 
 it('settles once on audio end, not synthesis completion', async () => {
     const settled = vi.fn();

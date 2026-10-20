@@ -1,10 +1,10 @@
 import { useEffect, useId, useRef, useState, type RefObject, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useEvent } from '@reactuses/core';
-import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { useDictation } from '@/hooks/useDictation';
 import { getDefaultTheme } from '@/lib/theme/themes';
+import type { HoldToTalkHint } from './useHoldToTalkInput';
 import './hold-to-talk.css';
 
 const speechColors = getDefaultTheme(false).colors;
@@ -23,16 +23,19 @@ const speechPalette = {
 } as CSSProperties;
 
 interface Props {
-    containerRef: RefObject<HTMLFormElement | null>;
+    containerRef: RefObject<HTMLElement | null>;
     disabled: boolean;
     onInsert: (text: string) => void;
     onSend: (text: string) => void;
-    onHintChange: (hint: 'recording' | 'cancelling' | 'editing' | 'processing' | null) => void;
+    onRelease: (text: string) => void;
+    onError: (error: Error) => void;
+    onHintChange: (hint: HoldToTalkHint) => void;
 }
 
-export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, onHintChange }: Props) {
+export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, onRelease, onError, onHintChange }: Props) {
     const { t } = useI18n();
     const [held, setHeld] = useState(false);
+    const [processing, setProcessing] = useState(false);
     const [intent, setIntent] = useState<'send' | 'cancel' | 'edit'>('send');
     const gesture = useRef<{ pointer: number; x: number; y: number; intent: 'send' | 'cancel' | 'edit'; started: boolean } | null>(null);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -41,10 +44,10 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     const arcGradientId = useId();
     const cancelClipId = useId();
     const editClipId = useId();
-    const dictation = useDictation({ onTranscript: (text) => action.current === 'send' ? onSend(text) : onInsert(text) });
+    const dictation = useDictation({ onTranscript: (text) => action.current === 'send' ? onSend(text) : onInsert(text), onError });
     const { status, partialTranscript, error, volume } = dictation;
     const publishHint = useEvent(onHintChange);
-    const hint = held ? intent === 'cancel' ? 'cancelling' : intent === 'edit' ? 'editing' : 'recording' : status === 'uploading' ? 'processing' : null;
+    const hint = held ? intent === 'cancel' ? 'cancelling' : intent === 'edit' ? 'editing' : 'recording' : processing ? 'processing' : null;
     useEffect(() => { publishHint(hint); }, [hint, publishHint]);
     useEffect(() => () => publishHint(null), [publishHint]);
     const clearTimer = useEvent(() => { if (timer.current) clearTimeout(timer.current); timer.current = null; });
@@ -111,8 +114,13 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         else if (current.intent === 'cancel') void dictation.cancelDictation();
         else {
             action.current = current.intent === 'edit' ? 'insert' : 'send';
+            onRelease(partialTranscript);
+            setProcessing(true);
             if (current.intent === 'edit') containerRef.current?.querySelector('textarea')?.focus();
-            void dictation.confirmDictation();
+            void Promise.resolve(dictation.confirmDictation()).finally(() => {
+                setProcessing(false);
+                dictation.discardFailedDictation();
+            });
         }
     });
     const interrupted = useEvent((event: PointerEvent) => { if (gesture.current?.pointer === event.pointerId) cancel(); });
@@ -147,7 +155,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     }, [containerRef, down, move, up, interrupted, cancel, clearTimer, preventEmptyInputSelection]);
     useEffect(() => { if (disabled) cancel(); }, [disabled, cancel]);
 
-    if (!held && status === 'idle' && !error) return null;
+    if (!held) return null;
     const energy = Math.pow(Math.min(1, Math.max(0, volume)), 0.6);
     return createPortal(
         <div className="oc-speech-overlay" data-intent={intent} data-error={Boolean(error)} onClick={error ? cancel : undefined} style={{ ...speechPalette, '--speech-energy': energy } as CSSProperties}>
@@ -157,9 +165,6 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
             <div className="oc-speech-content">
                 {error ? <p role="alert" className="oc-speech-caption oc-speech-error">{error}</p> : <div role="status" aria-live="polite" aria-atomic="true" className="oc-speech-caption">
                     {partialTranscript ? <span className="oc-speech-interim">{partialTranscript}</span> : t(status === 'uploading' ? 'chat.dictation.processing' : 'chat.dictation.listening')}
-                </div>}
-                {!error && status === 'uploading' && <div className="oc-speech-actions">
-                    <Button variant="ghost" size="sm" onClick={cancel}>{t('chat.dictation.cancel')}</Button>
                 </div>}
             </div>
             {held && <div className="oc-speech-gesture-stage" aria-hidden="true">

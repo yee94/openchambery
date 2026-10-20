@@ -53,9 +53,8 @@ export class DictationStreamManager {
   /**
    * @param {string} dictationId
    * @param {string} format e.g. "audio/pcm;rate=16000;bits=16"
-   * @param {object} startOptions provider/config options forwarded to createSttSession
    */
-  async handleStart(dictationId, format, startOptions = {}) {
+  async handleStart(dictationId, format) {
     this.cleanupStream(dictationId);
     const generation = Symbol();
     this.pendingStarts.set(dictationId, generation);
@@ -68,7 +67,7 @@ export class DictationStreamManager {
 
     let resolved;
     try {
-      resolved = await this.createSttSession(startOptions);
+      resolved = await this.createSttSession();
     } catch (error) {
       if (this.pendingStarts.get(dictationId) !== generation) return;
       this.pendingStarts.delete(dictationId);

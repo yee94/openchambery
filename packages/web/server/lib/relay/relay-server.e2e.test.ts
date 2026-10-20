@@ -333,7 +333,7 @@ async function verifyStreamingAsrOverRelay() {
   try {
     const saved = await runtimeFetch('/api/voice/volcengine', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: 'fixture-asr-key', asrResourceId: 'volc.seedasr.sauc.duration' }),
+      body: JSON.stringify({ apiKey: 'fixture-asr-key', sttProvider: 'volcengine', asrResourceId: 'volc.seedasr.sauc.duration' }),
     });
     expect(saved.status).toBe(200);
     await refreshRuntimeUrlAuthToken();
@@ -344,7 +344,7 @@ async function verifyStreamingAsrOverRelay() {
     await eventually(() => messages.some((message) => message.type === 'ready'), 'ASR Relay handshake did not reach ready');
     const send = (message: object) => socket!.send(JSON.stringify(message));
     for (const id of ['finish', 'cancel']) {
-      send({ type: 'start', dictationId: id, format: 'audio/pcm;rate=16000;bits=16', options: { provider: 'volcengine' } });
+      send({ type: 'start', dictationId: id, format: 'audio/pcm;rate=16000;bits=16' });
       await eventually(() => messages.some((message) => message.type === 'ack' && message.dictationId === id), 'ASR start was not acknowledged');
       const pcm = Buffer.alloc(6400); // One 200 ms PCM16 chunk.
       for (let i = 0; i < pcm.length; i += 2) pcm.writeInt16LE(4096, i);
@@ -506,8 +506,8 @@ describe('private relay compiled-process boundary', () => {
           const abort = new AbortController();
           try {
             const speechResponse = await runtimeFetch('/api/tts/speak', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
-              body: JSON.stringify({ provider: 'volcengine', text: 'Relay speech test', stream: true }),
+              method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, signal: abort.signal,
+              body: JSON.stringify({ text: 'Relay speech test' }),
             });
             expect(speechResponse.status).toBe(200);
             expect(speechResponse.headers.get('content-type')).toContain('application/x-ndjson');

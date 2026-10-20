@@ -9,7 +9,7 @@ export const applyRuntimeCorsHeaders = ({ origin, setHeader }) => {
   // cross-origin to the runtime API. Without an expose list, browsers hide
   // custom response headers from JS — including the optional-read existence
   // marker that FilesAPI.readFile({ optional: true }) requires.
-  setHeader('Access-Control-Expose-Headers', 'x-next-cursor, x-openchamber-file-exists');
+  setHeader('Access-Control-Expose-Headers', 'x-next-cursor, x-openchamber-file-exists, x-speech-pitch, x-speech-volume');
   setHeader('Access-Control-Max-Age', PREFLIGHT_CACHE_SECONDS);
   setHeader('Vary', 'Origin');
 };

@@ -44,13 +44,19 @@ export function DictationTestDialog({ onClose }: { onClose: () => void }) {
     });
 
     return <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
-        <DialogContent className="h-[min(22rem,calc(100dvh-2rem))] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-3xl sm:max-w-[22rem]">
+        <DialogContent className="h-[min(19rem,calc(100dvh-2rem))] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-3xl sm:max-w-[22rem]">
             <DialogHeader className="items-center pt-2 text-center">
                 <DialogTitle className="typography-ui-label font-medium">{t('settings.voice.volcengine.asrTest')}</DialogTitle>
                 <DialogDescription className="sr-only">{t('settings.voice.volcengine.testHelp')}</DialogDescription>
             </DialogHeader>
-            <div className="flex min-h-0 flex-col items-center justify-center overflow-y-auto py-3">
-                <div className="relative flex size-28 shrink-0 items-center justify-center">
+            <div className="flex min-h-0 flex-col items-center justify-center gap-3 overflow-y-auto pt-3">
+                <div className="relative flex size-36 shrink-0 items-center justify-center">
+                    <svg viewBox="0 0 144 144" className="pointer-events-none absolute inset-0 size-full text-foreground" fill="none" aria-hidden="true">
+                        <circle cx="72" cy="72" r="68" stroke="currentColor" strokeWidth="0.75" opacity="0.12" />
+                        <circle cx="72" cy="72" r="59" stroke="currentColor" strokeWidth="0.75"
+                            strokeDasharray="24 161.35" strokeLinecap="round" transform="rotate(-102 72 72)"
+                            className={cn(recording && 'text-[var(--primary-base)]')} opacity={recording ? 0.5 : 0.18} />
+                    </svg>
                     <Button variant="ghost" size="icon"
                         className={cn('relative size-28 max-h-full rounded-full !bg-transparent text-foreground shadow-none transition-transform duration-200 hover:scale-105 active:scale-95 motion-reduce:transform-none motion-reduce:transition-none', recording && 'text-[var(--primary-base)]')}
                         disabled={!supported || processing} aria-label={primaryLabel} aria-pressed={recording} onClick={activate}>
@@ -59,10 +65,10 @@ export function DictationTestDialog({ onClose }: { onClose: () => void }) {
                         <span className="sr-only">{primaryLabel}</span>
                     </Button>
                 </div>
-                <div className="mt-2 flex h-14 w-full shrink-0 items-center justify-center overflow-hidden px-2">
+                <div className="flex h-12 w-full shrink-0 items-center justify-center overflow-hidden px-2">
                     {dictation.error
                         ? <p role="alert" className="max-h-full overflow-y-auto break-words text-center typography-meta text-[var(--status-error)]">{dictation.error}</p>
-                        : <div role="log" aria-live="polite" title={text} className={cn('max-h-full break-words text-center typography-ui-label leading-relaxed text-muted-foreground', recording ? 'line-clamp-2' : 'overflow-y-auto')}>
+                        : <div role="log" aria-live="polite" title={text} className="line-clamp-2 max-h-full break-words text-center typography-ui-label leading-6 text-muted-foreground">
                             {text ? (recording && text.length > 80 ? `…${text.slice(-80)}` : text) : statusText || primaryLabel}
                         </div>}
                 </div>
