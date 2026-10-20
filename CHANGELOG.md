@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.3-beta.7] - 2026-10-20
+
+### 改进
+
+- 移动端长按语音默认松手进入文字编辑，滑向右上方后松手发送，原编辑区域文案调整为「发送」。
+
 ## [2.1.3-beta.6] - 2026-10-20
 
 ### 改进

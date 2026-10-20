@@ -2219,6 +2219,7 @@ export const dict = {
   'chat.dictation.releaseConfirm': 'Release to confirm',
   'chat.dictation.inputPlaceholder': 'Type a message, hold to transcribe',
   'chat.dictation.edit': 'Edit',
+  'chat.dictation.send': 'Send',
   'chat.dictation.cancelGesture': 'Cancel',
   'chat.dictation.releaseEdit': 'Release to edit',
   'chat.dictation.releaseSend': 'Release to send',

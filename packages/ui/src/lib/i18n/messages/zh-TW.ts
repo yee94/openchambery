@@ -2188,6 +2188,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.releaseConfirm': '鬆開確認',
   'chat.dictation.inputPlaceholder': '輸入訊息，按住轉文字',
   'chat.dictation.edit': '編輯',
+  'chat.dictation.send': '傳送',
   'chat.dictation.cancelGesture': '取消',
   'chat.dictation.releaseEdit': '放開編輯',
   'chat.dictation.releaseSend': '放開傳送',
