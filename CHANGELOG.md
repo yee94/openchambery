@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.3-beta.11] - 2026-10-20
+
+### 改进
+
+- PC 聊天正文、附件、Assistant 图片、文件预览和全屏查看统一显示动态点阵加载占位，覆盖 Relay 图片地址准备与图片加载阶段。
+- PC 正文图片加载占位限制在 320px 宽，缩略图保留原尺寸，加载后恢复图片正常比例。
+
 ## [2.1.3-beta.10] - 2026-10-20
 
 ### 改进
