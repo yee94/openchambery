@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEvent } from '@reactuses/core';
 import { useI18n } from '@/lib/i18n';
+import { subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 import { dictationClient } from '@/lib/dictation/dictation-client';
 import { DictationStreamSender } from '@/lib/dictation/dictation-stream-sender';
@@ -170,7 +171,7 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
             setDuration(0);
             setStatus('idle');
             statusRef.current = 'idle';
-            const transcriptText = text.trim().length > 0 ? text.trim() : latestPartialRef.current.trim();
+            const transcriptText = text.trim();
             clearStreamingState();
             if (!transcriptText) {
                 return null;
@@ -370,6 +371,15 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
         clearError();
         clearStreamingState();
     });
+
+    useEffect(() => subscribeRuntimeEndpointChanged(() => {
+        if (statusRef.current === 'failed') {
+            operationGenerationRef.current += 1;
+            discardFailedDictation();
+        } else {
+            void cancelDictation();
+        }
+    }), [cancelDictation, discardFailedDictation]);
 
     // While recording without an open stream (e.g. the model is still
     // downloading), retry the stream start so live partials kick in as soon

@@ -32,6 +32,7 @@ import { createDictationRuntime } from '../dictation/runtime.js';
 import { VolcengineTranscriptionSession } from '../dictation/volcengine-session.js';
 import { openRuntimeWebSocket } from '../../../../ui/src/lib/relay/runtime-socket.ts';
 import { refreshRuntimeUrlAuthToken } from '../../../../ui/src/lib/runtime-auth.ts';
+import { requestSpeechSession } from '../../../../ui/src/lib/voice/direct-session.ts';
 
 const timeoutMs = 10_000;
 const previewPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64');
@@ -199,7 +200,7 @@ const startOrigin = async () => {
         await uiAuth.requireAuth(req, res, () => proxy(req, rawRes));
         return;
       }
-      if (pathname === '/api/tts/speak' || pathname === '/api/voice/volcengine' || pathname === '/api/voice/settings') {
+      if (pathname === '/api/tts/speak' || pathname === '/api/voice/session' || pathname === '/api/voice/volcengine' || pathname === '/api/voice/settings') {
         await uiAuth.requireAuth(req, res, () => speech(req, rawRes));
         return;
       }
@@ -475,6 +476,11 @@ describe('private relay compiled-process boundary', () => {
       let upstreamController: ReadableStreamDefaultController<Uint8Array> | undefined;
       let upstreamSignal: AbortSignal | undefined;
       const speechFetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+        if (String(input) === 'https://openspeech.bytedance.com/api/v1/sts/token') {
+          expect(new Headers(init?.headers).get('X-Api-Key')).toBe('fixture-speech-key');
+          const claims = Buffer.from(JSON.stringify({ aud: ['fixture-app'], exp: Math.floor(Date.now() / 1000) + 300 })).toString('base64url');
+          return Promise.resolve(Response.json({ jwt_token: `header.${claims}.signature` }));
+        }
         if (String(input) !== 'https://openspeech.bytedance.com/api/v3/tts/unidirectional') return realFetch(input, init);
         upstreamSignal = init?.signal ?? undefined;
         const signal = upstreamSignal;
@@ -489,6 +495,7 @@ describe('private relay compiled-process boundary', () => {
       try {
         const deniedSpeech = await client.fetch('/api/tts/speak', { method: 'POST' });
         expect(deniedSpeech.status).toBe(401);
+        expect((await client.fetch('/api/voice/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"kind":"tts"}' })).status).toBe(401);
         expect((await client.fetch('/api/voice/volcengine')).status).toBe(401);
         expect((await client.fetch('/api/voice/volcengine', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(401);
         const saved = await realFetch(`http://127.0.0.1:${origin.port}/api/voice/settings`, {
@@ -500,6 +507,11 @@ describe('private relay compiled-process boundary', () => {
         expect(mobileSettings).toMatchObject({ showMessageTTSButtons: true, voiceProvider: 'volcengine', dictationEnabled: true, sttProvider: 'volcengine' });
         expect(mobileSettings.configured).toBe(true);
         expect(JSON.stringify(mobileSettings)).not.toContain('fixture-speech-key');
+        for (const kind of ['asr', 'tts'] as const) {
+          const ticket = await requestSpeechSession(kind, new AbortController().signal);
+          expect(ticket).toMatchObject({ transport: 'volcengine-direct', appId: 'fixture-app' });
+          expect(JSON.stringify(ticket)).not.toContain('fixture-speech-key');
+        }
         for (const outcome of ['done', 'error', 'cancel'] as const) {
           upstreamSignal = undefined;
           upstreamController = undefined;

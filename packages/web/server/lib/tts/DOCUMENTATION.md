@@ -166,6 +166,68 @@ delivery instruction, not a separate official “recommended emotional voice” 
 Custom/cloned speakers do not inherit this speaker-specific instruction.
 Custom speaker/resource pairs must belong to the same enabled model/service.
 
+#### Direct ASR and TTS sessions
+
+Current clients create `POST /api/voice/session` with `{kind: 'tts' | 'asr'}`
+through `runtimeFetch`, including the authenticated encrypted Relay tunnel.
+`direct-session.js` snapshots the selected Host provider and configuration.
+Non-Volcengine providers return `{transport:'host'}`. Volcengine exchanges the
+Host's existing `X-Api-Key` at the fixed speech `/api/v1/sts/token` endpoint
+with `{duration:300}`. The issuer's JWT `aud[0]` supplies the application ID;
+no extra AppID or old Access Token configuration is required. Its expiry and
+bounded shape are validated before returning `transport:'volcengine-direct'`,
+the temporary token, application ID, resource, expiry, and TTS preferences.
+The route is auth-gated like other voice routes, returns `Cache-Control:no-store`,
+aborts issuance on disconnect, and never forwards upstream errors or long-lived
+keys. These JWTs are application-scoped, not documented as single-use or
+restricted to one voice/resource; do not claim stronger isolation.
+
+`ui/lib/voice/direct-session.ts` owns the session mutation and fixed provider
+WebSocket URLs. `volcengine-protocol.ts` owns bounded binary framing, gzip
+response decoding, socket queues, timeouts and cancellation. Browser sockets
+use `api_app_key`, `api_resource_id`, and `api_access_key=Jwt; <token>` query
+parameters; they intentionally bypass runtime/Relay sockets. Tokens are kept
+only in the current operation, never persisted or shared across runtime switches.
+Each new operation/retry obtains a fresh ticket; established sockets are not
+reconnected mid-stream just because the initial handshake ticket expires.
+
+`direct-tts.ts` uses `/api/v3/tts/bidirection`, performs connection/session
+handshakes, sends text, and requires SessionFinished after audio. It adapts
+binary PCM into the existing bounded NDJSON player contract (24 kHz mono,
+9600-byte frames), retaining startup buffering, pitch, volume, cancellation,
+and playback-completion semantics. Text and audio go directly to the provider.
+`dictation/volcengine-direct.ts` uses `/api/v3/sauc/bigmodel_async` for 16 kHz
+PCM16, live full-text partials, and an explicit final audio frame. A terminal
+response without text retains the last partial; explicit empty text remains empty.
+Unexpected closure is failure. Cancel/unmount and runtime switches abort both
+ticket requests and sockets; failed replay audio cannot cross to a new Host.
+
+New Hosts select direct transport automatically; no setting migration is needed.
+Only an explicit `host` response or an older Host's missing route (404/SPA HTML)
+uses the existing transport. Ticket/auth/provider failures never silently retry
+audio through Relay. Web, Electron, hosted mobile and Capacitor share this
+browser implementation; VS Code explicitly returns 501 for session creation.
+The file transcription API remains Host-owned for existing external callers;
+the UI microphone and tester use streaming direct ASR.
+
+Validation: `direct-session.test.js` covers issuance and credential boundaries;
+`direct-speech.test.js` runs real local WebSocket fixtures through the production
+client, including 100 ordered PCM chunks, partial/final results, cancellation,
+late tickets, errors and truncation. Relay e2e covers auth-gated ticket exchange
+through the compiled encrypted tunnel. `direct-speech.live.test.js` uses an
+opt-in `VOLCENGINE_SPEECH_API_KEY` to synthesize with TTS 2.0 and recognize the
+audio with ASR 2.0 using the browser protocol. A Chromium 154/macOS browser run
+also verified actual Web Audio playback, seven partials and the final transcript,
+with exactly two Host requests (both ticket exchanges). Physical iOS/Android
+microphone/background behavior still needs device validation.
+The existing composer closed-picker scale guard passes. A macOS/Chromium 154
+development-page smoke measurement of 67 input events recorded synchronous
+dispatch median/P95/max 4.1/6.5/10 ms; 65 observed next-frame samples were
+14.4/30.7/40 ms. This is a smoke measurement, not a before/after production or
+IME/device performance comparison.
+
+#### Host audio APIs (other providers and existing clients)
+
 `POST /api/tts/speak` accepts `{text}`. The Host selects Volcengine, OpenAI or
 OpenAI-compatible synthesis from its saved configuration. Local Kokoro and macOS
 Say retain their existing routes, also accepting only `{text}` and reading their
@@ -192,8 +254,10 @@ approximately two seconds; the additional unscheduled buffer is bounded to the
 released on completion; stop, runtime switch, unmount and errors cancel the
 reader and queued audio. Playback completion waits for both terminal success
 and the last source's `ended` event, preserving automatic read-aloud ordering.
-The HTTP stream uses `runtimeFetch`, including the existing encrypted Relay
-transport. Relay may buffer transport bytes independently of the audio scheduler.
+The legacy Host HTTP stream uses `runtimeFetch`, including the existing encrypted
+Relay transport. Current Volcengine clients feed the same player from direct
+WebSocket audio instead. Relay may buffer legacy transport bytes independently
+of the audio scheduler.
 No native plugin or MediaSource support is required.
 
 Web Audio playback entrypoints call the shared UI `voice/audio-session.ts`
@@ -221,8 +285,9 @@ The Settings microphone tester uses the live dictation route instead of this fil
 Normal microphone input uses the dictation session adapter described in
 `../dictation/DOCUMENTATION.md`.
 
-Web, Electron, hosted mobile and Capacitor use the existing runtime HTTP and
-dictation WebSocket transports (including Relay). VS Code has no speech host and
+Web, Electron, hosted mobile and Capacitor use direct Volcengine sessions above;
+other providers use runtime HTTP and dictation WebSocket transports (including
+Relay). VS Code has no speech host and
 returns explicit 501 for speech settings and synthesis/file transcription, as for existing dictation.
 
 Protocol sources (checked October 2026):

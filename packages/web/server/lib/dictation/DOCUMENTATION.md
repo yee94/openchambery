@@ -1,5 +1,13 @@
 # Dictation module
 
+Current Volcengine UI clients use short-lived JWTs and direct provider sockets
+instead of sending PCM through this Host module. The Host still owns provider
+selection and ticket issuance; see `../tts/DOCUMENTATION.md#direct-asr-and-tts-sessions`.
+`ui/lib/dictation/dictation-client.ts` selects transport from the authoritative
+session response before opening a socket. Other providers and older clients
+continue to use the server pipeline below. Cancel/unmount, start cancellation,
+and Host switching close direct sockets and discard stale tickets/replay audio.
+
 Server-authoritative streaming speech-to-text for the chat composer, plus
 local text-to-speech. The client streams 16 kHz mono PCM16 chunks (base64)
 over a WebSocket; the server runs the transcription and streams live partial

@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { playPcmStream } from '@/lib/voice/pcm-stream';
+import { requestSpeechAudio } from '@/lib/voice/direct-tts';
 import { prepareSpeechPlayback, subscribeSpeechCapture } from '@/lib/voice/audio-session';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
@@ -231,17 +232,7 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       silentSource.start(0);
 
       // Fetch audio from server
-      const response = await runtimeFetch('/api/tts/speak', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/x-ndjson, audio/*',
-        },
-        body: JSON.stringify({
-          text: text.trim(),
-        }),
-        signal: session.abort.signal,
-      });
+      const response = await requestSpeechAudio(text.trim(), session.abort.signal);
 
       if (sessionRef.current !== session) {
         return;

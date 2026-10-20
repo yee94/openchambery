@@ -10,6 +10,8 @@ import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { openRuntimeWebSocket } from '@/lib/relay/runtime-socket';
 import { type RelayTunnelWebSocket } from '@/lib/relay/tunnel-client';
+import { requestSpeechSession } from '@/lib/voice/direct-session';
+import { DirectDictation } from './volcengine-direct';
 
 interface DictationServerMessage {
     type: string;
@@ -66,9 +68,13 @@ export class DictationClient {
     private readonly connectionListeners = new Set<ConnectionStatusListener>();
     private readonly partialListeners = new Set<PartialListener>();
     private activeDictations = 0;
+    private readonly directStarts = new Map<string, AbortController>();
+    private readonly directSessions = new Map<string, DirectDictation>();
 
     get isConnected(): boolean {
-        return this.socket?.readyState === WebSocket.OPEN;
+        if (this.socket?.readyState === WebSocket.OPEN) return true;
+        for (const session of this.directSessions.values()) if (session.connected) return true;
+        return false;
     }
 
     subscribeConnectionStatus(listener: ConnectionStatusListener): () => void {
@@ -86,7 +92,7 @@ export class DictationClient {
     }
 
     async ensureConnected(): Promise<void> {
-        if (this.isConnected) {
+        if (this.socket?.readyState === WebSocket.OPEN) {
             return;
         }
         if (this.connectPromise) {
@@ -194,7 +200,32 @@ export class DictationClient {
         dictationId: string,
         format: string,
     ): Promise<void> {
-        await this.ensureConnected();
+        const abort = new AbortController();
+        this.directStarts.set(dictationId, abort);
+        try {
+            const ticket = await requestSpeechSession('asr', abort.signal);
+            abort.signal.throwIfAborted();
+            if (ticket) {
+                const session = new DirectDictation(abort, (text) => {
+                    for (const listener of this.partialListeners) listener(dictationId, text);
+                }, () => {
+                    this.directSessions.delete(dictationId);
+                    session.cancel();
+                    this.notifyConnection(false);
+                });
+                this.directSessions.set(dictationId, session);
+                await session.start(ticket, format);
+                abort.signal.throwIfAborted();
+                this.notifyConnection(true);
+                return;
+            }
+            await this.ensureConnected();
+            abort.signal.throwIfAborted();
+        } catch (error) {
+            this.directSessions.get(dictationId)?.cancel();
+            this.directSessions.delete(dictationId);
+            throw error;
+        } finally { this.directStarts.delete(dictationId); }
         this.activeDictations += 1;
         this.clearIdleCloseTimer();
 
@@ -227,6 +258,8 @@ export class DictationClient {
     }
 
     sendDictationStreamChunk(dictationId: string, seq: number, audioBase64: string): boolean {
+        const direct = this.directSessions.get(dictationId);
+        if (direct) return direct.send(seq, audioBase64);
         return this.send({ type: 'chunk', dictationId, seq, audio: audioBase64 });
     }
 
@@ -234,6 +267,11 @@ export class DictationClient {
      * Finish a dictation stream. Resolves with the final transcript.
      */
     finishDictationStream(dictationId: string, finalSeq: number): Promise<{ text: string }> {
+        const direct = this.directSessions.get(dictationId);
+        if (direct) return direct.finish(finalSeq).finally(() => {
+            direct.cancel();
+            this.directSessions.delete(dictationId);
+        });
         return new Promise<{ text: string }>((resolve, reject) => {
             const pending: PendingFinish = {
                 resolve: (result) => {
@@ -268,6 +306,14 @@ export class DictationClient {
     }
 
     cancelDictationStream(dictationId: string): void {
+        this.directStarts.get(dictationId)?.abort();
+        this.directStarts.delete(dictationId);
+        const direct = this.directSessions.get(dictationId);
+        if (direct) {
+            direct.cancel();
+            this.directSessions.delete(dictationId);
+            return;
+        }
         this.send({ type: 'cancel', dictationId });
         const start = this.pendingStarts.get(dictationId);
         if (start) {
@@ -410,6 +456,10 @@ export class DictationClient {
      * nothing keeps streaming to the previous runtime.
      */
     cancelAllForRuntimeSwitch(): void {
+        for (const abort of this.directStarts.values()) abort.abort();
+        this.directStarts.clear();
+        for (const session of this.directSessions.values()) session.cancel();
+        this.directSessions.clear();
         this.clearIdleCloseTimer();
         const socket = this.socket;
         this.socket = null;

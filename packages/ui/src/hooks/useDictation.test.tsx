@@ -95,6 +95,32 @@ it('discards final responses arriving after cancellation', async () => {
     expect(onTranscript).not.toHaveBeenCalled();
 });
 
+it('cancels capture and fences a late final response on a runtime switch', async () => {
+    let finish!: (value: { text: string }) => void;
+    mock.sender.finish.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    await act(async () => current.startDictation());
+    let confirmation!: Promise<string | null>;
+    await act(async () => { confirmation = current.confirmDictation(); });
+    await act(async () => { window.dispatchEvent(new CustomEvent('openchamber:runtime-endpoint-changed')); });
+    await act(async () => { finish({ text: 'old host' }); await confirmation; });
+    expect(current.status).toBe('idle');
+    expect(mock.sender.cancel).toHaveBeenCalled();
+    expect(onTranscript).not.toHaveBeenCalled();
+});
+
+it('discards failed replay audio when switching Hosts', async () => {
+    mock.sender.finish.mockRejectedValue(new Error('Connection lost'));
+    await act(async () => current.startDictation());
+    await act(async () => current.confirmDictation());
+    expect(current.status).toBe('failed');
+    const cleared = mock.sender.clearAll.mock.calls.length;
+    await act(async () => { window.dispatchEvent(new CustomEvent('openchamber:runtime-endpoint-changed')); });
+    expect(current.status).toBe('idle');
+    expect(mock.sender.clearAll.mock.calls.length).toBeGreaterThan(cleared);
+    await act(async () => current.retryFailedDictation());
+    expect(mock.sender.finish).toHaveBeenCalledOnce();
+});
+
 it('discards a final response when the composer unmounts for another draft', async () => {
     let finish!: (value: { text: string }) => void;
     mock.sender.finish.mockReturnValue(new Promise((resolve) => { finish = resolve; }));

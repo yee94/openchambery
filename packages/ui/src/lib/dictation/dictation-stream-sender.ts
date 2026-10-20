@@ -67,6 +67,7 @@ export class DictationStreamSender {
     }
 
     clearAll(): void {
+        if (this.dictationId) this.client.cancelDictationStream(this.dictationId);
         this.clearScheduledFlush();
         this.dictationId = null;
         this.sendSeq = 0;
@@ -77,6 +78,7 @@ export class DictationStreamSender {
     }
 
     resetStreamForReplay(): void {
+        if (this.dictationId) this.client.cancelDictationStream(this.dictationId);
         this.clearScheduledFlush();
         this.dictationId = null;
         this.sendSeq = 0;
@@ -186,10 +188,6 @@ export class DictationStreamSender {
     }
 
     cancel(): void {
-        const dictationId = this.dictationId;
-        if (this.client.isConnected && dictationId) {
-            this.client.cancelDictationStream(dictationId);
-        }
         this.resetStreamForReplay();
     }
 
@@ -208,6 +206,7 @@ export class DictationStreamSender {
     }
 
     private clearScheduledFlush(): void {
+        this.resolveDrainWaiters();
         if (!this.flushTimer) {
             return;
         }
