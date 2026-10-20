@@ -297,7 +297,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                                 type="button"
                                 onClick={() => onQueue?.(message)}
                                 disabled={!canQueueInbox}
-                                aria-label={t('settings.openchamber.visual.option.followUpBehavior.queue.label')}
+                                aria-label={t('chat.queuedMessage.title')}
                                 className={cn(
                                     'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
                                     isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
@@ -309,7 +309,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                                     aria-hidden="true"
                                 />
                                 <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
-                                    {t('settings.openchamber.visual.option.followUpBehavior.queue.label')}
+                                    {t('chat.queuedMessage.title')}
                                 </span>
                             </button>
                         ) : null}

@@ -21,10 +21,12 @@ const Probe = ({
     timeline,
     generation = 0,
     initiallyRevealed = false,
+    enabled = true,
 }: {
     timeline: HTMLElement;
     generation?: number;
     initiallyRevealed?: boolean;
+    enabled?: boolean;
 }) => {
     const hidden = useMarkdownPinReveal({
         scopeKey: 'session:handoff',
@@ -32,6 +34,7 @@ const Probe = ({
         root: timeline,
         relevantKeys: ['turn:pending'],
         initiallyRevealed,
+        enabled,
     });
     return <span data-hidden={String(hidden)} />;
 };
@@ -92,5 +95,16 @@ describe('useMarkdownPinReveal handoff seed', () => {
 
         expect(host.querySelector('[data-hidden]')?.getAttribute('data-hidden')).toBe('true');
         expect(timeline.style.visibility).toBe('hidden');
+    });
+
+    test('disabled gate stays visible through cold open and repeated jumps with unready Markdown', async () => {
+        for (const generation of [0, 1, 2]) {
+            await act(async () => {
+                root.render(<Probe timeline={timeline} generation={generation} enabled={false} />);
+            });
+            expect(host.querySelector('[data-hidden]')?.getAttribute('data-hidden')).toBe('false');
+            expect(timeline.style.visibility).toBe('');
+            expect(timeline.querySelector('[data-markdown-ready]')?.getAttribute('data-markdown-ready')).toBe('false');
+        }
     });
 });

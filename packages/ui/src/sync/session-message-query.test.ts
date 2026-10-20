@@ -409,6 +409,55 @@ describe("transport page repeated-cursor cache barrier", () => {
 })
 
 describe("session transcript InfiniteQuery retry budget", () => {
+  test("repository warmup uses one enlarged page and restores the manual history budget", async () => {
+    const { createQueryTranscriptRepository } = await import("./transcript-repository-query-adapter")
+    const client = new QueryClient()
+    const limits: number[] = []
+    const pageSizes: Array<number | undefined> = []
+    let next = 100
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: "runtime-a",
+      generation: 1,
+      initialLimit: 3,
+      historyLimit: 4,
+      probe: { getTransport: () => "runtime-a", getGeneration: () => 1 },
+      fetcher: async ({ limit, pageSize }) => {
+        limits.push(limit)
+        pageSizes.push(pageSize)
+        const end = next
+        next -= limit
+        return {
+          records: Array.from({ length: limit }, (_, i) => ({
+            info: { id: `u${next + i}`, role: "user", sessionID: "ses_warm", time: { created: next + i } },
+            parts: [],
+          })),
+          complete: false,
+          cursor: `before-${end}`,
+          turnCount: limit,
+          requestedTurnLimit: limit,
+        }
+      },
+    })
+    const scope = { directory: "/repo", sessionID: "ses_warm", transport: "runtime-a", generation: 1 }
+    await repo.ensureInitial(scope)
+    const initial = repo.getTranscript(scope)
+    await Promise.all([repo.fetchPreviousPage(scope, 50), repo.fetchPreviousPage(scope)])
+    expect(limits).toEqual([3, 50])
+    expect(pageSizes).toEqual([undefined, 50])
+    const expanded = repo.getTranscript(scope)
+    expect(expanded.messageOrder).toHaveLength(53)
+    for (const id of initial.messageOrder) {
+      expect(expanded.messagesByID[id]).toBe(initial.messagesByID[id])
+      expect(expanded.partsByMessageID[id]).toBe(initial.partsByMessageID[id])
+    }
+    await repo.fetchPreviousPage(scope)
+    expect(limits).toEqual([3, 50, 4])
+    expect(pageSizes).toEqual([undefined, 50, undefined])
+    repo.destroy()
+    client.clear()
+  })
+
   test("single 503 through ensureInitial uses transport-page retry only (<=3 HTTP)", async () => {
     const client = new QueryClient({
       defaultOptions: {

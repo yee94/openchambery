@@ -214,14 +214,15 @@ export function applyTranscriptCommand(
 export async function fetchTranscriptPreviousPage(
   directory: string,
   sessionID: string,
+  pageSize?: number,
 ): Promise<void> {
   const repository = requireTranscriptRepository() as TranscriptRepository & {
-    fetchPreviousPage?: (scope: TranscriptScope) => Promise<unknown>
+    fetchPreviousPage?: (scope: TranscriptScope, pageSize?: number) => Promise<unknown>
   }
   if (typeof repository.fetchPreviousPage !== "function") {
     throw new Error("TranscriptRepository does not support fetchPreviousPage")
   }
-  await repository.fetchPreviousPage(transcriptScope(directory, sessionID))
+  await repository.fetchPreviousPage(transcriptScope(directory, sessionID), pageSize)
 }
 
 /**

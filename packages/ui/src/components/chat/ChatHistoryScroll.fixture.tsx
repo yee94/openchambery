@@ -5,6 +5,7 @@ import { useEvent, useEventListener } from '@reactuses/core';
 import MessageList, { type MessageListHandle } from './MessageList';
 import { useChatAutoFollow } from '@/hooks/useChatAutoFollow';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
+import { useDesktopHistoryWarmup } from './hooks/useDesktopHistoryWarmup';
 import { SyncProvider } from '@/sync/sync-context';
 import { opencodeClient } from '@/lib/opencode/client';
 import { queryClient } from '@/lib/queryRuntime';
@@ -42,6 +43,8 @@ export default function Fixture() {
     const compactPrepend = scenario?.startsWith('compact-prepend');
     const turnPrepend = scenario?.startsWith('turn-prepend');
     const partial = scenario === 'partial-turn' || scenario === 'mobile-partial-turn';
+    const warmup = scenario?.startsWith('desktop-warmup') ?? false;
+    const [warmupEnabled, setWarmupEnabled] = React.useState(false);
     const [rows, setRows] = React.useState(() => partial
         ? [partialAssistant('partial-process', 'HIDDEN_PARTIAL_PROCESS', 'tool-calls'),
             partialAssistant('partial-final', Array.from({ length: 40 }, (_, i) => `Answer paragraph ${i}. ${'Reading the final answer. '.repeat(8)}`).join('\n\n'), 'stop')]
@@ -50,7 +53,7 @@ export default function Fixture() {
             part.type === 'text' ? { ...part, text: 'Short initial transcript' } : part
         )) }))
         : turnPrepend ? makeTurns(100, 12)
-        : makeRows(compactPrepend ? 100 : 20, scenario === 'virtualize-transition' ? 4 : scenario?.startsWith('fast-entry') ? 8 : 12));
+        : makeRows(compactPrepend || warmup ? 100 : 20, scenario === 'virtualize-transition' || warmup ? 4 : scenario?.startsWith('fast-entry') ? 8 : 12));
     const [token, setToken] = React.useState(0);
     const [tailHeight, setTailHeight] = React.useState(0);
     const listRef = React.useRef<MessageListHandle | null>(null);
@@ -90,7 +93,7 @@ export default function Fixture() {
             viewportHeight: el.clientHeight,
         };
     });
-    const loadMore = useEvent(async () => {
+    const loadMore = useEvent(async (pageSize?: number) => {
         loads.current += 1;
         const anchor = listRef.current?.captureViewportAnchor();
         anchorID.current = anchor?.messageId ?? null;
@@ -100,7 +103,7 @@ export default function Fixture() {
         const older = partial
             ? [...makeRows(0, 1), partialAssistant('partial-older', 'HIDDEN_EARLIER_PROCESS', 'tool-calls')]
             : turnPrepend ? makeTurns(0, 12)
-            : makeRows(0, compactPrepend ? 60 : 12).map((message) => compactPrepend
+            : makeRows(0, scenario === 'desktop-warmup-small-pinned' ? 6 : warmup ? pageSize ?? 50 : compactPrepend ? 60 : 12).map((message) => compactPrepend
                 ? { ...message, parts: message.parts.map((part) => part.type === 'text' ? { ...part, text: 'Earlier short message' } : part) }
                 : message);
         setRows((current) => [...(delayedResize ? older.map((message) => ({
@@ -115,7 +118,7 @@ export default function Fixture() {
     const timeline = useChatTimelineController({
         sessionId: sessionID, directory: '/fixture', messages: rows,
         historyMeta: { limit: rows.length, loading: false, complete: loads.current > 0, canLoadEarlier: loads.current === 0 },
-        scrollRef: auto.scrollRef, messageListRef: listRef, loadMoreMessages: loadMore,
+        scrollRef: auto.scrollRef, messageListRef: listRef, loadMoreMessages: useEvent(() => loadMore()),
         goToBottom: auto.goToBottom, releaseAutoFollow: auto.releaseAutoFollow,
         beginHistoryViewportPreservation: auto.beginHistoryViewportPreservation,
         endHistoryViewportPreservation: auto.endHistoryViewportPreservation,
@@ -123,10 +126,24 @@ export default function Fixture() {
         onWillLoadEarlier: useEvent(() => setToken((value) => value + 1)),
     });
     upwardRef.current = timeline.handleHistoryUpwardIntent;
+    useDesktopHistoryWarmup({
+        scope: sessionID,
+        enabled: warmup && warmupEnabled,
+        cursor: loads.current === 0 ? 'older' : null,
+        loadedTurns: rows.length,
+        messages: rows,
+        scrollRef,
+        loadPrevious: loadMore,
+    });
     const { resumeToBottomInstant } = timeline;
     React.useEffect(() => {
         const api = {
             prepare: async () => {
+                if (warmup && scenario?.endsWith('-pinned')) {
+                    prepared.current = true;
+                    setWarmupEnabled(true);
+                    return;
+                }
                 if (scenario?.startsWith('fast-entry')) {
                     await restoreSnapshot();
                     prepared.current = true;
@@ -134,9 +151,10 @@ export default function Fixture() {
                 }
                 releaseAutoFollow();
                 await wait(50);
-                scrollRef.current!.scrollTop = scenario === 'virtualize-transition' ? 100 : 800;
+                scrollRef.current!.scrollTop = scenario === 'virtualize-transition' || warmup ? 100 : 800;
                 await wait(500);
                 prepared.current = true;
+                if (warmup) setWarmupEnabled(true);
             },
             sample,
             resume: () => resumeToBottomInstant(),
@@ -149,7 +167,7 @@ export default function Fixture() {
         }, 200);
         const prepareTimer = window.setTimeout(() => void api.prepare(), 2000);
         return () => { window.clearInterval(timer); window.clearTimeout(prepareTimer); };
-    }, [releaseAutoFollow, restoreSnapshot, scrollRef, sample, scenario, resumeToBottomInstant]);
+    }, [releaseAutoFollow, restoreSnapshot, scrollRef, sample, scenario, resumeToBottomInstant, warmup]);
     return <div ref={auto.scrollRef} data-history-scroller="true" onScroll={timeline.handleHistoryScroll}
         style={{ height: '100dvh', overflowY: 'auto', overflowAnchor: 'none' }}>
         <div><MessageList ref={listRef} sessionKey={sessionID} virtualizerKey={sessionID} directory="/fixture"

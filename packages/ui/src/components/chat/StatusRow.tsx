@@ -12,6 +12,7 @@ type TodoItem = Todo & { id?: string };
 import { useUIStore } from "@/stores/useUIStore";
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore";
 import { WorkingPlaceholder } from "./message/parts/WorkingPlaceholder";
+import { getToolRowBlockClass } from "./message/parts/toolRowChrome";
 import { isVSCodeRuntime } from "@/lib/desktop";
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from "@/lib/i18n";
@@ -232,13 +233,13 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   }
 
   return (
-    <div className={cn("mb-1", !hasLeftAccessory && "chat-column")} style={STATUS_ROW_CONTAINER_STYLE}>
+    <div className={cn("mb-1", !hasLeftAccessory && "chat-column -mt-1", !hasLeftAccessory && getToolRowBlockClass(isMobile))} style={STATUS_ROW_CONTAINER_STYLE}>
       {/*
         When leftAccessory is set (ChatInput pending-changes row), the parent is
         already `chat-input-column`. Use the same horizontal inset as the composer
         textarea (`px-3`) so the status triggers align with input content.
       */}
-      <div className={cn("flex items-center justify-between py-0.5 gap-2 h-[1.2rem]", hasLeftAccessory && "px-3")}>
+      <div className={cn("flex items-center justify-between py-0.5 gap-2", hasLeftAccessory && "px-3")}>
         {/* Left: Abort prompt | Abort status | Working placeholder | leftAccessory */}
         <div className={cn("flex-1 flex items-center min-w-0 gap-2", !hasLeftAccessory && "overflow-x-hidden")}>
           {hasAbortPrompt ? (

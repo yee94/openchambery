@@ -177,17 +177,13 @@ const VisualSectionContent: React.FC<VisualSectionContentProps> = ({ mobile }) =
   );
 };
 
-// Chat section: User message rendering, Diff layout, Mobile status bar, Show reasoning traces, Follow-up behavior, Persist draft
+// Chat section: Chat render mode, Message transport, Diff layout, Message appearance (incl. plain-text user messages, follow-up queueing), Reasoning, Sessions, Tools and files, Composer
 const ChatSectionContent: React.FC = () => {
-  const isVSCode = isVSCodeRuntime();
   return (
     <OpenChamberVisualSettings
       visibleSettings={[
         "chatRenderMode",
         "messageTransport",
-        "activityRenderMode",
-        "expandedTools",
-        "userMessageRendering",
         "diffLayout",
         "followUpBehavior",
         "sessionGoal",
@@ -196,15 +192,8 @@ const ChatSectionContent: React.FC = () => {
         "subagentReadOnlyBanner",
         "reasoning",
         "collapsibleUserMessages",
-        "stickyUserHeader",
-        ...(!isVSCode ? ["promptNavigatorEnabled" as const] : []),
-        "wideChatLayout",
-        "codeBlockLineWrap",
         "showAssistantTps",
-        "dotfiles",
-        "fileViewerPreview",
         "persistDraft",
-        "showTurnChangedFiles",
         "inputSpellcheck",
       ]}
     />

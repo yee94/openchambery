@@ -315,7 +315,7 @@ function collectAuthorityRefreshRemovals(
  */
 export type QueryTranscriptRepository = TranscriptRepository & {
   ensureInitial: (scope: TranscriptScope) => Promise<TranscriptData>
-  fetchPreviousPage: (scope: TranscriptScope) => Promise<TranscriptData>
+  fetchPreviousPage: (scope: TranscriptScope, pageSize?: number) => Promise<TranscriptData>
   getController: (scope: TranscriptScope) => SessionTranscriptController | undefined
   /** Ticket 08: QueryCache LRU + destructive reset budget. */
   getCacheBudget: () => TranscriptQueryCacheBudget
@@ -1843,7 +1843,7 @@ export function createQueryTranscriptRepository(
       return transcript
     },
 
-    async fetchPreviousPage(scope) {
+    async fetchPreviousPage(scope, pageSize) {
       if (needsAuthorityTail(scope)) {
         await repository.ensureInitial(scope)
       }
@@ -1859,7 +1859,7 @@ export function createQueryTranscriptRepository(
       const startedAt = Date.now()
       try {
         const controller = ensureController(scope)
-        await controller.fetchPreviousPage()
+        await controller.fetchPreviousPage(pageSize)
         if (!isInflightReadCurrent(flightKey, readEpoch)) {
           return repository.getTranscript(scope)
         }

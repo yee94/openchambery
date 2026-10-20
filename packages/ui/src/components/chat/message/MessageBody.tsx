@@ -2094,7 +2094,7 @@ const AssistantMessageBody = React.memo(({
                     continue;
                 }
 
-                if (isProcessGroupTool(toolName)) {
+                if (isSortedRenderMode && isProcessGroupTool(toolName)) {
                     const grouped = collectConsecutiveProcessTools(visibleParts, i, (item) => {
                         if (item.type !== 'tool') return '';
                         if (activityByPart.get(item)?.kind === 'tool') return '';

@@ -26,6 +26,19 @@ const assistants = (from: number, count: number) =>
 const input = { sessionID: "ses_child", directory: "/repo", signal: new AbortController().signal }
 
 describe("extendInitialPageToAuthoredUserTurn", () => {
+  test("forwards the one-shot warmup page size to native projection without scanning small pages", async () => {
+    fetchPage.mockResolvedValueOnce({
+      records: [record("msg_u0", "user", 0), ...assistants(1, 199)],
+      cursor: "older",
+      complete: false,
+      turnCount: 1,
+    })
+    const page = await fetchProductionTranscriptTransportPage({ ...input, limit: 200, pageSize: 200, before: "current" })
+    expect(fetchPage).toHaveBeenCalledTimes(1)
+    expect(fetchPage.mock.calls[0]![0]).toMatchObject({ cursor: "current", limit: 200 })
+    expect(page.records).toHaveLength(200)
+  })
+
   test("settles a native transport that ignores abort instead of loading forever", async () => {
     vi.useFakeTimers()
     try {

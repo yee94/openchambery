@@ -1364,7 +1364,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     // Header visibility must not change the rows' React parent: doing so resets
     // expanded reasoning/tool children when a stream settles.
     return (
-        <div className={getToolRowBlockClass(isMobile)}>
+        <div className={paintDisclosureHeader ? getToolRowBlockClass(isMobile) : 'flow-root'}>
                     {paintDisclosureHeader ? <button
                         ref={activityHeaderRef}
                         type="button"

@@ -801,7 +801,8 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         generation: pinRevealGeneration,
         root: scrollElement,
         relevantKeys: pinRevealKeys,
-        enabled: entryKeys.length > 0,
+        // Trial without the legacy whole-transcript visibility gate.
+        enabled: false,
         initiallyRevealed: initialPinRevealComplete,
     });
     const listStyle = mergeMarkdownPinRevealStyle(style, pinHidden);

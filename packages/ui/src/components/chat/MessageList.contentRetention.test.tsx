@@ -79,7 +79,11 @@ test.each([
         { id: 'tool-two', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: '/workspace/two.ts' }, output: 'two' } },
     ].map(part => ({ ...part, messageID: row.info.id, sessionID })) as Part[];
     await render([user, row], row.info.id);
-    expect(container.querySelectorAll('[data-component="context-tool-group"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-component="context-tool-group"]')).toHaveLength(chatRenderMode === 'sorted' ? 1 : 0);
+    if (chatRenderMode === 'live') {
+        expect(container.textContent).toContain('one.ts');
+        expect(container.textContent).toContain('two.ts');
+    }
 });
 
 test.each(['sorted', 'live'] as const)('zero-width provider text does not paint a blank paragraph or split tools (%s)', async (chatRenderMode) => {
@@ -95,7 +99,10 @@ test.each(['sorted', 'live'] as const)('zero-width provider text does not paint 
     })!;
     await render([user, row], row.info.id);
     expect(container.textContent).not.toContain('\u200b');
-    expect(container.querySelectorAll('[data-component="context-tool-group"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-component="context-tool-group"]')).toHaveLength(chatRenderMode === 'sorted' ? 1 : 0);
+    if (chatRenderMode === 'live') {
+        expect(container.textContent).toContain('picker.tsx');
+    }
 });
 
 beforeEach(async () => {
