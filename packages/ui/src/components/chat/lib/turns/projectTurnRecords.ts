@@ -46,6 +46,15 @@ const getMessageCompletedAt = (message: ChatMessageEntry): number | undefined =>
     return typeof completed === 'number' ? completed : undefined;
 };
 
+/**
+ * Provider-body end (`time.streamed`). OpenCode 2 compaction writes this clock
+ * and never `time.completed`; turn duration and TPS both have to accept it.
+ */
+const getMessageStreamedAt = (message: ChatMessageEntry): number | undefined => {
+    const streamed = (message.info as { time?: { streamed?: unknown } }).time?.streamed;
+    return typeof streamed === 'number' && Number.isFinite(streamed) ? streamed : undefined;
+};
+
 const getPartEndTime = (part: unknown): number | undefined => {
     const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end;
     if (typeof stateEnd === 'number') {
@@ -79,6 +88,7 @@ const createTurnMessageRecord = (message: ChatMessageEntry, order: number): Turn
 const buildTurnStreamState = (userMessage: ChatMessageEntry | undefined, assistantMessages: ChatMessageEntry[]): TurnStreamState => {
     const startedAt = userMessage ? getMessageCreatedAt(userMessage) : undefined;
     let completedAt: number | undefined;
+    let maxStreamedAt: number | undefined;
     let maxPartEndedAt: number | undefined;
     let isStreaming = false;
 
@@ -89,6 +99,14 @@ const buildTurnStreamState = (userMessage: ChatMessageEntry | undefined, assista
         } else {
             isStreaming = true;
         }
+        // Compaction (and any other step that ends at the provider body) stamps
+        // `time.streamed` and leaves `time.completed` empty. TPS already uses
+        // that clock; duration must too, or a compacted turn shows tok/s with
+        // no elapsed time.
+        const streamed = getMessageStreamedAt(message);
+        if (typeof streamed === 'number') {
+            maxStreamedAt = Math.max(maxStreamedAt ?? 0, streamed);
+        }
         message.parts.forEach((part) => {
             const endedAt = getPartEndTime(part);
             if (typeof endedAt === 'number') {
@@ -97,9 +115,9 @@ const buildTurnStreamState = (userMessage: ChatMessageEntry | undefined, assista
         });
     });
 
-    // Prefer message completion; fall back to latest part end so abnormal-exit
-    // turns still freeze a duration instead of live-ticking forever.
-    const durationEnd = completedAt ?? maxPartEndedAt;
+    // Prefer message completion; then the provider-stream boundary; then the
+    // latest part end so abnormal-exit turns freeze instead of ticking forever.
+    const durationEnd = completedAt ?? maxStreamedAt ?? maxPartEndedAt;
     const durationMs = typeof startedAt === 'number' && typeof durationEnd === 'number' && durationEnd >= startedAt
         ? durationEnd - startedAt
         : undefined;
