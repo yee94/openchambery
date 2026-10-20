@@ -774,7 +774,6 @@ const MessageImageCard = ({
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const imageResource = useResolvedImageResource(source ?? '', effectiveDirectory);
   const displaySource = imageResource.source;
-  const isMobile = useUIStore((state) => state.isMobile);
   return (
     <div
       className="relative aspect-square min-w-0 overflow-hidden w-24 max-w-full rounded-lg border border-border/40 bg-muted/10"
@@ -793,7 +792,7 @@ const MessageImageCard = ({
             {sizeText && <p className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{sizeText}</p>}
           </div>
         </button>
-      ) : isMobile && materializationStatus === 'loading' ? (
+      ) : materializationStatus === 'loading' ? (
         <ImageLoadingPlaceholder className="absolute inset-0 rounded-lg" />
       ) : (
         <div
@@ -804,15 +803,9 @@ const MessageImageCard = ({
           role={materializationStatus === 'error' ? 'alert' : 'status'}
           aria-label={filename}
         >
-          {materializationStatus === 'loading' ? (
-            <Icon name="loader-4" className="size-5 animate-spin" aria-hidden="true" />
-          ) : (
-            <Icon name={materializationStatus === 'error' ? 'error-warning' : 'file-image'} className="size-5" aria-hidden="true" />
-          )}
+          <Icon name={materializationStatus === 'error' ? 'error-warning' : 'file-image'} className="size-5" aria-hidden="true" />
           <span>
-            {materializationStatus === 'loading'
-              ? t('chat.fileAttachment.image.loading')
-              : materializationStatus === 'error'
+            {materializationStatus === 'error'
                 ? t('chat.fileAttachment.image.loadFailed')
                 : filename}
           </span>

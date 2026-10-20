@@ -1,8 +1,8 @@
 # Chat components
 
-## Mobile image presentation
+## Image presentation
 
-Markdown content, attachment thumbnails/gallery, Assistant contact images and composer attachments use `LoadingImage` from shared UI. URL acquisition and browser decode are separate pending phases; both show the shared dotted shimmer canvas. Fullscreen previews and mobile file sheets use `ImageLoadingPlaceholder` during resource acquisition. Failures end loading and preserve the owning surface's error/retry path; image preview/save metadata continues to carry the original source. Legacy Markdown keeps its DOM presentation owner and only marks streamed images loaded after the actual image load event. See `../ui/DOCUMENTATION.md#mobile-image-loading`.
+Markdown content, attachment thumbnails/gallery, Assistant contact images and composer attachments use `LoadingImage` from shared UI on desktop and mobile, over direct or Relay connections. URL acquisition and browser decode are separate pending phases; both show the shared dotted shimmer canvas. Desktop body-image placeholders cap at 320px; mobile body-image placeholders fill their message width, both defaulting to 16:9. Thumbnail slots retain their existing square size. Fullscreen previews and file sheets use `ImageLoadingPlaceholder` during resource acquisition. Failures end loading and preserve the owning surface's error/retry path; image preview/save metadata continues to carry the original source. Legacy Markdown keeps its DOM presentation owner and only marks streamed images loaded after the actual image load event. See `../ui/DOCUMENTATION.md#image-loading`.
 
 ## Mobile automatic read-aloud
 
