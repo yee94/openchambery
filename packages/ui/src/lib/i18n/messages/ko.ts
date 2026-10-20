@@ -2218,6 +2218,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.releaseConfirm': '놓아서 확인',
   'chat.dictation.inputPlaceholder': '메시지 입력, 길게 눌러 음성을 텍스트로 변환',
   'chat.dictation.edit': '편집',
+  'chat.dictation.send': '보내기',
   'chat.dictation.cancelGesture': '취소',
   'chat.dictation.releaseEdit': '손을 떼면 편집',
   'chat.dictation.releaseSend': '손을 떼면 전송',

@@ -2214,6 +2214,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.releaseConfirm': '離して確定',
   'chat.dictation.inputPlaceholder': 'メッセージを入力、長押しで文字起こし',
   'chat.dictation.edit': '編集',
+  'chat.dictation.send': '送信',
   'chat.dictation.cancelGesture': 'キャンセル',
   'chat.dictation.releaseEdit': '離して編集',
   'chat.dictation.releaseSend': '離して送信',

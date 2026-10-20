@@ -1956,6 +1956,7 @@ export const dict = {
   'chat.dictation.releaseConfirm': 'Relâchez pour confirmer',
   'chat.dictation.inputPlaceholder': 'Saisir un message, maintenir pour transcrire',
   'chat.dictation.edit': 'Modifier',
+  'chat.dictation.send': 'Envoyer',
   'chat.dictation.cancelGesture': 'Annuler',
   'chat.dictation.releaseEdit': 'Relâcher pour modifier',
   'chat.dictation.releaseSend': 'Relâcher pour envoyer',

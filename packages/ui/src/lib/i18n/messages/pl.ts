@@ -1417,6 +1417,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.releaseConfirm': 'Puść, aby potwierdzić',
   'chat.dictation.inputPlaceholder': 'Wpisz wiadomość, przytrzymaj, aby zamienić mowę na tekst',
   'chat.dictation.edit': 'Edytuj',
+  'chat.dictation.send': 'Wyślij',
   'chat.dictation.cancelGesture': 'Anuluj',
   'chat.dictation.releaseEdit': 'Puść, aby edytować',
   'chat.dictation.releaseSend': 'Puść, aby wysłać',

@@ -2184,6 +2184,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.releaseConfirm': '松开确认',
   'chat.dictation.inputPlaceholder': '输入消息，按住转文字',
   'chat.dictation.edit': '编辑',
+  'chat.dictation.send': '发送',
   'chat.dictation.cancelGesture': '取消',
   'chat.dictation.releaseEdit': '松开编辑',
   'chat.dictation.releaseSend': '松开发送',

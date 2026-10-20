@@ -36,10 +36,10 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     const { t } = useI18n();
     const [held, setHeld] = useState(false);
     const [processing, setProcessing] = useState(false);
-    const [intent, setIntent] = useState<'send' | 'cancel' | 'edit'>('send');
+    const [intent, setIntent] = useState<'send' | 'cancel' | 'edit'>('edit');
     const gesture = useRef<{ pointer: number; x: number; y: number; intent: 'send' | 'cancel' | 'edit'; started: boolean } | null>(null);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const action = useRef<'send' | 'insert'>('send');
+    const action = useRef<'send' | 'insert'>('insert');
     const gestureStage = useRef<SVGGElement>(null);
     const arcGradientId = useId();
     const cancelClipId = useId();
@@ -63,7 +63,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         clearTimer();
         gesture.current = null;
         setHeld(false);
-        setIntent('send');
+        setIntent('edit');
         if (status === 'failed' || (status === 'idle' && error)) dictation.discardFailedDictation();
         else void dictation.cancelDictation();
     });
@@ -73,7 +73,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         if (!emptyInputForTarget(target)) return;
         event.preventDefault();
         event.stopPropagation();
-        gesture.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, intent: 'send', started: false };
+        gesture.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, intent: 'edit', started: false };
         timer.current = setTimeout(() => {
             timer.current = null;
             if (!gesture.current) return;
@@ -81,9 +81,9 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
             if (!input) { gesture.current = null; return; }
             input.blur();
             gesture.current.started = true;
-            action.current = 'send';
+            action.current = 'insert';
             setHeld(true);
-            setIntent('send');
+            setIntent('edit');
             void dictation.startDictation();
         }, 300);
     });
@@ -96,8 +96,8 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         const targets = gestureStage.current?.getBoundingClientRect();
         const overTargets = targets && targets.width > 0 && event.clientY >= targets.top && event.clientY <= targets.bottom;
         const next = overTargets
-            ? event.clientX < targets.left + targets.width / 2 ? 'cancel' : 'edit'
-            : dx <= -64 ? 'cancel' : dx >= 64 ? 'edit' : 'send';
+            ? event.clientX < targets.left + targets.width / 2 ? 'cancel' : 'send'
+            : dx <= -64 ? 'cancel' : dx >= 64 ? 'send' : 'edit';
         if (!current.started && Math.hypot(dx, current.y - event.clientY) > 12) { clearTimer(); gesture.current = null; return; }
         if (current.started && next !== current.intent) { current.intent = next; setIntent(next); }
     });
@@ -185,9 +185,9 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
                             <path d={cancelTargetPath} />
                             <text x="95" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(-11 95 68)">{t('chat.dictation.cancelGesture')}</text>
                         </g>
-                        <g className="oc-speech-target oc-speech-target--edit" data-active={intent === 'edit'}>
+                        <g className="oc-speech-target oc-speech-target--send" data-active={intent === 'send'}>
                             <path d={editTargetPath} />
-                            <text x="305" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(11 305 68)">{t('chat.dictation.edit')}</text>
+                            <text x="305" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(11 305 68)">{t('chat.dictation.send')}</text>
                         </g>
                     </g>
                     <path className="oc-speech-hold-arc" fill={`url(#${arcGradientId})`} d="M-50 186.987 A500 500 0 0 1 450 186.987 L450 300 H-50 Z" />

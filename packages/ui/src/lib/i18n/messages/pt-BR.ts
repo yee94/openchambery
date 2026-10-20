@@ -1473,6 +1473,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.releaseConfirm': 'Solte para confirmar',
   'chat.dictation.inputPlaceholder': 'Digite uma mensagem, segure para transcrever',
   'chat.dictation.edit': 'Editar',
+  'chat.dictation.send': 'Enviar',
   'chat.dictation.cancelGesture': 'Cancelar',
   'chat.dictation.releaseEdit': 'Solte para editar',
   'chat.dictation.releaseSend': 'Solte para enviar',

@@ -75,17 +75,17 @@ An explicit non-passive `touchstart` listener prevents native touch selection on
 eligible empty input surfaces; a confirmed hold blurs the textarea to dismiss its
 native caret. Short taps still focus it, and nonempty drafts keep native editing.
 Horizontal displacement of 64 CSS pixels
-selects cancel (left) or edit (right); entering the bottom targets selects the
-half under the finger regardless of displacement. Release in the center sends the final text
+selects cancel (left) or send (right); entering the bottom targets selects the
+half under the finger regardless of displacement. Release in the center focuses the
+existing textarea for editing without sending. Release on the right sends the final text
 through the same primary send action as the Send button, preserving queue admission,
-establishing-session follow-ups and submission-flight guards; release on edit focuses the
-existing textarea without sending. Both releases immediately unmount the overlay,
+establishing-session follow-ups and submission-flight guards. Both releases immediately unmount the overlay,
 before microphone teardown or recognition finalization. The last partial text is
 staged in the composer and replaced by the final text; user edits take precedence
 over late results and suppress automatic sending. Processing stays in the composer
 hint, with no post-release cancel action. Late errors use a toast and retain the
 staged text rather than reopening the overlay. Returning
-to the center outside the targets restores send. Pointer interruption/backgrounding cancels; leaving the draft fences
+to the center outside the targets restores edit. Pointer interruption/backgrounding cancels; leaving the draft fences
 late recognition results. Nonempty inputs retain native text selection/editing;
 disabled and read-only inputs cannot start capture.
 
