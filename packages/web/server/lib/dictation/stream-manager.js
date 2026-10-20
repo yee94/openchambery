@@ -41,10 +41,11 @@ export class DictationStreamManager {
     this.finalTimeoutMs = finalTimeoutMs ?? DEFAULT_FINAL_TIMEOUT_MS;
     this.autoCommitSeconds = autoCommitSeconds ?? DEFAULT_AUTO_COMMIT_SECONDS;
     this.streams = new Map();
+    this.pendingStarts = new Map();
   }
 
   cleanupAll() {
-    for (const dictationId of Array.from(this.streams.keys())) {
+    for (const dictationId of new Set([...this.streams.keys(), ...this.pendingStarts.keys()])) {
       this.cleanupStream(dictationId);
     }
   }
@@ -56,6 +57,8 @@ export class DictationStreamManager {
    */
   async handleStart(dictationId, format, startOptions = {}) {
     this.cleanupStream(dictationId);
+    const generation = Symbol();
+    this.pendingStarts.set(dictationId, generation);
 
     const inputRate = parsePcmRateFromFormat(format, 16000) ?? 16000;
     if (!Number.isFinite(inputRate) || inputRate <= 0) {
@@ -67,9 +70,16 @@ export class DictationStreamManager {
     try {
       resolved = await this.createSttSession(startOptions);
     } catch (error) {
+      if (this.pendingStarts.get(dictationId) !== generation) return;
+      this.pendingStarts.delete(dictationId);
       this.failStream(dictationId, error?.message || String(error), true);
       return;
     }
+    if (this.pendingStarts.get(dictationId) !== generation) {
+      resolved?.session?.close();
+      return;
+    }
+    this.pendingStarts.delete(dictationId);
     if (!resolved || resolved.error) {
       this.failStream(
         dictationId,
@@ -144,7 +154,7 @@ export class DictationStreamManager {
       nextSeqToForward: 0,
       ackSeq: -1,
       autoCommitBytes:
-        this.autoCommitSeconds > 0
+        (stt.autoCommitSeconds ?? this.autoCommitSeconds) > 0
           ? Math.max(1, Math.round(this.autoCommitSeconds * stt.requiredSampleRate * 2))
           : 0,
       bytesSinceCommit: 0,
@@ -295,6 +305,7 @@ export class DictationStreamManager {
   }
 
   cleanupStream(dictationId) {
+    this.pendingStarts.delete(dictationId);
     const state = this.streams.get(dictationId);
     if (!state) {
       return;

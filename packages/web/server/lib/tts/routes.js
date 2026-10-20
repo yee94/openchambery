@@ -1,6 +1,8 @@
 import express from 'express';
+import { once } from 'node:events';
 import { normalizeCustomOpenAIBaseURL } from './base-url.js';
 import { summarizeText, sanitizeForTTS, sanitizeForNote } from '../text/summarization.js';
+import { synthesizeVolcengine, transcribeVolcengine } from './volcengine.js';
 
 export function registerTtsRoutes(app, { sayTTSCapability }) {
   let ttsModulePromise = null;
@@ -44,6 +46,43 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
   // Server-side TTS endpoint - streams audio from OpenAI TTS API
   app.post('/api/tts/speak', async (req, res) => {
     try {
+      if (req.body?.provider === 'volcengine') {
+        if (typeof req.body.apiKey !== 'string' || !req.body.apiKey.trim()) {
+          return res.status(400).json({ error: 'Volcengine speech API Key is required' });
+        }
+        const abort = new AbortController();
+        const cancel = () => { if (!res.writableEnded) abort.abort(); };
+        res.on('close', cancel);
+        try {
+          if (req.body.stream === true) {
+            res.type('application/x-ndjson').set('Cache-Control', 'no-store, no-transform').set('X-Accel-Buffering', 'no');
+            const write = async (frame) => {
+              abort.signal.throwIfAborted();
+              if (!res.write(`${JSON.stringify(frame)}\n`)) await once(res, 'drain', { signal: abort.signal });
+              res.flush?.();
+            };
+            await synthesizeVolcengine({ ...req.body, signal: abort.signal, onAudio: async (chunk) => {
+              for (let offset = 0; offset < chunk.length; offset += 9600) {
+                await write({ type: 'audio', data: chunk.subarray(offset, offset + 9600).toString('base64') });
+              }
+            } });
+            await write({ type: 'done' });
+            res.end();
+            return;
+          }
+          const result = await synthesizeVolcengine({ ...req.body, signal: abort.signal, onAudio: undefined });
+          if (!res.destroyed) res.type(result.contentType).set('Cache-Control', 'no-store').send(result.buffer);
+        } catch (error) {
+          if (res.headersSent) {
+            if (!res.destroyed) res.end(`${JSON.stringify({ type: 'error', error: 'Speech synthesis interrupted or failed' })}\n`);
+          } else {
+            throw error;
+          }
+        } finally {
+          res.off('close', cancel);
+        }
+        return;
+      }
       const { text, voice = 'nova', model = 'gpt-4o-mini-tts', speed = 0.9, instructions, providerId, modelId, apiKey, baseURL } = req.body || {};
 
       const normalizedBaseURLResult = normalizeCustomOpenAIBaseURL(baseURL);
@@ -226,6 +265,19 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
 
         if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
           return res.status(400).json({ error: 'Audio data is required' });
+        }
+
+        if (req.headers['x-speech-provider'] === 'volcengine') {
+          const abort = new AbortController();
+          const cancel = () => { if (!res.writableEnded) abort.abort(); };
+          res.on('close', cancel);
+          try {
+            const transcript = await transcribeVolcengine({ audioBuffer: req.body, apiKey: req.headers['x-speech-api-key'], signal: abort.signal });
+            if (!res.destroyed) res.json({ transcript });
+          } finally {
+            res.off('close', cancel);
+          }
+          return;
         }
 
         if (!baseURL) {

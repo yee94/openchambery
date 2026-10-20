@@ -149,6 +149,7 @@ class OpenChamberBridgeViewController: CAPBridgeViewController {
 
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(OpenChamberHapticsPlugin())
+        bridge?.registerPluginInstance(OpenChamberScreenAwakePlugin())
         bridge?.registerPluginInstance(OpenChamberNavigationPlugin())
         bridge?.registerPluginInstance(OpenChamberVirtualAssetPlugin())
         bridge?.registerPluginInstance(OpenChamberMediaPlugin())

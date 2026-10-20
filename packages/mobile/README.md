@@ -6,6 +6,15 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 
 ## Runtime Model
 
+- Chat overflow → Auto-read replies is local to the current open conversation.
+  `OpenChamberScreenAwake` keeps the foreground screen on while enabled: iOS
+  uses `UIApplication.isIdleTimerDisabled`; Android uses `FLAG_KEEP_SCREEN_ON`.
+  Pause/disable releases the screen, and resume reapplies only while enabled.
+  Hosted mobile uses browser Screen Wake Lock. The native plugin requires a
+  native build, not just an OTA web update; older shells try browser Wake Lock
+  and report unsupported environments. Voice/Relay requests keep their existing
+  runtime transport and configured provider.
+
 - The native app bundles the mobile UI only; it does not embed the OpenChamber web server or OpenCode server.
 - OTA checks are isolated by running release major and beta/stable channel: 1.x stays on 1.x and 2.x stays on 2.x, including channel rollback. New shared-UI clients send `releaseMajor` and reject cross-major responses, downloads and cached-bundle reuse. Legacy clients are routed by their existing bundle/native version fields on the update service. See `deploy/update-service/README.md` for the catalog and rollout-order contract.
 - On first launch in Capacitor, the app shows a connection screen for an existing OpenChamber server.

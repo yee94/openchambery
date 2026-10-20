@@ -8,7 +8,7 @@ export type SettingsBootstrap = {
   defaultFileViewerPreview?: boolean;
   zenModel?: string;
   messageStreamTransport?: 'auto' | 'ws' | 'sse';
-  sttProvider?: 'local' | 'openai-compatible';
+  sttProvider?: 'local' | 'openai-compatible' | 'volcengine';
   sttServerUrl?: string;
   sttModel?: string;
   sttLocalModel?: string;

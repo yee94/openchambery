@@ -18,6 +18,7 @@
  */
 
 type HighlightStyle =
+    | 'dictation'
     | 'marker'
     | 'code'
     | 'codeFence'
@@ -92,6 +93,7 @@ type AnyStyle = HighlightRange['style'];
 
 // Higher priority wins when ranges overlap on a given segment.
 const STYLE_PRIORITY: Record<AnyStyle, number> = {
+    dictation: 102,
     mentionFile: 100,
     mentionAgent: 100,
     mentionSession: 100,
@@ -109,6 +111,7 @@ const STYLE_PRIORITY: Record<AnyStyle, number> = {
 
 // Paint-only styles — never anything that affects layout.
 const STYLE_CLASS: Record<AnyStyle, string> = {
+    dictation: 'text-foreground underline decoration-current underline-offset-4',
     mentionFile: 'text-[var(--primary)]',
     mentionAgent: 'text-[var(--primary)]',
     mentionSession: 'text-[var(--primary)]',

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import {
     buildHighlightParts,
     resolveAtomicReferenceSelection,
@@ -12,6 +12,13 @@ import {
 } from '@/composer/inline-visual';
 
 describe('buildHighlightParts', () => {
+    test('underlines only provisional speech and removes it when finalized', () => {
+        const text = '已有草稿 今天晴天 ';
+        const parts = buildHighlightParts(text, [{ start: 5, end: 9, style: 'dictation' }]);
+        expect(parts?.filter((part) => part.className.includes('underline')).map((part) => part.text)).toEqual(['今天晴天']);
+        expect(parts?.map((part) => part.text).join('')).toBe(text);
+        expect(buildHighlightParts(text, [])?.some((part) => part.className.includes('underline')) ?? false).toBe(false);
+    });
     test('preserves skill names on skill tag parts', () => {
         const spec = { trigger: '/', icon: 'book-open', label: 'review-pr' };
         const token = composerTriggerIconDisplay(spec);

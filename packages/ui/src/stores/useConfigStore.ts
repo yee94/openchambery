@@ -49,7 +49,7 @@ interface OpenChamberDefaults {
     defaultFileViewerPreview?: boolean;
     zenModel?: string;
     messageStreamTransport?: 'auto' | 'ws' | 'sse';
-    sttProvider?: 'local' | 'openai-compatible';
+    sttProvider?: 'local' | 'openai-compatible' | 'volcengine';
     sttServerUrl?: string;
     sttModel?: string;
     sttLocalModel?: string;
@@ -832,8 +832,8 @@ interface ConfigStore {
     settingsZenModel: string | undefined;
     settingsMessageStreamTransport: 'auto' | 'ws' | 'sse';
     // Voice provider preference ('browser', 'openai', 'openai-compatible', or 'say' for macOS)
-    voiceProvider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say';
-    setVoiceProvider: (provider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say') => void;
+    voiceProvider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say' | 'volcengine';
+    setVoiceProvider: (provider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say' | 'volcengine') => void;
     // TTS settings
     speechRate: number;
     speechPitch: number;
@@ -849,14 +849,14 @@ interface ConfigStore {
     openaiCompatibleTtsModel: string;
     // STT (dictation) settings
     dictationEnabled: boolean;
-    sttProvider: 'local' | 'openai-compatible';
+    sttProvider: 'local' | 'openai-compatible' | 'volcengine';
     sttServerUrl: string;
     sttApiKey: string;
     sttModel: string;
     sttLocalModel: string;
     sttLanguage: string;
     showMessageTTSButtons: boolean;
-    ttsInputMode: 'sanitized' | 'raw' | 'summarized';
+    ttsInputMode: 'final' | 'sanitized' | 'raw' | 'summarized';
     // Summarization settings
     summarizeMessageTTS: boolean;
     summarizeVoiceConversation: boolean;
@@ -875,14 +875,14 @@ interface ConfigStore {
     setOpenaiCompatibleVoice: (voice: string) => void;
     setOpenaiCompatibleTtsModel: (model: string) => void;
     setDictationEnabled: (enabled: boolean) => void;
-    setSttProvider: (provider: 'local' | 'openai-compatible') => void;
+    setSttProvider: (provider: 'local' | 'openai-compatible' | 'volcengine') => void;
     setSttServerUrl: (url: string) => void;
     setSttApiKey: (apiKey: string) => void;
     setSttModel: (model: string) => void;
     setSttLocalModel: (model: string) => void;
     setSttLanguage: (lang: string) => void;
     setShowMessageTTSButtons: (show: boolean) => void;
-    setTtsInputMode: (mode: 'sanitized' | 'raw' | 'summarized') => void;
+    setTtsInputMode: (mode: 'final' | 'sanitized' | 'raw' | 'summarized') => void;
     setSummarizeMessageTTS: (enabled: boolean) => void;
     setSummarizeVoiceConversation: (enabled: boolean) => void;
     setSummarizeCharacterThreshold: (threshold: number) => void;
@@ -1014,7 +1014,7 @@ export const useConfigStore = create<ConfigStore>()(
                 voiceProvider: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('voiceProvider');
-                        if (saved === 'openai' || saved === 'browser' || saved === 'local' || saved === 'say' || saved === 'openai-compatible') return saved;
+                        if (saved === 'openai' || saved === 'browser' || saved === 'local' || saved === 'say' || saved === 'openai-compatible' || saved === 'volcengine') return saved;
                     }
                     return 'browser';
                 })(),
@@ -1124,19 +1124,19 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return 'kokoro';
                 })(),
-                // Voice input (dictation) master toggle - default enabled
+                // Voice input (dictation) master toggle - disabled until explicitly enabled
                 dictationEnabled: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('dictationEnabled');
-                        if (saved === 'false') return false;
+                        if (saved === 'true') return true;
                     }
-                    return true;
+                    return false;
                 })(),
                 // STT provider: 'local' (server-side sherpa-onnx) or 'openai-compatible'
                 sttProvider: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('sttProvider');
-                        if (saved === 'local' || saved === 'openai-compatible') return saved;
+                        if (saved === 'local' || saved === 'openai-compatible' || saved === 'volcengine') return saved;
                         // Migrate legacy providers: 'server' used an OpenAI-compatible
                         // endpoint; 'browser' and 'wasm' map to the local default.
                         if (saved === 'server') return 'openai-compatible' as const;
@@ -1189,10 +1189,11 @@ export const useConfigStore = create<ConfigStore>()(
                 ttsInputMode: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('ttsInputMode');
+                        if (saved === 'sanitized') return 'sanitized' as const;
                         if (saved === 'raw') return 'raw' as const;
                         if (saved === 'summarized') return 'summarized' as const;
                     }
-                    return 'sanitized' as const;
+                    return 'final' as const;
                 })(),
                 // Summarization settings
                 summarizeMessageTTS: (() => {
@@ -2713,7 +2714,7 @@ export const useConfigStore = create<ConfigStore>()(
                     });
                 },
 
-                setVoiceProvider: (provider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say') => {
+                setVoiceProvider: (provider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say' | 'volcengine') => {
                     set({ voiceProvider: provider });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('voiceProvider', provider);
@@ -2815,7 +2816,7 @@ export const useConfigStore = create<ConfigStore>()(
                     updateDesktopSettings({ dictationEnabled: enabled }).catch(() => {});
                 },
 
-                setSttProvider: (provider: 'local' | 'openai-compatible') => {
+                setSttProvider: (provider: 'local' | 'openai-compatible' | 'volcengine') => {
                     set({ sttProvider: provider });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('sttProvider', provider);
@@ -2869,7 +2870,7 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
-                setTtsInputMode: (mode: 'sanitized' | 'raw' | 'summarized') => {
+                setTtsInputMode: (mode: 'final' | 'sanitized' | 'raw' | 'summarized') => {
                     set({ ttsInputMode: mode });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('ttsInputMode', mode);

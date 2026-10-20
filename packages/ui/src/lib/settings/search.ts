@@ -877,13 +877,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     id: 'voice.playback',
     page: 'voice',
     titleKey: 'settings.voice.page.section.playbackAndSummary',
-    keywords: ['tts', 'read aloud', 'voice', 'provider', 'speech rate', 'speech pitch', 'speech volume', 'tts input mode', 'markdown'],
+    keywords: ['tts', 'read aloud', 'voice', 'provider', 'speech rate', 'speech pitch', 'speech volume', 'tts input mode', 'markdown', 'volcengine', 'doubao', '火山', '豆包', 'seed-tts', '音色', 'api key'],
   },
   {
     id: 'voice.speech-recognition',
     page: 'voice',
     titleKey: 'settings.voice.page.section.speechRecognition',
-    keywords: ['stt', 'dictation', 'voice input', 'transcribe', 'whisper', 'parakeet', 'microphone'],
+    keywords: ['stt', 'dictation', 'voice input', 'transcribe', 'whisper', 'parakeet', 'microphone', 'volcengine', 'doubao', '火山', '豆包', 'asr', '实时字幕', '识别', 'api key'],
   },
   {
     id: 'notifications.delivery',

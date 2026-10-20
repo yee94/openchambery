@@ -8,6 +8,9 @@ import { useNativeIosComposer } from './useNativeIosComposer';
 import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { applyNativeComposerAccessoryVar, canUseNativeIosComposer, getNativeIosComposerPlugin, handoffNativeComposerSendToWeb, resolveComposerInsertCaret } from '@/lib/native-ios-composer';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
+import { DesktopDictationButton } from '@/components/dictation/DesktopDictationButton';
+import { HoldToTalkComposer } from '@/components/dictation/HoldToTalkComposer';
+import { isDictationCaptureSupported } from '@/lib/dictation/use-dictation-audio-source';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
 import { reloadOpenCodeLocations } from '@/stores/useAgentsStore';
@@ -678,7 +681,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
             onPointerDownCapture={isMobileAttach ? (event) => {
                 event.preventDefault();
             } : undefined}
-            title={attachLabel}
+            title={withTooltip ? undefined : attachLabel}
             aria-label={attachLabel}
         >
             <Icon name="attachment-2" className={cn(iconSizeClass, 'text-current')} />
@@ -693,7 +696,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
                         <TooltipTrigger asChild>
                             {attachButton}
                         </TooltipTrigger>
-                        <TooltipContent side="top" sideOffset={8}>
+                        <TooltipContent side="top" sideOffset={8} className="oc-composer-tooltip">
                             {attachLabel}
                         </TooltipContent>
                     </Tooltip>
@@ -832,7 +835,7 @@ const PermissionAutoAcceptButton = React.memo(function PermissionAutoAcceptButto
                     <Icon name={props.enabled ? 'shield-check' : 'shield'} className={cn(props.iconSizeClass, 'text-current')} />
                 </button>
             </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={8}>{actionLabel}</TooltipContent>
+            <TooltipContent side="top" sideOffset={8} className="oc-composer-tooltip">{actionLabel}</TooltipContent>
         </Tooltip>
     );
 });
@@ -2090,7 +2093,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
     // Combined source-mode highlight: markdown syntax + @mentions. Returns null
     // when there's nothing to highlight so the overlay stays off for plain text.
-    const nativeComposerOwnedInput = iosNativeUiEnabled && canUseNativeIosComposer(isMobile) && surface.kind === 'primary';
+    const dictationEnabled = useConfigStore((state) => state.dictationEnabled);
+    const [dictationHint, setDictationHint] = React.useState<'recording' | 'cancelling' | 'editing' | 'processing' | null>(null);
+    const holdToTalkEnabled = isMobile && dictationEnabled && !isVSCodeRuntime() && isDictationCaptureSupported();
+    const speechPlaceholder = t(dictationHint === 'recording' ? 'chat.dictation.releaseSend' : dictationHint === 'cancelling' ? 'chat.dictation.releaseCancel' : dictationHint === 'editing' ? 'chat.dictation.releaseEdit' : dictationHint === 'processing' ? 'chat.dictation.processing' : 'chat.dictation.inputPlaceholder');
+    const nativeComposerOwnedInput = iosNativeUiEnabled && canUseNativeIosComposer(isMobile) && surface.kind === 'primary' && !holdToTalkEnabled;
+    const [desktopDictationPreview, setDesktopDictationPreview] = React.useState<{
+        draftID: string | null; text: string; start: number; end: number;
+    } | null>(null);
     const highlightedComposerContent = React.useMemo(() => {
         if (!message || inputMode === 'shell') {
             return null;
@@ -2101,6 +2111,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             ...mentionRangesToHighlightRanges(composerMentionRanges),
             ...composerCommandRanges,
             ...attachmentCitationRanges,
+            ...(!isMobile && desktopDictationPreview?.draftID === primaryDraftKeyID && desktopDictationPreview?.text === message
+                ? [{ start: desktopDictationPreview.start, end: desktopDictationPreview.end,
+                    style: 'dictation' as const }]
+                : []),
             // Authoritative reference decorations win over slash rescans so
             // reserved-slot skills/sessions keep their metric-safe icon placement.
             ...composerDocument.references.map((reference): HighlightRange => ({
@@ -2111,7 +2125,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             })),
         ];
         return buildHighlightParts(message, ranges);
-    }, [attachmentCitationRanges, composerCommandRanges, composerMentionRanges, composerDocument.references, inputMode, message, nativeComposerOwnedInput]);
+    }, [attachmentCitationRanges, composerCommandRanges, composerMentionRanges, composerDocument.references, inputMode, message, nativeComposerOwnedInput, desktopDictationPreview, primaryDraftKeyID, isMobile]);
 
     const sanitizeAttachmentsForSend = React.useCallback(
         (files: AttachedFile[] | undefined): AttachedFile[] => (files ?? [])
@@ -4224,23 +4238,62 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // Dictation: insert the transcript inline; optionally submit immediately.
     // getCurrentInputSnapshot reads textareaRef.current.value first, so setting
     // it synchronously lets handleSubmit pick up the text in the same tick.
-    const handleDictationInsert = React.useCallback((text: string) => {
+    const handleDictationInsert = useEvent((text: string) => {
         const next = appendInlineText(getDocument().text, text);
         applyProgrammaticEdit(next);
         if (textareaRef.current) textareaRef.current.value = next;
         setTimeout(() => {
             textareaRef.current?.focus();
         }, 0);
-    }, [applyProgrammaticEdit]);
+    });
 
-    const handleDictationInsertAndSend = React.useCallback((text: string) => {
+    const desktopDictationDraft = React.useRef<{ base: string; expected: string } | null>(null);
+    const beginDesktopDictation = useEvent(() => {
+        setDesktopDictationPreview(null);
+        const text = getDocument().text;
+        desktopDictationDraft.current = { base: text, expected: text };
+    });
+    const updateDesktopDictation = useEvent((text: string, final = false) => {
+        const draft = desktopDictationDraft.current;
+        if (!draft) return;
+        // Once the user edits the preview, their draft wins over late ASR results.
+        if (getDocument().text !== draft.expected) {
+            desktopDictationDraft.current = null;
+            setDesktopDictationPreview(null);
+            return;
+        }
+        const next = appendInlineText(draft.base, text);
+        const transcript = text.trim();
+        setDesktopDictationPreview(final || !transcript ? null : {
+            draftID: primaryDraftKeyID,
+            text: next,
+            start: next.length - transcript.length - 1,
+            end: next.length - 1,
+        });
+        if (next !== draft.expected) {
+            applyProgrammaticEdit(next);
+            if (textareaRef.current) textareaRef.current.value = next;
+            draft.expected = next;
+        }
+        if (final) desktopDictationDraft.current = null;
+    });
+    const cancelDesktopDictation = useEvent(() => {
+        setDesktopDictationPreview(null);
+        const draft = desktopDictationDraft.current;
+        desktopDictationDraft.current = null;
+        if (!draft || getDocument().text !== draft.expected) return;
+        applyProgrammaticEdit(draft.base);
+        if (textareaRef.current) textareaRef.current.value = draft.base;
+    });
+
+    const handleDictationInsertAndSend = useEvent((text: string) => {
         if (isSubmissionInFlight()) return;
         // Same as preset chips: the composed text goes into the submit as an
         // explicit override instead of being staged in the textarea, which may
         // not be mounted (collapsed mobile pill).
         const next = appendInlineText(textareaRef.current?.value ?? messageRef.current, text);
         void handleSubmitRef.current({ presetText: next });
-    }, []);
+    });
 
     // Preset chips rendered outside this component (e.g. under the welcome
     // message on narrow surfaces) request a submit via the input store; consume
@@ -6511,7 +6564,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         setNativeSuggestionHighlight(0);
     });
     const nativeIosComposerActive = useNativeIosComposer({
-        enabled: isMobile && surface.kind === 'primary',
+        enabled: isMobile && surface.kind === 'primary' && !holdToTalkEnabled,
         isMobile,
         text: message,
         textPresetEpoch: composer.textPresetEpoch,
@@ -7065,25 +7118,22 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     draftOpen={newSessionDraftOpen}
                 />
                 <SessionGoalObjectiveCounter length={message.length} />
+                {dictationEnabled && !isVSCodeRuntime() && isDictationCaptureSupported() && (
+                    <DesktopDictationButton key={primaryDraftKeyID}
+                        className={footerIconButtonClass}
+                        iconClassName={iconSizeClass}
+                        onStart={beginDesktopDictation}
+                        onPartial={updateDesktopDictation}
+                        onInsert={(text) => updateDesktopDictation(text, true)}
+                        onCancel={cancelDesktopDictation}
+                    />
+                )}
             </div>
             <div className={cn('relative z-30 flex flex-1 items-center justify-end md:gap-x-1.5', footerGapClass)}>
                 <MemoModelControls
                     className="min-w-0 flex-1 justify-end"
                     composerTextareaRef={textareaRef}
                     selectionAdapter={modelControlsSelectionAdapter}
-                />
-                <MemoComposerDictation
-                    radius={chatInputRadius}
-                    isMobile={isMobile}
-                    footerIconButtonClass={footerIconButtonClass}
-                    footerPaddingClass={footerPaddingClass}
-                    iconSizeClass={iconSizeClass}
-                    sendIconSizeClass={sendIconSizeClass}
-                    onInsert={handleDictationInsert}
-                    onInsertAndSend={handleDictationInsertAndSend}
-                    onContentHeightChange={handleDictationContentHeightChange}
-                    renderTrigger={false}
-                    topAccessory={<span data-oc-composer-dictation-active="true" className="hidden" aria-hidden="true" />}
                 />
                 <ComposerActionButtons
                     isMobile={isMobile}
@@ -7248,6 +7298,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 isMobile && 'bottom-safe-area oc-mobile-composer'
             )}
             data-native-ios-composer={nativeIosComposerActive ? 'true' : undefined}
+            data-hold-to-talk={holdToTalkEnabled ? 'true' : undefined}
+            data-hold-to-talk-empty={holdToTalkEnabled && message.length === 0 ? 'true' : undefined}
+            data-dictation-hint={holdToTalkEnabled ? dictationHint ?? undefined : undefined}
             style={isMobile && isCapacitorApp() && !nativeIosComposerActive && inputBarOffset > 0 && !mobileTextareaFocused
                 ? { marginBottom: `${inputBarOffset}px` }
                 : undefined}
@@ -7264,6 +7317,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     </h1>
                 </div>
             ) : null}
+            {holdToTalkEnabled && <HoldToTalkComposer
+                key={draftKey ? draftKeyString(draftKey) : currentSessionId ?? 'new'}
+                containerRef={composerFormRef}
+                disabled={(!currentSessionId && !newSessionDraftOpen) || resolvedDraftBusy}
+                onInsert={handleDictationInsert}
+                onSend={handleDictationInsertAndSend}
+                onHintChange={setDictationHint}
+            />}
             <div className={cn('chat-input-column relative overflow-visible', isComposerExpanded && 'flex flex-1 min-h-0 flex-col')}>
                 {nativeIosComposerActive ? null : (
                     <AttachedFilesList attachments={attachedFiles} onShowPopup={handleShowAttachmentPopup} onRemoveAttachedFile={handleAttachedFileRemove} />
@@ -7623,7 +7684,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     isMobile={isMobile}
                     onSubmit={handlePrimaryAction}
                     data-mobile-composer-surface={isMobile ? 'true' : undefined}
-                    data-session-swipe-surface={isMobile ? 'true' : undefined}
                     expanded={isComposerExpanded}
                     focusedTone={inputMode === 'shell' ? 'info' : 'primary'}
                     className={cn(
@@ -7686,7 +7746,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         borderBottomRightRadius: chatInputRadius,
                     }}
                     footerContent={composerFooterContent}
-                    placeholder={composerPlaceholder}
+                    placeholder={holdToTalkEnabled ? speechPlaceholder : composerPlaceholder}
                     onChange={(_value, event) => handleTextChange(event)}
                     textareaProps={{
                         readOnly: isLeaderKeyPending,
@@ -7877,7 +7937,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 {/* Wrapper-level dictation engine + overlay: stays mounted across
                     collapsed ↔ expanded layout so a recording started from the
                     compact field survives the grow. Overlay covers the surface. */}
-                {isMobile ? (
+                {isMobile && dictationEnabled && !holdToTalkEnabled ? (
                     <MemoComposerDictation
                         radius={chatInputRadius}
                         isMobile={isMobile}
@@ -7908,7 +7968,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             )}
                             aria-hidden="true"
                         >
-                            {message.trim() ? message : composerPlaceholder}
+                            {message.trim() ? message : holdToTalkEnabled ? speechPlaceholder : composerPlaceholder}
                         </div>
                     </div>
                 ) : null}

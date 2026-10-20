@@ -1,3 +1,20 @@
+.oc-composer-tooltip[data-slot="tooltip-content"] {
+  background: var(--foreground);
+  color: var(--background);
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 16px;
+  transition: none;
+  animation: none;
+  opacity: 1;
+  scale: 1;
+}
+.oc-composer-tooltip[data-slot="tooltip-content"] > svg {
+  fill: var(--foreground);
+}
+
 @layer base {
   :root {
     color-scheme: light;
@@ -13,6 +30,7 @@
     --oc-wco-right-inset: 0px;
     --oc-wco-titlebar-height: 0px;
     --ui-regular-font-weight: 400;
+    --voice-active-fill: var(--status-success);
     --oc-scrollbar-thumb: oklch(0.32 0.03 50 / 0.4);
     --oc-scrollbar-thumb-hover: oklch(0.32 0.03 50 / 0.6);
     /* User density setting (useUIStore.applyPadding writes this name).

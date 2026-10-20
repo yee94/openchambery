@@ -30,7 +30,7 @@ export const projectBootstrapSettingsResponse = (response) => {
   copyBoolean('defaultFileViewerPreview');
   copyString('zenModel');
   copyEnum('messageStreamTransport', new Set(['auto', 'ws', 'sse']));
-  copyEnum('sttProvider', new Set(['local', 'openai-compatible']));
+  copyEnum('sttProvider', new Set(['local', 'openai-compatible', 'volcengine']));
 
   if (typeof source.sttServerUrl === 'string' && source.sttServerUrl.length <= BOOTSTRAP_SETTINGS_URL_MAX_LENGTH) {
     try {
@@ -851,7 +851,7 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (typeof candidate.sttProvider === 'string') {
       const provider = candidate.sttProvider.trim();
-      if (provider === 'local' || provider === 'openai-compatible') {
+      if (provider === 'local' || provider === 'openai-compatible' || provider === 'volcengine') {
         result.sttProvider = provider;
       } else if (provider === 'server') {
         // Legacy provider migration: 'server' was the OpenAI-compatible endpoint.

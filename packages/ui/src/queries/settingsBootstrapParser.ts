@@ -68,7 +68,7 @@ const readField = (input: RecordValue, field: SettingsBootstrapField): SettingsB
     case 'messageStreamTransport':
       return readEnum(value, ['auto', 'ws', 'sse']);
     case 'sttProvider':
-      return readEnum(value, ['local', 'openai-compatible']);
+      return readEnum(value, ['local', 'openai-compatible', 'volcengine']);
     case 'sttServerUrl':
       return readUrl(value);
     case 'sttLanguage':

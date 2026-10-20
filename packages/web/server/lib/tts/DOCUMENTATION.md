@@ -4,6 +4,7 @@
 This module provides server-side Text-to-Speech services using OpenAI's TTS API. The historical shared text summarization endpoint now lives in `packages/web/server/lib/text/` as an API-compatible stub because the previous Zen model provider is unavailable.
 
 ## Entrypoints and structure
+- `volcengine.js`: Doubao speech adapter, using the speech console API Key (`X-Api-Key`), fixed upstream origin, bounded responses, timeout and cancellation. No Ark key, OpenAI credential fallback or server-side secret persistence.
 - `packages/web/server/lib/tts/index.js`: Public entrypoint imported by `packages/web/server/index.js`.
 - `packages/web/server/lib/tts/routes.js`: Express route registration for `/api/voice/*`, `/api/tts/*`, and `/api/stt/*` endpoints.
 - `packages/web/server/lib/tts/capability-runtime.js`: runtime helper for probing local macOS `say` TTS voice capability.
@@ -100,6 +101,106 @@ The historical summarization API is shared with notifications and notes, but cur
 The server-side TTS approach bypasses mobile Safari's audio context restrictions by generating audio on the server and streaming to clients.
 
 ## Notes for contributors
+
+### Volcengine / Doubao
+
+Settings → Voice provides a shared speech API Key, TTS resource ID and speaker ID.
+The key and voice preferences auto-save to client-local storage on edit, matching
+the other speech providers; no Save button is required. Clearing the key saves
+the empty value. Existing preferences without a key remain compatible. Keys are
+not synced between devices or stored by the Host. Select Volcengine separately
+for read-aloud and dictation. Missing keys return HTTP 400, not a server failure.
+Enable `seed-tts-2.0`, `volc.seedasr.sauc.duration` (live dictation),
+and optionally `volc.bigasr.auc_turbo` (file API) in the
+[speech console](https://console.volcengine.com/speech/new).
+Defaults: `seed-tts-2.0`, `zh_female_vv_uranus_bigtts`, 24 kHz audio.
+Settings treats Volcengine as a peer provider: enable playback or dictation,
+then select it in that section's existing provider selector. Only the selected
+channel's fields and tests render inline (TTS resource/speaker/preview versus
+ASR resource/microphone tester). Both sections share the locally saved speech API Key.
+Settings search points to the stable playback/recognition sections rather than
+hidden provider fields; searching never changes the selected provider.
+TTS resource and speaker controls use Select with a custom-ID input for existing
+or cloned voices. `packages/ui/src/lib/voice/volcengine-catalog.ts` contains the
+two documented 2.0 resources and 28 common official TTS 2.0 speakers, not the
+account's entitlement list. Clone resources never show public TTS speakers.
+The official [ListSpeakers API](https://www.volcengine.com/docs/DoubaoVoice/ListSpeakers-LargeModelSoundListNewInterface?lang=zh)
+(`2025-05-20`, `ResourceIDs`, `Page`, `Limit`) requires account AK/SK HMAC signing
+at `open.volcengineapi.com` for `speech_saas_prod`; the speech `X-Api-Key` cannot
+authenticate this management API. No live-list endpoint or extra credentials are
+added. The catalog is a documented snapshot and custom IDs remain editable.
+The default speaker is **Vivi 2.0**, listed among the official flagship S2S
+voices in the [voice catalog](https://www.volcengine.com/docs/6561/1257544?lang=zh).
+For this default resource/speaker pair, `additions.context_texts` requests natural,
+warm delivery with text-appropriate emotion, pauses and emphasis. This is our
+delivery instruction, not a separate official “recommended emotional voice” ID.
+Custom/cloned speakers do not inherit this speaker-specific instruction.
+Custom speaker/resource pairs must belong to the same enabled model/service.
+
+`POST /api/tts/speak` accepts `{provider: 'volcengine', text, apiKey, resourceId?,
+voice?, speed?, stream?}`. With `stream: true`, the adapter requests mono PCM
+(signed 16-bit little-endian, 24 kHz), incrementally parses upstream JSON and
+forwards `application/x-ndjson` frames: `{type:'audio',data:<base64>}`, then
+`{type:'done'}` only after terminal upstream success. Each audio frame is at most
+9600 bytes. A failure after headers emits `{type:'error',error:<safe message>}`;
+missing completion and truncated samples are errors, never successful playback.
+The route disables proxy/compression buffering, honors write backpressure and
+aborts upstream when the client disconnects. Responses remain bounded at 32 MiB.
+
+`packages/ui/src/lib/voice/pcm-stream.ts` schedules PCM directly on the unlocked
+Web Audio context with a 400 ms startup buffer measured in actual playback time
+(including pitch-induced speed changes). If the scheduled timeline runs out of
+its 20 ms safety margin, it accumulates another 400 ms before resuming, rather
+than playing isolated packets. Terminal success flushes short replies and any
+remaining tail below that threshold. Scheduled audio remains bounded to
+approximately two seconds; the additional unscheduled buffer is bounded to the
+400 ms target plus one frame. It does not wait for EOF or MP3 decoding. Source nodes are
+released on completion; stop, runtime switch, unmount and errors cancel the
+reader and queued audio. Playback completion waits for both terminal success
+and the last source's `ended` event, preserving automatic read-aloud ordering.
+The HTTP stream uses `runtimeFetch`, including the existing encrypted Relay
+transport. Relay may buffer transport bytes independently of the audio scheduler.
+No native plugin or MediaSource support is required.
+
+Existing clients without `stream: true` still receive complete MP3 bytes after
+terminal success, and new clients can play MP3 from older Hosts during upgrades.
+Speed 0.5–2 maps to upstream -50–100; pitch and volume remain client-side.
+
+`POST /api/stt/transcribe` accepts raw WAV/MP3/OGG (20 MB maximum) with
+`X-Speech-Provider: volcengine` and `X-Speech-Api-Key`. Runtime Authorization
+remains independent. ASR uses the flash endpoint with base64 audio and resource
+`volc.bigasr.auc_turbo`; only explicit silence returns an empty transcript.
+The Settings microphone tester uses the live dictation route instead of this file API.
+Normal microphone input uses the dictation session adapter described in
+`../dictation/DOCUMENTATION.md`.
+
+Web, Electron, hosted mobile and Capacitor use the existing runtime HTTP and
+dictation WebSocket transports (including Relay). VS Code has no speech host and
+returns explicit 501 for synthesis/file transcription, as for existing dictation.
+
+Protocol sources (checked October 2026):
+- [HTTP synthesis and API Key authentication](https://www.volcengine.com/docs/DoubaoVoice/unidirectional-streaming-text-to-speech-http?lang=zh)
+- [V3 chunked completion codes](https://www.volcengine.com/docs/6561/1598757)
+- [Flash ASR and Python example](https://www.volcengine.com/docs/DoubaoVoice/LargemodelrecordingfileLiterecognitionAPI?lang=zh)
+
+Validation: protocol, route and cancellation tests use mocked upstream responses.
+The compiled Relay integration test (`../relay/relay-server.e2e.test.ts`) also
+exercises the real TTS route through `runtimeFetch`, bearer auth, Host forwarding
+and the encrypted tunnel. Only the external synthesizer is mocked. It verifies
+audio arrival before upstream completion, terminal success/error delivery and
+client cancellation reaching the upstream signal. This does not measure mobile
+device playback or latency against the live speech service.
+For live validation, enter a speech API Key in Settings, preview TTS, then open
+the microphone tester and record/confirm speech. It displays live captions,
+input level, elapsed time and final text without sending a chat message.
+Closing, backgrounding and runtime changes cancel recording; unmount fences late results.
+Test cancel/retry separately. TTS and streaming ASR must be enabled;
+unit tests and builds do not establish live account permissions or audio quality.
+An opt-in TTS → ASR round-trip test is available with
+`bunx vitest run --project @openchamber/web packages/web/server/lib/tts/volcengine.live.test.js`.
+Set `VOLCENGINE_SPEECH_API_KEY` in the invoking environment; without it the test
+is skipped. It generates a short Chinese sentence, recognizes the resulting MP3,
+and checks key words. It uses the account's enabled services/billing.
 
 ### Adding new TTS features
 1. Add new methods to `packages/web/server/lib/tts/service.js` TTSService class.

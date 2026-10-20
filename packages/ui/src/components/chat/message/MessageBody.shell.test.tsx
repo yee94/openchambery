@@ -7,8 +7,14 @@ import { QueryClient } from '@tanstack/react-query';
 import { createQueryTranscriptRepository } from '@/sync/transcript-repository-query-adapter';
 import { normalizeSessionProjectionMessage } from '@/sync/session-projection-api';
 import { useUIStore } from '@/stores/useUIStore';
+import { useConfigStore } from '@/stores/useConfigStore';
+import { projectTurnActivity } from '../lib/turns/projectTurnActivity';
+import type { ChatMessageEntry } from '../lib/turns/types';
+import { AutoReadPlaybackContext } from '@/mobile/chat/auto-read-context';
 
-const mocks = vi.hoisted(() => ({ copy: vi.fn(async (_text: string) => ({ ok: true })) }));
+const mocks = vi.hoisted(() => ({ copy: vi.fn(async (_text: string) => ({ ok: true })), speak: vi.fn(), autoRead: vi.fn() }));
+vi.mock('@/hooks/useMessageTTS', () => ({ useMessageTTS: () => ({ isPlaying: false, play: mocks.speak, stop: () => {} }) }));
+vi.mock('@/mobile/chat/auto-read-context', async (importOriginal) => ({ ...await importOriginal<typeof import('@/mobile/chat/auto-read-context')>(), useAutoReadRenderedReply: mocks.autoRead }));
 vi.hoisted(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', {
     status: 200, headers: { 'content-type': 'application/json' },
@@ -38,6 +44,44 @@ describe('user shell results', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+  });
+  test.each([
+    ['live', true], ['sorted', true], ['live', false], ['sorted', false],
+  ] as const)('final-only speech matches the sorted body in %s view (last=%s)', async (mode, last) => {
+    const previousConfig = useConfigStore.getState();
+    const previousRenderMode = useUIStore.getState().chatRenderMode;
+    useConfigStore.setState({ ttsInputMode: 'final', showMessageTTSButtons: true });
+    useUIStore.setState({ chatRenderMode: mode });
+    const parts = [
+      { id: 'progress', type: 'text', text: 'Let me inspect the implementation.' },
+      { id: 'thought', type: 'reasoning', text: 'Private reasoning' },
+      { id: 'answer', type: 'text', text: '## Done\n\nThe final body has two paragraphs.\n\nBoth must be read.' },
+    ] as Part[];
+    const message = { info: { id: 'answer-message', role: 'assistant' }, parts } as ChatMessageEntry;
+    const projection = projectTurnActivity({ turnId: 'turn', assistantMessages: [message], showTextJustificationActivity: true });
+    const inlineParts = parts.filter((part) => !projection.activityParts.some((activity) => activity.part === part));
+    try {
+      const stopAutoRead = vi.fn();
+      await act(async () => root.render(<AutoReadPlaybackContext.Provider value={{ sessionId: 'session', messageId: 'answer-message', stop: stopAutoRead }}><MessageBody
+        sessionId="session" messageId="answer-message" parts={mode === 'sorted' ? inlineParts : parts} sourceParts={parts}
+        isUser={false} isMessageCompleted messageFinish="stop" messageCreatedAt={10} messageCompletedAt={20}
+        isMobile copiedCode={null} onCopyCode={() => {}} expandedTools={new Set()} onToggleTool={() => {}} onShowPopup={() => {}}
+        streamPhase="completed" allowAnimation={false} hasTextContent
+        turnGroupingContext={{ turnId: 'turn', isFirstAssistantInTurn: true, isLastAssistantInTurn: last,
+          isLatestTurn: false, hasTools: false, hasReasoning: true, isWorking: false, isTurnSettled: true }}
+      /></AutoReadPlaybackContext.Provider>));
+      expect(mocks.autoRead.mock.lastCall?.[0].text).toBe(last ? (inlineParts[0] as { text: string }).text : '');
+      expect(mocks.autoRead.mock.lastCall?.[0].text).not.toContain('inspect');
+      if (last) {
+        const speechButton = container.querySelector<HTMLButtonElement>('button[aria-label="chat.messageBody.tts.stopSpeaking"]');
+        expect(speechButton?.getAttribute('aria-pressed')).toBe('true');
+        await act(async () => speechButton!.click());
+        expect(stopAutoRead).toHaveBeenCalledTimes(1);
+      }
+    } finally {
+      useConfigStore.setState({ ttsInputMode: previousConfig.ttsInputMode, showMessageTTSButtons: previousConfig.showMessageTTSButtons });
+      useUIStore.setState({ chatRenderMode: previousRenderMode });
+    }
   });
   const render = async (output: string, status = 'completed', shell = true) => {
     const parts = [{ type: 'text', text: shell ? '/shell' : 'Ordinary message',

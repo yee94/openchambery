@@ -24,6 +24,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(OpenChamberHapticsPlugin.class);
+        registerPlugin(OpenChamberScreenAwakePlugin.class);
         registerPlugin(OpenChamberNavigationPlugin.class);
         registerPlugin(OpenChamberSharePlugin.class);
         registerPlugin(OpenChamberExternalBrowserPlugin.class);

@@ -39,6 +39,12 @@ const createTestHelpersWithRealSanitizers = () => {
 };
 
 describe('settings helpers', () => {
+  it('round-trips the Volcengine dictation provider without accepting speech credentials', () => {
+    const helpers = createTestHelpers();
+    const normalized = helpers.sanitizeSettingsUpdate({ sttProvider: 'volcengine', volcengineApiKey: 'credential-sentinel' });
+    expect(normalized.sttProvider).toBe('volcengine');
+    expect(JSON.stringify(normalized)).not.toContain('credential-sentinel');
+  });
   it('ignores retired Mermaid rendering modes in updates and stored settings', () => {
     const helpers = createTestHelpers();
     for (const mermaidRenderingMode of ['ascii', 'svg', null, {}, 'invalid']) {

@@ -1,5 +1,121 @@
 # Chat components
 
+## Mobile automatic read-aloud
+
+Read-aloud content defaults to `final` (existing explicit choices are retained).
+This mode selects the exact trailing body part owned by sorted presentation,
+using `getSortedBodyPartIndex` from `assistantMessageLifecycle.ts` in both
+`projectTurnActivity` and MessageBody. Only the last assistant of a settled,
+non-compaction turn can supply this text. It is the full body part, not the last
+paragraph, a heading heuristic, or a generated summary. Live and sorted views,
+manual read-aloud and automatic read-aloud use the same choice; intermediate
+Activity actions have no speech target in this mode. Other content modes retain
+their existing behavior. Settings uses a Select with a description per option.
+
+The chat overflow menu owns a device-local persistent auto-read preference through
+`mobile/chat/MobileAutoRead.tsx`, stored as a boolean at `openchamber.auto-read`
+using `useLocalStorage`. Missing/invalid values default to off. Navigation,
+runtime switches, unmounts and playback failures stop transient playback without
+clearing the preference. Explicit menu/message stop actions persist off. Restored
+sessions unlock browser audio on their next user pointer gesture.
+Each active, hydrated session snapshots completed message IDs and the
+current creation watermark only after transcript hydration. Assistant bodies
+notify `auto-read-context.ts` after completion, streaming cooldown and two paint
+frames. Historical rows, duplicate mounts and other sessions cannot requeue a
+reply; a reply observed live can complete even before the snapshot watermark.
+Only assistant text is read, not reasoning or tool output. Audio is serialized
+using actual playback completion callbacks, not synthesis-request completion.
+The separate auto-read playback context exposes the active session/message identity
+to message actions, so the matching read-aloud button shows its active state and
+can stop automatic reading. Completion, cancellation and backgrounding clear it;
+playback updates do not invalidate the rendered-reply registration context.
+
+The provider keeps high-frequency transcript subscriptions outside MobileApp;
+context identity stays stable across token updates. Disable, navigation and
+runtime changes stop speech and clear the queue. Backgrounding stops playback
+and releases the screen lock; foregrounding reacquires while still enabled.
+`useMessageTTS` shares voice settings, unlocks mobile audio on the menu gesture,
+and fences late summaries/playback callbacks after cancellation. Native mobile
+uses `OpenChamberScreenAwake`; browsers use Screen Wake Lock and show a localized
+warning when unavailable. Native support requires a new iOS/Android binary.
+
+## Mobile hold-to-talk
+
+Desktop dictation writes provisional transcripts directly into the existing
+composer via `useDictation.onPartialTranscript`. ChatInput captures the starting
+document text and replaces its own successive preview, so a final correction
+does not append a duplicate transcript. Programmatic edits retain composer reference
+handling. If the user changes the preview, subsequent ASR results relinquish
+ownership rather than overwrite that edit. Escape cancels recording and restores
+the starting text only while the draft still matches the last ASR preview.
+After failure, clicking the desktop microphone discards the failed audio and its
+owned preview and starts a fresh capture; it never silently replays the old audio.
+Desktop provisional speech uses the existing composer highlight overlay with an
+underline only over the appended transcript (excluding the original draft and
+separator). Finalization clears the decoration even when the text is unchanged.
+The decoration is scoped to the draft identity and exact preview text; switching
+drafts or editing the text cannot underline unrelated content.
+
+When dictation is enabled and microphone capture is supported, `ChatInput` mounts
+the mobile speech controls. With voice input disabled, no mobile dictation engine
+is mounted: normal placeholders, native selection and input behavior are restored.
+The legacy dictation toggle listener also requires the enabled/supported gates.
+When enabled, it mounts
+`HoldToTalkComposer` keyed by DraftKey. The existing expanded card, compact pill,
+attachments and footer remain visible and unchanged; only the empty input's
+placeholder changes. A short tap focuses the existing textarea. Holding an empty,
+input for 300 ms records, whether or not it already has focus. Empty input touch
+ownership (`touch-action`, selection/callout suppression) is also focus-independent;
+native selection/context menus are blocked on the empty textarea and compact
+placeholder even before/after a hold. Toolbar controls are excluded. The empty
+state attribute scopes CSS so nonempty inputs regain native behavior. The 300 ms
+timer rechecks emptiness/editability before starting capture, including paste or
+keyboard input during the pending hold.
+Horizontal displacement of 64 CSS pixels
+selects cancel (left) or edit (right); entering the bottom targets selects the
+half under the finger regardless of displacement. Release in the center sends the final text
+through the existing dictation submission handler; release on edit focuses the
+existing textarea and inserts the finalized transcript without sending. Returning
+to the center outside the targets restores send. Retry retains
+the chosen insert/send destination. Pointer interruption/backgrounding cancels; leaving the draft fences
+late recognition results. Nonempty inputs retain native text selection/editing;
+disabled and read-only inputs cannot start capture.
+
+The recording leaf portals a pointer-transparent overlay to the document body,
+outside composer transforms, with a scrim covering the bottom as well. The original top gradient, six volume-responsive
+animated lights and safe-area-positioned underlined captions remain intact.
+The bottom gesture stage scales with viewport width (400×226 SVG plus safe area).
+Cancel and edit occupy mirrored halves as concentric annular segments with rounded
+inner ends and a center gap. Their 600/524 radii and the lower surface's 500 radius
+share the same (200, 620) center; one SVG preserves that geometry at every width.
+The muted translucent fills and light labels sit above an opaque curved holding
+surface; the underlying composer must not show through that lower surface.
+There is no command action. Active targets increase their background opacity
+from 12% to 40% for a brighter highlight; text opacity and scale stay unchanged.
+The original input placeholder also shows release-to-send, cancel,
+edit, or processing. The underlying input surface becomes transparent during the
+gesture without changing layout or pointer capture. Only these low-frequency transitions reach
+ChatInput; captions and volume remain leaf-owned. Partial ASR
+text is underlined until finalization (the current transport supplies provisional
+full text, not per-word stability). Reduced-motion preferences disable animation.
+Error/retry actions alone accept pointer input; the holding finger stays captured
+within a global pointer lifecycle after starting on the original composer.
+Move/up/cancel listeners run on window capture and filter by the initiating
+pointer ID. Leaving the textarea or losing element pointer capture does not
+cancel; actual pointercancel, backgrounding, or draft disposal does. The gesture
+does not depend on textarea pointer capture surviving layout/keyboard changes.
+Idle leaves render no additional input chrome.
+
+Captions and volume updates are owned by the leaf, not ChatInput or a
+global store. ASR-enabled mobile uses the web input surface, including Capacitor
+iOS; the native composer overlay is disabled while this feature is enabled.
+Volcengine uses live streaming captions; other providers retain their existing
+partial-result cadence. See `packages/web/server/lib/dictation/DOCUMENTATION.md`.
+
+Composer horizontal session-switch gestures and their preview/transition UI have
+been removed. The transcript's session-list gesture still excludes the complete
+`.oc-mobile-composer` so it cannot compete with dictation or text editing.
+
 ## Markdown math delimiters
 
 Markstream's `customMarkdownIt` adapter replaces its permissive inline math rule with the shared `markdownMath.matchDollarMath` pairing used by the legacy renderer. Dollar currency in prose must remain literal in both streaming and completed messages. Explicit `$...$`, `$$...$$`, and `\(...\)` inline formulas remain supported; incomplete inline formulas stay literal until their closing delimiter arrives. Block math remains owned by Markstream's block rules. Code spans and escaped dollar signs follow the normal Markdown tokenizer. An inline candidate never crosses an inline code span (a currency amount must not pair with the `$` of a `` `${template}` `` inside backticks), and a candidate whose body contains CJK characters or CJK/fullwidth punctuation is prose, not TeX — Chinese amounts are often glued to surrounding text without spaces. Digit-leading candidates with spaces or quotes in the body are likewise prose even when they contain `/` or `+`; spaceless digit-leading formulas (`$2\pi$`, `$1+x$`) still pair. Coverage: `MarkstreamRenderer.codeblock.regression.test.tsx` and `markdown/markdownMath.test.ts`.
