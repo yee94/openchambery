@@ -4,7 +4,23 @@ import { useEvent } from '@reactuses/core';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { useDictation } from '@/hooks/useDictation';
+import { getDefaultTheme } from '@/lib/theme/themes';
 import './hold-to-talk.css';
+
+const speechColors = getDefaultTheme(false).colors;
+const cancelTargetPath = 'M-50 74.564 A600 600 0 0 1 147.707 22.283 A38 38 0 0 1 154.330 97.994 A524 524 0 0 0 -18.333 143.653 Z';
+const editTargetPath = 'M450 74.564 A600 600 0 0 0 252.293 22.283 A38 38 0 0 0 245.670 97.994 A524 524 0 0 1 418.333 143.653 Z';
+const speechPalette = {
+    colorScheme: 'light',
+    '--surface-background': speechColors.surface.background,
+    '--surface-foreground': speechColors.surface.foreground,
+    '--primary-base': speechColors.primary.base,
+    '--foreground': speechColors.surface.background,
+    '--interactive-hover': 'color-mix(in srgb, var(--surface-background) 12%, transparent)',
+    '--interactive-active': 'color-mix(in srgb, var(--surface-background) 20%, transparent)',
+    '--ring': speechColors.interactive.focusRing,
+    '--status-error': speechColors.status.error,
+} as CSSProperties;
 
 interface Props {
     containerRef: RefObject<HTMLFormElement | null>;
@@ -23,6 +39,8 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     const action = useRef<'send' | 'insert'>('send');
     const gestureStage = useRef<SVGGElement>(null);
     const arcGradientId = useId();
+    const cancelClipId = useId();
+    const editClipId = useId();
     const dictation = useDictation({ onTranscript: (text) => action.current === 'send' ? onSend(text) : onInsert(text) });
     const { status, partialTranscript, error, volume } = dictation;
     const publishHint = useEvent(onHintChange);
@@ -43,7 +61,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         gesture.current = null;
         setHeld(false);
         setIntent('send');
-        if (status === 'failed') dictation.discardFailedDictation();
+        if (status === 'failed' || (status === 'idle' && error)) dictation.discardFailedDictation();
         else void dictation.cancelDictation();
     });
     const down = useEvent((event: PointerEvent) => {
@@ -56,7 +74,9 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         timer.current = setTimeout(() => {
             timer.current = null;
             if (!gesture.current) return;
-            if (!emptyInputForTarget(target)) { gesture.current = null; return; }
+            const input = emptyInputForTarget(target);
+            if (!input) { gesture.current = null; return; }
+            input.blur();
             gesture.current.started = true;
             action.current = 'send';
             setHeld(true);
@@ -84,6 +104,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         event.preventDefault();
         event.stopPropagation();
         clearTimer();
+        if (error || status === 'failed') { cancel(); return; }
         gesture.current = null;
         setHeld(false);
         if (!current.started) containerRef.current?.querySelector('textarea')?.focus();
@@ -103,6 +124,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         if (!container) return;
         const hidden = () => { if (document.visibilityState === 'hidden') cancel(); };
         container.addEventListener('pointerdown', down, true);
+        container.addEventListener('touchstart', preventEmptyInputSelection, { capture: true, passive: false });
         window.addEventListener('pointermove', move, { capture: true, passive: false });
         window.addEventListener('pointerup', up, true);
         window.addEventListener('pointercancel', interrupted, true);
@@ -113,6 +135,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         return () => {
             clearTimer();
             container.removeEventListener('pointerdown', down, true);
+            container.removeEventListener('touchstart', preventEmptyInputSelection, true);
             window.removeEventListener('pointermove', move, true);
             window.removeEventListener('pointerup', up, true);
             window.removeEventListener('pointercancel', interrupted, true);
@@ -127,42 +150,44 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     if (!held && status === 'idle' && !error) return null;
     const energy = Math.pow(Math.min(1, Math.max(0, volume)), 0.6);
     return createPortal(
-        <div className="oc-speech-overlay" data-intent={intent} style={{ '--speech-energy': energy } as CSSProperties}>
+        <div className="oc-speech-overlay" data-intent={intent} data-error={Boolean(error)} onClick={error ? cancel : undefined} style={{ ...speechPalette, '--speech-energy': energy } as CSSProperties}>
             <div className="oc-speech-light-field" aria-hidden="true">
                 {['ice', 'lilac', 'mint', 'blush', 'mid', 'core'].map((tone) => <div key={tone} className={`oc-speech-reactor oc-speech-reactor--${tone}`}><div className="oc-speech-light" /></div>)}
             </div>
             <div className="oc-speech-content">
-                <div role="status" aria-live="polite" aria-atomic="true" className="oc-speech-caption">
+                {error ? <p role="alert" className="oc-speech-caption oc-speech-error">{error}</p> : <div role="status" aria-live="polite" aria-atomic="true" className="oc-speech-caption">
                     {partialTranscript ? <span className="oc-speech-interim">{partialTranscript}</span> : t(status === 'uploading' ? 'chat.dictation.processing' : 'chat.dictation.listening')}
-                </div>
-                {error && <p role="alert">{error}</p>}
-                {(status === 'failed' || error || status === 'uploading') && <div className="oc-speech-actions">
+                </div>}
+                {!error && status === 'uploading' && <div className="oc-speech-actions">
                     <Button variant="ghost" size="sm" onClick={cancel}>{t('chat.dictation.cancel')}</Button>
-                    {status === 'failed' && <>
-                        {partialTranscript && <Button variant="ghost" size="sm" onClick={() => { action.current = 'insert'; dictation.acceptPartialTranscript(); }}>{t('chat.dictation.insert')}</Button>}
-                        <Button variant="ghost" size="sm" onClick={() => { void dictation.retryFailedDictation(); }}>{t('chat.dictation.retry')}</Button>
-                    </>}
                 </div>}
             </div>
             {held && <div className="oc-speech-gesture-stage" aria-hidden="true">
+                <div className="oc-speech-gesture-surfaces">
+                <div className="oc-speech-target-glass" style={{ clipPath: `url(#${cancelClipId})` }} />
+                <div className="oc-speech-target-glass" style={{ clipPath: `url(#${editClipId})` }} />
                 <svg className="oc-speech-geometry" viewBox="0 0 400 226" focusable="false">
-                    <defs><linearGradient id={arcGradientId} x1="0" y1="0" x2="0" y2="1">
+                    <defs>
+                    <clipPath id={cancelClipId} clipPathUnits="objectBoundingBox"><path transform="scale(0.0025 0.004424778761)" d={cancelTargetPath} /></clipPath>
+                    <clipPath id={editClipId} clipPathUnits="objectBoundingBox"><path transform="scale(0.0025 0.004424778761)" d={editTargetPath} /></clipPath>
+                    <linearGradient id={arcGradientId} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" className="oc-speech-arc-top" />
                         <stop offset="100%" className="oc-speech-arc-bottom" />
                     </linearGradient></defs>
                     {/* All three arcs share (200, 620); target radii are 600/524 and the lower radius is 500. */}
                     <g className="oc-speech-targets" ref={gestureStage}>
                         <g className="oc-speech-target oc-speech-target--cancel" data-active={intent === 'cancel'}>
-                            <path d="M-50 74.564 A600 600 0 0 1 147.707 22.283 A38 38 0 0 1 154.330 97.994 A524 524 0 0 0 -18.333 143.653 Z" />
+                            <path d={cancelTargetPath} />
                             <text x="95" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(-11 95 68)">{t('chat.dictation.cancelGesture')}</text>
                         </g>
                         <g className="oc-speech-target oc-speech-target--edit" data-active={intent === 'edit'}>
-                            <path d="M450 74.564 A600 600 0 0 0 252.293 22.283 A38 38 0 0 0 245.670 97.994 A524 524 0 0 1 418.333 143.653 Z" />
+                            <path d={editTargetPath} />
                             <text x="305" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(11 305 68)">{t('chat.dictation.edit')}</text>
                         </g>
                     </g>
                     <path className="oc-speech-hold-arc" fill={`url(#${arcGradientId})`} d="M-50 186.987 A500 500 0 0 1 450 186.987 L450 300 H-50 Z" />
                 </svg>
+                </div>
             </div>}
         </div>, document.body,
     );

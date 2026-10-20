@@ -66,7 +66,7 @@ Server → client: `ready`, `ack {ackSeq}`, `partial {text}`,
 openaiCompatible?: { baseUrl, model, apiKey }, volcengine?: { apiKey?, resourceId? } }`.
 Volcengine uses automatic language recognition; the Whisper language hint is
 not forwarded. Volcengine resolves omitted credentials/resource IDs from the
-Host speech settings at session start (`../tts/volcengine-settings.js`). Shared
+Host speech settings at session start (`../tts/settings.js`). Shared
 UI sends only the provider, so mobile can use the PC-saved key without receiving
 it. Explicit client overrides remain supported for older clients. Session copies
 are released on close, and credentials are never logged.

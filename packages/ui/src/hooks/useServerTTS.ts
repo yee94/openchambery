@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { playPcmStream } from '@/lib/voice/pcm-stream';
+import { prepareSpeechPlayback } from '@/lib/voice/audio-session';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 interface ServerTTSStatusCache {
@@ -94,7 +95,7 @@ export interface UseServerTTSReturn {
 }
 
 interface SpeakOptions {
-  provider?: 'volcengine';
+  provider?: 'volcengine' | 'openai' | 'openai-compatible';
   /** Voice to use (defaults to coral) */
   voice?: string;
   /** Model to use (defaults to gpt-4o-mini-tts) */
@@ -129,6 +130,7 @@ interface SpeakOptions {
 let sharedAudioContext: AudioContext | null = null;
 
 function getAudioContext(): AudioContext {
+  prepareSpeechPlayback();
   if (!sharedAudioContext) {
     sharedAudioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
   }
@@ -149,9 +151,8 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
   // Get current model and API settings from config store.
   const currentProviderId = useConfigStore((state) => state.currentProviderId);
   const currentModelId = useConfigStore((state) => state.currentModelId);
-  const openaiApiKey = useConfigStore((state) => state.openaiApiKey);
+  const openaiApiKeyConfigured = useConfigStore((state) => state.openaiApiKeyConfigured);
   const openaiCompatibleUrl = useConfigStore((state) => state.openaiCompatibleUrl);
-  const openaiCompatibleApiKey = useConfigStore((state) => state.openaiCompatibleApiKey);
 
   // Check if server TTS is available
   const checkAvailability = useCallback(async (): Promise<boolean> => {
@@ -167,7 +168,7 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       return applyAvailability(false);
     }
 
-    const hasClientKey = Boolean(openaiApiKey && openaiApiKey.trim().length > 0);
+    const hasClientKey = openaiApiKeyConfigured;
     const hasCustomUrl = Boolean(openaiCompatibleUrl && openaiCompatibleUrl.trim().length > 0);
     if (availabilityMode === 'openai-compatible') {
       return applyAvailability(hasCustomUrl);
@@ -186,7 +187,7 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
     } catch {
       return applyAvailability(false);
     }
-  }, [availabilityMode, enabled, openaiApiKey, openaiCompatibleUrl]);
+  }, [availabilityMode, enabled, openaiApiKeyConfigured, openaiCompatibleUrl]);
 
   // Check availability on mount and when API key changes
   useEffect(() => {
@@ -294,8 +295,8 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
           // Use provided provider/model, or fall back to current chat model
           providerId: options?.providerId || currentProviderId || undefined,
           modelId: options?.modelId || currentModelId || undefined,
-          // Send API key from settings if available
-          apiKey: options?.baseURL ? (openaiCompatibleApiKey || undefined) : (openaiApiKey || undefined),
+          // Credentials are resolved by the Host for the selected speech provider.
+          provider: options?.provider ?? (options?.baseURL ? 'openai-compatible' : 'openai'),
           // Send custom base URL for OpenAI-compatible servers
           baseURL: options?.baseURL || undefined,
           ...(volcengine ? {
@@ -407,7 +408,7 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       }
       sessionRef.current = null;
     }
-  }, [stop, currentProviderId, currentModelId, openaiApiKey, openaiCompatibleApiKey]);
+  }, [stop, currentProviderId, currentModelId]);
 
   // Cleanup on unmount
   useEffect(() => subscribeRuntimeEndpointChanged(stop), [stop]);

@@ -36,10 +36,28 @@ const app = () => {
 };
 
 describe('Volcengine speech protocol', () => {
+  it('preserves existing Host speech credentials and ASR settings when adopting unified storage', async () => {
+    fs.mkdirSync(path.join(dataDir, 'speech'), { recursive: true });
+    fs.writeFileSync(path.join(dataDir, 'speech', 'volcengine.json'), JSON.stringify({ apiKey, voice: 'existing-speaker' }));
+    fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ dictationEnabled: true, sttProvider: 'volcengine' }));
+    const initial = await request(app()).get('/api/voice/settings').expect(200);
+    expect(initial.body).toMatchObject({ configured: true, voice: 'existing-speaker', dictationEnabled: true, sttProvider: 'volcengine' });
+    await request(app()).put('/api/voice/settings').send({ showMessageTTSButtons: true, voiceProvider: 'volcengine' }).expect(200);
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'speech', 'settings.json'), 'utf8'))).toMatchObject({ apiKey, showMessageTTSButtons: true, dictationEnabled: true });
+  });
+  it('shares the complete TTS and ASR configuration with a fresh client', async () => {
+    const tts = { showMessageTTSButtons: true, voiceProvider: 'volcengine', speechRate: 1.4, speechPitch: 1.1, speechVolume: 0.6, ttsInputMode: 'raw', apiKey };
+    await request(app()).put('/api/voice/settings').send(tts).expect(200);
+    await request(app()).put('/api/voice/settings').send({ dictationEnabled: true, sttProvider: 'volcengine', asrResourceId: 'volc.seedasr.sauc.concurrent' }).expect(200);
+    const mobile = await request(app()).get('/api/voice/settings').expect(200);
+    const { apiKey: _key, ...preferences } = tts;
+    expect(mobile.body).toMatchObject({ ...preferences, configured: true, dictationEnabled: true, sttProvider: 'volcengine', asrResourceId: 'volc.seedasr.sauc.concurrent' });
+    expect(JSON.stringify(mobile.body)).not.toContain(apiKey);
+  });
   it('persists PC settings and exposes configured status to a fresh mobile client without returning the key', async () => {
     const saved = await request(app()).put('/api/voice/volcengine').send({ apiKey, voice: 'custom_speaker', resourceId: 'seed-icl-2.0' });
     expect(saved.status).toBe(200);
-    const file = path.join(dataDir, 'speech', 'volcengine.json');
+    const file = path.join(dataDir, 'speech', 'settings.json');
     expect(JSON.parse(fs.readFileSync(file, 'utf8')).apiKey).toBe(apiKey);
     if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     const mobile = await request(app()).get('/api/voice/volcengine');
@@ -71,7 +89,7 @@ describe('Volcengine speech protocol', () => {
   });
   it('reports a corrupt settings file as failure without overwriting it or returning empty success', async () => {
     await request(app()).put('/api/voice/volcengine').send({ apiKey }).expect(200);
-    const file = path.join(dataDir, 'speech', 'volcengine.json');
+    const file = path.join(dataDir, 'speech', 'settings.json');
     fs.writeFileSync(file, '{invalid');
     await request(app()).get('/api/voice/volcengine').expect(500);
     await request(app()).put('/api/voice/volcengine').send({ voice: 'new' }).expect(500);

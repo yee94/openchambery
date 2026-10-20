@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { HoldToTalkComposer } from './HoldToTalkComposer';
 
 const speech = vi.hoisted(() => ({
-    status: 'idle', partialTranscript: '', error: null, volume: 0, duration: 0,
+    status: 'idle', partialTranscript: '', error: null as string | null, volume: 0, duration: 0,
     startDictation: vi.fn(), confirmDictation: vi.fn(), cancelDictation: vi.fn(),
     discardFailedDictation: vi.fn(), retryFailedDictation: vi.fn(), acceptPartialTranscript: vi.fn(),
 }));
@@ -26,9 +26,9 @@ const render = async () => {
     button.setPointerCapture = vi.fn();
 };
 beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.useFakeTimers();
-    speech.status = 'idle'; speech.partialTranscript = '';
+    speech.status = 'idle'; speech.partialTranscript = ''; speech.error = null;
     host = document.createElement('div'); document.body.append(host);
     containerRef.current = document.createElement('form');
     containerRef.current.append(document.createElement('textarea'));
@@ -259,4 +259,47 @@ it('removing disabled voice controls clears a pending hold and restores native i
     }
     await pointer('pointerdown');
     expect(speech.startDictation).not.toHaveBeenCalled();
+});
+
+it('prevents native touch selection on an empty input and blurs it only once a hold starts', async () => {
+    button.focus();
+    const touch = new Event('touchstart', { bubbles: true, cancelable: true });
+    button.dispatchEvent(touch);
+    expect(touch.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(button);
+    await pointer('pointerdown');
+    expect(document.activeElement).not.toBe(button);
+    await pointer('pointercancel');
+    button.value = 'editable draft';
+    const editingTouch = new Event('touchstart', { bubbles: true, cancelable: true });
+    button.dispatchEvent(editingTouch);
+    expect(editingTouch.defaultPrevented).toBe(false);
+});
+
+it.each(['idle', 'recording', 'failed'])('dismisses a %s error on release without confirming', async (status) => {
+    const dismiss = () => { speech.error = null; speech.status = 'idle'; };
+    speech.cancelDictation.mockImplementation(dismiss);
+    speech.discardFailedDictation.mockImplementation(dismiss);
+    await pointer('pointerdown');
+    speech.status = status;
+    speech.error = 'ASR unavailable';
+    await render();
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('ASR unavailable');
+    expect(document.querySelector('[role="status"]')).toBeNull();
+    await pointer('pointerup');
+    expect(speech.confirmDictation).not.toHaveBeenCalled();
+    if (status === 'recording') expect(speech.cancelDictation).toHaveBeenCalledTimes(1);
+    else expect(speech.discardFailedDictation).toHaveBeenCalledTimes(1);
+    await render();
+    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+});
+
+it('dismisses an error arriving after release by clicking anywhere on the overlay', async () => {
+    speech.error = 'Microphone unavailable';
+    speech.discardFailedDictation.mockImplementation(() => { speech.error = null; speech.status = 'idle'; });
+    await render();
+    await act(async () => document.querySelector('.oc-speech-overlay')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(speech.discardFailedDictation).toHaveBeenCalledTimes(1);
+    await render();
+    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
 });

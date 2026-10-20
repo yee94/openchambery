@@ -2180,6 +2180,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.pastedTextReference': '已粘贴文本 #{index} · {count} 个字符',
   'chat.dictation.start': '开始语音输入',
   'chat.dictation.holdToTalk': '按住说话',
+  'chat.dictation.holdHere': '鼠标按住这里，说话转文字',
+  'chat.dictation.releaseConfirm': '松开确认',
   'chat.dictation.inputPlaceholder': '输入消息，按住转文字',
   'chat.dictation.edit': '编辑',
   'chat.dictation.cancelGesture': '取消',

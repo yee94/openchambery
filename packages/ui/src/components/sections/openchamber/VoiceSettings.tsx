@@ -1,5 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { useConfigStore } from '@/stores/useConfigStore';
+import React, { useEffect, useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useDeviceInfo } from '@/lib/device';
 
 import {
@@ -24,6 +23,11 @@ import { useLocalTTS } from '@/hooks/useLocalTTS';
 import { disposePreviewAudio } from './voicePreviewAudio';
 import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 import { VolcengineSpeechSettings } from './VolcengineSpeechSettings';
+import { useSpeechSettingsQuery } from '@/queries/speechSettingsQueries';
+import { getRuntimeGeneration, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import type { SpeechSettings } from '@/lib/voice/speechSettings';
+import { useSpeechSettingsForm } from './useSpeechSettingsForm';
+import { useEvent } from '@reactuses/core';
 
 const LOCAL_STT_MODELS = [
     {
@@ -390,67 +394,68 @@ const OPENAI_VOICE_OPTIONS = [
 ];
 
 export const VoiceSettings: React.FC = () => {
+    const generation = useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeGeneration, getRuntimeGeneration);
+    return <VoiceSettingsHost key={generation} />;
+};
+
+function VoiceSettingsHost() {
+    const { t } = useI18n();
+    const query = useSpeechSettingsQuery();
+    return <>
+        {query.isError && <SettingsRow label={t('settings.voice.volcengine.loadFailed')}>
+            <Button variant="outline" size="sm" onClick={() => void query.refetch()}>{t('settings.voice.volcengine.retry')}</Button>
+        </SettingsRow>}
+        {query.data ? <VoiceSettingsContent settings={query.data} /> : query.isPending ? <span>{t('common.loading')}</span> : null}
+    </>;
+}
+
+const VoiceSettingsContent = ({ settings }: { settings: SpeechSettings }) => {
     const { t } = useI18n();
     const { isMobile } = useDeviceInfo();
-    const voiceProvider = useConfigStore((state) => state.voiceProvider);
-    const setVoiceProvider = useConfigStore((state) => state.setVoiceProvider);
-    const speechRate = useConfigStore((state) => state.speechRate);
-    const setSpeechRate = useConfigStore((state) => state.setSpeechRate);
-    const speechPitch = useConfigStore((state) => state.speechPitch);
-    const setSpeechPitch = useConfigStore((state) => state.setSpeechPitch);
-    const speechVolume = useConfigStore((state) => state.speechVolume);
-    const setSpeechVolume = useConfigStore((state) => state.setSpeechVolume);
-    const sayVoice = useConfigStore((state) => state.sayVoice);
-    const setSayVoice = useConfigStore((state) => state.setSayVoice);
-    const localTtsVoiceId = useConfigStore((state) => state.localTtsVoiceId);
-    const setLocalTtsVoiceId = useConfigStore((state) => state.setLocalTtsVoiceId);
+    const tts = useSpeechSettingsForm(settings);
+    const asr = useSpeechSettingsForm(settings);
+    const { voiceProvider, speechRate, speechPitch, speechVolume, sayVoice, localTtsVoiceId,
+        browserVoice, openaiVoice, openaiApiKey, openaiCompatibleUrl, openaiCompatibleApiKey,
+        openaiCompatibleVoice, openaiCompatibleTtsModel, showMessageTTSButtons, ttsInputMode } = tts.values;
+    const { sttProvider, sttServerUrl, sttApiKey, sttModel, sttLocalModel, sttLanguage, dictationEnabled } = asr.values;
+    const setVoiceProvider = (voiceProvider: SpeechSettings['voiceProvider']) => tts.edit({ voiceProvider });
+    const setSpeechRate = (speechRate: number) => tts.edit({ speechRate });
+    const setSpeechPitch = (speechPitch: number) => tts.edit({ speechPitch });
+    const setSpeechVolume = (speechVolume: number) => tts.edit({ speechVolume });
+    const setSayVoice = (sayVoice: string) => tts.edit({ sayVoice });
+    const setLocalTtsVoiceId = (localTtsVoiceId: number) => tts.edit({ localTtsVoiceId });
+    const setBrowserVoice = (browserVoice: string) => tts.edit({ browserVoice });
+    const setOpenaiVoice = (openaiVoice: string) => tts.edit({ openaiVoice });
+    const setOpenaiApiKey = (openaiApiKey: string) => tts.edit({ openaiApiKey });
+    const setOpenaiCompatibleUrl = (openaiCompatibleUrl: string) => tts.edit({ openaiCompatibleUrl });
+    const setOpenaiCompatibleApiKey = (openaiCompatibleApiKey: string) => tts.edit({ openaiCompatibleApiKey });
+    const setOpenaiCompatibleVoice = (openaiCompatibleVoice: string) => tts.edit({ openaiCompatibleVoice });
+    const setOpenaiCompatibleTtsModel = (openaiCompatibleTtsModel: string) => tts.edit({ openaiCompatibleTtsModel });
+    const setTtsInputMode = (ttsInputMode: SpeechSettings['ttsInputMode']) => tts.edit({ ttsInputMode });
+    const setShowMessageTTSButtons = (showMessageTTSButtons: boolean) => tts.edit({ showMessageTTSButtons });
+    const setDictationEnabled = (dictationEnabled: boolean) => asr.edit({ dictationEnabled });
+    const setSttProvider = (sttProvider: SpeechSettings['sttProvider']) => asr.edit({ sttProvider });
+    const setSttServerUrl = (sttServerUrl: string) => asr.edit({ sttServerUrl });
+    const setSttApiKey = (sttApiKey: string) => asr.edit({ sttApiKey });
+    const setSttModel = (sttModel: string) => asr.edit({ sttModel });
+    const setSttLocalModel = (sttLocalModel: string) => asr.edit({ sttLocalModel });
+    const setSttLanguage = (sttLanguage: string) => asr.edit({ sttLanguage });
     const { speak: speakLocalTts, stop: stopLocalTts, isPlaying: isLocalTtsPlaying, error: localTtsError } = useLocalTTS();
 
-    const previewLocalVoice = useCallback(() => {
+    const previewLocalVoice = useEvent(async () => {
         if (isLocalTtsPlaying) {
             stopLocalTts();
             return;
         }
+        if (!await tts.save()) return;
         const voiceLabel = KOKORO_VOICE_OPTIONS.find((v) => v.id === localTtsVoiceId)?.label
             ?? String(localTtsVoiceId);
         void speakLocalTts(t('settings.voice.page.preview.voiceLine', { voiceName: voiceLabel }), {
             speakerId: localTtsVoiceId,
-            speed: useConfigStore.getState().speechRate,
+            speed: speechRate,
         });
-    }, [isLocalTtsPlaying, localTtsVoiceId, speakLocalTts, stopLocalTts, t]);
-    const browserVoice = useConfigStore((state) => state.browserVoice);
-    const setBrowserVoice = useConfigStore((state) => state.setBrowserVoice);
-    const openaiVoice = useConfigStore((state) => state.openaiVoice);
-    const setOpenaiVoice = useConfigStore((state) => state.setOpenaiVoice);
-    const openaiApiKey = useConfigStore((state) => state.openaiApiKey);
-    const setOpenaiApiKey = useConfigStore((state) => state.setOpenaiApiKey);
-    const openaiCompatibleUrl = useConfigStore((state) => state.openaiCompatibleUrl);
-    const setOpenaiCompatibleUrl = useConfigStore((state) => state.setOpenaiCompatibleUrl);
-    const openaiCompatibleApiKey = useConfigStore((state) => state.openaiCompatibleApiKey);
-    const setOpenaiCompatibleApiKey = useConfigStore((state) => state.setOpenaiCompatibleApiKey);
-    const openaiCompatibleVoice = useConfigStore((state) => state.openaiCompatibleVoice);
-    const setOpenaiCompatibleVoice = useConfigStore((state) => state.setOpenaiCompatibleVoice);
-    const openaiCompatibleTtsModel = useConfigStore((state) => state.openaiCompatibleTtsModel);
-    const setOpenaiCompatibleTtsModel = useConfigStore((state) => state.setOpenaiCompatibleTtsModel);
-    const showMessageTTSButtons = useConfigStore((state) => state.showMessageTTSButtons);
-    const ttsInputMode = useConfigStore((state) => state.ttsInputMode);
-    const setTtsInputMode = useConfigStore((state) => state.setTtsInputMode);
+    });
     // STT settings
-    const sttProvider = useConfigStore((state) => state.sttProvider);
-    const setSttProvider = useConfigStore((state) => state.setSttProvider);
-    const sttServerUrl = useConfigStore((state) => state.sttServerUrl);
-    const setSttServerUrl = useConfigStore((state) => state.setSttServerUrl);
-    const sttApiKey = useConfigStore((state) => state.sttApiKey);
-    const setSttApiKey = useConfigStore((state) => state.setSttApiKey);
-    const sttModel = useConfigStore((state) => state.sttModel);
-    const setSttModel = useConfigStore((state) => state.setSttModel);
-    const sttLocalModel = useConfigStore((state) => state.sttLocalModel);
-    const setSttLocalModel = useConfigStore((state) => state.setSttLocalModel);
-    const sttLanguage = useConfigStore((state) => state.sttLanguage);
-    const setSttLanguage = useConfigStore((state) => state.setSttLanguage);
-    const setShowMessageTTSButtons = useConfigStore((state) => state.setShowMessageTTSButtons);
-    const dictationEnabled = useConfigStore((state) => state.dictationEnabled);
-    const setDictationEnabled = useConfigStore((state) => state.setDictationEnabled);
 
     const [isSayAvailable, setIsSayAvailable] = useState(false);
     const [sayVoices, setSayVoices] = useState<Array<{ name: string; locale: string }>>([]);
@@ -501,12 +506,13 @@ export const VoiceSettings: React.FC = () => {
             });
     }, [browserVoices]);
 
-    const previewBrowserVoice = useCallback(() => {
+    const previewBrowserVoice = useEvent(async () => {
         if (isBrowserPreviewPlaying) {
             browserVoiceService.cancelSpeech();
             setIsBrowserPreviewPlaying(false);
             return;
         }
+        if (!await tts.save()) return;
 
         const selectedVoice = browserVoices.find(v => v.name === browserVoice);
         const voiceName = selectedVoice?.name ?? t('settings.voice.page.preview.browserVoiceFallback');
@@ -529,7 +535,7 @@ export const VoiceSettings: React.FC = () => {
 
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
-    }, [browserVoice, browserVoices, speechRate, speechPitch, speechVolume, isBrowserPreviewPlaying, t]);
+    });
 
     useEffect(() => {
         return () => {
@@ -541,7 +547,7 @@ export const VoiceSettings: React.FC = () => {
 
     useEffect(() => {
         if (!showMessageTTSButtons || (voiceProvider !== 'openai' && voiceProvider !== 'openai-compatible')) {
-            setIsOpenAIAvailable(openaiApiKey.trim().length > 0);
+            setIsOpenAIAvailable(openaiApiKey.trim().length > 0 || settings.openaiApiKeyConfigured);
             return;
         }
 
@@ -550,15 +556,15 @@ export const VoiceSettings: React.FC = () => {
                 const response = await runtimeFetch('/api/tts/status');
                 const data = await response.json();
                 const hasServerKey = data.available;
-                const hasSettingsKey = openaiApiKey.trim().length > 0;
+                const hasSettingsKey = openaiApiKey.trim().length > 0 || settings.openaiApiKeyConfigured;
                 setIsOpenAIAvailable(hasServerKey || hasSettingsKey);
             } catch {
-                setIsOpenAIAvailable(openaiApiKey.trim().length > 0);
+                setIsOpenAIAvailable(openaiApiKey.trim().length > 0 || settings.openaiApiKeyConfigured);
             }
         };
 
         checkOpenAIAvailability();
-    }, [openaiApiKey, showMessageTTSButtons, voiceProvider]);
+    }, [openaiApiKey, settings.openaiApiKeyConfigured, showMessageTTSButtons, voiceProvider]);
 
     useEffect(() => {
         if (!showMessageTTSButtons) {
@@ -585,7 +591,7 @@ export const VoiceSettings: React.FC = () => {
             });
     }, [showMessageTTSButtons]);
 
-    const previewVoice = useCallback(async () => {
+    const previewVoice = useEvent(async () => {
         if (previewAudio) {
             disposePreviewAudio(previewAudio);
             setPreviewAudio(null);
@@ -593,6 +599,7 @@ export const VoiceSettings: React.FC = () => {
             return;
         }
 
+        if (!await tts.save()) return;
         setIsPreviewPlaying(true);
         let audio: HTMLAudioElement | null = null;
         try {
@@ -631,7 +638,7 @@ export const VoiceSettings: React.FC = () => {
             setPreviewAudio(null);
             setIsPreviewPlaying(false);
         }
-    }, [sayVoice, speechRate, previewAudio, t]);
+    });
 
     useEffect(() => {
         return () => {
@@ -639,7 +646,7 @@ export const VoiceSettings: React.FC = () => {
         };
     }, [previewAudio]);
 
-    const previewOpenAIVoice = useCallback(async () => {
+    const previewOpenAIVoice = useEvent(async () => {
         if (openaiPreviewAudio) {
             disposePreviewAudio(openaiPreviewAudio);
             setOpenaiPreviewAudio(null);
@@ -647,6 +654,7 @@ export const VoiceSettings: React.FC = () => {
             return;
         }
 
+        if (!await tts.save()) return;
         setIsOpenAIPreviewPlaying(true);
         let audio: HTMLAudioElement | null = null;
         try {
@@ -657,7 +665,7 @@ export const VoiceSettings: React.FC = () => {
                     text: t('settings.voice.page.preview.voiceLine', { voiceName: openaiVoice }),
                     voice: openaiVoice,
                     speed: speechRate,
-                    apiKey: openaiApiKey || undefined,
+                    provider: 'openai',
                 }),
             });
 
@@ -689,7 +697,7 @@ export const VoiceSettings: React.FC = () => {
             setOpenaiPreviewAudio(null);
             setIsOpenAIPreviewPlaying(false);
         }
-    }, [openaiVoice, speechRate, openaiPreviewAudio, openaiApiKey, t]);
+    });
 
     useEffect(() => {
         return () => {
@@ -697,7 +705,7 @@ export const VoiceSettings: React.FC = () => {
         };
     }, [openaiPreviewAudio]);
 
-    const previewCompatibleVoice = useCallback(async () => {
+    const previewCompatibleVoice = useEvent(async () => {
         if (compatiblePreviewAudio) {
             disposePreviewAudio(compatiblePreviewAudio);
             setCompatiblePreviewAudio(null);
@@ -707,6 +715,7 @@ export const VoiceSettings: React.FC = () => {
 
         if (!openaiCompatibleUrl.trim()) return;
 
+        if (!await tts.save()) return;
         setIsCompatiblePreviewPlaying(true);
         let audio: HTMLAudioElement | null = null;
         try {
@@ -719,7 +728,7 @@ export const VoiceSettings: React.FC = () => {
                     model: openaiCompatibleTtsModel || undefined,
                     speed: speechRate,
                     baseURL: openaiCompatibleUrl,
-                    apiKey: openaiCompatibleApiKey || undefined,
+                    provider: 'openai-compatible',
                 }),
             });
 
@@ -751,7 +760,7 @@ export const VoiceSettings: React.FC = () => {
             setCompatiblePreviewAudio(null);
             setIsCompatiblePreviewPlaying(false);
         }
-    }, [openaiCompatibleUrl, openaiCompatibleVoice, openaiCompatibleTtsModel, openaiCompatibleApiKey, speechRate, compatiblePreviewAudio, t]);
+    });
 
     useEffect(() => {
         return () => {
@@ -760,9 +769,6 @@ export const VoiceSettings: React.FC = () => {
     }, [compatiblePreviewAudio]);
 
     const sliderClass = "flex-1 min-w-0 h-1.5 bg-[var(--interactive-border)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--primary-base)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-[var(--primary-base)] [&::-moz-range-thumb]:border-0 disabled:opacity-50";
-    const renderPlaybackControls = (controls: React.ReactNode) => voiceProvider === 'volcengine'
-        ? <VolcengineSpeechSettings mode="tts">{controls}</VolcengineSpeechSettings>
-        : controls;
 
     return (
         <div className="oc-settings-section-stack">
@@ -827,6 +833,7 @@ export const VoiceSettings: React.FC = () => {
                                     </Select>
                             </SettingsRow>
 
+                            {voiceProvider === 'volcengine' && <VolcengineSpeechSettings mode="tts" form={tts} />}
                             {/* OpenAI API Key */}
                             {voiceProvider === 'openai' && (
                                 <SettingsRow
@@ -850,7 +857,7 @@ export const VoiceSettings: React.FC = () => {
                                             type="password"
                                             value={openaiApiKey}
                                             onChange={(e) => setOpenaiApiKey(e.target.value)}
-                                            placeholder="sk-..."
+                                            placeholder={settings.openaiApiKeyConfigured && tts.draft.openaiApiKey === undefined ? '••••••••' : 'sk-...'}
                                             className="w-full pr-8"
                                         />
                                         {openaiApiKey && (
@@ -905,7 +912,7 @@ export const VoiceSettings: React.FC = () => {
                                                 type="password"
                                                 value={openaiCompatibleApiKey}
                                                 onChange={(e) => setOpenaiCompatibleApiKey(e.target.value)}
-                                                placeholder="sk-..."
+                                                placeholder={settings.openaiCompatibleApiKeyConfigured && tts.draft.openaiCompatibleApiKey === undefined ? '••••••••' : 'sk-...'}
                                                 className="w-full pr-8"
                                             />
                                             {openaiCompatibleApiKey && (
@@ -1043,7 +1050,6 @@ export const VoiceSettings: React.FC = () => {
                                     )}
                             </SettingsRow>}
 
-                            {renderPlaybackControls(<>
                             {/* Speech Rate */}
                             <SettingsRow label={t('settings.voice.page.field.speechRate')}>
                                     {!isMobile && <input type="range" min={0.5} max={2} step={0.1} value={speechRate} onChange={(e) => setSpeechRate(Number(e.target.value))} className={sliderClass} />}
@@ -1099,9 +1105,11 @@ export const VoiceSettings: React.FC = () => {
                                     </SelectContent>
                                 </Select>
                             </SettingsRow>
-                            </>)}
                         </>
                     )}
+                    <div className="oc-settings-group-row flex justify-end">
+                        <Button size="sm" aria-busy={tts.saving} onClick={() => { if (!tts.saving) void tts.save(); }}>{t('settings.voice.volcengine.save')}</Button>
+                    </div>
                 </SettingsGroup>
             </div>
 
@@ -1149,7 +1157,7 @@ export const VoiceSettings: React.FC = () => {
                                 </Select>
                         </SettingsRow>
 
-                        {sttProvider === 'volcengine' && <VolcengineSpeechSettings mode="asr" />}
+                        {sttProvider === 'volcengine' && <VolcengineSpeechSettings mode="asr" form={asr} />}
 
                         {sttProvider === 'local' && (
                             <SettingsRow label={t('settings.voice.page.field.model')} className="oc-settings-split-row-stacked">
@@ -1192,7 +1200,7 @@ export const VoiceSettings: React.FC = () => {
                                             type="password"
                                             value={sttApiKey}
                                             onChange={(e) => setSttApiKey(e.target.value)}
-                                            placeholder="sk-..."
+                                            placeholder={settings.sttApiKeyConfigured && asr.draft.sttApiKey === undefined ? '••••••••' : 'sk-...'}
                                             className="w-full pr-8"
                                         />
                                         {sttApiKey && (
@@ -1235,6 +1243,9 @@ export const VoiceSettings: React.FC = () => {
                         )}
 
                         </>)}
+                        <div className="oc-settings-group-row flex justify-end">
+                            <Button size="sm" aria-busy={asr.saving} onClick={() => { if (!asr.saving) void asr.save(); }}>{t('settings.voice.volcengine.save')}</Button>
+                        </div>
                     </SettingsGroup>
             </div>
 

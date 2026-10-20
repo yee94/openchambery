@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { prepareSpeechPlayback } from '@/lib/voice/audio-session';
 
 export interface LocalTTSSpeakOptions {
     /** Kokoro speaker id (0-10) */
@@ -103,6 +104,7 @@ export function splitTextForSynthesis(text: string): string[] {
 let sharedAudioContext: AudioContext | null = null;
 
 function getAudioContext(): AudioContext {
+    prepareSpeechPlayback();
     if (!sharedAudioContext) {
         sharedAudioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     }

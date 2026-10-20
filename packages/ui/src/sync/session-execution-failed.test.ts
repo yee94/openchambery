@@ -388,20 +388,34 @@ describe("session.execution.succeeded unread marker", () => {
     } as Event, childStores, emptyRoutingIndex);
   }
 
-  test("records an unread turn-complete even when the session is selected and the window is focused", () => {
+  test.each(["session.execution.succeeded", "session.idle"])("records %s as viewed while watching the session in a focused window", (type) => {
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     setActiveSession(DIRECTORY, SESSION);
 
-    dispatch("session.execution.succeeded");
+    dispatch(type);
 
     const list = useNotificationStore.getState().list;
     expect(list).toEqual([
       expect.objectContaining({
         type: "turn-complete",
         session: SESSION,
-        viewed: false,
+        viewed: true,
       }),
     ]);
+    expect(useNotificationStore.getState().sessionUnseenCount(SESSION)).toBe(0);
+    expect(useNotificationStore.getState().projectUnseenCount(DIRECTORY)).toBe(0);
+  });
+
+  test.each([
+    [false, DIRECTORY, SESSION],
+    [true, DIRECTORY, "ses_other"],
+    [true, "/workspace/other", SESSION],
+  ])("keeps completion unread when not watching (focus=%s, directory=%s, session=%s)", (focused, directory, sessionID) => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(focused);
+    setActiveSession(directory, sessionID);
+
+    dispatch("session.execution.succeeded");
+
     expect(useNotificationStore.getState().sessionUnseenCount(SESSION)).toBe(1);
   });
 

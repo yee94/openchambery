@@ -199,7 +199,7 @@ const startOrigin = async () => {
         await uiAuth.requireAuth(req, res, () => proxy(req, rawRes));
         return;
       }
-      if (pathname === '/api/tts/speak' || pathname === '/api/voice/volcengine') {
+      if (pathname === '/api/tts/speak' || pathname === '/api/voice/volcengine' || pathname === '/api/voice/settings') {
         await uiAuth.requireAuth(req, res, () => speech(req, rawRes));
         return;
       }
@@ -491,12 +491,13 @@ describe('private relay compiled-process boundary', () => {
         expect(deniedSpeech.status).toBe(401);
         expect((await client.fetch('/api/voice/volcengine')).status).toBe(401);
         expect((await client.fetch('/api/voice/volcengine', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(401);
-        const saved = await realFetch(`http://127.0.0.1:${origin.port}/api/voice/volcengine`, {
+        const saved = await realFetch(`http://127.0.0.1:${origin.port}/api/voice/settings`, {
           method: 'PUT', headers: { authorization: 'Bearer client-token', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: 'fixture-speech-key', voice: 'zh_female_vv_uranus_bigtts' }),
+          body: JSON.stringify({ apiKey: 'fixture-speech-key', voice: 'zh_female_vv_uranus_bigtts', showMessageTTSButtons: true, voiceProvider: 'volcengine', dictationEnabled: true, sttProvider: 'volcengine' }),
         });
         expect(saved.status).toBe(200);
-        const mobileSettings = await (await runtimeFetch('/api/voice/volcengine')).json();
+        const mobileSettings = await (await runtimeFetch('/api/voice/settings')).json();
+        expect(mobileSettings).toMatchObject({ showMessageTTSButtons: true, voiceProvider: 'volcengine', dictationEnabled: true, sttProvider: 'volcengine' });
         expect(mobileSettings.configured).toBe(true);
         expect(JSON.stringify(mobileSettings)).not.toContain('fixture-speech-key');
         for (const outcome of ['done', 'error', 'cancel'] as const) {

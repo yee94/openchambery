@@ -25,6 +25,8 @@
  * ```
  */
 
+import { prepareSpeechPlayback } from './audio-session';
+
 // Callback types
 type SpeechResultCallback = (text: string, isFinal: boolean) => void;
 type SpeechEndCallback = () => void;
@@ -388,6 +390,7 @@ class BrowserVoiceService {
    * Must be called within a user gesture handler
    */
   async resumeAudioContext(): Promise<void> {
+    prepareSpeechPlayback();
     if (!this.audioContext) {
       this.audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     }
@@ -408,6 +411,7 @@ class BrowserVoiceService {
    * Call this from a button click handler for stubborn browsers
    */
   async unlockAudio(): Promise<boolean> {
+    prepareSpeechPlayback();
     try {
       // Create and play silent audio to unlock Web Audio API
       const audio = new Audio();

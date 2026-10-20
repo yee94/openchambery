@@ -5,7 +5,7 @@ This module provides server-side Text-to-Speech services using OpenAI's TTS API.
 
 ## Entrypoints and structure
 - `volcengine.js`: Doubao speech adapter, using the speech console API Key (`X-Api-Key`), fixed upstream origin, bounded responses, timeout and cancellation. No Ark key or OpenAI credential fallback.
-- `volcengine-settings.js`: Host-owned speech credentials/preferences and authenticated GET/PUT `/api/voice/volcengine` routes; responses expose configuration status, never the key.
+- `settings.js`: Host-owned settings for all TTS/ASR providers, switches and credentials. GET/PUT `/api/voice/settings` returns public preferences and credential existence only; `/api/voice/volcengine` remains an alias for older clients.
 - `packages/web/server/lib/tts/index.js`: Public entrypoint imported by `packages/web/server/index.js`.
 - `packages/web/server/lib/tts/routes.js`: Express route registration for `/api/voice/*`, `/api/tts/*`, and `/api/stt/*` endpoints.
 - `packages/web/server/lib/tts/capability-runtime.js`: runtime helper for probing local macOS `say` TTS voice capability.
@@ -112,19 +112,21 @@ state disables duplicate actions without a saved badge. Failures use a toast.
 Speech credential/resource edits remain local drafts until the
 Host confirms the write; failure preserves the draft for retry. The Host stores
 the shared key, TTS speaker/resource and ASR resource in
-`$OPENCHAMBER_DATA_DIR/speech/volcengine.json` (default data root:
+`$OPENCHAMBER_DATA_DIR/speech/settings.json` (default data root:
 `~/.config/openchamber`), using an owner-only directory/file and atomic replacement.
-GET returns `{configured, voice, resourceId, asrResourceId}` with `no-store`.
+GET returns all speech preferences and credential-existence flags with `no-store`.
 PUT merges only supplied fields: an omitted key is retained, an empty key clears
 it. Invalid/unreadable files and failed writes remain errors, never empty success.
 Relay forwards authenticated requests to this Host; the Relay service does not
 store speech settings. Devices sharing a Host therefore share its speech key.
 The runtime-scoped Query refreshes on Settings mount, reconnect and window focus;
-old runtime save completions cannot update the new runtime cache or clear legacy data.
-When no Host key exists, previously saved client-local settings prefill an unsaved
-migration draft. Explicit Save migrates the key and preferences together, removing
-the matching legacy local key only after success. New drafts are never persisted
-to localStorage. Select Volcengine separately for read-aloud and dictation.
+old runtime save completions cannot update the new runtime cache or start a test.
+There is no client-local speech persistence or localStorage migration. Existing
+Host `speech/volcengine.json` and general Host ASR settings are adopted when the
+unified file is first saved. Each section saves its own memory-only draft. A
+successful write emits `openchamber:speech-settings-changed`; startup and reconnect
+also fetch the authoritative snapshot without requiring Settings to be opened.
+Select Volcengine separately for read-aloud and dictation.
 Missing keys return HTTP 400, not a server failure.
 Enable `seed-tts-2.0`, `volc.seedasr.sauc.duration` (live dictation),
 and optionally `volc.bigasr.auc_turbo` (file API) in the
@@ -188,6 +190,13 @@ and the last source's `ended` event, preserving automatic read-aloud ordering.
 The HTTP stream uses `runtimeFetch`, including the existing encrypted Relay
 transport. Relay may buffer transport bytes independently of the audio scheduler.
 No native plugin or MediaSource support is required.
+
+Web Audio playback entrypoints call the shared UI `voice/audio-session.ts`
+helper before creating or reusing an AudioContext. Where supported, it sets
+`navigator.audioSession.type = 'playback'` so iOS 17+ uses media audio rather
+than respecting the Ring/Silent switch (WebKit bug 237322, comment 6).
+Unsupported engines retain their existing behavior. Physical iOS silent-mode
+playback still requires device validation; unit tests only verify API selection.
 
 Existing clients without `stream: true` still receive complete MP3 bytes after
 terminal success, and new clients can play MP3 from older Hosts during upgrades.
