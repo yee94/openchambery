@@ -28,11 +28,11 @@ on:
       macos_runner:
         description: 'macOS build runner'
         required: false
-        default: github-hosted
+        default: self-hosted
         type: choice
         options:
-          - github-hosted
           - self-hosted
+          - github-hosted
 
 env:
   CARGO_INCREMENTAL: 0
@@ -158,7 +158,9 @@ jobs:
 
   build-desktop-electron-macos:
     needs: create-release
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.macos_runner == 'self-hosted' && fromJSON('["self-hosted","macOS","ARM64","openchamber-macos"]') || matrix.runner }}
+    # Self-hosted by default: tag releases have no inputs, so they use the
+    # self-hosted labels; manual runs can fall back to the hosted runner.
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.macos_runner == 'github-hosted' && matrix.runner || fromJSON('["self-hosted","macOS","ARM64","openchamber-macos"]') }}
     strategy:
       fail-fast: false
       matrix:
