@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import { spawn, type ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -9,7 +9,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
+import { gzipSync, gunzipSync } from 'node:zlib';
 
 import { createRelayTunnelClient } from '../../../../ui/src/lib/relay/tunnel-client.ts';
 import { startRelayHost } from './host-client.js';
@@ -25,6 +26,12 @@ import { adoptRelayTunnel, deactivateRelayTunnel } from '../../../../ui/src/lib/
 import { acquireRuntimeImage } from '../../../../ui/src/lib/runtime-image-cache.ts';
 import { NATIVE_RELAY_ASSET_BRIDGE_KEY } from '../../../../ui/src/lib/relay/native-asset-bridge.ts';
 import { resetRelayImageStreamForTests } from '../../../../ui/src/lib/relay/relay-image-stream.ts';
+import { runtimeFetch } from '../../../../ui/src/lib/runtime-fetch.ts';
+import { registerTtsRoutes } from '../tts/routes.js';
+import { createDictationRuntime } from '../dictation/runtime.js';
+import { VolcengineTranscriptionSession } from '../dictation/volcengine-session.js';
+import { openRuntimeWebSocket } from '../../../../ui/src/lib/relay/runtime-socket.ts';
+import { refreshRuntimeUrlAuthToken } from '../../../../ui/src/lib/runtime-auth.ts';
 
 const timeoutMs = 10_000;
 const previewPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64');
@@ -157,6 +164,9 @@ const startOrigin = async () => {
   const requestSecurity = createRequestSecurityRuntime({ readSettingsFromDiskMigrated: async () => ({}) });
   const wss = new WebSocketServer({ noServer: true });
   const proxy = express();
+  const speech = express();
+  speech.use(express.json());
+  registerTtsRoutes(speech, { sayTTSCapability: null });
   const broadcast = createGlobalUiEventBroadcaster({ sseClients: new Set(), wsClients: new Set(), writeSseEvent() {} });
   let hostSubscriptions = 0;
   registerOpenCodeProxy(proxy, {
@@ -187,6 +197,10 @@ const startOrigin = async () => {
       }
       if (pathname === '/api/event') {
         await uiAuth.requireAuth(req, res, () => proxy(req, rawRes));
+        return;
+      }
+      if (pathname === '/api/tts/speak') {
+        await uiAuth.requireAuth(req, res, () => speech(req, rawRes));
         return;
       }
       if (pathname === '/auth/url-token' && req.method === 'POST') {
@@ -239,9 +253,14 @@ const startOrigin = async () => {
     });
   });
   server.on('connection', (socket) => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+  const dictation = createDictationRuntime({ app: speech, server, express, uiAuthController: uiAuth,
+    isRequestOriginAllowed: requestSecurity.isRequestOriginAllowed,
+    rejectWebSocketUpgrade: requestSecurity.rejectWebSocketUpgrade,
+  });
   server.on('upgrade', (req, socket, head) => {
     void (async () => {
       const pathname = new URL(req.url ?? '/', 'http://origin').pathname;
+      if (pathname === '/api/dictation/ws') return;
       if (pathname !== '/api/terminal/ws' || !await requestSecurity.isRequestOriginAllowed(req)) {
         requestSecurity.rejectWebSocketUpgrade(socket, 403, 'Forbidden');
         return;
@@ -264,6 +283,7 @@ const startOrigin = async () => {
   return {
     port, bearerRequests, observedOrigins, getHostSubscriptions: () => hostSubscriptions,
     stop: async () => {
+      dictation.stop();
       for (const client of wss.clients) client.terminate();
       for (const socket of sockets) socket.destroy();
       await Promise.race([new Promise<void>((resolve) => wss.close(() => resolve())), wait(1_000)]);
@@ -278,6 +298,71 @@ const waitSocketOpen = (socket: ReturnType<ReturnType<typeof createRelayTunnelCl
   socket.onerror = () => reject(new Error('tunneled websocket error'));
   socket.onclose = (event) => reject(new Error(`tunneled websocket closed: ${event.code}`));
 });
+
+async function verifyStreamingAsrOverRelay() {
+  const upstream = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+  await once(upstream, 'listening');
+  const receivedAudio: Buffer[] = [];
+  let finals = 0;
+  let closed = 0;
+  const reply = (text: string, final = false) => {
+    const payload = gzipSync(Buffer.from(JSON.stringify({ result: { text } })));
+    const fields = Buffer.alloc(8);
+    fields.writeInt32BE(final ? -1 : 1);
+    fields.writeUInt32BE(payload.length, 4);
+    return Buffer.concat([Buffer.from([0x11, final ? 0x93 : 0x91, 0x11, 0]), fields, payload]);
+  };
+  upstream.on('connection', (socket, request) => {
+    expect(request.headers['x-api-key']).toBe('fixture-asr-key');
+    socket.on('close', () => { closed += 1; });
+    socket.on('message', (data) => {
+      const frame = Buffer.from(data as Buffer);
+      if (frame[1] >> 4 === 1) { socket.send(reply('')); return; }
+      const final = Boolean(frame[1] & 2);
+      if (final) finals += 1;
+      else receivedAudio.push(gunzipSync(frame.subarray(8)));
+      socket.send(reply(final ? '你好世界。' : '你好', final));
+    });
+  });
+  const connect = VolcengineTranscriptionSession.prototype.connect;
+  const redirect = vi.spyOn(VolcengineTranscriptionSession.prototype, 'connect').mockImplementation(function () {
+    this.createSocket = (_url: string, options: object) => new WebSocket(`ws://127.0.0.1:${(upstream.address() as net.AddressInfo).port}`, options);
+    return connect.call(this);
+  });
+  let socket: ReturnType<typeof openRuntimeWebSocket> | undefined;
+  try {
+    await refreshRuntimeUrlAuthToken();
+    socket = openRuntimeWebSocket(getRuntimeUrlResolver().websocket('/api/dictation/ws'));
+    const messages: Array<{ type: string; dictationId?: string; text?: string }> = [];
+    socket.onmessage = (event) => { messages.push(JSON.parse(String(event.data))); };
+    await waitSocketOpen(socket);
+    await eventually(() => messages.some((message) => message.type === 'ready'), 'ASR Relay handshake did not reach ready');
+    const send = (message: object) => socket!.send(JSON.stringify(message));
+    for (const id of ['finish', 'cancel']) {
+      send({ type: 'start', dictationId: id, format: 'audio/pcm;rate=16000;bits=16', options: { provider: 'volcengine', volcengine: { apiKey: 'fixture-asr-key' } } });
+      await eventually(() => messages.some((message) => message.type === 'ack' && message.dictationId === id), 'ASR start was not acknowledged');
+      const pcm = Buffer.alloc(6400); // One 200 ms PCM16 chunk.
+      for (let i = 0; i < pcm.length; i += 2) pcm.writeInt16LE(4096, i);
+      send({ type: 'chunk', dictationId: id, seq: 0, audio: pcm.toString('base64') });
+      await eventually(() => messages.some((message) => message.type === 'partial' && message.dictationId === id && message.text === '你好'), 'No live ASR caption before finish over Relay');
+      expect(receivedAudio.at(-1)).toEqual(pcm);
+      expect(messages.some((message) => message.type === 'final' && message.dictationId === id)).toBe(false);
+      const previouslyClosed = closed;
+      send(id === 'finish' ? { type: 'finish', dictationId: id, finalSeq: 0 } : { type: 'cancel', dictationId: id });
+      if (id === 'finish') {
+        await eventually(() => messages.some((message) => message.type === 'final' && message.text === '你好世界。'), 'Final ASR transcript did not cross Relay');
+      }
+      await eventually(() => closed > previouslyClosed, 'ASR upstream socket was not cleaned up');
+    }
+    expect(finals).toBe(1);
+    expect(messages.some((message) => message.type === 'final' && message.dictationId === 'cancel')).toBe(false);
+  } finally {
+    socket?.close();
+    redirect.mockRestore();
+    for (const connection of upstream.clients) connection.terminate();
+    await new Promise<void>((resolve) => upstream.close(() => resolve()));
+  }
+}
 
 describe('private relay compiled-process boundary', () => {
   let cleanup: (() => Promise<void>) | undefined;
@@ -377,6 +462,66 @@ describe('private relay compiled-process boundary', () => {
       configureRuntimeUrlResolver({ apiBaseUrl: 'https://relay-runtime.example' });
       setRuntimeBearerToken('client-token');
       adoptRelayTunnel({ relayUrl: relay.url, serverId: identity.serverId, hostEncPubJwk: identity.hostEncPubJwk }, client);
+      await verifyStreamingAsrOverRelay();
+      // Only the external synthesizer is mocked: runtime routing, auth, Host route,
+      // encrypted tunnel and compiled Relay process all remain real.
+      const realFetch = globalThis.fetch;
+      let upstreamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+      let upstreamSignal: AbortSignal | undefined;
+      const speechFetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+        if (String(input) !== 'https://openspeech.bytedance.com/api/v3/tts/unidirectional') return realFetch(input, init);
+        upstreamSignal = init?.signal ?? undefined;
+        const signal = upstreamSignal;
+        return Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            upstreamController = controller;
+            controller.enqueue(new TextEncoder().encode('{"code":0,"data":"AABAQA=="}\n'));
+            signal?.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+          },
+        })));
+      });
+      try {
+        const deniedSpeech = await client.fetch('/api/tts/speak', { method: 'POST' });
+        expect(deniedSpeech.status).toBe(401);
+        for (const outcome of ['done', 'error', 'cancel'] as const) {
+          upstreamSignal = undefined;
+          upstreamController = undefined;
+          const abort = new AbortController();
+          try {
+            const speechResponse = await runtimeFetch('/api/tts/speak', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
+              body: JSON.stringify({ provider: 'volcengine', text: 'Relay speech test', apiKey: 'fixture-speech-key', stream: true }),
+            });
+            expect(speechResponse.status).toBe(200);
+            expect(speechResponse.headers.get('content-type')).toContain('application/x-ndjson');
+            const audioReader = speechResponse.body!.getReader();
+            const first = await audioReader.read();
+            expect(new TextDecoder().decode(first.value)).toBe('{"type":"audio","data":"AABAQA=="}\n');
+            // Upstream has not sent success or EOF, yet PCM is already at the client.
+            expect(upstreamSignal?.aborted).toBe(false);
+            if (outcome === 'cancel') {
+              abort.abort();
+              await eventually(() => upstreamSignal?.aborted === true, 'TTS cancellation did not cross Relay to upstream');
+              await expect(audioReader.read()).rejects.toThrow();
+            } else {
+              upstreamController!.enqueue(new TextEncoder().encode(outcome === 'done' ? '{"code":20000000}\n' : '{"code":45000001}\n'));
+              upstreamController!.close();
+              let tail = '';
+              while (true) {
+                const part = await audioReader.read();
+                if (part.done) break;
+                tail += new TextDecoder().decode(part.value);
+              }
+              expect(JSON.parse(tail)).toMatchObject({ type: outcome });
+            }
+            audioReader.releaseLock();
+          } finally {
+            abort.abort();
+          }
+        }
+      } finally {
+        speechFetch.mockRestore();
+      }
       const agents = await sdk.agent.list({ location: { directory: '/remote/worktrees/project/feature' } });
       expect(agents.data[0].name).toBe('Remote Build');
       const received: Uint8Array[] = [];

@@ -1,4 +1,5 @@
 import React from 'react';
+import { MobileAutoReadProvider, MobileAutoReadMenuItem } from '@/mobile/chat/MobileAutoRead';
 import { useEvent } from '@reactuses/core';
 import { useStartupCatalogRecovery } from '@/hooks/useStartupCatalogRecovery';
 import { toast } from 'sonner';
@@ -108,7 +109,6 @@ import { reconnectAppForTransportSwitch, resetAppForRuntimeEndpointChange } from
 import { useAppFontEffects } from './useAppFontEffects';
 import { useFontsReady } from './useFontsReady';
 import { useDeepLinkHandlers, useDeepLinkSource, usePairingDeepLinkHandler } from './deepLinkNavigation';
-import { useEdgeSwipeSessionSwitch, type SwipeProgress } from './useEdgeSwipeSessionSwitch';
 import { useHeaderSwipeToSessions } from './useHeaderSwipeToSessions';
 import { useMobilePressHaptics, useStreamingHaptics } from '@/hooks/streamingHaptics';
 import { startPerfDiagnosticsController } from '@/sync/perf-diagnostics';
@@ -1079,7 +1079,7 @@ const getProjectLabel = (path: string): string => {
 };
 
 type OverflowItem = {
-  key: 'new-session' | 'refresh-transcript' | 'files' | 'changes' | 'scheduled' | 'assistant' | 'mcp' | 'instances' | 'update' | 'settings';
+  key: 'new-session' | 'refresh-transcript' | 'files' | 'changes' | 'scheduled' | 'assistant' | 'mcp' | 'instances' | 'update' | 'settings' | 'auto-read';
   icon?: IconName;
   iconNode?: React.ReactNode;
   label: string;
@@ -2058,6 +2058,28 @@ const MobileOverflowMenu: React.FC<{
 
   if (!open) return null;
 
+  const renderItem = (item: OverflowItem, index: number, checked?: boolean) => (
+    <button
+      key={item.key}
+      type="button"
+      role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+      aria-checked={checked}
+      className={cn(
+        'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
+        index > 0 && 'border-t border-border/30',
+        item.disabled && 'cursor-not-allowed opacity-60',
+      )}
+      style={{ touchAction: 'manipulation' }}
+      disabled={item.disabled}
+      onClick={() => { item.onSelect(); onClose(); }}
+    >
+      {item.iconNode ?? (item.icon ? <Icon name={item.icon} className={cn('size-5 shrink-0 text-muted-foreground', item.spinning && 'animate-spin', item.key === 'auto-read' && 'translate-x-px')} /> : null)}
+      <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground">{item.label}</span>
+      {item.badge && item.badge > 0 ? <span className="inline-flex size-2 shrink-0 rounded-full bg-primary" aria-hidden /> : null}
+      {checked && <Icon name="check" className="size-4 shrink-0 text-muted-foreground" />}
+    </button>
+  );
+
   // No second more-2 trigger here: the chat/detail header already owns the
   // floating glass button. A duplicate close glyph sits slightly off that
   // control (different safe-area/padding math) and reads as a double ghost.
@@ -2095,30 +2117,13 @@ const MobileOverflowMenu: React.FC<{
           event.currentTarget.style.transform = 'none';
         }}
       >
-        {items.map((item, index) => (
-          <button
-            key={item.key}
-            type="button"
-            role="menuitem"
-            className={cn(
-              'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
-              index > 0 && 'border-t border-border/30',
-              item.disabled && 'cursor-not-allowed opacity-60',
-            )}
-            style={{ touchAction: 'manipulation' }}
-            disabled={item.disabled}
-            onClick={() => {
-              item.onSelect();
-              onClose();
-            }}
-          >
-            {item.iconNode ?? (item.icon ? <Icon name={item.icon} className={cn('size-5 shrink-0 text-muted-foreground', item.spinning && 'animate-spin')} /> : null)}
-            <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground">{item.label}</span>
-            {item.badge && item.badge > 0 ? (
-              <span className="inline-flex size-2 shrink-0 rounded-full bg-primary" aria-hidden />
-            ) : null}
-          </button>
-        ))}
+        {items.map((item, index) => renderItem(item, index))}
+        <MobileAutoReadMenuItem>
+          {({ enabled, available, toggle }) => renderItem({
+            key: 'auto-read', icon: 'volume-up', label: t('mobile.menu.autoRead'),
+            disabled: !available, onSelect: toggle,
+          }, items.length, enabled)}
+        </MobileAutoReadMenuItem>
       </div>
       <style>{`@keyframes mobile-menu-in { from { opacity: 0; transform: translateY(-6px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
     </div>
@@ -2845,15 +2850,8 @@ const MobileShell: React.FC<{
   );
   useDeepLinkHandlers(deepLinkHandlers);
 
-  // Horizontal swipes beginning on the explicitly marked Composer surface
-  // switch to the previous or next Session. Transcript gestures are owned by
-  // page-back and the Session List presentation below.
   const phoneSecondaryBackRef = React.useRef<(() => boolean) | null>(null);
   const chatMainRef = React.useRef<HTMLElement>(null);
-  const chatAnimRef = React.useRef<HTMLDivElement>(null);
-  const previousSessionHolderRef = React.useRef<HTMLDivElement>(null);
-  const nextSessionHolderRef = React.useRef<HTMLDivElement>(null);
-  const swipeDirectionRef = React.useRef<'prev' | 'next' | null>(null);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const currentSessionDirectorySelector = React.useMemo(
@@ -2883,53 +2881,6 @@ const MobileShell: React.FC<{
     })();
   });
 
-  // Record the swipe direction; the animation itself runs in the layout effect below, once the
-  // new session's content has committed — running it inline in the swipe callback raced the
-  // re-render and dropped the animation on roughly every other switch.
-  const recordSwipeDirection = useEvent((direction: 'prev' | 'next') => {
-    swipeDirectionRef.current = direction;
-  });
-  const renderSwipeProgress = useEvent((progress: SwipeProgress | null) => {
-    const chat = chatAnimRef.current;
-    const previous = previousSessionHolderRef.current;
-    const next = nextSessionHolderRef.current;
-    if (!chat) return;
-
-    if (!progress) {
-      chat.style.transform = '';
-      chat.style.opacity = '';
-      chat.style.willChange = '';
-      if (previous) {
-        previous.style.transform = '';
-        previous.style.willChange = '';
-      }
-      if (next) {
-        next.style.transform = '';
-        next.style.willChange = '';
-      }
-      return;
-    }
-
-    if (!chat.style.willChange) {
-      chat.getAnimations().forEach((animation) => animation.cancel());
-    }
-    chat.style.willChange = 'transform, opacity';
-    chat.style.transform = `translate3d(${progress.offsetX}px, 0, 0)`;
-    chat.style.opacity = String(1 - progress.progress * 0.08);
-    if (previous) {
-      previous.style.willChange = 'transform';
-      previous.style.transform = `translate3d(${progress.offsetX}px, 0, 0)`;
-    }
-    if (next) {
-      next.style.willChange = 'transform';
-      next.style.transform = `translate3d(${progress.offsetX}px, 0, 0)`;
-    }
-    const visibleHolder = progress.direction === 'prev' ? previous : next;
-    if (!visibleHolder) return;
-    Array.from(visibleHolder.children).forEach((child) => {
-      if (child instanceof HTMLElement) child.style.opacity = progress.canSwitch ? '1' : '0.35';
-    });
-  });
   // Re-bind when the chat subtree mounts: on phone it only exists while the
   // secondary page is open; on iPad it is always mounted.
   const phoneSecondaryKind = useMobileNavigationStore((state) => state.secondary?.kind ?? null);
@@ -2944,10 +2895,6 @@ const MobileShell: React.FC<{
   React.useEffect(() => {
     setOverflowOpen(false);
   }, [currentSessionId]);
-  useEdgeSwipeSessionSwitch(chatMainRef, {
-    onSwitch: recordSwipeDirection,
-    onProgress: renderSwipeProgress,
-  }, isIPad || phoneChatMounted);
 
   // A right-to-left swipe across the chat body opens the Session List
   // half-sheet. The opposite direction remains unclaimed for page-back.
@@ -2985,22 +2932,6 @@ const MobileShell: React.FC<{
     disabled: headerSwipeDisabled,
   }, isIPad || phoneChatMounted);
 
-  React.useLayoutEffect(() => {
-    const direction = swipeDirectionRef.current;
-    swipeDirectionRef.current = null;
-    if (!direction) return; // only animate swipe-driven switches
-    const element = chatAnimRef.current;
-    if (!element || typeof element.animate !== 'function') return;
-    element.getAnimations().forEach((animation) => animation.cancel());
-    const fromX = direction === 'prev' ? -70 : 70;
-    element.animate(
-      [
-        { opacity: 0.1, transform: `translateX(${fromX}px)` },
-        { opacity: 1, transform: 'translateX(0)' },
-      ],
-      { duration: 300, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-    );
-  }, [currentSessionId]);
 
   // Phone chat secondary page: MobilePhoneShell registers a handler that
   // closes the chat page before the app would minimize. Ref indirection keeps
@@ -3202,6 +3133,7 @@ const MobileShell: React.FC<{
   );
 
   return (
+    <MobileAutoReadProvider sessionId={currentSessionId ?? ''} directory={currentSessionDirectory || currentDirectory || undefined} active={isIPad ? activeMainTab !== 'assistant' : phoneSecondaryKind === 'chat'}>
     <DedicatedMobileAppProvider actions={mobileActions}>
       <MobileGlobalSearchHost>
       <div
@@ -3281,31 +3213,7 @@ const MobileShell: React.FC<{
                 />
               </div> : null}
               <main ref={chatMainRef} className="relative min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
-                <div
-                  ref={previousSessionHolderRef}
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-y-0 -left-full flex w-full items-center justify-end gap-3 bg-background pr-4"
-                >
-                  <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
-                    {t('helpDialog.item.previousSession')}
-                  </span>
-                  <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
-                    <Icon name="arrow-left" className="size-5" />
-                  </span>
-                </div>
-                <div
-                  ref={nextSessionHolderRef}
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-y-0 left-full flex w-full items-center justify-start gap-3 bg-background pl-4"
-                >
-                  <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
-                    <Icon name="arrow-right" className="size-5" />
-                  </span>
-                  <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
-                    {t('helpDialog.item.nextSession')}
-                  </span>
-                </div>
-                <div ref={chatAnimRef} className="relative h-full w-full bg-background">
+                <div className="relative h-full w-full bg-background">
                   <ErrorBoundary>
                     {activeMainTab === 'assistant' ? <AssistantView /> : <ChatView />}
                   </ErrorBoundary>
@@ -3372,35 +3280,7 @@ const MobileShell: React.FC<{
                   menuOpen={target.active && overflowOpen}
                 >
                   <main ref={target.active ? chatMainRef : undefined} className="relative h-full min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
-                    {target.active ? (
-                      <>
-                        <div
-                          ref={previousSessionHolderRef}
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-y-0 -left-full flex w-full items-center justify-end gap-3 bg-background pr-4"
-                        >
-                          <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
-                            {t('helpDialog.item.previousSession')}
-                          </span>
-                          <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
-                            <Icon name="arrow-left" className="size-5" />
-                          </span>
-                        </div>
-                        <div
-                          ref={nextSessionHolderRef}
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-y-0 left-full flex w-full items-center justify-start gap-3 bg-background pl-4"
-                        >
-                          <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
-                            <Icon name="arrow-right" className="size-5" />
-                          </span>
-                          <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
-                            {t('helpDialog.item.nextSession')}
-                          </span>
-                        </div>
-                      </>
-                    ) : null}
-                    <div ref={target.active ? chatAnimRef : undefined} className="relative h-full w-full bg-background">
+                    <div className="relative h-full w-full bg-background">
                       <ErrorBoundary>
                         <ChatView
                           readOnly={!target.active}
@@ -3823,6 +3703,7 @@ const MobileShell: React.FC<{
       </ErrorBoundary>
       </MobileGlobalSearchHost>
     </DedicatedMobileAppProvider>
+    </MobileAutoReadProvider>
   );
 };
 

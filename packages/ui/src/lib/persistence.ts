@@ -132,7 +132,7 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof settings.dictationEnabled === 'boolean') {
     localStorage.setItem('dictationEnabled', String(settings.dictationEnabled));
   }
-  if (settings.sttProvider === 'local' || settings.sttProvider === 'openai-compatible') {
+  if (settings.sttProvider === 'local' || settings.sttProvider === 'openai-compatible' || settings.sttProvider === 'volcengine') {
     localStorage.setItem('sttProvider', settings.sttProvider);
   }
   if (typeof settings.sttServerUrl === 'string') {
@@ -672,7 +672,7 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
     if (typeof settings.dictationEnabled === 'boolean' && settings.dictationEnabled !== configStore.dictationEnabled) {
       nextConfigState.dictationEnabled = settings.dictationEnabled;
     }
-    if ((settings.sttProvider === 'local' || settings.sttProvider === 'openai-compatible') && settings.sttProvider !== configStore.sttProvider) {
+    if ((settings.sttProvider === 'local' || settings.sttProvider === 'openai-compatible' || settings.sttProvider === 'volcengine') && settings.sttProvider !== configStore.sttProvider) {
       nextConfigState.sttProvider = settings.sttProvider;
     }
     if (typeof settings.sttServerUrl === 'string' && settings.sttServerUrl !== configStore.sttServerUrl) {
@@ -1274,7 +1274,7 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.dictationEnabled === 'boolean') {
     result.dictationEnabled = candidate.dictationEnabled;
   }
-  if (candidate.sttProvider === 'local' || candidate.sttProvider === 'openai-compatible') {
+  if (candidate.sttProvider === 'local' || candidate.sttProvider === 'openai-compatible' || candidate.sttProvider === 'volcengine') {
     result.sttProvider = candidate.sttProvider;
   } else if (candidate.sttProvider === 'server') {
     // Legacy provider migration: 'server' was the OpenAI-compatible endpoint.

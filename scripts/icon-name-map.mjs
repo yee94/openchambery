@@ -328,6 +328,6 @@ export const ICON_NAME_MAP = {
   "user": { lucide: "user", fill: false },
   "user-3": { lucide: "user", fill: false },
   "video-chat": { lucide: "video", fill: false },
-  "volume-up": { lucide: "volume-2", fill: false },
+  "volume-up": { custom: '<path d="M11.5 4.25a.75.75 0 0 0-1.25-.56L6 7.5H3.5A1.5 1.5 0 0 0 2 9v6a1.5 1.5 0 0 0 1.5 1.5H6l4.25 3.81a.75.75 0 0 0 1.25-.56Z" /><path d="M16 8a6 6 0 0 1 0 8M19 4.5a10.5 10.5 0 0 1 0 15" />' },
   "window": { lucide: "app-window", fill: false },
 };

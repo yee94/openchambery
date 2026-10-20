@@ -181,12 +181,13 @@ export const createNativeIosComposerSession = (
      */
     shutdown(root: HTMLElement = document.documentElement): void {
       cancelHide();
+      const hadNativeOverlay = warmed || retainCount > 0;
       retainCount = 0;
       warmed = false;
       concealed = false;
       handlers = null;
       setNativeComposerDocumentClass(root, false);
-      void getPlugin().dismiss();
+      if (hadNativeOverlay) void getPlugin().dismiss();
     },
     /** Test / reset only. */
     snapshot(): {

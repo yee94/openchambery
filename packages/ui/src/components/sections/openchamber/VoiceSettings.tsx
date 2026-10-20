@@ -23,6 +23,7 @@ import { useI18n } from '@/lib/i18n';
 import { useLocalTTS } from '@/hooks/useLocalTTS';
 import { disposePreviewAudio } from './voicePreviewAudio';
 import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
+import { VolcengineSpeechSettings } from './VolcengineSpeechSettings';
 
 const LOCAL_STT_MODELS = [
     {
@@ -799,57 +800,31 @@ export const VoiceSettings: React.FC = () => {
                                     </div>
                                 )}
                             >
-                                    <div className="flex flex-wrap items-center justify-end gap-1">
-                                        <Button
-                                            variant="chip"
-                                            size="xs"
-                                            aria-pressed={voiceProvider === 'browser'}
-                                            onClick={() => setVoiceProvider('browser')}
-                                            className="!font-normal"
-                                        >
-                                            {t('settings.voice.page.provider.browser')}
-                                        </Button>
-                                        <Button
-                                            variant="chip"
-                                            size="xs"
-                                            aria-pressed={voiceProvider === 'local'}
-                                            onClick={() => setVoiceProvider('local')}
-                                            className="!font-normal"
-                                        >
-                                            {t('settings.voice.page.provider.local')}
-                                        </Button>
-                                        <Button
-                                            variant="chip"
-                                            size="xs"
-                                            aria-pressed={voiceProvider === 'openai'}
-                                            onClick={() => setVoiceProvider('openai')}
-                                            className="!font-normal"
-                                        >
-                                            OpenAI
-                                        </Button>
-                                        <Button
-                                            variant="chip"
-                                            size="xs"
-                                            aria-pressed={voiceProvider === 'openai-compatible'}
-                                            onClick={() => setVoiceProvider('openai-compatible')}
-                                            className="!font-normal"
-                                        >
-                                            {t('settings.voice.page.provider.custom')}
-                                        </Button>
-                                        {isSayAvailable && (
-                                            <Button
-                                                variant="chip"
-                                                size="xs"
-                                                aria-pressed={voiceProvider === 'say'}
-                                                onClick={() => setVoiceProvider('say')}
-                                                className="!font-normal"
-                                            >
-                                                <Icon name="apple" className="w-3.5 h-3.5 mr-0.5" />
-                                                {t('settings.voice.page.provider.say')}
-                                            </Button>
-                                        )}
-                                    </div>
+                                    <Select value={voiceProvider} onValueChange={(value) => {
+                                        if (value === 'browser' || value === 'local' || value === 'openai' || value === 'openai-compatible' || value === 'volcengine' || (value === 'say' && isSayAvailable)) setVoiceProvider(value);
+                                    }}>
+                                        <SelectTrigger aria-label={t('settings.voice.page.field.provider')}>
+                                            <SelectValue>{({
+                                                browser: t('settings.voice.page.provider.browser'),
+                                                volcengine: t('settings.voice.volcengine.providerOption'),
+                                                local: t('settings.voice.page.provider.local'),
+                                                openai: 'OpenAI',
+                                                'openai-compatible': t('settings.voice.page.provider.custom'),
+                                                say: t('settings.voice.page.provider.say'),
+                                            })[voiceProvider]}</SelectValue>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="browser">{t('settings.voice.page.provider.browser')}</SelectItem>
+                                            <SelectItem value="volcengine">{t('settings.voice.volcengine.providerOption')}</SelectItem>
+                                            <SelectItem value="local">{t('settings.voice.page.provider.local')}</SelectItem>
+                                            <SelectItem value="openai">OpenAI</SelectItem>
+                                            <SelectItem value="openai-compatible">{t('settings.voice.page.provider.custom')}</SelectItem>
+                                            {isSayAvailable && <SelectItem value="say">{t('settings.voice.page.provider.say')}</SelectItem>}
+                                        </SelectContent>
+                                    </Select>
                             </SettingsRow>
+
+                            {voiceProvider === 'volcengine' && <VolcengineSpeechSettings mode="tts" />}
 
                             {/* OpenAI API Key */}
                             {voiceProvider === 'openai' && (
@@ -980,7 +955,7 @@ export const VoiceSettings: React.FC = () => {
                             {voiceProvider === 'local' && <LocalTtsModelStatus />}
 
                             {/* Voice Selection */}
-                            <SettingsRow label={t('settings.voice.page.field.voice')}>
+                            {voiceProvider !== 'volcengine' && <SettingsRow label={t('settings.voice.page.field.voice')}>
                                     {voiceProvider === 'local' && (
                                         <>
                                             <Select
@@ -1065,7 +1040,7 @@ export const VoiceSettings: React.FC = () => {
                                             </Button>
                                         </>
                                     )}
-                            </SettingsRow>
+                            </SettingsRow>}
 
                             {/* Speech Rate */}
                             <SettingsRow label={t('settings.voice.page.field.speechRate')}>
@@ -1093,35 +1068,34 @@ export const VoiceSettings: React.FC = () => {
 
                             {/* TTS input mode */}
                             <SettingsRow label={t('settings.voice.page.field.ttsInputMode')}>
-                                    <div className="flex flex-wrap items-center justify-end gap-1">
-                                        <Button
-                                            variant="chip"
-                                            size="xs"
-                                            aria-pressed={ttsInputMode === 'sanitized'}
-                                            onClick={() => setTtsInputMode('sanitized')}
-                                            className="!font-normal"
-                                        >
-                                            {t('settings.voice.page.field.ttsInputModeSanitized')}
-                                        </Button>
-                                        <Button
-                                            variant="chip"
-                                            size="xs"
-                                            aria-pressed={ttsInputMode === 'raw'}
-                                            onClick={() => setTtsInputMode('raw')}
-                                            className="!font-normal"
-                                        >
-                                            {t('settings.voice.page.field.ttsInputModeRaw')}
-                                        </Button>
-                                        <Button
-                                            variant="chip"
-                                            size="xs"
-                                            aria-pressed={ttsInputMode === 'summarized'}
-                                            onClick={() => setTtsInputMode('summarized')}
-                                            className="!font-normal"
-                                        >
-                                            {t('settings.voice.page.field.ttsInputModeSummarized')}
-                                        </Button>
-                                    </div>
+                                <Select value={ttsInputMode} onValueChange={(value) => {
+                                    if (value === 'final' || value === 'sanitized' || value === 'raw' || value === 'summarized') setTtsInputMode(value);
+                                }}>
+                                    <SelectTrigger className="w-fit max-w-full" aria-label={t('settings.voice.page.field.ttsInputMode')}>
+                                        <SelectValue>{() => t(ttsInputMode === 'final'
+                                            ? 'settings.voice.page.field.ttsInputModeFinal'
+                                            : ttsInputMode === 'raw'
+                                            ? 'settings.voice.page.field.ttsInputModeRaw'
+                                            : ttsInputMode === 'summarized'
+                                                ? 'settings.voice.page.field.ttsInputModeSummarized'
+                                                : 'settings.voice.page.field.ttsInputModeSanitized')}</SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {([
+                                            ['final', 'settings.voice.page.field.ttsInputModeFinal', 'settings.voice.page.field.ttsInputModeFinalDescription'],
+                                            ['sanitized', 'settings.voice.page.field.ttsInputModeSanitized', 'settings.voice.page.field.ttsInputModeSanitizedDescription'],
+                                            ['raw', 'settings.voice.page.field.ttsInputModeRaw', 'settings.voice.page.field.ttsInputModeRawDescription'],
+                                            ['summarized', 'settings.voice.page.field.ttsInputModeSummarized', 'settings.voice.page.field.ttsInputModeSummarizedDescription'],
+                                        ] as const).map(([value, label, description]) => (
+                                            <SelectItem key={value} value={value}>
+                                                <span className="flex min-w-0 flex-col gap-1 text-left">
+                                                    <span>{t(label)}</span>
+                                                    <span className="max-w-64 whitespace-normal typography-meta text-muted-foreground">{t(description)}</span>
+                                                </span>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </SettingsRow>
                         </>
                     )}
@@ -1154,27 +1128,25 @@ export const VoiceSettings: React.FC = () => {
                                 </div>
                             )}
                         >
-                                <div className="flex flex-wrap items-center justify-end gap-1">
-                                    <Button
-                                        variant="chip"
-                                        size="xs"
-                                        aria-pressed={sttProvider === 'local'}
-                                        onClick={() => setSttProvider('local')}
-                                        className="!font-normal"
-                                    >
-                                        {t('settings.voice.page.provider.local')}
-                                    </Button>
-                                    <Button
-                                        variant="chip"
-                                        size="xs"
-                                        aria-pressed={sttProvider === 'openai-compatible'}
-                                        onClick={() => setSttProvider('openai-compatible')}
-                                        className="!font-normal"
-                                    >
-                                        {t('settings.voice.page.provider.server')}
-                                    </Button>
-                                </div>
+                                <Select value={sttProvider} onValueChange={(value) => {
+                                    if (value === 'local' || value === 'openai-compatible' || value === 'volcengine') setSttProvider(value);
+                                }}>
+                                    <SelectTrigger aria-label={t('settings.voice.page.field.provider')}>
+                                        <SelectValue>{({
+                                            local: t('settings.voice.page.provider.local'),
+                                            volcengine: t('settings.voice.volcengine.providerOption'),
+                                            'openai-compatible': t('settings.voice.page.provider.server'),
+                                        })[sttProvider]}</SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="local">{t('settings.voice.page.provider.local')}</SelectItem>
+                                        <SelectItem value="volcengine">{t('settings.voice.volcengine.providerOption')}</SelectItem>
+                                        <SelectItem value="openai-compatible">{t('settings.voice.page.provider.server')}</SelectItem>
+                                    </SelectContent>
+                                </Select>
                         </SettingsRow>
+
+                        {sttProvider === 'volcengine' && <VolcengineSpeechSettings mode="asr" />}
 
                         {sttProvider === 'local' && (
                             <SettingsRow label={t('settings.voice.page.field.model')} className="oc-settings-split-row-stacked">

@@ -34,6 +34,9 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { useMessageTTS } from '@/hooks/useMessageTTS';
+import { VoiceActivityIcon } from '@/components/dictation/VoiceActivityIcon';
+import { AutoReadPlaybackContext, useAutoReadRenderedReply } from '@/mobile/chat/auto-read-context';
+import { getSortedBodyPartIndex } from '../lib/turns/assistantMessageLifecycle';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { TextSelectionMenu } from './TextSelectionMenu';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -1160,6 +1163,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
 });
 
 interface AssistantMessageActionButtonsProps {
+    messageId?: string;
     hasCopyableText: boolean;
     isTouchContext: boolean;
     onCopyMessage?: () => void | boolean | Promise<void | boolean>;
@@ -1174,6 +1178,7 @@ interface AssistantMessageActionButtonsProps {
 }
 
 const AssistantMessageActionButtons = React.memo(({
+    messageId,
     hasCopyableText,
     isTouchContext,
     onCopyMessage,
@@ -1185,7 +1190,10 @@ const AssistantMessageActionButtons = React.memo(({
     const chatSurfaceMode = useChatSurfaceMode();
     const sessionSurface = useSessionSurface();
     const sessionSurfaceActions = getSessionSurfaceActionAvailability(sessionSurface);
-    const { isPlaying: isTTSPlaying, play: playTTS, stop: stopTTS } = useMessageTTS();
+    const { isPlaying: isManualTTSPlaying, play: playTTS, stop: stopTTS } = useMessageTTS();
+    const autoReadPlayback = React.useContext(AutoReadPlaybackContext);
+    const isAutoReadPlaying = Boolean(autoReadPlayback && autoReadPlayback.sessionId === sessionId && autoReadPlayback.messageId === messageId);
+    const isTTSPlaying = isManualTTSPlaying || isAutoReadPlaying;
     const showMessageTTSButtons = useConfigStore((state) => state.showMessageTTSButtons);
     const voiceProvider = useConfigStore((state) => state.voiceProvider);
     const [copyHintVisible, setCopyHintVisible] = React.useState(false);
@@ -1322,6 +1330,7 @@ const AssistantMessageActionButtons = React.memo(({
             event.preventDefault();
 
             if (isTTSPlaying) {
+                if (isAutoReadPlaying) autoReadPlayback?.stop();
                 stopTTS();
                 return;
             }
@@ -1420,7 +1429,7 @@ const AssistantMessageActionButtons = React.memo(({
                     <TooltipContent sideOffset={6}>{reviewTransferAction.tooltip}</TooltipContent>
                 </Tooltip>
             ) : null}
-            {chatSurfaceMode !== 'mini-chat' && showMessageTTSButtons && hasCopyableText && (
+            {chatSurfaceMode !== 'mini-chat' && showMessageTTSButtons && hasCopyableText && ttsText.trim() && (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <Button
@@ -1429,17 +1438,15 @@ const AssistantMessageActionButtons = React.memo(({
                             size="icon"
                             className={cn(
                                 MESSAGE_ACTION_ICON_BUTTON_CLASS,
-                                isTTSPlaying ? 'text-green-500' : 'hover:text-foreground/80'
+                                '!bg-transparent shadow-none',
+                                isTTSPlaying ? 'text-[var(--primary-base)]' : 'hover:text-foreground/80'
                             )}
                             aria-label={isTTSPlaying ? t('chat.messageBody.tts.stopSpeaking') : t('chat.messageBody.tts.readAloud')}
+                            aria-pressed={isTTSPlaying}
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={handleTTSClick}
                         >
-                            {isTTSPlaying ? (
-                                <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="stop" className={MESSAGE_ACTION_ICON_CLASS} />
-                            ) : (
-                                <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="volume-up" className={MESSAGE_ACTION_ICON_CLASS} />
-                            )}
+                            <VoiceActivityIcon kind="speaker" active={isTTSPlaying} className={MESSAGE_ACTION_ICON_CLASS} />
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent sideOffset={6}>{readAloudTooltip}</TooltipContent>
@@ -1453,6 +1460,7 @@ const AssistantMessageBody = React.memo(({
     sessionId,
     messageId,
     parts,
+    sourceParts,
     isMessageCompleted,
     messageFinish,
     messageCompletedAt,
@@ -1849,6 +1857,21 @@ const AssistantMessageBody = React.memo(({
         isLastAssistantInTurn,
     };
     const canRevealSortedBody = canRevealSortedFinalBody(sortedFinalBodyReveal);
+    const ttsInputMode = useConfigStore((state) => state.ttsInputMode);
+    const finalTtsText = React.useMemo(() => {
+        if (!isLastAssistantInTurn || isCompactionTurn || !isTurnSettled || !canRevealSortedBody) return '';
+        const originalParts = sourceParts ?? parts;
+        const index = getSortedBodyPartIndex(originalParts);
+        return index < 0 ? '' : extractTextContent(originalParts[index]);
+    }, [isLastAssistantInTurn, isCompactionTurn, isTurnSettled, canRevealSortedBody, sourceParts, parts]);
+    const ttsText = ttsInputMode === 'final' ? finalTtsText : assistantPlanText;
+    useAutoReadRenderedReply({
+        sessionId: sessionId ?? '', messageId, created: messageCreatedAt ?? 0,
+        text: ttsText,
+        streaming: isMobile && sessionSurface.active && (streamPhase === 'streaming' || streamPhase === 'cooldown'),
+        completed: isMobile && sessionSurface.active && isMessageCompleted
+            && streamPhase !== 'streaming' && streamPhase !== 'cooldown' && !errorMessage,
+    });
     const streamSortedFinalBody = isSortedRenderMode && shouldStreamSortedFinalBody(sortedFinalBodyReveal);
     const shouldDeferSortedInlineText = isSortedRenderMode
         && !canRevealSortedBody
@@ -1874,14 +1897,15 @@ const AssistantMessageBody = React.memo(({
 
     const messageActionButtons = React.useMemo(() => (
         <AssistantMessageActionButtons
+            messageId={messageId}
             hasCopyableText={hasCopyableText}
             isTouchContext={isTouchContext}
             onCopyMessage={onCopyMessage}
-            ttsText={assistantPlanText}
+            ttsText={ttsText}
             reviewTransferAction={reviewTransferAction}
             sessionId={sessionId}
         />
-    ), [assistantPlanText, hasCopyableText, isTouchContext, onCopyMessage, reviewTransferAction, sessionId]);
+    ), [ttsText, hasCopyableText, isTouchContext, onCopyMessage, reviewTransferAction, sessionId, messageId]);
 
     const renderJustificationActions = React.useMemo(() => (activity: NonNullable<TurnGroupingContext['activityParts']>[number]) => {
         if (!showSplitAssistantMessageActions || !isSortedRenderMode) {
@@ -1903,10 +1927,10 @@ const AssistantMessageBody = React.memo(({
                 hasCopyableText={true}
                 isTouchContext={isTouchContext}
                 onCopyMessage={copyJustificationText}
-                ttsText={text}
+                ttsText={ttsInputMode === 'final' ? '' : text}
             />
         );
-    }, [isSortedRenderMode, isTouchContext, showSplitAssistantMessageActions]);
+    }, [isSortedRenderMode, isTouchContext, showSplitAssistantMessageActions, ttsInputMode]);
 
     const lastRenderableTextPartIndex = React.useMemo(() => {
         if (!shouldShowStandaloneMessageActions) {

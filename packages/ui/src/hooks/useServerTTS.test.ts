@@ -68,13 +68,16 @@ const createHookHarness = () => {
 
 const harness = createHookHarness();
 const requests: Array<Deferred<Response>> = [];
+const requestBodies: Record<string, unknown>[] = [];
 let transportIdentity = 'runtime-a';
 const decodes: Array<Deferred<AudioBuffer>> = [];
 const sources: Array<{ onended: (() => void) | null; start: () => void; stop: () => void; connect: () => void; buffer: AudioBuffer | null; detune: { value: number }; starts: number }> = [];
 
+const testStorage = globalThis.localStorage;
 Object.defineProperty(globalThis, 'window', {
   configurable: true,
   value: {
+    localStorage: testStorage,
     AudioContext: class {
       state = 'running';
       destination = {};
@@ -109,7 +112,8 @@ mock.module('@/stores/useConfigStore', () => ({
   }),
 }));
 mock.module('@/lib/runtime-fetch', () => ({
-  runtimeFetch: () => {
+  runtimeFetch: (_path: string, init?: RequestInit) => {
+    if (typeof init?.body === 'string') requestBodies.push(JSON.parse(init.body));
     const request = deferred<Response>();
     requests.push(request);
     return request.promise;
@@ -133,6 +137,20 @@ const flush = async () => {
 };
 
 describe('useServerTTS playback session identity', () => {
+  test('reads the current Volcengine key and voice at playback time', async () => {
+    const { useVolcengineSpeechStore } = await import('@/stores/useVolcengineSpeechStore');
+    useVolcengineSpeechStore.setState({ apiKey: 'first-test-key', voice: 'test_speaker', resourceId: 'seed-tts-2.0' });
+    let tts = useServerTTS({ enabled: false });
+    harness.render(() => { tts = useServerTTS({ enabled: false }); });
+    useVolcengineSpeechStore.getState().setApiKey('updated-test-key');
+    const playing = tts.speak('测试', { provider: 'volcengine' });
+    await flush();
+    expect(requestBodies.at(-1)).toMatchObject({ provider: 'volcengine', apiKey: 'updated-test-key', voice: 'test_speaker', resourceId: 'seed-tts-2.0' });
+    tts.stop();
+    requests.pop()!.resolve(response());
+    await playing;
+    useVolcengineSpeechStore.getState().setApiKey('');
+  });
   test('keeps current playback isolated from stale fetch, decode, error, and ended work', async () => {
     requests.length = 0;
     decodes.length = 0;

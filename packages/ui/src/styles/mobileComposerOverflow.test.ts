@@ -89,7 +89,7 @@ describe('mobile composer overflow and swap contract', () => {
         expect(chatInputSource).toContain('oc-mobile-composer-compact-preview');
         expect(chatInputSource).toContain('oc-mobile-composer-compact-preview--placeholder');
         expect(chatInputSource).toContain('placeholder: composerPlaceholder');
-        expect(chatInputSource).toContain('{message.trim() ? message : composerPlaceholder}');
+        expect(chatInputSource).toContain('{message.trim() ? message : holdToTalkEnabled ? speechPlaceholder : composerPlaceholder}');
         expect(chatInputSource).toMatch(
             /inputMode === 'shell'\s*\?\s*t\('chat\.chatInput\.placeholder\.shell'\)\s*:\s*isMobile\s*\?\s*t\('chat\.chatInput\.placeholder\.chatCompact'\)\s*:\s*t\('chat\.chatInput\.placeholder\.chat'\)/,
         );

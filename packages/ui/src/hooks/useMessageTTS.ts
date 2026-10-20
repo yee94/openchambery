@@ -5,7 +5,8 @@
  * Uses the configured voice provider (browser, OpenAI, or macOS Say).
  */
 
-import { useCallback, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useEvent, useEventListener } from '@reactuses/core';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useServerTTS } from './useServerTTS';
 import { useSayTTS } from './useSayTTS';
@@ -47,13 +48,15 @@ export interface UseMessageTTSReturn {
     /** Whether TTS is currently playing for this message */
     isPlaying: boolean;
     /** Play the message text */
-    play: (text: string) => Promise<void>;
+    play: (text: string, onSettled?: (error?: Error) => void) => Promise<void>;
+    unlock: () => Promise<void>;
     /** Stop playback */
     stop: () => void;
 }
 
-export function useMessageTTS(): UseMessageTTSReturn {
+export function useMessageTTS(options: { enabled?: boolean } = {}): UseMessageTTSReturn {
     const [isPlaying, setIsPlaying] = useState(false);
+    const generation = useRef(0);
     
     const voiceProvider = useConfigStore((state) => state.voiceProvider);
     const speechRate = useConfigStore((state) => state.speechRate);
@@ -69,32 +72,54 @@ export function useMessageTTS(): UseMessageTTSReturn {
     const showMessageTTSButtons = useConfigStore((state) => state.showMessageTTSButtons);
     const ttsInputMode = useConfigStore((state) => state.ttsInputMode);
 
-    const isServerProvider = voiceProvider === 'openai' || voiceProvider === 'openai-compatible';
-    const shouldCheckOpenAIAvailability = showMessageTTSButtons && isServerProvider;
-    const shouldCheckSayAvailability = showMessageTTSButtons && voiceProvider === 'say';
+    const isServerProvider = voiceProvider === 'openai' || voiceProvider === 'openai-compatible' || voiceProvider === 'volcengine';
+    const shouldCheckOpenAIAvailability = (options.enabled ?? showMessageTTSButtons) && isServerProvider && voiceProvider !== 'volcengine';
+    const shouldCheckSayAvailability = (options.enabled ?? showMessageTTSButtons) && voiceProvider === 'say';
 
-    const { speak: speakServerTTS, stop: stopServerTTS, isAvailable: isServerTTSAvailable } = useServerTTS({
+    const { speak: speakServerTTS, stop: stopServerTTS, unlockAudio, isAvailable: isServerTTSAvailable } = useServerTTS({
         enabled: shouldCheckOpenAIAvailability,
         availabilityMode: voiceProvider === 'openai-compatible' ? 'openai-compatible' : 'openai',
     });
-    const { speak: speakSayTTS, stop: stopSayTTS, isAvailable: isSayTTSAvailable } = useSayTTS({
+    const { speak: speakSayTTS, stop: stopSayTTS, unlockAudio: unlockSayAudio, isAvailable: isSayTTSAvailable } = useSayTTS({
         enabled: shouldCheckSayAvailability,
     });
-    const { speak: speakLocalTTS, stop: stopLocalTTS } = useLocalTTS();
+    const { speak: speakLocalTTS, stop: stopLocalTTS, unlockAudio: unlockLocalAudio } = useLocalTTS();
     
-    const stop = useCallback(() => {
+    const stop = useEvent(() => {
+        generation.current += 1;
         setIsPlaying(false);
         stopServerTTS();
         stopSayTTS();
         stopLocalTTS();
         browserVoiceService.cancelSpeech();
-    }, [stopServerTTS, stopSayTTS, stopLocalTTS]);
+    });
+    useEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key !== 'Escape' || event.isComposing || !isPlaying) return;
+        event.preventDefault();
+        event.stopPropagation();
+        stop();
+    }, () => isPlaying ? window : null, { capture: true });
+    const unlock = useEvent(async () => {
+        const providerUnlock = voiceProvider === 'local' ? unlockLocalAudio
+            : voiceProvider === 'say' ? unlockSayAudio : isServerProvider ? unlockAudio : null;
+        await Promise.all([providerUnlock?.(), browserVoiceService.resumeAudioContext()]);
+    });
+    useEffect(() => () => { generation.current += 1; }, []);
     
-    const play = useCallback(async (text: string) => {
-        if (!text.trim()) return;
+    const play = useEvent(async (text: string, onSettled?: (error?: Error) => void) => {
+        if (!text.trim()) { onSettled?.(); return; }
         
         // Stop any existing playback
         stop();
+        const request = generation.current;
+        let settled = false;
+        const finish = (error?: Error) => {
+            if (request !== generation.current || settled) return;
+            settled = true;
+            setIsPlaying(false);
+            onSettled?.(error);
+        };
+        const fail = (error: string) => finish(new Error(error));
         
         setIsPlaying(true);
         
@@ -114,11 +139,18 @@ export function useMessageTTS(): UseMessageTTSReturn {
                 }
             }
 
+            if (request !== generation.current) return;
             const shouldUseRaw = ttsInputMode === 'raw' && isServerProvider;
             const sanitizedText = sanitizeForTTS(sourceText);
             const textToSpeak = shouldUseRaw ? sourceText : sanitizedText;
+            if (!textToSpeak.trim()) { finish(); return; }
             
-            if (isServerProvider && isServerTTSAvailable) {
+            if (voiceProvider === 'volcengine') {
+                await speakServerTTS(textToSpeak, {
+                    provider: 'volcengine', speed: speechRate, pitch: speechPitch, volume: speechVolume,
+                    onEnd: () => finish(), onError: fail,
+                });
+            } else if (isServerProvider && isServerTTSAvailable) {
                 const voice = voiceProvider === 'openai-compatible' ? openaiCompatibleVoice : openaiVoice;
                 const baseURL = voiceProvider === 'openai-compatible' ? openaiCompatibleUrl : undefined;
                 const model = voiceProvider === 'openai-compatible' ? openaiCompatibleTtsModel : undefined;
@@ -130,32 +162,33 @@ export function useMessageTTS(): UseMessageTTSReturn {
                     volume: speechVolume,
                     summarize: false,
                     baseURL,
-                    onEnd: () => setIsPlaying(false),
-                    onError: () => setIsPlaying(false),
+                    onEnd: () => finish(),
+                    onError: fail,
                 });
             } else if (voiceProvider === 'local') {
                 await speakLocalTTS(sanitizedText, {
                     speakerId: localTtsVoiceId,
                     speed: speechRate,
-                    onEnd: () => setIsPlaying(false),
-                    onError: () => setIsPlaying(false),
+                    onEnd: () => finish(),
+                    onError: fail,
                 });
             } else if (voiceProvider === 'say' && isSayTTSAvailable) {
                 const wordsPerMinute = Math.round(100 + (speechRate - 0.5) * 200);
                 await speakSayTTS(sanitizedText, {
                     voice: sayVoice,
                     rate: wordsPerMinute,
-                    onEnd: () => setIsPlaying(false),
-                    onError: () => setIsPlaying(false),
+                    onEnd: () => finish(),
+                    onError: fail,
                 });
             } else {
                 // Browser TTS
                 await browserVoiceService.waitForVoices();
                 await browserVoiceService.resumeAudioContext();
+                if (request !== generation.current) return;
                 await browserVoiceService.speakText(
                     sanitizedText,
                     navigator.language || 'en-US',
-                    () => setIsPlaying(false),
+                    () => finish(),
                     {
                         rate: speechRate,
                         pitch: speechPitch,
@@ -166,33 +199,14 @@ export function useMessageTTS(): UseMessageTTSReturn {
             }
         } catch (err) {
             console.error('[useMessageTTS] Playback error:', err);
-            setIsPlaying(false);
+            finish(err instanceof Error ? err : new Error(String(err)));
         }
-    }, [
-        voiceProvider,
-        isServerProvider,
-        speechRate,
-        speechPitch,
-        speechVolume,
-        sayVoice,
-        browserVoice,
-        openaiVoice,
-        openaiCompatibleVoice,
-        openaiCompatibleUrl,
-        openaiCompatibleTtsModel,
-        isServerTTSAvailable,
-        isSayTTSAvailable,
-        ttsInputMode,
-        speakServerTTS,
-        speakSayTTS,
-        speakLocalTTS,
-        localTtsVoiceId,
-        stop,
-    ]);
+    });
     
     return {
         isPlaying,
         play,
         stop,
+        unlock,
     };
 }

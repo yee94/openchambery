@@ -410,13 +410,13 @@ const ImagePreviewDialog: React.FC<{
 
     const imageDisplaySize = React.useMemo(() => {
         const viewingArea = {
-            width: Math.max(1, viewport.width),
+            width: Math.max(1, viewport.width * (isMobile ? 1 : 0.8)),
             height: Math.max(1, viewport.height),
         };
         return imageNaturalSize
             ? getFittedImageSize(imageNaturalSize, viewingArea)
             : viewingArea;
-    }, [imageNaturalSize, viewport.height, viewport.width]);
+    }, [imageNaturalSize, isMobile, viewport.height, viewport.width]);
 
     const geometry = React.useMemo<ImageViewerGeometry>(() => ({
         image: imageDisplaySize,
@@ -837,17 +837,25 @@ const ImagePreviewDialog: React.FC<{
             tabIndex={-1}
             onClick={consumeViewerClick}
         >
-            <Button
-                ref={closeButtonRef}
-                variant="mobileGlass"
-                size="mobileIcon"
+            <div
                 className="absolute right-3 z-20"
-                style={{ top: 'calc(max(var(--oc-safe-area-top, 0px), env(safe-area-inset-top, 0px)) + 0.5rem)' }}
-                onClick={() => onOpenChange(false)}
+                style={isMobile ? {
+                    top: 'calc(max(var(--oc-safe-area-top, 0px), env(safe-area-inset-top, 0px)) + 0.5rem)',
+                } : {
+                    top: `calc(50% - ${imageDisplaySize.height / 2}px + 0.5rem)`,
+                    right: `calc(50% - ${imageDisplaySize.width / 2}px + 0.5rem)`,
+                }}
             >
-                <Icon name="close" className="size-5" />
-                <span className="sr-only">{t('dialog.common.actions.close')}</span>
-            </Button>
+                <Button
+                    ref={closeButtonRef}
+                    variant="mobileGlass"
+                    size="mobileIcon"
+                    aria-label={t('dialog.common.actions.close')}
+                    onClick={() => onOpenChange(false)}
+                >
+                    <Icon name="close" className="size-5" />
+                </Button>
+            </div>
             <div
                 ref={canvasRef}
                 className="absolute inset-0 flex items-center justify-center overflow-hidden touch-none [overscroll-behavior:none]"

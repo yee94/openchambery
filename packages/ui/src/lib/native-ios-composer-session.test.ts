@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { emptyNativeComposerAutocomplete, NATIVE_IOS_COMPOSER_CLASS } from './native-ios-composer';
+import { emptyNativeComposerAutocomplete, getNativeIosComposerPlugin, NATIVE_IOS_COMPOSER_CLASS } from './native-ios-composer';
 import { createNativeIosComposerSession } from './native-ios-composer-session';
 import type { NativeIosComposerPlugin, NativeIosComposerState } from './native-ios-composer';
 
@@ -147,6 +147,7 @@ describe('native iOS composer session', () => {
 
     await session.warm();
     session.shutdown(root);
+    session.shutdown(root);
     expect(plugin.dismiss).toHaveBeenCalledTimes(1);
     expect(session.snapshot()).toMatchObject({
       retainCount: 0,
@@ -158,6 +159,26 @@ describe('native iOS composer session', () => {
     await session.warm();
     expect(plugin.present).toHaveBeenCalledTimes(2);
     expect(session.snapshot().warmed).toBe(true);
+  });
+
+  test('web startup shutdown never invokes the unimplemented native plugin', async () => {
+    const failures: string[] = [];
+    const { plugin } = createPlugin();
+    plugin.dismiss = vi.fn(() => getNativeIosComposerPlugin().dismiss().catch((error: Error) => {
+      failures.push(error.message);
+    }));
+    const getPlugin = vi.fn(() => plugin);
+    const session = createNativeIosComposerSession(getPlugin);
+    const root = document.createElement('html');
+    root.classList.add(NATIVE_IOS_COMPOSER_CLASS);
+
+    session.shutdown(root);
+    session.shutdown(root);
+    await vi.runAllTimersAsync();
+
+    expect(failures).toEqual([]);
+    expect(getPlugin).not.toHaveBeenCalled();
+    expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(false);
   });
 
   test('warm is a no-op while the overlay is retained', async () => {

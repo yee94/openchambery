@@ -18,7 +18,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { useVolcengineSpeechStore } from '@/stores/useVolcengineSpeechStore';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { playPcmStream } from '@/lib/voice/pcm-stream';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 interface ServerTTSStatusCache {
@@ -93,6 +95,7 @@ export interface UseServerTTSReturn {
 }
 
 interface SpeakOptions {
+  provider?: 'volcengine';
   /** Voice to use (defaults to coral) */
   voice?: string;
   /** Model to use (defaults to gpt-4o-mini-tts) */
@@ -276,6 +279,7 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       console.log('[useServerTTS] Speaking with voice:', voice, 'options:', options);
 
       // Fetch audio from server
+      const volcengine = options?.provider === 'volcengine' ? useVolcengineSpeechStore.getState() : null;
       const response = await runtimeFetch('/api/tts/speak', {
         method: 'POST',
         headers: {
@@ -295,6 +299,13 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
           apiKey: options?.baseURL ? (openaiCompatibleApiKey || undefined) : (openaiApiKey || undefined),
           // Send custom base URL for OpenAI-compatible servers
           baseURL: options?.baseURL || undefined,
+          ...(volcengine ? {
+            provider: 'volcengine',
+            stream: true,
+            apiKey: volcengine.apiKey,
+            voice: volcengine.voice,
+            resourceId: volcengine.resourceId,
+          } : {}),
         }),
         signal: session.abort.signal,
       });
@@ -306,6 +317,25 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      if (volcengine && response.headers.get('content-type')?.includes('application/x-ndjson')) {
+        await playPcmStream(response, ctx, {
+          signal: session.abort.signal,
+          pitch: options?.pitch ?? 1,
+          volume: options?.volume ?? 1,
+          onStart: () => {
+            if (sessionRef.current !== session) return;
+            setIsPlaying(true);
+            options?.onStart?.();
+          },
+        });
+        if (sessionRef.current === session) {
+          sessionRef.current = null;
+          setIsPlaying(false);
+          options?.onEnd?.();
+        }
+        return;
       }
 
       // Get audio data from response
@@ -382,6 +412,8 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
   }, [stop, currentProviderId, currentModelId, openaiApiKey, openaiCompatibleApiKey]);
 
   // Cleanup on unmount
+  useEffect(() => subscribeRuntimeEndpointChanged(stop), [stop]);
+
   useEffect(() => {
     return () => {
       stop();

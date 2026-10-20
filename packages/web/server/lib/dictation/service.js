@@ -13,6 +13,7 @@ import { rm } from 'fs/promises';
 
 import { DictationWorkerClient, WorkerBackedTranscriptionSession } from './local/worker-client.js';
 import { OpenAICompatibleTranscriptionSession } from './openai-compatible-session.js';
+import { VolcengineTranscriptionSession } from './volcengine-session.js';
 import {
   DEFAULT_LOCAL_STT_MODEL,
   DEFAULT_LOCAL_TTS_MODEL,
@@ -84,6 +85,16 @@ export function createDictationService({ modelsDir }) {
    *           openaiCompatible?: { baseUrl?: string, model?: string, apiKey?: string } }} options
    */
   const createSttSession = async (options = {}) => {
+    if (options.provider === 'volcengine') {
+      const session = new VolcengineTranscriptionSession({ apiKey: options.volcengine?.apiKey, resourceId: options.volcengine?.resourceId });
+      try {
+        await session.connect();
+        return { session };
+      } catch (error) {
+        session.close();
+        return { error: error.message, retryable: false, reasonCode: 'stt_not_configured' };
+      }
+    }
     const provider = options.provider === 'openai-compatible' ? 'openai-compatible' : 'local';
 
     if (provider === 'openai-compatible') {
@@ -159,6 +170,9 @@ export function createDictationService({ modelsDir }) {
    * @param {{ provider?: string, localModel?: string }} [options]
    */
   const getStatus = async (options = {}) => {
+    if (options.provider === 'volcengine') {
+      return { provider: 'volcengine', available: true, models: [], ttsModels: [] };
+    }
     const provider = options.provider === 'openai-compatible' ? 'openai-compatible' : 'local';
     const modelId = resolveLocalModelId(options.localModel);
 

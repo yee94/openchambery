@@ -7,7 +7,8 @@
  * volume for the level meter.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEvent } from '@reactuses/core';
 
 export interface DictationAudioSourceConfig {
     onPcmSegment: (base64Pcm: string) => void;
@@ -21,7 +22,7 @@ export interface DictationAudioSource {
 }
 
 const OUTPUT_RATE = 16000;
-const CHUNK_SAMPLES = OUTPUT_RATE; // ~1s per chunk
+const CHUNK_SAMPLES = OUTPUT_RATE / 5; // 200 ms per chunk for live captions
 
 const getAudioContextCtor = (): typeof AudioContext | null => {
     if (typeof window === 'undefined') {
@@ -135,8 +136,9 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
     }, [config.onPcmSegment, config.onError]);
 
     const graphRef = useRef<CaptureGraph>(emptyGraph());
+    const captureGenerationRef = useRef(0);
 
-    const start = useCallback(async () => {
+    const start = useEvent(async () => {
         if (graphRef.current.started) {
             return;
         }
@@ -154,6 +156,7 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
             throw new Error('AudioContext unavailable');
         }
 
+        const generation = ++captureGenerationRef.current;
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 channelCount: 1,
@@ -163,10 +166,19 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
             },
         });
 
+        if (generation !== captureGenerationRef.current) {
+            stream.getTracks().forEach((track) => track.stop());
+            return;
+        }
         const context = new AudioContextCtor();
         try {
             if (context.state === 'suspended') {
                 await context.resume().catch(() => undefined);
+            }
+            if (generation !== captureGenerationRef.current) {
+                stream.getTracks().forEach((track) => track.stop());
+                await context.close();
+                return;
             }
 
             const source = context.createMediaStreamSource(stream);
@@ -227,9 +239,10 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
             graphRef.current = emptyGraph();
             throw error instanceof Error ? error : new Error(String(error));
         }
-    }, []);
+    });
 
-    const stop = useCallback(async () => {
+    const stop = useEvent(async () => {
+        captureGenerationRef.current += 1;
         const graph = graphRef.current;
         graph.started = false;
         setVolume(0);
@@ -272,7 +285,7 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
         if (graphRef.current === graph) {
             graphRef.current = emptyGraph();
         }
-    }, []);
+    });
 
     useEffect(() => {
         return () => {

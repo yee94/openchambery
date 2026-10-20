@@ -1,4 +1,4 @@
-import { countContinuationToolParts, isModelTextPart } from './assistantMessageLifecycle';
+import { getSortedBodyPartIndex } from './assistantMessageLifecycle';
 import type {
     ChatMessageEntry,
     TurnActivityGroup,
@@ -84,18 +84,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
     // Only the trailing model text can sit after Activity without changing
     // OpenCode's order. Earlier text parts remain at their original positions.
     const lastMessage = input.assistantMessages.at(-1);
-    let bodyPartIndex = -1;
-    if (lastMessage && countContinuationToolParts(lastMessage.parts) === 0) {
-        for (let index = lastMessage.parts.length - 1; index >= 0; index -= 1) {
-            const part = lastMessage.parts[index];
-            if (isModelTextPart(part)) {
-                bodyPartIndex = index;
-                break;
-            } else if (part.type === 'tool' || part.type === 'reasoning' || part.type === 'file' || part.type === 'agent' || part.type === 'subtask') {
-                break;
-            }
-        }
-    }
+    const bodyPartIndex = lastMessage ? getSortedBodyPartIndex(lastMessage.parts) : -1;
 
     input.assistantMessages.forEach((message) => {
         const messageActivity: TurnActivityRecord[] = [];

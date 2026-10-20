@@ -83,6 +83,17 @@ export const isModelTextPart = (part: Part): boolean => {
     return typeof text === 'string' && hasVisibleText(text);
 };
 
+/** The single trailing body part kept outside Activity by sorted presentation. */
+export const getSortedBodyPartIndex = (parts: readonly Part[]): number => {
+    if (countContinuationToolParts(parts) !== 0) return -1;
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+        const part = parts[index];
+        if (isModelTextPart(part)) return index;
+        if (part.type === 'tool' || part.type === 'reasoning' || part.type === 'file' || part.type === 'agent' || part.type === 'subtask') break;
+    }
+    return -1;
+};
+
 /**
  * Confirmed final body: terminal stop plus at least one model text part. An
  * error vetoes confirmation — the loop cannot continue, but the text is

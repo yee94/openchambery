@@ -63,6 +63,12 @@ imperative selection/mutation callers. The store loader now shares Query IO.
 
 ## Architecture
 
+`useVolcengineSpeechStore` owns client speech configuration. Its shared API Key
+is memory-only and excluded from persistence; only TTS resource/speaker IDs are
+persisted. Dictation reads this store once at start rather than subscribing the
+composer to credential edits. Provider selection remains in `useConfigStore`;
+`volcengine` is accepted by the settings bootstrap/persistence contract.
+
 Quota Magpie discovery uses the host's aggregate endpoint and runtime/directory-scoped Query flights.
 The quota store mirrors its results for the existing header, tray, Settings and mobile consumers.
 Dynamic provider IDs are namespaced and have explicit account groups; they never overwrite built-ins.

@@ -194,6 +194,7 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
     // Keyboard shortcut (toggle_dictation): idle -> start recording,
     // recording -> confirm and insert. Dispatched by useKeyboardShortcuts.
     React.useEffect(() => {
+        if (!supported || !dictationEnabled) return;
         const onToggle = () => {
             if (statusRef.current === 'idle') {
                 void startDictation();
@@ -204,7 +205,7 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
         };
         window.addEventListener('openchamber:dictation-toggle', onToggle);
         return () => window.removeEventListener('openchamber:dictation-toggle', onToggle);
-    }, [startDictation, confirmDictation]);
+    }, [supported, dictationEnabled, startDictation, confirmDictation]);
 
     // While recording: Enter confirms (insert), Escape cancels. Capture-phase
     // so the composer's own Enter-to-send never fires underneath the overlay.
