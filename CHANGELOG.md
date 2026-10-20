@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.4-beta.3] - 2026-10-21
+
+### 改进
+
+- 保留语音识别的淡雅叠加光团样式，恢复主光团随音量缩放、明暗变化的幅度，提高声音反馈的明显程度。
+
 ## [2.1.4-beta.2] - 2026-10-21
 
 ### 改进

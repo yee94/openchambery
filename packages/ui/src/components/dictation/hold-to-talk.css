@@ -27,7 +27,7 @@
 .oc-speech-reactor--lilac .oc-speech-light { animation-duration: 8s; animation-delay: -2s; }
 .oc-speech-reactor--mint, .oc-speech-reactor--blush { display: none; }
 .oc-speech-reactor--mid { top: -22px; left: 10%; width: 80%; height: 175px; opacity: .2; }
-.oc-speech-reactor--core { top: -46px; left: -8%; width: 116%; height: 250px; transform: scale(calc(.92 + var(--speech-energy) * .28)); opacity: calc(.48 + var(--speech-energy) * .32); transition: transform 140ms ease-out, opacity 140ms ease-out; }
+.oc-speech-reactor--core { top: -46px; left: -8%; width: 116%; height: 250px; transform: scale(calc(.74 + var(--speech-energy) * .84)); opacity: calc(.1 + var(--speech-energy) * .78); transition: transform 100ms ease-out, opacity 100ms ease-out; }
 .oc-speech-reactor--core .oc-speech-light { animation: none; }
 .oc-speech-content {
     position: absolute;
