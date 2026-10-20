@@ -771,6 +771,42 @@ describe('projectTurnRecords', () => {
         expect(turn?.activitySegments[0]?.parts).toBe(turn?.activityParts);
     });
 
+    test('keeps elapsed time when a compacted step ends at time.streamed without time.completed', () => {
+        // OpenCode 2 compaction publishes the provider-body boundary and never
+        // stamps time.completed. TPS already reads streamed; duration must too.
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1_000 });
+        const summary = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 1_200,
+            finish: 'stop',
+            parts: [{ id: 't1', type: 'text', text: 'checkpoint' } as Part],
+        });
+        (summary.info.time as { streamed?: number }).streamed = 4_200;
+
+        const projection = projectTurnRecords([user, summary]);
+
+        expect(projection.turns[0]?.durationMs).toBe(3_200);
+        expect(projection.turns[0]?.completedAt).toBeUndefined();
+    });
+
+    test('prefers time.completed over time.streamed for turn duration', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1_000 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 1_200,
+            completedAt: 5_000,
+            finish: 'stop',
+            parts: [{ id: 't1', type: 'text', text: 'done' } as Part],
+        });
+        (assistant.info.time as { streamed?: number }).streamed = 3_000;
+
+        expect(projectTurnRecords([user, assistant]).turns[0]?.durationMs).toBe(4_000);
+    });
+
     test('marks turn as compaction when user message has raw compaction part', () => {
         const user = createMessageEntry({
             id: 'u1',

@@ -1884,6 +1884,7 @@ export const dict: Record<I18nKey, string> = {
   'session.githubIntegration.validation.branchAlreadyCheckedOut': 'ブランチはすでにワークツリーでチェックアウトされています',
   'session.githubIntegration.validation.branchAlreadyExists': 'ブランチはすでにローカルに存在します',
   'session.githubIntegration.validation.failed': '検証に失敗しました',
+  'chat.fileReference.notice.binaryExternal': 'このファイルにはアプリ内プレビューがなく、システムのアプリでも開けませんでした。プレビューは開きます。',
   'chat.fileAttachment.toast.attachFailed': 'ファイルの添付に失敗しました',
   'chat.fileAttachment.toast.someFilesSkipped': '一部のファイルがスキップされました:\n{summary}',
   'chat.fileAttachment.toast.vscodePickFailed': 'VS Codeでのファイル選択に失敗しました',

@@ -1869,6 +1869,7 @@ export const dict: Record<I18nKey, string> = {
   "session.githubIntegration.validation.branchAlreadyCheckedOut": "Гілку вже відкрито в worktree",
   "session.githubIntegration.validation.branchAlreadyExists": "Гілка вже існує локально",
   "session.githubIntegration.validation.failed": "Помилка перевірки",
+  "chat.fileReference.notice.binaryExternal": "Цей файл не має попереднього перегляду в застосунку, і системна програма теж не змогла його відкрити. Попередній перегляд усе одно відкриється.",
   "chat.fileAttachment.toast.attachFailed": "Не вдалося прикріпити файл",
   "chat.fileAttachment.toast.someFilesSkipped": "Деякі файли були пропущені:\n{summary}",
   "chat.fileAttachment.toast.vscodePickFailed": "Не вдалося вибрати файли в VS Code",

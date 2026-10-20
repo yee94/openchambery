@@ -1890,6 +1890,7 @@ export const dict: Record<I18nKey, string> = {
   'session.githubIntegration.validation.branchAlreadyCheckedOut': '브랜치가 이미 워크트리에 체크아웃되어 있습니다',
   'session.githubIntegration.validation.branchAlreadyExists': '브랜치가 이미 로컬에 있습니다',
   'session.githubIntegration.validation.failed': '유효성 검사에 실패했습니다',
+  'chat.fileReference.notice.binaryExternal': '이 파일은 앱 안에서 미리볼 수 없고 시스템 앱으로도 열지 못했습니다. 미리보기는 열립니다.',
   'chat.fileAttachment.toast.attachFailed': '첨부 파일 실패',
   'chat.fileAttachment.toast.someFilesSkipped': '일부 파일을 건너뛰었습니다:\n{summary}',
   'chat.fileAttachment.toast.vscodePickFailed': 'VS Code에서 파일 선택에 실패했습니다',

@@ -1869,6 +1869,7 @@ export const dict: Record<I18nKey, string> = {
   "session.githubIntegration.validation.branchAlreadyCheckedOut": "La rama ya está en uso en un worktree",
   "session.githubIntegration.validation.branchAlreadyExists": "La rama ya existe localmente",
   "session.githubIntegration.validation.failed": "No se pudo validar",
+  "chat.fileReference.notice.binaryExternal": "Este archivo no tiene vista previa en la app y la app del sistema no pudo abrirlo. Se abre la vista previa de todos modos.",
   "chat.fileAttachment.toast.attachFailed": "No se pudo adjuntar el archivo",
   "chat.fileAttachment.toast.someFilesSkipped": "Algunos archivos se omitieron:\n{summary}",
   "chat.fileAttachment.toast.vscodePickFailed": "No se pudieron seleccionar archivos en VS Code",
