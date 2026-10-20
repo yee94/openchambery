@@ -120,7 +120,7 @@ export const resolveTurnActivityExpandedByDefault = (input: {
     );
 };
 
-const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
+const resolveHistoryVirtualizationThreshold = (): number => isMobileSurfaceRuntime() ? 5 : 12;
 const TIMELINE_CACHE_LIMIT = 16;
 
 const sameKeys = (a: readonly string[] | undefined, b: readonly string[] | undefined): boolean => {
@@ -474,6 +474,7 @@ type ViewportMessageAnchor = {
 
 type VirtualizationTransitionAnchor = ViewportMessageAnchor & {
     entryKey: string;
+    entryStart: number;
     attempts: number;
 };
 
@@ -515,14 +516,16 @@ const captureVirtualizationTransitionAnchor = (
     }
 
     const message = findMessageElement(content, messageAnchor.messageId);
-    const entryKey = message?.closest<HTMLElement>('[data-turn-entry]')?.dataset.turnEntry;
-    if (!entryKey) {
+    const entry = message?.closest<HTMLElement>('[data-turn-entry]');
+    const entryKey = entry?.dataset.turnEntry;
+    if (!entryKey || !entry) {
         return null;
     }
 
     return {
         ...messageAnchor,
         entryKey,
+        entryStart: entry.getBoundingClientRect().top - content.getBoundingClientRect().top,
         attempts: 0,
     };
 };
@@ -1448,11 +1451,11 @@ type StaticHistoryListProps = {
 
 const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, contentRef, scrollRef, registerTanstackVirtualizer, virtualizerKey, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, activityRenderMode, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
     const [displayEntries, setDisplayEntries] = React.useState(entries);
-    const isTanstack = engine === 'tanstack' && displayEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
+    const isTanstack = engine === 'tanstack' && displayEntries.length >= resolveHistoryVirtualizationThreshold();
     // A prepend can move this list across the tiny-history virtualization
-    // threshold. Capture from the old normal-flow DOM during render, then let
-    // the new virtualizer mount that same keyed entry before restoring its exact
-    // message offset in a layout effect.
+    // threshold. Capture from the old normal-flow DOM during render, then seed
+    // the virtual range at that keyed entry without replacing its mounted DOM.
+    // The layout effect compensates the remaining measured offset.
     const committedEngineRef = React.useRef<HistoryEngine>(engine);
     const virtualizationTransitionAnchorRef = React.useRef<VirtualizationTransitionAnchor | null>(null);
     const [virtualizationTransitionTick, retryVirtualizationTransitionAnchor] = React.useReducer(
@@ -1567,6 +1570,10 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     ));
 
     const sizeContainerRef = React.useRef<HTMLDivElement | null>(null);
+    const setHistoryRoot = useEvent((element: HTMLDivElement | null) => {
+        sizeContainerRef.current = element;
+        contentRef.current = element;
+    });
     const historyReadingAnchorRef = React.useRef<ViewportMessageAnchor | null>(null);
     const previousHistoryAnchorTokenRef = React.useRef(historyAnchorToken);
     // A held prepend must use the reading position at adoption, after the
@@ -1610,7 +1617,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     }
     // Core re-reads `initialOffset` every time it acquires a scroll element,
     // which includes the moment `enabled` flips on because the history grew
-    // past MESSAGE_LIST_VIRTUALIZE_THRESHOLD. Only a list that mounted already
+    // past the surface's virtualization threshold. Only a list that mounted already
     // virtualized is a cold open allowed to start at the newest message; a
     // mid-session flip must adopt the live position, or the load that crosses
     // the threshold teleports a viewport reading old history to the bottom.
@@ -1644,9 +1651,16 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
             estimatedEntrySizeRef.current,
         );
     }
+    // A zero initial viewport produces an empty range on the activation commit,
+    // unmounting every old row before ResizeObserver reports the actual size.
+    const initialViewportRect = React.useMemo(() => isTanstack ? {
+        width: scrollRef?.current?.clientWidth ?? 0,
+        height: scrollRef?.current?.clientHeight ?? 0,
+    } : undefined, [isTanstack, scrollRef]);
     const tanstackVirtualizer = useTanstackVirtualizer<HTMLDivElement, HTMLDivElement>({
         count: renderEntries.length,
         enabled: isTanstack,
+        initialRect: initialViewportRect,
         getScrollElement: () => scrollRef?.current ?? null,
         estimateSize: () => estimatedEntrySizeRef.current,
         overscan: historyOverscan,
@@ -1691,7 +1705,10 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
                 );
                 return Math.max(0, total - (scrollRef?.current?.clientHeight ?? 0));
             }
-            return scrollRef?.current?.scrollTop ?? 0;
+            const anchor = virtualizationTransitionAnchorRef.current;
+            const seededAnchor = anchor && measurementSeedRef.current?.find((item) => item.key === anchor.entryKey);
+            return (scrollRef?.current?.scrollTop ?? 0)
+                + (seededAnchor && anchor ? seededAnchor.start - anchor.entryStart : 0);
         },
         initialMeasurementsCache: measurementSeedRef.current,
     });
@@ -1802,10 +1819,20 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     // Streaming-tail Markdown is already painted. When that turn remounts into
     // history it must stay hydrated in this same render — an after-paint seed
     // would flash the deferred skeleton over finished content.
-    const activeHydratedMarkdownEntryKeys = ensureNewestMarkdownKeyHydrated(
+    let activeHydratedMarkdownEntryKeys = ensureNewestMarkdownKeyHydrated(
         hydratedMarkdownEntryKeys,
         entryKeys,
     );
+    // Normal-flow rows already painted real Markdown. Enabling virtualization
+    // must not replace their bodies with deferred hydration placeholders.
+    for (const key of unvirtualizedSizesRef.current.keys()) {
+        if (!activeHydratedMarkdownEntryKeys.has(key)) {
+            if (activeHydratedMarkdownEntryKeys === hydratedMarkdownEntryKeys) {
+                activeHydratedMarkdownEntryKeys = new Set(activeHydratedMarkdownEntryKeys);
+            }
+            activeHydratedMarkdownEntryKeys.add(key);
+        }
+    }
     if (activeHydratedMarkdownEntryKeys !== hydratedMarkdownEntryKeys) {
         setHydratedMarkdownEntryKeys(activeHydratedMarkdownEntryKeys);
     }
@@ -1926,16 +1953,18 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
 
     if (!isTanstack) {
         return (
-            <div ref={contentRef} className="relative w-full">
-                {renderEntries.map((entry) => (
-                    <div
-                        key={entry.key}
-                        data-turn-entry={entry.key}
-                        className="oc-chat-message-layout-boundary"
-                    >
-                        {renderEntry(entry)}
-                    </div>
-                ))}
+            <div ref={setHistoryRoot} className="relative w-full">
+                <div>
+                    {renderEntries.map((entry) => (
+                        <div
+                            key={entry.key}
+                            data-turn-entry={entry.key}
+                            className="oc-chat-message-layout-boundary"
+                        >
+                            {renderEntry(entry)}
+                        </div>
+                    ))}
+                </div>
             </div>
         );
     }
@@ -1961,7 +1990,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         // below it instead of painting through it.
         return (
             <div
-                ref={sizeContainerRef}
+                ref={setHistoryRoot}
                 className="relative flow-root w-full"
                 style={{ minHeight: historyFrameStyle.minHeight }}
             >
@@ -2623,7 +2652,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     // All surfaces virtualize with @tanstack/react-virtual (see the engine
     // note at the top of the file). An unvirtualized list is kept only for
     // tiny histories where windowing overhead is not worth it.
-    const shouldVirtualizeHistory = historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
+    const shouldVirtualizeHistory = historyEntries.length >= resolveHistoryVirtualizationThreshold();
     const currentHistoryVirtualizationRef = React.useRef(shouldVirtualizeHistory);
     syncCurrentHistoryVirtualization(currentHistoryVirtualizationRef, shouldVirtualizeHistory);
     const historyEngine: HistoryEngine = shouldVirtualizeHistory ? 'tanstack' : 'none';
@@ -2662,7 +2691,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         generation: pinRevealGeneration,
         root: tanstackPinRoot,
         relevantKeys: tanstackPinKeys,
-        enabled: !legendTimelineEnabled && allEntries.length > 0,
+        // Trial without the legacy whole-transcript visibility gate.
+        enabled: false,
         initiallyRevealed: initialPinRevealComplete,
     });
     const tanstackPinStyle = mergeMarkdownPinRevealStyle(undefined, tanstackPinHidden);

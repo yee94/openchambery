@@ -72,6 +72,10 @@ describe('virtual list scroll ownership', () => {
             expect(top).toBe(600);
             expect(rawWrites).toBe(0);
             expect(api.scrollRef.current!.style.overflow).toBe('');
+            scrollToBottom.mockClear();
+            await act(async () => api.goToBottom('instant', { reveal: false }));
+            expect(scrollToBottom).toHaveBeenCalledExactlyOnceWith({ behavior: 'auto', reveal: false });
+            expect(top).toBe(600);
             if (enabled) {
                 scrollToBottom.mockClear();
                 await act(async () => { height += 100; api.notifyContentChange('text'); });

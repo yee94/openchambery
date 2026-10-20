@@ -459,15 +459,13 @@ describe('runtime default list engine', () => {
 });
 
 describe('cold-start markdown pin reveal', () => {
-    test('LegendList and TanStack both hide until seeded markdown reports ready', () => {
+    test('LegendList and TanStack disable the legacy whole-transcript visibility gate', () => {
         const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
         const timelineSource = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
-        expect(messageListSource).toContain('useMarkdownPinReveal');
-        expect(messageListSource).toContain('setPinRevealGeneration((current) => current + 1)');
-        expect(messageListSource).toContain('pinRevealGeneration={pinRevealGeneration}');
-        expect(timelineSource).toContain('useMarkdownPinReveal');
-        expect(timelineSource).toContain('mergeMarkdownPinRevealStyle(style, pinHidden)');
-        expect(timelineSource).toContain('resolveMarkdownPinRevealKeys');
+        for (const source of [messageListSource, timelineSource]) {
+            const invocation = source.slice(source.indexOf('= useMarkdownPinReveal({'));
+            expect(invocation.slice(0, invocation.indexOf('});'))).toContain('enabled: false');
+        }
     });
 });
 

@@ -392,6 +392,8 @@ export type SessionTranscriptFetcher = (input: {
   directory: string
   sessionID: string
   limit: number
+  /** Explicit native message page size, independent of legacy turn budgets. */
+  pageSize?: number
   before?: string
   signal: AbortSignal
 }) => Promise<TranscriptTransportPage>
@@ -445,6 +447,7 @@ export function getPreviousTranscriptPageParam(
 }
 
 export type SessionTranscriptQueryOptionsInput = SessionTranscriptQueryParams & {
+  historyPageSize?: number
   fetcher: SessionTranscriptFetcher
   transport?: string
   generation?: number
@@ -470,6 +473,7 @@ function sessionTranscriptInfiniteQueryOptions(
       directory: args.directory,
       sessionID: args.sessionID,
       limit: args.limit,
+      ...(args.before && input.historyPageSize !== undefined ? { pageSize: input.historyPageSize } : {}),
       before: args.before,
       signal: args.signal,
     })
@@ -483,7 +487,7 @@ function sessionTranscriptInfiniteQueryOptions(
     ): Promise<TranscriptPage> => {
       assertRuntimeCurrent(transport, generation, probe)
       const before = context.pageParam?.trim() || undefined
-      const limit = before ? historyLimit : initialLimit
+      const limit = before ? (input.historyPageSize ?? historyLimit) : initialLimit
       const purpose = before ? "prepend" : "initial"
       const httpPage = await ensureSessionMessagePage(
         { directory, sessionID, limit, before },
@@ -532,7 +536,7 @@ export type SessionTranscriptController = {
   /** Imperative InfiniteQueryObserver for initial/previous-page control. */
   readonly observer: InfiniteQueryObserver<TranscriptPage>
   ensureInitial: () => Promise<SessionTranscriptData>
-  fetchPreviousPage: () => Promise<SessionTranscriptData>
+  fetchPreviousPage: (pageSize?: number) => Promise<SessionTranscriptData>
   getData: () => SessionTranscriptData | undefined
   subscribe: (
     listener: (data: SessionTranscriptData | undefined) => void,
@@ -545,7 +549,7 @@ export function createSessionTranscriptController(
 ): SessionTranscriptController {
   const client = input.client ?? defaultQueryClient
   const options = sessionTranscriptInfiniteQueryOptions({ ...input, client })
-  const observer = new InfiniteQueryObserver(client, {
+  const observerOptions = {
     ...options,
     structuralSharing: (
       oldData: unknown,
@@ -556,7 +560,8 @@ export function createSessionTranscriptController(
         newData as SessionTranscriptData | undefined,
         input.sessionID,
       ),
-  })
+  }
+  const observer = new InfiniteQueryObserver(client, observerOptions)
 
   const ensureInitial = async (): Promise<SessionTranscriptData> => {
     const existing = observer.getCurrentResult().data as SessionTranscriptData | undefined
@@ -578,7 +583,7 @@ export function createSessionTranscriptController(
     )
   }
 
-  const fetchPreviousPage = async (): Promise<SessionTranscriptData> => {
+  const runPreviousPage = async (): Promise<SessionTranscriptData> => {
     const prior = observer.getCurrentResult().data as SessionTranscriptData | undefined
     try {
       const result = await observer.fetchPreviousPage({ cancelRefetch: false })
@@ -615,6 +620,23 @@ export function createSessionTranscriptController(
       }
       throw error
     }
+  }
+
+  let previousPageFlight: Promise<SessionTranscriptData> | undefined
+  const fetchPreviousPage = (pageSize?: number): Promise<SessionTranscriptData> => {
+    if (previousPageFlight) return previousPageFlight
+    if (pageSize !== undefined && (!Number.isSafeInteger(pageSize) || pageSize < 1)) {
+      return Promise.reject(new Error("history page size must be a positive integer"))
+    }
+    if (pageSize !== undefined) {
+      const requestOptions = sessionTranscriptInfiniteQueryOptions({ ...input, client, historyPageSize: pageSize })
+      observer.setOptions({ ...observerOptions, queryFn: requestOptions.queryFn })
+    }
+    previousPageFlight = runPreviousPage().finally(() => {
+      if (pageSize !== undefined) observer.setOptions(observerOptions)
+      previousPageFlight = undefined
+    })
+    return previousPageFlight
   }
 
   return {

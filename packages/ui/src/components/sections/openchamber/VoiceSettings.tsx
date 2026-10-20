@@ -853,18 +853,23 @@ export const VoiceSettings: React.FC = () => {
 
                             {/* OpenAI API Key */}
                             {voiceProvider === 'openai' && (
-                                <div className="py-1.5">
-                                    <span className={cn("typography-ui-label text-foreground", !isOpenAIAvailable && "text-[var(--status-error)]")}>
-                                        {t('settings.voice.page.field.apiKey')}
-                                    </span>
-                                    <span className={cn("typography-meta ml-2", !isOpenAIAvailable ? "text-[var(--status-error)]/80" : "text-muted-foreground")}>
-                                        {isOpenAIAvailable && !openaiApiKey
-                                          ? t('settings.voice.page.field.apiKeyHintUsingConfig')
-                                          : !isOpenAIAvailable
-                                            ? t('settings.voice.page.field.apiKeyHintRequired')
-                                            : t('settings.voice.page.field.apiKeyHintProvide')}
-                                    </span>
-                                    <div className="relative ml-auto mt-1.5 max-w-xs">
+                                <SettingsRow
+                                    label={(
+                                        <span className={cn(!isOpenAIAvailable && 'text-[var(--status-error)]')}>
+                                            {t('settings.voice.page.field.apiKey')}
+                                        </span>
+                                    )}
+                                    description={(
+                                        <span className={cn(!isOpenAIAvailable && 'text-[var(--status-error)]/80')}>
+                                            {isOpenAIAvailable && !openaiApiKey
+                                              ? t('settings.voice.page.field.apiKeyHintUsingConfig')
+                                              : !isOpenAIAvailable
+                                                ? t('settings.voice.page.field.apiKeyHintRequired')
+                                                : t('settings.voice.page.field.apiKeyHintProvide')}
+                                        </span>
+                                    )}
+                                >
+                                    <div className="relative w-full">
                                         <Input
                                             type="password"
                                             value={openaiApiKey}
@@ -882,20 +887,21 @@ export const VoiceSettings: React.FC = () => {
                                             </button>
                                         )}
                                     </div>
-                                </div>
+                                </SettingsRow>
                             )}
 
                             {/* OpenAI-compatible custom server */}
                             {voiceProvider === 'openai-compatible' && (
-                                <div className="py-1.5 space-y-2">
-                                    <div>
-                                        <span className={cn("typography-ui-label text-foreground", !openaiCompatibleUrl.trim() && "text-[var(--status-error)]")}>
-                                            {t('settings.voice.page.field.serverUrl')}
-                                        </span>
-                                        <span className="typography-meta ml-2 text-muted-foreground">
-                                            {t('settings.voice.page.field.serverUrlHint')}
-                                        </span>
-                                        <div className="relative ml-auto mt-1.5 max-w-xs">
+                                <>
+                                    <SettingsRow
+                                        label={(
+                                            <span className={cn(!openaiCompatibleUrl.trim() && 'text-[var(--status-error)]')}>
+                                                {t('settings.voice.page.field.serverUrl')}
+                                            </span>
+                                        )}
+                                        description={t('settings.voice.page.field.serverUrlHint')}
+                                    >
+                                        <div className="relative w-full">
                                             <Input
                                                 type="text"
                                                 value={openaiCompatibleUrl}
@@ -913,13 +919,12 @@ export const VoiceSettings: React.FC = () => {
                                                 </button>
                                             )}
                                         </div>
-                                    </div>
-                                    <div>
-                                        <span className="typography-ui-label text-foreground">API Key</span>
-                                        <span className="typography-meta ml-2 text-muted-foreground">
-                                            Optional
-                                        </span>
-                                        <div className="relative ml-auto mt-1.5 max-w-xs">
+                                    </SettingsRow>
+                                    <SettingsRow
+                                        label="API Key"
+                                        description="Optional"
+                                    >
+                                        <div className="relative w-full">
                                             <Input
                                                 type="password"
                                                 value={openaiCompatibleApiKey}
@@ -937,10 +942,9 @@ export const VoiceSettings: React.FC = () => {
                                                 </button>
                                             )}
                                         </div>
-                                    </div>
-                                    <div>
-                                        <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.model')}</span>
-                                        <div className="relative ml-auto mt-1.5 max-w-xs">
+                                    </SettingsRow>
+                                    <SettingsRow label={t('settings.voice.page.field.model')}>
+                                        <div className="relative w-full">
                                             <Input
                                                 type="text"
                                                 value={openaiCompatibleTtsModel}
@@ -949,14 +953,13 @@ export const VoiceSettings: React.FC = () => {
                                                 className="w-full"
                                             />
                                         </div>
-                                    </div>
-                                    <div>
-                                        <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.voice')}</span>
-                                        <span className="typography-meta ml-2 text-muted-foreground">
-                                            {t('settings.voice.page.field.voiceIdentifierHint')}
-                                        </span>
-                                        <div className="mt-1.5 flex items-center justify-end gap-2">
-                                            <div className="relative max-w-xs flex-1">
+                                    </SettingsRow>
+                                    <SettingsRow
+                                        label={t('settings.voice.page.field.voice')}
+                                        description={t('settings.voice.page.field.voiceIdentifierHint')}
+                                    >
+                                        <div className="flex w-full items-center gap-2">
+                                            <div className="relative min-w-0 flex-1">
                                                 <Input
                                                     type="text"
                                                     value={openaiCompatibleVoice}
@@ -969,8 +972,8 @@ export const VoiceSettings: React.FC = () => {
                                                 {isCompatiblePreviewPlaying ? <Icon name="stop" className="w-3.5 h-3.5" /> : <Icon name="play" className="w-3.5 h-3.5" />}
                                             </Button>
                                         </div>
-                                    </div>
-                                </div>
+                                    </SettingsRow>
+                                </>
                             )}
 
                             {/* Local (Kokoro) TTS model status */}
@@ -1180,15 +1183,16 @@ export const VoiceSettings: React.FC = () => {
                         )}
 
                         {sttProvider === 'openai-compatible' && (
-                            <div className="oc-settings-group-row space-y-2">
-                                <div>
-                                    <span className={cn("typography-ui-label text-foreground", !sttServerUrl.trim() && "text-[var(--status-error)]")}>
-                                        {t('settings.voice.page.field.serverUrl')}
-                                    </span>
-                                    <span className="typography-meta ml-2 text-muted-foreground">
-                                        {t('settings.voice.page.field.sttServerUrlHint')}
-                                    </span>
-                                    <div className="relative ml-auto mt-1.5 max-w-xs">
+                            <>
+                                <SettingsRow
+                                    label={(
+                                        <span className={cn(!sttServerUrl.trim() && 'text-[var(--status-error)]')}>
+                                            {t('settings.voice.page.field.serverUrl')}
+                                        </span>
+                                    )}
+                                    description={t('settings.voice.page.field.sttServerUrlHint')}
+                                >
+                                    <div className="relative w-full">
                                         <Input
                                             type="text"
                                             value={sttServerUrl}
@@ -1206,13 +1210,9 @@ export const VoiceSettings: React.FC = () => {
                                             </button>
                                         )}
                                     </div>
-                                </div>
-                                <div>
-                                    <span className="typography-ui-label text-foreground">API Key</span>
-                                    <span className="typography-meta ml-2 text-muted-foreground">
-                                        Optional
-                                    </span>
-                                    <div className="relative ml-auto mt-1.5 max-w-xs">
+                                </SettingsRow>
+                                <SettingsRow label="API Key" description="Optional">
+                                    <div className="relative w-full">
                                         <Input
                                             type="password"
                                             value={sttApiKey}
@@ -1230,10 +1230,9 @@ export const VoiceSettings: React.FC = () => {
                                             </button>
                                         )}
                                     </div>
-                                </div>
-                                <div>
-                                    <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.model')}</span>
-                                    <div className="relative ml-auto mt-1.5 max-w-xs">
+                                </SettingsRow>
+                                <SettingsRow label={t('settings.voice.page.field.model')}>
+                                    <div className="relative w-full">
                                         <Input
                                             type="text"
                                             value={sttModel}
@@ -1242,13 +1241,12 @@ export const VoiceSettings: React.FC = () => {
                                             className="w-full"
                                         />
                                     </div>
-                                </div>
-                                <div>
-                                    <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.language')}</span>
-                                    <span className="typography-meta ml-2 text-muted-foreground">
-                                        {t('settings.voice.page.field.sttLanguageHint')}
-                                    </span>
-                                    <div className="relative ml-auto mt-1.5 max-w-[8rem]">
+                                </SettingsRow>
+                                <SettingsRow
+                                    label={t('settings.voice.page.field.language')}
+                                    description={t('settings.voice.page.field.sttLanguageHint')}
+                                >
+                                    <div className="relative w-full">
                                         <Input
                                             type="text"
                                             value={sttLanguage}
@@ -1257,8 +1255,8 @@ export const VoiceSettings: React.FC = () => {
                                             className="w-full"
                                         />
                                     </div>
-                                </div>
-                            </div>
+                                </SettingsRow>
+                            </>
                         )}
 
                         </>)}

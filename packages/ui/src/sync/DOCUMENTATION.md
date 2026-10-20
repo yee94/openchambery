@@ -1,5 +1,9 @@
 # Sync architecture, event handling & store update rules
 
+## Per-request history message budget
+
+`fetchTranscriptPreviousPage(directory, sessionID, pageSize?)` forwards an optional native message count through the repository and InfiniteQuery controller to the production projection API's `limit`. PC post-paint warmup and load-earlier requests use 50 messages per page; mobile history keeps the default native page size of 20. This override is distinct from the legacy turn budget, which native projection does not consume. Concurrent previous-page callers share the active flight and its original budget. The controller restores its normal query options after success or failure; transport-page cache keys include the effective limit, while canonical transcript identity remains runtime/directory/session scoped. A large page is merged atomically through the same pagination and viewport-preservation path, retaining unchanged message and part references.
+
 ## Global content search
 
 The Host now owns the production index; see `packages/web/server/lib/content-search/DOCUMENTATION.md`. Search calls `/api/openchamber/content-search` without a directory restriction and receives session titles and directories from the server. Opening a conversation is not required. The palette displays thirty-day coverage, indexing progress and partial failures, and refreshes queries while open to discover background writes. Runtime-scoped Query keys prevent cross-host result reuse.

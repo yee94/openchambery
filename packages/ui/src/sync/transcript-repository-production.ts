@@ -192,6 +192,7 @@ export async function fetchProductionTranscriptTransportPage(input: {
   directory: string
   sessionID: string
   limit: number
+  pageSize?: number
   before?: string
   signal: AbortSignal
   purpose?: SessionMessagePagePurpose
@@ -233,6 +234,7 @@ async function fetchProductionTranscriptPageInternal(
   const projection = await fetchSessionProjectionPage({
     sessionID: input.sessionID,
     directory: input.directory,
+    limit: input.pageSize,
     ...(input.before ? { cursor: input.before } : {}),
     signal: input.signal,
   })
@@ -363,6 +365,7 @@ export function mountProductionTranscriptStack(
         directory: args.directory,
         sessionID: args.sessionID,
         limit: args.limit,
+        pageSize: args.pageSize,
         before: args.before,
         signal: args.signal,
       }),

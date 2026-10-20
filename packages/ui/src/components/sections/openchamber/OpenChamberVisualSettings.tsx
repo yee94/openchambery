@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import type { ThemeMode } from '@/types/theme';
 import { useUIStore } from '@/stores/useUIStore';
-import { useMessageQueueStore, type FollowUpBehavior } from '@/stores/messageQueueStore';
+import { useMessageQueueStore } from '@/stores/messageQueueStore';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -29,10 +29,6 @@ import { useI18n, type Locale } from '@/lib/i18n';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSidebarBrandStore } from '@/stores/useSidebarBrandStore';
 import { normalizeMobileKeyboardMode, supportsMobileKeyboardResizeContent, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
-import {
-    setDirectoryShowHidden,
-    useDirectoryShowHidden,
-} from '@/lib/directoryShowHidden';
 import {
     SettingsField,
     SettingsGroup,
@@ -212,8 +208,8 @@ const THEME_MODE_OPTIONS: Array<{ value: ThemeMode; labelKey: string }> = [
 const DIFF_LAYOUT_OPTIONS: Option<'dynamic' | 'inline' | 'side-by-side'>[] = [
     {
         id: 'dynamic',
-        labelKey: 'settings.openchamber.visual.option.diffLayout.dynamic.label',
-        descriptionKey: 'settings.openchamber.visual.option.diffLayout.dynamic.description',
+        labelKey: 'settings.openchamber.visual.option.diffLayout.auto.label',
+        descriptionKey: 'settings.openchamber.visual.option.diffLayout.auto.description',
     },
     {
         id: 'inline',
@@ -265,22 +261,20 @@ type PwaInstallNameWindow = Window & {
     __OPENCHAMBER_UPDATE_PWA_MANIFEST__?: () => void;
 };
 
+const FOLLOW_UP_BEHAVIOR_OPTIONS: Option<'steer' | 'queue'>[] = [
+    {
+        id: 'steer',
+        labelKey: 'settings.openchamber.visual.option.followUpBehavior.steer.label',
+    },
+    {
+        id: 'queue',
+        labelKey: 'settings.openchamber.visual.option.followUpBehavior.queue.label',
+    },
+];
+
 const normalizePwaOrientation = (value: unknown): 'system' | 'portrait' | 'landscape' => {
     return value === 'portrait' || value === 'landscape' ? value : 'system';
 };
-
-const USER_MESSAGE_RENDERING_OPTIONS: Option<'markdown' | 'plain'>[] = [
-    {
-        id: 'markdown',
-        labelKey: 'settings.openchamber.visual.option.userMessageRendering.markdown.label',
-        descriptionKey: 'settings.openchamber.visual.option.userMessageRendering.markdown.description',
-    },
-    {
-        id: 'plain',
-        labelKey: 'settings.openchamber.visual.option.userMessageRendering.plain.label',
-        descriptionKey: 'settings.openchamber.visual.option.userMessageRendering.plain.description',
-    },
-];
 
 const CHAT_RENDER_MODE_OPTIONS: Option<'sorted' | 'live'>[] = [
     {
@@ -310,19 +304,6 @@ const MESSAGE_STREAM_TRANSPORT_OPTIONS: Option<'auto' | 'ws' | 'sse'>[] = [
         id: 'sse',
         labelKey: 'settings.openchamber.visual.option.messageTransport.sse.label',
         descriptionKey: 'settings.openchamber.visual.option.messageTransport.sse.description',
-    },
-];
-
-const ACTIVITY_RENDER_MODE_OPTIONS: Option<'collapsed' | 'summary'>[] = [
-    {
-        id: 'collapsed',
-        labelKey: 'settings.openchamber.visual.option.activityRenderMode.collapsed.label',
-        descriptionKey: 'settings.openchamber.visual.option.activityRenderMode.collapsed.description',
-    },
-    {
-        id: 'summary',
-        labelKey: 'settings.openchamber.visual.option.activityRenderMode.summary.label',
-        descriptionKey: 'settings.openchamber.visual.option.activityRenderMode.summary.description',
     },
 ];
 
@@ -360,22 +341,7 @@ const WEEK_START_OPTIONS: Option<'auto' | 'monday' | 'sunday'>[] = [
     },
 ];
 
-const FOLLOW_UP_BEHAVIOR_OPTIONS: Option<FollowUpBehavior>[] = [
-    {
-        id: 'steer',
-        labelKey: 'settings.openchamber.visual.option.followUpBehavior.steer.label',
-    },
-    {
-        id: 'queue',
-        labelKey: 'settings.openchamber.visual.option.followUpBehavior.queue.label',
-    },
-];
-
-const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' => {
-    return mode === 'markdown' ? 'markdown' : 'plain';
-};
-
-type VisibleSetting = 'questionAutoDelegate' | 'sessionAssist' | 'sessionGoal' | 'theme' | 'sidebarBrand' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'iosNativeUi' | 'fontSize' | 'codeFontSize' | 'terminalFontSize' | 'editorFontSize' | 'spacing' | 'inputBarOffset' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'promptNavigatorEnabled' | 'wideChatLayout' | 'codeBlockLineWrap' | 'splitAssistantMessageActions' | 'showAssistantTps' | 'subagentReadOnlyBanner' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'fileViewerPreview' | 'reasoning' | 'showToolFileIcons' | 'showTurnChangedFiles' | 'showSubagentTaskDetails' | 'expandedTools' | 'followUpBehavior' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'expandedEditorToolbar';
+type VisibleSetting = 'questionAutoDelegate' | 'sessionAssist' | 'sessionGoal' | 'theme' | 'sidebarBrand' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'iosNativeUi' | 'fontSize' | 'codeFontSize' | 'terminalFontSize' | 'editorFontSize' | 'spacing' | 'inputBarOffset' | 'chatRenderMode' | 'messageTransport' | 'collapsibleUserMessages' | 'splitAssistantMessageActions' | 'showAssistantTps' | 'subagentReadOnlyBanner' | 'diffLayout' | 'mobileStatusBar' | 'reasoning' | 'showSubagentTaskDetails' | 'followUpBehavior' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'expandedEditorToolbar';
 
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
@@ -390,7 +356,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const { isMobile: deviceIsMobile } = useDeviceInfo();
     const isMobile = mobile ?? deviceIsMobile;
     const { browserTab } = usePwaDetection();
-    const directoryShowHidden = useDirectoryShowHidden();
     const showReasoningTraces = useUIStore(state => state.showReasoningTraces);
     const sessionTitleRefreshEnabled = useUIStore(state => state.sessionTitleRefreshEnabled);
     const setSessionTitleRefreshEnabled = useUIStore(state => state.setSessionTitleRefreshEnabled);
@@ -404,26 +369,14 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const collapsibleThinkingBlocks = useUIStore(state => state.collapsibleThinkingBlocks);
     const setCollapsibleThinkingBlocks = useUIStore(state => state.setCollapsibleThinkingBlocks);
 
-    const userMessageRenderingMode = useUIStore(state => state.userMessageRenderingMode);
-    const setUserMessageRenderingMode = useUIStore(state => state.setUserMessageRenderingMode);
     const collapsibleUserMessages = useUIStore(state => state.collapsibleUserMessages);
     const setCollapsibleUserMessages = useUIStore(state => state.setCollapsibleUserMessages);
-    const stickyUserHeader = useUIStore(state => state.stickyUserHeader);
-    const promptNavigatorEnabled = useUIStore(state => state.promptNavigatorEnabled);
-    const setStickyUserHeader = useUIStore(state => state.setStickyUserHeader);
-    const setPromptNavigatorEnabled = useUIStore(state => state.setPromptNavigatorEnabled);
     const expandedEditorToolbar = useUIStore(state => state.expandedEditorToolbar);
     const setExpandedEditorToolbar = useUIStore(state => state.setExpandedEditorToolbar);
     const iosNativeUiEnabled = useIosNativeUiStore((state) => state.enabled);
     const setIosNativeUiEnabled = useIosNativeUiStore((state) => state.setEnabled);
-    const wideChatLayoutEnabled = useUIStore(state => state.wideChatLayoutEnabled);
-    const setWideChatLayoutEnabled = useUIStore(state => state.setWideChatLayoutEnabled);
-    const codeBlockLineWrap = useUIStore(state => state.codeBlockLineWrap);
-    const setCodeBlockLineWrap = useUIStore(state => state.setCodeBlockLineWrap);
     const chatRenderMode = useUIStore(state => state.chatRenderMode);
     const setChatRenderMode = useUIStore(state => state.setChatRenderMode);
-    const activityRenderMode = useUIStore(state => state.activityRenderMode);
-    const setActivityRenderMode = useUIStore(state => state.setActivityRenderMode);
     const fontSize = useUIStore(state => state.fontSize);
     const setFontSize = useUIStore(state => state.setFontSize);
     const codeFontSize = useUIStore(state => state.codeFontSize);
@@ -454,12 +407,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setPersistChatDraft = useUIStore(state => state.setPersistChatDraft);
     const inputSpellcheckEnabled = useUIStore(state => state.inputSpellcheckEnabled);
     const setInputSpellcheckEnabled = useUIStore(state => state.setInputSpellcheckEnabled);
-    const showToolFileIcons = useUIStore(state => state.showToolFileIcons);
-    const setShowToolFileIcons = useUIStore(state => state.setShowToolFileIcons);
-    const showTurnChangedFiles = useUIStore(state => state.showTurnChangedFiles);
-    const setShowTurnChangedFiles = useUIStore(state => state.setShowTurnChangedFiles);
-    const showExpandedBashTools = useUIStore(state => state.showExpandedBashTools);
-    const setShowExpandedBashTools = useUIStore(state => state.setShowExpandedBashTools);
     const showSubagentTaskDetails = useUIStore(state => state.showSubagentTaskDetails);
     const setShowSubagentTaskDetails = useUIStore(state => state.setShowSubagentTaskDetails);
     const timeFormatPreference = useUIStore(state => state.timeFormatPreference);
@@ -477,8 +424,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const messageStreamTransport = useConfigStore((state) => state.settingsMessageStreamTransport);
     const setMessageStreamTransport = useConfigStore((state) => state.setSettingsMessageStreamTransport);
     const effectiveMessageStreamTransport = messageStreamTransport;
-    const settingsDefaultFileViewerPreview = useConfigStore((state) => state.settingsDefaultFileViewerPreview);
-    const setSettingsDefaultFileViewerPreview = useConfigStore((state) => state.setSettingsDefaultFileViewerPreview);
     const isSettingsDialogOpen = useUIStore(state => state.isSettingsDialogOpen);
     const {
         themeMode,
@@ -572,21 +517,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         };
     }, [shouldAnimateChatPreview]);
 
-    const handleUserMessageRenderingModeChange = React.useCallback((mode: 'markdown' | 'plain') => {
-        setUserMessageRenderingMode(mode);
-        void updateDesktopSettings({ userMessageRenderingMode: mode });
-    }, [setUserMessageRenderingMode]);
-
-    const handleStickyUserHeaderChange = React.useCallback((enabled: boolean) => {
-        setStickyUserHeader(enabled);
-        void updateDesktopSettings({ stickyUserHeader: enabled });
-    }, [setStickyUserHeader]);
-
-    const handlePromptNavigatorEnabledChange = React.useCallback((enabled: boolean) => {
-        setPromptNavigatorEnabled(enabled);
-        void updateDesktopSettings({ promptNavigatorEnabled: enabled });
-    }, [setPromptNavigatorEnabled]);
-
     const handleExpandedEditorToolbarChange = React.useCallback((enabled: boolean) => {
         setExpandedEditorToolbar(enabled);
         void updateDesktopSettings({ expandedEditorToolbar: enabled });
@@ -596,11 +526,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         setCollapsibleUserMessages(enabled);
         void updateDesktopSettings({ collapsibleUserMessages: enabled });
     }, [setCollapsibleUserMessages]);
-
-    const handleWideChatLayoutChange = React.useCallback((enabled: boolean) => {
-        setWideChatLayoutEnabled(enabled);
-        void updateDesktopSettings({ wideChatLayoutEnabled: enabled });
-    }, [setWideChatLayoutEnabled]);
 
     const handleShowSplitAssistantMessageActionsChange = React.useCallback((enabled: boolean) => {
         setShowSplitAssistantMessageActions(enabled);
@@ -626,32 +551,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         setMessageStreamTransport(mode);
         void updateDesktopSettings({ messageStreamTransport: mode });
     }, [setMessageStreamTransport]);
-
-    const handleActivityRenderModeChange = React.useCallback((mode: 'collapsed' | 'summary') => {
-        setActivityRenderMode(mode);
-        void updateDesktopSettings({ activityRenderMode: mode });
-    }, [setActivityRenderMode]);
-
-    const handleShowToolFileIconsChange = React.useCallback((enabled: boolean) => {
-        setShowToolFileIcons(enabled);
-        void updateDesktopSettings({ showToolFileIcons: enabled });
-    }, [setShowToolFileIcons]);
-
-    const handleShowTurnChangedFilesChange = React.useCallback((enabled: boolean) => {
-        setShowTurnChangedFiles(enabled);
-        void updateDesktopSettings({ showTurnChangedFiles: enabled });
-    }, [setShowTurnChangedFiles]);
-
-    const handleFileViewerPreviewChange = React.useCallback((enabled: boolean) => {
-        setSettingsDefaultFileViewerPreview(enabled);
-        void updateDesktopSettings({ defaultFileViewerPreview: enabled });
-        window.dispatchEvent(new CustomEvent('openchamber:file-viewer-preview-mode-changed', { detail: { enabled } }));
-    }, [setSettingsDefaultFileViewerPreview]);
-
-    const handleShowExpandedBashToolsChange = React.useCallback((enabled: boolean) => {
-        setShowExpandedBashTools(enabled);
-        void updateDesktopSettings({ showExpandedBashTools: enabled });
-    }, [setShowExpandedBashTools]);
 
     const handleShowSubagentTaskDetailsChange = React.useCallback((enabled: boolean) => {
         setShowSubagentTaskDetails(enabled);
@@ -698,7 +597,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     }, []);
 
     const shouldShow = (setting: VisibleSetting): boolean => {
-        if (setting === 'splitAssistantMessageActions' || setting === 'showToolFileIcons') return false;
+        if (setting === 'splitAssistantMessageActions') return false;
         if (!visibleSettings) return true;
         return visibleSettings.includes(setting);
     };
@@ -727,27 +626,17 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const hasLayoutSettings = shouldShow('fontSize') || shouldShow('codeFontSize') || shouldShow('terminalFontSize') || shouldShow('editorFontSize') || shouldShow('spacing') || shouldShow('inputBarOffset');
     const hasNavigationSettings = (shouldShow('terminalQuickKeys') && !isMobile) || shouldShow('fileEditorKeymap') || shouldShow('expandedEditorToolbar');
     const hasBehaviorSettings = shouldShow('questionAutoDelegate')
-        || shouldShow('userMessageRendering')
         || shouldShow('chatRenderMode')
         || shouldShow('messageTransport')
-        || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted')
         || shouldShow('collapsibleUserMessages')
-        || shouldShow('stickyUserHeader')
-        || (shouldShow('promptNavigatorEnabled') && !isVSCode)
-        || shouldShow('wideChatLayout')
-        || shouldShow('codeBlockLineWrap')
         || shouldShow('splitAssistantMessageActions')
         || shouldShow('showAssistantTps')
         || shouldShow('subagentReadOnlyBanner')
         || shouldShow('diffLayout')
-        || shouldShow('dotfiles')
-        || shouldShow('fileViewerPreview')
         || shouldShow('reasoning')
         || shouldShow('followUpBehavior')
         || shouldShow('persistDraft')
-        || shouldShow('showToolFileIcons')
         || shouldShow('showSubagentTaskDetails')
-        || shouldShow('expandedTools')
         || (!isMobile && shouldShow('inputSpellcheck'));
 
     const showPwaInstallNameSetting = shouldShow('pwaInstallName') && isWebRuntime() && browserTab && !isDesktopShell() && !isVSCode;
@@ -1676,7 +1565,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                 {hasBehaviorSettings && (
                     <div className="oc-settings-section-stack">
 
-                                                        {(shouldShow('userMessageRendering') || shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted') || (shouldShow('diffLayout') && !isVSCode) || shouldShow('followUpBehavior')) && (
+                                                        {(shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('diffLayout') && !isVSCode)) && (
                                 <div className="grid w-full grid-cols-1 gap-y-[var(--oc-settings-section-stack-gap)]">
                                     {shouldShow('chatRenderMode') && (
                                         <ResponsiveSettingsGroup
@@ -1799,88 +1688,13 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         </ResponsiveSettingsGroup>
                                     )}
 
-                                    {shouldShow('activityRenderMode') && chatRenderMode === 'sorted' && (
-                                        <ResponsiveSettingsGroup
-                                            isMobile={isMobile}
-                                            label={t('settings.openchamber.visual.section.activityDefault')}
-                                            className="w-full"
-                                        >
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.activityDefaultAria')}>
-                                                {ACTIVITY_RENDER_MODE_OPTIONS.map((option) => {
-                                                    const selected = activityRenderMode === option.id;
-                                                    return (
-                                                        <SettingsRadioOption
-                                                            key={option.id}
-                                                            selected={selected}
-                                                            onSelect={() => handleActivityRenderModeChange(option.id)}
-                                                            label={tUnsafe(option.labelKey)}
-                                                            ariaLabel={t('settings.openchamber.visual.field.activityDefaultModeAria', { option: tUnsafe(option.labelKey) })}
-                                                        />
-                                                    );
-                                                })}
-                                            </div>
-                                        </ResponsiveSettingsGroup>
-                                    )}
-
-                                    {shouldShow('expandedTools') && (
-                                        <ResponsiveSettingsGroup
-                                            isMobile={isMobile}
-                                            label={t('settings.openchamber.visual.section.showToolsOpenedByDefault')}
-                                            className="w-full"
-                                        >
-                                            <div
-                                                className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
-                                                role="button"
-                                                tabIndex={0}
-                                                aria-pressed={showExpandedBashTools}
-                                                onClick={() => handleShowExpandedBashToolsChange(!showExpandedBashTools)}
-                                                onKeyDown={(event) => {
-                                                    if (event.key === ' ' || event.key === 'Enter') {
-                                                        event.preventDefault();
-                                                        handleShowExpandedBashToolsChange(!showExpandedBashTools);
-                                                    }
-                                                }}
-                                            >
-                                                <Checkbox
-                                                    checked={showExpandedBashTools}
-                                                    onChange={handleShowExpandedBashToolsChange}
-                                                    ariaLabel={t('settings.openchamber.visual.field.showExpandedBashToolsAria')}
-                                                />
-                                                <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.bash')}</span>
-                                            </div>
-                                        </ResponsiveSettingsGroup>
-                                    )}
-
-                                    {shouldShow('userMessageRendering') && (
-                                        <ResponsiveSettingsGroup
-                                            isMobile={isMobile}
-                                            label={t('settings.openchamber.visual.section.userMessageRendering')}
-                                            className="w-full"
-                                        >
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.userMessageRenderingAria')}>
-                                                {USER_MESSAGE_RENDERING_OPTIONS.map((option) => {
-                                                    const selected = normalizeUserMessageRenderingMode(userMessageRenderingMode) === option.id;
-                                                    return (
-                                                        <SettingsRadioOption
-                                                            key={option.id}
-                                                            selected={selected}
-                                                            onSelect={() => handleUserMessageRenderingModeChange(option.id)}
-                                                            label={tUnsafe(option.labelKey)}
-                                                            ariaLabel={t('settings.openchamber.visual.field.userMessageRenderingAria', { option: tUnsafe(option.labelKey) })}
-                                                        />
-                                                    );
-                                                })}
-                                            </div>
-                                        </ResponsiveSettingsGroup>
-                                    )}
-
                                     {shouldShow('diffLayout') && !isVSCode && (
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={t('settings.openchamber.visual.section.diffLayout')}
                                             className="w-full"
                                         >
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.diffLayoutAria')}>
+                                            <div data-settings-item="chat.diff-layout" role="radiogroup" aria-label={t('settings.openchamber.visual.section.diffLayoutAria')}>
                                                 {DIFF_LAYOUT_OPTIONS.map((option) => {
                                                     const selected = diffLayoutPreference === option.id;
                                                     return (
@@ -1890,29 +1704,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                             onSelect={() => setDiffLayoutPreference(option.id)}
                                                             label={tUnsafe(option.labelKey)}
                                                             ariaLabel={t('settings.openchamber.visual.field.diffLayoutAria', { option: tUnsafe(option.labelKey) })}
-                                                        />
-                                                    );
-                                                })}
-                                            </div>
-                                        </ResponsiveSettingsGroup>
-                                    )}
-
-                                    {shouldShow('followUpBehavior') && (
-                                        <ResponsiveSettingsGroup
-                                            isMobile={isMobile}
-                                            label={t('settings.openchamber.visual.section.followUpBehavior')}
-                                            className="w-full"
-                                        >
-                                            <div data-settings-item="chat.follow-up-behavior" role="radiogroup" aria-label={t('settings.openchamber.visual.section.followUpBehaviorAria')}>
-                                                {FOLLOW_UP_BEHAVIOR_OPTIONS.map((option) => {
-                                                    const selected = followUpBehavior === option.id;
-                                                    return (
-                                                        <SettingsRadioOption
-                                                            key={option.id}
-                                                            selected={selected}
-                                                            onSelect={() => setFollowUpBehavior(option.id)}
-                                                            label={tUnsafe(option.labelKey)}
-                                                            ariaLabel={t('settings.openchamber.visual.field.followUpBehaviorAria', { option: tUnsafe(option.labelKey) })}
                                                         />
                                                     );
                                                 })}
@@ -1981,11 +1772,9 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </ResponsiveSettingsGroup>
                             )}
 
-                            {shouldShow('questionAutoDelegate') && <QuestionAutoDelegateSetting />}
-
-                            {(shouldShow('sessionAssist') || shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('codeBlockLineWrap') || shouldShow('splitAssistantMessageActions') || shouldShow('showAssistantTps') || shouldShow('subagentReadOnlyBanner') || shouldShow('dotfiles') || shouldShow('fileViewerPreview') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || shouldShow('showSubagentTaskDetails') || shouldShow('showTurnChangedFiles') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
+                            {(shouldShow('sessionAssist') || shouldShow('collapsibleUserMessages') || shouldShow('splitAssistantMessageActions') || shouldShow('showAssistantTps') || shouldShow('subagentReadOnlyBanner') || shouldShow('persistDraft') || shouldShow('showSubagentTaskDetails') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
                                 <div className="oc-settings-section-stack">
-                                    {(shouldShow('sessionAssist') || shouldShow('subagentReadOnlyBanner')) && (
+                                    {(shouldShow('sessionAssist') || shouldShow('questionAutoDelegate') || shouldShow('subagentReadOnlyBanner')) && (
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={<span data-settings-item="chat.session-assistance">{t('settings.openchamber.visual.section.sessionAssistance')}</span>}
@@ -2036,67 +1825,53 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                     <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.allowPromptingSubagentSessions')}</span>
                                                 </div>
                                             )}
+                                            {shouldShow('questionAutoDelegate') && (
+                                                <div data-settings-item="chat.question-auto-delegate" className="oc-settings-group-row">
+                                                    <QuestionAutoDelegateSetting />
+                                                </div>
+                                            )}
                                         </ResponsiveSettingsGroup>
                                     )}
-                                    {shouldShow('reasoning') && (
-                                        <ResponsiveSettingsGroup
-                                            isMobile={isMobile}
-                                            label={<span data-settings-item="chat.reasoning">{t('settings.openchamber.visual.section.reasoning')}</span>}
-                                        >
-                                    {shouldShow('reasoning') && (
-                                        <div
-                                            data-settings-item="chat.reasoning-traces"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={showReasoningTraces}
-                                            onClick={() => setShowReasoningTraces(!showReasoningTraces)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    setShowReasoningTraces(!showReasoningTraces);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={showReasoningTraces}
-                                                onChange={setShowReasoningTraces}
-                                                ariaLabel={t('settings.openchamber.visual.field.showReasoningTracesAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.showReasoningTraces')}</span>
-                                        </div>
-                                    )}
-
-                                    {shouldShow('reasoning') && showReasoningTraces && (
-                                        <div
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={collapsibleThinkingBlocks}
-                                            onClick={() => setCollapsibleThinkingBlocks(!collapsibleThinkingBlocks)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    setCollapsibleThinkingBlocks(!collapsibleThinkingBlocks);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={collapsibleThinkingBlocks}
-                                                onChange={setCollapsibleThinkingBlocks}
-                                                ariaLabel={t('settings.openchamber.visual.field.collapsibleThinkingBlocksAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.collapsibleThinkingBlocks')}</span>
-                                        </div>
-                                    )}
-                                        </ResponsiveSettingsGroup>
-                                    )}
-
-                                    {(shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('splitAssistantMessageActions') || shouldShow('showAssistantTps') || shouldShow('codeBlockLineWrap')) && (
+                                    {(shouldShow('collapsibleUserMessages') || shouldShow('splitAssistantMessageActions') || shouldShow('showAssistantTps') || shouldShow('reasoning')) && (
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={<span data-settings-item="chat.message-appearance">{t('settings.openchamber.visual.section.messageAppearance')}</span>}
                                         >
+                                    {shouldShow('reasoning') && (
+                                        <>
+                                            <div data-settings-item="chat.reasoning" className="hidden" aria-hidden />
+                                            <SettingsToggleRow
+                                                checked={showReasoningTraces}
+                                                onChange={setShowReasoningTraces}
+                                                label={t('settings.openchamber.visual.field.showReasoningTraces')}
+                                                description={t('settings.openchamber.visual.field.showReasoningTracesHint')}
+                                                ariaLabel={t('settings.openchamber.visual.field.showReasoningTracesAria')}
+                                            />
+                                            {showReasoningTraces && (
+                                                <div
+                                                    className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    aria-pressed={collapsibleThinkingBlocks}
+                                                    onClick={() => setCollapsibleThinkingBlocks(!collapsibleThinkingBlocks)}
+                                                    onKeyDown={(event) => {
+                                                        if (event.key === ' ' || event.key === 'Enter') {
+                                                            event.preventDefault();
+                                                            setCollapsibleThinkingBlocks(!collapsibleThinkingBlocks);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Checkbox
+                                                        checked={collapsibleThinkingBlocks}
+                                                        onChange={setCollapsibleThinkingBlocks}
+                                                        ariaLabel={t('settings.openchamber.visual.field.collapsibleThinkingBlocksAria')}
+                                                    />
+                                                    <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.collapsibleThinkingBlocks')}</span>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+
                                     {shouldShow('collapsibleUserMessages') && (
                                         <div
                                             data-settings-item="chat.collapsible-user-messages"
@@ -2118,78 +1893,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 ariaLabel={t('settings.openchamber.visual.field.collapsibleUserMessagesAria')}
                                             />
                                             <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.collapsibleUserMessages')}</span>
-                                        </div>
-                                    )}
-
-                                    {shouldShow('stickyUserHeader') && (
-                                        <div
-                                            data-settings-item="chat.sticky-user-header"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={stickyUserHeader}
-                                            onClick={() => handleStickyUserHeaderChange(!stickyUserHeader)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    handleStickyUserHeaderChange(!stickyUserHeader);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={stickyUserHeader}
-                                                onChange={handleStickyUserHeaderChange}
-                                                ariaLabel={t('settings.openchamber.visual.field.stickyUserHeaderAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.stickyUserHeader')}</span>
-                                        </div>
-                                    )}
-
-                                    {shouldShow('promptNavigatorEnabled') && !isVSCode && (
-                                        <div
-                                            data-settings-item="chat.prompt-navigator"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={promptNavigatorEnabled}
-                                            onClick={() => handlePromptNavigatorEnabledChange(!promptNavigatorEnabled)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    handlePromptNavigatorEnabledChange(!promptNavigatorEnabled);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={promptNavigatorEnabled}
-                                                onChange={handlePromptNavigatorEnabledChange}
-                                                ariaLabel={t('settings.openchamber.visual.field.promptNavigatorEnabledAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.promptNavigatorEnabled')}</span>
-                                        </div>
-                                    )}
-
-                                    {shouldShow('wideChatLayout') && (
-                                        <div
-                                            data-settings-item="chat.wide-layout"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={wideChatLayoutEnabled}
-                                            onClick={() => handleWideChatLayoutChange(!wideChatLayoutEnabled)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    handleWideChatLayoutChange(!wideChatLayoutEnabled);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={wideChatLayoutEnabled}
-                                                onChange={handleWideChatLayoutChange}
-                                                ariaLabel={t('settings.openchamber.visual.field.wideChatLayoutAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.wideChatLayout')}</span>
                                         </div>
                                     )}
 
@@ -2261,59 +1964,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         </div>
                                     )}
 
-                                    {shouldShow('codeBlockLineWrap') && (
-                                        <div
-                                            data-settings-item="chat.code-block-line-wrap"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={codeBlockLineWrap}
-                                            onClick={() => setCodeBlockLineWrap(!codeBlockLineWrap)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    setCodeBlockLineWrap(!codeBlockLineWrap);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={codeBlockLineWrap}
-                                                onChange={setCodeBlockLineWrap}
-                                                ariaLabel={t('settings.openchamber.visual.field.codeBlockLineWrapAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.codeBlockLineWrap')}</span>
-                                        </div>
-                                    )}
                                         </ResponsiveSettingsGroup>
-                                    )}
-
-                                    {(shouldShow('showToolFileIcons') || shouldShow('showTurnChangedFiles') || shouldShow('dotfiles') || shouldShow('fileViewerPreview')) && (
-                                        <ResponsiveSettingsGroup
-                                            isMobile={isMobile}
-                                            label={<span data-settings-item="chat.tools-and-files">{t('settings.openchamber.visual.section.toolsAndFiles')}</span>}
-                                        >
-                                    {shouldShow('showToolFileIcons') && (
-                                        <div
-                                            data-settings-item="chat.tool-file-icons"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={showToolFileIcons}
-                                            onClick={() => handleShowToolFileIconsChange(!showToolFileIcons)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    handleShowToolFileIconsChange(!showToolFileIcons);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={showToolFileIcons}
-                                                onChange={handleShowToolFileIconsChange}
-                                                ariaLabel={t('settings.openchamber.visual.field.showToolFileIconsAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.showToolFileIcons')}</span>
-                                        </div>
                                     )}
 
                                     {shouldShow('showSubagentTaskDetails') && (
@@ -2344,86 +1995,48 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         </div>
                                     )}
 
-                                    {shouldShow('showTurnChangedFiles') && (
-                                        <div
-                                            data-settings-item="chat.changed-files"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={showTurnChangedFiles}
-                                            onClick={() => handleShowTurnChangedFilesChange(!showTurnChangedFiles)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    handleShowTurnChangedFilesChange(!showTurnChangedFiles);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={showTurnChangedFiles}
-                                                onChange={handleShowTurnChangedFilesChange}
-                                                ariaLabel={t('settings.openchamber.visual.field.showTurnChangedFilesAria')}
+                                    {shouldShow('showSubagentTaskDetails') && (
+                                        <ResponsiveSettingsGroup isMobile={isMobile}>
+                                            <SettingsToggleRow
+                                                itemId="chat.subagent-task-details"
+                                                checked={showSubagentTaskDetails}
+                                                onChange={handleShowSubagentTaskDetailsChange}
+                                                label={t('settings.openchamber.visual.field.showSubagentTaskDetails')}
+                                                description={t('settings.openchamber.visual.field.showSubagentTaskDetailsHint')}
+                                                ariaLabel={t('settings.openchamber.visual.field.showSubagentTaskDetailsAria')}
                                             />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.showTurnChangedFiles')}</span>
-                                        </div>
-                                    )}
-
-                                    {shouldShow('dotfiles') && !isVSCodeRuntime() && (
-                                        <div
-                                            data-settings-item="chat.dotfiles"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={directoryShowHidden}
-                                            onClick={() => setDirectoryShowHidden(!directoryShowHidden)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    setDirectoryShowHidden(!directoryShowHidden);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={directoryShowHidden}
-                                                onChange={setDirectoryShowHidden}
-                                                ariaLabel={t('settings.openchamber.visual.field.showDotfilesAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.showDotfiles')}</span>
-                                        </div>
-                                    )}
-
-                                    {shouldShow('fileViewerPreview') && (
-                                        <div
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={settingsDefaultFileViewerPreview}
-                                            onClick={() => handleFileViewerPreviewChange(!settingsDefaultFileViewerPreview)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    handleFileViewerPreviewChange(!settingsDefaultFileViewerPreview);
-                                                }
-                                            }}
-                                        >
-                                            <span onClick={(event) => event.stopPropagation()}>
-                                                <Checkbox
-                                                    checked={settingsDefaultFileViewerPreview}
-                                                    onChange={handleFileViewerPreviewChange}
-                                                    ariaLabel={t('settings.openchamber.defaults.field.openFilesPreviewAria')}
-                                                />
-                                            </span>
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.openFilesPreview')}</span>
-                                        </div>
-                                    )}
                                         </ResponsiveSettingsGroup>
                                     )}
 
-                                    {(shouldShow('persistDraft') || (!isMobile && shouldShow('inputSpellcheck'))) && (
+                                    {(shouldShow('persistDraft') || shouldShow('followUpBehavior') || (!isMobile && shouldShow('inputSpellcheck'))) && (
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={<span data-settings-item="chat.composer">{t('settings.openchamber.visual.section.composer')}</span>}
                                         >
+                                    {shouldShow('followUpBehavior') && (
+                                        <ResponsiveSettingsRow
+                                            isMobile={isMobile}
+                                            itemId="chat.follow-up-behavior"
+                                            label={t('settings.openchamber.visual.field.followUpBehavior')}
+                                            description={t('settings.openchamber.visual.field.followUpBehaviorDescription')}
+                                        >
+                                            <Select value={followUpBehavior} onValueChange={(value) => setFollowUpBehavior(value === 'steer' ? 'steer' : 'queue')}>
+                                                <SelectTrigger aria-label={t('settings.openchamber.visual.field.followUpBehaviorAria')} className="w-fit">
+                                                    <SelectValue>
+                                                        {t(`settings.openchamber.visual.option.followUpBehavior.${followUpBehavior}.label`)}
+                                                    </SelectValue>
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {FOLLOW_UP_BEHAVIOR_OPTIONS.map((option) => (
+                                                        <SelectItem key={option.id} value={option.id}>
+                                                            {tUnsafe(option.labelKey)}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </ResponsiveSettingsRow>
+                                    )}
+
                                     {shouldShow('persistDraft') && (
                                         <div
                                             data-settings-item="chat.persist-drafts"

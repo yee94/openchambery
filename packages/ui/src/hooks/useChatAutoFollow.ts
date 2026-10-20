@@ -78,7 +78,7 @@ export interface UseChatAutoFollowResult {
     showScrollButton: boolean;
     notifyContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
-    goToBottom: (mode?: 'instant' | 'smooth') => void;
+    goToBottom: (mode?: 'instant' | 'smooth', options?: { reveal?: boolean }) => void;
     scrollToBottomOnSend: () => void;
     releaseAutoFollow: () => void;
     beginHistoryViewportPreservation: () => void;
@@ -509,13 +509,13 @@ export const useChatAutoFollow = ({
     });
 
     // ── public scroll API (mapped onto the primitives) ───────────────────────
-    const goToBottom = useEvent((mode: 'instant' | 'smooth' = 'instant') => {
+    const goToBottom = useEvent((mode: 'instant' | 'smooth' = 'instant', options?: { reveal?: boolean }) => {
         downwardUserIntentRef.current = false;
         historyViewportPreservationRef.current = false;
         setStateValue('following');
         endEntryStick();
         cancelForcedBottom();
-        if (scrollControllerRef?.current?.scrollToBottom({ behavior: mode === 'smooth' ? 'smooth' : 'auto' })) {
+        if (scrollControllerRef?.current?.scrollToBottom({ behavior: mode === 'smooth' ? 'smooth' : 'auto', ...options })) {
             const el = scrollRef.current;
             if (el) markAuto(el);
             updateOverflowAndButton();

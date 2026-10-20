@@ -6,7 +6,7 @@ import { useQuestionAutoDelegate, refreshQuestionAutoDelegate } from '@/lib/ques
 import { queryClient } from '@/lib/queryRuntime';
 import { getRuntimeGeneration } from '@/lib/runtime-switch';
 import { Button } from '@/components/ui/button';
-import { SettingsGroup, SettingsToggleRow } from '../shared/SettingsGroup';
+import { SettingsToggleRow } from '../shared/SettingsGroup';
 
 export function QuestionAutoDelegateSetting() {
   const { t } = useI18n();
@@ -23,11 +23,11 @@ export function QuestionAutoDelegateSetting() {
   }, queryClient);
   const resetSave = save.reset;
   useEffect(() => { resetSave(); }, [generation, resetSave]);
-  return <SettingsGroup description={t('settings.chat.questionDelegate.description')}>
+  return <>
     <SettingsToggleRow
-      itemId="chat.question-auto-delegate"
       label={t('settings.chat.questionDelegate.label')}
       ariaLabel={t('settings.chat.questionDelegate.label')}
+      description={t('settings.chat.questionDelegate.description')}
       checked={query.data?.snapshot.enabled ?? true}
       disabled={save.isPending || !query.data || query.isError}
       onChange={(enabled) => save.mutate(enabled)}
@@ -37,5 +37,5 @@ export function QuestionAutoDelegateSetting() {
       <span className="typography-meta text-[var(--status-error)]">{t(save.isError ? 'settings.chat.questionDelegate.saveFailed' : 'chat.questionDelegate.loadFailed')}</span>
       <Button variant="ghost" size="xs" disabled={save.isPending} onClick={() => save.isError ? save.mutate(save.variables ?? true) : void query.refetch()}>{t('chat.questionDelegate.retry')}</Button>
     </div> : null}
-  </SettingsGroup>;
+  </>;
 }

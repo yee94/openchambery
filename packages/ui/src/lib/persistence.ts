@@ -562,9 +562,6 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   if (typeof settings.showToolFileIcons === 'boolean' && settings.showToolFileIcons !== store.showToolFileIcons) {
     store.setShowToolFileIcons(settings.showToolFileIcons);
   }
-  if (typeof settings.codeBlockLineWrap === 'boolean' && settings.codeBlockLineWrap !== store.codeBlockLineWrap) {
-    store.setCodeBlockLineWrap(settings.codeBlockLineWrap);
-  }
   if (typeof settings.showTurnChangedFiles === 'boolean' && settings.showTurnChangedFiles !== store.showTurnChangedFiles) {
     store.setShowTurnChangedFiles(settings.showTurnChangedFiles);
   }
@@ -604,12 +601,6 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
       store.setActivityRenderMode(settings.activityRenderMode);
     }
   }
-  if (typeof settings.userMessageRenderingMode === 'string'
-    && (settings.userMessageRenderingMode === 'markdown' || settings.userMessageRenderingMode === 'plain')) {
-    if (settings.userMessageRenderingMode !== store.userMessageRenderingMode) {
-      store.setUserMessageRenderingMode(settings.userMessageRenderingMode);
-    }
-  }
   if (typeof settings.collapsibleUserMessages === 'boolean' && settings.collapsibleUserMessages !== store.collapsibleUserMessages) {
     store.setCollapsibleUserMessages(settings.collapsibleUserMessages);
   }
@@ -619,17 +610,11 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
       configStore.setSettingsMessageStreamTransport(settings.messageStreamTransport);
     }
   }
-  if (typeof settings.stickyUserHeader === 'boolean' && settings.stickyUserHeader !== store.stickyUserHeader) {
-    store.setStickyUserHeader(settings.stickyUserHeader);
-  }
   if (typeof settings.promptNavigatorEnabled === 'boolean' && settings.promptNavigatorEnabled !== store.promptNavigatorEnabled) {
     store.setPromptNavigatorEnabled(settings.promptNavigatorEnabled);
   }
   if (typeof settings.expandedEditorToolbar === 'boolean' && settings.expandedEditorToolbar !== store.expandedEditorToolbar) {
     store.setExpandedEditorToolbar(settings.expandedEditorToolbar);
-  }
-  if (typeof settings.wideChatLayoutEnabled === 'boolean' && settings.wideChatLayoutEnabled !== store.wideChatLayoutEnabled) {
-    store.setWideChatLayoutEnabled(settings.wideChatLayoutEnabled);
   }
   if (
     typeof settings.showSplitAssistantMessageActions === 'boolean'
@@ -1122,9 +1107,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.showToolFileIcons === 'boolean') {
     result.showToolFileIcons = candidate.showToolFileIcons;
   }
-  if (typeof candidate.codeBlockLineWrap === 'boolean') {
-    result.codeBlockLineWrap = candidate.codeBlockLineWrap;
-  }
   if (typeof candidate.showTurnChangedFiles === 'boolean') {
     result.showTurnChangedFiles = candidate.showTurnChangedFiles;
   }
@@ -1158,21 +1140,8 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     && (candidate.activityRenderMode === 'collapsed' || candidate.activityRenderMode === 'summary')) {
     result.activityRenderMode = candidate.activityRenderMode;
   }
-  if (typeof candidate.userMessageRenderingMode === 'string'
-    && (candidate.userMessageRenderingMode === 'markdown' || candidate.userMessageRenderingMode === 'plain')) {
-    result.userMessageRenderingMode = candidate.userMessageRenderingMode;
-  }
   if (typeof candidate.collapsibleUserMessages === 'boolean') {
     result.collapsibleUserMessages = candidate.collapsibleUserMessages;
-  }
-  if (typeof candidate.stickyUserHeader === 'boolean') {
-    result.stickyUserHeader = candidate.stickyUserHeader;
-  }
-  if (typeof candidate.promptNavigatorEnabled === 'boolean') {
-    result.promptNavigatorEnabled = candidate.promptNavigatorEnabled;
-  }
-  if (typeof candidate.wideChatLayoutEnabled === 'boolean') {
-    result.wideChatLayoutEnabled = candidate.wideChatLayoutEnabled;
   }
   if (typeof candidate.showSplitAssistantMessageActions === 'boolean') {
     result.showSplitAssistantMessageActions = candidate.showSplitAssistantMessageActions;

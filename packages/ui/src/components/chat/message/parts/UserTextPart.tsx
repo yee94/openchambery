@@ -15,8 +15,7 @@ import { COMPOSER_TRIGGER_ICON_SLOT } from '@/composer/inline-visual';
 import { parseSessionMentionInstruction } from '@/composer/delivery';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { getAllSyncSessionMap } from '@/sync/sync-refs';
-import { buildAgentMentionUrl, parseSkillHref } from '@/lib/messages/inlineMessageLinks';
-import {
+import { parseSkillHref } from '@/lib/messages/inlineMessageLinks';import {
     buildCitationHintsFromParts,
     buildMessageReferenceParts,
     type MessageTextPart,
@@ -39,10 +38,6 @@ type UserTextPartProps = {
 const hasPotentialSkillToken = (textContent: string): boolean => {
     SKILL_TOKEN_PATTERN.lastIndex = 0;
     return SKILL_TOKEN_PATTERN.test(textContent) || textContent.includes('[skill:');
-};
-
-const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' => {
-    return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
 const hasActiveSelectionInElement = (element: HTMLElement): boolean => {
@@ -68,7 +63,6 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
 
     const [isExpanded, setIsExpanded] = React.useState(false);
     const [isTruncated, setIsTruncated] = React.useState(false);
-    const userMessageRenderingMode = useUIStore((state) => state.userMessageRenderingMode);
     const collapsibleUserMessages = useUIStore((state) => state.collapsibleUserMessages);
     const effectiveDirectory = useEffectiveDirectory();
     const skillsQuery = useInstalledSkillsQuery({
@@ -78,7 +72,6 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
     const openContextFile = useUIStore((state) => state.openContextFile);
     const { t } = useI18n();
-    const normalizedRenderingMode = normalizeUserMessageRenderingMode(userMessageRenderingMode);
     const isCollapsed = collapsibleUserMessages && !isExpanded;
     const textRef = React.useRef<HTMLDivElement>(null);
     const skillByName = React.useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
@@ -224,39 +217,36 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     // Render-phase factory: ordinary function, not useCallback/useEvent.
     const renderTextSegment = (segment: string, key: string): React.ReactNode => {
         if (!segment) return null;
-        if (normalizedRenderingMode === 'markdown') {
-            const markdown = prepareUserMarkdownContent({
-                textContent: segment,
-                skillNames: new Set(),
-                decorateInlineReferences: false,
-            });
-            return (
-                <SimpleMarkdownRenderer
-                    key={key}
-                    content={markdown}
-                    className={cn(
-                        "inline w-auto align-baseline [&_.markdown-content]:contents [&_.markdown-content_p]:inline [&_[data-markdown-size-spacer]]:inline",
-                        "[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0",
-                        isCollapsed && [
-                            "[&_.markdown-content>*]:my-0",
-                            "[&_[data-component='markdown-code']]:my-0",
-                            "[&_[data-component='markdown-code']]:inline",
-                            "[&_[data-component='markdown-code']]:border-0",
-                            "[&_[data-component='markdown-code']]:bg-transparent",
-                            "[&_[data-component='markdown-code']>*:first-child]:hidden",
-                            "[&_[data-component='markdown-code']>div]:inline",
-                            "[&_[data-component='markdown-code']>div]:p-0",
-                            "[&_[data-component='markdown-code']_pre]:inline",
-                            "[&_[data-component='markdown-code']_code]:inline",
-                            "[&_[data-md-code-line-numbers]]:hidden",
-                        ]
-                    )}
-                    disableLinkSafety
-                    enableFileReferences={false}
-                />
-            );
-        }
-        return <React.Fragment key={key}>{segment}</React.Fragment>;
+        const markdown = prepareUserMarkdownContent({
+            textContent: segment,
+            skillNames: new Set(),
+            decorateInlineReferences: false,
+        });
+        return (
+            <SimpleMarkdownRenderer
+                key={key}
+                content={markdown}
+                className={cn(
+                    "inline w-auto align-baseline [&_.markdown-content]:contents [&_.markdown-content_p]:inline [&_[data-markdown-size-spacer]]:inline",
+                    "[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0",
+                    isCollapsed && [
+                        "[&_.markdown-content>*]:my-0",
+                        "[&_[data-component='markdown-code']]:my-0",
+                        "[&_[data-component='markdown-code']]:inline",
+                        "[&_[data-component='markdown-code']]:border-0",
+                        "[&_[data-component='markdown-code']]:bg-transparent",
+                        "[&_[data-component='markdown-code']>*:first-child]:hidden",
+                        "[&_[data-component='markdown-code']>div]:inline",
+                        "[&_[data-component='markdown-code']>div]:p-0",
+                        "[&_[data-component='markdown-code']_pre]:inline",
+                        "[&_[data-component='markdown-code']_code]:inline",
+                        "[&_[data-md-code-line-numbers]]:hidden",
+                    ]
+                )}
+                disableLinkSafety
+                enableFileReferences={false}
+            />
+        );
     };
 
     const renderReferenceParts = (parts: MessageTextPart[]): React.ReactNode => {
@@ -273,70 +263,6 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
             );
         });
     };
-
-    const plainTextContent = React.useMemo(() => {
-        if (referenceParts) {
-            return renderReferenceParts(referenceParts);
-        }
-
-        const nodes: React.ReactNode[] = [];
-        let cursor = 0;
-        let agentMentionUsed = false;
-        let match: RegExpExecArray | null;
-        SKILL_TOKEN_PATTERN.lastIndex = 0;
-
-        while ((match = SKILL_TOKEN_PATTERN.exec(textContent)) !== null) {
-            const prefix = match[1] || '';
-            const skillName = match[2];
-            const slashIndex = match.index + prefix.length;
-            if (!skillByName.has(skillName)) continue;
-
-            if (match.index > cursor) nodes.push(textContent.slice(cursor, match.index));
-            if (prefix) nodes.push(prefix);
-            nodes.push(
-                <button
-                    key={`skill-${slashIndex}-${skillName}`}
-                    type="button"
-                    className="text-primary hover:underline"
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        openSkill(skillName);
-                    }}
-                >
-                    /{skillName}
-                </button>
-            );
-            cursor = slashIndex + skillName.length + 1;
-        }
-
-        if (cursor < textContent.length) nodes.push(textContent.slice(cursor));
-
-        const withSkills = nodes.length > 0 ? nodes : [textContent];
-        if (!agentMention?.token || !textContent.includes(agentMention.token)) {
-            return withSkills;
-        }
-
-        return withSkills.flatMap((node, index) => {
-            if (agentMentionUsed || typeof node !== 'string') return node;
-            const idx = node.indexOf(agentMention.token);
-            if (idx === -1) return node;
-            agentMentionUsed = true;
-            return [
-                node.slice(0, idx),
-                <a
-                    key={`agent-${index}`}
-                    href={buildAgentMentionUrl(agentMention.name)}
-                    className="text-primary hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(event) => event.stopPropagation()}
-                >
-                    {agentMention.token}
-                </a>,
-                node.slice(idx + agentMention.token.length),
-            ];
-        });
-    }, [agentMention, openSkill, referenceParts, renderReferenceParts, skillByName, textContent]);
 
     if ((!textContent || textContent.trim().length === 0) && !quotedConversation?.quotes.length) {
         return null;
@@ -381,7 +307,6 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                 className={cn(
                     "break-words font-sans typography-markdown-body",
                     isExpanded && "pb-3",
-                    normalizedRenderingMode === 'plain' && 'whitespace-pre-wrap',
                     isCollapsed && "line-clamp-10",
                     collapsibleUserMessages && isTruncated && !isExpanded && "cursor-pointer"
                 )}
@@ -389,34 +314,30 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                 ref={textRef}
                 onClick={handleClick}
             >
-                {normalizedRenderingMode === 'markdown' ? (
-                    referenceParts ? (
-                        renderReferenceParts(referenceParts)
-                    ) : (
-                        <SimpleMarkdownRenderer
-                            content={processedMarkdownContent}
-                            className={cn(
-                                "[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0",
-                                isCollapsed && [
-                                    "[&_.markdown-content>*]:my-0",
-                                    "[&_[data-component='markdown-code']]:my-0",
-                                    "[&_[data-component='markdown-code']]:inline",
-                                    "[&_[data-component='markdown-code']]:border-0",
-                                    "[&_[data-component='markdown-code']]:bg-transparent",
-                                    "[&_[data-component='markdown-code']>*:first-child]:hidden",
-                                    "[&_[data-component='markdown-code']>div]:inline",
-                                     "[&_[data-component='markdown-code']>div]:p-0",
-                                     "[&_[data-component='markdown-code']_pre]:inline",
-                                     "[&_[data-component='markdown-code']_code]:inline",
-                                     "[&_[data-md-code-line-numbers]]:hidden",
-                                 ]
-                            )}
-                            disableLinkSafety
-                            enableFileReferences={false}
-                        />
-                    )
+                {referenceParts ? (
+                    renderReferenceParts(referenceParts)
                 ) : (
-                    plainTextContent
+                    <SimpleMarkdownRenderer
+                        content={processedMarkdownContent}
+                        className={cn(
+                            "[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0",
+                            isCollapsed && [
+                                "[&_.markdown-content>*]:my-0",
+                                "[&_[data-component='markdown-code']]:my-0",
+                                "[&_[data-component='markdown-code']]:inline",
+                                "[&_[data-component='markdown-code']]:border-0",
+                                "[&_[data-component='markdown-code']]:bg-transparent",
+                                "[&_[data-component='markdown-code']>*:first-child]:hidden",
+                                "[&_[data-component='markdown-code']>div]:inline",
+                                 "[&_[data-component='markdown-code']>div]:p-0",
+                                 "[&_[data-component='markdown-code']_pre]:inline",
+                                 "[&_[data-component='markdown-code']_code]:inline",
+                                 "[&_[data-md-code-line-numbers]]:hidden",
+                             ]
+                        )}
+                        disableLinkSafety
+                        enableFileReferences={false}
+                    />
                 )}
             </div> : null}
         </div>

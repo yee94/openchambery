@@ -59,6 +59,7 @@ import { useChatAutoFollow, type AnimationHandlers, type ContentChangeReason } f
 import { useHistoryUpwardIntent } from '@/hooks/lib/chatUpwardIntent';
 import { useMobileComposerSwap } from './useMobileComposerSwap';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
+import { useDesktopHistoryWarmup } from './hooks/useDesktopHistoryWarmup';
 import { createAssistantSessionDivider, mergeHostedCurrentSessionHistory, stitchHostedSessionHistory } from './hostedSessionHistory';
 import type { ChatMessageEntry } from './lib/turns/types';
 import {
@@ -1100,7 +1101,11 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const loadMoreMessages = useEvent(async (sessionId: string) => {
         // Ticket 09: Query fetchPreviousPage is the sole history flight.
         if (historyBoundary.kind === 'has-more') {
-            await fetchTranscriptPreviousPage(effectiveSessionDirectory, sessionId);
+            await fetchTranscriptPreviousPage(
+                effectiveSessionDirectory,
+                sessionId,
+                isMobile || isDedicatedMobileApp ? undefined : 50,
+            );
             return;
         }
         if (historyBoundary.kind === 'unknown') {
@@ -1891,6 +1896,17 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         paintedTranscriptSessionRef.current = currentSessionId;
     }
     const isSessionHydrating = Boolean(currentSessionId) && sessionTranscriptGate === 'hydrating';
+    useDesktopHistoryWarmup({
+        scope: JSON.stringify([getRuntimeKey(), effectiveSessionDirectory, currentSessionId]),
+        enabled: active && !isMobile && !isDedicatedMobileApp && Boolean(currentSessionId)
+            && sessionTranscriptGate === 'pass' && transcriptHydration.p0Satisfied
+            && !sessionIsWorking && !historyMeta?.loading && !timelineController.isLoadingOlder,
+        cursor: historyBoundary.kind === 'has-more' ? historyBoundary.cursor : null,
+        loadedTurns: historyBoundary.loadedTurns,
+        messages: renderedViewportMessages,
+        scrollRef,
+        loadPrevious: (pageSize) => fetchTranscriptPreviousPage(effectiveSessionDirectory, currentSessionId!, pageSize),
+    });
     // Assistant-owned history is authoritative for prior bindings. Do not replace
     // a restorable transcript with the live-session load-failure wall.
     const hasSessionHistoryLoadError =

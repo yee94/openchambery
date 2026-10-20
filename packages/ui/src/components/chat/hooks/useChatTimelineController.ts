@@ -62,7 +62,7 @@ interface UseChatTimelineControllerOptions {
     scrollRef: React.RefObject<HTMLDivElement | null>;
     messageListRef: React.RefObject<MessageListHandle | null>;
     loadMoreMessages: (sessionId: string, direction: 'up' | 'down') => Promise<void>;
-    goToBottom: (mode?: 'instant' | 'smooth') => void;
+    goToBottom: (mode?: 'instant' | 'smooth', options?: { reveal?: boolean }) => void;
     releaseAutoFollow: () => void;
     beginHistoryViewportPreservation: () => void;
     endHistoryViewportPreservation: () => void;
@@ -999,7 +999,9 @@ export const useChatTimelineController = ({
             stopKeeper();
             if (didPrepend) {
                 prePrependScrollRef.current = null;
-                goToBottom('instant');
+                // Passive history compensation must not re-arm the explicit
+                // jump-to-latest reveal gate and hide the entire transcript.
+                goToBottom('instant', { reveal: false });
                 updateTracking(container.scrollHeight);
             } else {
                 updateTracking();

@@ -17,12 +17,13 @@ afterAll(() => {
     if (!keepEvidence()) for (const dir of workDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short', 'partial-turn', 'mobile-partial-turn', 'fast-entry', 'fast-entry-desktop-wheel', 'fast-entry-desktop-key', 'compact-prepend', 'compact-prepend-desktop', 'turn-prepend', 'turn-prepend-desktop'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
+test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short', 'desktop-warmup', 'desktop-warmup-pinned', 'desktop-warmup-small-pinned', 'partial-turn', 'mobile-partial-turn', 'fast-entry', 'fast-entry-desktop-wheel', 'fast-entry-desktop-key', 'compact-prepend', 'compact-prepend-desktop', 'turn-prepend', 'turn-prepend-desktop'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
     const fastEntry = scenario.startsWith('fast-entry');
     const desktop = scenario.includes('desktop') || scenario === 'partial-turn';
     const width = desktop ? 1200 : 402;
     const height = desktop ? 800 : 874;
     const partialTurn = scenario === 'partial-turn' || scenario === 'mobile-partial-turn';
+    const pinnedWarmup = scenario.startsWith('desktop-warmup') && scenario.endsWith('-pinned');
     const work = mkdtempSync(join(evidenceRoot(), 'history-scroll-'));
     workDirs.push(work);
     await build({
@@ -80,7 +81,29 @@ window.addEventListener('error',e=>{
             expect(await page.evaluate('document.body.textContent.includes("HIDDEN_PARTIAL_PROCESS")')).toBe(false);
             await page.evaluate('void (window.retainedAnswer = document.querySelector(\'[data-message-id="partial-final"]\'))');
         }
-        if (scenario === 'fast-entry-desktop-key') {
+        if (scenario.startsWith('desktop-warmup')) {
+            await page.evaluate(`window.retainedWarmupRow = document.querySelector('[data-message-id="message-100"]');
+                window.retainedWarmupBody = window.retainedWarmupRow.querySelector('p');
+                window.warmupHides = [];
+                const revealRoot = document.querySelector('[data-markdown-pin-reveal]');
+                new MutationObserver(records => {
+                    for (const record of records) {
+                        if (record.oldValue?.includes('hidden') || revealRoot.style.visibility === 'hidden') {
+                            window.warmupHides.push(record.oldValue);
+                        }
+                    }
+                }).observe(revealRoot, { attributes: true, attributeOldValue: true, attributeFilter: ['style'] });`);
+            await page.evaluate(`new Promise((resolve, reject) => {
+                const started = performance.now();
+                const tick = () => {
+                    if (window.historyScrollFixture.sample().loads === 1 && document.querySelector('[data-message-id="${scenario === 'desktop-warmup-small-pinned' ? 'message-005' : 'message-049'}"]')) return resolve();
+                    if (performance.now() - started > 10000) return reject(new Error('warmup did not commit'));
+                    requestAnimationFrame(tick);
+                }; tick();
+            })`);
+            expect(await page.evaluate('window.retainedWarmupRow.isConnected'), 'existing history DOM must survive virtualization activation').toBe(true);
+            expect(await page.evaluate('window.retainedWarmupBody?.isConnected'), 'painted Markdown must not return to a skeleton').toBe(true);
+        } else if (scenario === 'fast-entry-desktop-key') {
             await page.evaluate('document.querySelector("[data-history-scroller]").tabIndex = -1; document.querySelector("[data-history-scroller]").focus({preventScroll:true})');
             await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'PageUp', code: 'PageUp', windowsVirtualKeyCode: 33 });
             await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'PageUp', code: 'PageUp', windowsVirtualKeyCode: 33 });
@@ -118,8 +141,21 @@ window.addEventListener('error',e=>{
             expect(await page.evaluate('document.body.textContent.includes("HIDDEN_EARLIER_PROCESS")')).toBe(false);
             expect(Math.abs(after.anchorTop! - after.anchorOffset! - after.fingerDelta), 'enriching the turn must preserve the answer reading position').toBeLessThan(scenario === 'partial-turn' ? 3 : 24);
         }
-        if (scenario !== 'desktop-short') expect(after.max - after.top).toBeGreaterThan(scenario === 'virtualize-transition' ? 100 : desktop && fastEntry ? 500 : 1000);
-        if (fastEntry) {
+        if (scenario.startsWith('desktop-warmup')) {
+            expect(await page.evaluate('window.warmupHides'), 'background history must never hide the painted transcript').toEqual([]);
+        }
+        if (scenario !== 'desktop-short' && !pinnedWarmup) expect(after.max - after.top).toBeGreaterThan(scenario === 'virtualize-transition' || scenario === 'desktop-warmup' ? 100 : desktop && fastEntry ? 500 : 1000);
+        if (pinnedWarmup) expect(Math.abs(after.max - after.top)).toBeLessThan(1);
+        if (scenario === 'desktop-warmup-small-pinned') {
+            expect(await page.evaluate('document.querySelectorAll("[data-turn-entry][data-index]").length'), 'short desktop history must stay in normal flow below twelve history entries').toBe(0);
+        }
+        if (scenario === 'desktop-warmup') {
+            expect(Math.abs(after.anchorTop! - after.anchorOffset!), 'background prepend must retain the exact reading offset').toBeLessThan(1);
+            expect(await page.evaluate('window.retainedWarmupRow.isConnected && window.retainedWarmupBody.isConnected')).toBe(true);
+        }
+        if (pinnedWarmup) {
+            expect(after.pinned).toBe(true);
+        } else if (fastEntry) {
             expect(after.pinned, 'a fresh fling during entry must cancel follow before history arrives').toBe(false);
         } else {
             expect(after.anchorTop).not.toBeNull();
