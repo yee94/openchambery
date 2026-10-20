@@ -290,6 +290,44 @@
   row-gap: 0.5rem;
 }
 
+/* Row-level value collection that mixes an editable control with adjacent
+   actions. The actions keep their intrinsic width so they always sit on the
+   input's line; the two-column value cap applies to the whole collection. */
+.oc-settings-value-inline {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.oc-settings-value-inline > [data-slot="input"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.oc-settings-value-inline > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.oc-settings-workspace .oc-settings-value-inline > button {
+  height: var(--form-control-height);
+  min-height: var(--form-control-height);
+}
+
+.oc-settings-workspace .oc-settings-group-row
+  .oc-settings-value-inline > [data-slot="input"] {
+  margin-inline-end: 0;
+}
+
+/* Credentials are copied verbatim, so they read left-aligned in the font stack
+   they will be pasted into instead of the right-aligned value grammar. */
+.oc-settings-workspace .oc-settings-group-row
+  [data-slot="input"].oc-settings-value-inline-input {
+  text-align: left !important;
+}
+
 .oc-settings-split-row-stacked .oc-settings-split-row-copy {
   max-width: 32rem;
 }

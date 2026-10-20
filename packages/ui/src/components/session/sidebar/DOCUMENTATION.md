@@ -2,6 +2,17 @@
 
 ## Refactor result
 
+- `DeviceConnections` owns the settings-adjacent desktop/phone shortcut. Its
+  hover/click popover fetches the active runtime's authorized devices only while
+  open; failed refreshes retain the previous snapshot with an error message.
+  Device rows include only live authenticated event-stream connections reported
+  by the host, excluding the local desktop itself. The panel refreshes every five
+  seconds while open and never treats missing presence support as empty success.
+  The non-persisted
+  `devicePairingRequested` UI intent opens the existing remote-instance pairing
+  dialog and is consumed once by that page. Runtimes without `clientAuth` omit
+  this shortcut.
+
 - Navigation loading includes live busy/retry descendants through `useSessionActivity`; a parent remains loading after its own reply completes while background subagents run. `useRunningSessionIds` uses the same shared tree projection for pinned/in-progress and always-visible rows. Execution reads the parent's own status. Manual transcript refresh remains available during busy/retry so missed terminal events cannot block recovery.
 - `SessionSidebar.tsx` now acts mainly as orchestration; core logic moved to focused hooks/components.
 - Sidebar is now a single multi-project tree: an optional pinned + in-progress
