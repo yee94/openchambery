@@ -1667,6 +1667,7 @@ export const dict = {
   'session.githubIntegration.validation.branchAlreadyCheckedOut': 'La branche est déjà checkout dans un worktree',
   'session.githubIntegration.validation.branchAlreadyExists': 'Une branche existe déjà localement',
   'session.githubIntegration.validation.failed': 'Échec de la validation',
+  'chat.fileReference.notice.binaryExternal': 'Ce fichier n’a pas d’aperçu dans l’application, et l’application système n’a pas pu l’ouvrir. L’aperçu s’ouvre quand même.',
   'chat.fileAttachment.toast.attachFailed': 'Impossible de joindre le fichier',
   'chat.fileAttachment.toast.someFilesSkipped': 'Certains fichiers ont été ignorés :\n{summary}',
   'chat.fileAttachment.toast.vscodePickFailed': 'Échec de la sélection des fichiers dans VS Code',

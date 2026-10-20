@@ -1,5 +1,7 @@
+import { toast } from '@/components/ui';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { formatMessage, useI18nStore, type I18nKey } from '@/lib/i18n';
 import type { EditorAPI } from '@/lib/api/types';
 import {
   isDesktopBinaryPath,
@@ -8,7 +10,6 @@ import {
   isVSCodeRuntime,
   openDesktopPath,
 } from '@/lib/desktop';
-import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
 import { getImageMimeType, isHtmlFile, isImageFile } from '@/lib/toolHelpers';
 import { useUIStore } from '@/stores/useUIStore';
@@ -34,6 +35,11 @@ export type OpenFileReferenceOptions = {
 };
 
 export const FILE_REFERENCE_OPEN_TITLE = 'Open file';
+
+const notifyFileReferenceFallback = (key: I18nKey): void => {
+  const { dictionary } = useI18nStore.getState();
+  toast.warning(formatMessage(dictionary, key));
+};
 
 const FILE_REFERENCE_STAT_CONCURRENCY = 4;
 const FILE_REFERENCE_STAT_CACHE_MAX = 1000;
@@ -249,9 +255,13 @@ export const openFileReference = async (
     && !isImageFile(resolved.resolvedPath)
     && !isHtmlFile(resolved.resolvedPath)
   ) {
+    // Archives and other binaries have no in-app preview. Open them with the
+    // desktop handler when one exists. If it cannot, say so and still open the
+    // context panel / phone sheet instead of a no-op click.
     if (await openDesktopPath(resolved.resolvedPath)) {
       return;
     }
+    notifyFileReferenceFallback('chat.fileReference.notice.binaryExternal');
   }
 
   if (isImageFile(resolved.resolvedPath) && options.onShowPopup) {
@@ -289,10 +299,9 @@ export const openFileReference = async (
     return;
   }
 
-  if (!isFilePathWithinDirectory(resolved.resolvedPath, options.effectiveDirectory)) {
-    await ensureOutsideFileGrantForDesktop(resolved.resolvedPath, options.effectiveDirectory);
-  }
-
+  // Any local path opens in the preview. The file API already accepts an
+  // absolute path, so a project-boundary check here only blocked worktrees
+  // and files the user can already see in the transcript.
   const uiStore = useUIStore.getState();
   if (htmlPreview) {
     uiStore.openContextFile(contextDirectory, resolved.resolvedPath, { viewerMode: 'preview' });
