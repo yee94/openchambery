@@ -2,7 +2,7 @@
 
 ## Global content search
 
-The Host now owns the production index; see `packages/web/server/lib/content-search/DOCUMENTATION.md`. Search calls `/api/openchamber/content-search` without a directory restriction and receives session titles and directories from the server. Opening a conversation is not required. The palette displays seven-day coverage, indexing progress and partial failures, and refreshes queries while open to discover background writes. Runtime-scoped Query keys prevent cross-host result reuse.
+The Host now owns the production index; see `packages/web/server/lib/content-search/DOCUMENTATION.md`. Search calls `/api/openchamber/content-search` without a directory restriction and receives session titles and directories from the server. Opening a conversation is not required. The palette displays thirty-day coverage, indexing progress and partial failures, and refreshes queries while open to discover background writes. Runtime-scoped Query keys prevent cross-host result reuse.
 
 The earlier `transcript-content-search.ts` IndexedDB projection is retained only for legacy cache cleanup and adapter contract tests; production no longer writes or queries it. Full transcript persistence keeps its existing reasoning-visibility gate. Message-hash navigation loads earlier pages when a global hit lies outside the loaded tail, stops on session changes or lack of pagination progress, and then reveals the matching message.
 

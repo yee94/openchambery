@@ -2,7 +2,7 @@ import { projectSessionMessageRecords } from '../session-turn-pages/session-mess
 import { projectSearchRecord } from './service.js';
 import { normalizeSessionEventType } from '../session-metadata/session-projection.js';
 
-const WEEK = 7 * 24 * 60 * 60 * 1000;
+const RETENTION = 30 * 24 * 60 * 60 * 1000;
 const nextCursor = (page) => typeof page?.cursor?.next === 'string' ? page.cursor.next : null;
 
 export function createContentSearchRuntime({ service, getRuntimeKey, listSessions, listMessages, now = Date.now }) {
@@ -11,12 +11,12 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
   let timer;
   let due = 0;
   let controller;
-  let state = { runtime: getRuntimeKey(), phase: 'pending', since: now() - WEEK, total: 0, completed: 0, failed: 0, updatedAt: null };
+  let state = { runtime: getRuntimeKey(), phase: 'pending', since: now() - RETENTION, total: 0, completed: 0, failed: 0, updatedAt: null };
   const dirty = new Set();
   const deleted = new Set();
   const status = () => {
     const runtime = getRuntimeKey();
-    return { ...(state.runtime === runtime ? state : { runtime, phase: 'pending', since: now() - WEEK, total: 0, completed: 0, failed: 0, updatedAt: null }), ...service.stats(runtime) };
+    return { ...(state.runtime === runtime ? state : { runtime, phase: 'pending', since: now() - RETENTION, total: 0, completed: 0, failed: 0, updatedAt: null }), ...service.stats(runtime) };
   };
   const sync = () => {
     if (stopped) return Promise.resolve();
@@ -27,7 +27,7 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
     const current = () => !stopped && runtime === getRuntimeKey() && !signal.aborted;
     if (state.runtime !== runtime) { dirty.clear(); deleted.clear(); }
     const previous = state.runtime === runtime ? state.updatedAt : null;
-    state = { runtime, phase: previous ? 'ready' : 'indexing', since: now() - WEEK, total: state.total, completed: state.completed, failed: 0, updatedAt: previous };
+    state = { runtime, phase: previous ? 'ready' : 'indexing', since: now() - RETENTION, total: state.total, completed: 0, failed: 0, updatedAt: previous };
     flight = (async () => {
       const sessions = [];
       const ids = new Set();
@@ -52,7 +52,7 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
       const worker = async () => {
         while (current() && index < sessions.length) {
           const session = sessions[index++];
-          if (!dirty.has(session.id) && service.updated(runtime, session.id) === session.time?.updated) {
+          if (!dirty.has(session.id) && service.updated(runtime, session.id, state.since) === session.time?.updated) {
             state.completed++; continue;
           }
           dirty.delete(session.id);
@@ -76,7 +76,7 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
               // Native pages are newest-first, including control records.
               if (page.data.length && page.data.every((record) => Number(record.time?.created) < state.since)) break;
             } while (before && current());
-            if (current() && !deleted.has(session.id)) service.replaceSession(runtime, session, [...records.values()]);
+            if (current() && !deleted.has(session.id)) service.replaceSession(runtime, session, [...records.values()], state.since);
             state.completed++;
           } catch {
             if (!current()) return;

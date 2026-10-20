@@ -4,7 +4,7 @@ The Host owns `content-search.sqlite` alongside the session index. This index is
 independent of browser transcript caches and includes all projects exposed by the
 active OpenCode runtime. `session.list` is called without a project/directory
 filter; opaque cursors are followed until exhausted. The default coverage is
-messages created in the last seven days in recently updated sessions.
+messages created in the last thirty days in recently updated sessions.
 
 Two workers page native `message.list` directly, normalize via the shared server
 projection, and retain only user text and settled assistant text. Synthetic,
@@ -13,8 +13,14 @@ excerpts keep at most 2048 characters; user text stays complete. A session's
 projection and updated-time checkpoint commit together only after all its pages
 succeed. Failures preserve previous hits and retry on subsequent scans. Restarts
 skip unchanged sessions using persisted checkpoints. Failed catalog reads never
-trigger deletion. Successful catalogs remove deleted sessions; seven-day expiry
+trigger deletion. Successful catalogs remove deleted sessions; thirty-day expiry
 removes old message rows and corresponding FTS entries.
+
+Each session checkpoint also stores its indexed `since` boundary. Existing
+checkpoints without coverage are re-read, as are checkpoints whose coverage starts
+after the requested boundary. Expanding from seven to thirty days therefore
+backfills unchanged sessions too; failed reads preserve the previous projection
+and checkpoint until a complete replacement succeeds.
 
 Global upstream events mark sessions dirty and coalesce a scan within one second;
 a 30-second reconciliation discovers missed events. Indexing does not depend on
