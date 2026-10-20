@@ -38,8 +38,26 @@ security import "$cert_path" \
   -T /usr/bin/security \
   -T /usr/bin/productbuild
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
-security list-keychain -d user -s "$keychain_path"
-security default-keychain -s "$keychain_path"
+# Add the throwaway keychain to the search list without dropping the user's
+# existing keychains. Replacing the list (and making it the default keychain)
+# makes every other app on a self-hosted Mac prompt for this keychain's
+# password, which nobody can type: it is the RUNNER_TEMP path.
+previous_keychains=()
+while IFS= read -r existing; do
+  existing="${existing#"${existing%%[![:space:]]*}"}"
+  existing="${existing%"${existing##*[![:space:]]}"}"
+  existing="${existing#\"}"
+  existing="${existing%\"}"
+  if [[ -n "$existing" && "$existing" != "$keychain_path" ]]; then
+    previous_keychains+=("$existing")
+  fi
+done < <(security list-keychains -d user)
+
+if [[ ${#previous_keychains[@]} -gt 0 ]]; then
+  security list-keychains -d user -s "$keychain_path" "${previous_keychains[@]}"
+else
+  security list-keychains -d user -s "$keychain_path"
+fi
 rm -f "$cert_path"
 
 if ! security find-identity -v -p codesigning "$keychain_path" | grep -q "Developer ID Application"; then
