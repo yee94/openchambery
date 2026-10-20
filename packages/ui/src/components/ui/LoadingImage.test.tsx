@@ -44,13 +44,16 @@ test('a decoded cached image is immediately revealed without waiting for another
   expect(host.querySelector('[data-image-state="loaded"]')).not.toBeNull();
 });
 
-test('desktop keeps the image DOM and native event handlers', async () => {
+test('desktop shows a constrained content placeholder and preserves image events', async () => {
   boundary.mobile = false;
   const onLoad = vi.fn();
-  await act(async () => root.render(<LoadingImage src="/image.png" onLoad={onLoad} />));
-  expect(host.firstElementChild?.tagName).toBe('IMG');
+  await act(async () => root.render(<LoadingImage src="/image.png" placeholderAspectRatio={16 / 9} onLoad={onLoad} />));
+  expect(host.querySelector('[data-image-content="desktop"][data-image-state="loading"]')).not.toBeNull();
+  expect(host.querySelector('.oc-image-loading')).not.toBeNull();
+  expect(host.querySelector('[data-image-content="mobile"]')).toBeNull();
   await act(async () => host.querySelector('img')!.dispatchEvent(new Event('load')));
   expect(onLoad).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('.oc-image-loading')).toBeNull();
 });
 
 test('content reserves the requested ratio only while pending and resets on source change', async () => {

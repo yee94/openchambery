@@ -585,9 +585,9 @@ const ensureMarkdownImagePresentation = (image: HTMLImageElement): HTMLElement =
   visual.setAttribute('data-md-image-placeholder-visual', 'true');
   visual.setAttribute('aria-hidden', 'true');
   visual.className = 'pointer-events-none absolute inset-0 flex items-center justify-center text-muted-foreground';
+  visual.classList.add('oc-image-loading');
   if (isMobileSurfaceRuntime()) {
     presentation.setAttribute('data-mobile-image', 'true');
-    visual.classList.add('oc-image-loading');
   }
 
   const imageIcon = document.createElement('span');
@@ -639,11 +639,9 @@ export const decorateMarkdownImages = (root: HTMLElement, ctx: DecorateContext):
     // Only host/runtime file paths need placeholders + streamed display URLs.
     // Browser-native http(s)/data/blob sources keep the direct img path.
     if (!needsRuntimeImageStream(resolved)) {
-      if (isMobileSurfaceRuntime()) {
-        image.setAttribute('data-md-image-source', source);
-        ensureMarkdownImagePresentation(image);
-        image.setAttribute('data-md-image-state', image.complete && image.naturalWidth > 0 ? 'loaded' : 'loading');
-      }
+      image.setAttribute('data-md-image-source', source);
+      ensureMarkdownImagePresentation(image);
+      image.setAttribute('data-md-image-state', image.complete && image.naturalWidth > 0 ? 'loaded' : 'loading');
       continue;
     }
 

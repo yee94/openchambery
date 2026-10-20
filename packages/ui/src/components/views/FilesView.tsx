@@ -1,5 +1,6 @@
 import React from 'react';
 import { LoadingImage } from '@/components/ui/LoadingImage';
+import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
 import { useEvent } from '@reactuses/core';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
@@ -4043,7 +4044,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           {!selectedFile ? (
             <div className="p-3 typography-ui text-muted-foreground">{t('filesView.editor.pickFileFromTree')}</div>
           ) : (fileLoading || isImageAssetAuthLoading || isPdfAssetAuthLoading) ? (
-            suppressFileLoadingIndicator
+            isSelectedImage
+              ? <div className="flex h-full items-center justify-center p-3"><ImageLoadingPlaceholder className="size-48 max-w-full rounded-md" /></div>
+              : suppressFileLoadingIndicator
               ? <div className="p-3" />
               : (
                 <div className="p-3 flex items-center gap-2 typography-ui text-muted-foreground">
@@ -4413,7 +4416,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         </div>
         <ScrollableOverlay outerClassName="h-full min-w-0" className="h-full min-w-0">
           {(fileLoading || isImageAssetAuthLoading || isPdfAssetAuthLoading) ? (
-            suppressFileLoadingIndicator
+            isSelectedImage
+              ? <div className="flex h-full items-center justify-center p-4"><ImageLoadingPlaceholder className="size-48 max-w-full rounded-md" /></div>
+              : suppressFileLoadingIndicator
               ? <div className="p-4" />
               : (
                 <div className="p-4 flex items-center gap-2 typography-ui text-muted-foreground">
