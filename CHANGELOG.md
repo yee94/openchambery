@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.3-beta.9] - 2026-10-20
+
+### 改进
+
+- 移动端图片加载占位改为局部亮区移动、呼吸变化的点阵动画，适配深浅主题与减少动态效果设置。
+
 ## [2.1.3-beta.8] - 2026-10-20
 
 ### 改进

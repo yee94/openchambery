@@ -5,7 +5,7 @@
   overflow: hidden;
   border-radius: inherit;
   background-color: var(--surface-muted);
-  background-image: radial-gradient(circle, color-mix(in srgb, var(--surface-muted-foreground) 30%, transparent) 1px, transparent 1px);
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--surface-muted-foreground) 22%, transparent) 0.7px, transparent 1.3px);
   background-size: 11px 11px;
   isolation: isolate;
 }
@@ -14,13 +14,25 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(110deg, transparent 15%, color-mix(in srgb, var(--surface-foreground) 9%, transparent) 50%, transparent 85%);
-  transform: translateX(-100%);
-  animation: oc-image-loading-sweep 2.2s ease-in-out infinite;
+  background-image: radial-gradient(circle, var(--surface-foreground) 1.1px, transparent 1.6px);
+  background-size: 11px 11px;
+  mask-image: radial-gradient(black, transparent 60%), radial-gradient(black, transparent 62%);
+  mask-repeat: no-repeat;
+  mask-size: 74% 64%, 54% 54%;
+  mask-position: 16% 20%, 30% 32%;
+  animation: oc-image-loading-drift 4.2s ease-in-out infinite, oc-image-loading-breathe 1.9s ease-in-out infinite;
 }
 
-@keyframes oc-image-loading-sweep {
-  to { transform: translateX(100%); }
+@keyframes oc-image-loading-drift {
+  0%, 100% { mask-size: 74% 64%, 54% 54%; mask-position: 16% 20%, 30% 32%; }
+  25% { mask-size: 64% 82%, 59% 51%; mask-position: 84% 16%, 66% 30%; }
+  50% { mask-size: 83% 62%, 51% 62%; mask-position: 82% 84%, 62% 68%; }
+  75% { mask-size: 67% 75%, 62% 54%; mask-position: 14% 82%, 34% 66%; }
+}
+
+@keyframes oc-image-loading-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 
 .oc-image-frame {
