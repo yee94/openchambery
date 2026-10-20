@@ -10,7 +10,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import { refreshOpenCodeConfiguration } from '@/stores/useAgentsStore';
-import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 import { providerConnectionQueryOptions } from './providerConnectionQueries';
 import { createProviderOAuthFlow } from './providerOAuth';
 import {
@@ -131,37 +131,40 @@ export const QuotaCredentials: React.FC<{ providerId: ProviderId; providerName: 
   });
 
   const field = (name: string, label: string, placeholder: string) => (
-    <label className="oc-settings-group-row flex flex-col gap-1 typography-ui-label text-foreground">
-      {label}
+    <SettingsRow label={label}>
       <Input
-        className="font-mono text-xs"
+        className="w-full font-mono text-xs"
         type={name === 'workspaceId' ? 'text' : 'password'}
         autoComplete="off"
         value={values[name] ?? ''}
         onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))}
         placeholder={status?.secretMasked ?? placeholder}
       />
-    </label>
+    </SettingsRow>
   );
   return (
     <div data-settings-item={`providers.${providerId}-credentials`}>
       <SettingsGroup label={providerName} className="oc-settings-detail-group">
       {providerId === 'opencode-go' && (
-        <div className="oc-settings-group-row space-y-3">
+        <>
           {connectionQuery.isPending ? (
-            <p className="typography-meta text-muted-foreground">{t('settings.providers.page.auth.loadingMethods')}</p>
+            <div className="oc-settings-group-row">
+              <p className="typography-meta text-muted-foreground">{t('settings.providers.page.auth.loadingMethods')}</p>
+            </div>
           ) : consoleConnected ? (
-            <div className="flex items-start gap-1.5 py-1.5" role="status">
-              <Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-success)]" />
+            <div className="oc-settings-group-row flex items-center gap-1.5" role="status">
+              <Icon name="check" className="h-4 w-4 shrink-0 text-[var(--status-success)]" />
               <p className="min-w-0 typography-ui-label text-foreground">{t('settings.providers.page.openCodeGo.consoleConnected')}</p>
             </div>
           ) : (
             <>
-              <p className="typography-meta text-muted-foreground">{t('settings.providers.page.openCodeGo.consoleHint')}</p>
+              <div className="oc-settings-group-row">
+                <p className="typography-meta text-muted-foreground">{t('settings.providers.page.openCodeGo.consoleHint')}</p>
+              </div>
               {(consoleMethods.length > 0 ? consoleMethods : [{ id: '', label: undefined }]).map((method) => {
                 const pending = consoleAttempt?.methodID === method.id;
                 return (
-                  <div key={method.id || 'console'} className="space-y-3">
+                  <div key={method.id || 'console'} className="oc-settings-group-row">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <p className="min-w-0 typography-ui-label text-foreground">{method.label || t('settings.providers.page.openCodeGo.consoleSignIn')}</p>
                       <div className="flex flex-wrap gap-2">
@@ -184,18 +187,18 @@ export const QuotaCredentials: React.FC<{ providerId: ProviderId; providerName: 
                       </div>
                     </div>
                     {pending && consoleAttempt?.instructions && (
-                      <p className="typography-meta text-[var(--primary-base)] bg-[var(--primary-base)]/10 px-2 py-1.5 rounded">
+                      <p className="mt-2 typography-meta text-[var(--primary-base)] bg-[var(--primary-base)]/10 px-2 py-1.5 rounded">
                         {consoleAttempt.instructions}
                       </p>
                     )}
                     {pending && consoleAttempt?.userCode && (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                         <Input value={consoleAttempt.userCode} readOnly className="min-w-0 flex-1 font-mono text-center tracking-widest" />
                         <Button variant="outline" size="xs" className="!font-normal" onClick={() => void copyValue(consoleAttempt.userCode ?? '', 'settings.providers.page.toast.deviceCodeCopied', 'settings.providers.page.toast.deviceCodeCopyFailed')}>{t('settings.providers.page.actions.copyCode')}</Button>
                       </div>
                     )}
                     {pending && consoleAttempt?.url && (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                         <Input value={consoleAttempt.url} readOnly className="min-w-0 flex-1 text-xs text-muted-foreground" />
                         <div className="flex flex-wrap gap-1">
                           <Button variant="outline" size="xs" className="!font-normal" onClick={() => openExternalUrl(consoleAttempt.url ?? '')}>{t('settings.providers.page.actions.open')}</Button>
@@ -204,7 +207,7 @@ export const QuotaCredentials: React.FC<{ providerId: ProviderId; providerName: 
                       </div>
                     )}
                     {pending && consoleAttempt?.mode === 'code' && (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                         <Input
                           value={consoleCode}
                           onChange={(event) => setConsoleCode(event.target.value)}
@@ -227,7 +230,7 @@ export const QuotaCredentials: React.FC<{ providerId: ProviderId; providerName: 
               })}
             </>
           )}
-        </div>
+        </>
       )}
       {providerId === 'opencode-go' && field('workspaceId', t('settings.providers.page.openCodeGo.workspaceId'), 'wrk_...')}
       {providerId === 'opencode-go' && field('authCookie', t('settings.providers.page.openCodeGo.authCookie'), 'auth=...')}

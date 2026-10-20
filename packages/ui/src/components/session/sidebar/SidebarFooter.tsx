@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from "@/lib/i18n";
+import { DeviceConnections } from './DeviceConnections';
 
 type Props = {
   onOpenSettings: () => void;
@@ -53,6 +54,7 @@ export function SidebarFooter({
               {t("sessions.sidebar.footer.actions.settings")}
             </TooltipContent>
           </Tooltip>
+          <DeviceConnections />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

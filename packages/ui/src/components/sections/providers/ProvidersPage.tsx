@@ -32,13 +32,14 @@ import { providerConnectionQueryOptions } from './providerConnectionQueries';
 import { createProviderOAuthFlow } from './providerOAuth';
 import { methodsForSignIn, signInIntegrationIdForOAuth } from './providerSignIn';
 import { QuotaCredentials } from './QuotaCredentials';
-import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 type ProviderSettingsSectionProps = {
   itemId?: string;
   label: React.ReactNode;
   description?: React.ReactNode;
   action?: React.ReactNode;
+  rows?: boolean;
   children: React.ReactNode;
 };
 
@@ -47,6 +48,7 @@ const ProviderSettingsSection = ({
   label,
   description,
   action,
+  rows = false,
   children,
 }: ProviderSettingsSectionProps) => (
   <div data-settings-item={itemId}>
@@ -60,7 +62,7 @@ const ProviderSettingsSection = ({
       ) : label}
       description={description}
     >
-      <div className="oc-settings-group-row">{children}</div>
+      {rows ? children : <div className="oc-settings-group-row">{children}</div>}
     </SettingsGroup>
   </div>
 );
@@ -609,24 +611,28 @@ const ProvidersPageContent: React.FC = () => {
           </ProviderSettingsSection>
 
           {candidateProviderId && (
-            <ProviderSettingsSection itemId="providers.auth" label={t('settings.providers.page.auth.title')}>
+            <ProviderSettingsSection itemId="providers.auth" label={t('settings.providers.page.auth.title')} rows={!authLoading}>
               {authLoading ? (
                 <p className="typography-meta text-muted-foreground">{t('settings.providers.page.auth.loadingMethods')}</p>
               ) : (
-                <div className="space-y-4">
-                  <div className="py-1.5">
-                    <label className="typography-ui-label text-foreground flex items-center gap-1.5">
-                      {t('settings.providers.page.auth.apiKeyLabel')}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent sideOffset={8} className="max-w-xs">
-                          {t('settings.providers.page.auth.apiKeyTooltip')}
-                        </TooltipContent>
-                      </Tooltip>
-                    </label>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1.5">
+                <>
+                  <SettingsRow
+                    className="oc-settings-split-row-stacked"
+                    label={(
+                      <span className="flex items-center gap-1.5">
+                        {t('settings.providers.page.auth.apiKeyLabel')}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent sideOffset={8} className="max-w-xs">
+                            {t('settings.providers.page.auth.apiKeyTooltip')}
+                          </TooltipContent>
+                        </Tooltip>
+                      </span>
+                    )}
+                  >
+                    <div className="oc-settings-value-inline">
                       <Input
                         type="password"
                         value={apiKeyInputs[candidateProviderId] ?? ''}
@@ -637,18 +643,18 @@ const ProvidersPageContent: React.FC = () => {
                           }))
                         }
                         placeholder={t('settings.providers.page.auth.apiKeyPlaceholder')}
-                        className="flex-1 font-mono text-xs"
+                        className="oc-settings-value-inline-input font-mono text-xs"
                       />
                       <Button
                         size="xs"
-                        className="!font-normal shrink-0"
+                        className="!font-normal"
                         onClick={() => handleSaveApiKey(candidateProviderId)}
                         disabled={authBusyKey === `api:${candidateProviderId}`}
                       >
                         {authBusyKey === `api:${candidateProviderId}` ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.saveKey')}
                       </Button>
                     </div>
-                  </div>
+                  </SettingsRow>
 
                   {(() => {
                     const candidateAuthMethods = methodsForSignIn(candidateProviderId, authMethodsByProvider);
@@ -661,8 +667,8 @@ const ProvidersPageContent: React.FC = () => {
                       return null;
                     }
 
-                    return (
-                      <div className="space-y-4 border-t border-[var(--surface-subtle)] pt-2">
+                     return (
+                       <div className="oc-settings-group-row space-y-4">
                         {candidateOAuthMethods.map(({ method, methodIndex }, index) => {
                           const methodLabel = method.label || method.name || t('settings.providers.page.auth.oauthMethodFallback', { index: String(index + 1) });
                           const codeKey = `${candidateProviderId}:${methodIndex}`;
@@ -747,7 +753,7 @@ const ProvidersPageContent: React.FC = () => {
                       </div>
                     );
                   })()}
-                </div>
+                </>
               )}
             </ProviderSettingsSection>
           )}
@@ -803,6 +809,7 @@ const ProvidersPageContent: React.FC = () => {
         {/* Authentication */}
         <ProviderSettingsSection
           itemId="providers.auth"
+          rows={showAuthPanel && !authLoading}
           label={t('settings.providers.page.auth.title')}
           action={(
             <Button
@@ -811,7 +818,7 @@ const ProvidersPageContent: React.FC = () => {
               className="!font-normal"
               onClick={() => { clearOAuth(); setShowAuthPanel((prev) => !prev); }}
             >
-              {showAuthPanel ? t('settings.providers.page.actions.hide') : t('settings.providers.page.actions.reconnect')}
+              {showAuthPanel ? t('settings.common.actions.cancel') : t('settings.providers.page.actions.reconnect')}
             </Button>
           )}
         >
@@ -824,45 +831,49 @@ const ProvidersPageContent: React.FC = () => {
             ) : authLoading ? (
               <div className="py-1.5 typography-meta text-muted-foreground">{t('settings.providers.page.auth.loadingMethods')}</div>
             ) : (
-              <div className="space-y-4">
-                <div className="py-1.5">
-                  <label className="typography-ui-label text-foreground flex items-center gap-1.5">
-                    {t('settings.providers.page.auth.apiKeyLabel')}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent sideOffset={8} className="max-w-xs">
-                        {t('settings.providers.page.auth.apiKeyTooltip')}
-                      </TooltipContent>
-                    </Tooltip>
-                  </label>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1.5">
-                    <Input
-                      type="password"
-                      value={apiKeyInputs[selectedProvider.id] ?? ''}
-                      onChange={(event) =>
-                        setApiKeyInputs((prev) => ({
-                          ...prev,
-                          [selectedProvider.id]: event.target.value,
-                        }))
-                      }
-                      placeholder={t('settings.providers.page.auth.apiKeyPlaceholder')}
-                      className="flex-1 font-mono text-xs"
-                    />
-                    <Button
-                      size="xs"
-                      className="!font-normal shrink-0"
-                      onClick={() => handleSaveApiKey(selectedProvider.id)}
-                      disabled={authBusyKey === `api:${selectedProvider.id}`}
-                    >
-                      {authBusyKey === `api:${selectedProvider.id}` ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.saveKey')}
-                    </Button>
-                  </div>
-                </div>
+              <>
+                  <SettingsRow
+                    className="oc-settings-split-row-stacked"
+                    label={(
+                      <span className="flex items-center gap-1.5">
+                        {t('settings.providers.page.auth.apiKeyLabel')}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent sideOffset={8} className="max-w-xs">
+                            {t('settings.providers.page.auth.apiKeyTooltip')}
+                          </TooltipContent>
+                        </Tooltip>
+                      </span>
+                    )}
+                  >
+                    <div className="oc-settings-value-inline">
+                      <Input
+                        type="password"
+                        value={apiKeyInputs[selectedProvider.id] ?? ''}
+                        onChange={(event) =>
+                          setApiKeyInputs((prev) => ({
+                            ...prev,
+                            [selectedProvider.id]: event.target.value,
+                          }))
+                        }
+                        placeholder={t('settings.providers.page.auth.apiKeyPlaceholder')}
+                        className="oc-settings-value-inline-input font-mono text-xs"
+                      />
+                      <Button
+                        size="xs"
+                        className="!font-normal"
+                        onClick={() => handleSaveApiKey(selectedProvider.id)}
+                        disabled={authBusyKey === `api:${selectedProvider.id}`}
+                      >
+                        {authBusyKey === `api:${selectedProvider.id}` ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.saveKey')}
+                      </Button>
+                    </div>
+                  </SettingsRow>
 
                 {oauthAuthMethods.length > 0 && (
-                  <div className="space-y-4 border-t border-[var(--surface-subtle)] pt-2">
+                  <div className="oc-settings-group-row space-y-4">
                     {oauthAuthMethods.map(({ method, methodIndex }, index) => {
                       const methodLabel = method.label || method.name || t('settings.providers.page.auth.oauthMethodFallback', { index: String(index + 1) });
                       const codeKey = `${selectedProvider.id}:${methodIndex}`;
@@ -946,7 +957,7 @@ const ProvidersPageContent: React.FC = () => {
                     })}
                   </div>
                 )}
-              </div>
+              </>
             )}
         </ProviderSettingsSection>
 

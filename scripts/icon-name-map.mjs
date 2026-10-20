@@ -73,6 +73,34 @@ export const ROUND_CHAT_BUBBLE_SVG =
   `<path d="M12 3a9 9 0 0 1 7.45 14.05L21 21l-4.05-1.55A9 9 0 1 1 12 3Z" />`
 
 /**
+ * Device badges for the connected-device list. Brand marks (Apple, Android)
+ * keep their real silhouette; desktop and CLI stay in the rounded outline
+ * family so the column does not read as a logo wall.
+ */
+/** iOS: Apple mark — one continuous outline, bite and leaf kept soft. */
+export const ROUND_DEVICE_IOS_SVG =
+  `<path d="M12.9 6.3c.9-.1 2-.6 2.6-1.5.6-.8.9-1.9.8-2.8-1 .1-2.1.7-2.8 1.5-.6.7-1 1.8-.9 2.8Z" />` +
+  `<path d="M16.4 12.6c0-2 1.6-3 1.7-3.1-.9-1.4-2.4-1.6-2.9-1.6-1.2-.1-2.4.7-3 .7-.6 0-1.6-.7-2.6-.7-1.3 0-2.6.8-3.3 2-1.4 2.5-.4 6.1 1 8.1.7 1 1.5 2.1 2.5 2 1-.04 1.4-.6 2.6-.6s1.5.6 2.6.6c1.1 0 1.8-1 2.5-2 .8-1.2 1.1-2.3 1.1-2.4-.02-.01-2.2-.9-2.2-3z" />`
+
+/** Android: robot head with antennae and rounded eyes. */
+export const ROUND_DEVICE_ANDROID_SVG =
+  `<path d="M5 13.5a7 7 0 0 1 14 0v5a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 18.5z" />` +
+  `<path d="M8.4 8.2 6.9 5.6M15.6 8.2l1.5-2.6" />` +
+  `<path d="M9.75 13.25h.01M14.25 13.25h.01" />`
+
+/** Tablet: same rounded language as desktop, wider body, centered home dot. */
+export const ROUND_DEVICE_TABLET_SVG =
+  `<rect x="4.5" y="2.5" width="15" height="19" rx="4" /><path d="M11.5 18h1" />`
+
+/** Desktop: monitor with a soft stand and a rounded base. */
+export const ROUND_DEVICE_DESKTOP_SVG =
+  `<rect x="2.5" y="4" width="19" height="12.5" rx="3.5" /><path d="M9 20h6" /><path d="M12 16.5V20" />`
+
+/** Terminal / CLI: rounded window with a prompt caret and no title bar noise. */
+export const ROUND_DEVICE_TERMINAL_SVG =
+  `<rect x="2.5" y="3.5" width="19" height="17" rx="4" /><path d="m8 10 2.25 2L8 14" /><path d="M12.75 14h3.5" />`
+
+/**
  * Compact, overlapping double speech bubbles for session references. The outer
  * contours stay round at 12–16px and match the chat-thread glyph in product UI.
  */
@@ -89,6 +117,7 @@ export const REMIX_PUSHPIN_FILL_SVG =
 
 /** @type {Record<string, IconMapEntry>} */
 export const ICON_NAME_MAP = {
+  "devices-connected": { custom: '<path d="M13 17H5a2.5 2.5 0 0 1-2.5-2.5v-8A2.5 2.5 0 0 1 5 4h12a2.5 2.5 0 0 1 2.5 2.5V8M8 20h4M10 17v3" /><rect x="15" y="10" width="7" height="11" rx="2" /><path d="M18 18.5h1" />' },
   "add": { lucide: "plus", fill: false },
   "changes": { custom: '<path d="M6 8h12M12 2v12M6 21h12" />' },
   "add-circle": { lucide: "circle-plus", fill: false },
@@ -301,6 +330,15 @@ export const ICON_NAME_MAP = {
   "shield-user": { lucide: "shield-user", fill: false },
   "shuffle": { lucide: "shuffle", fill: false },
   "slash-commands-2": { lucide: "terminal", fill: false },
+  "device-android": { custom: ROUND_DEVICE_ANDROID_SVG },
+  "device-apple": { custom: ROUND_DEVICE_IOS_SVG },
+  "device-ios": { custom: ROUND_DEVICE_IOS_SVG },
+  "device-tablet": { custom: ROUND_DEVICE_TABLET_SVG },
+  "device-desktop": { custom: ROUND_DEVICE_DESKTOP_SVG },
+  "device-macos": { custom: ROUND_DEVICE_DESKTOP_SVG },
+  "device-windows": { custom: ROUND_DEVICE_DESKTOP_SVG },
+  "device-linux": { custom: ROUND_DEVICE_TERMINAL_SVG },
+  "device-cli": { custom: ROUND_DEVICE_TERMINAL_SVG },
   "smartphone": { lucide: "smartphone", fill: false },
   "sparkling": { lucide: "sparkles", fill: false },
   "split-cells-horizontal": { lucide: "split-square-horizontal", fill: false },

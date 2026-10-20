@@ -321,10 +321,10 @@ export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ itemId }) => {
         )}
       >
 
-      <div className="overflow-hidden flex flex-col">
+      <div className="flex flex-col">
         {connected ? (
-          <div className={cn("px-4 py-3", isMobile ? "flex flex-col gap-3" : "flex items-center justify-between gap-4")}>
-            <div className={cn("flex min-w-0 items-center gap-4", isMobile ? "w-full" : undefined)}>
+          <div className={cn('oc-settings-group-row', isMobile ? 'flex flex-col items-stretch gap-3' : 'flex items-center justify-between gap-4')}>
+            <div className={cn("flex min-w-0 items-center gap-3", isMobile ? "w-full" : undefined)}>
               {user?.avatarUrl ? (
                 <img
                   src={user.avatarUrl}
@@ -373,23 +373,22 @@ export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ itemId }) => {
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-between gap-4 px-4 py-4">
+          <div className={cn('oc-settings-group-row', isMobile ? 'flex flex-col items-stretch gap-3' : 'flex items-center justify-between gap-4')}>
             <div className="flex min-w-0 flex-col">
               <span className="typography-ui-label text-foreground">{t('settings.github.page.status.notConnected')}</span>
             </div>
-            <Button size="sm" variant="default" onClick={startConnect} disabled={isBusy}>
+            <Button size="sm" variant="default" onClick={startConnect} disabled={isBusy} className={cn(isMobile ? 'w-full' : undefined)}>
               {t('settings.github.page.actions.connect')}
             </Button>
           </div>
         )}
 
         {otherAccounts.length > 0 && (
-          <div className="mt-2 border-t border-[var(--surface-subtle)] pt-2 px-2 pb-1">
-            <div className="typography-micro text-muted-foreground mb-2 px-1">
+          <div className="oc-settings-group-row flex flex-col gap-2">
+            <div className="typography-micro text-muted-foreground">
               {t('settings.github.page.label.otherAccounts')}
             </div>
-            <div className="space-y-1">
-              {otherAccounts.map((account) => {
+            {otherAccounts.map((account) => {
                 const accountUser = account.user;
                 const sourceLabel = account.source === 'gh-cli'
                   ? t('settings.github.page.accountSource.cli')
@@ -397,7 +396,7 @@ export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ itemId }) => {
                 return (
                   <div
                     key={account.id}
-                    className="flex items-center justify-between gap-3 rounded-md border border-[var(--surface-subtle)] bg-[var(--surface-muted)] px-3 py-2"
+                    className="flex items-center justify-between gap-3"
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       {accountUser?.avatarUrl ? (
@@ -436,14 +435,13 @@ export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ itemId }) => {
                   </div>
                 );
               })}
-            </div>
           </div>
         )}
 
       </div>
 
       {connected && (
-        <div className="mt-2 px-2 pb-2">
+        <div className="oc-settings-group-row flex justify-end">
           <Button size="sm"
             variant="outline"
             onClick={startConnect}
@@ -492,9 +490,9 @@ export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ itemId }) => {
 
       {ghCli?.available && !ghCli?.active && (!ghCli.user || ghCli.disabled) && (
         <SettingsGroup label={t('settings.github.page.ghCli.title')}>
-          <div className="overflow-hidden">
-            <div className={cn("px-4 py-3", isMobile ? "flex flex-col gap-3" : "flex items-center justify-between gap-4")}>
-              <div className={cn("flex min-w-0 items-center gap-4", isMobile ? "w-full" : undefined)}>
+          <div className="oc-settings-group-row">
+            <div className={cn(isMobile ? "flex flex-col gap-3" : "flex items-center justify-between gap-4")}>
+              <div className={cn("flex min-w-0 items-center gap-3", isMobile ? "w-full" : undefined)}>
                 {ghCli.user?.avatarUrl ? (
                   <img
                     src={ghCli.user.avatarUrl}
