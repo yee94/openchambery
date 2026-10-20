@@ -24,15 +24,62 @@ const insert = vi.fn();
 const partial = vi.fn();
 const start = vi.fn();
 const cancel = vi.fn();
-const render = async () => { await act(async () => root.render(<DesktopDictationButton onInsert={insert} onPartial={partial} onStart={start} onCancel={cancel} />)); };
+const command = vi.fn();
+const recordingChange = vi.fn();
+const inputRef = { current: null as HTMLTextAreaElement | null };
+const render = async () => { await act(async () => root.render(<DesktopDictationButton inputRef={inputRef} onCommandChange={command} onRecordingChange={recordingChange} onInsert={insert} onPartial={partial} onStart={start} onCancel={cancel} />)); };
 const button = () => host.querySelector('button')!;
 beforeEach(async () => {
     vi.clearAllMocks();
     Object.assign(mock.dictation, { status: 'idle', error: null });
     host = document.createElement('div'); document.body.append(host);
     root = createRoot(host); await render();
+    inputRef.current = document.createElement('textarea'); host.append(inputRef.current);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+
+it('tracks Cmd transitions without publishing ordinary typing events', async () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true }));
+    for (let i = 0; i < 50; i++) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', metaKey: true }));
+    expect(command.mock.calls).toEqual([[true]]);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
+    expect(command.mock.calls).toEqual([[true], [false]]);
+});
+
+it('holds outside the input and after releasing Cmd, then confirms on mouse release', async () => {
+    const down = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse', pointerId: 3, button: 0, metaKey: true });
+    await act(async () => { inputRef.current!.dispatchEvent(down); });
+    expect(down.defaultPrevented).toBe(true);
+    expect(start).toHaveBeenCalledTimes(1);
+    mock.dictation.status = 'recording'; await render();
+    expect(recordingChange).toHaveBeenLastCalledWith(true);
+    expect(host.textContent).toContain('chat.dictation.releaseConfirm');
+    expect(host.textContent).not.toContain('chat.dictation.keyboardHint');
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
+    window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 3, clientX: 1000 }));
+    window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 4 }));
+    expect(mock.dictation.confirmDictation).not.toHaveBeenCalled();
+    await act(async () => { window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 3, button: 0 })); });
+    expect(mock.dictation.confirmDictation).toHaveBeenCalledTimes(1);
+});
+
+it('finishes even when released while microphone startup is pending', async () => {
+    let resolve!: () => void;
+    mock.dictation.startDictation.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+    await act(async () => { inputRef.current!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', pointerId: 1, button: 0, metaKey: true })); });
+    await act(async () => { window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, button: 0 })); });
+    expect(mock.dictation.confirmDictation).toHaveBeenCalledTimes(1);
+    await act(async () => resolve());
+});
+
+it('preserves ordinary clicks and read-only inputs', async () => {
+    for (const options of [{}, { metaKey: true, button: 2 }, { metaKey: true, pointerType: 'touch' }]) {
+        inputRef.current!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', button: 0, ...options }));
+    }
+    inputRef.current!.readOnly = true;
+    inputRef.current!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', button: 0, metaKey: true }));
+    expect(start).not.toHaveBeenCalled();
+});
 
 it('toggles recording with a theme-filled mic and inserts the final text', async () => {
     await act(async () => button().click());

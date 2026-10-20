@@ -7,13 +7,16 @@
     user-select: none;
 }
 .oc-speech-overlay {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
     position: fixed;
     z-index: 9999;
     inset: 0;
     overflow: hidden;
     pointer-events: none;
     color: var(--surface-foreground);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-foreground) 94%, transparent), color-mix(in srgb, var(--surface-foreground) 82%, transparent) 15%, color-mix(in srgb, var(--surface-foreground) 82%, transparent));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-foreground) 94%, transparent), color-mix(in srgb, var(--surface-foreground) 82%, transparent) 30%, color-mix(in srgb, var(--surface-foreground) 48%, transparent) 50%, color-mix(in srgb, var(--surface-foreground) 82%, transparent) 70%, color-mix(in srgb, var(--surface-foreground) 94%, transparent));
     animation: oc-speech-in 240ms ease-out both;
 }
 .oc-speech-light-field { position: absolute; inset: 0 0 auto; height: 48vh; min-height: 210px; overflow: hidden; }
@@ -50,10 +53,14 @@
     letter-spacing: .25px;
     animation: oc-speech-breathe 2.4s ease-in-out infinite;
 }
+.oc-speech-overlay[data-error="true"] { pointer-events: auto; touch-action: none; }
+.oc-speech-error { color: var(--status-error); animation: none; }
 .oc-speech-interim { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 58%, transparent); text-underline-offset: 4px; }
 .oc-speech-actions { display: flex; justify-content: center; gap: 8px; pointer-events: auto; }
 .oc-speech-gesture-stage { position: absolute; inset: auto 0 0; padding-bottom: env(safe-area-inset-bottom); background: linear-gradient(transparent calc(100% - env(safe-area-inset-bottom)), color-mix(in srgb, var(--surface-background) 72%, var(--surface-foreground)) 0); }
-.oc-speech-geometry { display: block; width: 100%; height: auto; overflow: visible; }
+.oc-speech-gesture-surfaces { position: relative; }
+.oc-speech-target-glass { position: absolute; inset: 0; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.oc-speech-geometry { position: relative; display: block; width: 100%; height: auto; overflow: visible; }
 .oc-speech-target {
     font-size: 20px;
     font-weight: 600;

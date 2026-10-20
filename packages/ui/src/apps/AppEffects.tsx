@@ -14,6 +14,7 @@ import { useSync } from '@/sync/use-sync';
 import { useWorktreeOrderSync } from '@/sync/worktree-order-sync';
 import { restoreWebviewZoomFactor } from '@/lib/webviewZoom';
 import { startWorktreeTopologySync } from '@/lib/worktrees/worktreeTopologySync';
+import { mountSpeechSettingsSync } from '@/sync/speech-settings-sync';
 
 const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
 
@@ -73,6 +74,7 @@ const MiniChatPresenceBridge: React.FC = () => {
 export function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
   embeddedBackgroundWorkEnabled: boolean;
 }) {
+  React.useEffect(mountSpeechSettingsSync, []);
   // Retention remains available from Settings, but never triggers a broad
   // catalog fetch during normal startup.
   useSessionAutoCleanup({ enabled: embeddedBackgroundWorkEnabled, autoRun: false });

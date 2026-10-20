@@ -2210,6 +2210,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.pastedTextReference': '貼り付けテキスト #{index} · {count} 文字',
   'chat.dictation.start': '音声入力を開始',
   'chat.dictation.holdToTalk': '押して話す',
+  'chat.dictation.holdHere': 'ここをマウスで長押しして、音声を文字に変換。',
+  'chat.dictation.releaseConfirm': '離して確定',
   'chat.dictation.inputPlaceholder': 'メッセージを入力、長押しで文字起こし',
   'chat.dictation.edit': '編集',
   'chat.dictation.cancelGesture': 'キャンセル',

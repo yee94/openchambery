@@ -1469,6 +1469,8 @@ export const dict: Record<I18nKey, string> = {
   'diffView.reviewDialog.toast.startFailed': 'No se pudo iniciar el flujo de revisión',
   'chat.dictation.start': 'Iniciar dictado',
   'chat.dictation.holdToTalk': 'Mantén pulsado para hablar',
+  'chat.dictation.holdHere': 'Mantén pulsado el ratón aquí para convertir voz en texto.',
+  'chat.dictation.releaseConfirm': 'Suelta para confirmar',
   'chat.dictation.inputPlaceholder': 'Escribe un mensaje, mantén pulsado para transcribir',
   'chat.dictation.edit': 'Editar',
   'chat.dictation.cancelGesture': 'Cancelar',

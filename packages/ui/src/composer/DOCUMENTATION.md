@@ -41,6 +41,14 @@ window blur before capture starts is ignored. The component is keyed by DraftKey
 so changing drafts/runtimes tears down capture and fences late results through
 `useDictation`. Recording updates stay local to the button rather than invalidating
 the composer; no transcript overlay or duration meter is mounted on desktop.
+Desktop also supports Cmd + left-button hold on the editable textarea. Cmd changes
+the placeholder to hold-to-talk; hovering the textarea with Cmd held and all active
+desktop recordings use `--voice-active-fill` for the 1px composer border without an
+additional focus ring. Held recording shows “Release to confirm” beside the mic. The initiating
+pointer is tracked on window capture: leaving the field or releasing Cmd does not
+stop capture; left-button release finalizes into the draft without sending.
+Pointer cancellation cancels recognition. Modifier and recording transitions alone
+are published to ChatInput; ordinary keystrokes and pointer movement add no renders.
 While recording, a small muted hint to the right of the microphone shows Enter
 to confirm. Capture-phase Enter handling suppresses composer
 submission during recording/finalization; modified Enter and IME composition are

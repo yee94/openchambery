@@ -2214,6 +2214,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.pastedTextReference': '붙여넣은 텍스트 #{index} · {count}자',
   'chat.dictation.start': '받아쓰기 시작',
   'chat.dictation.holdToTalk': '길게 눌러 말하기',
+  'chat.dictation.holdHere': '여기를 마우스로 길게 눌러 음성을 텍스트로 변환하세요.',
+  'chat.dictation.releaseConfirm': '놓아서 확인',
   'chat.dictation.inputPlaceholder': '메시지 입력, 길게 눌러 음성을 텍스트로 변환',
   'chat.dictation.edit': '편집',
   'chat.dictation.cancelGesture': '취소',

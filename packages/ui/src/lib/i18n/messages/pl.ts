@@ -1413,6 +1413,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.placeholder.shell': 'Wpisz polecenie powłoki...',
   'chat.dictation.start': 'Rozpocznij dyktowanie',
   'chat.dictation.holdToTalk': 'Przytrzymaj, aby mówić',
+  'chat.dictation.holdHere': 'Przytrzymaj tutaj przycisk myszy, aby zamienić mowę na tekst.',
+  'chat.dictation.releaseConfirm': 'Puść, aby potwierdzić',
   'chat.dictation.inputPlaceholder': 'Wpisz wiadomość, przytrzymaj, aby zamienić mowę na tekst',
   'chat.dictation.edit': 'Edytuj',
   'chat.dictation.cancelGesture': 'Anuluj',

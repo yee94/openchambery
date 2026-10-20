@@ -819,11 +819,12 @@ describe('useConfigStore provider persistence', () => {
     const state = useConfigStore.getState();
     expect(state.settingsDefaultModel).toBeUndefined();
     expect(state.settingsAutoCreateWorktree).toBe(true);
-    expect(state.speechRate).toBe(1.2);
+    expect(state.speechRate).toBe(1);
     const rewritten = storage.get(runtimeScopedStorageKey(STORAGE_KEY)) ?? '';
     expect(JSON.parse(rewritten).version).toBe(5);
     expect(rewritten).not.toContain(sentinel);
     expect(rewritten).not.toContain('unknownPreference');
+    expect(rewritten).not.toContain('speechRate');
     expect(JSON.stringify(useConfigStore.persist.getOptions().partialize?.(state))).not.toContain(sentinel);
   });
 

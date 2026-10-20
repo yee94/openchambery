@@ -129,24 +129,6 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
       localStorage.removeItem('opencode-update-toast-dismissed-version');
     }
   }
-  if (typeof settings.dictationEnabled === 'boolean') {
-    localStorage.setItem('dictationEnabled', String(settings.dictationEnabled));
-  }
-  if (settings.sttProvider === 'local' || settings.sttProvider === 'openai-compatible' || settings.sttProvider === 'volcengine') {
-    localStorage.setItem('sttProvider', settings.sttProvider);
-  }
-  if (typeof settings.sttServerUrl === 'string') {
-    localStorage.setItem('sttServerUrl', settings.sttServerUrl);
-  }
-  if (typeof settings.sttModel === 'string') {
-    localStorage.setItem('sttModel', settings.sttModel);
-  }
-  if (typeof settings.sttLocalModel === 'string') {
-    localStorage.setItem('sttLocalModel', settings.sttLocalModel);
-  }
-  if (typeof settings.sttLanguage === 'string') {
-    localStorage.setItem('sttLanguage', settings.sttLanguage);
-  }
 };
 
 const dispatchSettingsSynced = (settings: DesktopSettings): void => {
@@ -452,9 +434,6 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   const configStore = typeof window !== 'undefined'
     ? window.__zustand_config_store__?.getState?.() ?? null
     : null;
-  const configStoreApi = typeof window !== 'undefined'
-    ? window.__zustand_config_store__ ?? null
-    : null;
   const queueStore = useMessageQueueStore.getState();
 
   if (typeof settings.showReasoningTraces === 'boolean' && settings.showReasoningTraces !== store.showReasoningTraces) {
@@ -665,30 +644,6 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
     const mode = normalizeMobileKeyboardMode(settings.mobileKeyboardMode, store.mobileKeyboardMode);
     if (mode !== store.mobileKeyboardMode) {
       store.setMobileKeyboardMode(mode);
-    }
-  }
-  if (configStoreApi && configStore) {
-    const nextConfigState: Partial<typeof configStore> = {};
-    if (typeof settings.dictationEnabled === 'boolean' && settings.dictationEnabled !== configStore.dictationEnabled) {
-      nextConfigState.dictationEnabled = settings.dictationEnabled;
-    }
-    if ((settings.sttProvider === 'local' || settings.sttProvider === 'openai-compatible' || settings.sttProvider === 'volcengine') && settings.sttProvider !== configStore.sttProvider) {
-      nextConfigState.sttProvider = settings.sttProvider;
-    }
-    if (typeof settings.sttServerUrl === 'string' && settings.sttServerUrl !== configStore.sttServerUrl) {
-      nextConfigState.sttServerUrl = settings.sttServerUrl;
-    }
-    if (typeof settings.sttModel === 'string' && settings.sttModel !== configStore.sttModel) {
-      nextConfigState.sttModel = settings.sttModel;
-    }
-    if (typeof settings.sttLocalModel === 'string' && settings.sttLocalModel !== configStore.sttLocalModel) {
-      nextConfigState.sttLocalModel = settings.sttLocalModel;
-    }
-    if (typeof settings.sttLanguage === 'string' && settings.sttLanguage !== configStore.sttLanguage) {
-      nextConfigState.sttLanguage = settings.sttLanguage;
-    }
-    if (Object.keys(nextConfigState).length > 0) {
-      configStoreApi.setState(nextConfigState);
     }
   }
 

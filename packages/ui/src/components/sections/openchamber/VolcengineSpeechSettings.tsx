@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useMutation } from '@tanstack/react-query';
 import { SettingsRow } from '@/components/sections/shared/SettingsGroup';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,11 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useI18n } from '@/lib/i18n';
 import { DictationTestDialog } from '@/components/dictation/DictationTestDialog';
 import { useServerTTS } from '@/hooks/useServerTTS';
-import { useVolcengineSpeechStore } from '@/stores/useVolcengineSpeechStore';
-import { useConfigStore } from '@/stores/useConfigStore';
 import { VOLCENGINE_TTS_RESOURCES, VOLCENGINE_TTS_VOICES } from '@/lib/voice/volcengine-catalog';
-import { getRuntimeGeneration, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
-import { saveVolcengineSpeechSettings, useVolcengineSpeechQuery, type VolcengineSpeechPatch, type VolcengineSpeechSettings as SpeechSettings } from '@/queries/volcengineSpeechQueries';
+import type { useSpeechSettingsForm } from './useSpeechSettingsForm';
 
 const CUSTOM_ID = '$custom';
 const ASR_RESOURCES = [
@@ -53,58 +49,15 @@ function SpeechIdSelect({ value, onChange, options, label, allowCustom = true, d
     </div>;
 }
 
-export function VolcengineSpeechSettings({ mode, children }: { mode: 'tts' | 'asr'; children?: ReactNode }) {
-    const generation = useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeGeneration, getRuntimeGeneration);
-    return <VolcengineSpeechSection key={`${generation}:${mode}`} mode={mode}>{children}</VolcengineSpeechSection>;
-}
-
-function VolcengineSpeechSection({ mode, children }: { mode: 'tts' | 'asr'; children?: ReactNode }) {
-    const { t } = useI18n();
-    const query = useVolcengineSpeechQuery();
-    return <>
-        {query.isError && <SettingsRow label={t('settings.voice.volcengine.loadFailed')}>
-            <Button variant="outline" size="sm" onClick={() => void query.refetch()}>{t('settings.voice.volcengine.retry')}</Button>
-        </SettingsRow>}
-        {!query.data && query.isPending && <SettingsRow label={t('common.loading')}>{null}</SettingsRow>}
-        {query.data ? <VolcengineSpeechForm mode={mode} settings={query.data}>{children}</VolcengineSpeechForm> : children}
-    </>;
-}
-
-function VolcengineSpeechForm({ mode, settings, children }: { mode: 'tts' | 'asr'; settings: SpeechSettings; children?: ReactNode }) {
+export function VolcengineSpeechSettings({ mode, form }: { mode: 'tts' | 'asr'; form: ReturnType<typeof useSpeechSettingsForm> }) {
     const { t } = useI18n();
     const active = useRef(true);
     useEffect(() => {
         active.current = true;
         return () => { active.current = false; };
     }, []);
-    const [draft, setDraft] = useState<VolcengineSpeechPatch>(() => {
-        const legacy = useVolcengineSpeechStore.getState();
-        if (settings.configured || !legacy.apiKey) return {};
-        return { apiKey: legacy.apiKey, voice: legacy.voice, resourceId: legacy.resourceId, asrResourceId: legacy.asrResourceId };
-    });
-    const saveMutation = useMutation({ mutationFn: saveVolcengineSpeechSettings, networkMode: 'always', retry: false, gcTime: 0 });
-    const { voice, resourceId, asrResourceId } = { ...settings, ...draft };
-    const dirty = Object.keys(draft).length > 0;
-    const saving = saveMutation.isPending;
-    const edit = (patch: VolcengineSpeechPatch) => {
-        setDraft((previous) => ({ ...previous, ...patch }));
-    };
-    const save = async () => {
-        const generation = getRuntimeGeneration();
-        const legacyKey = useVolcengineSpeechStore.getState().apiKey;
-        try {
-            const confirmed = await saveMutation.mutateAsync(draft);
-            if (!active.current) return null;
-            if (draft.apiKey !== undefined && legacyKey === useVolcengineSpeechStore.getState().apiKey) {
-                useVolcengineSpeechStore.getState().setApiKey('');
-            }
-            setDraft({});
-            return confirmed;
-        } catch {
-            if (active.current && generation === getRuntimeGeneration()) toast.error(t('settings.voice.volcengine.saveFailed'));
-            return null;
-        }
-    };
+    const { values: settings, draft, saving, edit, save } = form;
+    const { voice, resourceId, asrResourceId } = settings;
     const { speak, stop, isPlaying, error } = useServerTTS({ enabled: false });
     const [testOpen, setTestOpen] = useState(false);
     const test = async () => {
@@ -113,7 +66,7 @@ function VolcengineSpeechForm({ mode, settings, children }: { mode: 'tts' | 'asr
             return;
         }
         if (saving) return;
-        const confirmed = dirty ? await save() : settings;
+        const confirmed = await save();
         if (!confirmed || !active.current) return;
         if (!confirmed.configured) {
             toast.error(t('settings.providers.page.toast.apiKeyRequired'));
@@ -122,7 +75,7 @@ function VolcengineSpeechForm({ mode, settings, children }: { mode: 'tts' | 'asr
         if (mode === 'asr') {
             setTestOpen(true);
         } else {
-            const { speechRate, speechPitch, speechVolume } = useConfigStore.getState();
+            const { speechRate, speechPitch, speechVolume } = confirmed;
             void speak(t('settings.voice.page.preview.voiceLine', { voiceName: 'OpenChamber' }), { provider: 'volcengine', speed: speechRate, pitch: speechPitch, volume: speechVolume });
         }
     };
@@ -159,12 +112,6 @@ function VolcengineSpeechForm({ mode, settings, children }: { mode: 'tts' | 'asr
             </SettingsRow>
             {testOpen && <DictationTestDialog onClose={() => setTestOpen(false)} />}
             </>}
-            {children}
-            <div className="oc-settings-group-row flex justify-end">
-                <Button size="sm" aria-busy={saving} onClick={() => { if (!saving) void save(); }}>
-                    {t('settings.voice.volcengine.save')}
-                </Button>
-            </div>
         </>
     );
 }

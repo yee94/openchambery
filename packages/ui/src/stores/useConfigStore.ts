@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { speechDefaults } from '@/lib/voice/speechSettings';
 import type { StoreApi, UseBoundStore } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 import type { Agent, Config } from '@/lib/opencode/v2-types';
@@ -653,9 +654,6 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
     if (persistedState.settingsMessageStreamTransport === 'auto' || persistedState.settingsMessageStreamTransport === 'ws' || persistedState.settingsMessageStreamTransport === 'sse') {
         preferences.settingsMessageStreamTransport = persistedState.settingsMessageStreamTransport;
     }
-    for (const key of ['speechRate', 'speechPitch', 'speechVolume'] as const) {
-        if (typeof persistedState[key] === 'number' && Number.isFinite(persistedState[key])) preferences[key] = persistedState[key];
-    }
 
     const directoryScoped: Record<string, DirectoryScopedConfig> = {};
     if (isRecord(persistedState.directoryScoped)) {
@@ -843,6 +841,7 @@ interface ConfigStore {
     localTtsVoiceId: number;
     openaiVoice: string;
     openaiApiKey: string;
+    openaiApiKeyConfigured: boolean;
     openaiCompatibleUrl: string;
     openaiCompatibleApiKey: string;
     openaiCompatibleVoice: string;
@@ -1010,226 +1009,8 @@ export const useConfigStore = create<ConfigStore>()(
                 settingsDefaultFileViewerPreview: false,
                 settingsZenModel: undefined,
                 settingsMessageStreamTransport: 'auto',
-                // Voice provider preference - load from localStorage or default to 'browser'
-                voiceProvider: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('voiceProvider');
-                        if (saved === 'openai' || saved === 'browser' || saved === 'local' || saved === 'say' || saved === 'openai-compatible' || saved === 'volcengine') return saved;
-                    }
-                    return 'browser';
-                })(),
-                // TTS settings - load from localStorage with defaults
-                speechRate: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('speechRate');
-                        if (saved) {
-                            const parsed = parseFloat(saved);
-                            if (!isNaN(parsed) && parsed >= 0.5 && parsed <= 2) return parsed;
-                        }
-                    }
-                    return 1;
-                })(),
-                speechPitch: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('speechPitch');
-                        if (saved) {
-                            const parsed = parseFloat(saved);
-                            if (!isNaN(parsed) && parsed >= 0.5 && parsed <= 2) return parsed;
-                        }
-                    }
-                    return 1;
-                })(),
-                speechVolume: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('speechVolume');
-                        if (saved) {
-                            const parsed = parseFloat(saved);
-                            if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) return parsed;
-                        }
-                    }
-                    return 1;
-                })(),
-                // macOS Say voice - load from localStorage or default to 'Samantha'
-                sayVoice: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sayVoice');
-                        if (saved) return saved;
-                    }
-                    return 'Samantha';
-                })(),
-                // Local (Kokoro) TTS speaker id - load from localStorage or default to 0
-                localTtsVoiceId: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('localTtsVoiceId');
-                        if (saved !== null) {
-                            const parsed = Number.parseInt(saved, 10);
-                            if (Number.isInteger(parsed) && parsed >= 0) return parsed;
-                        }
-                    }
-                    return 0;
-                })(),
-                // Browser voice - load from localStorage or default to empty (auto-select)
-                browserVoice: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('browserVoice');
-                        if (saved) return saved;
-                    }
-                    return '';
-                })(),
-                // OpenAI voice - load from localStorage or default to 'nova'
-                openaiVoice: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiVoice');
-                        if (saved) return saved;
-                    }
-                    return 'nova';
-                })(),
-                // OpenAI API key for TTS - load from localStorage or default to empty
-                openaiApiKey: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiApiKey');
-                        if (saved) return saved;
-                    }
-                    return '';
-                })(),
-                // OpenAI-compatible custom server URL
-                openaiCompatibleUrl: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiCompatibleUrl');
-                        if (saved) return saved;
-                    }
-                    return '';
-                })(),
-                // OpenAI-compatible custom server API key
-                openaiCompatibleApiKey: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiCompatibleApiKey');
-                        if (saved) return saved;
-                    }
-                    return '';
-                })(),
-                // OpenAI-compatible custom server voice
-                openaiCompatibleVoice: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiCompatibleVoice');
-                        if (saved) return saved;
-                    }
-                    return 'af_sky';
-                })(),
-                // OpenAI-compatible custom server TTS model
-                openaiCompatibleTtsModel: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiCompatibleTtsModel');
-                        if (saved && saved !== 'speaches-ai/Kokoro-82M-v1.0-ONNX') return saved;
-                    }
-                    return 'kokoro';
-                })(),
-                // Voice input (dictation) master toggle - disabled until explicitly enabled
-                dictationEnabled: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('dictationEnabled');
-                        if (saved === 'true') return true;
-                    }
-                    return false;
-                })(),
-                // STT provider: 'local' (server-side sherpa-onnx) or 'openai-compatible'
-                sttProvider: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttProvider');
-                        if (saved === 'local' || saved === 'openai-compatible' || saved === 'volcengine') return saved;
-                        // Migrate legacy providers: 'server' used an OpenAI-compatible
-                        // endpoint; 'browser' and 'wasm' map to the local default.
-                        if (saved === 'server') return 'openai-compatible' as const;
-                    }
-                    return 'local' as const;
-                })(),
-                sttServerUrl: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttServerUrl');
-                        if (saved) return saved;
-                    }
-                    return 'http://localhost:8001/v1';
-                })(),
-                sttApiKey: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttApiKey');
-                        if (saved) return saved;
-                    }
-                    return '';
-                })(),
-                sttModel: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttModel');
-                        if (saved) return saved;
-                    }
-                    return 'deepdml/faster-whisper-large-v3-turbo-ct2';
-                })(),
-                sttLocalModel: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttLocalModel');
-                        if (saved) return saved;
-                    }
-                    return 'parakeet-tdt-0.6b-v2-int8';
-                })(),
-                sttLanguage: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttLanguage');
-                        if (saved !== null) return saved;
-                    }
-                    return '';
-                })(),
-                // Show TTS buttons on messages - disabled by default until user enables it
-                showMessageTTSButtons: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('showMessageTTSButtons');
-                        if (saved === 'true') return true;
-                    }
-                    return false;
-                })(),
-                ttsInputMode: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('ttsInputMode');
-                        if (saved === 'sanitized') return 'sanitized' as const;
-                        if (saved === 'raw') return 'raw' as const;
-                        if (saved === 'summarized') return 'summarized' as const;
-                    }
-                    return 'final' as const;
-                })(),
-                // Summarization settings
-                summarizeMessageTTS: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('summarizeMessageTTS');
-                        if (saved === 'true') return true;
-                    }
-                    return false;
-                })(),
-                summarizeVoiceConversation: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('summarizeVoiceConversation');
-                        if (saved === 'true') return true;
-                    }
-                    return false;
-                })(),
-                summarizeCharacterThreshold: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('summarizeCharacterThreshold');
-                        if (saved) {
-                            const parsed = parseInt(saved, 10);
-                            if (!isNaN(parsed) && parsed >= 50 && parsed <= 2000) return parsed;
-                        }
-                    }
-                    return 200;
-                })(),
-                summarizeMaxLength: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('summarizeMaxLength');
-                        if (saved) {
-                            const parsed = parseInt(saved, 10);
-                            if (!isNaN(parsed) && parsed >= 50 && parsed <= 2000) return parsed;
-                        }
-                    }
-                    return 500;
-                })(),
+                // Speech settings are a memory-only projection of the selected Host.
+                ...speechDefaults,
                 activateDirectory: async (directory, options) => {
                     const generation = getRuntimeGeneration();
                     // Actual worktree directory is the config and selection scope.
@@ -1942,11 +1723,6 @@ export const useConfigStore = create<ConfigStore>()(
                                     defaultFileViewerPreview: get().settingsDefaultFileViewerPreview,
                                     zenModel: get().settingsZenModel,
                                     messageStreamTransport: get().settingsMessageStreamTransport,
-                                    sttProvider: get().sttProvider,
-                                    sttServerUrl: get().sttServerUrl,
-                                    sttModel: get().sttModel,
-                                    sttLocalModel: get().sttLocalModel,
-                                    sttLanguage: get().sttLanguage,
                                 }),
                             ]);
 
@@ -2029,11 +1805,6 @@ export const useConfigStore = create<ConfigStore>()(
                                     settingsDefaultFileViewerPreview: openChamberDefaults.defaultFileViewerPreview ?? false,
                                     settingsZenModel: resolvedZenModel,
                                     settingsMessageStreamTransport: openChamberDefaults.messageStreamTransport ?? state.settingsMessageStreamTransport ?? 'auto',
-                                    sttProvider: openChamberDefaults.sttProvider ?? state.sttProvider,
-                                    sttServerUrl: openChamberDefaults.sttServerUrl ?? state.sttServerUrl,
-                                    sttModel: openChamberDefaults.sttModel ?? state.sttModel,
-                                    sttLocalModel: openChamberDefaults.sttLocalModel ?? state.sttLocalModel,
-                                    sttLanguage: openChamberDefaults.sttLanguage ?? state.sttLanguage,
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -2716,195 +2487,111 @@ export const useConfigStore = create<ConfigStore>()(
 
                 setVoiceProvider: (provider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say' | 'volcengine') => {
                     set({ voiceProvider: provider });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('voiceProvider', provider);
-                    }
                 },
 
                 setSpeechRate: (rate: number) => {
                     const clampedRate = Math.max(0.5, Math.min(2, rate));
                     set({ speechRate: clampedRate });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('speechRate', String(clampedRate));
-                    }
                 },
 
                 setSpeechPitch: (pitch: number) => {
                     const clampedPitch = Math.max(0.5, Math.min(2, pitch));
                     set({ speechPitch: clampedPitch });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('speechPitch', String(clampedPitch));
-                    }
                 },
 
                 setSpeechVolume: (volume: number) => {
                     const clampedVolume = Math.max(0, Math.min(1, volume));
                     set({ speechVolume: clampedVolume });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('speechVolume', String(clampedVolume));
-                    }
                 },
 
                 setSayVoice: (voice: string) => {
                     set({ sayVoice: voice });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sayVoice', voice);
-                    }
                 },
 
                 setLocalTtsVoiceId: (voiceId: number) => {
                     set({ localTtsVoiceId: voiceId });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('localTtsVoiceId', String(voiceId));
-                    }
                 },
 
                 setBrowserVoice: (voice: string) => {
                     set({ browserVoice: voice });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('browserVoice', voice);
-                    }
                 },
 
                 setOpenaiVoice: (voice: string) => {
                     set({ openaiVoice: voice });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiVoice', voice);
-                    }
                 },
 
                 setOpenaiApiKey: (apiKey: string) => {
                     set({ openaiApiKey: apiKey });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiApiKey', apiKey);
-                    }
                 },
 
                 setOpenaiCompatibleUrl: (url: string) => {
                     set({ openaiCompatibleUrl: url });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiCompatibleUrl', url);
-                    }
                 },
 
                 setOpenaiCompatibleApiKey: (apiKey: string) => {
                     set({ openaiCompatibleApiKey: apiKey });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiCompatibleApiKey', apiKey);
-                    }
                 },
 
                 setOpenaiCompatibleVoice: (voice: string) => {
                     set({ openaiCompatibleVoice: voice });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiCompatibleVoice', voice);
-                    }
                 },
 
                 setOpenaiCompatibleTtsModel: (model: string) => {
                     set({ openaiCompatibleTtsModel: model });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiCompatibleTtsModel', model);
-                    }
                 },
 
                 setDictationEnabled: (enabled: boolean) => {
                     set({ dictationEnabled: enabled });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('dictationEnabled', String(enabled));
-                    }
-                    updateDesktopSettings({ dictationEnabled: enabled }).catch(() => {});
                 },
 
                 setSttProvider: (provider: 'local' | 'openai-compatible' | 'volcengine') => {
                     set({ sttProvider: provider });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttProvider', provider);
-                    }
-                    updateDesktopSettings({ sttProvider: provider }).catch(() => {});
                 },
 
                 setSttServerUrl: (url: string) => {
                     set({ sttServerUrl: url });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttServerUrl', url);
-                    }
-                    updateDesktopSettings({ sttServerUrl: url }).catch(() => {});
                 },
 
                 setSttApiKey: (apiKey: string) => {
                     set({ sttApiKey: apiKey });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttApiKey', apiKey);
-                    }
                 },
 
                 setSttModel: (model: string) => {
                     set({ sttModel: model });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttModel', model);
-                    }
-                    updateDesktopSettings({ sttModel: model }).catch(() => {});
                 },
 
                 setSttLocalModel: (model: string) => {
                     set({ sttLocalModel: model });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttLocalModel', model);
-                    }
-                    updateDesktopSettings({ sttLocalModel: model }).catch(() => {});
                 },
 
                 setSttLanguage: (lang: string) => {
                     set({ sttLanguage: lang });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttLanguage', lang);
-                    }
-                    updateDesktopSettings({ sttLanguage: lang }).catch(() => {});
                 },
 
                 setShowMessageTTSButtons: (show: boolean) => {
                     set({ showMessageTTSButtons: show });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('showMessageTTSButtons', String(show));
-                    }
                 },
 
                 setTtsInputMode: (mode: 'final' | 'sanitized' | 'raw' | 'summarized') => {
                     set({ ttsInputMode: mode });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('ttsInputMode', mode);
-                    }
                 },
 
                 setSummarizeMessageTTS: (enabled: boolean) => {
                     set({ summarizeMessageTTS: enabled });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('summarizeMessageTTS', String(enabled));
-                    }
                 },
 
                 setSummarizeVoiceConversation: (enabled: boolean) => {
                     set({ summarizeVoiceConversation: enabled });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('summarizeVoiceConversation', String(enabled));
-                    }
                 },
 
                 setSummarizeCharacterThreshold: (threshold: number) => {
                     const clamped = Math.max(50, Math.min(2000, threshold));
                     set({ summarizeCharacterThreshold: clamped });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('summarizeCharacterThreshold', String(clamped));
-                    }
                 },
 
                 setSummarizeMaxLength: (maxLength: number) => {
                     const clamped = Math.max(50, Math.min(2000, maxLength));
                     set({ summarizeMaxLength: clamped });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('summarizeMaxLength', String(clamped));
-                    }
                 },
 
                 probeConnection: async (options?: { timeoutMs?: number }) => {
@@ -3202,9 +2889,6 @@ export const useConfigStore = create<ConfigStore>()(
                             ?? sanitizeSelectionIdentifier(state.lastSelectedAgentName, true),
                         lastUserSelection: sanitizeLastUserSelection(state.lastUserSelection) ?? globalLastUserSelection,
                         globalLastUserSelection,
-                        speechRate: state.speechRate,
-                        speechPitch: state.speechPitch,
-                        speechVolume: state.speechVolume,
                     };
                 },
              },

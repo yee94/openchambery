@@ -3,10 +3,10 @@ import { once } from 'node:events';
 import { normalizeCustomOpenAIBaseURL } from './base-url.js';
 import { summarizeText, sanitizeForTTS, sanitizeForNote } from '../text/summarization.js';
 import { synthesizeVolcengine, transcribeVolcengine } from './volcengine.js';
-import { readVolcengineSettings, registerVolcengineSettingsRoutes } from './volcengine-settings.js';
+import { readSpeechSettings, registerSpeechSettingsRoutes } from './settings.js';
 
 export function registerTtsRoutes(app, { sayTTSCapability }) {
-  registerVolcengineSettingsRoutes(app);
+  registerSpeechSettingsRoutes(app);
   let ttsModulePromise = null;
   const getTtsModule = async () => {
     if (!ttsModulePromise) {
@@ -49,7 +49,7 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
   app.post('/api/tts/speak', async (req, res) => {
     try {
       if (req.body?.provider === 'volcengine') {
-        const saved = readVolcengineSettings();
+        const saved = readSpeechSettings();
         const speech = { ...saved, ...req.body, apiKey: req.body.apiKey || saved.apiKey };
         if (typeof speech.apiKey !== 'string' || !speech.apiKey.trim()) {
           return res.status(400).json({ error: 'Volcengine speech API Key is required' });
@@ -87,7 +87,14 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
         }
         return;
       }
-      const { text, voice = 'nova', model = 'gpt-4o-mini-tts', speed = 0.9, instructions, providerId, modelId, apiKey, baseURL } = req.body || {};
+      const saved = readSpeechSettings();
+      const compatible = req.body?.provider === 'openai-compatible';
+      const matchesSavedUrl = !req.body?.baseURL || normalizeCustomOpenAIBaseURL(req.body.baseURL).value === normalizeCustomOpenAIBaseURL(saved.openaiCompatibleUrl).value;
+      const savedApiKey = compatible ? (matchesSavedUrl ? saved.openaiCompatibleApiKey : undefined) : (req.body?.baseURL ? undefined : saved.openaiApiKey);
+      const { text, voice = compatible ? saved.openaiCompatibleVoice : saved.openaiVoice,
+        model = compatible ? saved.openaiCompatibleTtsModel : 'gpt-4o-mini-tts', speed = saved.speechRate,
+        instructions, providerId, modelId, apiKey = savedApiKey,
+        baseURL = compatible ? saved.openaiCompatibleUrl : undefined } = req.body || {};
 
       const normalizedBaseURLResult = normalizeCustomOpenAIBaseURL(baseURL);
       if (normalizedBaseURLResult.error) {
@@ -105,9 +112,9 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
       const { ttsService } = await getTtsModule();
 
       // Check availability - server-configured key, client-provided key, or custom server URL
-      const hasServerKey = await ttsService.isAvailable();
       const hasClientKey = apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0;
       const hasCustomBaseURL = typeof normalizedBaseURL === 'string' && normalizedBaseURL.length > 0;
+      const hasServerKey = !hasClientKey && !hasCustomBaseURL && await ttsService.isAvailable();
       
       if (!hasServerKey && !hasClientKey && !hasCustomBaseURL) {
         return res.status(503).json({ 
@@ -177,7 +184,7 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
     try {
       const { ttsService } = await getTtsModule();
       res.json({
-        available: await ttsService.isAvailable(),
+        available: Boolean(readSpeechSettings().openaiApiKey) || await ttsService.isAvailable(),
         voices: [
           'alloy', 'ash', 'ballad', 'coral', 'echo', 'fable',
           'nova', 'onyx', 'sage', 'shimmer', 'verse', 'marin', 'cedar'
@@ -276,7 +283,7 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
           const cancel = () => { if (!res.writableEnded) abort.abort(); };
           res.on('close', cancel);
           try {
-            const speechKey = req.headers['x-speech-api-key'] || readVolcengineSettings().apiKey;
+            const speechKey = req.headers['x-speech-api-key'] || readSpeechSettings().apiKey;
             if (!speechKey) return res.status(400).json({ error: 'Volcengine speech API Key is required' });
             const transcript = await transcribeVolcengine({ audioBuffer: req.body, apiKey: speechKey, signal: abort.signal });
             if (!res.destroyed) res.json({ transcript });

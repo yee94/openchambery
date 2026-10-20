@@ -2215,6 +2215,8 @@ export const dict = {
   'chat.chatInput.pastedTextReference': 'Pasted text #{index} · {count} characters',
   'chat.dictation.start': 'Start dictation',
   'chat.dictation.holdToTalk': 'Hold to talk',
+  'chat.dictation.holdHere': 'Click and hold here to turn speech into text.',
+  'chat.dictation.releaseConfirm': 'Release to confirm',
   'chat.dictation.inputPlaceholder': 'Type a message, hold to transcribe',
   'chat.dictation.edit': 'Edit',
   'chat.dictation.cancelGesture': 'Cancel',

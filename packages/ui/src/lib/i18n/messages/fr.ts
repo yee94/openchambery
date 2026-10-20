@@ -1952,6 +1952,8 @@ export const dict = {
   'chat.chatInput.pastedTextReference': 'Texte collé n°{index} · {count} caractères',
   'chat.dictation.start': 'Démarrer la dictée',
   'chat.dictation.holdToTalk': 'Maintenir pour parler',
+  'chat.dictation.holdHere': 'Maintenez le clic ici pour transcrire votre voix.',
+  'chat.dictation.releaseConfirm': 'Relâchez pour confirmer',
   'chat.dictation.inputPlaceholder': 'Saisir un message, maintenir pour transcrire',
   'chat.dictation.edit': 'Modifier',
   'chat.dictation.cancelGesture': 'Annuler',

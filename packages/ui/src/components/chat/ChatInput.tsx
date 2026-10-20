@@ -2094,6 +2094,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // Combined source-mode highlight: markdown syntax + @mentions. Returns null
     // when there's nothing to highlight so the overlay stays off for plain text.
     const dictationEnabled = useConfigStore((state) => state.dictationEnabled);
+    const [desktopCommandPressed, setDesktopCommandPressed] = React.useState(false);
+    const [desktopRecording, setDesktopRecording] = React.useState(false);
     const [dictationHint, setDictationHint] = React.useState<'recording' | 'cancelling' | 'editing' | 'processing' | null>(null);
     const holdToTalkEnabled = isMobile && dictationEnabled && !isVSCodeRuntime() && isDictationCaptureSupported();
     const speechPlaceholder = t(dictationHint === 'recording' ? 'chat.dictation.releaseSend' : dictationHint === 'cancelling' ? 'chat.dictation.releaseCancel' : dictationHint === 'editing' ? 'chat.dictation.releaseEdit' : dictationHint === 'processing' ? 'chat.dictation.processing' : 'chat.dictation.inputPlaceholder');
@@ -7116,6 +7118,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 <SessionGoalObjectiveCounter length={message.length} />
                 {dictationEnabled && !isVSCodeRuntime() && isDictationCaptureSupported() && (
                     <DesktopDictationButton key={primaryDraftKeyID}
+                        inputRef={textareaRef}
+                        onCommandChange={setDesktopCommandPressed}
+                        onRecordingChange={setDesktopRecording}
                         className={footerIconButtonClass}
                         iconClassName={iconSizeClass}
                         onStart={beginDesktopDictation}
@@ -7684,6 +7689,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     focusedTone={inputMode === 'shell' ? 'info' : 'primary'}
                     className={cn(
                         'relative z-10',
+                        desktopCommandPressed && '[&:has(textarea:hover)]:!border-[var(--voice-active-fill)] [&:has(textarea:hover)]:!ring-0 [&_textarea]:cursor-pointer',
+                        desktopRecording && '!ring-0 [&_textarea]:cursor-pointer',
                         isDragging && "ring-2 ring-primary ring-offset-2",
                         // Ctrl+X leader pending: subtle selection ring while waiting for M/A/N/C.
                         isLeaderKeyPending && "ring-1 ring-[var(--interactive-selection)] border-[var(--interactive-selection)]",
@@ -7691,6 +7698,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     )}
                     style={{
                         borderRadius: chatInputRadius,
+                        ...(desktopRecording ? { borderColor: 'var(--voice-active-fill)' } : {}),
                     }}
                     ref={dropZoneRef}
                     onDropCapture={handleDropCapture}
@@ -7742,7 +7750,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         borderBottomRightRadius: chatInputRadius,
                     }}
                     footerContent={composerFooterContent}
-                    placeholder={holdToTalkEnabled ? speechPlaceholder : composerPlaceholder}
+                    placeholder={holdToTalkEnabled ? speechPlaceholder : desktopCommandPressed ? t('chat.dictation.holdHere') : composerPlaceholder}
                     onChange={(_value, event) => handleTextChange(event)}
                     textareaProps={{
                         readOnly: isLeaderKeyPending,

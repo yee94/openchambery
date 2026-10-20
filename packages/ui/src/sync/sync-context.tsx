@@ -2527,9 +2527,8 @@ export function handleEvent(
 
   // Notification dispatch for top-level turn-complete and execution failures.
   // OpenCode 2 completes a turn with session.execution.succeeded; session.idle
-  // is deprecated and is only a fallback. Selecting the session, or having the
-  // window focused, must not mark that completion read — the blue unread dot
-  // stays until a later explicit view (open / window focus).
+  // is deprecated and is only a fallback. Completion is already viewed when
+  // the user is watching this session in a focused window (or an external view).
   // session.execution.failed is the v2 path that carries the error payload
   // (legacy session.error keeps the same shape). Reducer settles idle +
   // session_error_at; this store retains the message for live UI.
@@ -2568,11 +2567,7 @@ export function handleEvent(
           directory: resolvedDirectory,
           session: sessionID,
           time: Date.now(),
-          // Success stays unread even when this session is selected and the
-          // window is focused. Errors keep the "user is looking" gate.
-          viewed: isSuccessCompletion
-            ? false
-            : isViewedInCurrentSession(resolvedDirectory, sessionID),
+          viewed: isViewedInCurrentSession(resolvedDirectory, sessionID),
           ...(hasErrorDetails && errorSummary
             ? { type: "error" as const, error: errorSummary }
             : { type: "turn-complete" as const }),

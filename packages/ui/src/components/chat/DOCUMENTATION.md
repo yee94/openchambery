@@ -71,13 +71,15 @@ placeholder even before/after a hold. Toolbar controls are excluded. The empty
 state attribute scopes CSS so nonempty inputs regain native behavior. The 300 ms
 timer rechecks emptiness/editability before starting capture, including paste or
 keyboard input during the pending hold.
+An explicit non-passive `touchstart` listener prevents native touch selection on
+eligible empty input surfaces; a confirmed hold blurs the textarea to dismiss its
+native caret. Short taps still focus it, and nonempty drafts keep native editing.
 Horizontal displacement of 64 CSS pixels
 selects cancel (left) or edit (right); entering the bottom targets selects the
 half under the finger regardless of displacement. Release in the center sends the final text
 through the existing dictation submission handler; release on edit focuses the
 existing textarea and inserts the finalized transcript without sending. Returning
-to the center outside the targets restores send. Retry retains
-the chosen insert/send destination. Pointer interruption/backgrounding cancels; leaving the draft fences
+to the center outside the targets restores send. Pointer interruption/backgrounding cancels; leaving the draft fences
 late recognition results. Nonempty inputs retain native text selection/editing;
 disabled and read-only inputs cannot start capture.
 
@@ -98,7 +100,10 @@ gesture without changing layout or pointer capture. Only these low-frequency tra
 ChatInput; captions and volume remain leaf-owned. Partial ASR
 text is underlined until finalization (the current transport supplies provisional
 full text, not per-word stability). Reduced-motion preferences disable animation.
-Error/retry actions alone accept pointer input; the holding finger stays captured
+Processing cancellation accepts pointer input. Errors replace the listening caption
+with red alert text and make the entire overlay dismissible by a tap. Releasing
+an ongoing hold after an error cancels instead of confirming; idle startup errors
+are discarded as well as failed recordings. The holding finger stays tracked
 within a global pointer lifecycle after starting on the original composer.
 Move/up/cancel listeners run on window capture and filter by the initiating
 pointer ID. Leaving the textarea or losing element pointer capture does not

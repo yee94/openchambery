@@ -574,7 +574,7 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     });
   }
 
-  if (normalizedPathname === '/api/voice/volcengine' || ((normalizedPathname === '/api/tts/speak' || normalizedPathname === '/api/tts/say/speak' || normalizedPathname === '/api/stt/transcribe') && method === 'POST')) {
+  if (normalizedPathname === '/api/voice/settings' || normalizedPathname === '/api/voice/volcengine' || ((normalizedPathname === '/api/tts/speak' || normalizedPathname === '/api/tts/say/speak' || normalizedPathname === '/api/stt/transcribe') && method === 'POST')) {
     return new Response(JSON.stringify({ error: 'Speech endpoints are not available in VS Code runtime' }), {
       status: 501,
       headers: { 'Content-Type': 'application/json' },

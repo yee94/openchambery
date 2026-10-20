@@ -50,6 +50,8 @@ One weakly keyed reader per runtime child-store manager shares the projection ac
 
 ## Viewed-session terminal reconciliation
 
+Turn-complete and error notifications use the same viewed-session gate: the matching active directory/session in a focused window, or an externally registered viewed session, is already read on receipt. Background or other-session completions remain unread. `session.execution.succeeded` and its legacy `session.idle` fallback share this rule and retain completion deduplication. Regression coverage: `session-execution-failed.test.ts`.
+
 An idle/succeeded/failed/interrupted receipt for the viewed session requests an authoritative tail reconciliation regardless of the locally known assistant finish. A wholly missing final step cannot be detected from completion metadata on the preceding step. The materialization scheduler coalesces terminal receipts and drains them after any pre-terminal materialization; a receipt during reconciliation schedules another pass after that flight. Runtime/directory-store fences apply before each pass. Failures preserve the transcript and defer recovery until another terminal receipt or selection. Background sessions retain their bounded materialization policy. `sync-context.settle-repair.test.ts` covers absent final rows after both tool-calls and stop, overlapping reads, duplicate receipts and retry after failure.
 
 ## Consumed inbox transcript handoff

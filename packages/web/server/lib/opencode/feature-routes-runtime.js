@@ -480,6 +480,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenChamberEventClients,
       writeSseEvent,
     });
+    app.on('openchamber:speech-settings-changed', () => {
+      broadcastOpenChamberEvent({ type: 'openchamber:speech-settings-changed', properties: { occurredAt: Date.now() } });
+    });
     const broadcastWorktreeTopologyChanged = createWorktreeTopologyBroadcaster({
       getOpenChamberEventClients,
       writeSseEvent,

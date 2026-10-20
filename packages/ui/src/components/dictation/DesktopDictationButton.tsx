@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { useEvent, useEventListener } from '@reactuses/core';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -9,7 +9,10 @@ import { useUIStore } from '@/stores/useUIStore';
 import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { cn } from '@/lib/utils';
 
-export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel, className, iconClassName }: {
+export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel, className, iconClassName, inputRef, onCommandChange, onRecordingChange }: {
+    inputRef?: RefObject<HTMLTextAreaElement | null>;
+    onCommandChange?: (pressed: boolean) => void;
+    onRecordingChange?: (recording: boolean) => void;
     className?: string;
     iconClassName?: string;
     onInsert: (text: string) => void;
@@ -27,7 +30,21 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
     const ready = useRef(false);
     const recording = dictation.status === 'recording';
     const processing = dictation.status === 'uploading';
+    const heldPointer = useRef<number | null>(null);
+    const commandPressed = useRef(false);
+    const publishRecording = useEvent((active: boolean) => onRecordingChange?.(active));
+    useEffect(() => {
+        publishRecording(recording);
+        return () => publishRecording(false);
+    }, [recording, publishRecording]);
+    const setCommand = useEvent((pressed: boolean) => {
+        if (commandPressed.current === pressed) return;
+        commandPressed.current = pressed;
+        onCommandChange?.(pressed);
+    });
+    useEffect(() => () => setCommand(false), [setCommand]);
     const finish = useEvent(() => {
+        heldPointer.current = null;
         if (recording) {
             ready.current = false;
             void dictation.confirmDictation();
@@ -45,12 +62,49 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
         await dictation.startDictation();
         ready.current = true;
     });
-    useEventListener('blur', () => { if (ready.current) finish(); }, window);
+    useEventListener('pointerdown', (event: PointerEvent) => {
+        const input = inputRef?.current;
+        if (!input || event.target !== input || input.disabled || input.readOnly
+            || event.pointerType !== 'mouse' || event.button !== 0 || !event.metaKey
+            || recording || processing || heldPointer.current !== null) return;
+        event.preventDefault();
+        heldPointer.current = event.pointerId;
+        void toggle();
+    }, window, { capture: true });
+    useEventListener('pointerup', (event: PointerEvent) => {
+        if (heldPointer.current !== event.pointerId || event.button !== 0) return;
+        heldPointer.current = null;
+        ready.current = false;
+        void dictation.confirmDictation();
+    }, window, { capture: true });
+    useEventListener('pointercancel', (event: PointerEvent) => {
+        if (heldPointer.current !== event.pointerId) return;
+        heldPointer.current = null;
+        ready.current = false;
+        onCancel();
+        void dictation.cancelDictation();
+    }, window, { capture: true });
+    useEventListener('keyup', (event: KeyboardEvent) => setCommand(event.metaKey), window);
+    const finishHeldPointer = useEvent(() => {
+        if (heldPointer.current === null) return;
+        heldPointer.current = null;
+        ready.current = false;
+        void dictation.confirmDictation();
+    });
+    useEventListener('blur', () => {
+        setCommand(false);
+        if (heldPointer.current !== null) finishHeldPointer();
+        else if (ready.current) finish();
+    }, window);
     useEventListener('visibilitychange', () => {
-        if (document.hidden && ready.current) finish();
+        if (!document.hidden) return;
+        setCommand(false);
+        if (heldPointer.current !== null) finishHeldPointer();
+        else if (ready.current) finish();
     }, document);
     useEventListener('openchamber:dictation-toggle', () => { void toggle(); }, window);
     useEventListener('keydown', (event: KeyboardEvent) => {
+        setCommand(event.metaKey);
         if (event.isComposing || event.keyCode === 229) return;
         if (event.key === 'Enter' && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && (recording || processing)) {
             event.preventDefault();
@@ -62,6 +116,7 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
         event.preventDefault();
         event.stopPropagation();
         ready.current = false;
+        heldPointer.current = null;
         onCancel();
         if (dictation.status === 'failed') dictation.discardFailedDictation();
         else void dictation.cancelDictation();
@@ -90,7 +145,7 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
         </TooltipContent>
         </Tooltip>
         {recording && <span className="pointer-events-none select-none whitespace-nowrap text-[10px] leading-none text-muted-foreground">
-            {t('chat.dictation.keyboardHint')}
+            {t(heldPointer.current !== null ? 'chat.dictation.releaseConfirm' : 'chat.dictation.keyboardHint')}
         </span>}
     </div>;
 }

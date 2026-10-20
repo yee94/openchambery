@@ -14,7 +14,7 @@ import { rm } from 'fs/promises';
 import { DictationWorkerClient, WorkerBackedTranscriptionSession } from './local/worker-client.js';
 import { OpenAICompatibleTranscriptionSession } from './openai-compatible-session.js';
 import { VolcengineTranscriptionSession } from './volcengine-session.js';
-import { readVolcengineSettings } from '../tts/volcengine-settings.js';
+import { readSpeechSettings } from '../tts/settings.js';
 import {
   DEFAULT_LOCAL_STT_MODEL,
   DEFAULT_LOCAL_TTS_MODEL,
@@ -87,7 +87,7 @@ export function createDictationService({ modelsDir }) {
    */
   const createSttSession = async (options = {}) => {
     if (options.provider === 'volcengine') {
-      const saved = readVolcengineSettings();
+      const saved = readSpeechSettings();
       const session = new VolcengineTranscriptionSession({
         apiKey: options.volcengine?.apiKey || saved.apiKey,
         resourceId: options.volcengine?.resourceId || saved.asrResourceId,
@@ -103,7 +103,8 @@ export function createDictationService({ modelsDir }) {
     const provider = options.provider === 'openai-compatible' ? 'openai-compatible' : 'local';
 
     if (provider === 'openai-compatible') {
-      const config = options.openaiCompatible || {};
+      const saved = readSpeechSettings();
+      const config = options.openaiCompatible || { baseUrl: saved.sttServerUrl, model: saved.sttModel, apiKey: saved.sttApiKey };
       const session = new OpenAICompatibleTranscriptionSession({
         baseURL: config.baseUrl,
         model: config.model,
