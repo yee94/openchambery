@@ -127,7 +127,7 @@ describe("02 prompt admission API", () => {
 
   test("reconcilePromptAdmission finds pending inbox by fixed id", async () => {
     responseImpl = async (call) => {
-      if (call.url.pathname.includes("/inbox") && call.method === "GET") {
+      if (call.url.pathname.endsWith("/delivery") && call.method === "GET") {
         return jsonResponse({
           data: [{
             id: "msg_fixed",
@@ -156,7 +156,7 @@ describe("02 prompt admission API", () => {
 
   test("reconcilePromptAdmission treats projection hit as promoted", async () => {
     responseImpl = async (call) => {
-      if (call.url.pathname.includes("/inbox") && call.method === "GET") {
+      if (call.url.pathname.endsWith("/delivery") && call.method === "GET") {
         return jsonResponse({ data: [] })
       }
       return jsonResponse({ records: [], complete: true })
@@ -388,7 +388,7 @@ describe("02 prompt admission API", () => {
     expect(useSessionInboxOverlayStore.getState().list("ses_a")).toEqual([])
 
     responseImpl = async (call) => {
-      if (call.url.pathname.includes("/inbox") && call.method === "GET") {
+      if (call.url.pathname.endsWith("/delivery") && call.method === "GET") {
         return jsonResponse({
           data: [{
             id: "msg_consumed",

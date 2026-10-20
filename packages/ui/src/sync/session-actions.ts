@@ -1730,7 +1730,7 @@ export async function settleOptimisticSend(input: {
     assertCurrentSendTarget(capture, transport)
     transportEntered = true
     await withSendDispatchTimeout(input.send(messageID))
-    if (!isCurrentSendTarget(capture, transport)) {
+    if (!isCurrentRuntimeTransport(transport)) {
       throw new SendDispatchError(
         "ambiguous-dispatched",
         new Error("Send target changed after transport dispatch"),
@@ -1825,7 +1825,9 @@ export async function optimisticSend(input: {
       assertCurrentSendTarget(capture, transport)
       transportEntered = true
       await withSendDispatchTimeout(input.send(messageID))
-      assertCurrentSendTarget(capture, transport)
+      if (!isCurrentRuntimeTransport(transport)) {
+        throw new SendDispatchError("ambiguous-dispatched", new Error("Runtime changed after transport dispatch"), messageID)
+      }
       input.onSendConfirmed?.(messageID)
     } catch (error) {
       throw error instanceof SendDispatchError

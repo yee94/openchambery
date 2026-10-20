@@ -781,7 +781,7 @@ describe("fetchMessagesForSession startup race", () => {
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     const original = vi.mocked(runtimeFetch).getMockImplementation()!
     vi.mocked(runtimeFetch).mockImplementation(async (input, init) => {
-      if (String(input).endsWith("/inbox")) {
+      if (String(input).endsWith("/delivery")) {
         return new Response(JSON.stringify([{ id: "msg_waiting_reload", sessionID: "session-a", type: "user", delivery: "queue", timeCreated: 1, payload: { text: "Queued on another device" } }]))
       }
       return original(input, init)
@@ -2991,6 +2991,23 @@ describe("send failure classification", () => {
     expect(getSendFailureKind(caught)).toBe("definitive-rejection")
     expect((removed as OptimisticRemoveCall | null)?.sessionID).toBe("rejected-session")
     expect(targetStore.getState().session_status["rejected-session"]?.type).toBe("idle")
+  })
+
+  test.each(["queue", "steer"] as const)("accepted %s survives leaving the original directory store", async (delivery) => {
+    const targetStore = createStore({})
+    const entries: Array<[string, StoreApi<TestDirectoryStore>]> = [["/target/project", targetStore]]
+    const childStores = createChildStores(entries)
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(() => {}, () => {})
+    let confirmed = false
+    await optimisticSend({
+      sessionId: "accepted-session", directory: "/target/project", content: "accepted",
+      providerID: "provider", modelID: "model", delivery,
+      onSendConfirmed: () => { confirmed = true },
+      send: async () => { entries.splice(0) },
+    })
+    expect(confirmed).toBe(true)
   })
 
   test("marks a resolved send with an expired runtime capture as ambiguous without confirming", async () => {
