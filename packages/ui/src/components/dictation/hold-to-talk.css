@@ -20,15 +20,15 @@
     animation: oc-speech-in 240ms ease-out both;
 }
 .oc-speech-light-field { position: absolute; inset: 0 0 auto; height: 48vh; min-height: 210px; overflow: hidden; }
-.oc-speech-reactor { position: absolute; --speech-color: var(--surface-background); transform-origin: top center; transform: scale(calc(1 + var(--speech-energy) * .1)); opacity: calc(.78 + var(--speech-energy) * .22); transition: transform 180ms ease-out, opacity 180ms ease-out; }
-.oc-speech-light { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--speech-color) 32%, transparent), color-mix(in srgb, var(--speech-color) 12%, transparent) 30%, transparent 72%); animation: oc-speech-flow 7s ease-in-out infinite; }
-.oc-speech-reactor--ice { top: -12px; left: 12%; width: 24%; height: 230px; }
-.oc-speech-reactor--lilac { top: -12px; right: 15%; width: 28%; height: 260px; }
+.oc-speech-reactor { position: absolute; --speech-color: var(--surface-background); transform-origin: 50% 26%; opacity: .28; }
+.oc-speech-light { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 26%, color-mix(in srgb, var(--speech-color) 40%, transparent), color-mix(in srgb, var(--speech-color) 14%, transparent) 30%, transparent 74%); animation: oc-speech-flow 7s ease-in-out infinite; }
+.oc-speech-reactor--ice { top: -40px; left: -8%; width: 90%; height: 190px; }
+.oc-speech-reactor--lilac { top: -30px; right: -8%; width: 90%; height: 180px; }
 .oc-speech-reactor--lilac .oc-speech-light { animation-duration: 8s; animation-delay: -2s; }
 .oc-speech-reactor--mint, .oc-speech-reactor--blush { display: none; }
-.oc-speech-reactor--mid { top: -14px; left: 24%; width: 52%; height: 250px; transform: scale(calc(.9 + var(--speech-energy) * .38)); opacity: calc(.16 + var(--speech-energy) * .5); transition-duration: 135ms; }
-.oc-speech-reactor--core { top: -16px; left: 32%; width: 36%; height: 310px; transform: scale(calc(.74 + var(--speech-energy) * .84)); opacity: calc(.1 + var(--speech-energy) * .78); transition-duration: 100ms; }
-.oc-speech-reactor--core .oc-speech-light { animation-duration: 9s; animation-delay: -4s; }
+.oc-speech-reactor--mid { top: -22px; left: 10%; width: 80%; height: 175px; opacity: .2; }
+.oc-speech-reactor--core { top: -46px; left: -8%; width: 116%; height: 250px; transform: scale(calc(.92 + var(--speech-energy) * .28)); opacity: calc(.48 + var(--speech-energy) * .32); transition: transform 140ms ease-out, opacity 140ms ease-out; }
+.oc-speech-reactor--core .oc-speech-light { animation: none; }
 .oc-speech-content {
     position: absolute;
     top: calc(max(env(safe-area-inset-top), 20px) + 68px);
