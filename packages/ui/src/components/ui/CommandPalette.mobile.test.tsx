@@ -91,7 +91,7 @@ test('page presentation has a focused search header and results without dialog c
   }
 });
 
-test('previews five titles before body hits, expands explicitly and resets for the next query', async () => {
+test('combines title and body matches in five unified rows, freezes navigation and resets expansion', async () => {
   searchSessions.mockResolvedValue(Array.from({ length: 30 }, (_, i) => ({
     id: `session-${i}`, title: `matching conversation ${i}`, time: { updated: i },
   })));
@@ -112,8 +112,13 @@ test('previews five titles before body hits, expands explicitly and resets for t
   try {
     await act(async () => root.render(<QueryClientProvider client={client}><CommandPalette presentation="page" /></QueryClientProvider>));
     await type('matching');
-    expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(5);
+    expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(4);
     expect(host.querySelectorAll('[cmdk-item][data-value^="message:"]')).toHaveLength(1);
+    expect(host.querySelector('[data-value="session:session-1"]')).toBeNull();
+    const bodyRow = host.querySelector('[cmdk-item][data-value^="message:"]')!;
+    expect(bodyRow.textContent).toContain('matching conversation 1');
+    expect(bodyRow.querySelectorAll('mark')).toHaveLength(2);
+    expect(host.textContent).not.toContain('commandPalette.group.messages');
     expect(host.querySelector('[data-value="more:sessions"]')).not.toBeNull();
     await act(async () => host.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
     await act(async () => {
@@ -123,7 +128,7 @@ test('previews five titles before body hits, expands explicitly and resets for t
     expect(host.textContent).toContain('matching body result');
     expect(host.textContent).not.toContain('new background result');
     await act(async () => (host.querySelector('[data-value="more:sessions"]') as HTMLElement).click());
-    expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(30);
+    expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(29);
     await type('conversation');
     expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(5);
     await type('matching');
