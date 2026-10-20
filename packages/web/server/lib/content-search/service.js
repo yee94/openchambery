@@ -27,6 +27,9 @@ export function createContentSearchService({ dbPath }) {
     CREATE TRIGGER IF NOT EXISTS search_delete AFTER DELETE ON search_message BEGIN
       INSERT INTO search_fts(search_fts,rowid,body) VALUES('delete',old.id,old.body); END;
   `);
+  if (!db.prepare('PRAGMA table_info(search_session)').all().some((column) => column.name === 'since')) {
+    db.exec('ALTER TABLE search_session ADD COLUMN since REAL');
+  }
   const remove = db.prepare('DELETE FROM search_message WHERE runtime=? AND session=?');
   const write = db.prepare('INSERT INTO search_message(runtime,session,message,role,created,body) VALUES(?,?,?,?,?,?)');
   const removeSession = db.transaction((runtime, id) => {
@@ -34,17 +37,21 @@ export function createContentSearchService({ dbPath }) {
     db.prepare('DELETE FROM search_session WHERE runtime=? AND id=?').run(runtime, id);
   });
   return {
-    replaceSession: db.transaction((runtime, session, records) => {
+    replaceSession: db.transaction((runtime, session, records, since = null) => {
       remove.run(runtime, session.id);
       for (const record of records) {
         const projected = projectSearchRecord(record);
         if (projected) write.run(runtime, session.id, projected.info.id, projected.info.role, projected.info.time.created, projected.parts[0].text);
       }
-      db.prepare('INSERT OR REPLACE INTO search_session VALUES(?,?,?,?,?)').run(runtime, session.id,
-        session.location?.directory ?? session.directory ?? '', session.title ?? '', session.time?.updated ?? 0);
+      db.prepare('INSERT OR REPLACE INTO search_session(runtime,id,directory,title,updated,since) VALUES(?,?,?,?,?,?)').run(runtime, session.id,
+        session.location?.directory ?? session.directory ?? '', session.title ?? '', session.time?.updated ?? 0, since);
     }),
     removeSession,
-    updated(runtime, id) { return db.prepare('SELECT updated FROM search_session WHERE runtime=? AND id=?').get(runtime, id)?.updated; },
+    updated(runtime, id, since) {
+      const row = db.prepare('SELECT updated,since FROM search_session WHERE runtime=? AND id=?').get(runtime, id);
+      if (since !== undefined && (row?.since == null || row.since > since)) return undefined;
+      return row?.updated;
+    },
     prune: db.transaction((runtime, since, ids) => {
       db.prepare('DELETE FROM search_message WHERE runtime=? AND created<?').run(runtime, since);
       for (const row of db.prepare('SELECT id FROM search_session WHERE runtime=?').all(runtime)) {

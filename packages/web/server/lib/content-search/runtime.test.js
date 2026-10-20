@@ -2,9 +2,31 @@ import { expect, test } from 'vitest';
 import { createContentSearchService } from './service.js';
 import { createContentSearchRuntime } from './runtime.js';
 
+test('expands existing seven-day checkpoints to thirty days even when sessions are unchanged', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  const day = 86400000;
+  const now = 40 * day;
+  const session = { id: 's', directory: '/project', time: { updated: now } };
+  service.replaceSession('host', session, [], now - 7 * day);
+  let reads = 0;
+  const runtime = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', now: () => now,
+    listSessions: async () => ({ data: [session], cursor: {} }),
+    listMessages: async () => {
+      reads++;
+      return { data: [10, 29, 31].map((age) => ({ type: 'user', id: `m${age}`, sessionID: 's', time: { created: now - age * day }, text: `history ${age}` })), cursor: {} };
+    },
+  });
+  await runtime.sync();
+  expect(service.search('host', 'history').map((hit) => hit.messageID)).toEqual(['m10', 'm29']);
+  expect(runtime.status().since).toBe(now - 30 * day);
+  await runtime.sync();
+  expect(reads).toBe(1);
+  await runtime.stop(); service.close();
+});
+
 test('pages older messages, excludes expired text, and reuses checkpoints after restarting', async () => {
   const service = createContentSearchService({ dbPath: ':memory:' });
-  const now = 8 * 24 * 60 * 60 * 1000;
+  const now = 31 * 24 * 60 * 60 * 1000;
   let reads = 0;
   const dependencies = { service, getRuntimeKey: () => 'host', now: () => now,
     listSessions: async () => ({ data: [{ id: 's', directory: '/project', time: { updated: now } }], cursor: {} }),

@@ -2,8 +2,8 @@ import type { I18nKey } from './en';
 import { settingsDict } from './uk.settings';
 
 export const dict: Record<I18nKey, string> = {
-  'commandPalette.index.progress': 'Індексування останніх 7 днів усіх проєктів: {completed}/{total} розмов',
-  'commandPalette.index.ready': 'Усі проєкти · останні 7 днів · проіндексовано {count} повідомлень',
+  'commandPalette.index.progress': 'Індексування останніх 30 днів усіх проєктів: {completed}/{total} розмов',
+  'commandPalette.index.ready': 'Усі проєкти · останні 30 днів · проіндексовано {count} повідомлень',
   'commandPalette.index.partial': 'Частину історії не вдалося проіндексувати. Показано доступні результати; автоматична повторна спроба.',
   'mobile.notifications.service': 'Служба фонових сповіщень про завдання',
   'mobile.notifications.connected': 'З’єднання підтримується для отримання сповіщень про завдання, коли застосунок працює у фоновому режимі.',

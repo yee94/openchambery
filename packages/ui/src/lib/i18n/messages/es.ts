@@ -2,8 +2,8 @@ import type { I18nKey } from './en';
 import { settingsDict } from './es.settings';
 
 export const dict: Record<I18nKey, string> = {
-  'commandPalette.index.progress': 'Indexando los últimos 7 días de todos los proyectos: {completed}/{total} conversaciones',
-  'commandPalette.index.ready': 'Todos los proyectos · últimos 7 días · {count} mensajes indexados',
+  'commandPalette.index.progress': 'Indexando los últimos 30 días de todos los proyectos: {completed}/{total} conversaciones',
+  'commandPalette.index.ready': 'Todos los proyectos · últimos 30 días · {count} mensajes indexados',
   'commandPalette.index.partial': 'No se pudo indexar parte del historial. Se muestran los resultados disponibles y se reintenta automáticamente.',
   'mobile.notifications.service': 'Servicio de notificaciones de tareas en segundo plano',
   'mobile.notifications.connected': 'Se mantiene la conexión para recibir notificaciones de tareas mientras la aplicación está en segundo plano.',
