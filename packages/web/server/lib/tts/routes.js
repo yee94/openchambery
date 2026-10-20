@@ -48,9 +48,10 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
   // Server-side TTS endpoint - streams audio from OpenAI TTS API
   app.post('/api/tts/speak', async (req, res) => {
     try {
-      if (req.body?.provider === 'volcengine') {
-        const saved = readSpeechSettings();
-        const speech = { ...saved, ...req.body, apiKey: req.body.apiKey || saved.apiKey };
+      const saved = readSpeechSettings();
+      res.set('X-Speech-Pitch', String(saved.speechPitch)).set('X-Speech-Volume', String(saved.speechVolume));
+      if (saved.voiceProvider === 'volcengine') {
+        const speech = { text: req.body?.text, apiKey: saved.apiKey, voice: saved.voice, resourceId: saved.resourceId, speed: saved.speechRate };
         if (typeof speech.apiKey !== 'string' || !speech.apiKey.trim()) {
           return res.status(400).json({ error: 'Volcengine speech API Key is required' });
         }
@@ -58,7 +59,7 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
         const cancel = () => { if (!res.writableEnded) abort.abort(); };
         res.on('close', cancel);
         try {
-          if (req.body.stream === true) {
+          if (req.headers.accept?.includes('application/x-ndjson')) {
             res.type('application/x-ndjson').set('Cache-Control', 'no-store, no-transform').set('X-Accel-Buffering', 'no');
             const write = async (frame) => {
               abort.signal.throwIfAborted();
@@ -87,14 +88,16 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
         }
         return;
       }
-      const saved = readSpeechSettings();
-      const compatible = req.body?.provider === 'openai-compatible';
-      const matchesSavedUrl = !req.body?.baseURL || normalizeCustomOpenAIBaseURL(req.body.baseURL).value === normalizeCustomOpenAIBaseURL(saved.openaiCompatibleUrl).value;
-      const savedApiKey = compatible ? (matchesSavedUrl ? saved.openaiCompatibleApiKey : undefined) : (req.body?.baseURL ? undefined : saved.openaiApiKey);
-      const { text, voice = compatible ? saved.openaiCompatibleVoice : saved.openaiVoice,
-        model = compatible ? saved.openaiCompatibleTtsModel : 'gpt-4o-mini-tts', speed = saved.speechRate,
-        instructions, providerId, modelId, apiKey = savedApiKey,
-        baseURL = compatible ? saved.openaiCompatibleUrl : undefined } = req.body || {};
+      if (!['openai', 'openai-compatible'].includes(saved.voiceProvider)) {
+        return res.status(400).json({ error: 'Select a server speech provider in Voice settings' });
+      }
+      const compatible = saved.voiceProvider === 'openai-compatible';
+      const text = req.body?.text;
+      const voice = compatible ? saved.openaiCompatibleVoice : saved.openaiVoice;
+      const model = compatible ? saved.openaiCompatibleTtsModel : 'gpt-4o-mini-tts';
+      const speed = saved.speechRate;
+      const apiKey = compatible ? saved.openaiCompatibleApiKey : saved.openaiApiKey;
+      const baseURL = compatible ? saved.openaiCompatibleUrl : undefined;
 
       const normalizedBaseURLResult = normalizeCustomOpenAIBaseURL(baseURL);
       if (normalizedBaseURLResult.error) {
@@ -111,12 +114,12 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
       // Dynamically import the TTS service (ESM)
       const { ttsService } = await getTtsModule();
 
-      // Check availability - server-configured key, client-provided key, or custom server URL
-      const hasClientKey = apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0;
+      // Use saved speech credentials or the Host's OpenCode credential source.
+      const hasSavedKey = apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0;
       const hasCustomBaseURL = typeof normalizedBaseURL === 'string' && normalizedBaseURL.length > 0;
-      const hasServerKey = !hasClientKey && !hasCustomBaseURL && await ttsService.isAvailable();
+      const hasServerKey = !hasSavedKey && !hasCustomBaseURL && await ttsService.isAvailable();
       
-      if (!hasServerKey && !hasClientKey && !hasCustomBaseURL) {
+      if (!hasServerKey && !hasSavedKey && !hasCustomBaseURL) {
         return res.status(503).json({ 
           error: 'TTS service not available. Please configure OpenAI in OpenCode, provide an API key, or set a custom server URL in settings.' 
         });
@@ -132,8 +135,7 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
         voice,
         model,
         speed,
-        instructions,
-        apiKey: hasClientKey ? apiKey.trim() : undefined,
+        apiKey: hasSavedKey ? apiKey.trim() : undefined,
         baseURL: hasCustomBaseURL ? normalizedBaseURL : undefined,
       });
 
@@ -144,10 +146,8 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
       } catch (error) {
         console.error('[TTS] Error:', error);
         if (!res.headersSent) {
-          const { model: m, voice: v, baseURL: b } = req.body || {};
           res.status(500).json({ 
             error: error instanceof Error ? error.message : 'TTS generation failed',
-            detail: { model: m, voice: v, hasBaseURL: !!b },
           });
         }
       }
@@ -183,8 +183,11 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
   app.get('/api/tts/status', async (_req, res) => {
     try {
       const { ttsService } = await getTtsModule();
+      const saved = readSpeechSettings();
       res.json({
-        available: Boolean(readSpeechSettings().openaiApiKey) || await ttsService.isAvailable(),
+        available: saved.voiceProvider === 'volcengine' ? Boolean(saved.apiKey)
+          : saved.voiceProvider === 'openai-compatible' ? Boolean(saved.openaiCompatibleUrl)
+          : saved.voiceProvider === 'openai' && (Boolean(saved.openaiApiKey) || await ttsService.isAvailable()),
         voices: [
           'alloy', 'ash', 'ballad', 'coral', 'echo', 'fable',
           'nova', 'onyx', 'sage', 'shimmer', 'verse', 'marin', 'cedar'
@@ -203,7 +206,10 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
   // macOS 'say' command TTS speak endpoint
   app.post('/api/tts/say/speak', async (req, res) => {
     try {
-      const { text, voice = 'Samantha', rate = 200 } = req.body || {};
+      const { text } = req.body || {};
+      const saved = readSpeechSettings();
+      const voice = saved.sayVoice;
+      const rate = Math.round(100 + (saved.speechRate - 0.5) * 200);
       
       if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ error: 'Text is required' });
@@ -264,26 +270,22 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
         const { transcribeAudio } = await import('./stt.js');
 
         const mimeType = (req.headers['content-type'] || 'audio/webm').split(',')[0].trim();
-        const baseURL = typeof req.headers['x-base-url'] === 'string' ? req.headers['x-base-url'].trim() : '';
-        const model = typeof req.headers['x-model'] === 'string' && req.headers['x-model'].trim().length > 0
-          ? req.headers['x-model'].trim()
-          : 'deepdml/faster-whisper-large-v3-turbo-ct2';
-        const language = typeof req.headers['x-language'] === 'string' && req.headers['x-language'].trim().length > 0
-          ? req.headers['x-language'].trim()
-          : undefined;
-        const authHeader = typeof req.headers['authorization'] === 'string' ? req.headers['authorization'].trim() : '';
-        const apiKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+        const saved = readSpeechSettings();
+        const baseURL = saved.sttServerUrl;
+        const model = saved.sttModel;
+        const language = saved.sttLanguage || undefined;
+        const apiKey = saved.sttApiKey || undefined;
 
         if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
           return res.status(400).json({ error: 'Audio data is required' });
         }
 
-        if (req.headers['x-speech-provider'] === 'volcengine') {
+        if (saved.sttProvider === 'volcengine') {
           const abort = new AbortController();
           const cancel = () => { if (!res.writableEnded) abort.abort(); };
           res.on('close', cancel);
           try {
-            const speechKey = req.headers['x-speech-api-key'] || readSpeechSettings().apiKey;
+            const speechKey = saved.apiKey;
             if (!speechKey) return res.status(400).json({ error: 'Volcengine speech API Key is required' });
             const transcript = await transcribeVolcengine({ audioBuffer: req.body, apiKey: speechKey, signal: abort.signal });
             if (!res.destroyed) res.json({ transcript });
@@ -293,8 +295,8 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
           return;
         }
 
-        if (!baseURL) {
-          return res.status(400).json({ error: 'X-Base-URL header is required' });
+        if (saved.sttProvider !== 'openai-compatible' || !baseURL) {
+          return res.status(400).json({ error: 'Configure a file transcription provider in Voice settings' });
         }
 
         console.log('[STT] Transcribing audio:', {

@@ -13,6 +13,7 @@ export const speechSettingsQueryOptions = (transport = getRuntimeTransportIdenti
         return parseSpeechSettings(await response.json());
     }),
     staleTime: 30_000,
+    networkMode: 'always' as const,
     retry: 1,
     refetchOnWindowFocus: true,
 });

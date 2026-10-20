@@ -53,6 +53,30 @@ Use `useEffect` for external-system synchronization. Calculate derived values du
 - Effect rerun conditions express their real semantic dependencies. `useEvent` identity never controls an effect's rerun condition.
 - Keep server state in TanStack Query, global UI/app state in Zustand, and IPC/SSE behavior in runtime and sync modules.
 
+### Callback boundaries on high-frequency paths
+
+Apply these rules when an input, streaming update, or timer can rerender a caller:
+
+1. **Classify invocation time.** Use `useEvent` for callbacks invoked after commit by user actions or external events. Keep render-time selectors, render props, and calculations as ordinary functions or `useMemo`; they need the current render's values.
+2. **Stabilize the actual boundary.** Pass the `useEvent` result directly to an identity-sensitive child or subscription. An inline adapter such as `onInsert={(text) => handleTranscript(text, true)}` creates a new prop even when `handleTranscript` is stable; give the adapter its own `useEvent`.
+3. **Isolate unrelated work.** Keep high-frequency state with its owner and subscribe to narrow fields. For an independent leaf under an updating parent, use an evidenced memo boundary with stable props. Check callback, object, array, and JSX props together; one fresh prop defeats the boundary. Local state and relevant context/store updates must still reach the leaf.
+4. **Let the listener Hook own freshness.** `useEventListener` already forwards to the latest handler. Inline handlers at that Hook are valid; adding another `useEvent` solely to prevent listener reattachment is redundant. Subscription lifetime follows the actual event, target, and options. Custom subscription Hooks should likewise separate callback freshness from resource lifetime.
+5. **Account for Hook work.** `useEvent` uses a layout effect to update its latest handler; it is not a zero-effect primitive. Prefer it over hand-written callback-ref synchronization, but first eliminate unrelated leaf renders. Keep Effects that synchronize real external resources and express their semantic dependencies; never hide a required reconnect or reconfiguration behind a stable callback.
+6. **Guard the call site.** On hot-path boundary changes, test at least 50 unrelated parent updates with zero unrelated leaf Hook/subscription work, then verify that callbacks see the latest committed state and owner changes perform the required cleanup/rebind. Test the production JSX boundary so a new inline adapter cannot silently invalidate the guard. Composer timing and scale gates remain in `packages/ui/src/composer/DOCUMENTATION.md#input-responsiveness-contract`.
+
+```tsx
+const MemoSpeechControls = React.memo(SpeechControls);
+
+function Composer() {
+    const finishSpeech = useEvent((text: string) => applyTranscript(text, true));
+    return <MemoSpeechControls onInsert={finishSpeech} />;
+}
+```
+
+Native DOM event props and Hooks that already own handler freshness do not need a blanket inline-function ban. ESLint dependency checks cannot prove callback stability across components or zero per-keystroke work; use the operation-count guard and browser measurements above.
+
+Reference: [ReactUse useEvent](https://reactuse.com/effect/useevent/). Check the installed implementation when choosing a Hook; stable callback identity and avoiding renders are separate guarantees.
+
 ## Refactor Patterns
 
 - Query owns pull state for Agents, Commands, Skills, MCP, Plugins, GitHub, Files, and Plans. Store-owned loaders and effects retain UI synchronization responsibilities.

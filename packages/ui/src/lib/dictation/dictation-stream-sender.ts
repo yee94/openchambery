@@ -11,7 +11,7 @@
  * after a connection drop (`resetStreamForReplay()` + `finish()`).
  */
 
-import type { DictationClient, DictationStartOptions } from './dictation-client';
+import type { DictationClient } from './dictation-client';
 
 const MAX_CHUNKS_PER_FLUSH_TURN = 128;
 
@@ -33,7 +33,6 @@ export class DictationStreamSender {
     private readonly client: DictationClient;
     private readonly format: string;
     private readonly createDictationId: () => string;
-    private getStartOptions: () => DictationStartOptions;
 
     private dictationId: string | null = null;
     private sendSeq = 0;
@@ -47,13 +46,11 @@ export class DictationStreamSender {
 
     constructor(params: {
         client: DictationClient;
-        getStartOptions: () => DictationStartOptions;
         format?: string;
         createDictationId?: () => string;
     }) {
         this.client = params.client;
         this.format = params.format ?? PCM_DICTATION_FORMAT;
-        this.getStartOptions = params.getStartOptions;
         this.createDictationId = params.createDictationId ?? createDictationIdDefault;
     }
 
@@ -141,7 +138,7 @@ export class DictationStreamSender {
         this.streamReady = false;
 
         const start = (async () => {
-            await this.client.startDictationStream(dictationId, this.format, this.getStartOptions());
+            await this.client.startDictationStream(dictationId, this.format);
             if (this.startGeneration !== generation) {
                 return;
             }

@@ -74,7 +74,7 @@ describe('ChatInput staged-edit wiring', () => {
     test('delegates staged edits to direct submission before queue admission', () => {
         const queueStart = chatInputSource.indexOf('const handleQueueMessage = useEvent(async () => {');
         const queueHandler = chatInputSource.slice(queueStart, chatInputSource.indexOf('const inputSnapshot = getCurrentInputSnapshot();', queueStart));
-        expect(queueHandler).toContain('await handleSubmitRef.current();');
+        expect(queueHandler).toContain('await handleSubmit();');
         expect(queueHandler).not.toContain('commitMessageEdit(');
     });
 
@@ -119,7 +119,7 @@ describe('sent-message edit submission routing', () => {
             record: (value: unknown) => { sent.push(value); }, shortcut: input.shortcut,
         };
         const code = `async function submit(options) { ${routing}\n record({ delivery, steerAfterAdmit }); }
-            const handleSubmitRef = { current: submit };
+            const handleSubmit = submit;
             ${primary};
             shortcut ? submit({ steerAfterAdmit: true }) : handlePrimaryAction();`;
         await runInNewContext(transpileModule(code, { compilerOptions: { target: ScriptTarget.ESNext } }).outputText, context);

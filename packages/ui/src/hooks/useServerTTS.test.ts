@@ -128,6 +128,7 @@ const { useServerTTS } = await import('./useServerTTS');
 
 const response = (): Response => ({
   ok: true,
+  headers: new Headers(),
   blob: async () => ({ arrayBuffer: async () => new ArrayBuffer(1) }),
 } as Response);
 
@@ -140,9 +141,9 @@ describe('useServerTTS playback session identity', () => {
   test('uses Host speech settings without sending client-local credentials or voice overrides', async () => {
     let tts = useServerTTS({ enabled: false });
     harness.render(() => { tts = useServerTTS({ enabled: false }); });
-    const playing = tts.speak('测试', { provider: 'volcengine' });
+    const playing = tts.speak('测试');
     await flush();
-    expect(requestBodies.at(-1)).toMatchObject({ provider: 'volcengine' });
+    expect(requestBodies.at(-1)).toEqual({ text: '测试' });
     expect(requestBodies.at(-1)?.apiKey).toBeUndefined();
     expect(requestBodies.at(-1)?.voice).toBeUndefined();
     expect(requestBodies.at(-1)?.resourceId).toBeUndefined();

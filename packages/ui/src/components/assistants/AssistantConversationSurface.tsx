@@ -317,9 +317,9 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     event.preventDefault()
     void addFiles(files)
   })
-  const submit = useEvent(async () => {
+  const submit = useEvent(async (voiceText?: string) => {
     const uploadController = uploadControllerRef.current
-    const text = draft
+    const text = voiceText ?? draft
     const staged = attachments
     const sentAssistantID = assistant.id
     const previous = retrySendRef.current
@@ -677,6 +677,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               removeAttachmentLabel={t('assistants.contact.removeAttachment')}
               fileAccept="*/*"
               onChange={(value) => setDraft(value)}
+              onVoiceSend={(text) => { void submit(text) }}
               onSubmit={() => {
                 void submit()
               }}

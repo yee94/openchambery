@@ -6,8 +6,8 @@ over a WebSocket; the server runs the transcription and streams live partial
 transcripts back.
 
 Local TTS (Kokoro via sherpa-onnx OfflineTts) runs in the same worker process
-and is exposed as `POST /api/dictation/tts/speak` (JSON `{text, speakerId?,
-speed?, model?}` → WAV bytes; 503 with `reasonCode` while the model is
+and is exposed as `POST /api/dictation/tts/speak` (JSON `{text}` → WAV bytes;
+voice and speed come from Host speech settings; 503 with `reasonCode` while the model is
 downloading). TTS models live in the same catalog/downloader as STT models
 (`local/model-catalog.js` `LOCAL_TTS_MODEL_CATALOG`) and are managed by the
 same status/download/delete routes.
@@ -53,7 +53,7 @@ same status/download/delete routes.
 
 ## WebSocket protocol (JSON text frames)
 
-Client → server: `start {dictationId, format, options}`,
+Client → server: `start {dictationId, format}`,
 `chunk {dictationId, seq, audio}`, `finish {dictationId, finalSeq}`,
 `cancel {dictationId}`, `ping`.
 
@@ -61,15 +61,13 @@ Server → client: `ready`, `ack {ackSeq}`, `partial {text}`,
 `finish_accepted {timeoutMs}`, `final {text}`,
 `error {error, retryable, reasonCode?}`, `pong`.
 
-`options` in `start` carries the client-selected provider config:
-`{ provider: 'local' | 'openai-compatible' | 'volcengine', language?, localModel?,
-openaiCompatible?: { baseUrl, model, apiKey }, volcengine?: { apiKey?, resourceId? } }`.
-Volcengine uses automatic language recognition; the Whisper language hint is
-not forwarded. Volcengine resolves omitted credentials/resource IDs from the
-Host speech settings at session start (`../tts/settings.js`). Shared
-UI sends only the provider, so mobile can use the PC-saved key without receiving
-it. Explicit client overrides remain supported for older clients. Session copies
-are released on close, and credentials are never logged.
+The client sends audio and stream-control metadata only. The service snapshots
+provider, credentials, resource, language and local model from Host speech settings
+at session start (`../tts/settings.js`). Legacy `options` are ignored, including
+provider overrides. Saving during a session affects the next session; it cannot
+change an active upstream connection. Volcengine uses automatic language recognition
+and does not receive the Whisper language hint. Session copies are released on
+close, and credentials are never logged.
 
 ## Invariants
 

@@ -1,5 +1,9 @@
 # Assistant UI
 
+## Hold-to-talk input
+
+Mobile contact composers reuse the memoized `HoldToTalkComposer` shared with primary Chat: hold an empty textarea to record, release to send, slide to cancel or edit. The dictation setting and capture/runtime support gate activation (VS Code is unsupported). Final recognition is passed explicitly into the existing contact admission path, retaining attachments, failed-send drafts and retry identity. Edit results use the reference-aware document commit. Text typed during finalization is preserved and receives the transcript without automatic submission. Inactive contacts unmount capture; the existing runtime/assistant key fences late results. Stable event callbacks isolate idle audio Hooks from ordinary typing; working contacts remain usable while admission-pending contacts are disabled.
+
 ## Contact session references
 
 Assistant Settings resolves model choices through the directory-scoped `providerQueryOptions`, which reuses the complete `providerCatalogQueryOptions` loader and its abort signal. The catalog includes models and thinking variants; the v2 provider-only list is not a model catalog. Favorites and recents remain shortcuts alongside the full provider/model sections.

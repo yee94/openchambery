@@ -17,7 +17,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useConfigStore } from '@/stores/useConfigStore';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { playPcmStream } from '@/lib/voice/pcm-stream';
 import { prepareSpeechPlayback } from '@/lib/voice/audio-session';
@@ -34,7 +33,6 @@ interface PlaybackSession {
 
 interface UseServerTTSOptions {
   enabled?: boolean;
-  availabilityMode?: 'auto' | 'openai' | 'openai-compatible';
 }
 
 const SERVER_TTS_STATUS_TTL_MS = 30000;
@@ -95,29 +93,6 @@ export interface UseServerTTSReturn {
 }
 
 interface SpeakOptions {
-  provider?: 'volcengine' | 'openai' | 'openai-compatible';
-  /** Voice to use (defaults to coral) */
-  voice?: string;
-  /** Model to use (defaults to gpt-4o-mini-tts) */
-  model?: string;
-  /** Speech speed (0.25 to 4.0, defaults to 1.0) */
-  speed?: number;
-  /** Speech pitch shift (0.5 to 2.0, mapped to cents; 1.0 = no shift) */
-  pitch?: number;
-  /** Playback volume (0 to 1, defaults to 1.0) */
-  volume?: number;
-  /** Optional instructions for the voice */
-  instructions?: string;
-  /** Summarize long text before speaking (defaults to true) */
-  summarize?: boolean;
-  /** Provider ID for summarization model */
-  providerId?: string;
-  /** Model ID for summarization */
-  modelId?: string;
-  /** Character threshold for summarization (defaults to 200) */
-  threshold?: number;
-  /** Custom base URL for OpenAI-compatible server */
-  baseURL?: string;
   /** Callback when playback starts */
   onStart?: () => void;
   /** Callback when playback ends */
@@ -139,7 +114,6 @@ function getAudioContext(): AudioContext {
 
 export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSReturn {
   const enabled = options.enabled ?? true;
-  const availabilityMode = options.availabilityMode ?? 'auto';
   const [isPlaying, setIsPlaying] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,11 +122,6 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
   const sessionRef = useRef<PlaybackSession | null>(null);
   const availabilityGenerationRef = useRef(0);
   
-  // Get current model and API settings from config store.
-  const currentProviderId = useConfigStore((state) => state.currentProviderId);
-  const currentModelId = useConfigStore((state) => state.currentModelId);
-  const openaiApiKeyConfigured = useConfigStore((state) => state.openaiApiKeyConfigured);
-  const openaiCompatibleUrl = useConfigStore((state) => state.openaiCompatibleUrl);
 
   // Check if server TTS is available
   const checkAvailability = useCallback(async (): Promise<boolean> => {
@@ -168,28 +137,14 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       return applyAvailability(false);
     }
 
-    const hasClientKey = openaiApiKeyConfigured;
-    const hasCustomUrl = Boolean(openaiCompatibleUrl && openaiCompatibleUrl.trim().length > 0);
-    if (availabilityMode === 'openai-compatible') {
-      return applyAvailability(hasCustomUrl);
-    }
-
-    if (hasClientKey) {
-      return applyAvailability(true);
-    }
-
-    if (availabilityMode === 'auto' && hasCustomUrl) {
-      return applyAvailability(true);
-    }
-
     try {
       return applyAvailability(await getServerTTSStatus(transportIdentity));
     } catch {
       return applyAvailability(false);
     }
-  }, [availabilityMode, enabled, openaiApiKeyConfigured, openaiCompatibleUrl]);
+  }, [enabled]);
 
-  // Check availability on mount and when API key changes
+  // Check the Host capability when playback becomes enabled.
   useEffect(() => {
     void checkAvailability();
   }, [checkAvailability]);
@@ -275,36 +230,15 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       silentSource.connect(ctx.destination);
       silentSource.start(0);
 
-      const voice = options?.voice || 'nova';
-      console.log('[useServerTTS] Speaking with voice:', voice, 'options:', options);
-
       // Fetch audio from server
-      const volcengine = options?.provider === 'volcengine';
       const response = await runtimeFetch('/api/tts/speak', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Accept: 'application/x-ndjson, audio/*',
         },
         body: JSON.stringify({
           text: text.trim(),
-          voice,
-          model: options?.model || undefined,
-          speed: options?.speed || 0.9,
-          instructions: options?.instructions,
-          summarize: false,
-          // Use provided provider/model, or fall back to current chat model
-          providerId: options?.providerId || currentProviderId || undefined,
-          modelId: options?.modelId || currentModelId || undefined,
-          // Credentials are resolved by the Host for the selected speech provider.
-          provider: options?.provider ?? (options?.baseURL ? 'openai-compatible' : 'openai'),
-          // Send custom base URL for OpenAI-compatible servers
-          baseURL: options?.baseURL || undefined,
-          ...(volcengine ? {
-            provider: 'volcengine',
-            stream: true,
-            apiKey: undefined,
-            voice: undefined,
-          } : {}),
         }),
         signal: session.abort.signal,
       });
@@ -318,11 +252,13 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      if (volcengine && response.headers.get('content-type')?.includes('application/x-ndjson')) {
+      const pitch = Number(response.headers.get('X-Speech-Pitch') ?? 1);
+      const volume = Number(response.headers.get('X-Speech-Volume') ?? 1);
+      if (response.headers.get('content-type')?.includes('application/x-ndjson')) {
         await playPcmStream(response, ctx, {
           signal: session.abort.signal,
-          pitch: options?.pitch ?? 1,
-          volume: options?.volume ?? 1,
+          pitch,
+          volume,
           onStart: () => {
             if (sessionRef.current !== session) return;
             setIsPlaying(true);
@@ -356,13 +292,11 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       source.buffer = audioBuffer;
 
       // Apply pitch shift via detune (cents): 1200 cents = 1 octave
-      const pitch = options?.pitch ?? 1.0;
       if (pitch !== 1.0) {
         source.detune.value = (pitch - 1.0) * 1200;
       }
 
       // Apply volume via GainNode
-      const volume = options?.volume ?? 1.0;
       const gainNode = ctx.createGain();
       gainNode.gain.value = volume;
 
@@ -408,7 +342,7 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       }
       sessionRef.current = null;
     }
-  }, [stop, currentProviderId, currentModelId]);
+  }, [stop]);
 
   // Cleanup on unmount
   useEffect(() => subscribeRuntimeEndpointChanged(stop), [stop]);

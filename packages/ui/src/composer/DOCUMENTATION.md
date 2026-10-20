@@ -17,6 +17,7 @@ Typing is the highest-priority interactive path. This contract applies to primar
 - Per-keystroke work is bounded by the edited document and active suggestions, not total projects, sessions, branches, models, agents or transcript history. Subscribe to the current draft's exact fields; unrelated entity updates must not fan out into composer work.
 - Closed pickers perform **zero catalog enumeration and zero row/label construction** during typing, including after opening and closing once. Render expensive children as components inside the popup/sheet presence boundary. JSX `.map()` arguments execute in the parent even when a portal eventually returns `null`; CSS hiding and memoizing the outer popup do not establish this boundary. Let the existing presence owner retain rows through exit animation.
 - Keep network waits, synchronous storage writes, global catalog scans and transcript recomputation off the text-echo path. Coalesce ancillary persistence/derived work through its existing owner; retain explicit flush-on-send and lifecycle guarantees.
+- Independent idle controls (including ASR) perform **zero leaf Hook evaluation and zero subscription setup/cleanup caused by unrelated draft edits**. Keep callback adapters stable at the production JSX boundary and verify latest-state delivery plus DraftKey teardown. Follow `.agents/skills/ui-api-decoupling/SKILL.md#callback-boundaries-on-high-frequency-paths` for Hook selection and identity rules; stable callbacks alone do not isolate a leaf from parent renders.
 
 ### Acceptance gate
 
@@ -27,7 +28,32 @@ Typing is the highest-priority interactive path. This contract applies to primar
 
 The closed-project/branch regression and its implementation boundary are documented in `../components/chat/DOCUMENTATION.md#composer-closed-picker-work`. This is the canonical input-performance contract; other guides link here instead of defining competing budgets.
 
+### Input Hook ownership
+
+`ChatInput` uses `useEvent` for event-time callbacks, `useMemo` factories for
+render-time store selectors, and module-level helpers for context-free transforms
+and project labels. Submission routes call the event handler directly rather
+than maintaining a parallel callback ref. Per-operation send/flight closures keep
+their captured scope so an asynchronous completion cannot release another surface's flight.
+ESLint rejects `useCallback` in ChatInput and its textarea layout owner.
+
+`components/chat/useComposerTextareaAutosize.ts` owns textarea sizing, the stable
+imperative resize callback, and one layout effect for text, expansion, platform,
+and dictation-height changes. Simultaneous changes perform one measurement;
+unrelated parent renders perform none. Text growth avoids the shrink/grow cycle;
+deletion, collapse, and dictation finalization permit shrinking. Autocomplete's
+resize subscription uses `useEventListener` with a target resolver: in the installed
+ReactUse version a bare null target defaults to window, whereas a resolver returning
+null disables registration. Text edits do not rebind that listener.
+
+Regression coverage: `ChatInput.hooks.test.tsx` checks current-render draft selection,
+selector identity, resize listener lifetime and latest callbacks;
+`useComposerTextareaAutosize.test.tsx` checks operation counts, expansion/collapse,
+text growth/deletion, dictation finalization and scroll preservation.
+
 ## Document and delivery ownership
+
+`components/dictation/useHoldToTalkInput` shares only hold-to-talk state between Chat and Assistant inputs: the global dictation setting, runtime/capture availability, current hint and stable `onHintChange` callback. Callers supply surface availability and mount `HoldToTalkComposer` only while enabled, releasing capture when the global setting turns off. Disabled surfaces receive a null hint. Each input independently chooses its placeholder and localized copy; Assistant idle/disabled copy retains its contextual Assistant name. Gesture/audio behavior stays in the shared component; drafts and sends stay with each input owner.
 
 Desktop ASR uses `DesktopDictationButton` in the composer action row when
 dictation is enabled and capture is supported (web/Electron, not VS Code).
@@ -41,6 +67,10 @@ window blur before capture starts is ignored. The component is keyed by DraftKey
 so changing drafts/runtimes tears down capture and fences late results through
 `useDictation`. Recording updates stay local to the button rather than invalidating
 the composer; no transcript overlay or duration meter is mounted on desktop.
+The desktop dictation leaf is memoized at the ChatInput boundary with stable
+event callbacks, including final transcript insertion. Ordinary draft edits do
+not rerun its dictation/audio Hooks or callback synchronization effects; local
+recording state and subscribed settings still update the leaf normally.
 Desktop also supports Cmd + left-button hold on the editable textarea. Cmd changes
 the placeholder to hold-to-talk; hovering the textarea with Cmd held and all active
 desktop recordings use `--voice-active-fill` for the 1px composer border without an

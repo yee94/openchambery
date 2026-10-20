@@ -4,7 +4,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { SessionIndexSession, SessionIndexSnapshot } from '@/lib/session-index-api';
 
-const runtime = vi.hoisted(() => ({ transport: 'runtime-a', load: vi.fn() }));
+const runtime = vi.hoisted(() => ({ transport: 'runtime-a', load: vi.fn(), dictationEnabled: true }));
+const speech = vi.hoisted(() => ({ renders: vi.fn(), deliver: (_text: string) => {}, start: vi.fn(), confirm: vi.fn(), cancel: vi.fn() }));
+vi.mock('@/stores/useConfigStore', () => ({ useConfigStore: (select: (state: { dictationEnabled: boolean }) => unknown) => select(runtime) }));
+vi.mock('@/lib/dictation/use-dictation-audio-source', () => ({ isDictationCaptureSupported: () => true }));
+vi.mock('@/hooks/useDictation', () => ({ useDictation: (options: { onTranscript: (text: string) => void }) => {
+  speech.renders(); speech.deliver = options.onTranscript;
+  return { status: 'idle', partialTranscript: '', error: null, volume: 0, startDictation: speech.start,
+    confirmDictation: speech.confirm, cancelDictation: speech.cancel, discardFailedDictation: () => {} };
+} }));
 vi.mock('@/components/chat/imageSource', () => ({ useRuntimeTransportIdentity: () => runtime.transport }));
 vi.mock('@/queries/sessionIndexQueries', () => ({
   sessionIndexSnapshotQueryOptions: (transport: string) => ({
@@ -16,7 +24,7 @@ vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 vi.mock('@/components/ui/ScrollableOverlay', () => ({ ScrollableOverlay: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock('@/components/ui/textarea', () => ({
   Textarea: React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>((props, ref) => (
-    <textarea ref={ref} className={props.className} style={props.style} value={props.value} disabled={props.disabled} onInput={props.onChange as React.FormEventHandler<HTMLTextAreaElement>}
+    <textarea ref={ref} placeholder={props.placeholder} className={props.className} style={props.style} value={props.value} disabled={props.disabled} onInput={props.onChange as React.FormEventHandler<HTMLTextAreaElement>}
       onCopy={props.onCopy} onCut={props.onCut} onKeyDown={props.onKeyDown} onSelect={props.onSelect} onCompositionStart={props.onCompositionStart} onCompositionEnd={props.onCompositionEnd}
       aria-controls={props['aria-controls']} aria-activedescendant={props['aria-activedescendant']} />
   )),
@@ -45,9 +53,10 @@ let active = true;
 let working = false;
 const stop = vi.fn();
 const submit = vi.fn();
+const voiceSend = vi.fn();
 const render = () => root.render(<QueryClientProvider client={client}><main><AssistantSessionComposer
-  key={runtime.transport} active={active} working={working} onStop={stop} stopLabel="Stop generating" value={draft} isMobile={mobile} autoResize={false}
-  onChange={(value) => { draft = value; render(); }} onSubmit={submit}
+  key={runtime.transport} active={active} working={working} onStop={stop} stopLabel="Stop generating" value={draft} isMobile={mobile} autoResize={false} placeholder="normal input"
+  onChange={(value) => { draft = value; render(); }} onSubmit={submit} onVoiceSend={voiceSend}
 /></main></QueryClientProvider>);
 const input = () => host.querySelector('textarea')!;
 const flush = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); }); };
@@ -65,13 +74,86 @@ const key = async (value: string, options: KeyboardEventInit = {}) => {
 const rows = () => Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'));
 
 beforeEach(async () => {
-  runtime.transport = 'runtime-a'; runtime.load.mockReset().mockResolvedValue(snapshot()); submit.mockReset();
+  runtime.transport = 'runtime-a'; runtime.dictationEnabled = true; runtime.load.mockReset().mockResolvedValue(snapshot()); submit.mockReset();
   draft = ''; mobile = false; active = true; working = false; stop.mockReset();
+  voiceSend.mockReset(); speech.renders.mockClear(); speech.start.mockClear(); speech.confirm.mockClear(); speech.cancel.mockClear();
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   await act(async () => render());
 });
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); });
+
+test('mobile ASR stays idle through 50 edits and delivers into the latest draft without sending', async () => {
+  mobile = true;
+  await act(async () => render());
+  speech.renders.mockClear();
+  for (let index = 0; index < 50; index++) {
+    await act(async () => { draft = `typed ${index}`; render(); });
+  }
+  expect(speech.renders).not.toHaveBeenCalled();
+  await act(async () => speech.deliver('识别结果'));
+  expect(draft).toBe('typed 49 识别结果');
+  expect(voiceSend).not.toHaveBeenCalled();
+});
+
+test('mobile ASR sends explicit final text, while edit gesture only updates the draft', async () => {
+  mobile = true;
+  await act(async () => render());
+  await act(async () => speech.deliver('直接发送'));
+  expect(voiceSend).toHaveBeenCalledExactlyOnceWith('直接发送');
+  expect(draft).toBe('直接发送');
+  await act(async () => { draft = ''; render(); });
+  vi.useFakeTimers();
+  try {
+    const pointer = (type: string, x: number) => input().dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: 1, isPrimary: true, button: 0, clientX: x, clientY: 200,
+    }));
+    await act(async () => { pointer('pointerdown', 200); vi.advanceTimersByTime(300); });
+    await act(async () => { pointer('pointermove', 290); pointer('pointerup', 290); });
+    await act(async () => speech.deliver('先编辑'));
+    expect(draft).toBe('先编辑');
+    expect(voiceSend).toHaveBeenCalledTimes(1);
+  } finally { vi.useRealTimers(); }
+});
+
+test('deactivating the contact removes the hold target and ignores late transcripts', async () => {
+  mobile = true;
+  await act(async () => render());
+  expect(host.querySelector('[data-hold-to-talk-empty="true"]')).not.toBeNull();
+  await act(async () => { active = false; render(); });
+  expect(host.querySelector('[data-hold-to-talk-empty="true"]')).toBeNull();
+  await act(async () => speech.deliver('迟到的识别结果'));
+  expect(draft).toBe('');
+  expect(voiceSend).not.toHaveBeenCalled();
+});
+
+test('placeholder follows gestures and the global switch removes ASR and restores normal input', async () => {
+  mobile = true;
+  await act(async () => render());
+  expect(input().placeholder).toBe('normal input');
+  vi.useFakeTimers();
+  try {
+    const pointer = (type: string, x: number) => input().dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: 1, isPrimary: true, button: 0, clientX: x, clientY: 200,
+    }));
+    await act(async () => { pointer('pointerdown', 200); vi.advanceTimersByTime(300); });
+    expect(input().placeholder).toBe('chat.dictation.releaseSend');
+    await act(async () => { pointer('pointermove', 100); });
+    expect(input().placeholder).toBe('chat.dictation.releaseCancel');
+    await act(async () => { pointer('pointermove', 290); });
+    expect(input().placeholder).toBe('chat.dictation.releaseEdit');
+    await act(async () => { runtime.dictationEnabled = false; render(); });
+    expect(input().placeholder).toBe('normal input');
+    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(host.querySelector('[data-hold-to-talk-empty="true"]')).toBeNull();
+    speech.start.mockClear(); speech.renders.mockClear();
+    await act(async () => { pointer('pointerdown', 200); vi.advanceTimersByTime(300); });
+    expect(speech.start).not.toHaveBeenCalled();
+    expect(speech.renders).not.toHaveBeenCalled();
+    await act(async () => { runtime.dictationEnabled = true; render(); });
+    expect(input().placeholder).toBe('normal input');
+  } finally { vi.useRealTimers(); }
+});
 
 test('mounts only for @, searches the bounded snapshot once, and shows directory disambiguation', async () => {
   expect(runtime.load).not.toHaveBeenCalled();

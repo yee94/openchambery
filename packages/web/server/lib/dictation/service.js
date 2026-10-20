@@ -25,7 +25,6 @@ import {
   getLocalSttModelDir,
   isLocalModelId,
   isLocalSttModelId,
-  isLocalTtsModelId,
 } from './local/model-catalog.js';
 import { ensureLocalSttModel, isLocalSttModelInstalled } from './local/model-downloader.js';
 
@@ -82,15 +81,14 @@ export function createDictationService({ modelsDir }) {
    * Returns { session } on success or { error, retryable, reasonCode } when
    * the provider is not ready.
    *
-   * @param {{ provider?: string, language?: string, localModel?: string,
-   *           openaiCompatible?: { baseUrl?: string, model?: string, apiKey?: string } }} options
+   * Configuration is read from the Host once at session creation.
    */
-  const createSttSession = async (options = {}) => {
-    if (options.provider === 'volcengine') {
-      const saved = readSpeechSettings();
+  const createSttSession = async () => {
+    const saved = readSpeechSettings();
+    if (saved.sttProvider === 'volcengine') {
       const session = new VolcengineTranscriptionSession({
-        apiKey: options.volcengine?.apiKey || saved.apiKey,
-        resourceId: options.volcengine?.resourceId || saved.asrResourceId,
+        apiKey: saved.apiKey,
+        resourceId: saved.asrResourceId,
       });
       try {
         await session.connect();
@@ -100,16 +98,14 @@ export function createDictationService({ modelsDir }) {
         return { error: error.message, retryable: false, reasonCode: 'stt_not_configured' };
       }
     }
-    const provider = options.provider === 'openai-compatible' ? 'openai-compatible' : 'local';
+    const provider = saved.sttProvider;
 
     if (provider === 'openai-compatible') {
-      const saved = readSpeechSettings();
-      const config = options.openaiCompatible || { baseUrl: saved.sttServerUrl, model: saved.sttModel, apiKey: saved.sttApiKey };
       const session = new OpenAICompatibleTranscriptionSession({
-        baseURL: config.baseUrl,
-        model: config.model,
-        apiKey: config.apiKey || undefined,
-        language: options.language || undefined,
+        baseURL: saved.sttServerUrl,
+        model: saved.sttModel,
+        apiKey: saved.sttApiKey || undefined,
+        language: saved.sttLanguage || undefined,
       });
       try {
         await session.connect();
@@ -123,7 +119,7 @@ export function createDictationService({ modelsDir }) {
       return { session };
     }
 
-    const modelId = resolveLocalModelId(options.localModel);
+    const modelId = resolveLocalModelId(saved.sttLocalModel);
     const installed = await isLocalSttModelInstalled(modelsDir, modelId);
     if (!installed) {
       const state = downloadStates.get(modelId);
@@ -240,10 +236,11 @@ export function createDictationService({ modelsDir }) {
   /**
    * Synthesize speech with the local TTS model. Returns WAV bytes, or a
    * readiness error while the model is missing/downloading.
-   * @param {{ text: string, model?: string, speakerId?: number, speed?: number }} options
+   * @param {{ text: string }} options
    */
-  const synthesizeSpeech = async ({ text, model, speakerId, speed }) => {
-    const modelId = isLocalTtsModelId(model) ? model : DEFAULT_LOCAL_TTS_MODEL;
+  const synthesizeSpeech = async ({ text }) => {
+    const saved = readSpeechSettings();
+    const modelId = DEFAULT_LOCAL_TTS_MODEL;
     const installed = await isLocalSttModelInstalled(modelsDir, modelId);
     if (!installed) {
       const state = downloadStates.get(modelId);
@@ -268,8 +265,8 @@ export function createDictationService({ modelsDir }) {
       modelsDir,
       modelId,
       text,
-      speakerId,
-      speed,
+      speakerId: saved.localTtsVoiceId,
+      speed: saved.speechRate,
     });
     return { audio: result.audio, format: result.format };
   };

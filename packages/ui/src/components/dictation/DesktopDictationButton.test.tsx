@@ -1,17 +1,24 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { useEvent } from '@reactuses/core';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { DesktopDictationButton } from './DesktopDictationButton';
 
 const mock = vi.hoisted(() => ({
     onTranscript: (_text: string) => {},
     onPartial: (_text: string) => {},
+    hookWork: vi.fn(),
     toastError: vi.fn(), toastDismiss: vi.fn(),
     dictation: { status: 'idle', error: null as string | null,
         startDictation: vi.fn(), confirmDictation: vi.fn(), retryFailedDictation: vi.fn(), cancelDictation: vi.fn(), discardFailedDictation: vi.fn() },
 }));
 vi.mock('sonner', () => ({ toast: { error: mock.toastError, dismiss: mock.toastDismiss } }));
 vi.mock('@/hooks/useDictation', () => ({ useDictation: (options: { onTranscript: (text: string) => void; onPartialTranscript: (text: string) => void }) => {
+    mock.hookWork();
     mock.onTranscript = options.onTranscript;
     mock.onPartial = options.onPartialTranscript;
     return mock.dictation;
@@ -37,6 +44,56 @@ beforeEach(async () => {
     inputRef.current = document.createElement('textarea'); host.append(inputRef.current);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+
+it('keeps dictation hook work off repeated composer edits while final insertion sees the latest draft', async () => {
+    const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../chat/ChatInput.tsx'), 'utf8');
+    const ast = ts.createSourceFile('ChatInput.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const declarations = new Map<string, string>();
+    let buttonJsx = '';
+    const visit = (node: ts.Node) => {
+        if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+            if (['MemoDesktopDictationButton', 'finishDesktopDictation'].includes(node.name.text)) {
+                declarations.set(node.name.text, `const ${node.getText(ast)};`);
+            }
+        }
+        if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(ast) === 'MemoDesktopDictationButton') {
+            buttonJsx = node.getText(ast);
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    expect(declarations.size).toBe(2);
+    expect(buttonJsx).not.toBe('');
+    const update = vi.fn();
+    const scope = {
+        React, useEvent, DesktopDictationButton, update,
+        textareaRef: inputRef, setDesktopCommandPressed: command, setDesktopRecording: recordingChange,
+        footerIconButtonClass: '', iconSizeClass: '', beginDesktopDictation: start, cancelDesktopDictation: cancel,
+    };
+    const compiled = ts.transpileModule(`
+        ${declarations.get('MemoDesktopDictationButton')}
+        const Surface = ({ revision, primaryDraftKeyID }) => {
+            const updateDesktopDictation = useEvent((text, final) => update(revision, text, final));
+            ${declarations.get('finishDesktopDictation')}
+            return (${buttonJsx});
+        };
+    `, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+    const Surface = new Function(...Object.keys(scope), `${compiled}\nreturn Surface;`)(...Object.values(scope));
+    await act(async () => root.render(<Surface revision={0} primaryDraftKeyID="draft-a" />));
+    mock.hookWork.mockClear();
+    for (let revision = 1; revision <= 50; revision++) {
+        await act(async () => root.render(<Surface revision={revision} primaryDraftKeyID="draft-a" />));
+    }
+    expect(mock.hookWork).not.toHaveBeenCalled();
+    mock.onTranscript('最终识别');
+    expect(update).toHaveBeenLastCalledWith(50, '最终识别', true);
+    mock.onPartial('临时识别');
+    expect(update).toHaveBeenLastCalledWith(50, '临时识别', undefined);
+    await act(async () => root.render(<Surface revision={51} primaryDraftKeyID="draft-b" />));
+    expect(mock.hookWork).toHaveBeenCalledTimes(1);
+    mock.onTranscript('新草稿');
+    expect(update).toHaveBeenLastCalledWith(51, '新草稿', true);
+});
 
 it('tracks Cmd transitions without publishing ordinary typing events', async () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true }));

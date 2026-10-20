@@ -10,9 +10,10 @@ import { registerTtsRoutes } from './routes.js';
 const nativeFetch = globalThis.fetch;
 
 let dataDir;
-beforeEach(() => {
+beforeEach(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speech-settings-'));
   vi.stubEnv('OPENCHAMBER_DATA_DIR', dataDir);
+  await request(app()).put('/api/voice/settings').send({ voiceProvider: 'volcengine', sttProvider: 'volcengine' }).expect(200);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -37,6 +38,7 @@ const app = () => {
 
 describe('Volcengine speech protocol', () => {
   it('preserves existing Host speech credentials and ASR settings when adopting unified storage', async () => {
+    fs.rmSync(path.join(dataDir, 'speech', 'settings.json'));
     fs.mkdirSync(path.join(dataDir, 'speech'), { recursive: true });
     fs.writeFileSync(path.join(dataDir, 'speech', 'volcengine.json'), JSON.stringify({ apiKey, voice: 'existing-speaker' }));
     fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ dictationEnabled: true, sttProvider: 'volcengine' }));
@@ -65,10 +67,12 @@ describe('Volcengine speech protocol', () => {
     expect(JSON.stringify(mobile.body)).not.toContain(apiKey);
     expect(mobile.headers['cache-control']).toBe('no-store');
     const upstream = mockResponse(new Response(audioLines));
-    const spoken = await request(app()).post('/api/tts/speak').send({ text: '测试', provider: 'volcengine' });
+    const spoken = await request(app()).post('/api/tts/speak').send({ text: '测试', provider: 'openai', apiKey: 'ignored-key', voice: 'ignored-voice', resourceId: 'ignored-resource', speed: 2 });
     expect(spoken.status).toBe(200);
     expect(upstream.mock.calls[0][1].headers['X-Api-Key']).toBe(apiKey);
     expect(JSON.parse(upstream.mock.calls[0][1].body).req_params.speaker).toBe('custom_speaker');
+    expect(JSON.parse(upstream.mock.calls[0][1].body).req_params.audio_params.speech_rate).toBe(0);
+    expect(upstream.mock.calls[0][1].headers['X-Api-Resource-Id']).toBe('seed-icl-2.0');
   });
   it('merges independent TTS/ASR saves, preserves an omitted key, and explicitly clears it', async () => {
     await request(app()).put('/api/voice/volcengine').send({ apiKey, voice: 'custom_speaker' }).expect(200);
@@ -99,11 +103,12 @@ describe('Volcengine speech protocol', () => {
     await request(app()).put('/api/voice/volcengine').send({ apiKey }).expect(200);
     const upstream = mockResponse(new Response('{"result":{"text":"测试"}}', { headers: { 'X-Api-Status-Code': '20000000' } }));
     const result = await request(app()).post('/api/stt/transcribe')
-      .set('Content-Type', 'audio/wav').set('X-Speech-Provider', 'volcengine').send(Buffer.from('wav')).expect(200);
+      .set('Content-Type', 'audio/wav').send(Buffer.from('wav')).expect(200);
     expect(result.body.transcript).toBe('测试');
     expect(upstream.mock.calls[0][1].headers['X-Api-Key']).toBe(apiKey);
   });
   it('flushes first audio over HTTP before synthesis ends and aborts upstream on disconnect', async () => {
+    await request(app()).put('/api/voice/settings').send({ apiKey }).expect(200);
     let controller;
     const upstream = mockResponse(new Response(new ReadableStream({ start(c) { controller = c; } })));
     const server = app().listen(0, '127.0.0.1');
@@ -111,8 +116,8 @@ describe('Volcengine speech protocol', () => {
     const abort = new AbortController();
     try {
       const responsePromise = nativeFetch(`http://127.0.0.1:${server.address().port}/api/tts/speak`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...speech, provider: 'volcengine', stream: true }), signal: abort.signal,
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
+        body: JSON.stringify({ text: speech.text }), signal: abort.signal,
       });
       controller.enqueue(new TextEncoder().encode('{"code":0,"data":"AABAQA=="}\n'));
       const response = await responsePromise;
@@ -146,8 +151,9 @@ describe('Volcengine speech protocol', () => {
   });
 
   it.each([true, false])('streams audio and explicit completion/error through the route (success=%s)', async (success) => {
+    await request(app()).put('/api/voice/settings').send({ apiKey }).expect(200);
     mockResponse(new Response('{"code":0,"data":"AABAQA=="}\n' + (success ? '{"code":20000000}\n' : '')));
-    const result = await request(app()).post('/api/tts/speak').send({ ...speech, provider: 'volcengine', stream: true });
+    const result = await request(app()).post('/api/tts/speak').set('Accept', 'application/x-ndjson').send({ text: speech.text });
     expect(result.headers['content-type']).toContain('application/x-ndjson');
     const frames = result.text.trim().split('\n').map(JSON.parse);
     expect(frames).toEqual([{ type: 'audio', data: 'AABAQA==' }, success ? { type: 'done' } : { type: 'error', error: expect.any(String) }]);
@@ -215,18 +221,20 @@ describe('Volcengine speech protocol', () => {
   });
 
   it('returns audio through the existing route without requiring OpenAI credentials', async () => {
+    await request(app()).put('/api/voice/settings').send({ apiKey }).expect(200);
     mockResponse(new Response(audioLines));
-    const result = await request(app()).post('/api/tts/speak').send({ ...speech, provider: 'volcengine' });
+    const result = await request(app()).post('/api/tts/speak').send({ text: speech.text });
     expect(result.status).toBe(200);
     expect(result.headers['content-type']).toContain('audio/mpeg');
     expect(result.body.toString()).toBe('audio');
   });
 
   it('keeps runtime authorization separate from the speech key', async () => {
+    await request(app()).put('/api/voice/settings').send({ apiKey }).expect(200);
     const upstream = mockResponse(new Response('{"result":{"text":"测试"}}', { headers: { 'X-Api-Status-Code': '20000000' } }));
     const result = await request(app()).post('/api/stt/transcribe')
       .set('Content-Type', 'audio/wav').set('Authorization', 'Bearer runtime-token')
-      .set('X-Speech-Provider', 'volcengine').set('X-Speech-Api-Key', apiKey).send(Buffer.from('wav'));
+      .set('X-Speech-Provider', 'openai-compatible').set('X-Speech-Api-Key', 'ignored-key').send(Buffer.from('wav'));
     expect(result.status).toBe(200);
     expect(result.body.transcript).toBe('测试');
     expect(upstream.mock.calls[0][1].headers['X-Api-Key']).toBe(apiKey);

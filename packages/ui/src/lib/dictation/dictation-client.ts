@@ -11,18 +11,6 @@ import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { openRuntimeWebSocket } from '@/lib/relay/runtime-socket';
 import { type RelayTunnelWebSocket } from '@/lib/relay/tunnel-client';
 
-export interface DictationStartOptions {
-    provider?: 'local' | 'openai-compatible' | 'volcengine';
-    volcengine?: { apiKey: string; resourceId?: string };
-    language?: string;
-    localModel?: string;
-    openaiCompatible?: {
-        baseUrl?: string;
-        model?: string;
-        apiKey?: string;
-    };
-}
-
 interface DictationServerMessage {
     type: string;
     dictationId?: string;
@@ -205,7 +193,6 @@ export class DictationClient {
     async startDictationStream(
         dictationId: string,
         format: string,
-        options: DictationStartOptions,
     ): Promise<void> {
         await this.ensureConnected();
         this.activeDictations += 1;
@@ -230,7 +217,7 @@ export class DictationClient {
                 },
             timeout });
 
-            if (!this.send({ type: 'start', dictationId, format, options })) {
+            if (!this.send({ type: 'start', dictationId, format })) {
                 clearTimeout(timeout);
                 this.pendingStarts.delete(dictationId);
                 this.releaseDictation();
