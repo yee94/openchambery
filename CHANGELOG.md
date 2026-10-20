@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.3-beta.13] - 2026-10-21
+
+### 改进
+
+- 托管 OpenCode 默认开启后台子代理（`OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS`），用户显式设置时仍以用户值为准。
+- 排队消息与会话收件箱统一通过会话运行时分发，减少跨主机切换时的状态错位。
+
+### 修复
+
+- 自托管 macOS runner 签名时不再把临时钥匙串设为系统默认钥匙串，避免系统反复索要钥匙串密码导致构建卡住。
+
 ## [2.1.3-beta.12] - 2026-10-20
 
 ### 改进
