@@ -6,16 +6,27 @@ const {
   openContextFileMock,
   openContextFileAtLineMock,
   editorOpenFileMock,
+  toastWarningMock,
 } = vi.hoisted(() => ({
   runtimeFetchMock: vi.fn(),
   openDesktopPathMock: vi.fn(async () => false),
   openContextFileMock: vi.fn(),
   openContextFileAtLineMock: vi.fn(),
   editorOpenFileMock: vi.fn(async () => undefined),
+  toastWarningMock: vi.fn(),
 }));
 
 vi.mock('@/lib/runtime-fetch', () => ({
   runtimeFetch: (...args: unknown[]) => runtimeFetchMock(...args),
+}));
+
+vi.mock('@/components/ui', () => ({
+  toast: { warning: toastWarningMock },
+}));
+
+vi.mock('@/lib/i18n', () => ({
+  useI18nStore: { getState: () => ({ dictionary: {} }) },
+  formatMessage: (_dictionary: unknown, key: string) => key,
 }));
 
 vi.mock('@/lib/desktop', () => ({
@@ -24,10 +35,6 @@ vi.mock('@/lib/desktop', () => ({
   isDesktopShell: () => false,
   isVSCodeRuntime: () => false,
   openDesktopPath: openDesktopPathMock,
-}));
-
-vi.mock('@/lib/outsideFileGrants', () => ({
-  ensureOutsideFileGrantForDesktop: vi.fn(async () => undefined),
 }));
 
 vi.mock('@/stores/useUIStore', () => ({
@@ -55,6 +62,7 @@ describe('fileReferenceActions', () => {
     runtimeFetchMock.mockReset();
     openDesktopPathMock.mockReset();
     openDesktopPathMock.mockResolvedValue(false);
+    toastWarningMock.mockReset();
     openContextFileMock.mockReset();
     openContextFileAtLineMock.mockReset();
     editorOpenFileMock.mockReset();
@@ -162,6 +170,42 @@ describe('fileReferenceActions', () => {
     expect(openContextFileMock).toHaveBeenCalledWith('/tmp', '/tmp/report.html', { viewerMode: 'preview' });
   });
 
+  test('opens a file outside the session directory with no grant and no warning', async () => {
+    await openFileReference('/private/var/folders/x/report.md', false, {
+      effectiveDirectory: '/Users/dev/project',
+    });
+    expect(toastWarningMock).not.toHaveBeenCalled();
+    expect(openContextFileMock).toHaveBeenCalledWith(
+      '/Users/dev/project',
+      '/private/var/folders/x/report.md',
+    );
+  });
+
+  test('opens a worktree file in the context panel', async () => {
+    await openFileReference(
+      '/Users/dev/.local/share/opencode/worktree/abc/wechat-gui/src/app.ts',
+      false,
+      { effectiveDirectory: '/Users/dev/project' },
+    );
+    expect(toastWarningMock).not.toHaveBeenCalled();
+    expect(openContextFileMock).toHaveBeenCalledWith(
+      '/Users/dev/project',
+      '/Users/dev/.local/share/opencode/worktree/abc/wechat-gui/src/app.ts',
+    );
+  });
+
+  test('opens a workspace-relative markdown link in the context panel', async () => {
+    await openFileReference(
+      'app/wxaaiagentnodelogicsvr/test/yi/stochastic/reports/kf-full-review.md',
+      false,
+      { effectiveDirectory: '/Users/dev/project' },
+    );
+    expect(openContextFileMock).toHaveBeenCalledWith(
+      '/Users/dev/project',
+      '/Users/dev/project/app/wxaaiagentnodelogicsvr/test/yi/stochastic/reports/kf-full-review.md',
+    );
+  });
+
   test('routes non-preview binary paths through the desktop opener first', async () => {
     openDesktopPathMock.mockResolvedValueOnce(true);
     await openFileReference('/tmp/notes.bin', true, {
@@ -169,5 +213,18 @@ describe('fileReferenceActions', () => {
     });
     expect(openDesktopPathMock).toHaveBeenCalledWith('/tmp/notes.bin');
     expect(openContextFileMock).not.toHaveBeenCalled();
+  });
+
+  test('falls through to the context panel when the desktop opener cannot handle a binary', async () => {
+    openDesktopPathMock.mockResolvedValueOnce(false);
+    await openFileReference('/private/var/folders/x/evidence-bundle.tar.gz', true, {
+      effectiveDirectory: '/Users/dev/project',
+    });
+    expect(openDesktopPathMock).toHaveBeenCalledWith('/private/var/folders/x/evidence-bundle.tar.gz');
+    expect(toastWarningMock).toHaveBeenCalledWith('chat.fileReference.notice.binaryExternal');
+    expect(openContextFileMock).toHaveBeenCalledWith(
+      '/Users/dev/project',
+      '/private/var/folders/x/evidence-bundle.tar.gz',
+    );
   });
 });

@@ -1854,6 +1854,7 @@ export const dict: Record<I18nKey, string> = {
   'session.githubIntegration.validation.branchAlreadyCheckedOut': '该分支已在某个工作树中检出',
   'session.githubIntegration.validation.branchAlreadyExists': '该分支已在本地存在',
   'session.githubIntegration.validation.failed': '校验失败',
+  'chat.fileReference.notice.binaryExternal': '这个文件没有应用内预览，系统应用也没能打开。仍会打开预览。',
   'chat.fileAttachment.toast.attachFailed': '附加文件失败',
   'chat.fileAttachment.toast.someFilesSkipped': '以下文件被跳过：\n{summary}',
   'chat.fileAttachment.toast.vscodePickFailed': '在 VS Code 中选择文件失败',
