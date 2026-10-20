@@ -25,7 +25,7 @@
  * ```
  */
 
-import { prepareSpeechPlayback } from './audio-session';
+import { prepareSpeechCapture, prepareSpeechPlayback, subscribeSpeechCapture } from './audio-session';
 
 // Callback types
 type SpeechResultCallback = (text: string, isFinal: boolean) => void;
@@ -65,6 +65,7 @@ class BrowserVoiceService {
   private isSpeaking = false;
   private audioContext: AudioContext | null = null;
   private audioUnlockRequired = false;
+  private speechGeneration = 0;
 
   /**
    * Check if browser supports Web Speech API
@@ -191,6 +192,7 @@ class BrowserVoiceService {
     }
 
     try {
+      prepareSpeechCapture();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
       return true;
@@ -227,6 +229,8 @@ class BrowserVoiceService {
 
     // Stop any existing recognition
     this.stopListening();
+    prepareSpeechCapture();
+    this.isSpeaking = false;
 
     // Create new recognition instance
     const SpeechRecognitionConstructor = (window.SpeechRecognition || window.webkitSpeechRecognition) as
@@ -461,6 +465,7 @@ class BrowserVoiceService {
     }
 
     // Resume audio context first (user gesture must have happened)
+    const generation = ++this.speechGeneration;
     await this.resumeAudioContext();
 
     // Wait for voices to be available (Chrome requires this)
@@ -468,6 +473,7 @@ class BrowserVoiceService {
 
     // Small delay to ensure audio context is ready
     await new Promise(resolve => setTimeout(resolve, 50));
+    if (generation !== this.speechGeneration) return;
 
     // Set speaking state and pause listening to avoid hearing ourselves
     this.isSpeaking = true;
@@ -560,6 +566,8 @@ class BrowserVoiceService {
    * Cancel ongoing speech
    */
   cancelSpeech(): void {
+    this.speechGeneration += 1;
+    this.isSpeaking = false;
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -674,3 +682,4 @@ class BrowserVoiceService {
 
 // Export singleton instance
 export const browserVoiceService = new BrowserVoiceService();
+subscribeSpeechCapture(() => browserVoiceService.cancelSpeech());

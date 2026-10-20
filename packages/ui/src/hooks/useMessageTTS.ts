@@ -14,6 +14,7 @@ import { useLocalTTS } from './useLocalTTS';
 import { browserVoiceService } from '@/lib/voice/browserVoiceService';
 import { sanitizeForTTS } from '@/lib/voice/summarize';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { subscribeSpeechCapture } from '@/lib/voice/audio-session';
 
 // Below this length the reply is comfortable to listen to as-is; summarizing
 // would only add latency.
@@ -89,6 +90,7 @@ export function useMessageTTS(options: { enabled?: boolean } = {}): UseMessageTT
         event.stopPropagation();
         stop();
     }, () => isPlaying ? window : null, { capture: true });
+    useEffect(() => subscribeSpeechCapture(stop), [stop]);
     const unlock = useEvent(async () => {
         const providerUnlock = voiceProvider === 'local' ? unlockLocalAudio
             : voiceProvider === 'say' ? unlockSayAudio : isServerProvider ? unlockAudio : null;

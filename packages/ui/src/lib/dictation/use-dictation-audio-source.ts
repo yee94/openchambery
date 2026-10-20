@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEvent } from '@reactuses/core';
+import { prepareSpeechCapture } from '../voice/audio-session';
 
 export interface DictationAudioSourceConfig {
     onPcmSegment: (base64Pcm: string) => void;
@@ -157,6 +158,7 @@ export function useDictationAudioSource(config: DictationAudioSourceConfig): Dic
         }
 
         const generation = ++captureGenerationRef.current;
+        prepareSpeechCapture();
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 channelCount: 1,

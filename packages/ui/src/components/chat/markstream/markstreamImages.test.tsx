@@ -8,6 +8,8 @@ const { streamImage, releaseImage, showPopup, transport } = vi.hoisted(() => ({
   transport: { identity: 'direct:http://lan-host' },
 }));
 vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/workspace/project' }));
+vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock('@/stores/useUIStore', () => ({ useUIStore: (selector: (state: { isMobile: boolean }) => unknown) => selector({ isMobile: true }) }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ runtime: { isVSCode: false } }) }));
 vi.mock('@/contexts/useThemeSystem', () => ({ useOptionalThemeSystem: () => undefined }));
 vi.mock('@/lib/relay/relay-image-stream', () => ({
@@ -19,7 +21,9 @@ vi.mock('@/lib/runtime-image-cache', () => ({
     return { url, release: () => releaseImage(url) };
   },
 }));
-vi.mock('@/lib/runtime-switch', () => ({
+vi.mock('@/lib/runtime-switch', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/runtime-switch')>(),
+  getRuntimeKey: () => 'image-test',
   getRuntimeTransportIdentity: () => transport.identity,
   subscribeRuntimeEndpointChanged: () => () => {},
 }));
@@ -33,6 +37,27 @@ beforeEach(() => {
   root = createRoot(host);
   streamImage.mockResolvedValue('blob:runtime-image');
   transport.identity = 'direct:http://lan-host';
+});
+
+test('mobile image reserves a loading canvas until the runtime URL and image bytes are ready', async () => {
+  let resolve!: (url: string) => void;
+  streamImage.mockReturnValue(new Promise<string>((done) => { resolve = done; }));
+  await act(async () => root.render(<MarkstreamRenderer content="![photo](/workspace/photo.png)" messageId="pending-image" enableFileReferences={false} />));
+  expect(host.querySelector('[data-image-state="loading"]')).not.toBeNull();
+  expect(host.querySelector('img')?.style.opacity).toBe('0');
+  await act(async () => resolve('blob:runtime-image'));
+  expect(host.querySelector('[data-image-state="loading"]')).not.toBeNull();
+  await act(async () => host.querySelector('img')!.dispatchEvent(new Event('load')));
+  expect(host.querySelector('[data-image-state="loaded"]')).not.toBeNull();
+  expect(host.querySelector('img')?.style.opacity).not.toBe('0');
+});
+
+test('mobile runtime image failure ends loading without exposing a broken image', async () => {
+  streamImage.mockRejectedValue(new Error('Unavailable'));
+  await act(async () => root.render(<MarkstreamRenderer content="![photo](/workspace/photo.png)" messageId="failed-image" enableFileReferences={false} />));
+  expect(host.querySelector('[data-image-state="error"]')).not.toBeNull();
+  expect(host.querySelector('[data-image-state="loading"]')).toBeNull();
+  expect(host.querySelector('img')?.style.opacity).toBe('0');
 });
 afterEach(async () => {
   await act(async () => root.unmount());

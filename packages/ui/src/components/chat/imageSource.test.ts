@@ -171,7 +171,7 @@ describe('image source contracts', () => {
     expect(stylesSource).toContain("[data-md-image-loading-badge='true']");
     expect(decorateSource).toContain('setMarkdownImagePlaceholder(image)');
     expect(decorateSource).toContain('if (!ctx.imagePreviewEnabled)');
-    expect(decorateSource).toContain('if (!needsRuntimeImageStream(resolved)) continue');
+    expect(decorateSource).toContain('if (!needsRuntimeImageStream(resolved)) {');
     expect(decorateSource).not.toContain('isRelayTransport(ctx.imageTransportIdentity)');
     const decorateImagesStart = decorateSource.indexOf('export const decorateMarkdownImages');
     const imageScanStart = decorateSource.indexOf('root.querySelectorAll<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR)', decorateImagesStart);
@@ -222,7 +222,7 @@ describe('image source contracts', () => {
   });
 
   test('shares resolved display sources while popup payloads retain original URLs', () => {
-    expect(attachmentSource).toContain("import { useResolvedImageSource,");
+    expect(attachmentSource).toContain("import { useResolvedImageResource,");
     expect(attachmentSource).toContain('source={file.url}');
     expect(attachmentSource).toContain('url: file.url');
     expect(dialogSource).toContain("import { useResolvedImageResource } from '../imageSource'");

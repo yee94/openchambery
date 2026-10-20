@@ -22,7 +22,9 @@ import { attachmentCitationDisplay } from '@/composer/inline-visual';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
 import { openImageSaveActions } from './imageSaveActionsBus';
-import { useResolvedImageSource, useRuntimeTransportIdentity, imageRequiresManualLoadOverRelay, isRelayTransport } from './imageSource';
+import { useResolvedImageResource, useRuntimeTransportIdentity, imageRequiresManualLoadOverRelay, isRelayTransport } from './imageSource';
+import { LoadingImage } from '@/components/ui/LoadingImage';
+import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
 import { Button } from '@/components/ui/button';
 import { useSessionParts } from '@/sync/sync-context';
 import { getLastFetchedSessionMessageParts } from '@/sync/transcript-parent-recovery';
@@ -163,7 +165,8 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
 
   const imageUrl = isLocalImagePreview ? file.dataUrl : (file.serverPath || '');
   const effectiveDirectory = useEffectiveDirectory() ?? '';
-  const displayImageUrl = useResolvedImageSource(imageUrl, effectiveDirectory);
+  const imageResource = useResolvedImageResource(imageUrl, effectiveDirectory);
+  const displayImageUrl = imageResource.source;
   const longPressKey = `attachment-image:${file.id}`;
   const longPressRef = React.useRef(createMobileLongPressController());
 
@@ -283,7 +286,9 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
       className="relative h-10 w-10 rounded-lg border border-border/40 bg-muted/10 overflow-hidden flex-shrink-0 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       aria-label={displayName}
     >
-      <img
+      <LoadingImage
+        fill
+        resourceError={imageResource.error}
         src={displayImageUrl || undefined}
         alt={displayName}
         className="h-full w-full object-cover"
@@ -767,7 +772,9 @@ const MessageImageCard = ({
 }) => {
   const { t } = useI18n();
   const effectiveDirectory = useEffectiveDirectory() ?? '';
-  const displaySource = useResolvedImageSource(source ?? '', effectiveDirectory);
+  const imageResource = useResolvedImageResource(source ?? '', effectiveDirectory);
+  const displaySource = imageResource.source;
+  const isMobile = useUIStore((state) => state.isMobile);
   return (
     <div
       className="relative aspect-square min-w-0 overflow-hidden w-24 max-w-full rounded-lg border border-border/40 bg-muted/10"
@@ -780,12 +787,14 @@ const MessageImageCard = ({
           className="group/message-image absolute inset-0 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
           aria-label={filename}
         >
-          <img src={displaySource || undefined} alt={filename} className="h-full w-full object-cover" loading="lazy" />
+          <LoadingImage fill resourceError={imageResource.error} src={displaySource || undefined} alt={filename} className="h-full w-full object-cover" loading="lazy" />
           <div className="pointer-events-none absolute inset-x-2 bottom-2 flex translate-y-1 items-center gap-2 rounded-xl border border-border/40 bg-[color-mix(in_srgb,var(--surface-elevated)_85%,transparent)] px-3 py-2 text-foreground opacity-0 shadow-sm backdrop-blur-md transition-[opacity,transform] duration-150 ease-out group-hover/message-image:translate-y-0 group-hover/message-image:opacity-100 group-focus-visible/message-image:translate-y-0 group-focus-visible/message-image:opacity-100 motion-reduce:transform-none motion-reduce:transition-none">
             <p className="min-w-0 flex-1 truncate text-xs font-medium">{filename}</p>
             {sizeText && <p className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{sizeText}</p>}
           </div>
         </button>
+      ) : isMobile && materializationStatus === 'loading' ? (
+        <ImageLoadingPlaceholder className="absolute inset-0 rounded-lg" />
       ) : (
         <div
           className={cn(
@@ -1383,7 +1392,8 @@ const ImageGallery = memo(({ urls, caption, onShowPopup }: ImageGalleryProps) =>
             })}
             className="relative aspect-square rounded-lg border border-border/40 bg-muted/10 overflow-hidden group"
           >
-            <img
+            <LoadingImage
+              fill
               src={url}
               alt={caption || `Image ${index + 1}`}
               className="h-full w-full object-cover transition-transform group-hover:scale-105"

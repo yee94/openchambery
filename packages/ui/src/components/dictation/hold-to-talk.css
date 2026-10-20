@@ -54,6 +54,11 @@
     animation: oc-speech-breathe 2.4s ease-in-out infinite;
 }
 .oc-speech-overlay[data-error="true"] { pointer-events: auto; touch-action: none; }
+.oc-speech-content[data-starting="true"] { animation: none; }
+.oc-speech-loading { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 26px; }
+.oc-speech-loading > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: oc-speech-dot 1050ms ease-in-out infinite; }
+.oc-speech-loading > span:nth-child(2) { animation-delay: 150ms; }
+.oc-speech-loading > span:nth-child(3) { animation-delay: 300ms; }
 .oc-speech-error { color: var(--status-error); animation: none; }
 .oc-speech-interim { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 58%, transparent); text-underline-offset: 4px; }
 .oc-speech-gesture-stage { position: absolute; inset: auto 0 0; padding-bottom: env(safe-area-inset-bottom); background: linear-gradient(transparent calc(100% - env(safe-area-inset-bottom)), color-mix(in srgb, var(--surface-background) 72%, var(--surface-foreground)) 0); }
@@ -76,6 +81,7 @@
 .oc-speech-arc-bottom { stop-color: color-mix(in srgb, var(--surface-background) 72%, var(--surface-foreground)); }
 .oc-mobile-composer:is([data-dictation-hint="recording"], [data-dictation-hint="cancelling"], [data-dictation-hint="editing"]) :is(.oc-mobile-composer-surface, .oc-mobile-composer-compact-layer) { opacity: 0; }
 @keyframes oc-speech-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes oc-speech-dot { 0%, 70%, 100% { transform: scale(.65); } 35% { transform: scale(1.25); } }
 @keyframes oc-speech-content-in { from { opacity: 0; transform: translateY(-7px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes oc-speech-flow { 0%, 100% { opacity: .38; transform: translate3d(-9px,-4px,0) scale(.98); } 50% { opacity: .56; transform: translate3d(17px,9px,0) scale(1.06); } }
 @keyframes oc-speech-orbit { 0%, 100% { transform: translate(-12px,0); } 25% { transform: translate(0,-8px); } 50% { transform: translate(12px,0); } 75% { transform: translate(0,8px); } }

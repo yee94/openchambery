@@ -2,7 +2,8 @@ import React from 'react';
 import { useEvent } from '@reactuses/core';
 import type { ImageNode, NodeComponentProps } from 'markstream-react';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { useResolvedImageSource } from '../imageSource';
+import { useResolvedImageResource } from '../imageSource';
+import { LoadingImage } from '@/components/ui/LoadingImage';
 import { MarkstreamCodeBlockNode } from './markstreamCodeBlock';
 import { useMarkstreamHostContext } from './markstreamHostContext';
 
@@ -11,7 +12,7 @@ type FenceProps = React.ComponentProps<typeof MarkstreamCodeBlockNode>;
 
 function RuntimeImage({ node }: NodeComponentProps<ImageNodeShape>) {
   const directory = useEffectiveDirectory() ?? '';
-  const source = useResolvedImageSource(node.src, directory);
+  const resource = useResolvedImageResource(node.src, directory);
   const { onShowPopup } = useMarkstreamHostContext();
   const handleKeyDown = useEvent((event: React.KeyboardEvent<HTMLImageElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -19,8 +20,9 @@ function RuntimeImage({ node }: NodeComponentProps<ImageNodeShape>) {
     event.currentTarget.click();
   });
   return (
-    <img
-      src={source || undefined}
+    <LoadingImage
+      src={resource.source || undefined}
+      resourceError={resource.error}
       data-md-image-source={node.src}
       alt={node.alt}
       title={node.title ?? undefined}

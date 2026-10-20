@@ -202,6 +202,11 @@ helper before creating or reusing an AudioContext. Where supported, it sets
 than respecting the Ring/Silent switch (WebKit bug 237322, comment 6).
 Unsupported engines retain their existing behavior. Physical iOS silent-mode
 playback still requires device validation; unit tests only verify API selection.
+Before microphone capture (including browser speech recognition), the same
+helper synchronously stops registered TTS players and pending message playback,
+cancels browser synthesis, and selects `play-and-record`. Merely stopping audio
+does not clear WebKit's explicit `playback` category. The next TTS playback
+selects `playback` again. Engines without the API retain automatic selection.
 
 Clients without the NDJSON Accept header receive complete MP3 bytes after
 terminal success, and new clients can play MP3 from older Hosts during upgrades.

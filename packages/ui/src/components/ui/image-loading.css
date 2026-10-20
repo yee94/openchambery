@@ -1,0 +1,83 @@
+@layer components {
+.oc-image-loading {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: inherit;
+  background-color: var(--surface-muted);
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--surface-muted-foreground) 30%, transparent) 1px, transparent 1px);
+  background-size: 11px 11px;
+  isolation: isolate;
+}
+
+.oc-image-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 15%, color-mix(in srgb, var(--surface-foreground) 9%, transparent) 50%, transparent 85%);
+  transform: translateX(-100%);
+  animation: oc-image-loading-sweep 2.2s ease-in-out infinite;
+}
+
+@keyframes oc-image-loading-sweep {
+  to { transform: translateX(100%); }
+}
+
+.oc-image-frame {
+  position: relative;
+  display: inline-grid;
+  max-width: 100%;
+  vertical-align: middle;
+  border-radius: 0.5rem;
+}
+
+.oc-image-frame > img {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.oc-image-frame[data-image-state]:not([data-image-state='loaded']):not([data-image-fill]) {
+  min-width: min(12rem, 100%);
+  min-height: 12rem;
+}
+
+.oc-image-frame[data-image-fill] {
+  width: 100%;
+  height: 100%;
+}
+
+.oc-image-frame > .oc-image-loading,
+.oc-image-frame > .oc-image-error {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.oc-image-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0.5rem;
+  border-radius: inherit;
+  background: var(--surface-muted);
+  color: var(--surface-muted-foreground);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+[data-mobile-image='true']:has(img:not([data-md-image-state='loaded'])) {
+  min-width: min(12rem, 100%);
+  min-height: 12rem;
+  border-radius: 0.75rem;
+}
+
+[data-mobile-image='true'] > img:not([data-md-image-state='loaded']) { opacity: 0; }
+[data-mobile-image='true']:has(img[data-md-image-state='loading']) .oc-image-loading > *,
+[data-mobile-image='true']:has(img[data-md-image-state='placeholder']) .oc-image-loading > * { visibility: hidden; }
+[data-mobile-image='true']:has(img[data-md-image-state='error']) .oc-image-loading::after { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-image-loading::after { animation: none; }
+}
+}

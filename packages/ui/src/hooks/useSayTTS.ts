@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { prepareSpeechPlayback } from '@/lib/voice/audio-session';
+import { prepareSpeechPlayback, subscribeSpeechCapture } from '@/lib/voice/audio-session';
 
 interface SayTTSStatusCache {
   available: boolean;
@@ -286,6 +286,7 @@ export function useSayTTS(options: UseSayTTSOptions = {}): UseSayTTSReturn {
   }, [stop]);
 
   // Cleanup on unmount
+  useEffect(() => subscribeSpeechCapture(stop), [stop]);
   useEffect(() => {
     return () => {
       stop();

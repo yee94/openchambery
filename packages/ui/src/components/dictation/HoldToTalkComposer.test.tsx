@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { HoldToTalkComposer } from './HoldToTalkComposer';
 
 const speech = vi.hoisted(() => ({
-    status: 'idle', partialTranscript: '', error: null as string | null, volume: 0, duration: 0,
+    status: 'idle', isStarting: false, partialTranscript: '', error: null as string | null, volume: 0, duration: 0,
     startDictation: vi.fn(), confirmDictation: vi.fn(), cancelDictation: vi.fn(),
     discardFailedDictation: vi.fn(), retryFailedDictation: vi.fn(), acceptPartialTranscript: vi.fn(),
 }));
@@ -30,7 +30,7 @@ const render = async () => {
 beforeEach(async () => {
     vi.resetAllMocks();
     vi.useFakeTimers();
-    speech.status = 'idle'; speech.partialTranscript = ''; speech.error = null;
+    speech.status = 'idle'; speech.isStarting = false; speech.partialTranscript = ''; speech.error = null;
     host = document.createElement('div'); document.body.append(host);
     containerRef.current = document.createElement('form');
     containerRef.current.append(document.createElement('textarea'));
@@ -55,6 +55,21 @@ it('opens editing on release and ignores subsequent capture loss', async () => {
     transcript.deliver('可编辑的识别文本');
     expect(onInsert).toHaveBeenCalledWith('可编辑的识别文本');
     expect(onSend).not.toHaveBeenCalled();
+});
+
+it('shows the overlay and a loading indicator while iOS opens the microphone', async () => {
+    speech.isStarting = true;
+    await render();
+    await pointer('pointerdown');
+    expect(document.querySelector('.oc-speech-overlay')).not.toBeNull();
+    expect(document.querySelector('[role="status"]')?.textContent).toBe('');
+    expect(document.querySelector('.oc-speech-loading')?.getAttribute('aria-label')).toBe('common.loading');
+    expect(document.querySelectorAll('.oc-speech-loading > span')).toHaveLength(3);
+    speech.isStarting = false;
+    speech.status = 'recording';
+    await render();
+    expect(document.querySelector('.oc-speech-loading')).toBeNull();
+    expect(document.querySelector('[role="status"]')?.textContent).toBe('chat.dictation.listening');
 });
 
 it('arms left cancellation, ignores another pointer and discards on release', async () => {

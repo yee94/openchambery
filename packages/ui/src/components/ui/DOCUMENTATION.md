@@ -1,3 +1,13 @@
+# Mobile image loading
+
+`LoadingImage` owns mobile content-image presentation: reserve a dotted shimmer canvas while a runtime URL is pending and while the browser loads the bytes; reveal the image only on `load` or a successful cached decode (`complete && naturalWidth > 0`). Resource failures and browser `error` stop the animation and show the translated failure state without painting the browser's broken-image glyph. A source/srcSet change resets the image boundary; detached image events cannot reveal the next source. Desktop renders the original `img` directly.
+
+Resource acquisition, auth, leases, cancellation and retry remain with each caller. Pass `resourceError` from `useResolvedImageResource`; do not collapse a failed source to an indefinite empty-source spinner. `fill` fits existing thumbnail slots; unconstrained content reserves a 12rem square until intrinsic dimensions arrive. Image event handlers and preview metadata stay on the actual `img`. The memoized leaf avoids image Hook work during unrelated composer typing.
+
+`ImageLoadingPlaceholder` supplies the shared visual for resource-only and fullscreen loading phases. Its dotted canvas and sweeping light are independently implemented from the public AICSS Image Processing preview (`https://aicss.dev/components/image-generation`), with semantic theme tokens and reduced-motion support. CSS lives in the components layer so caller sizing/positioning/radius utilities remain authoritative. Legacy DOM Markdown uses the same visual class while its image-interaction owner tracks real `load`/`error` events.
+
+Coverage: `LoadingImage.test.tsx`, `markstreamImages.test.tsx`, `MobileFilesSurface.imagePreview.test.tsx`, and the existing attachment/preview contracts. Avatar/provider icons retain their existing icon-specific fallbacks.
+
 # Mobile Window Motion
 
 `MobileWindowMotion` owns mobile overlay motion. React owns discrete presence and modal state. Interaction frames write only the component-owned scrim and surface `transform` and `opacity` styles.

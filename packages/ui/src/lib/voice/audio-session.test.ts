@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { prepareSpeechPlayback } from './audio-session';
+import { prepareSpeechCapture, prepareSpeechPlayback, subscribeSpeechCapture } from './audio-session';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -18,4 +18,23 @@ it('supports browsers without the API or with an unsupported setter', () => {
     expect(prepareSpeechPlayback).not.toThrow();
     vi.stubGlobal('navigator', { audioSession: { set type(_value: string) { throw new Error('Unsupported'); } } });
     expect(prepareSpeechPlayback).not.toThrow();
+    expect(prepareSpeechCapture).not.toThrow();
+});
+
+it('stops registered playback before switching to microphone capture and cleans up subscribers', () => {
+    const audioSession = { type: 'playback' };
+    vi.stubGlobal('navigator', { audioSession });
+    const stop = vi.fn(() => expect(audioSession.type).toBe('playback'));
+    const unsubscribe = subscribeSpeechCapture(stop);
+    try {
+        prepareSpeechCapture();
+        expect(stop).toHaveBeenCalledOnce();
+        expect(audioSession.type).toBe('play-and-record');
+    } finally {
+        unsubscribe();
+    }
+    prepareSpeechCapture();
+    expect(stop).toHaveBeenCalledOnce();
+    prepareSpeechPlayback();
+    expect(audioSession.type).toBe('playback');
 });

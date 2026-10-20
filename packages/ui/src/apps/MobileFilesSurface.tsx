@@ -1,4 +1,6 @@
 import React from 'react';
+import { LoadingImage } from '@/components/ui/LoadingImage';
+import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
 import { createPortal } from 'react-dom';
 import { File as PierreFile } from '@pierre/diffs/react';
 import { useEvent } from '@reactuses/core';
@@ -688,7 +690,9 @@ const MobileFileDetail: React.FC<{
             ? createPortal(htmlViewer, document.body)
             : htmlViewer
         ) : isLoading || imageResource.loading ? (
-          <MobileFilesState loading message={t('filesView.state.loading')} />
+          isImageFile(path)
+            ? <div className="flex flex-1 items-center justify-center p-4"><ImageLoadingPlaceholder className="aspect-square w-64 max-w-full rounded-lg" /></div>
+            : <MobileFilesState loading message={t('filesView.state.loading')} />
         ) : imageError ? (
           <MobileFilesState message={imageError} />
         ) : isImageFile(path) && previewImageSrc ? (
@@ -699,7 +703,7 @@ const MobileFileDetail: React.FC<{
               onClick={openImagePreview}
               aria-label={imageFilename}
             >
-              <img
+              <LoadingImage
                 src={previewImageSrc}
                 alt={imageFilename}
                 className="mx-auto max-h-full max-w-full rounded-lg object-contain"

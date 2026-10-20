@@ -19,8 +19,8 @@ export function sanitizeForTTS(text: string): string {
         // Deliberately NOT matching interword slashes: "iOS/Android" and
         // "origin/main" are speech, not paths.
         .replace(/(^|\s)\/(?:[\w.-]+\/)*[\w.-]+/g, '$1')
-        // Read remaining interword slashes out loud ("iOS slash Android").
-        .replace(/([\w.])\/([\w.])/g, '$1 slash $2')
+        // Treat remaining slash separators as word boundaries, never spoken syntax.
+        .replace(/[/／]+/g, ' ')
         // Remove shell-like patterns
         .replace(/^\s*[$#>]\s*/gm, '')
         // Remove brackets and special chars
