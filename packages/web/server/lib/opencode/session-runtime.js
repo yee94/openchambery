@@ -1,3 +1,5 @@
+import { createSessionDeliveryRuntime } from './session-delivery-runtime.js';
+
 const SESSION_COOLDOWN_DURATION_MS = 2000;
 const SESSION_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SESSION_ATTENTION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -71,7 +73,8 @@ const deriveSessionActivityTransitions = (payload) => {
   return [];
 };
 
-export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, broadcastEvent }) => {
+export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, broadcastEvent, getRuntimeIdentity }) => {
+  const delivery = createSessionDeliveryRuntime({ getRuntimeIdentity });
   const sessionActivityPhases = new Map();
   const sessionActivityCooldowns = new Map();
   const sessionStates = new Map();
@@ -334,6 +337,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
   const cleanupInterval = setInterval(cleanupOldSessionStates, SESSION_STATE_CLEANUP_INTERVAL_MS);
 
   const processOpenCodeSsePayload = (payload) => {
+    delivery.processEvent(payload);
     const transitions = deriveSessionActivityTransitions(payload);
     for (const activity of transitions) {
       setSessionActivityPhase(activity.sessionId, activity.phase);
@@ -352,6 +356,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
   };
 
   const dispose = () => {
+    delivery.reset();
     clearInterval(cleanupInterval);
     for (const timer of sessionActivityCooldowns.values()) {
       clearTimeout(timer);
@@ -360,6 +365,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
   };
 
   return {
+    delivery,
     processOpenCodeSsePayload,
     getSessionActivitySnapshot,
     getSessionStateSnapshot,

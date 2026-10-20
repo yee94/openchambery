@@ -107,9 +107,13 @@ type SessionCompactionBarrierState = {
   reset: () => void
 }
 
+const barrierRevisions = new Map<string, number>()
+export const captureCompactionBarrierRevision = (sessionID: string): number => barrierRevisions.get(sessionID) ?? 0
+
 export const useSessionCompactionBarrierStore = create<SessionCompactionBarrierState>((set, get) => ({
   runningBySession: {},
   setRunning(sessionID, running) {
+    barrierRevisions.set(sessionID, captureCompactionBarrierRevision(sessionID) + 1)
     set((state) => {
       const next = { ...state.runningBySession }
       if (running) next[sessionID] = true
@@ -121,6 +125,7 @@ export const useSessionCompactionBarrierStore = create<SessionCompactionBarrierS
     return get().runningBySession[sessionID] === true
   },
   reset() {
+    barrierRevisions.clear()
     set({ runningBySession: {} })
   },
 }))
