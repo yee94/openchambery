@@ -144,7 +144,7 @@ describe('progressive activity presentation', () => {
         expect(simplifiedChinese).toContain("'chat.activity.compactionCompleted': '已完成压缩'");
         expect(simplifiedChinese).toContain("'chat.activity.expandAria': '展开处理详情'");
         expect(simplifiedChinese).toContain("'chat.activity.collapseAria': '收起处理详情'");
-        expect(simplifiedChinese).toContain("'chat.activity.completed': '已处理 {duration}'");
+        expect(simplifiedChinese).toContain("'chat.activity.completed': '用时 {duration}'");
         expect(simplifiedChinese).toContain("'chat.activity.completedStatus': '已处理'");
         expect(simplifiedChinese).toContain("'chat.activity.agentsWorking': '{count} 个 Agent 处理中'");
         expect(simplifiedChinese).toContain("'chat.activity.agentsInvolved': '{count} 个 Agent 参与'");
@@ -234,7 +234,7 @@ describe('progressive activity presentation', () => {
         expect(activityHeaderSource.match(/typography-meta shrink-0 tabular-nums text-muted-foreground/g)).toHaveLength(1);
         expect(activityHeaderSource).not.toContain('{activeDuration}');
         expect(activityHeaderSource).not.toContain('{completedDuration}');
-        expect(progressiveGroupSource).toContain("'group/tool flex w-full min-w-0 flex-nowrap items-center text-left'");
+        expect(progressiveGroupSource).toContain("'group/tool flex w-[calc(100%+1rem)] min-w-0 flex-nowrap items-center text-left'");
         expect(activityHeaderSource).toContain("'inline-flex min-w-0 items-center overflow-clip'");
         expect(activityHeaderSource).toContain("'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center'");
         expect(activityHeaderSource).not.toContain('flex-1');

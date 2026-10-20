@@ -830,7 +830,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.activity.compactionFailed': 'Kompresja nie powiodła się',
   'chat.activity.expandAria': 'Rozwiń szczegóły przetwarzania',
   'chat.activity.collapseAria': 'Zwiń szczegóły przetwarzania',
-  'chat.activity.completed': 'Przetworzono w {duration}',
+  'chat.activity.completed': 'Czas trwania: {duration}',
   'chat.activity.completedStatus': 'Przetworzono',
   'chat.activity.agentsWorking': '{count} agentów pracuje',
   'chat.activity.agentsInvolved': '{count} agentów brało udział',

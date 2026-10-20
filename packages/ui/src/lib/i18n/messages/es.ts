@@ -1897,7 +1897,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.activity.compactionFailed": "Falló la compactación",
   "chat.activity.expandAria": "Expandir detalles del procesamiento",
   "chat.activity.collapseAria": "Contraer detalles del procesamiento",
-  "chat.activity.completed": "Procesado en {duration}",
+  "chat.activity.completed": "Duración: {duration}",
   "chat.activity.completedStatus": "Procesado",
   "chat.activity.agentsWorking": "{count} agentes trabajando",
   "chat.activity.agentsInvolved": "{count} agentes involucrados",

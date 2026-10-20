@@ -146,7 +146,7 @@ describe('slim transcript image attachments', () => {
   });
 
   test('uses a responsive square photo grid for compact message images', () => {
-    expect(source).toContain("imageCount === 1 ? 'grid-cols-1 max-w-56' : 'grid-cols-2'");
+    expect(source).toContain("imageCount === 1 ? 'grid-cols-1 max-w-24' : 'grid-cols-[repeat(auto-fill,6rem)]'");
     expect(compactDisplaySource).toContain('getMessageImageGridClassName(compactGridImageFiles.length)');
     expect(compactDisplaySource).toContain('<MessageImageCard');
     expect(compactDisplaySource).not.toContain('MessageImageRow');

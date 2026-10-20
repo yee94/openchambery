@@ -1882,7 +1882,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.activity.compactionFailed': '压缩失败',
   'chat.activity.expandAria': '展开处理详情',
   'chat.activity.collapseAria': '收起处理详情',
-  'chat.activity.completed': '已处理 {duration}',
+  'chat.activity.completed': '用时 {duration}',
   'chat.activity.completedStatus': '已处理',
   'chat.activity.agentsWorking': '{count} 个 Agent 处理中',
   'chat.activity.agentsInvolved': '{count} 个 Agent 参与',

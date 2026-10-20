@@ -1694,7 +1694,7 @@ export const dict = {
   'chat.activity.compactionFailed': 'Échec de la compression',
   'chat.activity.expandAria': 'Développer les détails du traitement',
   'chat.activity.collapseAria': 'Réduire les détails du traitement',
-  'chat.activity.completed': 'Traité en {duration}',
+  'chat.activity.completed': 'Durée : {duration}',
   'chat.activity.completedStatus': 'Traité',
   'chat.activity.agentsWorking': '{count} agents au travail',
   'chat.activity.agentsInvolved': '{count} agents impliqués',

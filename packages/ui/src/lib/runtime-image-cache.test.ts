@@ -50,14 +50,25 @@ test('changed file version and changed host cannot reuse old bytes', async () =>
   (await acquire()).release();
   expect(state.fetch).toHaveBeenCalledTimes(3);
 });
-test('metadata failure is not a cache hit and unsupported runtimes do no work', async () => {
+test('metadata failure is not a cache hit', async () => {
   (await acquire()).release();
   state.stat.mockRejectedValue(new Error('offline'));
   await expect(acquire()).rejects.toThrow('offline');
   expect(state.acquire).toHaveBeenCalledTimes(1);
-  state.supported = false;
-  expect((await acquire()).url).toBe('');
   expect(state.fetch).toHaveBeenCalledTimes(1);
+});
+test('browser inline images fall back to a Blob URL and release it', async () => {
+  state.supported = false;
+  const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-image');
+  const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  try {
+    const lease = await acquire();
+    expect(lease.url).toBe('blob:test-image');
+    expect(state.fetch).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(1);
+    lease.release();
+    expect(revoke).toHaveBeenCalledWith('blob:test-image');
+  } finally { create.mockRestore(); revoke.mockRestore(); }
 });
 test('one cancelled subscriber cannot abort its peer', async () => {
   const a = new AbortController();

@@ -35,8 +35,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Consecutive `skill` calls collapse into `tool-skill-group` rows via
     `collectConsecutiveSkillTools` + `isSkillGroupTool`. A lone skill still uses the group header so adding the next name can flip-animate.
     Task and question stay individual rows. A lone process tool still uses the Used header so the next call cannot remount the wrapper.
-  - Live Activity headers use S1 `LatticeOrb`; settled headers keep `stack` / `fold-vertical`.
-  - Activity headers retain a full-width hit target: status and duration stay at the start, while the agent summary, diff totals and chevron align to the right.
+  - Completed ordinary Activity headers show localized elapsed time (`Worked for {duration}` in English) at the start in muted, regular-weight text, without a leading icon or underline. Missing timing falls back to the completed status label. A small disclosure chevron immediately after the elapsed time appears on hover or keyboard focus, with its space reserved to avoid layout shifts. Both disclosure states retain the trailing agent summary, diff totals, full-width hit target, and ARIA toggle. The elapsed label is vertically centered in the original 20px mobile / 24px desktop row height.
+  - Compaction headers retain their `fold-vertical` icon, status, duration, and trailing summary/chevron layout.
   - While `completionDisposition === 'active'`, the Activity disclosure is locked open:
     no collapse chevron/toggle, and the indent rail (`ml-2 pl-3` + connector line) is
     omitted so in-flight rows do not jump horizontally when the turn settles.
@@ -205,6 +205,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - It follows the Activity group's disclosure and keeps message export, copy/TTS actions, file references, streaming updates, and text haptics without adding a nested reasoning disclosure.
 
 ## Current important behavior
+
+- When assistant text is the first content directly below the model header, `MessageBody` adds 6px mobile / 8px desktop top padding, matching the Activity block's top padding plus chip inset. Text after Activity or in continuation messages does not receive this header gap.
 
 - `read` is both a **static navigation tool** (`StaticToolRow`) and a **process-group member**. Consecutive explore tools (`read` / `glob` / `grep` / `list`) and used tools (edit / write / bash / custom / MCP) collapse into one `ContextToolGroup` ("Running" from the first process call until later body text / skill / task / question appears or the turn is no longer live, otherwise "Used" plus mixed counts and aggregated `+N / -M`). Expanded explore children are `StaticToolRow`; used children are `ToolPart`. Grouping is client-side on `part.tool` names — not an OpenCode API v1/v2 feature. Logic lives in `processToolGrouping.ts` + `isProcessGroupTool`; both Activity (`ProgressiveGroup.aggregateRows`) and the flat `MessageBody` loop apply it. In sorted mode those rows live inside Activity and collapse with the Processed disclosure.
 - A visible tool part stays in loading presentation until an explicit terminal status or valid end timing proves settlement. `completed`, `error`, `failed`, `timeout`, `cancelled`, and `aborted` restore the tool identity; `pending`, `started`, and `running` keep the 14px desktop / 12px mobile orb in the 14px desktop / 16px mobile leading slot even when timing fields arrive early. Mobile slots center the orb. Flat `MessageBody` rendering keeps lifecycle-unknown tool parts visible so this contract starts with the call row itself.

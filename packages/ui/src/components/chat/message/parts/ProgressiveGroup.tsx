@@ -1019,6 +1019,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         : null;
     const isCompleted = completionDisposition === 'normal' || completionDisposition === 'abnormal';
     const isCompaction = activityPresentationKind === 'compaction';
+    const isElapsedHeader = isCompleted && !isCompaction;
     const activityIconName = isCompaction ? 'fold-vertical' : 'stack';
     const activityStatusLabel = completionDisposition === undefined
         ? t('chat.activity.title')
@@ -1369,7 +1370,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         type="button"
                         className={cn(
                             // Full-width hit target with status at the start and trailer at the end.
-                            'group/tool flex w-full min-w-0 flex-nowrap items-center text-left',
+                            'group/tool flex w-[calc(100%+1rem)] min-w-0 flex-nowrap items-center text-left',
                             isMobile ? 'gap-x-1' : 'gap-x-2',
                             // Locked-open live headers are not a disclosure control — drop chip hover/cursor.
                             !disclosureLockedOpen && TOOL_ROW_INTERACTIVE_CHROME_CLASS,
@@ -1395,7 +1396,20 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         'inline-flex min-w-0 items-center overflow-clip',
                         isMobile ? 'gap-x-1' : 'gap-x-1.5',
                     )}>
-                        <span
+                        {isElapsedHeader ? (
+                            <span className={cn(
+                                'typography-meta inline-flex shrink-0 items-center gap-1.5 tabular-nums text-muted-foreground',
+                                isMobile ? 'h-5' : 'h-6',
+                            )}>
+                                {activityDuration
+                                    ? t('chat.activity.completed', { duration: activityDuration })
+                                    : activityStatusLabel}
+                                <Icon
+                                    name={effectivelyExpanded ? 'arrow-down-s' : 'arrow-right-s'}
+                                    className="size-3.5 shrink-0 opacity-0 group-hover/tool:opacity-70 group-focus-visible/tool:opacity-70"
+                                />
+                            </span>
+                        ) : <><span
                             className={cn(
                                 'inline-flex flex-none items-center justify-center',
                                 isMobile ? 'h-5 w-4' : 'h-6 w-3.5',
@@ -1425,6 +1439,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         {activityDuration ? (
                             <span className="typography-meta shrink-0 tabular-nums text-muted-foreground">{activityDuration}</span>
                         ) : null}
+                        </>}
                     </span>
                     {/* Trailer: agents (optional), diff totals and chevron align right. */}
                     <span className={cn(
@@ -1463,7 +1478,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                 <ProcessDiffTotals added={headerDiffTotals.added} removed={headerDiffTotals.removed} />
                             </span>
                         ) : null}
-                        {!disclosureLockedOpen ? (
+                        {!disclosureLockedOpen && !isElapsedHeader ? (
                             <Icon
                                 name={effectivelyExpanded ? 'arrow-down-s' : 'arrow-right-s'}
                                 className={cn(

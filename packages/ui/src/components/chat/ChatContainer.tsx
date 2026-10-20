@@ -397,8 +397,8 @@ const ChatViewport = React.memo(({
         isLoadingOlder: loadOlderBusy,
     });
     const desktopHistoryStatus = showDesktopLoadOlderStatus ? (
-        <div className="absolute inset-x-0 top-0 z-20 flex justify-center pointer-events-none" role="status" aria-live="polite">
-            <div className="flex items-center justify-center gap-1.5 pt-3 pb-1">
+        <div className="absolute inset-x-0 top-0 z-20 pointer-events-none" role="status" aria-live="polite">
+            <div className="chat-column flex items-center justify-center gap-1.5 pt-3 pb-1">
                 <span
                     className="oc-mobile-glass-control flex size-8 items-center justify-center rounded-full text-[var(--surface-mutedForeground)]"
                     aria-label={t('chat.history.loadingMore')}
