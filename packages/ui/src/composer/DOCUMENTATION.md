@@ -32,15 +32,20 @@ The closed-project/branch regression and its implementation boundary are documen
 Desktop ASR uses `DesktopDictationButton` in the composer action row when
 dictation is enabled and capture is supported (web/Electron, not VS Code).
 The microphone stays visible as a filled glyph in primary-foreground over a
-`--voice-active-fill` (the theme's `--status-success` green) disc with two compact breathing halo layers while recording
+`--voice-active-fill` (fixed `#85C588` in dark mode for both dictation and read-aloud; otherwise the theme's `--status-success` green) disc with two compact breathing halo layers while recording
 (reduced motion keeps them static). Its button has no
 background. The same `VoiceActivityIcon` treatment is used by active read-aloud;
-clicking again, button blur, or window/background blur after capture starts
+clicking again, plain Enter, button blur, or window/background blur after capture starts
 finalizes recognition into the current draft without sending it. Permission-dialog
 window blur before capture starts is ignored. The component is keyed by DraftKey,
 so changing drafts/runtimes tears down capture and fences late results through
 `useDictation`. Recording updates stay local to the button rather than invalidating
 the composer; no transcript overlay or duration meter is mounted on desktop.
+While recording, a small muted hint to the right of the microphone shows Enter
+to confirm. Capture-phase Enter handling suppresses composer
+submission during recording/finalization; modified Enter and IME composition are
+left untouched, and key-repeat does not confirm again. Esc stops recognition and
+clears provisional highlighting while preserving all current input text.
 
 Prompt attachment delivery is owned by `lib/opencode/client.ts`: non-images become synthetic text path references, never native `files` that OpenCode eagerly reads into context. Reference instructions have explicit `<system-reminder>` / `</system-reminder>` boundaries, matching OpenCode V2 editor context. The shared `wrapSystemReminder` / `stripSystemReminders` contract keeps them hidden after V2 flattens text parts and loses per-part `synthetic`; authored mentions and subsequent authored text remain visible. JSON-quoted attachment names/paths escape `<` so filenames cannot terminate the block. Only images with a verified size at or below 20 MiB remain native attachments; oversized or unknown-size images become references too. The shared builder covers ordinary/queued sends, first-message creation, additional parts, and command sends. Inline data/blob attachments are uploaded through `runtimeFetch` to the active host's temporary directory before references are emitted; relay/browser/mobile clients reference the returned host path, not a client path. Existing host `file://` references need no upload. Runtime switches during upload/stat discard the send. Upload/inspection failures remain failures rather than fabricated usable paths.
 

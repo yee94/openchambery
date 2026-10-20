@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.voice.volcengine.save': '저장',
+  'settings.voice.volcengine.saveFailed': '저장하지 못했습니다. 변경 사항은 유지됩니다. 다시 시도하세요.',
+  'settings.voice.volcengine.loadFailed': '이 서버의 음성 설정을 불러올 수 없습니다.',
+  'settings.voice.volcengine.retry': '다시 시도',
   'chat.dictation.error.microphoneNotFound': '마이크를 찾을 수 없습니다. 연결 후 다시 시도하세요.',
   'settings.voice.volcengine.name': 'Volcengine (Doubao)',
   'settings.voice.volcengine.providerOption': 'Volcengine Doubao (추천 | 유료)',

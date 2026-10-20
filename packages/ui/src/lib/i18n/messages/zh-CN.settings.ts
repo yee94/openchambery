@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.voice.volcengine.save': '保存',
+  'settings.voice.volcengine.saveFailed': '保存失败，修改已保留，请重试。',
+  'settings.voice.volcengine.loadFailed': '无法读取此服务的语音设置。',
+  'settings.voice.volcengine.retry': '重试',
   'chat.dictation.error.microphoneNotFound': '未检测到麦克风，请连接后重试。',
   'settings.voice.volcengine.name': '火山引擎（豆包）',
   'settings.voice.volcengine.providerOption': '火山豆包（推荐|付费）',

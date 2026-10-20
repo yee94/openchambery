@@ -2195,6 +2195,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.processing': '正在转写...',
   'chat.dictation.failed': '转写失败',
   'chat.dictation.cancel': '放弃语音输入',
+  'chat.dictation.keyboardHint': 'Enter 确认',
   'chat.dictation.insert': '插入文本',
   'chat.dictation.insertAndSend': '插入并发送',
   'chat.dictation.retry': '重试转写',

@@ -2225,6 +2225,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.processing': '文字起こし中...',
   'chat.dictation.failed': '文字起こしに失敗しました',
   'chat.dictation.cancel': '音声入力を破棄',
+  'chat.dictation.keyboardHint': 'Enter で確定',
   'chat.dictation.insert': 'テキストを挿入',
   'chat.dictation.insertAndSend': '挿入して送信',
   'chat.dictation.retry': '文字起こしを再試行',

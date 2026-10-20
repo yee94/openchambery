@@ -234,6 +234,8 @@ settles; the **next steer** applies the new selection.
 
 `session-inbox-edit.ts` owns native queue-to-draft editing. It fetches authoritative inbox content, reconstructs Composer resources with the shared restoration builder, and requires a current durable draft CAS before DELETE. Draft conflicts or invalid attachments leave the inbox untouched. HTTP 4xx cancellation rejection rolls back with the committed draft revision, preserving subsequent user edits; unknown cancellation outcomes retain the durable recovery draft. Confirmed DELETE records the existing cancelled terminal receipt. Runtime/session fences prevent cancellation on a switched target and late focus in another Composer.
 
+Queue attachment restoration accepts prompt `uri` files and native `data`/`mime`/`source.uri` files. Native embedded bytes take precedence over temporary source URLs and become durable draft blobs; URI-only files retain their MIME type. Invalid resources fail before inbox cancellation, preserving the original queued message.
+
 When `delivery: "queue"`, **do not** call `applySendSelection` / model+agent
 switch on enqueue. Composer picks may be recorded in prompt `metadata` for
 diagnostics only. The runner re-reads authoritative `session.model` /

@@ -15,7 +15,6 @@ import { dictationClient, type DictationStartOptions } from '@/lib/dictation/dic
 import { DictationStreamSender } from '@/lib/dictation/dictation-stream-sender';
 import { useDictationAudioSource } from '@/lib/dictation/use-dictation-audio-source';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useVolcengineSpeechStore } from '@/stores/useVolcengineSpeechStore';
 
 export type DictationStatus = 'idle' | 'recording' | 'uploading' | 'failed';
 
@@ -52,8 +51,7 @@ const getDictationStartOptions = (): DictationStartOptions => {
     const state = useConfigStore.getState();
     const language = state.sttLanguage?.trim();
     if (state.sttProvider === 'volcengine') {
-        const { apiKey, asrResourceId } = useVolcengineSpeechStore.getState();
-        return { provider: 'volcengine', volcengine: { apiKey, resourceId: asrResourceId } };
+        return { provider: 'volcengine' };
     }
     if (state.sttProvider === 'openai-compatible') {
         return {

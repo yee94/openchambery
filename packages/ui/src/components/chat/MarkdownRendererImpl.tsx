@@ -209,6 +209,7 @@ const useMarkdownImageInteractions = ({
         title: filename,
         content: '',
         metadata: { tool: 'image-preview', filename },
+        previewSource: image,
         image: { url: selectedSource, filename, gallery, index: Math.max(0, galleryIndex) },
       });
     };
@@ -744,6 +745,7 @@ const useMermaidInlineInteractions = ({
         source,
         filename,
       },
+      previewSource: block instanceof HTMLElement ? block : undefined,
     });
   });
 
@@ -1405,6 +1407,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   stripFrontmatter?: boolean;
   onShowPopup?: (content: ToolPopupContent) => void;
   mermaidControls?: MermaidControlOptions;
+  mermaidTheme?: Theme;
   allowMermaidWheelEvents?: boolean;
   enableFileReferences?: boolean;
 }> = ({
@@ -1415,6 +1418,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   stripFrontmatter = false,
   onShowPopup,
   mermaidControls = DEFAULT_MERMAID_CONTROLS,
+  mermaidTheme,
   allowMermaidWheelEvents = false,
   enableFileReferences = true,
 }) => {
@@ -1461,7 +1465,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
 
   const syntaxVars = React.useMemo(() => getMarkdownSyntaxVars(currentTheme), [currentTheme]);
   const ctx = useDecorateContext(
-    currentTheme,
+    mermaidTheme ?? currentTheme,
     false,
     undefined,
     mermaidControls,
@@ -1522,6 +1526,7 @@ export const SimpleMarkdownRenderer = React.memo(SimpleMarkdownRendererImpl, (pr
     && prevMermaidControls.download === nextMermaidControls.download
     && prevMermaidControls.copy === nextMermaidControls.copy
     && prevMermaidControls.showPanZoomControls === nextMermaidControls.showPanZoomControls
+    && prev.mermaidTheme === next.mermaidTheme
     && prev.allowMermaidWheelEvents === next.allowMermaidWheelEvents
     && prev.enableFileReferences === next.enableFileReferences;
 });

@@ -4,7 +4,6 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { File as PierreFile, PatchDiff } from '@pierre/diffs/react';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
-import { createPortal } from 'react-dom';
 
 import { cn } from '@/lib/utils';
 import { SimpleMarkdownRenderer } from '../MarkdownRenderer';
@@ -32,7 +31,6 @@ import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 import { blobFromImageElement } from '../imageSave';
 import { openImageSaveActions } from '../imageSaveActionsBus';
 import { useResolvedImageResource } from '../imageSource';
@@ -50,6 +48,7 @@ import {
     type ImageViewerTransform,
 } from './imageViewerTransform';
 import { closeImageViewerAfterMobileTap } from './imageViewerTapGuard';
+import { MediaPreviewOverlay, PreviewCloseButton } from './MediaPreviewOverlay';
 
 const IMAGE_VIEWER_LONG_PRESS_MS = 500;
 /** Ignore accidental close from the same gesture / history thrash that opened the viewer. */
@@ -111,8 +110,6 @@ const getToolIcon = (toolName: string) => {
     }
     return <Icon name="tools" className={iconClass} />;
 };
-
-const PREVIEW_ANIMATION_MS = 150;
 
 const DIALOG_CODE_TAG_PROPS = { style: { background: 'transparent', backgroundColor: 'transparent', fontSize: 'inherit' } };
 
@@ -181,54 +178,6 @@ const getWindowViewport = (): ViewportSize => ({
     height: typeof window !== 'undefined' ? window.innerHeight : 0,
 });
 
-const usePreviewOverlayState = (open: boolean) => {
-    const [isRendered, setIsRendered] = React.useState(open);
-    const [isVisible, setIsVisible] = React.useState(open);
-    const [isTransitioning, setIsTransitioning] = React.useState(false);
-
-    React.useEffect(() => {
-        if (open) {
-            setIsRendered(true);
-            setIsTransitioning(true);
-            if (typeof window === 'undefined') {
-                setIsVisible(true);
-                return;
-            }
-
-            const raf = window.requestAnimationFrame(() => {
-                setIsVisible(true);
-            });
-
-            const doneId = window.setTimeout(() => {
-                setIsTransitioning(false);
-            }, PREVIEW_ANIMATION_MS);
-
-            return () => {
-                window.cancelAnimationFrame(raf);
-                window.clearTimeout(doneId);
-            };
-        }
-
-        setIsVisible(false);
-        setIsTransitioning(true);
-        if (typeof window === 'undefined') {
-            setIsRendered(false);
-            return;
-        }
-
-        const timeoutId = window.setTimeout(() => {
-            setIsRendered(false);
-            setIsTransitioning(false);
-        }, PREVIEW_ANIMATION_MS);
-
-        return () => {
-            window.clearTimeout(timeoutId);
-        };
-    }, [open]);
-
-    return { isRendered, isVisible, isTransitioning };
-};
-
 const usePreviewViewport = (open: boolean) => {
     const [viewport, setViewport] = React.useState<ViewportSize>(getWindowViewport);
 
@@ -278,15 +227,19 @@ const ImagePreviewDialog: React.FC<{
         }];
     }, [popup.image]);
 
-    const [currentIndex, setCurrentIndex] = React.useState(0);
-    const [imageNaturalSize, setImageNaturalSize] = React.useState<{ width: number; height: number } | null>(null);
-    const [imageLoaded, setImageLoaded] = React.useState(false);
-    const { isRendered, isVisible, isTransitioning } = usePreviewOverlayState(popup.open);
+    const [currentIndex, setCurrentIndex] = React.useState(() => {
+        const index = popup.image?.index ?? gallery.findIndex((item) => item.url === popup.image?.url);
+        return index >= 0 && index < gallery.length ? index : 0;
+    });
+    const sourceElement = popup.previewSource instanceof HTMLImageElement ? popup.previewSource : undefined;
+    const sourceSize = sourceElement?.naturalWidth && sourceElement.naturalHeight
+        ? { width: sourceElement.naturalWidth, height: sourceElement.naturalHeight } : null;
+    const [imageNaturalSize, setImageNaturalSize] = React.useState<{ width: number; height: number } | null>(sourceSize);
+    const [imageLoaded, setImageLoaded] = React.useState(Boolean(sourceSize));
+    const isRendered = popup.open;
     const viewport = usePreviewViewport(popup.open);
     const canvasRef = React.useRef<HTMLDivElement | null>(null);
     const viewerRef = React.useRef<HTMLDivElement | null>(null);
-    const closeButtonRef = React.useRef<HTMLButtonElement | null>(null);
-    const previousFocusRef = React.useRef<HTMLElement | null>(null);
     const imageRef = React.useRef<HTMLImageElement | null>(null);
     const zoomLabelRef = React.useRef<HTMLSpanElement | null>(null);
     const transformRef = React.useRef<ImageViewerTransform>({ scale: 1, x: 0, y: 0 });
@@ -326,13 +279,6 @@ const ImagePreviewDialog: React.FC<{
         return now - openedAtRef.current < IMAGE_VIEWER_OPEN_CLOSE_GUARD_MS;
     });
 
-    useMobileBackRoute({
-        id: 'image-preview',
-        active: popup.open && isMobile,
-        layer: 'overlay',
-        onBack: () => onOpenChange(false),
-        surfaceRef: viewerRef,
-    });
 
     const clearLongPressTimer = useEvent(() => {
         const gesture = singleGestureRef.current;
@@ -360,7 +306,7 @@ const ImagePreviewDialog: React.FC<{
 
     const currentImage = gallery[currentIndex] ?? gallery[0] ?? popup.image;
     const imageResource = useResolvedImageResource(currentImage?.url ?? '', effectiveDirectory, 'preview');
-    const displayImageSource = imageResource.source;
+    const displayImageSource = imageResource.source || (currentImage?.url === popup.image?.url ? sourceElement?.currentSrc : '') || '';
     const imageDisplayKey = `${imageResource.key}\n${displayImageSource}`;
     const [failedImageKey, setFailedImageKey] = React.useState('');
     const hasImageError = Boolean(imageResource.error || failedImageKey === imageDisplayKey);
@@ -411,7 +357,7 @@ const ImagePreviewDialog: React.FC<{
     const imageDisplaySize = React.useMemo(() => {
         const viewingArea = {
             width: Math.max(1, viewport.width * (isMobile ? 1 : 0.8)),
-            height: Math.max(1, viewport.height),
+            height: Math.max(1, viewport.height * (isMobile ? 1 : 0.95)),
         };
         return imageNaturalSize
             ? getFittedImageSize(imageNaturalSize, viewingArea)
@@ -481,38 +427,7 @@ const ImagePreviewDialog: React.FC<{
     });
 
     const handleKeyDown = useEvent((event: KeyboardEvent) => {
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            onOpenChange(false);
-            return;
-        }
-
-        if (event.key === 'Tab') {
-            const viewer = viewerRef.current;
-            if (!viewer) return;
-            const focusable = Array.from(viewer.querySelectorAll<HTMLElement>(
-                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-            ));
-            if (focusable.length === 0) {
-                event.preventDefault();
-                viewer.focus({ preventScroll: true });
-                return;
-            }
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && (document.activeElement === first || !viewer.contains(document.activeElement))) {
-                event.preventDefault();
-                last.focus({ preventScroll: true });
-                return;
-            }
-            if (!event.shiftKey && (document.activeElement === last || !viewer.contains(document.activeElement))) {
-                event.preventDefault();
-                first.focus({ preventScroll: true });
-            }
-            return;
-        }
-
-        if (isMobile) return;
+        if (isMobile || event.defaultPrevented) return;
 
         if (event.key === '+' || event.key === '=') {
             event.preventDefault();
@@ -556,18 +471,6 @@ const ImagePreviewDialog: React.FC<{
         // eslint-disable-next-line react-hooks/exhaustive-deps -- popup.open controls the subscription lifecycle; useEvent supplies the latest callback.
     }, [popup.open]);
 
-    React.useLayoutEffect(() => {
-        if (!popup.open || !isRendered) return;
-
-        previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        closeButtonRef.current?.focus({ preventScroll: true });
-
-        return () => {
-            const previousFocus = previousFocusRef.current;
-            previousFocusRef.current = null;
-            if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
-        };
-    }, [isRendered, popup.open]);
 
     React.useEffect(() => {
         if (pendingFrameRef.current !== null) {
@@ -575,8 +478,10 @@ const ImagePreviewDialog: React.FC<{
         }
         pendingFrameRef.current = null;
         pendingTransformRef.current = null;
-        setImageNaturalSize(null);
-        setImageLoaded(false);
+        const source = currentImage?.url === popup.image?.url ? sourceElement : undefined;
+        setImageNaturalSize(source?.naturalWidth && source.naturalHeight
+            ? { width: source.naturalWidth, height: source.naturalHeight } : null);
+        setImageLoaded(Boolean(source?.naturalWidth));
         transformRef.current = { scale: 1, x: 0, y: 0 };
         pointersRef.current.clear();
         singleGestureRef.current = null;
@@ -587,7 +492,7 @@ const ImagePreviewDialog: React.FC<{
         if (zoomLabelRef.current) {
             zoomLabelRef.current.textContent = '100%';
         }
-    }, [currentImage?.url, displayImageSource]);
+    }, [currentImage?.url, displayImageSource, popup.image?.url, sourceElement]);
 
     React.useLayoutEffect(() => {
         geometryRef.current = geometry;
@@ -811,9 +716,6 @@ const ImagePreviewDialog: React.FC<{
     }
 
     const isDarkTheme = themeSystem?.currentTheme.metadata.variant === 'dark';
-    const viewerTone = isDarkTheme
-        ? 'bg-background text-foreground'
-        : 'bg-foreground text-background';
     const toolbarTone = isDarkTheme
         ? 'border-foreground/15 bg-foreground/10 text-foreground'
         : 'border-background/15 bg-background/10 text-background';
@@ -824,38 +726,11 @@ const ImagePreviewDialog: React.FC<{
     const content = (
         <div
             ref={viewerRef}
-            className={cn(
-                'fixed inset-0 z-50 overflow-hidden select-none',
-                viewerTone,
-                isTransitioning && 'transition-opacity duration-150 ease-out',
-                isVisible ? 'opacity-100' : 'opacity-0',
-                'pointer-events-auto',
-            )}
-            role="dialog"
-            aria-modal="true"
-            aria-label={imageAccessibleLabel}
+            className="absolute inset-0 overflow-hidden select-none"
             tabIndex={-1}
             onClick={consumeViewerClick}
         >
-            <div
-                className="absolute right-3 z-20"
-                style={isMobile ? {
-                    top: 'calc(max(var(--oc-safe-area-top, 0px), env(safe-area-inset-top, 0px)) + 0.5rem)',
-                } : {
-                    top: `calc(50% - ${imageDisplaySize.height / 2}px + 0.5rem)`,
-                    right: `calc(50% - ${imageDisplaySize.width / 2}px + 0.5rem)`,
-                }}
-            >
-                <Button
-                    ref={closeButtonRef}
-                    variant="mobileGlass"
-                    size="mobileIcon"
-                    aria-label={t('dialog.common.actions.close')}
-                    onClick={() => onOpenChange(false)}
-                >
-                    <Icon name="close" className="size-5" />
-                </Button>
-            </div>
+            <PreviewCloseButton onClose={() => onOpenChange(false)} isMobile={isMobile} size={imageDisplaySize} />
             <div
                 ref={canvasRef}
                 className="absolute inset-0 flex items-center justify-center overflow-hidden touch-none [overscroll-behavior:none]"
@@ -881,6 +756,8 @@ const ImagePreviewDialog: React.FC<{
                     </p>
                 ) : <img
                     ref={imageRef}
+                    data-preview-transition-target=""
+                    data-preview-return={currentImage?.url === popup.image?.url}
                     src={displayImageSource || undefined}
                     alt={imageAccessibleLabel ?? ''}
                     className={cn(
@@ -895,7 +772,7 @@ const ImagePreviewDialog: React.FC<{
                 />}
             </div>
 
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-2 pb-2">
                 <div
                     className={cn('pointer-events-auto flex h-10 items-center gap-0.5 rounded-full border px-1 shadow-lg backdrop-blur-xl', toolbarTone)}
                     onPointerDown={(event) => event.stopPropagation()}
@@ -967,7 +844,7 @@ const ImagePreviewDialog: React.FC<{
         </div>
     );
 
-    return createPortal(content, document.body);
+    return content;
 };
 
 // ── PERF-007: Virtualised sub-components for dialog ──────────────────
@@ -1095,20 +972,16 @@ const MermaidPreviewDialog: React.FC<{
     isMobile: boolean;
 }> = ({ popup, onOpenChange, isMobile }) => {
     const { t } = useI18n();
+    const themeSystem = useOptionalThemeSystem();
+    const previewTheme = React.useMemo(() => {
+        if (themeSystem?.currentTheme.metadata.variant === 'dark') return themeSystem.currentTheme;
+        return themeSystem?.availableThemes.find((theme) => theme.metadata.id === themeSystem.darkThemeId && theme.metadata.variant === 'dark')
+            ?? getDefaultTheme(true);
+    }, [themeSystem?.currentTheme, themeSystem?.availableThemes, themeSystem?.darkThemeId]);
     const [source, setSource] = React.useState<string>(popup.mermaid?.source || '');
     const [status, setStatus] = React.useState<'idle' | 'loading' | 'ready' | 'error'>(popup.mermaid?.source ? 'ready' : 'idle');
     const [errorMessage, setErrorMessage] = React.useState<string>('');
-    const { isRendered, isVisible, isTransitioning } = usePreviewOverlayState(popup.open);
     const requestIdRef = React.useRef(0);
-    const viewerRef = React.useRef<HTMLDivElement | null>(null);
-
-    useMobileBackRoute({
-        id: 'mermaid-preview',
-        active: popup.open && isMobile,
-        layer: 'overlay',
-        onBack: () => onOpenChange(false),
-        surfaceRef: viewerRef,
-    });
 
     const normalizeFilePath = React.useCallback((rawPath: string): string | null => {
         const input = rawPath.trim();
@@ -1239,73 +1112,24 @@ const MermaidPreviewDialog: React.FC<{
         void loadMermaidSource();
     }, [loadMermaidSource, popup.mermaid, popup.open]);
 
-    React.useEffect(() => {
-        if (!popup.open) {
-            return;
-        }
-
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                onOpenChange(false);
-            }
-        };
-
-        window.addEventListener('keydown', onKeyDown);
-        return () => {
-            window.removeEventListener('keydown', onKeyDown);
-        };
-    }, [onOpenChange, popup.open]);
-
     const mermaidMarkdown = `\`\`\`mermaid\n${source}\n\`\`\``;
 
-    if (!isRendered || typeof document === 'undefined') {
+    if (!popup.open || typeof document === 'undefined') {
         return null;
     }
 
     const content = (
-        <div className={cn('fixed inset-0 z-50', popup.open ? 'pointer-events-auto' : 'pointer-events-none')}>
-            <div
-                aria-hidden="true"
-                className={cn(
-                    'absolute inset-0',
-                    isTransitioning && 'transition-opacity duration-150 ease-out',
-                    isVisible ? 'opacity-100' : 'opacity-0'
-                )}
-                style={{ backgroundColor: 'color-mix(in srgb, var(--surface-background) 70%, transparent)' }}
-                onMouseDown={() => onOpenChange(false)}
-            />
-
-            <div
-                className={cn(
-                    'absolute inset-0 flex items-center justify-center pointer-events-none'
-                )}
-            >
+        <div className="absolute inset-0 flex items-center justify-center" onClick={(event) => {
+            if (event.target === event.currentTarget) onOpenChange(false);
+        }}>
                 <div
-                    ref={viewerRef}
                     data-mermaid-preview="true"
-                    data-page-scroll-lock="true"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={popup.title}
-                    className={cn(
-                        'pointer-events-auto flex min-h-0 flex-col overflow-hidden bg-background',
-                        isTransitioning && 'transition-opacity duration-150 ease-out',
-                        isVisible ? 'opacity-100' : 'opacity-0'
-                    )}
-                    style={{ width: '100%', height: '100%', paddingTop: 'var(--oc-safe-area-top, env(safe-area-inset-top, 0px))', paddingBottom: 'var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0px))' }}
+                    data-preview-transition-target=""
+                    className="relative flex min-h-0 flex-col overflow-hidden"
+                    style={{ width: isMobile ? '100%' : '80%', height: isMobile ? '100%' : '95%' }}
                     onMouseDown={(event) => event.stopPropagation()}
                 >
-                    <div className="flex shrink-0 items-center justify-end p-2">
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => onOpenChange(false)}
-                            aria-label={t('chat.toolOutputDialog.mermaid.closeAria')}
-                        >
-                            <Icon name="close" className="h-4 w-4" />
-                        </Button>
-                    </div>
+                    <PreviewCloseButton onClose={() => onOpenChange(false)} isMobile={isMobile} />
                     <div
                         className="relative min-h-0 flex-1 overflow-hidden"
                     >
@@ -1351,7 +1175,8 @@ const MermaidPreviewDialog: React.FC<{
                                         variant="tool"
                                         allowMermaidWheelEvents
                                         className="markdown-mermaid-fullscreen h-full"
-                                        mermaidControls={MERMAID_CONTROLS}
+                                         mermaidControls={MERMAID_CONTROLS}
+                                         mermaidTheme={previewTheme}
                                         enableFileReferences={false}
                                     />
                                 </div>
@@ -1359,11 +1184,10 @@ const MermaidPreviewDialog: React.FC<{
                         </div>
                     </div>
                 </div>
-            </div>
         </div>
     );
 
-    return createPortal(content, document.body);
+    return content;
 };
 
 const ToolOutputDialog: React.FC<ToolOutputDialogProps> = ({ popup, onOpenChange, isMobile }) => {
@@ -1376,12 +1200,13 @@ const ToolOutputDialog: React.FC<ToolOutputDialogProps> = ({ popup, onOpenChange
         setDiffViewMode('unified');
     }, [popup.open, popup.title]);
 
-    if (popup.image) {
-        return <ImagePreviewDialog popup={popup} onOpenChange={onOpenChange} isMobile={isMobile} />;
-    }
-
-    if (popup.mermaid) {
-        return <MermaidPreviewDialog popup={popup} onOpenChange={onOpenChange} isMobile={isMobile} />;
+    if (popup.image || popup.mermaid) {
+        return <MediaPreviewOverlay open={popup.open} title={popup.title} kind={popup.image ? 'image' : 'mermaid'}
+            source={popup.previewSource} isMobile={isMobile} onOpenChange={onOpenChange}>
+            {(close) => popup.image
+                ? <ImagePreviewDialog popup={popup} onOpenChange={close} isMobile={isMobile} />
+                : <MermaidPreviewDialog popup={popup} onOpenChange={close} isMobile={isMobile} />}
+        </MediaPreviewOverlay>;
     }
 
     return (

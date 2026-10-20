@@ -63,11 +63,15 @@ imperative selection/mutation callers. The store loader now shares Query IO.
 
 ## Architecture
 
-`useVolcengineSpeechStore` owns client speech configuration. Its shared API Key
-is memory-only and excluded from persistence; only TTS resource/speaker IDs are
-persisted. Dictation reads this store once at start rather than subscribing the
-composer to credential edits. Provider selection remains in `useConfigStore`;
-`volcengine` is accepted by the settings bootstrap/persistence contract.
+`useVolcengineSpeechStore` retains legacy client-local speech configuration only
+for explicit migration. `queries/volcengineSpeechQueries.ts` owns runtime-scoped
+Host settings/status; the Host never returns the stored key. TTS and ASR forms
+keep unsaved drafts locally and confirm Save only after a successful Host write.
+An unconfigured Host can import the old key/preferences on explicit Save; failed
+writes retain the legacy source, and successful matching-key migration clears it.
+TTS/dictation requests resolve saved settings on the Host, without adding queries
+or credential subscriptions to the composer. Provider selection remains in
+`useConfigStore`; `volcengine` is accepted by settings bootstrap/persistence.
 
 Quota Magpie discovery uses the host's aggregate endpoint and runtime/directory-scoped Query flights.
 The quota store mirrors its results for the existing header, tray, Settings and mobile consumers.

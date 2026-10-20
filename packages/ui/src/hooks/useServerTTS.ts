@@ -18,7 +18,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useVolcengineSpeechStore } from '@/stores/useVolcengineSpeechStore';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { playPcmStream } from '@/lib/voice/pcm-stream';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
@@ -279,7 +278,7 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
       console.log('[useServerTTS] Speaking with voice:', voice, 'options:', options);
 
       // Fetch audio from server
-      const volcengine = options?.provider === 'volcengine' ? useVolcengineSpeechStore.getState() : null;
+      const volcengine = options?.provider === 'volcengine';
       const response = await runtimeFetch('/api/tts/speak', {
         method: 'POST',
         headers: {
@@ -302,9 +301,8 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
           ...(volcengine ? {
             provider: 'volcengine',
             stream: true,
-            apiKey: volcengine.apiKey,
-            voice: volcengine.voice,
-            resourceId: volcengine.resourceId,
+            apiKey: undefined,
+            voice: undefined,
           } : {}),
         }),
         signal: session.abort.signal,

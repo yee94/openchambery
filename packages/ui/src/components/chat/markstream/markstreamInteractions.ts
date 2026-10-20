@@ -57,6 +57,7 @@ export const handleMarkstreamPointerEvent = (
       open: true,
       title: image.alt || selectedSource,
       content: '',
+      previewSource: image,
       image: {
         url: selectedSource,
         filename: image.alt || selectedSource,

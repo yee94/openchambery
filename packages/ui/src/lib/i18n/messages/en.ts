@@ -2230,6 +2230,7 @@ export const dict = {
   'chat.dictation.processing': 'Transcribing...',
   'chat.dictation.failed': 'Transcription failed',
   'chat.dictation.cancel': 'Discard dictation',
+  'chat.dictation.keyboardHint': 'Enter to confirm',
   'chat.dictation.insert': 'Insert transcript',
   'chat.dictation.insertAndSend': 'Insert and send',
   'chat.dictation.retry': 'Retry transcription',

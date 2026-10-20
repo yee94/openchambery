@@ -229,6 +229,7 @@ describe('handleMarkstreamPointerEvent', () => {
       open: true,
       title: 'diagram',
       content: '',
+      previewSource: image,
       image: {
         url: 'https://example.com/a.png',
         filename: 'diagram',

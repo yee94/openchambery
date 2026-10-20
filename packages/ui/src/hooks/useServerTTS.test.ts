@@ -137,7 +137,7 @@ const flush = async () => {
 };
 
 describe('useServerTTS playback session identity', () => {
-  test('reads the current Volcengine key and voice at playback time', async () => {
+  test('uses Host speech settings without sending client-local credentials or voice overrides', async () => {
     const { useVolcengineSpeechStore } = await import('@/stores/useVolcengineSpeechStore');
     useVolcengineSpeechStore.setState({ apiKey: 'first-test-key', voice: 'test_speaker', resourceId: 'seed-tts-2.0' });
     let tts = useServerTTS({ enabled: false });
@@ -145,7 +145,10 @@ describe('useServerTTS playback session identity', () => {
     useVolcengineSpeechStore.getState().setApiKey('updated-test-key');
     const playing = tts.speak('测试', { provider: 'volcengine' });
     await flush();
-    expect(requestBodies.at(-1)).toMatchObject({ provider: 'volcengine', apiKey: 'updated-test-key', voice: 'test_speaker', resourceId: 'seed-tts-2.0' });
+    expect(requestBodies.at(-1)).toMatchObject({ provider: 'volcengine' });
+    expect(requestBodies.at(-1)?.apiKey).toBeUndefined();
+    expect(requestBodies.at(-1)?.voice).toBeUndefined();
+    expect(requestBodies.at(-1)?.resourceId).toBeUndefined();
     tts.stop();
     requests.pop()!.resolve(response());
     await playing;

@@ -34,8 +34,15 @@ export async function editSessionInboxIntoDraft(input: {
   }
   parts.push({ type: 'text', text })
   for (const file of entries(item.payload.files)) {
-    if (typeof file.uri !== 'string' || !file.uri) throw new Error('inbox-edit-invalid-file')
-    parts.push({ type: 'file', url: file.uri, filename: file.name })
+    const mime = typeof file.mime === 'string' && file.mime ? file.mime : 'application/octet-stream'
+    const source = file.source && typeof file.source === 'object' && 'type' in file.source && file.source.type === 'uri' && 'uri' in file.source
+      ? file.source.uri : undefined
+    // Native file bodies survive temporary source cleanup and must travel with the recovered draft.
+    const url = typeof file.data === 'string' && file.data
+      ? `data:${mime};base64,${file.data}`
+      : typeof file.uri === 'string' && file.uri ? file.uri : source
+    if (typeof url !== 'string' || !url) throw new Error('inbox-edit-invalid-file')
+    parts.push({ type: 'file', url, filename: file.name, mime })
   }
   for (const agent of entries(item.payload.agents)) {
     if (typeof agent.name !== 'string' || !agent.name) throw new Error('inbox-edit-invalid-agent')

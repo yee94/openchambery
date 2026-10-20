@@ -258,17 +258,6 @@ describe('image source contracts', () => {
     expect(resetSource.indexOf('pendingTransformRef.current = null')).toBeLessThan(resetSource.indexOf("imageRef.current.style.transform = 'translate3d(0, 0, 0) scale(1)'"));
   });
 
-  test('keeps the viewer full-width and traps focus with an invisible close action', () => {
-    expect(dialogSource).toContain('className="absolute inset-0 flex items-center justify-center overflow-hidden touch-none [overscroll-behavior:none]"');
-    expect(dialogSource).toContain('ref={closeButtonRef}');
-    expect(dialogSource).toContain('className="sr-only"');
-    expect(dialogSource).toContain("{t('dialog.common.actions.close')}");
-    expect(dialogSource).toContain("if (event.key === 'Tab')");
-    expect(dialogSource).toContain("if (event.key === 'Escape')");
-    expect(dialogSource).toContain('previousFocusRef.current = document.activeElement');
-    expect(dialogSource).toContain('previousFocus.focus({ preventScroll: true })');
-  });
-
   test('arms the native trailing-click guard before a mobile tap unmounts the viewer', () => {
     const viewerStart = dialogSource.indexOf('const ImagePreviewDialog');
     const viewerEnd = dialogSource.indexOf('// ── PERF-007', viewerStart);
@@ -282,11 +271,7 @@ describe('image source contracts', () => {
     expect(viewerSource).toMatch(/closeImageViewerAfterMobileTap\(point, \(\) => onOpenChange\(false\)\);\s*return;/);
   });
 
-  test('registers mobile back to dismiss fullscreen preview without leaving chat', () => {
-    expect(dialogSource).toContain("import { useMobileBackRoute } from '@/mobile/mobileBackNavigation'");
-    expect(dialogSource).toContain("id: 'image-preview'");
-    expect(dialogSource).toContain('active: popup.open && isMobile');
-    expect(dialogSource).toContain("layer: 'overlay'");
+  test('keeps image save actions available through long press and context menu', () => {
     expect(dialogSource).toContain('openImageSaveActions');
     expect(dialogSource).toContain('IMAGE_VIEWER_LONG_PRESS_MS');
     expect(dialogSource).toContain('onContextMenu={handleContextMenu}');

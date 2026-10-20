@@ -1484,6 +1484,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.processing': 'Розшифровка...',
   'chat.dictation.failed': 'Не вдалося розшифрувати запис',
   'chat.dictation.cancel': 'Відхилити диктування',
+  'chat.dictation.keyboardHint': 'Enter — підтвердити',
   'chat.dictation.insert': 'Вставити текст',
   'chat.dictation.insertAndSend': 'Вставити й надіслати',
   'chat.dictation.retry': 'Повторити розшифровку',

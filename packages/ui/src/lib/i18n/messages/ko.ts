@@ -2229,6 +2229,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.processing': '변환 중...',
   'chat.dictation.failed': '변환에 실패했습니다',
   'chat.dictation.cancel': '받아쓰기 취소',
+  'chat.dictation.keyboardHint': 'Enter로 확인',
   'chat.dictation.insert': '텍스트 삽입',
   'chat.dictation.insertAndSend': '삽입 후 전송',
   'chat.dictation.retry': '변환 다시 시도',

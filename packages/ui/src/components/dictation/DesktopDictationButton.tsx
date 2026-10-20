@@ -51,6 +51,13 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
     }, document);
     useEventListener('openchamber:dictation-toggle', () => { void toggle(); }, window);
     useEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.isComposing || event.keyCode === 229) return;
+        if (event.key === 'Enter' && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && (recording || processing)) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat) finish();
+            return;
+        }
         if (event.key !== 'Escape' || (!recording && !processing && dictation.status !== 'failed')) return;
         event.preventDefault();
         event.stopPropagation();
@@ -64,7 +71,7 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
         : processing ? 'chat.dictation.processing'
             : 'chat.dictation.start');
 
-    return <div className="relative shrink-0">
+    return <div className="relative flex shrink-0 items-center gap-1.5">
         <Tooltip delayDuration={0}>
         <TooltipTrigger asChild>
         <Button variant="ghost" size="icon"
@@ -82,5 +89,8 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
             </span>}
         </TooltipContent>
         </Tooltip>
+        {recording && <span className="pointer-events-none select-none whitespace-nowrap text-[10px] leading-none text-muted-foreground">
+            {t('chat.dictation.keyboardHint')}
+        </span>}
     </div>;
 }

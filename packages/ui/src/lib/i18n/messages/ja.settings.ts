@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.voice.volcengine.save': '保存',
+  'settings.voice.volcengine.saveFailed': '保存に失敗しました。変更は保持されています。再試行してください。',
+  'settings.voice.volcengine.loadFailed': 'このサーバーの音声設定を読み込めませんでした。',
+  'settings.voice.volcengine.retry': '再試行',
   'chat.dictation.error.microphoneNotFound': 'マイクが見つかりません。接続して再試行してください。',
   'settings.voice.volcengine.name': 'Volcengine (Doubao)',
   'settings.voice.volcengine.providerOption': 'Volcengine Doubao（推奨|有料）',

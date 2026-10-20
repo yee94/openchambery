@@ -4,7 +4,8 @@
 This module provides server-side Text-to-Speech services using OpenAI's TTS API. The historical shared text summarization endpoint now lives in `packages/web/server/lib/text/` as an API-compatible stub because the previous Zen model provider is unavailable.
 
 ## Entrypoints and structure
-- `volcengine.js`: Doubao speech adapter, using the speech console API Key (`X-Api-Key`), fixed upstream origin, bounded responses, timeout and cancellation. No Ark key, OpenAI credential fallback or server-side secret persistence.
+- `volcengine.js`: Doubao speech adapter, using the speech console API Key (`X-Api-Key`), fixed upstream origin, bounded responses, timeout and cancellation. No Ark key or OpenAI credential fallback.
+- `volcengine-settings.js`: Host-owned speech credentials/preferences and authenticated GET/PUT `/api/voice/volcengine` routes; responses expose configuration status, never the key.
 - `packages/web/server/lib/tts/index.js`: Public entrypoint imported by `packages/web/server/index.js`.
 - `packages/web/server/lib/tts/routes.js`: Express route registration for `/api/voice/*`, `/api/tts/*`, and `/api/stt/*` endpoints.
 - `packages/web/server/lib/tts/capability-runtime.js`: runtime helper for probing local macOS `say` TTS voice capability.
@@ -105,11 +106,26 @@ The server-side TTS approach bypasses mobile Safari's audio context restrictions
 ### Volcengine / Doubao
 
 Settings → Voice provides a shared speech API Key, TTS resource ID and speaker ID.
-The key and voice preferences auto-save to client-local storage on edit, matching
-the other speech providers; no Save button is required. Clearing the key saves
-the empty value. Existing preferences without a key remain compatible. Keys are
-not synced between devices or stored by the Host. Select Volcengine separately
-for read-aloud and dictation. Missing keys return HTTP 400, not a server failure.
+Each section has one right-aligned Save button at its bottom, without an extra
+label or description. The button always reads Save; TanStack mutation pending
+state disables duplicate actions without a saved badge. Failures use a toast.
+Speech credential/resource edits remain local drafts until the
+Host confirms the write; failure preserves the draft for retry. The Host stores
+the shared key, TTS speaker/resource and ASR resource in
+`$OPENCHAMBER_DATA_DIR/speech/volcengine.json` (default data root:
+`~/.config/openchamber`), using an owner-only directory/file and atomic replacement.
+GET returns `{configured, voice, resourceId, asrResourceId}` with `no-store`.
+PUT merges only supplied fields: an omitted key is retained, an empty key clears
+it. Invalid/unreadable files and failed writes remain errors, never empty success.
+Relay forwards authenticated requests to this Host; the Relay service does not
+store speech settings. Devices sharing a Host therefore share its speech key.
+The runtime-scoped Query refreshes on Settings mount, reconnect and window focus;
+old runtime save completions cannot update the new runtime cache or clear legacy data.
+When no Host key exists, previously saved client-local settings prefill an unsaved
+migration draft. Explicit Save migrates the key and preferences together, removing
+the matching legacy local key only after success. New drafts are never persisted
+to localStorage. Select Volcengine separately for read-aloud and dictation.
+Missing keys return HTTP 400, not a server failure.
 Enable `seed-tts-2.0`, `volc.seedasr.sauc.duration` (live dictation),
 and optionally `volc.bigasr.auc_turbo` (file API) in the
 [speech console](https://console.volcengine.com/speech/new).
@@ -117,7 +133,16 @@ Defaults: `seed-tts-2.0`, `zh_female_vv_uranus_bigtts`, 24 kHz audio.
 Settings treats Volcengine as a peer provider: enable playback or dictation,
 then select it in that section's existing provider selector. Only the selected
 channel's fields and tests render inline (TTS resource/speaker/preview versus
-ASR resource/microphone tester). Both sections share the locally saved speech API Key.
+ASR resource/microphone tester). Both sections share the Host-saved speech API Key.
+Configured clients show a masked placeholder in the key input without a separate
+status label or clear action. An untouched input preserves the key; explicitly
+editing it to an empty value and saving clears it.
+Preview and microphone test remain clickable with unsaved edits. Clicking either
+first saves the current draft, then starts the test only after Host confirmation.
+Save failure retains the draft and reports a toast; missing keys report a
+configuration prompt instead of leaving the button disabled. Pending saves disable
+duplicate actions. Leaving the form or switching Hosts prevents a late save from
+starting playback or opening the recorder.
 Settings search points to the stable playback/recognition sections rather than
 hidden provider fields; searching never changes the selected provider.
 TTS resource and speaker controls use Select with a custom-ID input for existing
@@ -137,8 +162,10 @@ delivery instruction, not a separate official “recommended emotional voice” 
 Custom/cloned speakers do not inherit this speaker-specific instruction.
 Custom speaker/resource pairs must belong to the same enabled model/service.
 
-`POST /api/tts/speak` accepts `{provider: 'volcengine', text, apiKey, resourceId?,
-voice?, speed?, stream?}`. With `stream: true`, the adapter requests mono PCM
+`POST /api/tts/speak` accepts `{provider: 'volcengine', text, apiKey?, resourceId?,
+voice?, speed?, stream?}`. Missing key/resource/voice values resolve from the Host
+at request time. Existing clients may still supply explicit overrides.
+With `stream: true`, the adapter requests mono PCM
 (signed 16-bit little-endian, 24 kHz), incrementally parses upstream JSON and
 forwards `application/x-ndjson` frames: `{type:'audio',data:<base64>}`, then
 `{type:'done'}` only after terminal upstream success. Each audio frame is at most
@@ -167,7 +194,8 @@ terminal success, and new clients can play MP3 from older Hosts during upgrades.
 Speed 0.5–2 maps to upstream -50–100; pitch and volume remain client-side.
 
 `POST /api/stt/transcribe` accepts raw WAV/MP3/OGG (20 MB maximum) with
-`X-Speech-Provider: volcengine` and `X-Speech-Api-Key`. Runtime Authorization
+`X-Speech-Provider: volcengine` and optional `X-Speech-Api-Key` (otherwise the
+Host-saved key). Runtime Authorization
 remains independent. ASR uses the flash endpoint with base64 audio and resource
 `volc.bigasr.auc_turbo`; only explicit silence returns an empty transcript.
 The Settings microphone tester uses the live dictation route instead of this file API.
@@ -176,7 +204,7 @@ Normal microphone input uses the dictation session adapter described in
 
 Web, Electron, hosted mobile and Capacitor use the existing runtime HTTP and
 dictation WebSocket transports (including Relay). VS Code has no speech host and
-returns explicit 501 for synthesis/file transcription, as for existing dictation.
+returns explicit 501 for speech settings and synthesis/file transcription, as for existing dictation.
 
 Protocol sources (checked October 2026):
 - [HTTP synthesis and API Key authentication](https://www.volcengine.com/docs/DoubaoVoice/unidirectional-streaming-text-to-speech-http?lang=zh)

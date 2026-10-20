@@ -50,6 +50,27 @@ it('does not cancel when draft persistence fails or conflicts', async () => {
   await expect(editSessionInboxIntoDraft(input)).rejects.toThrow('draft-not-committed')
   expect(fixture.cancel).not.toHaveBeenCalled()
 })
+it.each([undefined, { type: 'uri', uri: 'file:///temporary/image.png' }])('restores native image bytes instead of relying on their temporary source (%j)', async (source) => {
+  fixture.fetch.mockResolvedValue({ current: true, items: [{ ...item, payload: {
+    text: 'edit this image', files: [{ name: 'image.png', mime: 'image/png', data: 'aW1hZ2U=', source }],
+  } }] })
+  expect(await editSessionInboxIntoDraft(input)).toBe(true)
+  const { snapshot, values } = fixture.commit.mock.calls[0][0].payload
+  expect(snapshot.text).toBe('edit this image')
+  expect(snapshot.attachments).toEqual([expect.objectContaining({ filename: 'image.png', mimeType: 'image/png', locator: expect.objectContaining({ kind: 'blob' }) })])
+  const blob = [...values.values()][0] as Blob
+  expect(await blob.text()).toBe('image')
+  expect(fixture.commit.mock.invocationCallOrder[0]).toBeLessThan(fixture.cancel.mock.invocationCallOrder[0])
+})
+it('restores native source URI attachments with their MIME type', async () => {
+  fixture.fetch.mockResolvedValue({ current: true, items: [{ ...item, payload: {
+    text: 'edit file', files: [{ name: 'image.png', mime: 'image/png', source: { type: 'uri', uri: 'file:///repo/image.png' } }],
+  } }] })
+  expect(await editSessionInboxIntoDraft(input)).toBe(true)
+  expect(fixture.commit.mock.calls[0][0].payload.snapshot.attachments).toEqual([
+    expect.objectContaining({ filename: 'image.png', mimeType: 'image/png', locator: { kind: 'url', url: 'file:///repo/image.png' } }),
+  ])
+})
 it('does not restore an already consumed item or treat fetch failure as empty success', async () => {
   fixture.fetch.mockResolvedValueOnce({ current: true, items: [] })
   await expect(editSessionInboxIntoDraft(input)).rejects.toThrow('no-longer-queued')

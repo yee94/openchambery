@@ -547,7 +547,7 @@ const MobileFileDetail: React.FC<{
     ?? (previewImageSrc && failedImageSrc === previewImageSrc ? t('filesView.error.readFileFailed') : null);
   const handleImageError = useEvent(() => setFailedImageSrc(previewImageSrc));
 
-  const openImagePreview = useEvent(() => {
+  const openImagePreview = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
     // One-use native streams cannot serve a second reader. Pass the source path
     // so fullscreen acquires its own stream (desktop disk leases remain shared).
     const url = imagePath || previewImageSrc;
@@ -556,6 +556,7 @@ const MobileFileDetail: React.FC<{
       open: true,
       title: imageFilename,
       content: '',
+      previewSource: event.currentTarget.querySelector<HTMLImageElement>('img') ?? undefined,
       metadata: {
         tool: 'image-preview',
         filename: imageFilename,
