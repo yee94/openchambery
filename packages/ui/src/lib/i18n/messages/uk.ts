@@ -1897,7 +1897,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.activity.compactionFailed": "Не вдалося стиснути",
   "chat.activity.expandAria": "Розгорнути деталі обробки",
   "chat.activity.collapseAria": "Згорнути деталі обробки",
-  "chat.activity.completed": "Оброблено за {duration}",
+  "chat.activity.completed": "Тривалість: {duration}",
   "chat.activity.completedStatus": "Оброблено",
   "chat.activity.agentsWorking": "{count} агентів працюють",
   "chat.activity.agentsInvolved": "{count} агентів брали участь",

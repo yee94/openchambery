@@ -725,14 +725,14 @@ svg.animate-spin {
 .oc-chat-work-status-inline .chat-message-column,
 .oc-chat-work-status-inline .chat-input-column {
   max-width: calc(100% - var(--oc-work-status-reserve));
-  margin-left: max(0px, calc((100% - var(--oc-work-status-reserve) - 800px) / 2));
+  margin-left: max(0px, calc((100% - var(--oc-work-status-reserve) - var(--oc-chat-column-max)) / 2));
   margin-right: auto;
 }
 
 .wide-chat-layout .oc-chat-work-status-inline .chat-column,
 .wide-chat-layout .oc-chat-work-status-inline .chat-message-column,
 .wide-chat-layout .oc-chat-work-status-inline .chat-input-column {
-  margin-left: max(0px, calc((100% - var(--oc-work-status-reserve) - 64rem) / 2));
+  margin-left: max(0px, calc((100% - var(--oc-work-status-reserve) - var(--oc-chat-column-max-wide)) / 2));
 }
 
 html:not(.dark) .chat-scroll {

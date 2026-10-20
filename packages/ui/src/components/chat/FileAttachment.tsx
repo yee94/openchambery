@@ -746,7 +746,7 @@ export const filePartImageManualLoadRequired = (transportIdentity: string, file:
 
 const getMessageImageGridClassName = (imageCount: number) => cn(
   'grid gap-2',
-  imageCount === 1 ? 'grid-cols-1 max-w-56' : 'grid-cols-2',
+  imageCount === 1 ? 'grid-cols-1 max-w-24' : 'grid-cols-[repeat(auto-fill,6rem)]',
 );
 
 const MessageImageCard = ({
@@ -769,7 +769,7 @@ const MessageImageCard = ({
   const displaySource = useResolvedImageSource(source ?? '', effectiveDirectory);
   return (
     <div
-      className="relative aspect-square min-w-0 overflow-hidden rounded-lg border border-border/40 bg-muted/10"
+      className="relative aspect-square min-w-0 overflow-hidden w-24 max-w-full rounded-lg border border-border/40 bg-muted/10"
       data-message-image-slot="true"
     >
       {source ? (

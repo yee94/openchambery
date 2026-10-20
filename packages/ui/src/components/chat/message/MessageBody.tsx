@@ -1471,6 +1471,7 @@ const AssistantMessageBody = React.memo(({
     onCopyMessage,
     onAuxiliaryContentComplete,
     showReasoningTraces = false,
+    shouldShowHeader = false,
     turnGroupingContext,
     errorPresentation,
     reviewTransferDirection = null,
@@ -2413,7 +2414,13 @@ const AssistantMessageBody = React.memo(({
               <div>
                  <div
                      // 不用 overflow-hidden：工具行 -mx 洗底需要画进列 gutter，否则圆角会被裁成直角
-                     className="message-content-text leading-relaxed text-foreground/90 [&_p:last-child]:mb-0 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0"
+                     className={cn(
+                         'message-content-text leading-relaxed text-foreground/90 [&_p:last-child]:mb-0 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0',
+                         (shouldShowHeader || turnGroupingContext?.headerMessageId === messageId)
+                             && (isMobile
+                                 ? '[&>[data-message-text-export-source]:first-child]:pt-1.5'
+                                 : '[&>[data-message-text-export-source]:first-child]:pt-2'),
+                     )}
                  >
                     {renderedParts}
                     {errorPresentation && (

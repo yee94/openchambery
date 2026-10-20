@@ -1918,7 +1918,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.activity.compactionFailed': '압축 실패',
   'chat.activity.expandAria': '처리 세부 정보 펼치기',
   'chat.activity.collapseAria': '처리 세부 정보 접기',
-  'chat.activity.completed': '{duration} 만에 처리됨',
+  'chat.activity.completed': '소요 시간 {duration}',
   'chat.activity.completedStatus': '처리됨',
   'chat.activity.agentsWorking': '{count}개 에이전트 작업 중',
   'chat.activity.agentsInvolved': '{count}개 에이전트 참여',

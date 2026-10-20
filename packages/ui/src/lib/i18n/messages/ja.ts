@@ -1912,7 +1912,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.activity.compactionFailed': '圧縮に失敗しました',
   'chat.activity.expandAria': '処理の詳細を展開',
   'chat.activity.collapseAria': '処理の詳細を折りたたむ',
-  'chat.activity.completed': '{duration}で処理完了',
+  'chat.activity.completed': '所要時間 {duration}',
   'chat.activity.completedStatus': '処理完了',
   'chat.activity.agentsWorking': '{count}人のエージェントが処理中',
   'chat.activity.agentsInvolved': '{count}人のエージェントが参加',

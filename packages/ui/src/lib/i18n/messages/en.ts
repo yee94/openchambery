@@ -1917,7 +1917,7 @@ export const dict = {
   'chat.activity.compactionFailed': 'Compaction failed',
   'chat.activity.expandAria': 'Expand processing details',
   'chat.activity.collapseAria': 'Collapse processing details',
-  'chat.activity.completed': 'Processed in {duration}',
+  'chat.activity.completed': 'Worked for {duration}',
   'chat.activity.completedStatus': 'Processed',
   'chat.activity.agentsWorking': '{count} agents working',
   'chat.activity.agentsInvolved': '{count} agents involved',
