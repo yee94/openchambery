@@ -824,12 +824,17 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       : {};
 
     try {
+      // Enable OpenCode background subagents for managed servers unless the
+      // user explicitly set the experimental flag themselves.
+      const backgroundSubagentsUnset = shellEnv.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS === undefined
+        && process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS === undefined;
       const childEnv = {
         ...shellEnv,
         ...process.env,
         PATH: envPath,
         OPENCODE_PASSWORD: openCodePassword,
         OPENCODE_SERVER_PASSWORD: openCodePassword,
+        ...(backgroundSubagentsUnset ? { OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'true' } : {}),
       };
       const managedEnv = managedCapabilitiesRuntime
         ? await managedCapabilitiesRuntime.prepareManagedChildEnv(childEnv)
