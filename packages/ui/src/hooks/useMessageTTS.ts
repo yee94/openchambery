@@ -20,6 +20,8 @@ import { subscribeSpeechCapture } from '@/lib/voice/audio-session';
 // would only add latency.
 const TTS_SUMMARIZE_MIN_CHARS = 600;
 
+let stopActiveMessageSpeech: (() => void) | null = null;
+
 const SUMMARIZE_SYSTEM_PROMPT = 'Summarize the assistant reply for text-to-speech listening. Reply with 2-4 sentences of plain spoken prose in the same language as the reply. No markdown, no lists, no code — mention code changes briefly in words instead.';
 
 async function summarizeForSpeech(
@@ -82,7 +84,10 @@ export function useMessageTTS(options: { enabled?: boolean } = {}): UseMessageTT
         stopServerTTS();
         stopSayTTS();
         stopLocalTTS();
-        browserVoiceService.cancelSpeech();
+        if (stopActiveMessageSpeech === stop) {
+            stopActiveMessageSpeech = null;
+            browserVoiceService.cancelSpeech();
+        }
     });
     useEventListener('keydown', (event: KeyboardEvent) => {
         if (event.key !== 'Escape' || event.isComposing || !isPlaying) return;
@@ -96,18 +101,24 @@ export function useMessageTTS(options: { enabled?: boolean } = {}): UseMessageTT
             : voiceProvider === 'say' ? unlockSayAudio : isServerProvider ? unlockAudio : null;
         await Promise.all([providerUnlock?.(), browserVoiceService.resumeAudioContext()]);
     });
-    useEffect(() => () => { generation.current += 1; }, []);
+    useEffect(() => () => {
+        if (stopActiveMessageSpeech === stop) stop();
+        else generation.current += 1;
+    }, [stop]);
     
     const play = useEvent(async (text: string, onSettled?: (error?: Error) => void) => {
         if (!text.trim()) { onSettled?.(); return; }
         
         // Stop any existing playback
+        stopActiveMessageSpeech?.();
         stop();
+        stopActiveMessageSpeech = stop;
         const request = generation.current;
         let settled = false;
         const finish = (error?: Error) => {
             if (request !== generation.current || settled) return;
             settled = true;
+            if (stopActiveMessageSpeech === stop) stopActiveMessageSpeech = null;
             setIsPlaying(false);
             onSettled?.(error);
         };

@@ -6,7 +6,7 @@ import { prepareSpeechCapture } from '@/lib/voice/audio-session';
 
 const mocks = vi.hoisted(() => ({
     config: { voiceProvider: 'volcengine', ttsInputMode: 'raw' },
-    speak: vi.fn(), stop: vi.fn(), unlock: vi.fn(), localUnlock: vi.fn(), fetch: vi.fn(),
+    speak: vi.fn(), stop: vi.fn(), unlock: vi.fn(), localUnlock: vi.fn(), fetch: vi.fn(), cancelSpeech: vi.fn(),
 }));
 vi.mock('@/stores/useConfigStore', () => ({ useConfigStore: Object.assign(
     (selector: (state: typeof mocks.config) => unknown) => selector(mocks.config), { getState: () => mocks.config },
@@ -14,7 +14,7 @@ vi.mock('@/stores/useConfigStore', () => ({ useConfigStore: Object.assign(
 vi.mock('./useServerTTS', () => ({ useServerTTS: () => ({ speak: mocks.speak, stop: mocks.stop, unlockAudio: mocks.unlock, isAvailable: false }) }));
 vi.mock('./useSayTTS', () => ({ useSayTTS: () => ({ stop: () => {}, unlockAudio: async () => {} }) }));
 vi.mock('./useLocalTTS', () => ({ useLocalTTS: () => ({ stop: () => {}, unlockAudio: mocks.localUnlock }) }));
-vi.mock('@/lib/voice/browserVoiceService', () => ({ browserVoiceService: { cancelSpeech: () => {}, resumeAudioContext: async () => {} } }));
+vi.mock('@/lib/voice/browserVoiceService', () => ({ browserVoiceService: { cancelSpeech: mocks.cancelSpeech, resumeAudioContext: async () => {} } }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: mocks.fetch }));
 let current: UseMessageTTSReturn;
 let root: ReturnType<typeof createRoot>;
@@ -104,4 +104,57 @@ it('unlocks the configured local audio context on the enabling gesture', async (
     await act(async () => current.unlock());
     expect(mocks.localUnlock).toHaveBeenCalledTimes(1);
     expect(mocks.unlock).not.toHaveBeenCalled();
+});
+
+it('replaces playback owned by another message and ignores its late completion', async () => {
+    let other!: UseMessageTTSReturn;
+    function Other() { other = useMessageTTS({ enabled: true }); return null; }
+    await act(async () => root.render(<><Probe /><Other /></>));
+    const settled = vi.fn();
+    await act(async () => current.play('第一条消息', settled));
+    const firstCompletion = mocks.speak.mock.calls[0][1].onEnd;
+    mocks.stop.mockClear();
+    await act(async () => other.play('第二条消息'));
+    expect(mocks.stop).toHaveBeenCalledTimes(2);
+    expect(current.isPlaying).toBe(false);
+    expect(other.isPlaying).toBe(true);
+    await act(async () => firstCompletion());
+    expect(settled).not.toHaveBeenCalled();
+    expect(other.isPlaying).toBe(true);
+});
+
+it('stops the owned audio when its message is removed', async () => {
+    await act(async () => current.play('被撤回的消息'));
+    mocks.stop.mockClear();
+    await act(async () => root.render(null));
+    expect(mocks.stop).toHaveBeenCalledOnce();
+});
+
+it('does not revive a pending summary after another message starts', async () => {
+    mocks.config.ttsInputMode = 'summarized';
+    let other!: UseMessageTTSReturn;
+    function Other() { other = useMessageTTS({ enabled: true }); return null; }
+    await act(async () => root.render(<><Probe /><Other /></>));
+    let resolve!: (response: Response) => void;
+    mocks.fetch.mockReturnValue(new Promise((done) => { resolve = done; }));
+    let pending!: Promise<void>;
+    await act(async () => { pending = current.play('很长的回复'.repeat(200)); });
+    await act(async () => other.play('新的朗读'));
+    await act(async () => { resolve(Response.json({ text: '旧的摘要' })); await pending; });
+    expect(mocks.speak).toHaveBeenCalledTimes(1);
+    expect(mocks.speak.mock.calls[0][0]).toBe('新的朗读');
+});
+
+it('does not interrupt the new owner when the replaced message unmounts', async () => {
+    let other!: UseMessageTTSReturn;
+    function Other() { other = useMessageTTS({ enabled: true }); return null; }
+    await act(async () => root.render(<><Probe key="old" /><Other key="new" /></>));
+    await act(async () => current.play('旧消息'));
+    await act(async () => other.play('新消息'));
+    mocks.stop.mockClear();
+    mocks.cancelSpeech.mockClear();
+    await act(async () => root.render(<><Other key="new" /></>));
+    expect(other.isPlaying).toBe(true);
+    expect(mocks.stop).not.toHaveBeenCalled();
+    expect(mocks.cancelSpeech).not.toHaveBeenCalled();
 });
