@@ -41,7 +41,9 @@ import {
   useSessionInboxOverlayStore,
 } from "./session-inbox-overlay"
 import {
+  captureCompactionBarrierRevision,
   parseSessionInboxCompactionList,
+  setSessionCompactionBarrier,
   syncCompactionBarrierFromInbox,
 } from "./session-compaction-api"
 import { fetchSessionProjectionPage } from "./session-projection-api"
@@ -320,14 +322,7 @@ export async function postSessionPrompt(
   if (!isCurrentPromptCommitScope(commit)) {
     throwRuntimeSwitched("session prompt")
   }
-  // A missing delivery field parses as steer. Queue admission must still paint
-  // a chip; echoing steer afterwards keeps wasQueued so 引导中 can take over.
-  if (input.delivery === "queue" && admitted.delivery !== "queue") {
-    rememberUnpromotedInbox({ ...admitted, delivery: "queue" })
-    updateInboxOverlayDelivery(admitted.sessionID, admitted.id, "steer")
-  } else {
-    rememberUnpromotedInbox(admitted)
-  }
+  rememberUnpromotedInbox(admitted)
   return admitted
 }
 
@@ -485,19 +480,29 @@ export async function fetchSessionInboxAuthority(
 ): Promise<SessionInboxAuthoritySnapshot> {
   const scope = captureInboxRuntimeScope()
   const startedMark = captureInboxAuthorityMark()
-  const response = await runtimeFetch(inboxPath(input.sessionID), {
+  const compactionRevision = captureCompactionBarrierRevision(input.sessionID)
+  const options = {
     method: "GET",
     query: directoryQuery(input.directory),
     signal: input.signal,
-  })
+  }
+  let response = await runtimeFetch(`/api/sessions/${encodeURIComponent(input.sessionID)}/delivery`, options)
+  // Standalone VS Code and older Hosts do not own this projection route.
+  if (response.status === 404 || response.status === 501 || isHtmlContentType(response.headers.get("content-type"))) {
+    response = await runtimeFetch(inboxPath(input.sessionID), options)
+  }
   if (!response.ok) {
     throwHttp("session inbox", response.status, await readFailedDetail(response))
   }
   const payload = await parseJsonBody(response, "session inbox")
   const items = parseSessionInboxList(payload)
   const current = isCurrentInboxRuntimeScope(scope)
-  if (current) {
-    syncCompactionBarrierFromInbox(input.sessionID, parseSessionInboxCompactionList(payload))
+  if (current && captureCompactionBarrierRevision(input.sessionID) === compactionRevision) {
+    if (record(payload) && typeof payload.compactionRunning === "boolean") {
+      setSessionCompactionBarrier(input.sessionID, payload.compactionRunning)
+    } else {
+      syncCompactionBarrierFromInbox(input.sessionID, parseSessionInboxCompactionList(payload))
+    }
   }
   return { items, startedMark, scope, current }
 }

@@ -1,5 +1,6 @@
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { isSensitiveCredentialResponse } from './credential-boundary.js';
+import { registerSessionDeliveryRoute } from './session-delivery-runtime.js';
 
 import {
   applyForwardProxyResponseHeaders,
@@ -284,6 +285,9 @@ export const registerOpenCodeProxy = (app, deps) => {
   } = deps;
 
   const storeConfigured = typeof getStoredSessionMetadata === 'function';
+  if (deps.sessionDelivery) {
+    registerSessionDeliveryRoute(app, { delivery: deps.sessionDelivery, buildOpenCodeUrl, getOpenCodeAuthHeaders });
+  }
   const sessionDirectories = createSessionDirectoryRuntime({ getRuntimeUrl: () => buildOpenCodeUrl('/', '') });
 
   const waitForHostMetadataReady = async () => {

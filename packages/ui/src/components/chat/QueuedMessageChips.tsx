@@ -210,7 +210,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                 )}
             </span>
             <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-                {sendPending ? (
+                {sendPending && !waitingForCompaction ? (
                     <span
                         className={cn(
                             'inline-flex items-center gap-1 font-medium text-muted-foreground',
