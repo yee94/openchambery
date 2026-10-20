@@ -745,10 +745,7 @@ const ImagePreviewDialog: React.FC<{
             >
                 {!imageLoaded && !hasImageError && (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center" role="status">
-                        {isMobile ? <ImageLoadingPlaceholder className="aspect-square w-64 max-w-[80vw] rounded-xl" /> : <span className="flex items-center gap-2 typography-ui-label opacity-70">
-                            <Icon name="loader-4" className="size-4 animate-spin" />
-                            {t('common.loading')}
-                        </span>}
+                        <ImageLoadingPlaceholder className="aspect-square w-64 max-w-[80vw] rounded-xl" />
                     </div>
                 )}
                 {hasImageError ? (

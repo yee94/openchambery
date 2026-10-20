@@ -5,11 +5,11 @@ import { MarkstreamRenderer } from '../MarkstreamRendererImpl';
 
 const { streamImage, releaseImage, showPopup, transport } = vi.hoisted(() => ({
   streamImage: vi.fn(), releaseImage: vi.fn(), showPopup: vi.fn(),
-  transport: { identity: 'direct:http://lan-host' },
+  transport: { identity: 'direct:http://lan-host', mobile: true },
 }));
 vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/workspace/project' }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
-vi.mock('@/stores/useUIStore', () => ({ useUIStore: (selector: (state: { isMobile: boolean }) => unknown) => selector({ isMobile: true }) }));
+vi.mock('@/stores/useUIStore', () => ({ useUIStore: (selector: (state: { isMobile: boolean }) => unknown) => selector({ isMobile: transport.mobile }) }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ runtime: { isVSCode: false } }) }));
 vi.mock('@/contexts/useThemeSystem', () => ({ useOptionalThemeSystem: () => undefined }));
 vi.mock('@/lib/relay/relay-image-stream', () => ({
@@ -37,13 +37,17 @@ beforeEach(() => {
   root = createRoot(host);
   streamImage.mockResolvedValue('blob:runtime-image');
   transport.identity = 'direct:http://lan-host';
+  transport.mobile = true;
 });
 
-test('mobile image reserves a loading canvas until the runtime URL and image bytes are ready', async () => {
+test.each([true, false])('image reserves a loading canvas over Relay until URL and bytes are ready (mobile=%s)', async (mobile) => {
+  transport.mobile = mobile;
+  transport.identity = 'relay:test-host';
   let resolve!: (url: string) => void;
   streamImage.mockReturnValue(new Promise<string>((done) => { resolve = done; }));
   await act(async () => root.render(<MarkstreamRenderer content="![photo](/workspace/photo.png)" messageId="pending-image" enableFileReferences={false} />));
   expect(host.querySelector('[data-image-state="loading"]')).not.toBeNull();
+  expect(host.querySelector(`[data-image-content="${mobile ? 'mobile' : 'desktop'}"]`)).not.toBeNull();
   expect(host.querySelector('img')?.style.opacity).toBe('0');
   await act(async () => resolve('blob:runtime-image'));
   expect(host.querySelector('[data-image-state="loading"]')).not.toBeNull();
@@ -52,7 +56,9 @@ test('mobile image reserves a loading canvas until the runtime URL and image byt
   expect(host.querySelector('img')?.style.opacity).not.toBe('0');
 });
 
-test('mobile runtime image failure ends loading without exposing a broken image', async () => {
+test.each([true, false])('runtime image failure ends loading without a broken image (mobile=%s)', async (mobile) => {
+  transport.mobile = mobile;
+  transport.identity = 'relay:test-host';
   streamImage.mockRejectedValue(new Error('Unavailable'));
   await act(async () => root.render(<MarkstreamRenderer content="![photo](/workspace/photo.png)" messageId="failed-image" enableFileReferences={false} />));
   expect(host.querySelector('[data-image-state="error"]')).not.toBeNull();
