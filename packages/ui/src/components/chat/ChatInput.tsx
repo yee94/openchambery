@@ -4279,11 +4279,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     });
     const cancelDesktopDictation = useEvent(() => {
         setDesktopDictationPreview(null);
-        const draft = desktopDictationDraft.current;
         desktopDictationDraft.current = null;
-        if (!draft || getDocument().text !== draft.expected) return;
-        applyProgrammaticEdit(draft.base);
-        if (textareaRef.current) textareaRef.current.value = draft.base;
     });
 
     const handleDictationInsertAndSend = useEvent((text: string) => {

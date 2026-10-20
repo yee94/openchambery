@@ -14,6 +14,7 @@ import { rm } from 'fs/promises';
 import { DictationWorkerClient, WorkerBackedTranscriptionSession } from './local/worker-client.js';
 import { OpenAICompatibleTranscriptionSession } from './openai-compatible-session.js';
 import { VolcengineTranscriptionSession } from './volcengine-session.js';
+import { readVolcengineSettings } from '../tts/volcengine-settings.js';
 import {
   DEFAULT_LOCAL_STT_MODEL,
   DEFAULT_LOCAL_TTS_MODEL,
@@ -86,7 +87,11 @@ export function createDictationService({ modelsDir }) {
    */
   const createSttSession = async (options = {}) => {
     if (options.provider === 'volcengine') {
-      const session = new VolcengineTranscriptionSession({ apiKey: options.volcengine?.apiKey, resourceId: options.volcengine?.resourceId });
+      const saved = readVolcengineSettings();
+      const session = new VolcengineTranscriptionSession({
+        apiKey: options.volcengine?.apiKey || saved.apiKey,
+        resourceId: options.volcengine?.resourceId || saved.asrResourceId,
+      });
       try {
         await session.connect();
         return { session };

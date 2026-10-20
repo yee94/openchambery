@@ -1967,6 +1967,7 @@ export const dict = {
   'chat.dictation.processing': 'Transcription...',
   'chat.dictation.failed': 'Échec de la transcription',
   'chat.dictation.cancel': 'Abandonner la dictée',
+  'chat.dictation.keyboardHint': 'Entrée pour confirmer',
   'chat.dictation.insert': 'Insérer la transcription',
   'chat.dictation.insertAndSend': 'Insérer et envoyer',
   'chat.dictation.retry': 'Réessayer la transcription',

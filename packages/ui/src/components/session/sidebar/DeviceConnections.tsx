@@ -54,7 +54,7 @@ export function DeviceConnections() {
               <Popover.Title className="typography-ui-label font-medium">{t('settings.remoteInstances.quick.title')}</Popover.Title>
               {query.data && query.data.length > 0 ? <span className="typography-micro text-muted-foreground tabular-nums">{query.data.length}</span> : null}
             </div>
-            <div className="max-h-64 overflow-y-auto px-2 pb-2" aria-live="polite">
+            <div className="max-h-64 space-y-2 overflow-y-auto px-3 pb-2" aria-live="polite">
               {query.isPending ? <p className="px-2 py-3 typography-meta text-muted-foreground">{t('common.loading')}</p> : null}
               {query.isError ? <p className="px-2 py-3 typography-meta text-muted-foreground">{t('settings.remoteInstances.quick.error')}</p> : null}
               {!query.isError && query.data?.length === 0 ? (
@@ -67,13 +67,13 @@ export function DeviceConnections() {
               {query.data?.map((client) => {
                 const platform = client.devicePlatform?.toLowerCase();
                 return (
-                  <div key={client.id} className="flex items-center gap-3 rounded-xl px-2 py-2.5">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-muted-foreground">
+                  <div key={client.id} className="flex items-center gap-3 rounded-xl border border-[var(--interactive-border)] bg-[var(--surface-muted)] px-3 py-2.5">
+                    <span className="flex size-9 shrink-0 items-center justify-center text-muted-foreground">
                       <Icon name={platform === 'ios' ? 'device-ios' : platform === 'android' ? 'device-android' : 'device-desktop'} className="size-5" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate typography-ui-label">{client.label}</p>
-                      <p className="mt-0.5 truncate typography-micro text-muted-foreground">
+                      <p className="mt-0.5 truncate typography-micro text-[var(--status-success)]">
                         {t('desktopHostSwitcher.status.connected')}
                       </p>
                     </div>

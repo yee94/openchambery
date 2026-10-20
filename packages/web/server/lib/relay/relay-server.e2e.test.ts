@@ -199,7 +199,7 @@ const startOrigin = async () => {
         await uiAuth.requireAuth(req, res, () => proxy(req, rawRes));
         return;
       }
-      if (pathname === '/api/tts/speak') {
+      if (pathname === '/api/tts/speak' || pathname === '/api/voice/volcengine') {
         await uiAuth.requireAuth(req, res, () => speech(req, rawRes));
         return;
       }
@@ -331,6 +331,11 @@ async function verifyStreamingAsrOverRelay() {
   });
   let socket: ReturnType<typeof openRuntimeWebSocket> | undefined;
   try {
+    const saved = await runtimeFetch('/api/voice/volcengine', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'fixture-asr-key', asrResourceId: 'volc.seedasr.sauc.duration' }),
+    });
+    expect(saved.status).toBe(200);
     await refreshRuntimeUrlAuthToken();
     socket = openRuntimeWebSocket(getRuntimeUrlResolver().websocket('/api/dictation/ws'));
     const messages: Array<{ type: string; dictationId?: string; text?: string }> = [];
@@ -339,7 +344,7 @@ async function verifyStreamingAsrOverRelay() {
     await eventually(() => messages.some((message) => message.type === 'ready'), 'ASR Relay handshake did not reach ready');
     const send = (message: object) => socket!.send(JSON.stringify(message));
     for (const id of ['finish', 'cancel']) {
-      send({ type: 'start', dictationId: id, format: 'audio/pcm;rate=16000;bits=16', options: { provider: 'volcengine', volcengine: { apiKey: 'fixture-asr-key' } } });
+      send({ type: 'start', dictationId: id, format: 'audio/pcm;rate=16000;bits=16', options: { provider: 'volcengine' } });
       await eventually(() => messages.some((message) => message.type === 'ack' && message.dictationId === id), 'ASR start was not acknowledged');
       const pcm = Buffer.alloc(6400); // One 200 ms PCM16 chunk.
       for (let i = 0; i < pcm.length; i += 2) pcm.writeInt16LE(4096, i);
@@ -366,10 +371,11 @@ async function verifyStreamingAsrOverRelay() {
 
 describe('private relay compiled-process boundary', () => {
   let cleanup: (() => Promise<void>) | undefined;
-  afterEach(async () => { await cleanup?.(); cleanup = undefined; });
+  afterEach(async () => { try { await cleanup?.(); } finally { cleanup = undefined; vi.unstubAllEnvs(); } });
 
   it('carries authenticated HTTP, SSE, URL-token WebSocket, restart recovery, and cleanup across compiled Relay', { timeout: 60_000 }, async () => {
     const temp = await mkdtemp(path.join(os.tmpdir(), 'openchamber-relay-e2e-'));
+    vi.stubEnv('OPENCHAMBER_DATA_DIR', path.join(temp, 'host-data'));
     const binary = path.join(temp, 'openchamber-relay');
     let relay: Awaited<ReturnType<typeof startCompiledRelay>> | undefined;
     let origin: Awaited<ReturnType<typeof startOrigin>> | undefined;
@@ -483,6 +489,16 @@ describe('private relay compiled-process boundary', () => {
       try {
         const deniedSpeech = await client.fetch('/api/tts/speak', { method: 'POST' });
         expect(deniedSpeech.status).toBe(401);
+        expect((await client.fetch('/api/voice/volcengine')).status).toBe(401);
+        expect((await client.fetch('/api/voice/volcengine', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(401);
+        const saved = await realFetch(`http://127.0.0.1:${origin.port}/api/voice/volcengine`, {
+          method: 'PUT', headers: { authorization: 'Bearer client-token', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: 'fixture-speech-key', voice: 'zh_female_vv_uranus_bigtts' }),
+        });
+        expect(saved.status).toBe(200);
+        const mobileSettings = await (await runtimeFetch('/api/voice/volcengine')).json();
+        expect(mobileSettings.configured).toBe(true);
+        expect(JSON.stringify(mobileSettings)).not.toContain('fixture-speech-key');
         for (const outcome of ['done', 'error', 'cancel'] as const) {
           upstreamSignal = undefined;
           upstreamController = undefined;
@@ -490,7 +506,7 @@ describe('private relay compiled-process boundary', () => {
           try {
             const speechResponse = await runtimeFetch('/api/tts/speak', {
               method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
-              body: JSON.stringify({ provider: 'volcengine', text: 'Relay speech test', apiKey: 'fixture-speech-key', stream: true }),
+              body: JSON.stringify({ provider: 'volcengine', text: 'Relay speech test', stream: true }),
             });
             expect(speechResponse.status).toBe(200);
             expect(speechResponse.headers.get('content-type')).toContain('application/x-ndjson');

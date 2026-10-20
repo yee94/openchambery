@@ -1484,6 +1484,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.processing': 'Transcribiendo...',
   'chat.dictation.failed': 'La transcripción falló',
   'chat.dictation.cancel': 'Descartar dictado',
+  'chat.dictation.keyboardHint': 'Enter para confirmar',
   'chat.dictation.insert': 'Insertar transcripción',
   'chat.dictation.insertAndSend': 'Insertar y enviar',
   'chat.dictation.retry': 'Reintentar transcripción',

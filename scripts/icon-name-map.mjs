@@ -84,9 +84,9 @@ export const ROUND_DEVICE_IOS_SVG =
 
 /** Android: robot head with antennae and rounded eyes. */
 export const ROUND_DEVICE_ANDROID_SVG =
-  `<path d="M5 13.5a7 7 0 0 1 14 0v5a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 18.5z" />` +
-  `<path d="M8.4 8.2 6.9 5.6M15.6 8.2l1.5-2.6" />` +
-  `<path d="M9.75 13.25h.01M14.25 13.25h.01" />`
+  `<path d="m7 9-2-3.5M17 9l2-3.5" />` +
+  `<path d="M2 18a10 10 0 0 1 20 0H2Z" />` +
+  `<path d="M7.5 14h.01M16.5 14h.01" />`
 
 /** Tablet: same rounded language as desktop, wider body, centered home dot. */
 export const ROUND_DEVICE_TABLET_SVG =

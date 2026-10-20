@@ -192,7 +192,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
     });
   });
 
-  const handleOpenPreview = useEvent(() => {
+  const handleOpenPreview = useEvent((event: React.SyntheticEvent<HTMLElement>) => {
     if (longPressRef.current.consumeClick(longPressKey)) return;
     if (!onShowPopup || !imageUrl) return;
 
@@ -200,6 +200,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
       open: true,
       title: displayName || 'Image',
       content: '',
+      previewSource: event.currentTarget.querySelector<HTMLImageElement>('img') ?? undefined,
       metadata: {
         tool: 'image-preview',
         filename: displayName,
@@ -251,7 +252,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
         if (!onShowPopup) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          handleOpenPreview();
+          handleOpenPreview(event);
         }
       }}
       onPointerDown={(event) => {
@@ -760,7 +761,7 @@ const MessageImageCard = ({
   source?: string;
   filename: string;
   sizeText: string;
-  onOpen?: () => void;
+  onOpen?: (source: HTMLImageElement | undefined) => void;
   materializationStatus?: 'idle' | 'loading' | 'ready' | 'error';
   onRetry?: () => void;
 }) => {
@@ -775,7 +776,7 @@ const MessageImageCard = ({
       {source ? (
         <button
           type="button"
-          onClick={onOpen}
+          onClick={(event) => onOpen?.(event.currentTarget.querySelector<HTMLImageElement>('img') ?? undefined)}
           className="group/message-image absolute inset-0 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
           aria-label={filename}
         >
@@ -1070,7 +1071,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
     [fullImageFiles, resolveDisplayName]
   );
 
-  const handleImageClick = useEvent((targetFile: FilePart) => {
+  const handleImageClick = useEvent((targetFile: FilePart, previewSource?: HTMLImageElement) => {
     if (!onShowPopup) {
       return;
     }
@@ -1085,6 +1086,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
       open: true,
       title: filename,
       content: '',
+      previewSource,
       metadata: {
         tool: 'image-preview',
         filename,
@@ -1176,7 +1178,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
                   sizeText={formatFileSize(filePartImageKnownBytes(file))}
                   materializationStatus={file.url ? 'ready' : imageMaterializationStatus}
                   onRetry={() => requestImageMaterialization(true)}
-                  onOpen={file.url ? () => handleImageClick(file) : undefined}
+                  onOpen={file.url ? (source) => handleImageClick(file, source) : undefined}
                 />
               );
             })}
@@ -1209,7 +1211,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
               source={file.url}
               filename={fileName}
               sizeText={sizeText}
-              onOpen={() => handleImageClick(file)}
+              onOpen={(source) => handleImageClick(file, source)}
             />
           );
         }
@@ -1368,10 +1370,11 @@ const ImageGallery = memo(({ urls, caption, onShowPopup }: ImageGalleryProps) =>
           <button
             key={url}
             type="button"
-            onClick={() => onShowPopup?.({
+            onClick={(event) => onShowPopup?.({
               open: true,
               title: caption || `Image ${index + 1} of ${urls.length}`,
               content: '',
+              previewSource: event.currentTarget.querySelector<HTMLImageElement>('img') ?? undefined,
               image: {
                 url,
                 gallery: urls.map(u => ({ url: u })),

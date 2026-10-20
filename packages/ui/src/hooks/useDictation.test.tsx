@@ -4,6 +4,8 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { useDictation, type UseDictationResult } from './useDictation';
 
 const mock = vi.hoisted(() => ({
+    provider: 'local',
+    getStartOptions: () => ({} as { provider?: string }),
     audio: { start: vi.fn(), stop: vi.fn(), volume: 0 },
     sender: { clearAll: vi.fn(), cancel: vi.fn(), restartStream: vi.fn(), getDictationId: vi.fn(),
         getFinalSeq: vi.fn(), finish: vi.fn(), hasSegments: vi.fn(), resetStreamForReplay: vi.fn(), enqueueSegment: vi.fn() },
@@ -13,15 +15,22 @@ vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/lib/dictation/dictation-client', () => ({ dictationClient: {
     onPartial: () => () => {}, subscribeConnectionStatus: () => () => {},
 } }));
-vi.mock('@/lib/dictation/dictation-stream-sender', () => ({ DictationStreamSender: class { constructor() { return mock.sender; } } }));
-vi.mock('@/stores/useConfigStore', () => ({ useConfigStore: { getState: () => ({ sttProvider: 'local' }) } }));
+vi.mock('@/lib/dictation/dictation-stream-sender', () => ({ DictationStreamSender: class {
+    constructor(options: { getStartOptions: () => { provider?: string } }) {
+        mock.getStartOptions = options.getStartOptions;
+        return mock.sender;
+    }
+} }));
+vi.mock('@/stores/useConfigStore', () => ({ useConfigStore: { getState: () => ({ sttProvider: mock.provider }) } }));
 let current: UseDictationResult;
 let root: ReturnType<typeof createRoot>;
 const onTranscript = vi.fn();
 const onError = vi.fn();
 function Probe() { current = useDictation({ onTranscript, onError }); return null; }
 beforeEach(async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     vi.resetAllMocks();
+    mock.provider = 'local';
     mock.audio.start.mockResolvedValue(undefined); mock.audio.stop.mockResolvedValue(undefined);
     mock.sender.getFinalSeq.mockReturnValue(0); mock.sender.hasSegments.mockReturnValue(true);
     mock.sender.restartStream.mockResolvedValue(undefined);
@@ -29,6 +38,13 @@ beforeEach(async () => {
     await act(async () => root.render(<Probe />));
 });
 afterEach(async () => { await act(async () => root.unmount()); });
+
+it('starts Volcengine with Host-owned settings and no local key or resource override', async () => {
+    mock.provider = 'volcengine';
+    await act(async () => current.startDictation());
+    expect(mock.sender.restartStream).toHaveBeenCalledOnce();
+    expect(mock.getStartOptions()).toEqual({ provider: 'volcengine' });
+});
 
 it('explains a missing microphone in both visible state and error notifications', async () => {
     mock.audio.start.mockRejectedValue(new DOMException('Requested device not found', 'NotFoundError'));

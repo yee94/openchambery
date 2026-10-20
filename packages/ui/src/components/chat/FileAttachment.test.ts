@@ -171,7 +171,7 @@ describe('slim transcript image attachments', () => {
   test('retains the existing full-image gallery popup', () => {
     expect(source).toContain('gallery: imageGallery');
     expect(source).toContain('const index = fullImageFiles.findIndex');
-    expect(source).toContain('onOpen={() => handleImageClick(file)}');
+    expect(source).toContain('onOpen={(source) => handleImageClick(file, source)}');
   });
 
   test('localizes loading, failure, and retry copy in every locale', () => {

@@ -3167,7 +3167,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         }) : ''))
     : '';
 
-  const openSelectedImagePreview = React.useCallback(() => {
+  const openSelectedImagePreview = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
     if (!selectedFile?.path || !isSelectedImage) return;
     // Prefer path for non-SVG so the shared viewer resolves/saves via runtime stream;
     // SVG and already-materialized blob/data URLs stay on the display source.
@@ -3178,6 +3178,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       open: true,
       title: filename,
       content: '',
+      previewSource: event.currentTarget.querySelector<HTMLImageElement>('img') ?? undefined,
       metadata: {
         tool: 'image-preview',
         filename,
@@ -3189,7 +3190,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         filename,
       },
     });
-  }, [imageSrc, isSelectedImage, isSelectedSvg, selectedFile?.name, selectedFile?.path]);
+  });
 
   const handleImagePopupChange = React.useCallback((open: boolean) => {
     setImagePopup((previous) => (previous.open === open ? previous : { ...previous, open }));

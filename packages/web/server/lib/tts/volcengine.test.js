@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { synthesizeVolcengine, transcribeVolcengine } from './volcengine.js';
@@ -6,7 +9,17 @@ import { registerTtsRoutes } from './routes.js';
 
 const nativeFetch = globalThis.fetch;
 
-afterEach(() => vi.unstubAllGlobals());
+let dataDir;
+beforeEach(() => {
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speech-settings-'));
+  vi.stubEnv('OPENCHAMBER_DATA_DIR', dataDir);
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
 const apiKey = 'test-speech-key';
 const speech = { text: '你好', apiKey };
 const audioLines = `${JSON.stringify({ code: 0, data: Buffer.from('audio').toString('base64') })}\n${JSON.stringify({ code: 20000000 })}\n`;
@@ -23,6 +36,55 @@ const app = () => {
 };
 
 describe('Volcengine speech protocol', () => {
+  it('persists PC settings and exposes configured status to a fresh mobile client without returning the key', async () => {
+    const saved = await request(app()).put('/api/voice/volcengine').send({ apiKey, voice: 'custom_speaker', resourceId: 'seed-icl-2.0' });
+    expect(saved.status).toBe(200);
+    const file = path.join(dataDir, 'speech', 'volcengine.json');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).apiKey).toBe(apiKey);
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    const mobile = await request(app()).get('/api/voice/volcengine');
+    expect(mobile.body).toMatchObject({ configured: true, voice: 'custom_speaker', resourceId: 'seed-icl-2.0' });
+    expect(JSON.stringify(mobile.body)).not.toContain(apiKey);
+    expect(mobile.headers['cache-control']).toBe('no-store');
+    const upstream = mockResponse(new Response(audioLines));
+    const spoken = await request(app()).post('/api/tts/speak').send({ text: '测试', provider: 'volcengine' });
+    expect(spoken.status).toBe(200);
+    expect(upstream.mock.calls[0][1].headers['X-Api-Key']).toBe(apiKey);
+    expect(JSON.parse(upstream.mock.calls[0][1].body).req_params.speaker).toBe('custom_speaker');
+  });
+  it('merges independent TTS/ASR saves, preserves an omitted key, and explicitly clears it', async () => {
+    await request(app()).put('/api/voice/volcengine').send({ apiKey, voice: 'custom_speaker' }).expect(200);
+    const saved = await request(app()).put('/api/voice/volcengine').send({ asrResourceId: 'volc.seedasr.sauc.concurrent' }).expect(200);
+    expect(saved.body).toMatchObject({ configured: true, voice: 'custom_speaker', asrResourceId: 'volc.seedasr.sauc.concurrent' });
+    const cleared = await request(app()).put('/api/voice/volcengine').send({ apiKey: '' }).expect(200);
+    expect(cleared.body.configured).toBe(false);
+    await request(app()).post('/api/tts/speak').send({ text: '测试', provider: 'volcengine' }).expect(400);
+  });
+  it('rejects malformed updates and preserves saved data when the atomic write fails', async () => {
+    await request(app()).put('/api/voice/volcengine').send({ apiKey, voice: 'original' }).expect(200);
+    await request(app()).put('/api/voice/volcengine').send({ apiKey: 'invalid\nkey' }).expect(400);
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => { throw new Error('private filesystem details'); });
+    const failed = await request(app()).put('/api/voice/volcengine').send({ voice: 'changed' }).expect(500);
+    expect(JSON.stringify(failed.body)).not.toContain('private filesystem details');
+    rename.mockRestore();
+    expect((await request(app()).get('/api/voice/volcengine')).body).toMatchObject({ configured: true, voice: 'original' });
+  });
+  it('reports a corrupt settings file as failure without overwriting it or returning empty success', async () => {
+    await request(app()).put('/api/voice/volcengine').send({ apiKey }).expect(200);
+    const file = path.join(dataDir, 'speech', 'volcengine.json');
+    fs.writeFileSync(file, '{invalid');
+    await request(app()).get('/api/voice/volcengine').expect(500);
+    await request(app()).put('/api/voice/volcengine').send({ voice: 'new' }).expect(500);
+    expect(fs.readFileSync(file, 'utf8')).toBe('{invalid');
+  });
+  it('uses the saved speech key for file transcription with no client key', async () => {
+    await request(app()).put('/api/voice/volcengine').send({ apiKey }).expect(200);
+    const upstream = mockResponse(new Response('{"result":{"text":"测试"}}', { headers: { 'X-Api-Status-Code': '20000000' } }));
+    const result = await request(app()).post('/api/stt/transcribe')
+      .set('Content-Type', 'audio/wav').set('X-Speech-Provider', 'volcengine').send(Buffer.from('wav')).expect(200);
+    expect(result.body.transcript).toBe('测试');
+    expect(upstream.mock.calls[0][1].headers['X-Api-Key']).toBe(apiKey);
+  });
   it('flushes first audio over HTTP before synthesis ends and aborts upstream on disconnect', async () => {
     let controller;
     const upstream = mockResponse(new Response(new ReadableStream({ start(c) { controller = c; } })));

@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.voice.volcengine.save': 'Зберегти',
+  'settings.voice.volcengine.saveFailed': 'Не вдалося зберегти. Ваші зміни збережено в чернетці; спробуйте ще раз.',
+  'settings.voice.volcengine.loadFailed': 'Не вдалося завантажити налаштування голосу з цього сервера.',
+  'settings.voice.volcengine.retry': 'Повторити',
   'chat.dictation.error.microphoneNotFound': 'Мікрофон не виявлено. Підключіть його та спробуйте знову.',
   'settings.voice.volcengine.name': 'Volcengine (Doubao)',
   'settings.voice.volcengine.providerOption': 'Volcengine Doubao (Рекомендовано | Платно)',

@@ -3,8 +3,10 @@ import { once } from 'node:events';
 import { normalizeCustomOpenAIBaseURL } from './base-url.js';
 import { summarizeText, sanitizeForTTS, sanitizeForNote } from '../text/summarization.js';
 import { synthesizeVolcengine, transcribeVolcengine } from './volcengine.js';
+import { readVolcengineSettings, registerVolcengineSettingsRoutes } from './volcengine-settings.js';
 
 export function registerTtsRoutes(app, { sayTTSCapability }) {
+  registerVolcengineSettingsRoutes(app);
   let ttsModulePromise = null;
   const getTtsModule = async () => {
     if (!ttsModulePromise) {
@@ -47,7 +49,9 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
   app.post('/api/tts/speak', async (req, res) => {
     try {
       if (req.body?.provider === 'volcengine') {
-        if (typeof req.body.apiKey !== 'string' || !req.body.apiKey.trim()) {
+        const saved = readVolcengineSettings();
+        const speech = { ...saved, ...req.body, apiKey: req.body.apiKey || saved.apiKey };
+        if (typeof speech.apiKey !== 'string' || !speech.apiKey.trim()) {
           return res.status(400).json({ error: 'Volcengine speech API Key is required' });
         }
         const abort = new AbortController();
@@ -61,7 +65,7 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
               if (!res.write(`${JSON.stringify(frame)}\n`)) await once(res, 'drain', { signal: abort.signal });
               res.flush?.();
             };
-            await synthesizeVolcengine({ ...req.body, signal: abort.signal, onAudio: async (chunk) => {
+            await synthesizeVolcengine({ ...speech, signal: abort.signal, onAudio: async (chunk) => {
               for (let offset = 0; offset < chunk.length; offset += 9600) {
                 await write({ type: 'audio', data: chunk.subarray(offset, offset + 9600).toString('base64') });
               }
@@ -70,7 +74,7 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
             res.end();
             return;
           }
-          const result = await synthesizeVolcengine({ ...req.body, signal: abort.signal, onAudio: undefined });
+          const result = await synthesizeVolcengine({ ...speech, signal: abort.signal, onAudio: undefined });
           if (!res.destroyed) res.type(result.contentType).set('Cache-Control', 'no-store').send(result.buffer);
         } catch (error) {
           if (res.headersSent) {
@@ -272,7 +276,9 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
           const cancel = () => { if (!res.writableEnded) abort.abort(); };
           res.on('close', cancel);
           try {
-            const transcript = await transcribeVolcengine({ audioBuffer: req.body, apiKey: req.headers['x-speech-api-key'], signal: abort.signal });
+            const speechKey = req.headers['x-speech-api-key'] || readVolcengineSettings().apiKey;
+            if (!speechKey) return res.status(400).json({ error: 'Volcengine speech API Key is required' });
+            const transcript = await transcribeVolcengine({ audioBuffer: req.body, apiKey: speechKey, signal: abort.signal });
             if (!res.destroyed) res.json({ transcript });
           } finally {
             res.off('close', cancel);

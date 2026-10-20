@@ -1670,7 +1670,7 @@ html:not(.dark) .chat-scroll {
   padding: 0.75rem;
   border: 0;
   border-radius: 0;
-  background: var(--surface-elevated);
+  background: transparent;
 }
 
 .markdown-mermaid-fullscreen
@@ -1695,6 +1695,7 @@ html:not(.dark) .chat-scroll {
   min-width: 100%;
   min-height: 100%;
   overflow: hidden;
+  background: transparent;
 }
 
 .markdown-mermaid-fullscreen

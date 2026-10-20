@@ -71,13 +71,14 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
   const name = filename || t(image ? 'assistants.contact.attachment.image' : 'assistants.contact.attachment.file')
   // Same viewer contract as chat attachment images: pass the leased display URL;
   // the lease lives with this row, and assistant switches close the viewer first.
-  const openPreview = useEvent(() => {
+  const openPreview = useEvent((event: React.SyntheticEvent<HTMLImageElement>) => {
     if (!onShowPopup || !url) return
     onShowPopup({
       open: true,
       title: name,
       content: '',
       metadata: { tool: 'image-preview', filename: name, mime },
+      previewSource: event.currentTarget,
       image: { url, mimeType: mime, filename: name, size, gallery: [{ url, mimeType: mime, filename: name, size }], index: 0 },
     })
   })
@@ -91,7 +92,7 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return
         event.preventDefault()
-        openPreview()
+        openPreview(event)
       }}
       role="button"
       tabIndex={0}
@@ -113,13 +114,14 @@ function LegacyAttachment({ part, onShowPopup }: { part: AssistantContactFilePar
   const source = useResolvedImageSource(safeSource, '')
   const [failed, setFailed] = React.useState(false)
   const name = part.filename || t('assistants.contact.attachment.image')
-  const openPreview = useEvent(() => {
+  const openPreview = useEvent((event: React.SyntheticEvent<HTMLImageElement>) => {
     if (!onShowPopup || !source) return
     onShowPopup({
       open: true,
       title: name,
       content: '',
       metadata: { tool: 'image-preview', filename: name },
+      previewSource: event.currentTarget,
       image: { url: source, filename: name, gallery: [{ url: source, filename: name }], index: 0 },
     })
   })
@@ -133,7 +135,7 @@ function LegacyAttachment({ part, onShowPopup }: { part: AssistantContactFilePar
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return
         event.preventDefault()
-        openPreview()
+        openPreview(event)
       }}
       role="button"
       tabIndex={0}

@@ -12,7 +12,7 @@ interface VolcengineSpeechState {
     setAsrResourceId: (asrResourceId: string) => void;
 }
 
-// Auto-save locally, matching the other speech providers' API Key settings.
+// Legacy client-local settings, retained until an explicit Host save succeeds.
 export const useVolcengineSpeechStore = create<VolcengineSpeechState>()(persist((set) => ({
     apiKey: '',
     voice: 'zh_female_vv_uranus_bigtts',

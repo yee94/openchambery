@@ -15,6 +15,7 @@ export interface ToolPopupContent {
     isDiff?: boolean;
     diffHunks?: Array<Record<string, unknown>>;
     metadata?: Record<string, unknown>;
+    previewSource?: HTMLElement;
     image?: {
         url: string;
         mimeType?: string;

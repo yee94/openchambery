@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.voice.volcengine.save': 'Salvar',
+  'settings.voice.volcengine.saveFailed': 'Não foi possível salvar. Suas alterações foram mantidas; tente novamente.',
+  'settings.voice.volcengine.loadFailed': 'Não foi possível carregar as configurações de voz deste servidor.',
+  'settings.voice.volcengine.retry': 'Tentar novamente',
   'chat.dictation.error.microphoneNotFound': 'Nenhum microfone detectado. Conecte um e tente novamente.',
   'settings.voice.volcengine.name': 'Volcengine (Doubao)',
   'settings.voice.volcengine.providerOption': 'Volcengine Doubao (Recomendado | Pago)',

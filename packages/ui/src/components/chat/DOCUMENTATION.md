@@ -46,10 +46,10 @@ composer via `useDictation.onPartialTranscript`. ChatInput captures the starting
 document text and replaces its own successive preview, so a final correction
 does not append a duplicate transcript. Programmatic edits retain composer reference
 handling. If the user changes the preview, subsequent ASR results relinquish
-ownership rather than overwrite that edit. Escape cancels recording and restores
-the starting text only while the draft still matches the last ASR preview.
-After failure, clicking the desktop microphone discards the failed audio and its
-owned preview and starts a fresh capture; it never silently replays the old audio.
+ownership rather than overwrite that edit. Escape stops recognition and clears
+preview ownership and highlighting without changing the current input text.
+After failure, clicking the desktop microphone discards the failed audio, retains
+the current text and starts a fresh capture; it never silently replays the old audio.
 Desktop provisional speech uses the existing composer highlight overlay with an
 underline only over the appended transcript (excluding the original draft and
 separator). Finalization clears the decoration even when the text is unchanged.
@@ -128,7 +128,11 @@ The renderer retains a 100-entry / 8 MiB LRU keyed by resolved theme colors, loc
 
 Use `render()`, not `mount()`: `mermaidViewer.ts` remains the sole pan/zoom/resize owner. Layout is independent of container width and automatic direction switching is disabled, keeping cache geometry stable across inline/fullscreen and mobile views. `decorate.ts` scopes accessibility IDs per displayed instance, while the original SVG is retained for unzoomed downloads. Coverage: `mermaidRender.test.ts`, `mermaidViewer.test.ts`, and `useUIStore.mermaidMigration.test.ts`.
 
-`ToolOutputDialog` presents Mermaid on a viewport-filling opaque canvas with safe-area-aware controls, independent of diagram aspect ratio. The existing viewer fits the diagram and owns pan/zoom. Mermaid and image previews register overlay routes with the mobile Back coordinator so system/gesture/history Back dismisses the preview before the underlying page. Image pointer-dismissal guards never block explicit Back. Coverage: `ToolOutputDialog.preview.test.tsx`.
+`ToolOutputDialog` uses `MediaPreviewOverlay` for both images and Mermaid: one portal, focus boundary, close control, mobile Back route and shared-element transition lifecycle. Mobile previews fill the viewport with an opaque black canvas; desktop previews fit within 80% viewport width / 95% height, with a 70%-opaque black backdrop for images and 90% for Mermaid. The existing image and Mermaid viewers retain their own pan/zoom. Mermaid previews pass the selected dark theme (default dark fallback) through `SimpleMarkdownRenderer.mermaidTheme` to Pele, including node, edge, text and accent colors. Inline diagrams retain the page theme; exported preview SVGs carry the preview's dark colors.
+
+Activation passes the actual clicked DOM element as ephemeral `ToolPopupContent.previewSource` (never persisted). `mediaPreviewTransition` hands a unique snapshot name from that source to the preview and back using the browser View Transitions API, with a 280ms transition and cleanup on interruption/unmount. Missing/offscreen sources, unsupported browsers and a changed gallery image fall back to a 150ms fade; reduced-motion skips animation. The preview never scans the transcript for a matching URL. Mobile system/gesture/history Back dismisses the preview before the underlying page; image pointer-dismissal guards never block explicit Back. Coverage: `ToolOutputDialog.preview.test.tsx`, `mediaPreviewTransition.test.ts`.
+
+Both preview kinds intentionally ignore safe-area insets: the canvas reaches every viewport edge, with fixed close/toolbar spacing rather than notch or home-indicator padding.
 
 ## Composer closed-picker work
 

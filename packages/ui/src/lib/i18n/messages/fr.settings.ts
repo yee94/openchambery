@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.voice.volcengine.save': 'Enregistrer',
+  'settings.voice.volcengine.saveFailed': 'Échec de l’enregistrement. Vos modifications sont conservées ; réessayez.',
+  'settings.voice.volcengine.loadFailed': 'Impossible de charger les paramètres vocaux de ce serveur.',
+  'settings.voice.volcengine.retry': 'Réessayer',
   'chat.dictation.error.microphoneNotFound': 'Aucun microphone détecté. Branchez-en un et réessayez.',
   'settings.voice.volcengine.name': 'Volcengine (Doubao)',
   'settings.voice.volcengine.providerOption': 'Volcengine Doubao (Recommandé | Payant)',
