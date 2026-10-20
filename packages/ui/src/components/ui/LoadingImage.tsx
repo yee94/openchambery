@@ -6,9 +6,10 @@ import { ImageLoadingPlaceholder } from './ImageLoadingPlaceholder';
 type LoadingImageProps = React.ImgHTMLAttributes<HTMLImageElement> & {
   resourceError?: string | null;
   fill?: boolean;
+  placeholderAspectRatio?: number;
 };
 
-function MobileImage({ resourceError, fill, onLoad, onError, style, ...props }: LoadingImageProps) {
+function MobileImage({ resourceError, fill, placeholderAspectRatio, onLoad, onError, style, ...props }: LoadingImageProps) {
   const { t } = useI18n();
   const imageRef = React.useRef<HTMLImageElement>(null);
   const [state, setState] = React.useState<'loading' | 'loaded' | 'error'>('loading');
@@ -18,7 +19,14 @@ function MobileImage({ resourceError, fill, onLoad, onError, style, ...props }: 
     if (image?.complete && image.naturalWidth > 0) setState('loaded');
   }, []);
   return (
-    <span className="oc-image-frame" data-image-state={phase} data-image-fill={fill || undefined} aria-busy={phase === 'loading'}>
+    <span
+      className="oc-image-frame"
+      data-image-state={phase}
+      data-image-fill={fill || undefined}
+      data-image-content={placeholderAspectRatio ? true : undefined}
+      style={placeholderAspectRatio && phase !== 'loaded' ? { aspectRatio: placeholderAspectRatio } : undefined}
+      aria-busy={phase === 'loading'}
+    >
       <img
         {...props}
         ref={imageRef}
@@ -38,9 +46,9 @@ function MobileImage({ resourceError, fill, onLoad, onError, style, ...props }: 
 }
 
 /** Presentation only: callers retain ownership of resource loading and retry. */
-export const LoadingImage = React.memo(function LoadingImage({ resourceError, fill, ...props }: LoadingImageProps) {
+export const LoadingImage = React.memo(function LoadingImage({ resourceError, fill, placeholderAspectRatio, ...props }: LoadingImageProps) {
   const isMobile = useUIStore((state) => state.isMobile);
   return isMobile
-    ? <MobileImage key={`${props.src ?? ''}\n${props.srcSet ?? ''}`} {...props} resourceError={resourceError} fill={fill} />
+    ? <MobileImage key={`${props.src ?? ''}\n${props.srcSet ?? ''}`} {...props} resourceError={resourceError} fill={fill} placeholderAspectRatio={placeholderAspectRatio} />
     : <img {...props} />;
 });

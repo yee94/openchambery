@@ -53,6 +53,22 @@ test('desktop keeps the image DOM and native event handlers', async () => {
   expect(onLoad).toHaveBeenCalledTimes(1);
 });
 
+test('content reserves the requested ratio only while pending and resets on source change', async () => {
+  await act(async () => root.render(<LoadingImage src="/wide.png" placeholderAspectRatio={16 / 9} />));
+  const frame = host.querySelector<HTMLElement>('[data-image-content]')!;
+  expect(parseFloat(frame.style.aspectRatio)).toBeCloseTo(16 / 9);
+  await act(async () => host.querySelector('img')!.dispatchEvent(new Event('load')));
+  expect(frame.style.aspectRatio).toBe('');
+  await act(async () => root.render(<LoadingImage src="/portrait.png" placeholderAspectRatio={3 / 4} />));
+  expect(parseFloat(host.querySelector<HTMLElement>('[data-image-content]')!.style.aspectRatio)).toBe(0.75);
+});
+
+test('thumbnail fill never adopts the content placeholder sizing', async () => {
+  await act(async () => root.render(<LoadingImage fill src="/thumb.png" />));
+  expect(host.querySelector('[data-image-fill]')).not.toBeNull();
+  expect(host.querySelector('[data-image-content]')).toBeNull();
+});
+
 test('50 unrelated composer renders perform no image hook work or image remounts', async () => {
   function Composer({ draft }: { draft: string }) {
     return <div><input value={draft} readOnly /><LoadingImage fill src="/attachment.png" alt="attachment" className="size-16" /></div>;

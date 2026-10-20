@@ -21,6 +21,7 @@ function RuntimeImage({ node }: NodeComponentProps<ImageNodeShape>) {
   });
   return (
     <LoadingImage
+      placeholderAspectRatio={16 / 9}
       src={resource.source || undefined}
       resourceError={resource.error}
       data-md-image-source={node.src}

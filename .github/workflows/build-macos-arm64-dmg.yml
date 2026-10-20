@@ -18,8 +18,8 @@ on:
 
 jobs:
   build-macos-dmg-arm64-electron:
-    name: Build Electron DMG (arm64, ${{ inputs.macos_version }})
-    runs-on: ${{ inputs.macos_version }}
+    name: Build Electron DMG (arm64, macos-26)
+    runs-on: macos-26
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

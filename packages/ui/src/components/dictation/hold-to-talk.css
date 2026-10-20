@@ -43,16 +43,20 @@
     animation: oc-speech-content-in 500ms cubic-bezier(.2,.8,.25,1) both;
 }
 .oc-speech-caption {
-    max-height: 5.8em;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    max-height: 5.4em;
+    overflow: clip;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
     font-size: 18px;
     font-weight: 620;
-    line-height: 1.45;
+    line-height: 1.8;
     letter-spacing: .25px;
     animation: oc-speech-breathe 2.4s ease-in-out infinite;
 }
+.oc-speech-caption > * { flex-shrink: 0; }
 .oc-speech-overlay[data-error="true"] { pointer-events: auto; touch-action: none; }
 .oc-speech-content[data-starting="true"] { animation: none; }
 .oc-speech-loading { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 26px; }
