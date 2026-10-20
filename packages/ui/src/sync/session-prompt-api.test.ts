@@ -348,18 +348,20 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     expect(calls[2]!.url.pathname).toBe(itemPath)
   })
 
-  test("direct inbox admission never becomes a queue chip, while promoted queue items stay visible", async () => {
+  test("all unconsumed server inbox items stay visible independently of local admission history", async () => {
     const { useSessionInboxOverlayStore, selectInboxOverlayChips } = await import('./session-inbox-overlay')
     const store = useSessionInboxOverlayStore.getState()
     const item = { id: 'msg_direct', sessionID: SESSION, timeCreated: 1, type: 'user' as const, delivery: 'steer' as const, payload: { text: 'direct send' } }
     store.remember(item)
-    expect(selectInboxOverlayChips(SESSION)).toEqual([])
+    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_direct'])
     store.remember({ ...item, id: 'msg_waiting', delivery: 'queue' })
     store.updateDelivery(SESSION, 'msg_waiting', 'steer')
-    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_waiting'])
+    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_direct', 'msg_waiting'])
     store.replaceFromAuthority(SESSION, [item, { ...item, id: 'msg_waiting' }])
-    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_waiting'])
+    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_direct', 'msg_waiting'])
     store.forget(SESSION, 'msg_waiting', 'consumed')
+    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_direct'])
+    store.forget(SESSION, 'msg_direct', 'consumed')
     expect(selectInboxOverlayChips(SESSION)).toEqual([])
   })
 
@@ -432,7 +434,7 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
 
     responseImpl = async (call) => {
       if (call.method === "DELETE") return emptyResponse(204)
-      if (call.method === "GET" && call.url.pathname.endsWith("/inbox")) {
+      if (call.method === "GET" && call.url.pathname.endsWith("/delivery")) {
         return jsonResponse({ data: [] })
       }
       return jsonResponse({ data: [] })
@@ -514,7 +516,7 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
       releaseGet = resolve
     })
     responseImpl = async (call) => {
-      if (call.method === "GET" && call.url.pathname.endsWith("/inbox")) {
+      if (call.method === "GET" && call.url.pathname.endsWith("/delivery")) {
         return getGate
       }
       return jsonResponse({ data: [] })

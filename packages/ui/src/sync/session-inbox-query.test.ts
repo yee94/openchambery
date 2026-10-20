@@ -11,6 +11,7 @@ import {
   useSessionInboxOverlayStore,
 } from "./session-inbox-overlay"
 import type { SessionInboxUser } from "./session-prompt-api"
+import { isCompactionBarrierActive, resetSessionCompactionBarrier, setSessionCompactionBarrier } from "./session-compaction-api"
 
 const runtime = vi.hoisted(() => ({ transport: "runtime-a", generation: 1 }))
 vi.mock("@/lib/runtime-fetch", () => ({ runtimeFetch: vi.fn() }))
@@ -37,6 +38,7 @@ beforeEach(() => {
   runtime.generation = 1
   resetInboxTerminalReceiptsForTests()
   useSessionInboxOverlayStore.setState({ bySession: {} })
+  resetSessionCompactionBarrier()
 })
 afterEach(() => { queryClient.clear() })
 
@@ -48,7 +50,7 @@ test("cold restore and warm revisit fetch authority, with concurrent consumers s
   resolve(response([row("queued")]))
   await Promise.all([first, second])
   expect(visible()).toEqual(["queued"])
-  expect(runtimeFetch).toHaveBeenCalledWith("/api/session/session-a/inbox", expect.objectContaining({ query: { directory: "/project" }, signal: expect.any(AbortSignal) }))
+  expect(runtimeFetch).toHaveBeenCalledWith("/api/sessions/session-a/delivery", expect.objectContaining({ query: { directory: "/project" }, signal: expect.any(AbortSignal) }))
   vi.mocked(runtimeFetch).mockResolvedValueOnce(response([]))
   await refreshSessionInbox(scope)
   expect(visible()).toEqual([])
@@ -66,6 +68,45 @@ test("a failed refresh retains prior queue and Query data; retry can recover", a
   vi.mocked(runtimeFetch).mockResolvedValueOnce(response([]))
   await refreshSessionInbox(scope)
   expect(visible()).toEqual([])
+})
+
+test("another client restores an admitted steering message without local queue history", async () => {
+  vi.mocked(runtimeFetch).mockResolvedValueOnce(response([{ ...row("accepted"), delivery: "steer" }]))
+  await refreshSessionInbox(scope)
+  expect(visible()).toEqual(["accepted"])
+  expect(selectInboxOverlayChips(scope.sessionID)[0]?.delivery).toBe("steer")
+})
+
+test("server-held compaction survives switching sessions and clears from server completion", async () => {
+  const snapshot = (running: boolean) => new Response(JSON.stringify({ data: [{ ...row("accepted"), delivery: "steer" }], compactionRunning: running }), { headers: { "content-type": "application/json" } })
+  vi.mocked(runtimeFetch).mockResolvedValueOnce(snapshot(true))
+  await refreshSessionInbox(scope)
+  expect(isCompactionBarrierActive(scope.sessionID)).toBe(true)
+  vi.mocked(runtimeFetch).mockResolvedValueOnce(response([]))
+  await refreshSessionInbox({ ...scope, sessionID: "session-b" })
+  expect(visible()).toEqual(["accepted"])
+  expect(isCompactionBarrierActive(scope.sessionID)).toBe(true)
+  vi.mocked(runtimeFetch).mockResolvedValueOnce(snapshot(false))
+  await refreshSessionInbox(scope)
+  expect(isCompactionBarrierActive(scope.sessionID)).toBe(false)
+  expect(visible()).toEqual(["accepted"])
+})
+
+test("a live compaction completion wins over a late delivery snapshot", async () => {
+  const resolve = deferredResponse()
+  const flight = refreshSessionInbox(scope)
+  setSessionCompactionBarrier(scope.sessionID, false)
+  resolve(new Response(JSON.stringify({ data: [row("waiting")], compactionRunning: true }), { headers: { "content-type": "application/json" } }))
+  await flight
+  expect(isCompactionBarrierActive(scope.sessionID)).toBe(false)
+  expect(visible()).toEqual(["waiting"])
+})
+
+test("standalone runtimes explicitly fall back to native inbox without losing steer state", async () => {
+  vi.mocked(runtimeFetch).mockResolvedValueOnce(new Response(null, { status: 501 })).mockResolvedValueOnce(response([{ ...row("accepted"), delivery: "steer" }]))
+  await refreshSessionInbox(scope)
+  expect(visible()).toEqual(["accepted"])
+  expect(runtimeFetch).toHaveBeenLastCalledWith("/api/session/session-a/inbox", expect.objectContaining({ query: { directory: scope.directory } }))
 })
 
 test("a stale GET cannot erase a live enqueue or revert a delivery change", async () => {
@@ -115,7 +156,7 @@ test("query keys isolate runtime, generation, directory and session", () => {
 })
 
 test.each([true, false])("stream-ready/reconnect restores viewed queues without scanning unopened sessions (statusOnly=%s)", async (statusOnly) => {
-  vi.mocked(runtimeFetch).mockImplementation(async (input) => response(String(input).endsWith("/inbox") ? [row("missed-while-offline")] : []))
+  vi.mocked(runtimeFetch).mockImplementation(async (input) => response(String(input).endsWith("/delivery") ? [row("missed-while-offline")] : []))
   const { createStore } = await import("zustand/vanilla")
   const { INITIAL_STATE } = await import("./types")
   const { resyncDirectoryAfterReconnect, setContextPanelViewedSession } = await import("./sync-context")
@@ -124,7 +165,7 @@ test.each([true, false])("stream-ready/reconnect restores viewed queues without 
   const store = createStore<import("./child-store").DirectoryStore>((set) => ({ ...INITIAL_STATE, patch: (partial) => set(partial), replace: (next) => set(next) }))
   const routing = { sessionDirectoryById: new Map(), messageSessionById: new Map(), sessionMessageIdsById: new Map() }
   setContextPanelViewedSession(scope.directory, scope.sessionID)
-  const inboxCalls = () => vi.mocked(runtimeFetch).mock.calls.filter(([input]) => String(input).endsWith("/inbox"))
+  const inboxCalls = () => vi.mocked(runtimeFetch).mock.calls.filter(([input]) => String(input).endsWith("/delivery"))
   try {
     await resyncDirectoryAfterReconnect("/unopened", store, routing, "stream-reconnect", () => 0, { statusOnly })
     expect(inboxCalls()).toHaveLength(0)

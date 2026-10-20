@@ -445,6 +445,10 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     return unsupportedWebRouteResponse('Schedule');
   }
 
+  if (/^\/api\/sessions\/[^/]+\/delivery$/.test(normalizedPathname) && method === 'GET') {
+    return unsupportedWebRouteResponse('Session delivery projection');
+  }
+
   if (normalizedPathname === '/api/sessions/snapshot' && method === 'GET') {
     const activity = await sendBridgeMessage<Record<string, { type: 'idle' | 'busy' | 'cooldown' }>>('api:session-activity:get')
       .catch(() => ({}));

@@ -30,7 +30,7 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); });
-async function render(items: SessionComposerPendingItem[] = [], onSteerClientPending?: (id: string) => Promise<void>, steeringMessageIDs?: ReadonlySet<string>) {
+async function render(items: SessionComposerPendingItem[] = [], onSteerClientPending?: (id: string) => Promise<void>, steeringMessageIDs?: ReadonlySet<string>, compactionBarrier = false) {
   const key = { transportIdentity: 'test', owner: { kind: 'session' as const, ownerID: 's' } };
   await act(async () => root.render(<QueryClientProvider client={client}><QueuedMessageChips
     onEditMessage={() => true} onSendMessage={() => {}} draftKey={key} draftTarget={{ key, expectedRevision: () => 1 }} onEditCommitted={fixture.focus}
@@ -38,6 +38,7 @@ async function render(items: SessionComposerPendingItem[] = [], onSteerClientPen
     clientPendingItems={items}
     onSteerClientPending={onSteerClientPending}
     steeringMessageIDs={steeringMessageIDs}
+    compactionBarrier={compactionBarrier}
   /></QueryClientProvider>));
 }
 it('shows the original Chinese queuing state until admission becomes a queued item', async () => {
@@ -103,6 +104,14 @@ it('shows promotion pending immediately and keeps it until authoritative consump
   expect(host.textContent).not.toContain('Queue');
   await render([], promote);
   expect(host.querySelector('[data-oc-queue-card]')).toBeNull();
+});
+it('restores waiting for compaction before steering and retains the message until consumption', async () => {
+  await render([{ ...inbox, delivery: 'steer' }], undefined, undefined, true);
+  expect(host.textContent).toContain(dict['chat.queuedMessage.waitingForCompaction']);
+  expect(host.textContent).not.toContain(dict['chat.queuedMessage.sending']);
+  await render([{ ...inbox, delivery: 'steer' }]);
+  expect(host.textContent).toContain(dict['chat.queuedMessage.sending']);
+  expect(host.textContent).toContain('Next task');
 });
 it('restores Send when promotion fails and preserves the queued content', async () => {
   const promote = vi.fn(async () => { throw new Error('offline'); });

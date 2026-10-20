@@ -2540,7 +2540,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         ), [currentSessionId]),
     );
     const inboxOverlayChips = React.useMemo(
-        () => (inboxOverlayItems ? inboxOverlayItems.filter((item) => item.wasQueued).map(toInboxChip) : EMPTY_INBOX_CHIPS),
+        () => (inboxOverlayItems ? inboxOverlayItems.map(toInboxChip) : EMPTY_INBOX_CHIPS),
         [inboxOverlayItems],
     );
     const [nativeQueueAdmission, setNativeQueueAdmission] = React.useState<{

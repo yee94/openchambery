@@ -432,6 +432,7 @@ const broadcastGlobalUiEvent = createGlobalUiEventBroadcaster({
 const broadcastUiNotification = (...args) => notificationEmitterRuntime.broadcastUiNotification(...args);
 
 const sessionRuntime = createSessionRuntime({
+  getRuntimeIdentity: () => buildOpenCodeUrl('/', ''),
   writeSseEvent,
   getNotificationClients: () => uiNotificationClients,
   broadcastEvent: broadcastGlobalUiEvent,
@@ -2121,6 +2122,7 @@ async function main(options = {}) {
     terminalRebindWindowMs: TERMINAL_INPUT_WS_REBIND_WINDOW_MS,
     terminalMaxRebindsPerWindow: TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW,
     setupProxy: (proxyApp) => setupProxy(proxyApp, {
+      sessionDelivery: sessionRuntime.delivery,
       onInteractiveSessionRequest: () => sessionIndexSyncRuntime?.noteInteractiveRequest(),
       onSessionTurnAdmission: (scope) => messageQueueRuntime?.noteClientOperation(scope),
     }),

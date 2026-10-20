@@ -115,6 +115,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - Keeps route behavior independent from composition root; `index.js` now supplies dependencies only.
 
 ## Public exports (session-runtime.js)
+- `delivery` owns the Host projection of accepted inbox work and compaction, driven by the always-on global watcher. Viewed/unviewed clients never cancel or clear delivery state. `session-delivery-runtime.js` registers `GET /api/sessions/:sessionID/delivery` before the generic proxy; each read reconciles native inbox authority and returns `{ data, compactionRunning }`. Compaction is `null` until known, `true` from pending compaction/start, and `false` on end/failure. Removing a compaction inbox item on consumption does not end a running compaction. Native events racing a read trigger a bounded reread; failed reads return 503 rather than empty success. No message content is persisted by this projection. Inactive entries are evicted at the 1024-entry soft limit; active work is retained. Runtime disposal clears the projection, and a cold read rebuilds inbox state from OpenCode. Web, Electron and mobile share the Host route; standalone VS Code explicitly returns 501 and uses native inbox/projection recovery.
 - `createSessionRuntime({ writeSseEvent, getNotificationClients, broadcastEvent? })`: creates runtime-owned state machine and APIs for session status.
 - Returned API:
   - `processOpenCodeSsePayload(payload)`
