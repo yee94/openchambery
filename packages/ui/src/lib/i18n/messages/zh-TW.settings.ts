@@ -1,4 +1,6 @@
 ﻿export const settingsDict = {
+  'settings.remoteInstances.pairing.advanced': '進階設定',
+  'settings.remoteInstances.pairing.relayHint': '設定網際網路連線使用的中繼伺服器。本機或區域網路直連時不會使用。',
   'settings.remoteInstances.pairing.downloadStep': '下載 App',
   'settings.remoteInstances.pairing.name': '這台伺服器的名稱',
   'settings.remoteInstances.pairing.anywhere': '在家、外出都能用',

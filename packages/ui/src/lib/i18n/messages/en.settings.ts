@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.pairing.advanced': 'Advanced settings',
+  'settings.remoteInstances.pairing.relayHint': 'Configure the relay server for internet connections. Not used for direct local or LAN connections.',
   'settings.remoteInstances.pairing.downloadStep': 'Get the app',
   'settings.remoteInstances.pairing.name': 'Server name',
   'settings.remoteInstances.pairing.anywhere': 'At home or away',

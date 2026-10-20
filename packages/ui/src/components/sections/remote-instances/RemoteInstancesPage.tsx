@@ -108,7 +108,7 @@ import {
   writePairingRelayUrlPreference,
 } from '@/lib/pairingRelayPreference';
 
-const SELF_HOSTED_RELAY_DOCS_URL = 'https://github.com/yee94/openchamber/tree/main/packages/relay-server';
+const SELF_HOSTED_RELAY_DOCS_URL = 'https://github.com/yee94/openchambery/tree/main/packages/relay-server';
 
 const randomPort = (): number => {
   return Math.floor(20000 + Math.random() * 30000);
@@ -1117,11 +1117,15 @@ export const RemoteInstancesPage: React.FC = () => {
   const [addDeviceFallback, setAddDeviceFallback] = React.useState(true);
   const [addDeviceRelayUrl, setAddDeviceRelayUrl] = React.useState(DEFAULT_PAIRING_RELAY_URL);
   const [addDeviceRelayUrlError, setAddDeviceRelayUrlError] = React.useState<string | null>(null);
+  const [addDeviceAdvancedOpen, setAddDeviceAdvancedOpen] = React.useState(false);
   // Multi-relay: with several configured endpoints the dialog shows a picker;
   // the local owner may still switch to a custom endpoint (appended on the
   // host as an additional relay). Remote hosts pick from the reported list.
   const [addDeviceRelayCustom, setAddDeviceRelayCustom] = React.useState(false);
   const addDeviceRelayUrlInputRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (addDeviceAdvancedOpen && addDeviceRelayUrlError) addDeviceRelayUrlInputRef.current?.focus();
+  }, [addDeviceAdvancedOpen, addDeviceRelayUrlError]);
   const [transportOptions, setTransportOptions] = React.useState<PairingTransportOptions | null>(null);
   const revokedClientCount = React.useMemo(() => remoteClients.filter((client) => Boolean(client.revokedAt)).length, [remoteClients]);
   const [sshAddDialogOpen, setSshAddDialogOpen] = React.useState(false);
@@ -1591,6 +1595,7 @@ export const RemoteInstancesPage: React.FC = () => {
     setCreatedPairingId(null);
     setAddDeviceRelayUrlError(null);
     setAddDevicePhase('configure');
+    setAddDeviceAdvancedOpen(false);
     setAddDeviceFallback(true);
     setAddDeviceOpen(true);
     const opts = await resolveTransportOptions();
@@ -1647,7 +1652,7 @@ export const RemoteInstancesPage: React.FC = () => {
       const relayUrl = includeRelay ? normalizePairingRelayUrl(addDeviceRelayUrl) : null;
       if (includeRelay && !relayUrl) {
         setAddDeviceRelayUrlError(t('settings.remoteInstances.clientAuth.addDevice.relayUrlInvalid'));
-        addDeviceRelayUrlInputRef.current?.focus();
+        setAddDeviceAdvancedOpen(true);
         return;
       }
       setAddDeviceRelayUrlError(null);
@@ -2719,7 +2724,16 @@ export const RemoteInstancesPage: React.FC = () => {
                       <span className="typography-meta text-muted-foreground">{t('settings.remoteInstances.clientAuth.addDevice.fallback.preferLocal')}</span>
                     </label>
                   ) : null}
-                  {(addDeviceTransport === 'relay' || (addDeviceTransport === 'lan' && addDeviceFallback)) ? (
+                  <Collapsible open={addDeviceAdvancedOpen} onOpenChange={setAddDeviceAdvancedOpen} className="pt-3">
+                    <CollapsibleTrigger className="px-0 hover:bg-transparent">
+                      <span className="typography-ui-label">{t('settings.remoteInstances.pairing.advanced')}</span>
+                      <Icon name={addDeviceAdvancedOpen ? 'arrow-up-s' : 'arrow-down-s'} className="size-4 text-muted-foreground" />
+                    </CollapsibleTrigger>
+                    <p className="mt-1 font-normal text-muted-foreground" style={{ fontSize: 'var(--form-helper-font-size)', lineHeight: 'var(--form-helper-line-height)' }}>
+                      {t('settings.remoteInstances.pairing.relayHint')}
+                    </p>
+                    <CollapsibleContent>
+                  {(
                     (() => {
                       const relayEndpoints = Array.from(new Set(
                         [...(transportOptions?.relayUrls ?? []), ...(transportOptions?.relayUrl ? [transportOptions.relayUrl] : [])],
@@ -2786,25 +2800,20 @@ export const RemoteInstancesPage: React.FC = () => {
                           ? t('settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint')
                           : transportOptions?.remoteHost
                             ? t('settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint')
-                            : (
-                            <>
-                              {t('settings.remoteInstances.clientAuth.addDevice.relayUrlHint')}
-                              {' '}
-                              <a
-                                href={SELF_HOSTED_RELAY_DOCS_URL}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="underline underline-offset-2 hover:text-foreground"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  void openExternalUrl(SELF_HOSTED_RELAY_DOCS_URL);
-                                }}
-                              >
-                                {t('settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink')}
-                              </a>
-                            </>
-                          )}
+                            : t('settings.remoteInstances.clientAuth.addDevice.relayUrlHint')}
                       </span>
+                      <a
+                        href={SELF_HOSTED_RELAY_DOCS_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block typography-meta text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          void openExternalUrl(SELF_HOSTED_RELAY_DOCS_URL);
+                        }}
+                      >
+                        {t('settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink')}
+                      </a>
                       {addDeviceRelayUrlError ? (
                         <span
                           id="add-device-relay-url-error"
@@ -2818,7 +2827,9 @@ export const RemoteInstancesPage: React.FC = () => {
                     </label>
                       );
                     })()
-                  ) : null}
+                  )}
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
                 {remoteClientError ? <p className="typography-meta text-[var(--status-error)]">{remoteClientError}</p> : null}
                 <div className="flex justify-end gap-3 pt-4">

@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.pairing.advanced': '高级设置',
+  'settings.remoteInstances.pairing.relayHint': '配置互联网连接使用的中继服务器。仅本机或局域网直连时不会使用。',
   'settings.remoteInstances.pairing.downloadStep': '下载 App',
   'settings.remoteInstances.pairing.name': '这台服务器的名称',
   'settings.remoteInstances.pairing.anywhere': '通过加密中继连接',
@@ -189,8 +191,8 @@ export const settingsDict = {
   'settings.remoteInstances.clientAuth.addDevice.fallback.relay': '外出时也允许通过加密中继连接',
   'settings.remoteInstances.clientAuth.addDevice.fallback.preferLocal': '在家时优先使用直接连接',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlLabel': 'Relay 服务端',
-  'settings.remoteInstances.clientAuth.addDevice.relayUrlHint': '使用 OpenChamber 官方 Relay，或输入你自己的 ws:// 或 wss:// 地址。设备会保存二维码中的该地址。',
-  'settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink': '可部署自己的 Relay 服务。',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlHint': '使用默认中继，或输入自建服务器的 ws:// 或 wss:// 地址。连接设备会保存二维码中的地址。',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink': '你可部署自己的 Relay 服务',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint': '此服务器已通过 OPENCHAMBER_RELAY_URL 固定 Relay 地址。',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint': '由所连主机决定，配对将使用该主机当前的 Relay 地址。',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlCustomOption': '自定义地址…',

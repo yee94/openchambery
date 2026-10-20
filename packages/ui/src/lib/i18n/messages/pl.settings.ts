@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.pairing.advanced': 'Ustawienia zaawansowane',
+  'settings.remoteInstances.pairing.relayHint': 'Skonfiguruj serwer pośredniczący dla połączeń internetowych. Nie jest używany przy bezpośrednich połączeniach lokalnych.',
   'settings.remoteInstances.pairing.downloadStep': 'Pobierz apkę',
   'settings.remoteInstances.pairing.name': 'Nazwa serwera',
   'settings.remoteInstances.pairing.anywhere': 'W domu i poza domem',

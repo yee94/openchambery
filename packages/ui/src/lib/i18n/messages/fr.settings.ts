@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.pairing.advanced': 'Paramètres avancés',
+  'settings.remoteInstances.pairing.relayHint': 'Configurez le serveur relais pour les connexions Internet. Il ne sert pas aux connexions locales directes.',
   'settings.remoteInstances.pairing.downloadStep': 'Installer l’app',
   'settings.remoteInstances.pairing.name': 'Nom du serveur',
   'settings.remoteInstances.pairing.anywhere': 'Chez vous ou ailleurs',

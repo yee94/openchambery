@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.pairing.advanced': '고급 설정',
+  'settings.remoteInstances.pairing.relayHint': '인터넷 연결에 사용할 중계 서버를 설정합니다. 로컬 또는 LAN 직접 연결에는 사용하지 않습니다.',
   'settings.remoteInstances.pairing.downloadStep': '앱 받기',
   'settings.remoteInstances.pairing.name': '서버 이름',
   'settings.remoteInstances.pairing.anywhere': '집에서도 밖에서도',
