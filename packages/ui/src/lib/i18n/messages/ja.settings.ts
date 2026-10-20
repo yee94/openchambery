@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.pairing.advanced': '詳細設定',
+  'settings.remoteInstances.pairing.relayHint': 'インターネット接続用の中継サーバーを設定します。ローカルや LAN の直接接続では使用しません。',
   'settings.remoteInstances.pairing.downloadStep': 'アプリを入手',
   'settings.remoteInstances.pairing.name': 'サーバー名',
   'settings.remoteInstances.pairing.anywhere': '自宅でも外出先でも',

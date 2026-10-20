@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.pairing.advanced': 'Розширені налаштування',
+  'settings.remoteInstances.pairing.relayHint': 'Налаштуйте сервер ретрансляції для інтернет-з’єднань. Для прямих локальних з’єднань він не використовується.',
   'settings.remoteInstances.pairing.downloadStep': 'Завантажити',
   'settings.remoteInstances.pairing.name': 'Назва сервера',
   'settings.remoteInstances.pairing.anywhere': 'Удома й поза домом',

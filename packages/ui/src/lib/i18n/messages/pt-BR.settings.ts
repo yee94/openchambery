@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.pairing.advanced': 'Configurações avançadas',
+  'settings.remoteInstances.pairing.relayHint': 'Configure o servidor de retransmissão para conexões pela internet. Não é usado em conexões locais diretas.',
   'settings.remoteInstances.pairing.downloadStep': 'Baixar app',
   'settings.remoteInstances.pairing.name': 'Nome do servidor',
   'settings.remoteInstances.pairing.anywhere': 'Em casa ou fora',

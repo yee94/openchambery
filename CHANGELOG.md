@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.3-beta.2] - 2026-10-20
+
+### 改进
+
+- 设备连接弹窗新增默认收起的高级设置，集中配置 Relay 服务器，附带简明用途说明。
+- Relay 服务器下方固定展示自建服务的部署文档入口，远程主机或地址锁定时也可查看。
+- 中继地址校验失败时自动展开高级设置并定位输入框。
+
 ## [2.1.3-beta.1] - 2026-10-20
 
 ### 改进
