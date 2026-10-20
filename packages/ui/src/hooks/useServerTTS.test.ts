@@ -113,6 +113,7 @@ mock.module('@/stores/useConfigStore', () => ({
 }));
 mock.module('@/lib/runtime-fetch', () => ({
   runtimeFetch: (_path: string, init?: RequestInit) => {
+    if (_path === '/api/voice/session') return Promise.resolve(Response.json({ transport: 'host' }));
     if (typeof init?.body === 'string') requestBodies.push(JSON.parse(init.body));
     const request = deferred<Response>();
     requests.push(request);
@@ -133,8 +134,7 @@ const response = (): Response => ({
 } as Response);
 
 const flush = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 12; i++) await Promise.resolve();
 };
 
 describe('useServerTTS playback session identity', () => {

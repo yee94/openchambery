@@ -4,9 +4,11 @@ import { normalizeCustomOpenAIBaseURL } from './base-url.js';
 import { summarizeText, sanitizeForTTS, sanitizeForNote } from '../text/summarization.js';
 import { synthesizeVolcengine, transcribeVolcengine } from './volcengine.js';
 import { readSpeechSettings, registerSpeechSettingsRoutes } from './settings.js';
+import { registerDirectSpeechRoute } from './direct-session.js';
 
 export function registerTtsRoutes(app, { sayTTSCapability }) {
   registerSpeechSettingsRoutes(app);
+  registerDirectSpeechRoute(app);
   let ttsModulePromise = null;
   const getTtsModule = async () => {
     if (!ttsModulePromise) {
