@@ -1173,6 +1173,8 @@ export interface GitHubAPI {
 }
 
 export interface RemoteClientRecord {
+  /** Live authenticated event stream on this host; absent on older hosts. */
+  connected?: boolean;
   id: string;
   label: string;
   createdAt: string;
@@ -1263,6 +1265,7 @@ export interface ClientAuthAPI {
   // `relayUrls` lists every configured relay endpoint (primary first,
   // multi-relay); `relayUrl` is the primary, kept for compatibility.
   getPairingTransports(): Promise<{
+    serverName?: string;
     local: string | null;
     lan: string | null;
     relayAvailable: boolean;

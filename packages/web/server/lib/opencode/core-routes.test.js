@@ -1497,7 +1497,7 @@ describe('client auth routes', () => {
 
     const listed = await request(app).get('/api/client-auth/clients');
     expect(listed.status).toBe(200);
-    expect(listed.body.clients).toEqual([other.body.client]);
+    expect(listed.body.clients).toEqual([{ ...other.body.client, connected: false }]);
 
     const denied = await request(app).delete(`/api/client-auth/clients/${current.body.client.id}`);
     expect(denied.status).toBe(403);

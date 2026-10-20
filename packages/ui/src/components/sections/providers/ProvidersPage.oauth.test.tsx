@@ -36,7 +36,10 @@ vi.mock('@/components/ui/ProviderLogo', () => ({ ProviderLogo: () => null }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 vi.mock('./QuotaCredentials', () => ({ QuotaCredentials: () => null }));
 vi.mock('@/components/ui/ScrollableOverlay', () => ({ ScrollableOverlay: Box }));
-vi.mock('@/components/sections/shared/SettingsGroup', () => ({ SettingsGroup: ({ children, label }: React.PropsWithChildren<{ label?: React.ReactNode }>) => <div>{label}{children}</div> }));
+vi.mock('@/components/sections/shared/SettingsGroup', () => ({
+  SettingsGroup: ({ children, label }: React.PropsWithChildren<{ label?: React.ReactNode }>) => <div>{label}{children}</div>,
+  SettingsRow: ({ children, label }: React.PropsWithChildren<{ label?: React.ReactNode }>) => <div>{label}{children}</div>,
+}));
 vi.mock('@/components/ui/tooltip', () => ({ Tooltip: Box, TooltipContent: Box, TooltipTrigger: Box }));
 vi.mock('@/components/ui/dropdown-menu', () => ({ DropdownMenu: Box, DropdownMenuContent: Box, DropdownMenuTrigger: Box,
   DropdownMenuItem: ({ children, onSelect }: React.PropsWithChildren<{ onSelect: () => void }>) => <button onClick={onSelect}>{children}</button>,

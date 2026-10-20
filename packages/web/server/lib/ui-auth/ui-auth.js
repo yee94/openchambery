@@ -454,10 +454,14 @@ export const createUiAuth = ({
     return { ok: true, sessionToken: entry.sessionToken || 'url:authenticated' };
   };
 
+  const clientPresence = createClientPresence();
   const authenticateClientRequest = async (req, { allowUrlToken = true } = {}) => {
     if (allowUrlToken) {
       const urlAuth = authenticateUrlAuthToken(req);
-      if (urlAuth) return urlAuth;
+      if (urlAuth) {
+        clientPresence.track(req, urlAuth);
+        return urlAuth;
+      }
     }
     const token = getBearerTokenFromRequest(req);
     if (!token || typeof clientAuthController?.authenticateBearerToken !== 'function') {
@@ -466,6 +470,7 @@ export const createUiAuth = ({
     try {
       const result = await clientAuthController.authenticateBearerToken(token, req);
       if (result?.ok) {
+        clientPresence.track(req, result);
         return result;
       }
       return null;
@@ -518,6 +523,7 @@ export const createUiAuth = ({
 
     const requireAuth = async (req, res, next) => {
       if (!requireClientAuth) {
+        await authenticateClientRequest(req);
         return next();
       }
       if (req.method === 'OPTIONS') {
@@ -561,6 +567,7 @@ export const createUiAuth = ({
       requireAuth,
       requireSessionAuth,
       resolveAuthContext,
+      getConnectedClientIds: clientPresence.connectedIds,
       handleSessionStatus: async (req, res) => {
         if (requireClientAuth) {
           const clientAuth = await authenticateClientRequest(req);
@@ -970,6 +977,7 @@ export const createUiAuth = ({
     requireAuth,
     requireSessionAuth,
     resolveAuthContext,
+    getConnectedClientIds: clientPresence.connectedIds,
     handleSessionStatus,
     handleSessionCreate,
     handleUrlAuthToken,
@@ -987,3 +995,4 @@ export const createUiAuth = ({
     dispose,
   };
 };
+import { createClientPresence } from './client-presence.js';

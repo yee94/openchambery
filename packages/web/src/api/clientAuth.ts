@@ -72,6 +72,7 @@ export const createWebClientAuthAPI = (): ClientAuthAPI => ({
   },
 
   async getPairingTransports(): Promise<{
+    serverName?: string;
     local: string | null;
     lan: string | null;
     relayAvailable: boolean;
@@ -83,6 +84,7 @@ export const createWebClientAuthAPI = (): ClientAuthAPI => ({
       headers: { Accept: 'application/json' },
     });
     const payload = await jsonOrNull<{
+      serverName?: string;
       local?: string | null;
       lan?: string | null;
       relayAvailable?: boolean;
@@ -94,6 +96,7 @@ export const createWebClientAuthAPI = (): ClientAuthAPI => ({
       throw new Error(payload?.error || response.statusText || 'Failed to load pairing transports');
     }
     return {
+      ...(typeof payload.serverName === 'string' ? { serverName: payload.serverName } : {}),
       local: payload.local ?? null,
       lan: payload.lan ?? null,
       relayAvailable: payload.relayAvailable === true,
