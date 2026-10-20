@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.4-beta.2] - 2026-10-21
+
+### 改进
+
+- 语音识别顶部恢复为聚拢叠加的柔和光团，保持淡雅单色，由最大最亮的主光团随音量缩放和明暗起伏。
+
 ## [2.1.4-beta.1] - 2026-10-21
 
 ### 改进
