@@ -59,11 +59,28 @@ it('does not open a stream when microphone permission arrives after cancellation
     mock.audio.start.mockReturnValue(new Promise<void>((resolve) => { grant = resolve; }));
     let start!: Promise<void>;
     await act(async () => { start = current.startDictation(); });
+    expect(current.isStarting).toBe(true);
     await act(async () => current.cancelDictation());
+    expect(current.isStarting).toBe(false);
     await act(async () => { grant(); await start; });
     expect(current.status).toBe('idle');
+    expect(current.isStarting).toBe(false);
     expect(mock.sender.restartStream).not.toHaveBeenCalled();
     expect(onTranscript).not.toHaveBeenCalled();
+});
+
+it('finishes microphone loading before the network stream is ready', async () => {
+    let grant!: () => void;
+    let connected!: () => void;
+    mock.audio.start.mockReturnValue(new Promise<void>((resolve) => { grant = resolve; }));
+    mock.sender.restartStream.mockReturnValue(new Promise<void>((resolve) => { connected = resolve; }));
+    let start!: Promise<void>;
+    await act(async () => { start = current.startDictation(); });
+    expect(current.status).toBe('recording');
+    expect(current.isStarting).toBe(true);
+    await act(async () => grant());
+    expect(current.isStarting).toBe(false);
+    await act(async () => { connected(); await start; });
 });
 
 it('discards final responses arriving after cancellation', async () => {

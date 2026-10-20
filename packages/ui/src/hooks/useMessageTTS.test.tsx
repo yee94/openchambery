@@ -2,6 +2,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { useMessageTTS, type UseMessageTTSReturn } from './useMessageTTS';
+import { prepareSpeechCapture } from '@/lib/voice/audio-session';
 
 const mocks = vi.hoisted(() => ({
     config: { voiceProvider: 'volcengine', ttsInputMode: 'raw' },
@@ -42,6 +43,15 @@ it('settles once on audio end, not synthesis completion', async () => {
     expect(settled).toHaveBeenCalledTimes(1);
 });
 
+it.each(['final', 'sanitized'])('cleans Markdown and slash separators before %s playback', async (mode) => {
+    mocks.config.ttsInputMode = mode;
+    await act(async () => root.render(<Probe />));
+    await act(async () => current.play('## **总结**\n支持 `iOS/Android/Web`，支持输入/输出。 / // ／ \\ \n[说明](https://example.com/guide)\n```sh\nnpm run build\n```'));
+    expect(mocks.speak).toHaveBeenCalledWith('总结 支持 iOS Android Web，支持输入 输出。 说明', {
+        onEnd: expect.any(Function), onError: expect.any(Function),
+    });
+});
+
 it('stops active speech on Escape and ignores late playback completion', async () => {
     const settled = vi.fn();
     await act(async () => current.play('你好', settled));
@@ -75,9 +85,17 @@ it('does not play a summary that resolves after cancellation', async () => {
     mocks.fetch.mockReturnValue(new Promise((done) => { resolve = done; }));
     let playing!: Promise<void>;
     await act(async () => { playing = current.play('很长的回复'.repeat(200)); });
-    await act(async () => current.stop());
+    await act(async () => prepareSpeechCapture());
     await act(async () => { resolve(Response.json({ text: '迟到的摘要' })); await playing; });
     expect(mocks.speak).not.toHaveBeenCalled();
+});
+
+it('stops active playback and clears its UI when microphone capture starts', async () => {
+    await act(async () => current.play('正在朗读'));
+    mocks.stop.mockClear();
+    await act(async () => prepareSpeechCapture());
+    expect(current.isPlaying).toBe(false);
+    expect(mocks.stop).toHaveBeenCalledOnce();
 });
 
 it('unlocks the configured local audio context on the enabling gesture', async () => {

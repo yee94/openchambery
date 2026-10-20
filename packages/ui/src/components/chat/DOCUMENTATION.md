@@ -1,5 +1,9 @@
 # Chat components
 
+## Mobile image presentation
+
+Markdown content, attachment thumbnails/gallery, Assistant contact images and composer attachments use `LoadingImage` from shared UI. URL acquisition and browser decode are separate pending phases; both show the shared dotted shimmer canvas. Fullscreen previews and mobile file sheets use `ImageLoadingPlaceholder` during resource acquisition. Failures end loading and preserve the owning surface's error/retry path; image preview/save metadata continues to carry the original source. Legacy Markdown keeps its DOM presentation owner and only marks streamed images loaded after the actual image load event. See `../ui/DOCUMENTATION.md#mobile-image-loading`.
+
 ## Mobile automatic read-aloud
 
 Read-aloud content defaults to `final` (existing explicit choices are retained).
@@ -143,7 +147,7 @@ Use `render()`, not `mount()`: `mermaidViewer.ts` remains the sole pan/zoom/resi
 
 Activation passes the actual clicked DOM element as ephemeral `ToolPopupContent.previewSource` (never persisted). `mediaPreviewTransition` hands a unique snapshot name from that source to the preview and back using the browser View Transitions API, with a 280ms transition and cleanup on interruption/unmount. Missing/offscreen sources, unsupported browsers and a changed gallery image fall back to a 150ms fade; reduced-motion skips animation. The preview never scans the transcript for a matching URL. Mobile system/gesture/history Back dismisses the preview before the underlying page; image pointer-dismissal guards never block explicit Back. Coverage: `ToolOutputDialog.preview.test.tsx`, `mediaPreviewTransition.test.ts`.
 
-Both preview kinds intentionally ignore safe-area insets: the canvas reaches every viewport edge, with fixed close/toolbar spacing rather than notch or home-indicator padding.
+Both preview kinds keep the canvas edge-to-edge and toolbar spacing fixed. Only the mobile close button respects the top and right safe-area insets, with its normal spacing added inside the safe area.
 
 ## Composer closed-picker work
 

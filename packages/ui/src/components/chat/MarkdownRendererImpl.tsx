@@ -284,8 +284,6 @@ const useMarkdownImageInteractions = ({
           }
           latest.controller = undefined;
           latest.objectUrl = objectUrl;
-          clearMarkdownImagePlaceholder(image);
-          image.setAttribute('data-md-image-state', 'loaded');
           image.src = objectUrl;
         })
         .catch(() => {
@@ -293,7 +291,7 @@ const useMarkdownImageInteractions = ({
           if (latest === state) {
             latest.controller = undefined;
             image.removeAttribute('aria-busy');
-            image.setAttribute('data-md-image-state', 'placeholder');
+            image.setAttribute('data-md-image-state', 'error');
           }
         });
     };
@@ -396,6 +394,21 @@ const useMarkdownImageInteractions = ({
       longPress.openFromContextMenu(imagePressKey(image), () => openSaveForImage(image));
     };
 
+    const handleImageLoad = (event: Event) => {
+      const image = event.target;
+      if (!(image instanceof HTMLImageElement) || !image.matches(MARKDOWN_IMAGE_SELECTOR)) return;
+      if (image.getAttribute('src') === image.getAttribute('data-md-placeholder-source')) return;
+      clearMarkdownImagePlaceholder(image);
+      image.setAttribute('data-md-image-state', 'loaded');
+    };
+    const handleImageError = (event: Event) => {
+      const image = event.target;
+      if (!(image instanceof HTMLImageElement) || !image.matches(MARKDOWN_IMAGE_SELECTOR)) return;
+      image.removeAttribute('aria-busy');
+      image.setAttribute('data-md-image-state', 'error');
+    };
+    container.addEventListener('load', handleImageLoad, true);
+    container.addEventListener('error', handleImageError, true);
     container.addEventListener('click', handleClick);
     container.addEventListener('keydown', handleKeyDown);
     container.addEventListener('pointerdown', handlePointerDown);
@@ -407,6 +420,8 @@ const useMarkdownImageInteractions = ({
     return () => {
       reconcileRef.current = () => {};
       longPress.reset();
+      container.removeEventListener('load', handleImageLoad, true);
+      container.removeEventListener('error', handleImageError, true);
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
       container.removeEventListener('pointerdown', handlePointerDown);

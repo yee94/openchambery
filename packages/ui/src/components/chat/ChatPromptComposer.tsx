@@ -1,4 +1,5 @@
 import React from 'react';
+import { LoadingImage } from '@/components/ui/LoadingImage';
 import { useEvent, useResizeObserver } from '@reactuses/core';
 import { toast } from '@/components/ui';
 import { isIMECompositionEvent } from '@/lib/ime';
@@ -329,7 +330,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
             <div className="flex gap-2 overflow-x-auto px-3 pt-3" data-chat-prompt-attachments="true">
               {imageAttachments.map((attachment) => (
                 <div key={attachment.id} className="group relative shrink-0">
-                  <img src={attachment.url} alt={attachment.name} className="size-16 rounded-lg border border-border object-cover" />
+                  <span className="block size-16"><LoadingImage fill src={attachment.url} alt={attachment.name} className="size-16 rounded-lg border border-border object-cover" /></span>
                   {onRemoveAttachment ? (
                     <button
                       type="button"

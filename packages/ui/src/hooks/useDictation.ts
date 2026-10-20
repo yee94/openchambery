@@ -27,6 +27,7 @@ export interface UseDictationOptions {
 export interface UseDictationResult {
     status: DictationStatus;
     isRecording: boolean;
+    isStarting: boolean;
     isProcessing: boolean;
     partialTranscript: string;
     volume: number;
@@ -51,6 +52,7 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
     const { onTranscript, onError, canStart } = options;
 
     const [status, setStatus] = useState<DictationStatus>('idle');
+    const [isStarting, setIsStarting] = useState(false);
     const [partialTranscript, setPartialTranscript] = useState('');
     const [duration, setDuration] = useState(0);
     const [error, setError] = useState<string | null>(null);
@@ -204,6 +206,7 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
         }
 
         gate.starting = true;
+        setIsStarting(true);
         const generation = ++operationGenerationRef.current;
         clearError();
         setPartialTranscript('');
@@ -215,6 +218,7 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
         try {
             await audio.start();
             if (operationGenerationRef.current !== generation || statusRef.current !== 'recording') return;
+            setIsStarting(false);
             startDurationTracking();
             // Open the stream eagerly so partials start flowing immediately.
             await senderRef.current?.restartStream().catch((err) => {
@@ -231,6 +235,7 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
             statusRef.current = 'idle';
             reportError(err);
         } finally {
+            if (operationGenerationRef.current === generation) setIsStarting(false);
             gate.starting = false;
         }
     });
@@ -244,6 +249,7 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
             return;
         }
         gate.cancelling = true;
+        setIsStarting(false);
         operationGenerationRef.current += 1;
         stopDurationTracking();
         setDuration(0);
@@ -280,6 +286,7 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
         }
 
         gate.confirming = true;
+        setIsStarting(false);
         const generation = ++operationGenerationRef.current;
         clearError();
         stopDurationTracking();
@@ -396,6 +403,7 @@ export function useDictation(options: UseDictationOptions = {}): UseDictationRes
     return {
         status,
         isRecording: status === 'recording',
+        isStarting,
         isProcessing: status === 'uploading',
         partialTranscript,
         volume: audio.volume,

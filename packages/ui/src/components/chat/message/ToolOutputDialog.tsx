@@ -1,4 +1,5 @@
 import React from 'react';
+import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
 import { useEvent } from '@reactuses/core';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -744,10 +745,10 @@ const ImagePreviewDialog: React.FC<{
             >
                 {!imageLoaded && !hasImageError && (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center" role="status">
-                        <span className="flex items-center gap-2 typography-ui-label opacity-70">
+                        {isMobile ? <ImageLoadingPlaceholder className="aspect-square w-64 max-w-[80vw] rounded-xl" /> : <span className="flex items-center gap-2 typography-ui-label opacity-70">
                             <Icon name="loader-4" className="size-4 animate-spin" />
                             {t('common.loading')}
-                        </span>
+                        </span>}
                     </div>
                 )}
                 {hasImageError ? (

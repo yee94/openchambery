@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { prepareSpeechPlayback } from '@/lib/voice/audio-session';
+import { prepareSpeechPlayback, subscribeSpeechCapture } from '@/lib/voice/audio-session';
 
 export interface LocalTTSSpeakOptions {
     onStart?: () => void;
@@ -246,6 +246,7 @@ export function useLocalTTS(): UseLocalTTSReturn {
         }
     }, [stop]);
 
+    useEffect(() => subscribeSpeechCapture(stop), [stop]);
     useEffect(() => {
         return () => {
             stop();

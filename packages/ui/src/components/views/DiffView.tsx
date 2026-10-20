@@ -1,4 +1,5 @@
 import React from 'react';
+import { LoadingImage } from '@/components/ui/LoadingImage';
 import { useEvent } from '@reactuses/core';
 
 import { useMobileAppActions } from '@/apps/mobileAppContext';
@@ -414,7 +415,7 @@ const InlineImageDiffViewer = React.memo<InlineImageDiffViewerProps>(({
                 {hasOriginal && (
                     <div className={imageContainerClass}>
                         <span className="typography-meta text-muted-foreground font-medium">{t('diffView.image.original')}</span>
-                        <img
+                        <LoadingImage
                             src={diff.original}
                             alt={t('diffView.image.originalAlt', { path: filePath })}
                             className={renderSideBySide ? "max-w-full max-h-[70vh] object-contain" : "max-w-full object-contain"}
@@ -427,7 +428,7 @@ const InlineImageDiffViewer = React.memo<InlineImageDiffViewerProps>(({
                         <span className="typography-meta text-muted-foreground font-medium">
                             {hasOriginal ? t('diffView.image.modified') : t('diffView.image.new')}
                         </span>
-                        <img
+                        <LoadingImage
                             src={diff.modified}
                             alt={t('diffView.image.modifiedAlt', { path: filePath })}
                             className={renderSideBySide ? "max-w-full max-h-[70vh] object-contain" : "max-w-full object-contain"}

@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { playPcmStream } from '@/lib/voice/pcm-stream';
-import { prepareSpeechPlayback } from '@/lib/voice/audio-session';
+import { prepareSpeechPlayback, subscribeSpeechCapture } from '@/lib/voice/audio-session';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 interface ServerTTSStatusCache {
@@ -346,6 +346,7 @@ export function useServerTTS(options: UseServerTTSOptions = {}): UseServerTTSRet
 
   // Cleanup on unmount
   useEffect(() => subscribeRuntimeEndpointChanged(stop), [stop]);
+  useEffect(() => subscribeSpeechCapture(stop), [stop]);
 
   useEffect(() => {
     return () => {

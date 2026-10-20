@@ -14,7 +14,8 @@ export function PreviewCloseButton({ onClose, isMobile, size }: {
 }) {
     const { t } = useI18n();
     return <div className="absolute right-3 z-20" style={isMobile ? {
-        top: '0.5rem',
+        top: 'calc(var(--oc-safe-area-top, 0px) + 0.5rem)',
+        right: 'calc(var(--oc-safe-area-right, 0px) + 0.75rem)',
     } : {
         top: size ? `calc(50% - ${size.height / 2}px + 0.5rem)` : '0.5rem',
         right: size ? `calc(50% - ${size.width / 2}px + 0.5rem)` : '0.5rem',

@@ -239,6 +239,6 @@ describe('relay image auto-load size gate', () => {
     expect(source).toContain('hasSlimImage && !slimImageLoadGateActive ? hydrationRootRef : null');
     expect(source).toContain('if (slimImageLoadGateActive) return;');
     expect(source).toContain("t('chat.fileAttachment.image.loadManually')");
-    expect(source).toContain('const displaySource = useResolvedImageSource(source ?? \'\', effectiveDirectory);');
+    expect(source).toContain('const imageResource = useResolvedImageResource(source ?? \'\', effectiveDirectory);');
   });
 });

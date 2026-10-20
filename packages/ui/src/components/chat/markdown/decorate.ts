@@ -5,6 +5,8 @@ import { parseCodeFenceInfo } from './codeFenceInfo';
 import { getMermaidViewerController } from './mermaidViewer';
 import { needsRuntimeImageStream, resolveImageSource } from '../imageSource';
 import { wrapMarkdownFileReferenceTokens } from '../fileReferenceDecorate';
+import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
+import '@/components/ui/image-loading.css';
 
 // ---------------------------------------------------------------------------
 // Shared decoration context
@@ -583,6 +585,10 @@ const ensureMarkdownImagePresentation = (image: HTMLImageElement): HTMLElement =
   visual.setAttribute('data-md-image-placeholder-visual', 'true');
   visual.setAttribute('aria-hidden', 'true');
   visual.className = 'pointer-events-none absolute inset-0 flex items-center justify-center text-muted-foreground';
+  if (isMobileSurfaceRuntime()) {
+    presentation.setAttribute('data-mobile-image', 'true');
+    visual.classList.add('oc-image-loading');
+  }
 
   const imageIcon = document.createElement('span');
   imageIcon.className = 'relative flex size-14 items-center justify-center rounded-2xl border border-border/80 bg-[var(--surface-elevated)] shadow-sm';
@@ -632,7 +638,14 @@ export const decorateMarkdownImages = (root: HTMLElement, ctx: DecorateContext):
     const resolved = resolveImageSource(source, ctx.imageEffectiveDirectory);
     // Only host/runtime file paths need placeholders + streamed display URLs.
     // Browser-native http(s)/data/blob sources keep the direct img path.
-    if (!needsRuntimeImageStream(resolved)) continue;
+    if (!needsRuntimeImageStream(resolved)) {
+      if (isMobileSurfaceRuntime()) {
+        image.setAttribute('data-md-image-source', source);
+        ensureMarkdownImagePresentation(image);
+        image.setAttribute('data-md-image-state', image.complete && image.naturalWidth > 0 ? 'loaded' : 'loading');
+      }
+      continue;
+    }
 
     image.classList.add(...MARKDOWN_IMAGE_CLASS, ...MARKDOWN_IMAGE_INTERACTIVE_CLASS);
     image.setAttribute('role', 'button');

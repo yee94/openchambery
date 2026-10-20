@@ -1,4 +1,5 @@
 import React from 'react';
+import { LoadingImage } from '@/components/ui/LoadingImage';
 import { useEvent } from '@reactuses/core';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
@@ -3207,7 +3208,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           aria-label={alt}
           disabled={!imageSrc}
         >
-          <img
+          <LoadingImage
             key={imagePreviewNonce}
             src={imageSrc}
             alt={alt}

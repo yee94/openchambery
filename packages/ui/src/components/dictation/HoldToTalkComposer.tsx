@@ -45,7 +45,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     const cancelClipId = useId();
     const editClipId = useId();
     const dictation = useDictation({ onTranscript: (text) => action.current === 'send' ? onSend(text) : onInsert(text), onError });
-    const { status, partialTranscript, error, volume } = dictation;
+    const { status, isStarting, partialTranscript, error, volume } = dictation;
     const publishHint = useEvent(onHintChange);
     const hint = held ? intent === 'cancel' ? 'cancelling' : intent === 'edit' ? 'editing' : 'recording' : processing ? 'processing' : null;
     useEffect(() => { publishHint(hint); }, [hint, publishHint]);
@@ -162,9 +162,10 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
             <div className="oc-speech-light-field" aria-hidden="true">
                 {['ice', 'lilac', 'mint', 'blush', 'mid', 'core'].map((tone) => <div key={tone} className={`oc-speech-reactor oc-speech-reactor--${tone}`}><div className="oc-speech-light" /></div>)}
             </div>
-            <div className="oc-speech-content">
+            <div className="oc-speech-content" data-starting={isStarting}>
                 {error ? <p role="alert" className="oc-speech-caption oc-speech-error">{error}</p> : <div role="status" aria-live="polite" aria-atomic="true" className="oc-speech-caption">
-                    {partialTranscript ? <span className="oc-speech-interim">{partialTranscript}</span> : t(status === 'uploading' ? 'chat.dictation.processing' : 'chat.dictation.listening')}
+                    {isStarting ? <span className="oc-speech-loading" aria-label={t('common.loading')}><span /><span /><span /></span>
+                        : partialTranscript ? <span className="oc-speech-interim">{partialTranscript}</span> : t(status === 'uploading' ? 'chat.dictation.processing' : 'chat.dictation.listening')}
                 </div>}
             </div>
             {held && <div className="oc-speech-gesture-stage" aria-hidden="true">

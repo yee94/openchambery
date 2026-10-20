@@ -32,7 +32,7 @@ vi.mock('@/queries/fileQueries', () => ({
   useFileDirectoryQuery: () => ({}), useFileSearchQuery: () => ({}), useFileContentQuery: () => ({}), useFileStatWatcher: () => {},
 }));
 vi.mock('@/mobile/mobileBackNavigation', () => ({ useMobileBackRoute: () => {} }));
-vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (s: unknown) => unknown) => select({ pendingFileFocusPath: null, setPendingFileFocusPath: () => {} }) }));
+vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (s: unknown) => unknown) => select({ isMobile: true, pendingFileFocusPath: null, setPendingFileFocusPath: () => {} }) }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: state.t }) }));
 vi.mock('@/components/ui', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/components/chat/message/TextSelectionMenu', () => ({ TextSelectionMenu: () => null }));
@@ -97,11 +97,12 @@ test('session inline Markdown images use mobile native streams and release on un
   expect(state.release).toHaveBeenCalledTimes(1);
 });
 
-test('inline browser images without native support do not auto-download Blob bytes', async () => {
+test('inline browser images use the existing Blob fallback when native streams are unavailable', async () => {
   state.native = false;
   await act(async () => root.render(<MarkstreamImageNode node={{ type: 'image', src: '/workspace/theme.png', alt: 'theme', title: null, raw: '![theme](/workspace/theme.png)' }} />));
-  expect(state.fetch).not.toHaveBeenCalled();
-  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  expect(state.fetch).toHaveBeenCalledTimes(1);
+  expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('img')?.getAttribute('src')).toBe('blob:wrong-path');
 });
 
 test('distinct session image paths keep distinct bytes through concurrent loading and component reuse', async () => {

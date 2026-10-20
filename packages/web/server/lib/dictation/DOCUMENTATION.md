@@ -80,6 +80,11 @@ close, and credentials are never logged.
   recording. Live captions and volume state stay inside this leaf component.
   Keyboard mode preserves the draft; ASR-enabled iOS uses the web composer
   instead of the native overlay. Other providers retain their own caption cadence.
+  An empty-composer hold shows the overlay and starts capture after 300 ms;
+  releasing before the threshold focuses keyboard input without requesting
+  microphone access. `useDictation.isStarting` tracks microphone initialization:
+  the overlay immediately shows a small loading animation until capture is ready,
+  independently of network readiness. Cancellation and startup failure clear it.
 - Streaming protocol references:
   https://www.volcengine.com/docs/DoubaoVoice/bidirectional-streaming-automatic-speech-recognition-websocket?lang=zh
   and https://www.volcengine.com/docs/DoubaoVoice/LargemodelstreamingautomaticspeechrecognitionAPI?lang=zh.

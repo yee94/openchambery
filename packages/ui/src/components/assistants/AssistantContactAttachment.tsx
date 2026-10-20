@@ -1,6 +1,9 @@
 import React from 'react'
 import { useEvent } from '@reactuses/core'
 import { Button } from '@/components/ui/button'
+import { LoadingImage } from '@/components/ui/LoadingImage'
+import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder'
+import { useUIStore } from '@/stores/useUIStore'
 import { Icon } from '@/components/icon/Icon'
 import { useResolvedImageSource, useRuntimeTransportIdentity } from '@/components/chat/imageSource'
 import type { ToolPopupContent } from '@/components/chat/message/types'
@@ -17,6 +20,7 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
   onShowPopup?: (content: ToolPopupContent) => void
 }) {
   const { t } = useI18n()
+  const isMobile = useUIStore((state) => state.isMobile)
   const transport = useRuntimeTransportIdentity()
   const { attachmentID, sha256, size, mime, filename } = descriptor
   const stableDescriptor = React.useMemo(() => ({ type: 'file' as const, attachmentID, sha256, size, mime, filename }), [attachmentID, sha256, size, mime, filename])
@@ -83,7 +87,7 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
     })
   })
   if (image && url && !failed) return (
-    <img
+    <LoadingImage
       src={url}
       alt={name}
       className={imageClass}
@@ -99,6 +103,7 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
       data-assistant-contact-image=""
     />
   )
+  if (image && !failed && isMobile) return <ImageLoadingPlaceholder className="size-48 max-w-full rounded-[1.35rem]" />
   return <div className="flex max-w-full flex-col gap-1 rounded-[1.25rem] bg-[var(--surface-muted)] px-3.5 py-2.5 ring-1 ring-inset ring-[var(--surface-subtle)]" data-assistant-contact-file="">
     <span className="flex min-w-0 items-center gap-2.5"><Icon name="file-text" className="size-4 shrink-0 text-muted-foreground" /><span className="truncate typography-ui">{name}</span></span>
     {failed ? <p role="alert" className="typography-micro text-[var(--status-error)]">{t('assistants.contact.attachment.loadFailed')}</p> : null}
@@ -126,7 +131,7 @@ function LegacyAttachment({ part, onShowPopup }: { part: AssistantContactFilePar
     })
   })
   if (part.mime.startsWith('image/') && source && !failed) return (
-    <img
+    <LoadingImage
       src={source}
       alt={name}
       className={imageClass}
