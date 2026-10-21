@@ -219,6 +219,24 @@ describe('useMobileComposerSwap gesture commit', () => {
         });
     });
 
+    test('lets preview touch scroll before expanding on a tap', async () => {
+        await mount();
+        await beginSwipe();
+        await fireScroll(100);
+        const compact = document.createElement('div');
+        compact.dataset.ocComposerCompactSurface = 'true';
+        const preview = document.createElement('div');
+        preview.className = 'oc-mobile-composer-compact-preview';
+        compact.append(preview);
+        scopeEl.append(compact);
+        const down = new Event('pointerdown', { bubbles: true, cancelable: true });
+        await act(async () => { preview.dispatchEvent(down); });
+        expect(down.defaultPrevented).toBe(false);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+        await act(async () => { preview.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+        expect(readSwap(scopeEl).rest).toBe('expanded');
+    });
+
     test('full follow lands compact at rest without snapping', async () => {
         await mount();
 

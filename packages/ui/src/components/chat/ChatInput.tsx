@@ -4980,6 +4980,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // the composer to grow — feed this into the autosize below.
     const [dictationContentHeight, setDictationContentHeight] = React.useState<number | null>(null);
     const [mobileDictationActive, setMobileDictationActive] = React.useState(false);
+    const compactPreviewRef = React.useRef<HTMLDivElement>(null);
+    const compactPreviewFollowRef = React.useRef(true);
+    React.useLayoutEffect(() => {
+        compactPreviewFollowRef.current = true;
+    }, [primaryDraftKeyID]);
+    React.useLayoutEffect(() => {
+        const preview = compactPreviewRef.current;
+        if (preview && (mobileDictationActive || desktopRecording) && compactPreviewFollowRef.current) {
+            preview.scrollLeft = preview.scrollWidth;
+        }
+    }, [message, mobileDictationActive, desktopRecording]);
     const handleDictationContentHeightChange = useEvent((height: number | null) => {
         setDictationContentHeight((prev) => (prev === height ? prev : height));
     });
@@ -7958,6 +7969,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     >
                         {mobileCompactComposerChrome}
                         <div
+                            ref={compactPreviewRef}
+                            onPointerDown={() => { compactPreviewFollowRef.current = false; }}
+                            onScroll={(event) => {
+                                const preview = event.currentTarget;
+                                compactPreviewFollowRef.current = preview.scrollWidth - preview.clientWidth - preview.scrollLeft <= 2;
+                            }}
                             className={cn(
                                 'oc-mobile-composer-compact-preview',
                                 !message.trim() && 'oc-mobile-composer-compact-preview--placeholder',
