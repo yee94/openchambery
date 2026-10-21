@@ -612,11 +612,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const sizeVariant: 'mobile' | 'vscode' | 'default' = isMobile ? 'mobile' : isVSCodeRuntime ? 'vscode' : 'default';
     const controlIconSize = sizeVariant === 'mobile' ? 'size-5' : sizeVariant === 'vscode' ? 'size-4' : 'size-4';
     const controlTextSize = isCompact ? 'typography-micro' : 'typography-meta';
-    const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-1' : sizeVariant === 'vscode' ? 'gap-x-2' : 'gap-x-1.5';
+    const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-0.5' : sizeVariant === 'vscode' ? 'gap-x-2' : 'gap-x-1.5';
     // Icon-only agent trigger: same square hit-target as composer + / focus / shield buttons.
     // Icon-only agent trigger: same square hit-target as composer + / focus / shield buttons.
-    const agentIconButtonClass = sizeVariant === 'mobile' ? 'h-8 w-8' : 'h-6 w-6';
+    const agentIconButtonClass = sizeVariant === 'mobile' ? 'h-8 w-7' : 'h-6 w-6';
     const agentAvatarSize = sizeVariant === 'mobile' ? 24 : 20;
+    const agentLabelGapClass = sizeVariant === 'mobile' ? 'pl-1 pr-0.5' : 'pl-1.5 pr-0.5';
     const showAgentCycleLabel = useAgentCycleLabelReveal(uiAgentName);
 
     const currentProvider = selectionAdapter
@@ -2625,6 +2626,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                 revealed={showAgentCycleLabel}
                                                 avatarSize={agentAvatarSize}
                                                 slotClassName={agentIconButtonClass}
+                                                labelGapClassName={agentLabelGapClass}
                                                 colorVar={agentTriggerColor?.var}
                                             />
                                         )}
@@ -2747,6 +2749,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         revealed={showAgentCycleLabel}
                         avatarSize={agentAvatarSize}
                         slotClassName={agentIconButtonClass}
+                        labelGapClassName={agentLabelGapClass}
                         colorVar={agentTriggerColor?.var}
                     />
                 )}

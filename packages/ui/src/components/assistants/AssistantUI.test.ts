@@ -751,7 +751,7 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('px-4 py-2.5 typography-markdown leading-6');
     expect(conversation).not.toContain('px-4 py-2.5 typography-ui leading-6');
     expect(conversation).toContain('border border-dashed border-border/50 bg-[var(--surface-muted)]/70');
-    expect(conversation).toContain("cn('bg-[var(--surface-muted)] text-foreground', sameAssistantRun && 'rounded-tl-lg')");
+    expect(conversation).not.toContain('rounded-tl-lg');
     expect(conversation).toContain("startsTurn ? 'mt-6 first:mt-0' : sameAssistantRun ? 'mt-1.5' : 'mt-3'");
     expect(conversation).toContain("max-w-[min(82%,30rem)] items-end");
     expect(conversation).toContain('data-assistant-contact-empty');

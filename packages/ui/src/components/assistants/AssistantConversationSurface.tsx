@@ -71,8 +71,12 @@ const ToolOutputDialog = lazyWithChunkRecovery(() => import('@/components/chat/m
 /** Legacy internal settle markers — never render as user-visible bubbles. */
 const isInternalSettleText = (text: string) => text.trim().startsWith('oc.settle.')
 
+// Live previews are text-only, so only text bubbles share the turn/bubble key
+// that lets a preview hand its DOM to the authoritative row. Cards and files in
+// the same turn reuse bubble indexes; keying them alike duplicates React keys.
 const contactRenderKey = (message: AssistantContactMessage): string => (
-  message.role === 'assistant' && message.parts.length > 0 && message.status !== 'error'
+  message.role === 'assistant' && message.status !== 'error'
+    && message.parts.some((part) => part.type === 'text')
     ? `${message.turnID}:assistant:${message.bubbleIndex}`
     : message.messageID
 )
@@ -639,7 +643,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                                 ? 'rounded-[1.15rem] rounded-br-lg bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]'
                                 : isPeer
                                   ? 'rounded-[1.25rem] border border-dashed border-border/50 bg-[var(--surface-muted)]/70 text-foreground'
-                                  : cn('bg-[var(--surface-muted)] text-foreground', sameAssistantRun && 'rounded-tl-lg'),
+                                  : 'bg-[var(--surface-muted)] text-foreground',
                             )}
                           >
                             {useMarkdown ? (
