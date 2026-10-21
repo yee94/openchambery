@@ -333,6 +333,23 @@ export function createTranscriptDurableStoreFromDriver(
   options: Pick<IndexedDBTranscriptDurableStoreOptions, "now"> = {},
 ): TranscriptDurableStore {
   const now = createTranscriptMonotonicClock(options.now ?? Date.now)
+  /**
+   * Committed byte total, so an under-budget `evictToBytes` skips the full
+   * index scan. Upserts apply their delta after commit; deletes and repairs
+   * invalidate it (`undefined`) and the next eviction rescans authoritatively.
+   * Writes from another tab can make it stale low until that rescan.
+   */
+  let trackedBytes: number | undefined
+  /** Bumped by every committed size change; an eviction scan that overlapped one does not adopt its total. */
+  let sizeEpoch = 0
+  const addTrackedBytes = (delta: number) => {
+    sizeEpoch += 1
+    if (trackedBytes !== undefined) trackedBytes += delta
+  }
+  const invalidateTrackedBytes = () => {
+    sizeEpoch += 1
+    trackedBytes = undefined
+  }
 
   const persistTouch = async (
     transaction: TranscriptDurableStoreTransaction,
@@ -352,6 +369,7 @@ export function createTranscriptDurableStoreFromDriver(
           const content = await transaction.getContent(index.id)
           if (!content) {
             await transaction.deleteIndex(index.id)
+            invalidateTrackedBytes()
             continue
           }
           const row = joinRow(index, content)
@@ -385,7 +403,8 @@ export function createTranscriptDurableStoreFromDriver(
       const fingerprint = await fingerprintTranscriptContent(info, incomingParts)
       const identity = transcriptDurableIdentityKey(scope, info.id)
 
-      return driver.transaction(async (transaction): Promise<TranscriptUpsertResult> => {
+      let committedDelta = 0
+      const result = await driver.transaction(async (transaction): Promise<TranscriptUpsertResult> => {
         const existing = await loadJoined(transaction, identity)
         const decision = decideTranscriptUpsertSettled({
           info,
@@ -421,12 +440,16 @@ export function createTranscriptDurableStoreFromDriver(
           info: cloneTranscriptValue(info),
           parts: incomingParts,
         })
+        committedDelta = row.byteSize - (existing?.byteSize ?? 0)
         return { status: "written", record: snapshotTranscriptDurableRecord(row) }
       })
+      addTrackedBytes(committedDelta)
+      return result
     },
 
     async removeMessage(scope, messageID) {
       await driver.transaction((transaction) => deleteBoth(transaction, transcriptDurableIdentityKey(scope, messageID)))
+      invalidateTrackedBytes()
     },
 
     async clearSession(scope) {
@@ -434,6 +457,7 @@ export function createTranscriptDurableStoreFromDriver(
         const indexes = await transaction.getIndexesByScope(transcriptDurableScopeKey(scope))
         for (const index of indexes) await deleteBoth(transaction, index.id)
       })
+      invalidateTrackedBytes()
     },
 
     async clearGeneration(generation: TranscriptDurableGeneration) {
@@ -441,11 +465,17 @@ export function createTranscriptDurableStoreFromDriver(
         const indexes = await transaction.getIndexesByGeneration(transcriptDurableGenerationKey(generation))
         for (const index of indexes) await deleteBoth(transaction, index.id)
       })
+      invalidateTrackedBytes()
     },
 
     async evictToBytes(maxBytes, options?: TranscriptEvictToBytesOptions) {
-      return driver.transaction(async (transaction) => {
-        const budget = Number.isFinite(maxBytes) ? Math.max(0, maxBytes) : 0
+      const budget = Number.isFinite(maxBytes) ? Math.max(0, maxBytes) : 0
+      if (trackedBytes !== undefined && trackedBytes <= budget) {
+        return { evicted: 0, freedBytes: 0, remainingBytes: trackedBytes }
+      }
+      trackedBytes = undefined
+      const scanEpoch = sizeEpoch
+      const result = await driver.transaction(async (transaction) => {
         const protectedKeys = new Set((options?.protect ?? []).map(transcriptDurableScopeKey))
         const indexes = await transaction.getAllIndexes()
         let remainingBytes = 0
@@ -472,12 +502,16 @@ export function createTranscriptDurableStoreFromDriver(
         }
         return { evicted, freedBytes, remainingBytes }
       })
+      if (sizeEpoch === scanEpoch) trackedBytes = result.remainingBytes
+      return result
     },
 
     async clearAll() {
       await driver.transaction(async (transaction) => {
         await transaction.clearAll()
       })
+      sizeEpoch += 1
+      trackedBytes = 0
     },
 
     async destroy() {

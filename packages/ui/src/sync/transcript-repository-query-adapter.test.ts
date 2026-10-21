@@ -3048,12 +3048,36 @@ describe("Query repository durable byte-budget eviction", () => {
       ),
     })
     await waitUntil(async () => (await inner.readSession(durableScope)).records.length === 1)
-    await waitUntil(() => evicts.length >= 2)
+    await waitUntil(async () => (await inner.readSession(otherDurableScope)).records.length === 0)
     expect((await inner.readSession(durableScope)).records.map((record) => record.messageID)).toEqual(["msg_keep"])
     expect((await inner.readSession(otherDurableScope)).records).toEqual([])
     expect(evicts.some((item) => item.maxBytes === 0 && item.protect.includes(SESSION))).toBe(true)
     release()
     repo.destroy()
+  })
+
+  test("a batch of settled writes runs at most one eviction scan", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    let evicts = 0
+    const durableStore = {
+      ...inner,
+      evictToBytes: async (maxBytes: number, options?: { protect?: readonly typeof durableScope[] }) => {
+        evicts += 1
+        return inner.evictToBytes(maxBytes, options)
+      },
+    }
+    const queue = createTranscriptDurableQueryQueue(durableStore, {
+      getByteBudget: () => 10 * 1024 * 1024,
+      getProtectScopes: () => [],
+    })
+    await Promise.all(Array.from({ length: 20 }, (_, index) => {
+      const id = `msg_${index}`
+      return queue.persistSettled(durableScope, userMessage(id), [textPart(`p_${index}`, id, `body ${index}`)])
+    }))
+    await waitUntil(() => evicts >= 1)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(evicts).toBe(1)
+    expect((await inner.readSession(durableScope)).records).toHaveLength(20)
   })
 
   test("hash-skipped writes do not run evictToBytes", async () => {

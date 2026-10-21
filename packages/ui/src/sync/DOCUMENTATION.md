@@ -905,11 +905,17 @@ Modules:
   returns to the highest satisfied stage. A later empty read cannot drop a
   latched P0 back to skeleton. Runtime `purgeGeneration` resets the latch.
   ChatContainer / Activity wiring is not in this slice.
-- Durable transcript cache (ticket 11): each successful `upsertSettled` on the
-  per-scope persist queue runs `evictToBytes` with
-  `getTranscriptDurableByteBudget()` (VS Code 4 MiB / mobile 12 MiB / default
-  40 MiB). `activeRegistry.listRetained()` scopes stay protected. Hash-skipped
-  writes do not scan. `clearAll` / `clearCurrentRuntimeTranscriptCache` wipe
+- Durable transcript cache (ticket 11): successful `upsertSettled` writes on
+  the persist queue schedule `evictToBytes` with
+  `getTranscriptDurableByteBudget()` (VS Code 4 MiB / mobile 32 MiB / default
+  40 MiB). Eviction is coalesced: it runs once after every enqueued persist has
+  settled (a 50-message page triggers one check, not 50), and each persist
+  promise resolves after that check. The IndexedDB adapter tracks its committed
+  byte total, so an under-budget check skips the full index scan; deletes,
+  orphan repair and overlapping writes invalidate the total and the next check
+  rescans. Another tab's writes can leave the total stale until that rescan.
+  `activeRegistry.listRetained()` scopes stay protected. Hash-skipped writes do
+  not schedule a check. `clearAll` / `clearCurrentRuntimeTranscriptCache` wipe
   the current runtime backend only (Electron local → HTTP/SQLite; otherwise
   IndexedDB). `clearGeneration` still hits both backends. `destroy` stays
   lifecycle-only. Settings UI is not wired here.

@@ -162,17 +162,52 @@ export function createTranscriptDurableQueryQueue(
     return run
   }
 
+  // Byte-budget eviction is coalesced across the whole queue: it runs once
+  // after every enqueued persist has settled, not once per written row.
+  let pendingPersists = 0
+  let evictionDirty = false
+  let evicting = false
+  let evictionWaiters: Array<() => void> = []
+
+  const runEvictionWhenIdle = () => {
+    if (pendingPersists > 0 || evicting || !evictionDirty) return
+    evictionDirty = false
+    evicting = true
+    const waiters = evictionWaiters
+    evictionWaiters = []
+    const budget = (options.getByteBudget ?? getTranscriptDurableByteBudget)()
+    void store.evictToBytes(budget, { protect: options.getProtectScopes?.() ?? [] })
+      .catch(() => undefined)
+      .then(() => {
+        evicting = false
+        for (const resolve of waiters) resolve()
+        runEvictionWhenIdle()
+      })
+  }
+
   return {
     wait: waitFor,
-    persistSettled: (scope, info, parts) =>
-      enqueueScope(scope, async () => {
+    persistSettled: (scope, info, parts) => {
+      pendingPersists += 1
+      let written = false
+      const run = enqueueScope(scope, async () => {
         const result = await store.upsertSettled(scope, info, parts)
-        if (result.status !== "written") return
-        const budget = (options.getByteBudget ?? getTranscriptDurableByteBudget)()
-        await store.evictToBytes(budget, {
-          protect: options.getProtectScopes?.() ?? [],
-        })
-      }),
+        written = result.status === "written"
+      })
+      const evicted = run.finally(() => {
+        pendingPersists -= 1
+        if (written) evictionDirty = true
+      }).then(() => {
+        if (!written) {
+          runEvictionWhenIdle()
+          return
+        }
+        const settled = new Promise<void>((resolve) => evictionWaiters.push(resolve))
+        runEvictionWhenIdle()
+        return settled
+      })
+      return evicted
+    },
     removeMessage: (scope, messageID) =>
       enqueueScope(scope, () => store.removeMessage(scope, messageID)),
     clearSession: (scope) => enqueueScope(scope, () => store.clearSession(scope)),
