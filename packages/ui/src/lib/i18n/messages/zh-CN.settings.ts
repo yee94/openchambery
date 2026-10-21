@@ -9,6 +9,8 @@ export const settingsDict = {
   'settings.voice.volcengine.keyHelp': '在这里获得：',
   'settings.voice.volcengine.openLink': '点击打开',
   'settings.voice.volcengine.asrResource': '流式 ASR 资源 ID',
+  'settings.voice.volcengine.asrContext': '识别语境',
+  'settings.voice.volcengine.asrContextHelp': '描述话题与术语。清空可关闭，保存后下次录音生效。最多 2,000 字符。',
   'settings.voice.volcengine.custom': '自定义 ID',
   'settings.voice.volcengine.durationHelp': '小时版，按识别时长计费。',
   'settings.voice.volcengine.concurrentHelp': '并发版，使用已购买的并发额度。',

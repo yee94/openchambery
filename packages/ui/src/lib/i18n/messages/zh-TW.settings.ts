@@ -9,6 +9,8 @@
   'settings.voice.volcengine.keyHelp': '在這裡取得：',
   'settings.voice.volcengine.openLink': '點擊開啟',
   'settings.voice.volcengine.asrResource': '串流 ASR 資源 ID',
+  'settings.voice.volcengine.asrContext': '辨識語境',
+  'settings.voice.volcengine.asrContextHelp': '描述話題與術語。清空可停用，儲存後下次錄音生效。最多 2,000 字元。',
   'settings.voice.volcengine.custom': '自訂 ID',
   'settings.voice.volcengine.durationHelp': '小時版，依辨識時長計費。',
   'settings.voice.volcengine.concurrentHelp': '並發版，使用已購買的並發額度。',

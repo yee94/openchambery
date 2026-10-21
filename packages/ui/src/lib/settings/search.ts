@@ -883,7 +883,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     id: 'voice.speech-recognition',
     page: 'voice',
     titleKey: 'settings.voice.page.section.speechRecognition',
-    keywords: ['stt', 'dictation', 'voice input', 'transcribe', 'whisper', 'parakeet', 'microphone', 'volcengine', 'doubao', '火山', '豆包', 'asr', '实时字幕', '识别', 'api key'],
+    keywords: ['stt', 'dictation', 'voice input', 'transcribe', 'whisper', 'parakeet', 'microphone', 'volcengine', 'doubao', '火山', '豆包', 'asr', '实时字幕', '识别', 'api key', 'recognition context', 'terminology', '语境', '上下文', '中英文'],
   },
   {
     id: 'notifications.delivery',

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.6-beta.6] - 2026-10-21
+
+### 改进
+
+- 火山引擎语音识别新增可编辑的识别上下文（默认内置中英混说与软件工程术语场景），设置中可填写最多 2000 字，识别时作为对话上下文下发，提升术语与中英混说准确率。
+
 ## [2.1.6-beta.5] - 2026-10-21
 
 ### 改进

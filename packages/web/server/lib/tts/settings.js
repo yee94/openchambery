@@ -8,6 +8,7 @@ const defaults = {
   voice: 'zh_female_vv_uranus_bigtts',
   resourceId: 'seed-tts-2.0',
   asrResourceId: 'volc.seedasr.sauc.duration',
+  asrContext: 'The speaker is discussing software development and technical tasks with an AI assistant. Speech may mix Mandarin Chinese and English within the same sentence. The conversation may cover requirements, system design, implementation, debugging, testing, deployment, and maintenance. Common software engineering terms include alpha, beta, release, stable, version, build, branch, commit, merge, pull request, code review, bug, fix, hotfix, patch, refactor, rollback, deploy, CI/CD, API, SDK, and CLI. Technical terms, product names, acronyms, and code identifiers may be spoken in English within otherwise Chinese sentences.',
   showMessageTTSButtons: false,
   voiceProvider: 'browser',
   speechRate: 1,
@@ -55,7 +56,7 @@ function normalizePatch(value) {
     if (!Object.hasOwn(value, field)) continue;
     const input = value[field];
     if (typeof input !== typeof defaults[field]
-      || (typeof input === 'string' && (input.length > 4096 || /[\r\n\0]/.test(input) || (requiredStrings.has(field) && !input.trim())))
+      || (typeof input === 'string' && (input.length > (field === 'asrContext' ? 2000 : 4096) || (field === 'asrContext' ? /\0/ : /[\r\n\0]/).test(input) || (requiredStrings.has(field) && !input.trim())))
       || (enums[field] && !enums[field].includes(input))
       || (typeof input === 'number' && (!Number.isFinite(input) || input < ranges[field][0] || input > ranges[field][1]))) {
       throw new TypeError('Invalid speech settings');

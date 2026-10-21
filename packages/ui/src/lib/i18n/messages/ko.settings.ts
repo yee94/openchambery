@@ -9,6 +9,8 @@ export const settingsDict = {
   'settings.voice.volcengine.keyHelp': '발급받기:',
   'settings.voice.volcengine.openLink': '클릭하여 열기',
   'settings.voice.volcengine.asrResource': '스트리밍 ASR 리소스 ID',
+  'settings.voice.volcengine.asrContext': '인식 문맥',
+  'settings.voice.volcengine.asrContextHelp': '주제와 전문 용어를 설명하세요. 비우면 비활성화되며 저장 후 다음 녹음부터 적용됩니다. 최대 2,000자.',
   'settings.voice.volcengine.custom': '사용자 지정 ID',
   'settings.voice.volcengine.durationHelp': '시간제 요금제. 인식 시간에 따라 과금됩니다.',
   'settings.voice.volcengine.concurrentHelp': '동시 연결 요금제. 구매한 동시 연결 용량을 사용합니다.',

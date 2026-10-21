@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { SettingsRow } from '@/components/sections/shared/SettingsGroup';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useI18n } from '@/lib/i18n';
 import { DictationTestDialog } from '@/components/dictation/DictationTestDialog';
@@ -105,6 +106,9 @@ export function VolcengineSpeechSettings({ mode, form }: { mode: 'tts' | 'asr'; 
                     ...option,
                     description: t(option.value.endsWith('.duration') ? 'settings.voice.volcengine.durationHelp' : 'settings.voice.volcengine.concurrentHelp'),
                 }))} label={t('settings.voice.volcengine.asrResource')} allowCustom={false} />
+            </SettingsRow>
+            <SettingsRow itemId="voice.volcengine-asr-context" className="oc-settings-split-row-stacked" label={t('settings.voice.volcengine.asrContext')} description={t('settings.voice.volcengine.asrContextHelp')}>
+                <Textarea rows={5} maxLength={2000} disabled={saving} value={settings.asrContext} onChange={(event) => edit({ asrContext: event.target.value })} aria-label={t('settings.voice.volcengine.asrContext')} />
             </SettingsRow>
             <SettingsRow itemId="voice.volcengine-asr-test" label={t('settings.voice.volcengine.asrTest')} description={t('settings.voice.volcengine.testHelp')}>
                 <Button variant="outline" size="sm" disabled={saving} aria-busy={saving} onClick={() => void test()}>{t('settings.voice.volcengine.asrTest')}</Button>

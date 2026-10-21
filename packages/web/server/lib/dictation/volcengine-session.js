@@ -44,10 +44,11 @@ function decodeFrame(input) {
 }
 
 export class VolcengineTranscriptionSession extends EventEmitter {
-  constructor({ apiKey, resourceId = 'volc.seedasr.sauc.duration' }, { createSocket = (url, options) => new WebSocket(url, options) } = {}) {
+  constructor({ apiKey, resourceId = 'volc.seedasr.sauc.duration', asrContext = '' }, { createSocket = (url, options) => new WebSocket(url, options) } = {}) {
     super();
     this.apiKey = apiKey;
     this.resourceId = resourceId;
+    this.asrContext = asrContext;
     this.createSocket = createSocket;
     this.requiredSampleRate = 16000;
     this.autoCommitSeconds = 0;
@@ -91,7 +92,9 @@ export class VolcengineTranscriptionSession extends EventEmitter {
         socket.send(encodeFrame(1, Buffer.from(JSON.stringify({
           user: { uid: 'openchamber' },
           audio: { format: 'pcm', codec: 'raw', rate: 16000, bits: 16, channel: 1 },
-          request: { model_name: 'bigmodel', result_type: 'full', enable_itn: true, enable_punc: true, enable_nonstream: true, show_utterances: true },
+          request: { model_name: 'bigmodel', result_type: 'full', enable_itn: true, enable_punc: true, enable_nonstream: true, show_utterances: true,
+            ...(this.asrContext.trim() ? { corpus: { context: JSON.stringify({ context_type: 'dialog_ctx', context_data: [{ text: this.asrContext.trim() }] }) } } : {}),
+          },
         }))), (error) => { if (error) fail(new Error('Volcengine ASR request could not be sent')); });
       });
       socket.on('message', (data) => {

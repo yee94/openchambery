@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { registerTtsRoutes } from './routes.js';
+import { parseSpeechSettings, speechDefaults } from '../../../../ui/src/lib/voice/speechSettings.ts';
 
 let directory;
 let app;
@@ -41,6 +42,26 @@ it('does not mint tickets for other providers, missing keys or malformed session
   await request(app).put('/api/voice/settings').send({ apiKey: '' });
   await request(app).post('/api/voice/session').send({ kind: 'asr' }).expect(400);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it('round-trips context, preserves it across unrelated saves and failed validation, and snapshots only saved ASR context', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ jwt_token: jwt() })));
+  const initial = (await request(app).get('/api/voice/settings').expect(200)).body;
+  expect(initial.asrContext).toBe(speechDefaults.asrContext);
+  const { asrContext: _context, ...legacy } = initial;
+  expect(parseSpeechSettings(legacy).asrContext).toBe('');
+  const context = 'Mixed Mandarin and English.\nReact, "OpenCode", and APIs.';
+  await request(app).put('/api/voice/settings').send({ asrContext: context }).expect(200);
+  await request(app).put('/api/voice/settings').send({ speechRate: 1.2 }).expect(200);
+  for (const asrContext of [42, null, 'x'.repeat(2001), 'bad\0text']) {
+    await request(app).put('/api/voice/settings').send({ asrContext }).expect(400);
+  }
+  expect((await request(app).get('/api/voice/settings')).body.asrContext).toBe(context);
+  expect(JSON.parse(fs.readFileSync(path.join(directory, 'speech/settings.json'), 'utf8')).asrContext).toBe(context);
+  expect((await request(app).post('/api/voice/session').send({ kind: 'asr', asrContext: 'ignored' })).body.asrContext).toBe(context);
+  expect((await request(app).post('/api/voice/session').send({ kind: 'tts' })).body).not.toHaveProperty('asrContext');
+  await request(app).put('/api/voice/settings').send({ asrContext: '  ' }).expect(200);
+  expect((await request(app).post('/api/voice/session').send({ kind: 'asr' })).body.asrContext).toBe('');
 });
 
 it('rejects failed, oversized, malformed, expired and overlong tickets without leaking upstream details', async () => {
