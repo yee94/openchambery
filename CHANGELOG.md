@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.6-beta.8] - 2026-10-21
+
+### 修复
+
+- 修复桌面按住语音按钮结束后焦点没回到输入框、需要再点一次才能继续打字的问题；现在只在焦点确实未被占用时接回，并在输入框末尾定位光标。
+
 ## [2.1.6-beta.7] - 2026-10-21
 
 ### 改进

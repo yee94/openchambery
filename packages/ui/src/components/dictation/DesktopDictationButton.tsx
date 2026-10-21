@@ -55,14 +55,26 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
         publishRecording(recording && (mobile || !loading));
         return () => publishRecording(false);
     }, [recording, loading, mobile, publishRecording]);
-    const confirm = useEvent(async () => {
+    const focusGeneration = useRef(0);
+    useEffect(() => () => { focusGeneration.current += 1; }, []);
+    const confirm = useEvent(async (restoreFocus = false) => {
         if (finalizing) return;
+        const input = inputRef?.current;
+        const generation = focusGeneration.current;
         ready.current = false;
         setFinalizing(true);
         try {
             await dictation.confirmDictation();
         } finally {
             setFinalizing(false);
+            if (restoreFocus && !mobile && generation === focusGeneration.current
+                && input?.isConnected && inputRef?.current === input && !input.disabled && !input.readOnly
+                && !document.hidden && document.hasFocus()
+                && (document.activeElement === document.body || document.activeElement === input
+                    || pointerCaptureTarget.current?.contains(document.activeElement))) {
+                input.focus({ preventScroll: true });
+                input.setSelectionRange(input.value.length, input.value.length);
+            }
         }
     });
     const finish = useEvent(() => {
@@ -147,7 +159,7 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
         if (heldPointer.current !== event.pointerId || event.button !== 0) return;
         heldPointer.current = null;
         ready.current = false;
-        void confirm();
+        void confirm(true);
     }, window, { capture: true });
     useEventListener('pointercancel', (event: PointerEvent) => {
         if (pendingPointer.current?.id === event.pointerId) cancelPendingHold();
