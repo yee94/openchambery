@@ -2,6 +2,22 @@
 
 Owning module for global CSS under `packages/ui/src/styles/`, including touch-mode adaptations in `mobile.css`.
 
+## Voice color calibration
+
+`design-system.css` owns `.oc-dictation-caret` and its trailing glow, including
+geometry, gradient, keyframes and reduced-motion handling. ChatInput mounts the
+trail only for a current provisional transcript and keys it by text to restart the
+animation on recognition updates; entering recording alone does not animate it.
+
+`design-system.css` sets dark `--voice-active-fill` to sRGB `#3BCC80`.
+Local browser screenshot calibration with the embedded `Rec2020 Gamut with sRGB Transfer`
+ICC profile maps this to raw screenshot RGB `#85C588`; the previous CSS `#85C588`
+mapped to raw `#9EC18F`. These are profile-dependent pixel values, not a CSS color
+calculation: converting the old screenshot to sRGB recovers its original `#85C588`.
+The compensation targets that screenshot profile and is not display-independent.
+Light mode uses sRGB `#38CD80`, targeting raw screenshot RGB `#85C688`
+under the same profile. Dark mode retains its separate `#85C588` target.
+
 The first-prompt establishing draft joins the main chat and hydrating overlay-foot contract. The idle draft keeps the in-flow Composer contract.
 
 ## `isMobile` vs `mobile-pointer` (do not confuse)

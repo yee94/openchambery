@@ -861,9 +861,9 @@ describe('classifyManagedSshBootstrapError', () => {
     );
     expect(summarizeManagedSshBootstrapError(
       'OpenChamber installation completed but the executable is unavailable',
-    )).toBe('OpenChamber installation completed but the executable is unavailable');
+    )).toBe('OpenChamberY installation completed but the executable is unavailable');
     expect(summarizeManagedSshBootstrapError('npm ERR! code ENOTFOUND registry.npmjs.org')).toBe(
-      'Failed to install OpenChamber because the remote could not reach the npm registry',
+      'Failed to install OpenChamberY because the remote could not reach the npm registry',
     );
   });
 });

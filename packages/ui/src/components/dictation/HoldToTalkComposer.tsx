@@ -6,6 +6,7 @@ import { useDictation } from '@/hooks/useDictation';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import type { HoldToTalkHint } from './useHoldToTalkInput';
 import './hold-to-talk.css';
+import { DictationLoading } from './DictationLoading';
 
 const speechColors = getDefaultTheme(false).colors;
 const cancelTargetPath = 'M-50 74.564 A600 600 0 0 1 147.707 22.283 A38 38 0 0 1 154.330 97.994 A524 524 0 0 0 -18.333 143.653 Z';
@@ -60,6 +61,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         return input;
     });
     const cancel = useEvent(() => {
+        if (processing) return;
         clearTimer();
         gesture.current = null;
         setHeld(false);
@@ -69,7 +71,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     });
     const down = useEvent((event: PointerEvent) => {
         const target = event.target;
-        if (disabled || status !== 'idle' || gesture.current || !event.isPrimary || event.button !== 0 || !(target instanceof HTMLElement)) return;
+        if (disabled || processing || status !== 'idle' || gesture.current || !event.isPrimary || event.button !== 0 || !(target instanceof HTMLElement)) return;
         if (!emptyInputForTarget(target)) return;
         event.preventDefault();
         event.stopPropagation();
@@ -116,10 +118,10 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
             action.current = current.intent === 'edit' ? 'insert' : 'send';
             onRelease(partialTranscript);
             setProcessing(true);
-            if (current.intent === 'edit') containerRef.current?.querySelector('textarea')?.focus();
             void Promise.resolve(dictation.confirmDictation()).finally(() => {
                 setProcessing(false);
                 dictation.discardFailedDictation();
+                if (current.intent === 'edit') containerRef.current?.querySelector('textarea')?.focus();
             });
         }
     });
@@ -155,16 +157,16 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     }, [containerRef, down, move, up, interrupted, cancel, clearTimer, preventEmptyInputSelection]);
     useEffect(() => { if (disabled) cancel(); }, [disabled, cancel]);
 
-    if (!held) return null;
+    if (!held && !processing) return null;
     const energy = Math.pow(Math.min(1, Math.max(0, volume)), 0.6);
     return createPortal(
         <div className="oc-speech-overlay" data-intent={intent} data-error={Boolean(error)} onClick={error ? cancel : undefined} style={{ ...speechPalette, '--speech-energy': energy } as CSSProperties}>
             <div className="oc-speech-light-field" aria-hidden="true">
                 {['ice', 'lilac', 'mint', 'blush', 'mid', 'core'].map((tone) => <div key={tone} className={`oc-speech-reactor oc-speech-reactor--${tone}`}><div className="oc-speech-light" /></div>)}
             </div>
-            <div className="oc-speech-content" data-starting={isStarting}>
-                {error ? <p role="alert" className="oc-speech-caption oc-speech-error">{error}</p> : <div role="status" aria-live="polite" aria-atomic="true" className="oc-speech-caption">
-                    {isStarting ? <span className="oc-speech-loading" aria-label={t('common.loading')}><span /><span /><span /></span>
+            <div className="oc-speech-content" data-starting={isStarting || processing}>
+                {error && !processing ? <p role="alert" className="oc-speech-caption oc-speech-error">{error}</p> : <div role="status" aria-live="polite" aria-atomic="true" className="oc-speech-caption">
+                    {isStarting || processing ? <DictationLoading />
                         : partialTranscript ? <span className="oc-speech-interim">{partialTranscript}</span> : t(status === 'uploading' ? 'chat.dictation.processing' : 'chat.dictation.listening')}
                 </div>}
             </div>

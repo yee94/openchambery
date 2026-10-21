@@ -155,13 +155,14 @@ describe("idle prompt + interrupt (ticket 06)", () => {
     expect(refreshCalls).toBe(1)
   })
 
-  test("interrupt POSTs /api/session/:id/interrupt", async () => {
+  test.each([undefined, false, true])("interrupt preserves resume=%s on /api/session/:id/interrupt", async (resume) => {
     responseImpl = async () => emptyResponse(204)
     const { postSessionInterrupt } = await import("./session-prompt-api")
 
     await postSessionInterrupt({
       sessionID: "ses/a b",
       directory: "/repo a",
+      resume,
     })
 
     expect(calls).toHaveLength(1)
@@ -169,6 +170,7 @@ describe("idle prompt + interrupt (ticket 06)", () => {
     expect(call.method).toBe("POST")
     expect(call.url.pathname).toBe(`/api/session/${encodeURIComponent("ses/a b")}/interrupt`)
     expect(call.url.searchParams.get("directory")).toBe("/repo a")
+    expect(call.url.searchParams.get("resume")).toBe(resume === undefined ? null : String(resume))
   })
 
   test("send and STOP wire to v2 prompt / interrupt, not prompt_async / abort", async () => {

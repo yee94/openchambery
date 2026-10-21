@@ -2300,7 +2300,7 @@ export function abortCurrentOperation(sessionId: string): Promise<void> {
   }
   const promise = runSessionInterrupt({
     store, sessionID: sessionId, isCurrent: current,
-    request: (signal) => postSessionInterrupt({ sessionID: sessionId, directory, signal }),
+    request: (signal) => postSessionInterrupt({ sessionID: sessionId, directory, signal, resume: true }),
   }).then((result) => {
     if (result === "unconfirmed") rollback()
   }, () => rollback()).finally(() => {

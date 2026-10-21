@@ -160,6 +160,12 @@ textarea[data-chat-input="true"] {
   box-shadow: none;
 }
 
+/* Paint selected text above the transparent textarea's syntax-highlight layer. */
+textarea[data-chat-input="true"]::selection {
+  background-color: Highlight;
+  color: HighlightText;
+}
+
 textarea[data-chat-input="true"]:hover,
 textarea[data-chat-input="true"]:focus,
 textarea[data-chat-input="true"]:focus-visible {

@@ -1,0 +1,81 @@
+.glyph {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  overflow: hidden;
+  contain: strict;
+  color: var(--voice-active-fill);
+}
+
+.lens {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  transform-origin: 0 0;
+  transform: scale(0.7142857143);
+}
+
+.shape {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: revolve 3.3s linear infinite both;
+}
+
+.shape:nth-child(2) {
+  animation-delay: -1.1s;
+}
+
+.shape:nth-child(3) {
+  animation-delay: -2.2s;
+}
+
+@keyframes revolve {
+  0% {
+    opacity: 1;
+    filter: blur(0);
+    transform: rotate(0deg) translateY(6.5px) scale(1);
+  }
+  25% {
+    opacity: 0.55;
+    filter: blur(1.3px);
+    transform: rotate(90deg) translateY(6.5px) scale(0.82);
+  }
+  50% {
+    opacity: 0.28;
+    filter: blur(2.4px);
+    transform: rotate(180deg) translateY(6.5px) scale(0.66);
+  }
+  75% {
+    opacity: 0.55;
+    filter: blur(1.3px);
+    transform: rotate(270deg) translateY(6.5px) scale(0.82);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: rotate(360deg) translateY(6.5px) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shape {
+    animation: none;
+    transform: translateY(6.5px);
+  }
+  .shape:nth-child(2) {
+    transform: rotate(120deg) translateY(6.5px);
+  }
+  .shape:nth-child(3) {
+    transform: rotate(240deg) translateY(6.5px);
+  }
+}

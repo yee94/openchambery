@@ -63,12 +63,13 @@ it('shows the overlay and a loading indicator while iOS opens the microphone', a
     await pointer('pointerdown');
     expect(document.querySelector('.oc-speech-overlay')).not.toBeNull();
     expect(document.querySelector('[role="status"]')?.textContent).toBe('');
-    expect(document.querySelector('.oc-speech-loading')?.getAttribute('aria-label')).toBe('common.loading');
-    expect(document.querySelectorAll('.oc-speech-loading > span')).toHaveLength(3);
+    expect(document.querySelector('[data-dictation-loading]')).not.toBeNull();
+    expect(document.querySelector('[data-dictation-loading] > span')?.classList.length).toBe(1);
+    expect(document.querySelectorAll('[data-dictation-loading] > span > span')).toHaveLength(3);
     speech.isStarting = false;
     speech.status = 'recording';
     await render();
-    expect(document.querySelector('.oc-speech-loading')).toBeNull();
+    expect(document.querySelector('[data-dictation-loading]')).toBeNull();
     expect(document.querySelector('[role="status"]')?.textContent).toBe('chat.dictation.listening');
 });
 
@@ -320,7 +321,7 @@ it('does not reopen the overlay for an error arriving after release', async () =
     expect(document.querySelector('.oc-speech-overlay')).toBeNull();
 });
 
-it.each(['send', 'edit'])('dismisses immediately on %s release while finalization is pending', async (intent) => {
+it.each(['send', 'edit'])('shows loading on %s release until finalization completes', async (intent) => {
     let finish!: () => void;
     speech.confirmDictation.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
     await pointer('pointerdown');
@@ -329,13 +330,17 @@ it.each(['send', 'edit'])('dismisses immediately on %s release while finalizatio
     await render();
     if (intent === 'send') await pointer('pointermove', 290);
     await pointer('pointerup');
-    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(document.querySelector('.oc-speech-overlay [data-dictation-loading]')).not.toBeNull();
+    expect(document.querySelector('.oc-speech-gesture-stage')).toBeNull();
     expect(onRelease).toHaveBeenCalledExactlyOnceWith('待整理的文字');
     expect(onHintChange).toHaveBeenLastCalledWith('processing');
     speech.status = 'uploading';
     await render();
-    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(document.querySelector('.oc-speech-overlay [data-dictation-loading]')).not.toBeNull();
+    await act(async () => window.dispatchEvent(new Event('blur')));
+    expect(speech.cancelDictation).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain('chat.dictation.cancel');
     await act(async () => finish());
+    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
     expect(onHintChange).toHaveBeenLastCalledWith(null);
 });

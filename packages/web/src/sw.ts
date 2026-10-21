@@ -47,7 +47,7 @@ self.addEventListener('push', (event) => {
       return;
     }
 
-    const title = payload.title || 'OpenChamber';
+    const title = payload.title || 'OpenChamberY';
     const body = payload.body ?? '';
     const icon = payload.icon ?? '/apple-touch-icon-180x180.png';
     const badge = payload.badge ?? '/favicon-32.png';

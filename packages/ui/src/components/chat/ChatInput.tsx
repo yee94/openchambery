@@ -1229,7 +1229,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     submissionBlocked = false,
     surface: surfaceProp,
 }) => {
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
     const iosNativeUiEnabled = useIosNativeUiEnabled();
     const [attachmentPopup, setAttachmentPopup] = React.useState<ToolPopupContent>({
         open: false,
@@ -2215,8 +2215,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const { globallyEnabled: dictationEnabled, enabled: holdToTalkEnabled, hint: dictationHint,
         onHintChange: setDictationHint } = useHoldToTalkInput({ available: isMobile });
     const speechPlaceholder = t(dictationHint === 'recording' ? 'chat.dictation.releaseSend' : dictationHint === 'cancelling' ? 'chat.dictation.releaseCancel' : dictationHint === 'editing' ? 'chat.dictation.releaseEdit' : dictationHint === 'processing' ? 'chat.dictation.processing' : 'chat.dictation.inputPlaceholder');
-    const [desktopCommandPressed, setDesktopCommandPressed] = React.useState(false);
     const [desktopRecording, setDesktopRecording] = React.useState(false);
+    const [desktopDictationActive, setDesktopDictationActive] = React.useState(false);
     const nativeComposerOwnedInput = iosNativeUiEnabled && canUseNativeIosComposer(isMobile) && surface.kind === 'primary' && !holdToTalkEnabled;
     const [desktopDictationPreview, setDesktopDictationPreview] = React.useState<{
         draftID: string | null; text: string; start: number; end: number;
@@ -6877,11 +6877,19 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         </div>
     );
 
-    const composerHighlightedContent = highlightedComposerContent?.map((part, index) => (
+    const composerHighlightedParts = highlightedComposerContent?.map((part, index) => (
         <span key={`${index}-${part.text.length}`} className={part.className}>
             {part.visual ? <ComposerTriggerIconMark visual={part.visual} text={part.text} /> : part.text}
         </span>
     ));
+    const composerHighlightedContent = !isMobile && desktopDictationActive ? <>
+        {composerHighlightedParts ?? message}
+        <span aria-hidden="true" className="oc-dictation-caret">
+            {desktopDictationPreview?.draftID === primaryDraftKeyID && desktopDictationPreview.text === message && (
+                <span key={message} className="oc-dictation-caret-trail" />
+            )}
+        </span>
+    </> : composerHighlightedParts;
 
     const mobileDictationTrigger = isMobile && holdToTalkEnabled ? (
         <Button
@@ -7054,7 +7062,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         </>
     ) : (
         <>
-            <div className={cn('flex flex-shrink-0 items-center', footerGapClass)}>
+            <div className={cn('flex flex-shrink-0 items-center', footerGapClass, desktopDictationActive && '[&>*:not([data-dictation-control])]:opacity-40')}>
                 <ComposerAttachmentControls
                     isVSCode={isVSCode}
                     footerIconButtonClass={footerIconButtonClass}
@@ -7090,7 +7098,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 {dictationEnabled && !isVSCodeRuntime() && isDictationCaptureSupported() && (
                     <MemoDesktopDictationButton key={primaryDraftKeyID}
                         inputRef={textareaRef}
-                        onCommandChange={setDesktopCommandPressed}
+                        onActiveChange={setDesktopDictationActive}
                         onRecordingChange={setDesktopRecording}
                         className={footerIconButtonClass}
                         iconClassName={iconSizeClass}
@@ -7101,7 +7109,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     />
                 )}
             </div>
-            <div className={cn('relative z-30 flex flex-1 items-center justify-end md:gap-x-1.5', footerGapClass)}>
+            <div className={cn('relative z-30 flex flex-1 items-center justify-end md:gap-x-1.5', footerGapClass, desktopDictationActive && 'opacity-40')}>
                 <MemoModelControls
                     className="min-w-0 flex-1 justify-end"
                     composerTextareaRef={textareaRef}
@@ -7663,8 +7671,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     focusedTone={inputMode === 'shell' ? 'info' : 'primary'}
                     className={cn(
                         'relative z-10',
-                        desktopCommandPressed && '[&:has(textarea:hover)]:!border-[var(--voice-active-fill)] [&:has(textarea:hover)]:!ring-0 [&_textarea]:cursor-pointer',
-                        desktopRecording && '!ring-0 [&_textarea]:cursor-pointer',
+                        desktopDictationActive && '!ring-0 [&_textarea]:caret-transparent',
                         isDragging && "ring-2 ring-primary ring-offset-2",
                         // Ctrl+X leader pending: subtle selection ring while waiting for M/A/N/C.
                         isLeaderKeyPending && "ring-1 ring-[var(--interactive-selection)] border-[var(--interactive-selection)]",
@@ -7672,7 +7679,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     )}
                     style={{
                         borderRadius: chatInputRadius,
-                        ...(desktopRecording ? { borderColor: 'var(--voice-active-fill)' } : {}),
+                        ...(desktopDictationActive ? { borderColor: 'var(--voice-active-fill)' } : {}),
                     }}
                     ref={dropZoneRef}
                     onDropCapture={handleDropCapture}
@@ -7724,7 +7731,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         borderBottomRightRadius: chatInputRadius,
                     }}
                     footerContent={composerFooterContent}
-                    placeholder={holdToTalkEnabled ? speechPlaceholder : desktopCommandPressed ? t('chat.dictation.holdHere') : composerPlaceholder}
+                    placeholder={holdToTalkEnabled ? speechPlaceholder : !isMobile && desktopDictationActive ? t('chat.dictation.recordingPlaceholder') : !isMobile && dictationEnabled && !isVSCodeRuntime() && isDictationCaptureSupported() ? `${composerPlaceholder}${locale.startsWith('zh') ? '，' : locale === 'ja' ? '、' : ', '}${t('chat.dictation.holdHere')}` : composerPlaceholder}
                     onChange={(_value, event) => handleTextChange(event)}
                     textareaProps={{
                         readOnly: isLeaderKeyPending,

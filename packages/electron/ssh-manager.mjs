@@ -107,7 +107,7 @@ export const createEphemeralUiPassword = () => crypto.randomBytes(24).toString('
 export const buildManagedServeEnvPrefix = (uiPassword) => {
   const password = typeof uiPassword === 'string' ? uiPassword.trim() : '';
   if (!password) {
-    throw new Error('Managed SSH OpenChamber requires a UI password');
+    throw new Error('Managed SSH OpenChamberY requires a UI password');
   }
   return `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD=${shellQuote(password)}`;
 };
@@ -236,14 +236,14 @@ export const classifyManagedSshBootstrapError = (raw) => {
 
 const SHORT_BOOTSTRAP_ERROR_DETAIL = {
   nodeRuntimeMissing: 'Managed SSH remote requires Node.js 22+; no supported Node runtime was found on the remote host',
-  packageManagerMissing: 'Remote host has neither bun nor npm available to install OpenChamber',
+  packageManagerMissing: 'Remote host has neither bun nor npm available to install OpenChamberY',
   nativeBinding: 'failed to prepare better-sqlite3 for the selected remote Node runtime',
-  openchamberCliMissing: 'OpenChamber installation completed but the executable is unavailable',
-  openchamberRegistry: 'Failed to install OpenChamber because the remote could not reach the npm registry',
-  openchamberInstall: 'Failed to install OpenChamber on remote host',
-  openchamberCliIncompatible: 'Remote OpenChamber CLI does not support --relay-host',
+  openchamberCliMissing: 'OpenChamberY installation completed but the executable is unavailable',
+  openchamberRegistry: 'Failed to install OpenChamberY because the remote could not reach the npm registry',
+  openchamberInstall: 'Failed to install OpenChamberY on remote host',
+  openchamberCliIncompatible: 'Remote OpenChamberY CLI does not support --relay-host',
   opencodeInstall: 'Failed to install OpenCode CLI on remote host',
-  serverStart: 'Managed OpenChamber server failed to become reachable',
+  serverStart: 'Managed OpenChamberY server failed to become reachable',
   sshAuth: 'SSH authentication failed',
   sshUnreachable: 'Could not reach the SSH host',
   timeout: 'Timed out waiting for SSH connection',
@@ -1023,7 +1023,7 @@ const waitLocalForwardReady = async (localPort) => {
     await new Promise((resolve) => setTimeout(resolve, pollMs));
     pollMs = Math.min(pollMs * 2, 2000);
   }
-  throw new Error('Timed out waiting for forwarded OpenChamber health');
+  throw new Error('Timed out waiting for forwarded OpenChamberY health');
 };
 
 /**
@@ -1446,7 +1446,7 @@ export class ElectronSshManager {
   async issueClientToken(localUrl, openchamberPassword) {
     const password = typeof openchamberPassword === 'string' ? openchamberPassword.trim() : '';
     if (!password) {
-      throw new Error('OpenChamber UI password is required to mint a client token');
+      throw new Error('OpenChamberY UI password is required to mint a client token');
     }
 
     const loginResponse = await fetch(new URL('/auth/session', `${localUrl}/`).toString(), {
@@ -1466,7 +1466,7 @@ export class ElectronSshManager {
       }),
     });
     if (!loginResponse.ok) {
-      throw new Error(`OpenChamber UI password was rejected by forwarded server (status ${loginResponse.status})`);
+      throw new Error(`OpenChamberY UI password was rejected by forwarded server (status ${loginResponse.status})`);
     }
 
     const payload = await loginResponse.json().catch(() => null);
@@ -1475,11 +1475,11 @@ export class ElectronSshManager {
 
     const cookie = this.extractCookieHeader(loginResponse);
     if (!cookie) {
-      throw new Error('Forwarded OpenChamber did not issue an SSH host token');
+      throw new Error('Forwarded OpenChamberY did not issue an SSH host token');
     }
     const minted = await this.createClientToken(localUrl, { Cookie: cookie });
     if (!minted) {
-      throw new Error('Forwarded OpenChamber did not issue an SSH host token');
+      throw new Error('Forwarded OpenChamberY did not issue an SSH host token');
     }
     return minted;
   }
@@ -1798,12 +1798,12 @@ export class ElectronSshManager {
       try {
         await this.runManagedRemoteCommand(parsed, controlPath, command);
         if (await this.currentRemoteOpenChamberVersion(parsed, controlPath)) return;
-        lastError = new Error('OpenChamber installation completed but the executable is unavailable');
+        lastError = new Error('OpenChamberY installation completed but the executable is unavailable');
       } catch (error) {
         lastError = error;
       }
     }
-    throw lastError || new Error('Failed to install OpenChamber on remote host');
+    throw lastError || new Error('Failed to install OpenChamberY on remote host');
   }
 
   async probeRemoteSystemInfo(parsed, controlPath, port, openchamberPassword) {
@@ -1820,15 +1820,15 @@ export class ElectronSshManager {
     if (isLivenessHttpStatus(infoStatus)) {
       if (isAuthHttpStatus(infoStatus)) {
         if (openchamberPassword && authStatus !== 200) {
-          throw new Error(`Remote OpenChamber requires UI authentication and configured password was rejected (auth status ${authStatus})`);
+          throw new Error(`Remote OpenChamberY requires UI authentication and configured password was rejected (auth status ${authStatus})`);
         }
         if (isLivenessHttpStatus(healthStatus)) return {};
-        throw new Error('Remote OpenChamber requires UI authentication on /api/system/info; configure OpenChamber UI password');
+        throw new Error('Remote OpenChamberY requires UI authentication on /api/system/info; configure OpenChamberY UI password');
       }
     } else if (isLivenessHttpStatus(healthStatus)) {
       return {};
     } else {
-      throw new Error(`Remote OpenChamber probe failed (info status ${infoStatus}, health status ${healthStatus})`);
+      throw new Error(`Remote OpenChamberY probe failed (info status ${infoStatus}, health status ${healthStatus})`);
     }
 
     try {
@@ -1857,7 +1857,7 @@ export class ElectronSshManager {
         this.appendLogWithLevel(
           instance.id,
           'WARN',
-          'Remote OpenChamber CLI does not advertise --relay-host; starting without a private relay host',
+          'Remote OpenChamberY CLI does not advertise --relay-host; starting without a private relay host',
         );
       }
     }
@@ -2415,29 +2415,29 @@ export class ElectronSshManager {
   async ensureRemoteServer(instance, parsed, controlPath) {
     if (instance.remoteOpenchamber.mode === 'external') {
       if (!instance.remoteOpenchamber.preferredPort) {
-        throw new Error('External mode requires a preferred remote OpenChamber port');
+        throw new Error('External mode requires a preferred remote OpenChamberY port');
       }
       const port = instance.remoteOpenchamber.preferredPort;
       const uiPassword = this.configuredOpenChamberPassword(instance);
-      this.setStatus(instance.id, 'server_detecting', 'Probing external OpenChamber server', null, null, port, false, 0, false);
+      this.setStatus(instance.id, 'server_detecting', 'Probing external OpenChamberY server', null, null, port, false, 0, false);
       await this.probeRemoteSystemInfo(parsed, controlPath, port, uiPassword);
       return { remotePort: port, startedByUs: false, uiPassword };
     }
 
-    this.setStatus(instance.id, 'remote_probe', 'Checking remote OpenChamber installation');
+    this.setStatus(instance.id, 'remote_probe', 'Checking remote OpenChamberY installation');
     await this.ensureManagedNodeRuntime(parsed, controlPath);
     const installedVersion = await this.currentRemoteOpenChamberVersion(parsed, controlPath);
     if (!installedVersion) {
-      this.setStatus(instance.id, 'installing', 'Installing OpenChamber on remote host');
+      this.setStatus(instance.id, 'installing', 'Installing OpenChamberY on remote host');
       await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
     } else if (installedVersion !== this.appVersion) {
-      this.setStatus(instance.id, 'updating', `Updating remote OpenChamber from ${installedVersion} to ${this.appVersion}`);
+      this.setStatus(instance.id, 'updating', `Updating remote OpenChamberY from ${installedVersion} to ${this.appVersion}`);
       await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
     }
     await this.ensureRemoteOpenChamberNativeBinding(parsed, controlPath);
     await this.ensureRemoteOpenCodeCli(parsed, controlPath, instance.remoteOpenchamber.installMethod);
 
-    this.setStatus(instance.id, 'server_detecting', 'Detecting managed OpenChamber server');
+    this.setStatus(instance.id, 'server_detecting', 'Detecting managed OpenChamberY server');
     let remotePort = instance.remoteOpenchamber.preferredPort || null;
     let startedByUs = false;
     let uiPassword = this.configuredOpenChamberPassword(instance)
@@ -2454,7 +2454,7 @@ export class ElectronSshManager {
     }
     // Default relay-host SSH remotes cannot reuse a leftover `web` serve.
     if (remotePort && instanceWantsRelayHost(instance) && !remoteRuntimeCanHostRelay(runningInfo)) {
-      this.setStatus(instance.id, 'server_starting', 'Restarting remote OpenChamber as a relay host');
+      this.setStatus(instance.id, 'server_starting', 'Restarting remote OpenChamberY as a relay host');
       await this.stopRemoteServerBestEffort(parsed, controlPath, remotePort);
       const deadline = Date.now() + 8_000;
       while (Date.now() < deadline) {
@@ -2464,7 +2464,7 @@ export class ElectronSshManager {
       remotePort = null;
     }
     if (!remotePort) {
-      this.setStatus(instance.id, 'server_starting', 'Starting managed OpenChamber server');
+      this.setStatus(instance.id, 'server_starting', 'Starting managed OpenChamberY server');
       const desiredPort = instance.remoteOpenchamber.preferredPort || randomPortCandidate(instance.id);
       const started = await this.startRemoteServerManaged(parsed, controlPath, instance, desiredPort);
       remotePort = started.port;
@@ -2473,7 +2473,7 @@ export class ElectronSshManager {
       this.ephemeralUiPasswords.set(instance.id, uiPassword);
     }
     if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) {
-      throw new Error('Managed OpenChamber server failed to become reachable');
+      throw new Error('Managed OpenChamberY server failed to become reachable');
     }
     return { remotePort, startedByUs, uiPassword };
   }
@@ -2593,7 +2593,7 @@ export class ElectronSshManager {
     const localUrl = `http://127.0.0.1:${localPort}`;
     const label = instance.nickname?.trim() || parsed.destination || id;
     if (!uiPassword) {
-      throw new Error('OpenChamber UI password is required to mint a client token');
+      throw new Error('OpenChamberY UI password is required to mint a client token');
     }
     const clientToken = await this.issueClientToken(localUrl, uiPassword);
     const relay = instanceWantsRelayHost(instance)
