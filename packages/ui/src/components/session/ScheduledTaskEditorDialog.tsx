@@ -1627,12 +1627,12 @@ export function ScheduledTaskEditorDialog(props: {
                   updateAutocompleteState(nextPrompt, cursorPosition);
                 }}
                 onKeyDown={handlePromptKeyDown}
-                rows={groupedPanel ? 4 : 8}
-                simple={groupedPanel}
+                rows={8}
+                outerClassName="h-64 min-h-32"
                 placeholder={t('sessions.scheduledTasks.editor.prompt.placeholder')}
                 className={cn(
-                  'typography-meta min-h-[120px] max-h-[300px] resize-none overflow-y-auto',
-                  groupedPanel && '!h-32 !min-h-32 !max-h-32 rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-4 py-4 text-base shadow-none ring-0 placeholder:text-muted-foreground/65 focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
+                  'typography-meta min-h-0 overflow-y-auto',
+                  groupedPanel && 'px-4 pt-4 text-base placeholder:text-muted-foreground/65',
                 )}
               />
 

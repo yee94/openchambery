@@ -109,6 +109,15 @@ fallbacks. A new native build is required for PNG-consuming native surfaces.
 
 ## Image presentation
 
+`message/mediaPreviewTransition` animates loaded image previews through one temporary,
+fixed, paint-contained crop frame and one image. Thumbnail `object-fit`, percentage
+`object-position`, clipping ancestors and matching-frame corner radius determine the
+return geometry. Frame bounds and image translation/scale animate together in both
+directions; no React state updates or DOM measurements occur per animation frame.
+Completion and cancellation remove the temporary layer and restore image visibility.
+Non-image previews retain View Transitions; unavailable geometry and reduced motion
+retain the shared fallback. All `MediaPreviewOverlay` image consumers use this path.
+
 Markdown content, attachment thumbnails/gallery, Assistant contact images and composer attachments use `LoadingImage` from shared UI on desktop and mobile, over direct or Relay connections. URL acquisition and browser decode are separate pending phases; both show the shared dotted shimmer canvas. Body images use one fixed-height frame (`contentFrame`, 10rem) in every phase so late image bytes never shift the transcript: 320px wide on desktop, full message width on mobile, with the image contained inside and full size available in the preview. Thumbnail slots retain their existing square size. Fullscreen previews and file sheets use `ImageLoadingPlaceholder` during resource acquisition. Failures end loading and preserve the owning surface's error/retry path; image preview/save metadata continues to carry the original source. Legacy Markdown keeps its DOM presentation owner and only marks streamed images loaded after the actual image load event. See `../ui/DOCUMENTATION.md#image-loading`.
 
 ## Mobile automatic read-aloud
