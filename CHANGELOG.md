@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.6-beta.10] - 2026-10-21
+
+### 改进
+
+- 移动端原生外壳争取更高屏幕刷新率：Android 在同分辨率下选择最高刷新率档，iOS 关闭 WebKit 的 60FPS 渲染上限，并在系统省电与温控策略允许范围内生效。
+- 助手会话自动跟随改用随滚动位置更新的锚点，加载历史或图片、Markdown 渲染撑高内容时更少跳位。
+
+### 修复
+
+- 修复助手会话里手指按住屏幕拖动时，自动补偿滚动会打断手势、导致拖不动的问题。
+
 ## [2.1.6-beta.9] - 2026-10-21
 
 ### 改进
