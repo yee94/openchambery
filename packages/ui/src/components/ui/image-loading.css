@@ -156,3 +156,18 @@
   object-fit: contain;
   object-position: center;
 }
+
+/* Decoded images participate in intrinsic width sizing; only pending frames
+   need a placeholder width. Height stays reserved through the transition. */
+.oc-image-frame[data-image-content][data-image-state='loaded'],
+[data-md-image-presentation='true']:has(> img[data-md-image-state='loaded']) {
+  width: fit-content;
+}
+
+.oc-image-frame[data-image-content][data-image-state='loaded'] > img,
+.oc-markstream-host .markstream-react .oc-image-frame[data-image-content][data-image-state='loaded'] > img,
+[data-md-image-presentation='true'] > img[data-md-image-state='loaded'] {
+  position: static;
+  width: auto;
+  height: var(--oc-content-image-height);
+}
