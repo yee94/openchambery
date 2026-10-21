@@ -2,18 +2,20 @@ import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useEvent } from '@reactuses/core';
 import { resolveComposerTextareaAutosize } from './composerTextareaAutosize';
 
-export function useComposerTextareaAutosize({ inputRef, message, expanded, isMobile, dictationHeight }: {
+export function useComposerTextareaAutosize({ inputRef, message, expanded, isMobile, dictationHeight, manualHeight = false }: {
     inputRef: RefObject<HTMLTextAreaElement | null>;
     message: string;
     expanded: boolean;
     isMobile: boolean;
     dictationHeight: number | null;
+    manualHeight?: boolean;
 }) {
     const [size, setSize] = useState<{ height: number; maxHeight: number } | null>(null);
-    const previousLayout = useRef<{ length: number; expanded: boolean; dictationHeight: number | null } | null>(null);
+    const previousLayout = useRef<{ length: number; expanded: boolean; dictationHeight: number | null; manualHeight: boolean } | null>(null);
     const resize = useEvent((options?: { allowShrink?: boolean }) => {
         const textarea = inputRef.current;
         if (!textarea) return;
+        if (manualHeight) return;
         const previousScrollTop = textarea.scrollTop;
 
         if (expanded) {
@@ -57,11 +59,11 @@ export function useComposerTextareaAutosize({ inputRef, message, expanded, isMob
         const previous = previousLayout.current;
         // Growing transcript never shrinks mid-recording (matches typing);
         // dictation ending (null) releases the height back to the message.
-        const allowShrink = !previous || message.length < previous.length || expanded !== previous.expanded
+        const allowShrink = !previous || previous.manualHeight || message.length < previous.length || expanded !== previous.expanded
             || (previous.dictationHeight !== null && dictationHeight === null);
-        previousLayout.current = { length: message.length, expanded, dictationHeight };
+        previousLayout.current = { length: message.length, expanded, dictationHeight, manualHeight };
         resize({ allowShrink });
-    }, [message, expanded, isMobile, dictationHeight, inputRef, resize]);
+    }, [message, expanded, isMobile, dictationHeight, manualHeight, inputRef, resize]);
 
     return { size, resize };
 }

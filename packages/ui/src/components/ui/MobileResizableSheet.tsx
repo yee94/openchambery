@@ -57,7 +57,7 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
   const sheetSnap = useMobileSheetSnap({
     initialSnapPoint: initiallyExpanded ? MOBILE_SHEET_EXPANDED_SNAP : undefined,
     fitContent,
-    onDismiss: () => onOpenChange(false),
+    onDismiss: open ? () => onOpenChange(false) : undefined,
   });
   const [headerActionsSlot, setHeaderActionsSlot] = React.useState<HTMLDivElement | null>(null);
   const hasHeader = title != null || leading != null || trailing != null;

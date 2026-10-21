@@ -62,6 +62,7 @@ Dense UI that intentionally uses sub-36px controls **must opt out**. Tailwind `h
 | Surface | Selector | File |
 |---|---|---|
 | Tool expandable rows | `.oc-tool-row[role="button"]` | `mobile.css` |
+| Composer pending changes summary | `button.oc-pending-changes-trigger` (28px minimum height) | `mobile.css` |
 | Tool move-to-background action | `.oc-tool-row button[data-component="session-background-move"]` (content-height, no extra row height) | `mobile.css` |
 | Composer footer mobile actions | `.composer-mobile-actions button` | `mobile.css` |
 | Composer send + stop controls | `button[data-composer-send="true"]` / `button[data-composer-stop="true"]` | `mobile.css` |

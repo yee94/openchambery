@@ -23,7 +23,6 @@ import type { SessionIndexSnapshot } from '@/lib/session-index-api';
 import { sessionIndexSnapshotQueryOptions } from '@/queries/sessionIndexQueries';
 import { HoldToTalkComposer } from '@/components/dictation/HoldToTalkComposer';
 import { useHoldToTalkInput } from '@/components/dictation/useHoldToTalkInput';
-import { toast } from '@/components/ui';
 
 const ignoreDictationRelease = () => {};
 const MemoHoldToTalkComposer = React.memo(HoldToTalkComposer);
@@ -197,7 +196,6 @@ export const AssistantSessionComposer = ({ active, working = false, onChange, on
     onChange(text);
     onVoiceSend?.(text);
   });
-  const reportDictationError = useEvent((error: Error) => toast.error(error.message));
   const copyReferenceSelection = useEvent((event: React.ClipboardEvent<HTMLTextAreaElement>, cut: boolean) => {
     const input = event.currentTarget;
     if (input.selectionStart === input.selectionEnd || !event.clipboardData
@@ -224,7 +222,7 @@ export const AssistantSessionComposer = ({ active, working = false, onChange, on
     data-hold-to-talk-empty={holdToTalkEnabled && document.text.length === 0 ? 'true' : undefined}>
     {holdToTalkEnabled && <MemoHoldToTalkComposer containerRef={containerRef} disabled={Boolean(props.pending || props.disabled)}
       onInsert={insertDictation} onSend={sendDictation} onRelease={ignoreDictationRelease}
-      onError={reportDictationError} onHintChange={setDictationHint} />}
+      onHintChange={setDictationHint} />}
     <ChatPromptComposer {...props} value={document.text} pending={props.pending || working}
     placeholder={placeholder}
     disableInputWhilePending={props.pending === true} inputRef={inputRef}

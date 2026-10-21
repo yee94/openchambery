@@ -11,10 +11,13 @@ const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url
 const ast = ts.createSourceFile('ChatInput.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const declarations = new Map<string, string>();
 let resizeListener = '';
+let dictationTailEffect = '';
 const visit = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node)) declarations.set(node.name.getText(ast), `const ${node.getText(ast)};`);
     if (ts.isCallExpression(node) && node.expression.getText(ast) === 'useEventListener'
         && node.arguments[1]?.getText(ast) === 'updateAutocompleteOverlayPosition') resizeListener = `${node.getText(ast)};`;
+    if (ts.isCallExpression(node) && node.expression.getText(ast) === 'React.useLayoutEffect'
+        && node.getText(ast).includes('textarea.scrollTop = textarea.scrollHeight')) dictationTailEffect = `${node.getText(ast)};`;
     ts.forEachChild(node, visit);
 };
 visit(ast);
@@ -28,6 +31,34 @@ function surface<Props extends object>(body: string, scope: Record<string, unkno
 const host = document.createElement('div');
 const root = createRoot(host);
 afterEach(async () => { await act(async () => root.render(null)); vi.restoreAllMocks(); });
+
+it('follows mobile ASR text and its underline to the bottom without focusing or resizing', async () => {
+    expect(dictationTailEffect).not.toBe('');
+    const textarea = document.createElement('textarea');
+    const highlight = document.createElement('div');
+    textarea.style.height = '48px';
+    let contentHeight = 48;
+    Object.defineProperty(textarea, 'scrollHeight', { get: () => contentHeight });
+    const focus = vi.spyOn(textarea, 'focus');
+    const Surface = surface<{ isMobile: boolean; mobileDictationActive: boolean; message: string }>(`
+        const { isMobile, mobileDictationActive, message } = props;
+        ${dictationTailEffect}
+        return null;
+    `, { textareaRef: { current: textarea }, composerHighlightRef: { current: highlight } });
+    for (let i = 1; i <= 50; i++) {
+        contentHeight = 48 + i * 20;
+        await act(async () => root.render(<Surface isMobile mobileDictationActive message={'转写\n'.repeat(i)} />));
+        expect(textarea.scrollTop).toBe(contentHeight);
+        expect(highlight.style.transform).toBe(`translateY(-${textarea.scrollTop}px)`);
+        expect(textarea.style.height).toBe('48px');
+    }
+    expect(focus).not.toHaveBeenCalled();
+    for (const mode of [{ isMobile: false, mobileDictationActive: true }, { isMobile: true, mobileDictationActive: false }]) {
+        textarea.scrollTop = 12;
+        await act(async () => root.render(<Surface {...mode} message="普通输入" />));
+        expect(textarea.scrollTop).toBe(12);
+    }
+});
 
 it('selects the new draft during render and retains selector identity across unrelated renders', async () => {
     const state = { drafts: { a: { text: 'first' }, b: { text: 'second' } } };

@@ -28,7 +28,7 @@ interface Props {
     onInsert: (text: string) => void;
     onSend: (text: string) => void;
     onRelease: (text: string) => void;
-    onError: (error: Error) => void;
+    onError?: (error: Error) => void;
     onHintChange: (hint: HoldToTalkHint) => void;
 }
 

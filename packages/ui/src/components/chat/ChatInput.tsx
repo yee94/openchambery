@@ -241,6 +241,7 @@ import {
 } from '@/composer/inline-visual';
 import { buildAssistantQueueDeliveryParts, buildAssistantQueueSyntheticSidecar, buildSyntheticDeliveryParts, compileChatComposerDelivery, legacyTextToAuthoredPlan } from './chatComposerDelivery';
 import { useComposerTextareaAutosize } from './useComposerTextareaAutosize';
+import { MobileComposerHeightHandle } from './MobileComposerHeightHandle';
 import { queueModeAllowsMutations, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
 
 const COMPOSER_TEXT_LAYOUT_CLASS = 'box-border w-full whitespace-pre-wrap break-words px-3 typography-markdown [font-family:inherit] [font-style:inherit] [font-weight:inherit] leading-[inherit] tracking-[inherit] md:typography-ui-label';
@@ -2228,7 +2229,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             ...mentionRangesToHighlightRanges(composerMentionRanges),
             ...composerCommandRanges,
             ...attachmentCitationRanges,
-            ...(!isMobile && desktopDictationPreview?.draftID === primaryDraftKeyID && desktopDictationPreview?.text === message
+            ...(desktopDictationPreview?.draftID === primaryDraftKeyID && desktopDictationPreview?.text === message
                 ? [{ start: desktopDictationPreview.start, end: desktopDictationPreview.end,
                     style: 'dictation' as const }]
                 : []),
@@ -2242,7 +2243,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             })),
         ];
         return buildHighlightParts(message, ranges);
-    }, [attachmentCitationRanges, composerCommandRanges, composerMentionRanges, composerDocument.references, inputMode, message, nativeComposerOwnedInput, desktopDictationPreview, primaryDraftKeyID, isMobile]);
+    }, [attachmentCitationRanges, composerCommandRanges, composerMentionRanges, composerDocument.references, inputMode, message, nativeComposerOwnedInput, desktopDictationPreview, primaryDraftKeyID]);
 
     const [autocompleteOverlayPosition, setAutocompleteOverlayPosition] = React.useState<AutocompleteOverlayPosition | null>(null);
     const abortTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -4413,9 +4414,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     });
     const insertMobileDictation = useEvent((text: string) => finishMobileDictation(text, false));
     const sendMobileDictation = useEvent((text: string) => finishMobileDictation(text, true));
-    const reportMobileDictationError = useEvent((error: Error) => {
+    const reportMobileDictationError = useEvent(() => {
         mobileDictationDraft.current = null;
-        toast.error(error.message);
     });
 
     // Preset chips rendered outside this component (e.g. under the welcome
@@ -4976,9 +4976,22 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         setDictationContentHeight((prev) => (prev === height ? prev : height));
     });
 
+    const mobileComposerSnapVisible = isMobile && !nativeComposerOwnedInput && !isComposerExpanded && message.length > 0;
+    const [mobileComposerManualHeight, setMobileComposerManualHeight] = React.useState(false);
     const { size: textareaSize, resize: adjustTextareaHeight } = useComposerTextareaAutosize({
         inputRef: textareaRef, message, expanded: isComposerExpanded, isMobile, dictationHeight: dictationContentHeight,
+        manualHeight: (mobileComposerSnapVisible && mobileComposerManualHeight) || (isMobile && mobileDictationActive),
     });
+    React.useLayoutEffect(() => {
+        if (!isMobile || !mobileDictationActive) return;
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.style.overflowY = 'auto';
+        textarea.scrollTop = textarea.scrollHeight;
+        if (composerHighlightRef.current) {
+            composerHighlightRef.current.style.transform = `translateY(-${textarea.scrollTop}px)`;
+        }
+    }, [isMobile, mobileDictationActive, message]);
 
     const updateAutocompleteState = useEvent((
         value: string,
@@ -6868,11 +6881,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             size="icon"
             className={footerIconButtonClass}
             data-composer-action="true"
-            aria-label={t('chat.dictation.start')}
-            disabled={resolvedDraftBusy || mobileDictationActive || dictationHint !== null || (!currentSessionId && !newSessionDraftOpen)}
-            onClick={() => window.dispatchEvent(new Event('openchamber:dictation-toggle'))}
+            aria-label={t(desktopRecording ? 'settings.voice.volcengine.finishRecording' : 'chat.dictation.start')}
+            aria-pressed={desktopRecording}
+            disabled={!desktopRecording && (resolvedDraftBusy || mobileDictationActive || dictationHint !== null || (!currentSessionId && !newSessionDraftOpen))}
+            onClick={() => window.dispatchEvent(new Event('openchamber:mobile-dictation-toggle'))}
         >
-            <Icon name="mic" className={iconSizeClass} />
+            <Icon name="mic" className={cn(iconSizeClass, desktopRecording && 'text-[var(--voice-active-fill)]')} />
         </Button>
     ) : null;
 
@@ -6991,7 +7005,19 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         draftOpen={newSessionDraftOpen}
                     />
                     <SessionGoalObjectiveCounter length={message.length} />
-                    {mobileDictationTrigger}
+                    {holdToTalkEnabled && <MemoDesktopDictationButton
+                        key={primaryDraftKeyID}
+                        interactionMode="mobile"
+                        disabled={resolvedDraftBusy || dictationHint !== null || (!currentSessionId && !newSessionDraftOpen)}
+                        onRecordingChange={setDesktopRecording}
+                        onActiveChange={setMobileDictationActive}
+                        className={footerIconButtonClass}
+                        iconClassName={iconSizeClass}
+                        onStart={beginDesktopDictation}
+                        onPartial={updateDesktopDictation}
+                        onInsert={finishDesktopDictation}
+                        onCancel={cancelDesktopDictation}
+                    />}
                 </div>
                 {mobileComposerControls}
                 <div className="relative z-30 flex shrink-0 items-center justify-end gap-x-1.5">
@@ -7457,6 +7483,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     data-native-composer-accessories="true"
                 >
                 <MemoStatusRow
+                    className={mobileComposerSnapVisible ? 'mb-0' : undefined}
                     showAbortStatus={showAbortStatus}
                     showAbortPrompt={Boolean(
                         isDesktopExpanded
@@ -7659,7 +7686,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         isComposerExpanded
                             ? cn('h-full min-h-0', isMobile ? 'py-2.5' : 'py-4')
                             : isMobile
-                                ? 'py-2.5'
+                                ? mobileComposerSnapVisible ? 'pt-[22px] pb-2' : 'py-2.5'
                                 : 'pt-4 pb-2',
                         inputMode === 'shell' ? 'font-mono' : 'typography-markdown md:typography-ui-label',
                     )}
@@ -7806,6 +7833,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     }}
                 >
                     <LeaderKeyHint />
+                    {mobileComposerSnapVisible ? (
+                        <MobileComposerHeightHandle
+                            inputRef={textareaRef}
+                            draftID={draftKey ? draftKeyString(draftKey) : null}
+                            ariaLabel={t('textarea.resizeHandleAria')}
+                            onManualHeightChange={setMobileComposerManualHeight}
+                        />
+                    ) : null}
                     {isDragging && (
                         <div
                             className="absolute inset-0 z-50 flex items-center justify-center bg-background/90"
@@ -7880,7 +7915,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 {/* Wrapper-level dictation engine + overlay: stays mounted across
                     collapsed ↔ expanded layout so a recording started from the
                     compact field survives the grow. Overlay covers the surface. */}
-                {isMobile && dictationEnabled ? (
+                {isMobile && dictationEnabled && !holdToTalkEnabled ? (
                     <MemoComposerDictation
                         key={primaryDraftKeyID}
                         radius={chatInputRadius}

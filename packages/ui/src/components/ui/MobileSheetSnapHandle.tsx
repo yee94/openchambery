@@ -1,4 +1,5 @@
 import React from 'react';
+import { HeightSnapHandle } from './HeightSnapHandle';
 
 import {
   MOBILE_SHEET_COLLAPSED_SNAP,
@@ -10,7 +11,7 @@ export const MobileSheetSnapHandle: React.FC<{
   controller: MobileSheetSnapController;
   ariaLabel: string;
 }> = ({ controller, ariaLabel }) => (
-  <div
+  <HeightSnapHandle
     data-mobile-sheet-snap-handle
     role="separator"
     tabIndex={0}
@@ -24,9 +25,8 @@ export const MobileSheetSnapHandle: React.FC<{
     onPointerMove={controller.handlePointerMove}
     onPointerUp={controller.handlePointerUp}
     onPointerCancel={controller.handlePointerCancel}
+    onLostPointerCapture={controller.handleLostPointerCapture}
     onClick={controller.handleClick}
     onKeyDown={controller.handleKeyDown}
-  >
-    <div className="h-1.5 w-11 rounded-full bg-[var(--interactive-border)]" />
-  </div>
+  />
 );

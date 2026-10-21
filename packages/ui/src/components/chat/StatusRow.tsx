@@ -54,6 +54,7 @@ interface StatusRowProps {
   showTodos?: boolean;
   agentName?: string;
   leftAccessory?: React.ReactNode;
+  className?: string;
 }
 
 export const StatusRow: React.FC<StatusRowProps> = ({
@@ -72,6 +73,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   showTodos = true,
   agentName,
   leftAccessory,
+  className,
 }) => {
   const { t } = useI18n();
   const [isExpanded, setIsExpanded] = React.useState(false);
@@ -233,7 +235,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   }
 
   return (
-    <div className={cn("mb-1", !hasLeftAccessory && "chat-column -mt-1", !hasLeftAccessory && getToolRowBlockClass(isMobile))} style={STATUS_ROW_CONTAINER_STYLE}>
+    <div className={cn("mb-1", !hasLeftAccessory && "chat-column -mt-1", !hasLeftAccessory && getToolRowBlockClass(isMobile), className)} style={STATUS_ROW_CONTAINER_STYLE}>
       {/*
         When leftAccessory is set (ChatInput pending-changes row), the parent is
         already `chat-input-column`. Use the same horizontal inset as the composer

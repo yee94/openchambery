@@ -48,6 +48,7 @@ const isKeyboardPinned = (): boolean => {
 const isComposerPinned = (scope: HTMLElement): boolean => {
     if (isKeyboardPinned()) return true;
     if (scope.querySelector('[data-oc-composer-dictation-active="true"]')) return true;
+    if (scope.querySelector('[data-composer-height-snap="full"], [data-mobile-composer-resizing="true"]')) return true;
     const active = document.activeElement;
     return active instanceof HTMLElement
         && active.matches('textarea[data-chat-input="true"]')

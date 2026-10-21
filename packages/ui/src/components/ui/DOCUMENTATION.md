@@ -10,6 +10,22 @@ Coverage: `LoadingImage.test.tsx`, `markstreamImages.test.tsx`, `MobileFilesSurf
 
 # Mobile Window Motion
 
+`useHeightSnap` is the shared dynamic pixel-height gesture/settlement owner for mobile
+sheets and composer textareas. Callers supply semantic snap IDs and measured heights;
+the hook captures geometry once per drag, coalesces writes through rAF, restores the
+starting position on cancellation/lost capture, and releases capture/animations on
+reset or teardown. `useMobileSheetSnap` retains sheet-specific ratios, fit-content
+measurement and downward dismissal. `HeightSnapHandle` shares the visual and accessible
+separator primitive; each caller supplies its own value range and translated label.
+The controller exposes `settling` separately from `dragging`: consumers with their own
+autosizing must yield height and max-height ownership until settlement completes.
+Interrupted animations are sampled, cancelled, and only then remeasured, so their
+fill cannot contaminate dynamic content-height snap points.
+Closed `MobileResizableSheet` shells do not provide a dismiss callback, so unrelated
+composer edits cannot refresh a hidden sheet's release-handler effect. Animation and
+pointer cleanup runs in layout teardown before a removed composer handle returns
+height ownership to its parent's autosize effect.
+
 `MobileWindowMotion` owns mobile overlay motion. React owns discrete presence and modal state. Interaction frames write only the component-owned scrim and surface `transform` and `opacity` styles.
 
 `begin(operation)` accepts `present` and `dismiss` and returns whether the interaction started. `update(progress)` receives the current operation completion from `0` through `1`: present maps directly to visible progress, dismiss maps to `1 - progress`. `finish(commit | cancel)` resolves through the recipe: present commits visible and cancels hidden; dismiss commits hidden and cancels visible.

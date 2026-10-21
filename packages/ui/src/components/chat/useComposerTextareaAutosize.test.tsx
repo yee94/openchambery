@@ -9,10 +9,10 @@ let contentHeight: number;
 let result: ReturnType<typeof useComposerTextareaAutosize>;
 const inputRef = { current: null as HTMLTextAreaElement | null };
 
-function Probe({ message = '', expanded = false, dictationHeight = null, isMobile = false }: {
-    message?: string; expanded?: boolean; dictationHeight?: number | null; isMobile?: boolean;
+function Probe({ message = '', expanded = false, dictationHeight = null, isMobile = false, manualHeight = false }: {
+    message?: string; expanded?: boolean; dictationHeight?: number | null; isMobile?: boolean; manualHeight?: boolean;
 }) {
-    result = useComposerTextareaAutosize({ inputRef, message, expanded, dictationHeight, isMobile });
+    result = useComposerTextareaAutosize({ inputRef, message, expanded, dictationHeight, isMobile, manualHeight });
     return null;
 }
 
@@ -91,4 +91,22 @@ it('skips resetting height during text growth and allows shrinking on deletion',
     heights.length = 0;
     await act(async () => root.render(<Probe message="a" />));
     expect(heights).toEqual(['auto']);
+});
+
+it('holds mobile recording height across transcript updates and imperative resize calls', async () => {
+    await act(async () => root.render(<Probe isMobile message="已有内容" />));
+    const height = inputRef.current!.style.height;
+    const size = result.size;
+    const measure = vi.spyOn(window, 'getComputedStyle');
+    for (let i = 1; i <= 50; i++) {
+        contentHeight = 48 + i * 20;
+        await act(async () => root.render(<Probe isMobile manualHeight message={'语音\n'.repeat(i)} />));
+        await act(async () => result.resize());
+        expect(inputRef.current!.style.height).toBe(height);
+        expect(result.size).toBe(size);
+    }
+    expect(measure).not.toHaveBeenCalled();
+    await act(async () => root.render(<Probe isMobile message={'语音\n'.repeat(50)} />));
+    expect(measure).toHaveBeenCalledTimes(1);
+    expect(inputRef.current!.style.height).not.toBe(height);
 });
