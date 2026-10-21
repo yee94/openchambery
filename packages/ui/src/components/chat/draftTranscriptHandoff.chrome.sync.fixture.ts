@@ -50,6 +50,7 @@ export const useSessionTranscriptPagination = () => ({
   boundary: { kind: 'complete' as const, loadedTurns: useFrame().messages.filter((entry) => entry.info.role === 'user').length },
 });
 export const useSessionStatus = () => useFrame().status;
+export const useGlobalSessionStatus = () => useFrame().status;
 export const useSessionStatusObservedAt = () => 10_000;
 export const useSessionStatusSnapshotAt = () => 10_000;
 export const useSessionParts = (messageID: string) => (
@@ -62,7 +63,11 @@ export const useScopedBlockingPermissions = () => [];
 export const useScopedBlockingQuestions = () => [];
 export const useSessions = () => [];
 export const useParentSessionTarget = () => null;
-export const useDirectorySync = <T,>(selector: (state: { todo: Record<string, never[]> }) => T) => selector({ todo: {} });
+export const useDirectorySync = <T,>(selector: (state: {
+  todo: Record<string, never[]>;
+  session_execution_recovery: Record<string, never>;
+  session_status: Record<string, NonNullable<SyncHarnessFrame['status']>>;
+}) => T) => selector({ todo: {}, session_execution_recovery: {}, session_status: {} });
 export const useEnsureSessionMessages = () => async () => undefined;
 export const useChildStoreManager = () => ({ getChild: () => null, ensureChild: () => null });
 export const useScopedSessionStatusReader = () => () => frame.status;

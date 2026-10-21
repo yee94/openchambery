@@ -131,7 +131,7 @@ const replay = async (label: string, frame: ReplayFrame) => {
   const wrapper = column?.parentElement;
   const turn = host.querySelector('[data-turn-id="user-1"]');
   const body = host.querySelector('[data-chrome-message-body="assistant-1"]');
-  if (!user || !heading || !header || !wrapper || !turn || (frame !== 'pending' && frame !== 'error' && !body)) {
+  if (!user || !heading || !header || !wrapper || !turn || (assistant?.parts.length && !body)) {
     throw new Error(`pending header Chrome fixture structure missing user=${Boolean(user)} heading=${Boolean(heading)} header=${Boolean(header)} wrapper=${Boolean(wrapper)} body=${Boolean(body)} turn=${Boolean(turn)} html=${host.innerHTML.slice(0, 1200)}`);
   }
   const rect = (node: Element) => node.getBoundingClientRect();

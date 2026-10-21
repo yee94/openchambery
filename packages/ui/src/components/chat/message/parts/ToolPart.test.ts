@@ -69,13 +69,11 @@ describe('static navigation hit targets', () => {
         expect(filesSurfaceSource).toContain('initialFilePath');
     });
 
-    test('mobile read image preview loads relay assets through runtimeFetch', () => {
+    test('mobile read image preview delegates runtime assets to the shared image resource owner', () => {
         const filesSurfaceSource = readFileSync(join(__dirname, '../../../../apps/MobileFilesSurface.tsx'), 'utf-8');
-        expect(filesSurfaceSource).toContain('isRelayModeActive()');
-        expect(filesSurfaceSource).toContain("runtimeFetch('/api/fs/raw', { query: { path: imagePath } })");
-        expect(filesSurfaceSource).toContain('URL.createObjectURL(blob)');
-        expect(filesSurfaceSource).toContain('URL.revokeObjectURL(objectUrl)');
-        expect(filesSurfaceSource).toContain('const imageSrc = relayImageKey ? relayImageSrc');
+        expect(filesSurfaceSource).toContain("useResolvedImageResource(imagePath, getParentDirectory(path) ?? '', 'preview')");
+        expect(filesSurfaceSource).toContain('const imageSrc = imageResource.source;');
+        expect(filesSurfaceSource).toContain('const imageError = error ?? imageResource.error');
     });
 
     test('mobile and desktop file image previews open the shared ToolOutputDialog viewer', () => {

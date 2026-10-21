@@ -43,6 +43,23 @@ function mountStyledFixture(html: string): HTMLElement {
 }
 
 describe('mobile composer overflow and swap contract', () => {
+    test('touch spacing preserves the shared textarea and highlight padding', () => {
+        const spacingRule = mobileCss.match(/:root\.mobile-pointer:not\(\.desktop-runtime\)\s+\.py-2[^{}]*\{[^}]*\}/)?.[0];
+        expect(spacingRule).toBeTruthy();
+        const host = mountStyledFixture('<textarea data-chat-input="true" class="py-2"></textarea><div data-composer-highlight="true"></div><div class="py-2" data-unrelated></div>');
+        const style = document.createElement('style');
+        document.head.appendChild(style);
+        injected.add(style);
+        const textarea = host.querySelector('textarea')!;
+        const highlight = host.querySelector<HTMLElement>('[data-composer-highlight]')!;
+        for (const padding of ['10px 12px', '22px 12px 8px', '16px 12px 8px']) {
+            style.textContent = `[data-chat-input], [data-composer-highlight] { padding: ${padding}; } ${spacingRule}`;
+            expect(getComputedStyle(textarea).paddingTop).toBe(getComputedStyle(highlight).paddingTop);
+            expect(getComputedStyle(textarea).paddingBottom).toBe(getComputedStyle(highlight).paddingBottom);
+        }
+        expect(getComputedStyle(host.querySelector('[data-unrelated]')!).paddingTop).toBe('12px');
+    });
+
     test('keeps composer send and stop controls at their authored compact size', () => {
         expect(mobileCss).toContain('button[data-composer-send="true"]');
         expect(mobileCss).toContain('[data-composer-send="true"][role="button"]');

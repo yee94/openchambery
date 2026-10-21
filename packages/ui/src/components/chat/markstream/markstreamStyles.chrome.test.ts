@@ -33,16 +33,18 @@ describe('Markstream nested legacy code card Chromium styles', () => {
       mode: 'production',
       root: join(uiSrc, '..'),
       publicDir: false,
+      worker: { format: 'es' },
       esbuild: { jsxDev: false },
       resolve: { alias: [
         { find: /^@\/(contexts\/useThemeSystem|hooks\/useEffectiveDirectory|hooks\/useRuntimeAPIs)$/, replacement: boundary },
         { find: '@', replacement: uiSrc },
       ] },
       build: {
+        rolldownOptions: { output: { codeSplitting: false } },
         emptyOutDir: false, minify: false, reportCompressedSize: false, outDir: work,
         lib: {
           entry: join(here, 'markstreamStyles.chrome.fixture.tsx'),
-          formats: ['iife'], name: 'MarkstreamStyleFixture',
+          formats: ['es'], name: 'MarkstreamStyleFixture',
           fileName: () => 'fixture.js', cssFileName: 'fixture',
         },
       },
@@ -52,7 +54,7 @@ describe('Markstream nested legacy code card Chromium styles', () => {
       <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
       <link rel="stylesheet" href="/production.css"><link rel="stylesheet" href="/fixture.css">
       </head><body><div id="root"></div><script>window.process={env:{NODE_ENV:'production'}};window.global=window;</script>
-      <script src="/fixture.js"></script></body></html>`);
+       <script type="module" src="/fixture.js"></script></body></html>`);
     // Serve generated worker assets over HTTP so the actual Shiki worker can run.
     const imageRequests: string[] = [];
     const server = createServer((request, response) => {
@@ -85,10 +87,10 @@ describe('Markstream nested legacy code card Chromium styles', () => {
       }
       expect(await page.evaluate('typeof window.markstreamStyleReplay')).toBe('function');
       const imageResult = await page.evaluate<{ loaded: boolean; source: string; openedSource: string }>('window.markstreamImageReplay()');
-      expect(imageResult.loaded).toBe(false);
-      expect(imageResult.source).toBeNull();
+      expect(imageResult.loaded).toBe(true);
+      expect(imageResult.source).toMatch(/^blob:/);
       expect(imageResult.openedSource).toBe('/workspace/photo.png');
-      expect(imageRequests).toEqual([]);
+      expect(imageRequests).toEqual(['/workspace/photo.png']);
       const evidence: Record<string, unknown> = {};
       for (const dark of [false, true]) {
         const mode = dark ? 'dark' : 'light';

@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useEvent } from '@reactuses/core';
 import { toast } from 'sonner';
 import { publishNativeAssistantCatalog, refreshNativeAssistantCatalog } from '@/apps/MobileShareBridge';
@@ -451,11 +452,12 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
 
 interface AssistantsSettingsPageProps {
   onItemDeleted?: () => void;
+  saveActionContainer?: HTMLElement | null;
   /** Route-owned selection for a detail opened above an Assistant conversation. */
   assistantID?: string;
 }
 
-export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ onItemDeleted, assistantID }) => {
+export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ onItemDeleted, assistantID, saveActionContainer }) => {
   const { t } = useI18n();
   const snapshotQuery = useAssistantSnapshotQuery();
   const capabilityQuery = useAssistantCapabilityQuery();
@@ -606,7 +608,9 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               <div className="group/avatar relative shrink-0">
                 <AgentAvatar kind="assistant" name={draft.avatarSeed ?? selected?.id ?? 'new'} size={40} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} shape="rounded" className="rounded-[0.5rem]" />
                 <Button variant="link" size="icon" disabled={saving} className="absolute inset-0 h-full w-full p-0 text-muted-foreground opacity-0 transition-opacity hover:no-underline group-hover/avatar:opacity-100 group-focus-within/avatar:opacity-100 [@media(hover:none)]:opacity-100" aria-label={t('assistants.settings.randomAvatar')} title={t('assistants.settings.randomAvatar')} onClick={() => patchDraft('avatarSeed', crypto.randomUUID())}>
-                  <Icon name="refresh" className="absolute -right-0.5 -bottom-0.5 size-3.5" />
+                  <span className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-[var(--oc-settings-avatar-action-background)] text-[var(--oc-settings-avatar-action-foreground)] shadow-sm">
+                    <Icon name="refresh" className="size-3.5" />
+                  </span>
                 </Button>
               </div>
               <div className="min-w-0 flex-1">
@@ -687,9 +691,14 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
 
             {selected ? <AssistantScheduledTasksGroup assistantID={selected.id} /> : null}
 
-            <div className="flex justify-end">
+            {saveActionContainer ? createPortal(
+              <Button type="button" variant="mobileGlass" size="mobileIcon" className="text-primary" onClick={save} disabled={saving} aria-label={t('assistants.settings.save')} aria-busy={saving}>
+                <Icon name={saving ? 'loader-4' : 'check'} className={saving ? 'size-5 animate-spin motion-reduce:animate-none' : 'size-5'} />
+              </Button>,
+              saveActionContainer,
+            ) : <div className="flex justify-end">
               <Button onClick={save} disabled={saving}>{saving ? <Icon name="loader-4" className="size-4 animate-spin" /> : null}{t('assistants.settings.save')}</Button>
-            </div>
+            </div>}
           </>
         ) : (
           <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">

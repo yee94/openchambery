@@ -2728,7 +2728,7 @@ button.oc-mobile-worktree-label-trigger:active,
     padding-right: 1rem !important;
   }
 
-  :root.mobile-pointer:not(.desktop-runtime) .py-2 {
+  :root.mobile-pointer:not(.desktop-runtime) .py-2:not([data-chat-input="true"]):not([data-composer-highlight="true"]) {
     padding-top: 0.75rem !important;
     padding-bottom: 0.75rem !important;
   }

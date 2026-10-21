@@ -57,7 +57,7 @@ describe('pending assistant header Chrome continuity', () => {
       const root = evidenceRoot();
       evidenceDirs.push(root);
       const work = mkdtempSync(join(root, 'pending-header-chrome-'));
-      const bundlePath = join(work, 'browser-entry.iife.js');
+      const bundlePath = join(work, 'browser-entry.js');
       const htmlPath = join(work, 'harness.html');
       const css = await compileProductionCssAsync(uiSrc);
       const bodyFixturePath = join(here, 'pendingAssistantHeaderContinuity.chrome.body.fixture.tsx');
@@ -72,6 +72,7 @@ describe('pending assistant header Chrome continuity', () => {
         mode: 'production',
         root: join(uiSrc, '..'),
         publicDir: false,
+        worker: { format: 'es' },
         esbuild: { jsxDev: false },
         resolve: {
           alias: [
@@ -93,14 +94,15 @@ describe('pending assistant header Chrome continuity', () => {
           },
         }],
         build: {
+          rolldownOptions: { output: { codeSplitting: false } },
           emptyOutDir: false,
           minify: false,
           outDir: work,
           lib: {
             entry: join(here, 'pendingAssistantHeaderContinuity.chrome.fixture.tsx'),
-            formats: ['iife'],
+            formats: ['es'],
             name: 'PendingAssistantHeaderChromeFixture',
-            fileName: () => 'browser-entry.iife.js',
+            fileName: () => 'browser-entry.js',
           },
         },
       });
@@ -125,7 +127,7 @@ describe('pending assistant header Chrome continuity', () => {
       window.__pendingHeaderHarnessError = String(event.reason && event.reason.stack || event.reason);
     });
   </script>
-  <script>${browserBundle}</script>
+  <script type="module">${browserBundle}</script>
 </body>
 </html>`, 'utf8');
 

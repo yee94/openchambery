@@ -191,22 +191,20 @@ describe('ChatContainer source contracts', () => {
     });
 
     /**
-     * Auto-follow is disabled on the legend path so it cannot fight the list
-     * for the scroll position. Its goToBottom therefore returns without
-     * writing. The visible scroll-to-bottom control used to call that no-op
-     * and nothing moved. The list handle talks to LegendList.scrollToEnd.
+     * Auto-follow owns follow policy while its controller delegates scroll
+     * writes to the active list. The visible control must re-arm both owners.
      */
-    test('resume-to-latest scrolls the legend list, not the disabled auto-follow writer', () => {
+    test('resume-to-latest resumes follow through the active list controller', () => {
         const resumeStart = source.indexOf('const resumeToLatestInstant = useEvent');
         expect(resumeStart).toBeGreaterThan(-1);
         const resumeBody = source.slice(resumeStart, source.indexOf('});', resumeStart));
         expect(resumeBody).toContain('setLegendFollowReleased(false);');
-        expect(resumeBody).toContain('messageListRef.current?.scrollToBottom();');
-        expect(resumeBody.indexOf('messageListRef.current?.scrollToBottom();'))
-            .toBeLessThan(resumeBody.indexOf("goToBottom('instant')"));
+        expect(resumeBody).toContain("goToBottom('instant')");
+        const autoFollowSource = readFileSync(join(here, '../../hooks/useChatAutoFollow.ts'), 'utf8');
+        expect(source).toContain('scrollControllerRef: messageListRef');
+        expect(autoFollowSource).toContain("scrollControllerRef?.current?.scrollToBottom({ behavior: mode === 'smooth' ? 'smooth' : 'auto', ...options })");
         // The visible control goes through turn navigation, which must use
-        // this wrapper — the controller's own resume still calls goToBottom
-        // and would otherwise remain a no-op for the button.
+        // this wrapper so the legend follow-release flag is also reset.
         expect(source).toContain('resumeToBottom: resumeToLatestInstant,');
         expect(source).not.toContain('resumeToBottom: timelineController.resumeToBottomInstant,');
     });

@@ -444,6 +444,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }, [mobileStage, onMobileStageChange]);
 
   const [navWidth, setNavWidth] = React.useState(216);
+  const [assistantSaveActionContainer, setAssistantSaveActionContainer] = React.useState<HTMLDivElement | null>(null);
   const [settingsSearchQuery, setSettingsSearchQuery] = React.useState("");
   const [pendingSearchItemId, setPendingSearchItemId] = React.useState<
     string | null
@@ -1085,6 +1086,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           return (
             <AssistantsSettingsPage
               onItemDeleted={isMobile ? handleMobileSplitItemDeleted : undefined}
+              saveActionContainer={isMobile ? assistantSaveActionContainer : undefined}
             />
           );
         case "behavior":
@@ -1137,6 +1139,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     },
     [
+      assistantSaveActionContainer,
       handleMobileSplitItemDeleted,
       isMobile,
       mobileInstancesPage,
@@ -1690,6 +1693,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           : t("settings.view.home.title")}
       backAriaLabel={mobileBackButtonLabel}
       onBack={showBackButton ? handleBack : onClose}
+      trailing={stage === "page-content" && settingsSlug === "assistants" ? <div ref={setAssistantSaveActionContainer} /> : undefined}
       actions={[
         ...(showOpenPageSidebarButton ? [{
           icon: "list-unordered" as const,

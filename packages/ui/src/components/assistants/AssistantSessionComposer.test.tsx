@@ -99,10 +99,6 @@ test('mobile ASR stays idle through 50 edits and delivers into the latest draft 
 test('mobile ASR sends explicit final text, while edit gesture only updates the draft', async () => {
   mobile = true;
   await act(async () => render());
-  await act(async () => speech.deliver('直接发送'));
-  expect(voiceSend).toHaveBeenCalledExactlyOnceWith('直接发送');
-  expect(draft).toBe('直接发送');
-  await act(async () => { draft = ''; render(); });
   vi.useFakeTimers();
   try {
     const pointer = (type: string, x: number) => input().dispatchEvent(new PointerEvent(type, {
@@ -110,6 +106,12 @@ test('mobile ASR sends explicit final text, while edit gesture only updates the 
     }));
     await act(async () => { pointer('pointerdown', 200); vi.advanceTimersByTime(300); });
     await act(async () => { pointer('pointermove', 290); pointer('pointerup', 290); });
+    await act(async () => speech.deliver('直接发送'));
+    expect(voiceSend).toHaveBeenCalledExactlyOnceWith('直接发送');
+    expect(draft).toBe('直接发送');
+    await act(async () => { draft = ''; render(); });
+    await act(async () => { pointer('pointerdown', 200); vi.advanceTimersByTime(300); });
+    await act(async () => { pointer('pointerup', 200); });
     await act(async () => speech.deliver('先编辑'));
     expect(draft).toBe('先编辑');
     expect(voiceSend).toHaveBeenCalledTimes(1);
@@ -137,11 +139,11 @@ test('placeholder follows gestures and the global switch removes ASR and restore
       bubbles: true, pointerId: 1, isPrimary: true, button: 0, clientX: x, clientY: 200,
     }));
     await act(async () => { pointer('pointerdown', 200); vi.advanceTimersByTime(300); });
-    expect(input().placeholder).toBe('chat.dictation.releaseSend');
+    expect(input().placeholder).toBe('chat.dictation.releaseEdit');
     await act(async () => { pointer('pointermove', 100); });
     expect(input().placeholder).toBe('chat.dictation.releaseCancel');
     await act(async () => { pointer('pointermove', 290); });
-    expect(input().placeholder).toBe('chat.dictation.releaseEdit');
+    expect(input().placeholder).toBe('chat.dictation.releaseSend');
     await act(async () => { runtime.dictationEnabled = false; render(); });
     expect(input().placeholder).toBe('normal input');
     expect(document.querySelector('.oc-speech-overlay')).toBeNull();

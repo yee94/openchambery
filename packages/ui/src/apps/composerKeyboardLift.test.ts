@@ -19,37 +19,9 @@ const mobileAppSource = readFileSync(
 );
 
 const createElement = (tag: string, className = ''): HTMLElement => {
-  const children: Element[] = [];
-  const el = {
-    tagName: tag.toUpperCase(),
-    className,
-    children,
-    parentElement: null as HTMLElement | null,
-    closest(selector: string) {
-      let current: HTMLElement | null = el as unknown as HTMLElement;
-      while (current) {
-        if (selector.startsWith('.') && current.className.split(/\s+/).includes(selector.slice(1))) {
-          return current;
-        }
-        current = current.parentElement;
-      }
-      return null;
-    },
-    append(...nodes: HTMLElement[]) {
-      for (const node of nodes) {
-        Object.defineProperty(node, 'parentElement', {
-          configurable: true,
-          value: el as unknown as HTMLElement,
-        });
-        children.push(node);
-      }
-    },
-    appendChild(node: HTMLElement) {
-      this.append(node);
-      return node;
-    },
-  };
-  return el as unknown as HTMLElement;
+  const el = document.createElement(tag);
+  el.className = className;
+  return el;
 };
 
 describe('composerKeyboardLift', () => {
