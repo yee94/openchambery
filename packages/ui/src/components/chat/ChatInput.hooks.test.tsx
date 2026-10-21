@@ -32,6 +32,28 @@ const host = document.createElement('div');
 const root = createRoot(host);
 afterEach(async () => { await act(async () => root.render(null)); vi.restoreAllMocks(); });
 
+it('does not flash an inbox chip for a direct send already painted in the transcript', async () => {
+    const Surface = surface<{ messages: { id: string }[]; inbox: { id: string }[] }>(`
+        const primarySessionMessages = props.messages;
+        const inboxOverlayItems = props.inbox;
+        ${declarations.get('inboxOverlayChips')}
+        return React.createElement('span', null, inboxOverlayChips.map((item) => item.messageID).join(','));
+    `, { toInboxChip: (item: { id: string }) => ({ messageID: item.id }), EMPTY_INBOX_CHIPS: [] });
+    const messages = [{ id: 'direct-send' }];
+    await act(async () => root.render(<Surface messages={messages} inbox={[]} />));
+    expect(host.textContent).toBe('');
+    // HTTP admission / enqueue SSE can arrive before the consumed receipt.
+    await act(async () => root.render(<Surface messages={messages} inbox={[{ id: 'direct-send' }]} />));
+    expect(host.textContent).toBe('');
+    await act(async () => root.render(<Surface messages={messages} inbox={[{ id: 'direct-send' }, { id: 'waiting' }]} />));
+    expect(host.textContent).toBe('waiting');
+    await act(async () => root.render(<Surface messages={[...messages, { id: 'waiting' }]} inbox={[{ id: 'waiting' }]} />));
+    expect(host.textContent).toBe('');
+    // A genuinely pending item without a transcript row remains recoverable.
+    await act(async () => root.render(<Surface messages={[]} inbox={[{ id: 'waiting' }]} />));
+    expect(host.textContent).toBe('waiting');
+});
+
 it('follows mobile ASR text and its underline to the bottom without focusing or resizing', async () => {
     expect(dictationTailEffect).not.toBe('');
     const textarea = document.createElement('textarea');

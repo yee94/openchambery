@@ -13,7 +13,7 @@ import { useMobileComposerSnap } from './useMobileComposerSnap';
  *   会裁断动画，提前测量 scrollHeight 会把动画高度当作内容高度，造成松手跳变和回弹。
  * - 此叶子独占下方三个 data 属性；不要在父级 JSX 再写同名属性。父级只接收离散的
  *   manualHeight 信号，不接收逐帧高度。帧更新、指针捕获、动画取消仍由 useHeightSnap 负责。
- * - bar 留在卡片内部，文字顶部 padding 要为触摸区留空间；不要重挂载 textarea 来切档，
+ * - bar 留在卡片现有顶部 padding 内，显隐不能增加文字 padding 或卡片高度；不要重挂载 textarea 来切档，
  *   否则会丢失焦点、选区或 IME 状态。原生 iOS composer 的排除条件由调用方保留。
  * - 改动 props、Effect、布局或动画后，运行 MobileComposerHeightHandle.test.tsx 和
  *   useMobileComposerSnap.test.tsx，并在浏览器验证松手逐帧高度及每档至少 50 次输入。
@@ -60,7 +60,7 @@ export const MobileComposerHeightHandle = memo(function MobileComposerHeightHand
     aria-valuemin={0}
     aria-valuemax={2}
     aria-valuenow={snapPoint === 'min' ? 0 : snapPoint === 'auto' ? 1 : 2}
-    className="absolute top-0 left-1/2 z-40 h-6 w-20 -translate-x-1/2 items-center"
+    className="absolute top-1 left-1/2 z-40 h-2.5 w-20 -translate-x-1/2 items-center"
     onPointerDown={snap.handlePointerDown}
     onPointerMove={snap.handlePointerMove}
     onPointerUp={snap.handlePointerUp}

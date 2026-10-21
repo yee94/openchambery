@@ -2542,8 +2542,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         ), [currentSessionId]),
     );
     const inboxOverlayChips = React.useMemo(
-        () => (inboxOverlayItems ? inboxOverlayItems.map(toInboxChip) : EMPTY_INBOX_CHIPS),
-        [inboxOverlayItems],
+        () => {
+            if (!inboxOverlayItems?.length) return EMPTY_INBOX_CHIPS;
+            // Direct sends already own an optimistic transcript row. Admission
+            // may precede consumption, but must not paint that message twice.
+            const transcriptIDs = new Set(primarySessionMessages.map((message) => message.id));
+            return inboxOverlayItems.filter((item) => !transcriptIDs.has(item.id)).map(toInboxChip);
+        },
+        [inboxOverlayItems, primarySessionMessages],
     );
     const [nativeQueueAdmission, setNativeQueueAdmission] = React.useState<{
         sessionID: string;
@@ -7483,7 +7489,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     data-native-composer-accessories="true"
                 >
                 <MemoStatusRow
-                    className={mobileComposerSnapVisible ? 'mb-0' : undefined}
+                    className={isMobile ? 'mb-0' : undefined}
                     showAbortStatus={showAbortStatus}
                     showAbortPrompt={Boolean(
                         isDesktopExpanded
@@ -7686,7 +7692,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         isComposerExpanded
                             ? cn('h-full min-h-0', isMobile ? 'py-2.5' : 'py-4')
                             : isMobile
-                                ? mobileComposerSnapVisible ? 'pt-[22px] pb-2' : 'py-2.5'
+                                ? 'py-2.5'
                                 : 'pt-4 pb-2',
                         inputMode === 'shell' ? 'font-mono' : 'typography-markdown md:typography-ui-label',
                     )}
