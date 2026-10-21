@@ -1673,6 +1673,11 @@ both readers agree on when a frame may shrink.
 
 ## Runtime endpoint lifecycle
 
+- Same-origin Web's empty API base maps directly to `url:default` (transport
+  `direct:url:default`). Identity reads are a per-subscriber hot path: do not
+  construct an invalid URL and catch an exception for this normal case.
+  `runtime-switch.test.ts` guards 1,000 repeated reads and later injected-endpoint
+  changes; reads still resolve current runtime state rather than freezing it.
 - A runtime transport identity change means the normalized direct endpoint URL
   or relay descriptor changed. A direct-runtime key alias on the same endpoint
   is storage metadata, not a transport change, and must not reset app state or

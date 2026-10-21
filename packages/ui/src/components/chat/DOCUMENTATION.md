@@ -90,6 +90,15 @@ component generates only on seed/style/emoji/palette changes, not draft or strea
 updates. SVG images isolate internal definition IDs and preserve attribution
 metadata; see `THIRD_PARTY_NOTICES.md` for artwork credits.
 
+Identical faces also share generated SVGs across row mounts through the existing
+`DualLimitLru` (128 entries / 1 MiB of UTF-16 key + URI payload). Keys include
+normalized identity, kind, resolved background color and applicable animation.
+Theme changes select another key; style definitions are build-pinned. Artwork is
+pure local data, deliberately reusable across runtimes with the same inputs,
+without retaining session/auth state. Oversized results are returned but not
+cached. `generatedAvatar.test.ts` guards duplicate generation and variant/bound
+semantics; per-component memoization still skips unrelated render work.
+
 Native iOS composer receives an optional `agentIcon` PNG generated only when its
 Agent identity or palette changes. Late rasterizations are fenced on identity/availability
 changes; text echo does not resend the image. Old shells retain the identicon
@@ -278,6 +287,16 @@ ChatInput prioritizes image bytes from clipboard files/items over accompanying f
 On PC surfaces with fewer than 12 authored-user turns loaded, `useDesktopHistoryWarmup` requests one 50-message history page after content readiness and 800ms of unchanged messages, scroll height and position. The enlarged page commits together rather than cascading small pages. The 50-message cap bounds tool-heavy sessions; it does not guarantee 12 turns when a turn contains many messages. Mobile, inactive/hidden views, initial hydration, working sessions and concurrent history loads do not warm. A failed or short page does not automatically retry during that visit; explicit pagination remains available. Existing timeline prepend compensation owns the viewport; warmup does not release follow, show a loading indicator or toast. Only eligible views sample geometry, at 200ms intervals; starting the single request stops sampling.
 
 `StaticHistoryList` retains the same root/row-parent structure when history crosses the virtualization threshold. It seeds the first virtual range with the mounted viewport dimensions and the keyed reading position shifted by the prepend, so there is no empty-range commit that destroys visible rows. Already painted Markdown stays hydrated. The repository prepend retains unchanged message/part references; the real-browser `desktop-warmup` fixture asserts the existing message and Markdown nodes survive a 50-message background prepend with subpixel reading-offset preservation.
+
+Normal-flow history does not measure every row on every commit just to prepare
+that seed. On virtualization activation, it reads the still-mounted old rows
+before the virtualized commit changes their geometry; only newly prepended rows
+use estimates. This includes late image/font/width changes since the previous
+commit. Restored measurement snapshots take precedence, and the active
+virtualizer retains measurement ownership afterwards. The production-boundary
+`MessageList.measurementSeed.test.tsx` guards 50 normal-flow commits with zero
+seed reads, one read per old row at activation, fractional sizes, reactivation,
+and snapshot restore.
 
 PC history enables virtualization at 12 render entries; mobile retains its five-entry threshold. Both the list and controller-facing virtualization flag use the same surface policy. A bottom-pinned background prepend calls `goToBottom` with `reveal: false`: position compensation must never re-arm a whole-transcript visibility gate. As a validation trial on current TanStack/Legend versions, both list implementations now disable the legacy Markdown pin-reveal gate entirely, including cold open and explicit jump-to-latest. Its helper remains for comparison, but no production list enables it. Per-row Markdown hydration, measured sizes and scroll anchoring remain active. Browser warmup regressions cover pinned short history below the PC threshold, pinned history crossing it, and a released reading viewport; they observe visibility mutations as well as DOM identity and scroll offsets.
 

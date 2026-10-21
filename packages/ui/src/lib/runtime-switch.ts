@@ -85,6 +85,8 @@ const setWindowRuntimeValue = <K extends '__OPENCHAMBER_API_BASE_URL__' | '__OPE
 };
 
 const normalizeRuntimeUrlKey = (value: string): string => {
+  // Same-origin Web uses an empty base; identity reads must not throw per subscriber.
+  if (!value) return 'url:default';
   try {
     const url = new URL(value);
     url.hash = '';
