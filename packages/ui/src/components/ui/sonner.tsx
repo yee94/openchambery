@@ -63,18 +63,26 @@ function useIsDarkTheme() {
 // box-shadow that erases our custom elevation on click. We pin every toast's
 // box-shadow as an !important inline style and strip tabIndex so the element
 // can't receive focus-induced style swaps.
-function usePinnedToastStyles(shadow: string) {
+function usePinnedToastStyles(shadow: string, scopeRef: React.RefObject<HTMLDivElement | null>) {
   React.useEffect(() => {
-    if (typeof document === "undefined") return
+    const scope = scopeRef.current
+    if (!scope) return
+    const pinnedStyle = document.createElement("div").style
+    pinnedStyle.setProperty("box-shadow", shadow, "important")
+    pinnedStyle.setProperty("outline", "none", "important")
 
     const apply = (el: HTMLElement) => {
-      el.style.setProperty("box-shadow", shadow, "important")
-      el.style.setProperty("outline", "none", "important")
+      if (el.style.getPropertyValue("box-shadow") !== pinnedStyle.getPropertyValue("box-shadow") || el.style.getPropertyPriority("box-shadow") !== "important") {
+        el.style.setProperty("box-shadow", shadow, "important")
+      }
+      if (el.style.getPropertyValue("outline") !== pinnedStyle.getPropertyValue("outline") || el.style.getPropertyPriority("outline") !== "important") {
+        el.style.setProperty("outline", "none", "important")
+      }
       if (el.getAttribute("tabindex") === "0") el.setAttribute("tabindex", "-1")
     }
 
     const applyToAll = () => {
-      document
+      scope
         .querySelectorAll<HTMLElement>("[data-sonner-toast]")
         .forEach(apply)
     }
@@ -83,6 +91,9 @@ function usePinnedToastStyles(shadow: string) {
 
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
+        // Re-pin in case sonner mutates style.cssText on interactions.
+        // Attribute repair is toast-local; our own idempotent writes settle.
+        if (m.type === "attributes" && m.target instanceof HTMLElement && m.target.matches("[data-sonner-toast]")) apply(m.target)
         m.addedNodes.forEach((node) => {
           if (!(node instanceof HTMLElement)) return
           if (node.matches?.("[data-sonner-toast]")) apply(node)
@@ -91,11 +102,9 @@ function usePinnedToastStyles(shadow: string) {
             .forEach(apply)
         })
       }
-      // Re-pin in case sonner mutates style.cssText on interactions.
-      applyToAll()
     })
 
-    observer.observe(document.body, {
+    observer.observe(scope, {
       childList: true,
       subtree: true,
       attributes: true,
@@ -103,15 +112,17 @@ function usePinnedToastStyles(shadow: string) {
     })
 
     return () => observer.disconnect()
-  }, [shadow])
+  }, [shadow, scopeRef])
 }
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const isDark = useIsDarkTheme()
   const shadow = isDark ? SHADOW_DARK : SHADOW_LIGHT
-  usePinnedToastStyles(shadow)
+  const scopeRef = React.useRef<HTMLDivElement>(null)
+  usePinnedToastStyles(shadow, scopeRef)
 
   return (
+    <div ref={scopeRef} style={{ display: "contents" }}>
     <Sonner
       theme={isDark ? "dark" : "light"}
       className="toaster group"
@@ -162,6 +173,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       {...props}
     />
+    </div>
   )
 }
 

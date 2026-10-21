@@ -1,4 +1,5 @@
 import React from 'react';
+import { messageHoverHandlers } from './lib/messageHover';
 import type { Message, Part } from '@/lib/opencode/v2-types';
 import { useEvent } from '@reactuses/core';
 import { toast } from 'sonner';
@@ -1124,13 +1125,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         <>
             <div
                 className={cn(
-                    'group w-full',
-                    !isUser && 'group/message',
+                    'w-full',
+                    !isUser && 'oc-message-hover-scope',
                     isUser ? (isMobile ? 'pt-2' : 'pt-6') : assistantTopPaddingClass,
                     isUser ? 'pb-0' : isFollowedByAssistant || turnOwnsAssistantHeader ? 'pb-0' : tightenWorkingBottomGap ? 'pb-1' : 'pb-8'
                 )}
                 id={`message-${message.info.id}`}
                 data-message-id={message.info.id}
+                {...messageHoverHandlers}
                 ref={setMessageContainerRef}
             >
                 <div className="chat-message-column relative">
@@ -1142,7 +1144,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 ignoreContextDisabled
                                 respectReducedMotion
                             >
-                                <div className={cn('relative flex', isShellResult ? 'justify-start' : 'justify-end', !isMobile ? 'group/user-shell' : undefined)}>
+                                <div {...messageHoverHandlers} className={cn('relative flex', isShellResult ? 'justify-start' : 'justify-end', !isMobile ? 'oc-user-shell-hover-scope' : undefined)}>
                                     <div className={cn(isShellResult ? 'w-full min-w-0' : 'max-w-[85%]', showStickyInlineHoverRow && !isShellResult ? 'pb-5' : undefined)}>
                                         <div
                                             style={isShellResult ? undefined : {

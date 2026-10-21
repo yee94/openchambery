@@ -203,6 +203,13 @@ describe('Markstream nested legacy code card Chromium styles', () => {
       expect(stream.heights.every((height) => height >= stream.height)).toBe(true);
       expect(new Set(stream.heights).size).toBe(1);
       expect(stream.closed).toBe(true);
+      const concurrent = await page.evaluate<{ stable: boolean; paragraphs: number; p50: number; p95: number; max: number }>(
+        'window.markstreamStreamingScrollReplay()',
+      );
+      writeFileSync(join(work, 'stream-scroll.json'), JSON.stringify(concurrent, null, 2));
+      expect(concurrent.stable).toBe(true);
+      expect(concurrent.paragraphs).toBe(60);
+      expect(concurrent.p95).toBeLessThan(50);
     } finally {
       await session.close();
       await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done()));

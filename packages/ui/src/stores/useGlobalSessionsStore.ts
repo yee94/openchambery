@@ -779,6 +779,7 @@ const applySessionIndexSnapshotState = (
       preserveTailDirectories,
     )
     : sortSessionsByUpdated(mergeSessionLists(state.activeSessions, cachedSessions));
+  const sessionsByDirectory = buildSessionsByDirectory(activeSessions);
   const nextPagination = new Map(state.activePaginationByDirectory);
   const nextSyncMetadata = new Map(state.sessionIndexSyncByDirectory);
   for (const entry of snapshot.directories) {
@@ -808,7 +809,7 @@ const applySessionIndexSnapshotState = (
   const nextRefreshing = new Set(state.refreshingDirectories);
   const pendingDirectorySet = new Set(snapshot.sync.pendingDirectories);
   for (const directory of pendingDirectorySet) {
-    if ((activeSessions.some((session) => resolveGlobalSessionDirectory(session) === directory))) {
+    if (sessionsByDirectory.has(directory)) {
       nextRefreshing.add(directory);
       nextLoading.delete(directory);
     } else {
@@ -837,7 +838,7 @@ const applySessionIndexSnapshotState = (
 
   return {
     activeSessions,
-    sessionsByDirectory: buildSessionsByDirectory(activeSessions),
+    sessionsByDirectory,
     reviewTransferBySessionId: buildReviewTransferMap(activeSessions),
     cachedDirectories: snapshotDirectories,
     sessionIndexSyncByDirectory: nextSyncMetadata,

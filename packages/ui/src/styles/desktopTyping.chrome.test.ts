@@ -1,7 +1,8 @@
-import { rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
+import { messageHoverHandlers } from '../components/chat/lib/messageHover';
 import { compileProductionCssAsync, evidenceRoot, keepEvidence, openChromeSession, openPageSession, resolveChrome } from '../components/ui/chromeCdpHarness';
 
 test.skipIf(!resolveChrome())('desktop typing does not invalidate the retained transcript tree', async () => {
@@ -62,6 +63,70 @@ test.skipIf(!resolveChrome())('desktop typing does not invalidate the retained t
     } finally {
       chrome.ws.removeEventListener('message', listener);
     }
+  } finally {
+    await chrome.close();
+    if (!keepEvidence()) rmSync(root, { recursive: true, force: true });
+  }
+}, 120_000);
+
+test.skipIf(!resolveChrome())('message hover during scrolling restyles only chrome, not rich message descendants', async () => {
+  const root = evidenceRoot();
+  const chrome = await openChromeSession({ width: 900, height: 700 });
+  try {
+    const source = join(dirname(fileURLToPath(import.meta.url)), '..');
+    const body = readFileSync(join(source, 'components/chat/message/MessageBody.tsx'), 'utf8');
+    // Read production call-site classes so restoring a broad group-hover utility
+    // also changes this browser regression fixture.
+    const scope = body.match(/className="relative w-full ([^"]+)"/)![1];
+    const time = body.match(/: '(hidden [^']+)',\s*\)\}\s*data-message-time/)![1];
+    const actions = body.match(/: '(pointer-events-none opacity-0 transition-opacity[^']+)'/)![1];
+    const css = await compileProductionCssAsync(source);
+    const html = join(root, 'message-hover.html');
+    writeFileSync(html, `<!doctype html><html><head><style>${css}</style></head><body>
+      <div id="scroller" style="height:600px;overflow:auto;width:700px">
+      ${Array.from({ length: 3 }, (_, i) => `<div class="relative w-full ${scope}" style="height:600px">
+        <span class="${time}" data-message-time>timestamp ${i}</span>
+        <div class="${actions}" data-action-probe>Copy / Fork</div>
+        <div>${'<span class="text-foreground">rich text </span>'.repeat(5000)}</div>
+      </div>`).join('')}</div><script>
+      document.querySelectorAll('.${scope}').forEach(scope => {
+        scope.addEventListener('pointerenter', ${messageHoverHandlers.onPointerEnter.toString()});
+        scope.addEventListener('pointerleave', ${messageHoverHandlers.onPointerLeave.toString()});
+      });
+      </script></body></html>`);
+    const page = await openPageSession(chrome, { width: 900, height: 700, standalone: false });
+    await page.navigateFile(html);
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 800, y: 300 });
+    const sizes: number[] = [];
+    let complete!: () => void;
+    const completed = new Promise<void>(resolve => { complete = resolve; });
+    const listener = (message: MessageEvent) => {
+      const event = JSON.parse(String(message.data));
+      if (event.method === 'Tracing.tracingComplete') complete();
+      if (event.method === 'Tracing.dataCollected') for (const entry of event.params.value) {
+        if (entry.name === 'UpdateLayoutTree') sizes.push(entry.args?.elementCount ?? 0);
+      }
+    };
+    chrome.ws.addEventListener('message', listener);
+    try {
+      await chrome.send('Tracing.start', { categories: 'devtools.timeline', transferMode: 'ReportEvents' });
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 300, y: 200 });
+      const visible = await page.evaluate<string>(`getComputedStyle(document.querySelector('[data-message-time]')).display`);
+      expect(await page.evaluate(`getComputedStyle(document.querySelector('[data-action-probe]')).pointerEvents`)).toBe('auto');
+      for (const top of [600, 1200, 600, 0]) {
+        await page.evaluate(`document.querySelector('#scroller').scrollTop=${top}`);
+        await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 301, y: 201 });
+        await page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+      }
+      await chrome.send('Tracing.end');
+      await completed;
+      expect(visible).toBe('inline-flex');
+      expect(sizes.length).toBeGreaterThan(0);
+      expect(Math.max(...sizes)).toBeLessThan(100);
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 800, y: 300 });
+      expect(await page.evaluate(`getComputedStyle(document.querySelector('[data-message-time]')).display`)).toBe('none');
+      expect(await page.evaluate(`getComputedStyle(document.querySelector('[data-action-probe]')).pointerEvents`)).toBe('none');
+    } finally { chrome.ws.removeEventListener('message', listener); }
   } finally {
     await chrome.close();
     if (!keepEvidence()) rmSync(root, { recursive: true, force: true });

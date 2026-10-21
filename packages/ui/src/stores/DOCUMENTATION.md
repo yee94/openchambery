@@ -1,5 +1,14 @@
 # UI Stores
 
+Session-index snapshot application builds `sessionsByDirectory` once and reuses
+it for pending-directory loading/refreshing classification. Never scan all
+active sessions once per pending directory: that cross-product runs on the UI
+thread during startup/background refresh and stalls typing even when the input
+handler itself is fast. `useGlobalSessionsStore.performance.test.ts` exercises
+the public hydration path with 2,000 sessions and 301 pending directories and
+guards directory reads independently of timing. Failed/completed directory
+cleanup and authoritative tail/pagination ownership keep their existing rules.
+
 ## Purpose
 
 `globalSessions.ts` follows the authoritative V2 cursor even when a returned page

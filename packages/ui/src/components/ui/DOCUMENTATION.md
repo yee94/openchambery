@@ -1,3 +1,13 @@
+# Toast mutation isolation
+
+`sonner.tsx` owns a layout-neutral `display: contents` host around its Sonner
+instance. Shadow/tabindex repair observes only that host, never `document.body`.
+New toast subtrees are scanned locally; attribute repair touches only the
+affected toast and compares normalized CSS declarations before writing so its
+own observer notifications settle. Theme changes repin only this host's toasts.
+`sonner.performance.test.tsx` replays 50 unrelated transcript scroll/stream DOM
+updates with zero toast scans and covers style replacement and theme changes.
+
 # Image loading
 
 `LoadingImage` owns content-image presentation on desktop and mobile, including direct and Relay connections: reserve a dotted shimmer canvas while a runtime URL is pending and while the browser loads the bytes; reveal the image only on `load` or a successful cached decode (`complete && naturalWidth > 0`). Resource failures and browser `error` stop the animation and show the translated failure state without painting the browser's broken-image glyph. A source/srcSet change resets the image boundary; detached image events cannot reveal the next source.

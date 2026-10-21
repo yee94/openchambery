@@ -12,12 +12,23 @@ const ast = ts.createSourceFile('ChatInput.tsx', source, ts.ScriptTarget.Latest,
 const declarations = new Map<string, string>();
 let resizeListener = '';
 let dictationTailEffect = '';
+let primaryCatalog = '';
+let modelControls = '';
 const visit = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node)) declarations.set(node.name.getText(ast), `const ${node.getText(ast)};`);
     if (ts.isCallExpression(node) && node.expression.getText(ast) === 'useEventListener'
         && node.arguments[1]?.getText(ast) === 'updateAutocompleteOverlayPosition') resizeListener = `${node.getText(ast)};`;
     if (ts.isCallExpression(node) && node.expression.getText(ast) === 'React.useLayoutEffect'
         && node.getText(ast).includes('textarea.scrollTop = textarea.scrollHeight')) dictationTailEffect = `${node.getText(ast)};`;
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'primarySurface') {
+        const call = node.initializer as ts.CallExpression;
+        const value = call.arguments[0] as ts.ObjectLiteralExpression;
+        const selection = value.properties.find(prop => prop.name?.getText(ast) === 'selection') as ts.PropertyAssignment;
+        const catalog = (selection.initializer as ts.ObjectLiteralExpression).properties.find(prop => prop.name?.getText(ast) === 'catalog') as ts.PropertyAssignment;
+        primaryCatalog = catalog.initializer.getText(ast);
+    }
+    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(ast) === 'MemoModelControls'
+        && node.getText(ast).includes('min-w-0 flex-1 justify-end')) modelControls = node.getText(ast);
     ts.forEachChild(node, visit);
 };
 visit(ast);
@@ -31,6 +42,47 @@ function surface<Props extends object>(body: string, scope: Record<string, unkno
 const host = document.createElement('div');
 const root = createRoot(host);
 afterEach(async () => { await act(async () => root.render(null)); vi.restoreAllMocks(); });
+
+it('keeps model-control Hooks asleep through 50 draft edits and delivers the latest selection callback', async () => {
+    let evaluations = 0;
+    let latest: { onChange: (selection: object) => Promise<void>; catalog: { providers: unknown[] } };
+    const MemoModelControls = React.memo((props: { selectionAdapter: typeof latest }) => {
+        evaluations++;
+        latest = props.selectionAdapter;
+        return null;
+    });
+    const Surface = surface<{ onChange: (value: object) => void; providers: unknown[]; active: boolean }>(`
+        const primarySelectionProviders = props.providers;
+        const primarySelectionAgents = agents;
+        const primarySelectionVariants = variants;
+        const primaryProviderConfigLoading = false;
+        const primaryAgentConfigLoading = false;
+        ${declarations.get('primarySelectionCatalog') ?? ''}
+        const selectionCatalog = ${primaryCatalog};
+        const selectionValue = { providerID: 'provider', modelID: 'model', agent: 'build' };
+        const selectionChange = props.onChange;
+        const surface = { active: props.active };
+        ${declarations.get('handleModelControlsSelectionChange') ?? ''}
+        ${declarations.get('modelControlsSelectionAdapter')}
+        return ${modelControls};
+    `, { MemoModelControls, agents: [], variants: [], textareaRef: { current: null } });
+    const providers = Array.from({ length: 300 }, (_, id) => ({ id: String(id) }));
+    let received = -1;
+    await act(async () => root.render(<Surface providers={providers} active onChange={() => { received = 0; }} />));
+    const initialEvaluations = evaluations;
+    for (let i = 1; i <= 50; i++) {
+        await act(async () => root.render(<Surface providers={providers} active onChange={() => { received = i; }} />));
+    }
+    expect(evaluations).toBe(initialEvaluations);
+    await latest!.onChange({ providerID: 'provider', modelID: 'other', agent: 'build' });
+    expect(received).toBe(50);
+    const updated = [...providers, { id: 'new' }];
+    await act(async () => root.render(<Surface providers={updated} active onChange={() => { received = 51; }} />));
+    expect(latest!.catalog.providers).toBe(updated);
+    expect(evaluations).toBe(initialEvaluations + 1);
+    await act(async () => root.render(<Surface providers={updated} active={false} onChange={() => { received = 52; }} />));
+    expect(evaluations).toBe(initialEvaluations + 2);
+});
 
 it('does not flash an inbox chip for a direct send already painted in the transcript', async () => {
     const Surface = surface<{ messages: { id: string }[]; inbox: { id: string }[] }>(`
