@@ -126,6 +126,34 @@ it('starts after 500ms without modifiers and confirms on release outside the inp
     expect([...document.body.querySelectorAll('style')].some((style) => style.textContent?.includes('user-select: none !important'))).toBe(false);
 });
 
+it.each(['restore', 'other-input', 'unmount'])('restores focus after held recognition without stealing it: %s', async (scenario) => {
+    vi.useFakeTimers();
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    let resolve!: () => void;
+    mock.dictation.confirmDictation.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+    const input = inputRef.current!;
+    input.focus();
+    await act(async () => input.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', pointerId: 6, button: 0 })));
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(document.activeElement).not.toBe(input);
+    await act(async () => window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 6, button: 0 })));
+    const other = document.createElement('input');
+    document.body.append(other);
+    if (scenario === 'other-input') other.focus();
+    if (scenario === 'unmount') await act(async () => root.render(null));
+    input.value = 'final transcript';
+    await act(async () => resolve());
+    if (scenario === 'restore') {
+        expect(document.activeElement).toBe(input);
+        expect(input.selectionStart).toBe(input.value.length);
+        expect(input.selectionEnd).toBe(input.value.length);
+    } else {
+        expect(document.activeElement).not.toBe(input);
+    }
+    other.remove();
+    hasFocus.mockRestore();
+});
+
 it('finishes even when released while microphone startup is pending', async () => {
     vi.useFakeTimers();
     let resolve!: () => void;

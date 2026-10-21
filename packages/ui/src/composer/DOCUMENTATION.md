@@ -91,7 +91,10 @@ to the current textarea height. Each transcript update scrolls the textarea and
 its underline overlay to the bottom in the same layout phase without moving focus.
 Normal autosizing resumes after capture finalization.
 Desktop also supports a 500ms left-button hold on the editable textarea, without
-modifiers. Short clicks retain native focus; dragging more than 6px, keyboard input,
+modifiers. After pointer-release finalization, focus returns to the same textarea with
+the caret at the end, without scrolling. Draft disposal, backgrounding or focus moved
+to another control prevents this restoration. Short clicks retain native focus;
+dragging more than 6px, keyboard input,
 pointer cancellation or backgrounding cancels the pending hold. The timer rechecks
 editability and text selection before capture. The idle placeholder preserves the usual
 input instructions and appends mouse hold-to-talk guidance inline, without adding a line break or changing input height.
