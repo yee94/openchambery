@@ -217,6 +217,11 @@ The main chat and hydrating branches attach `.oc-chat-composer-swap-scope` and a
 
 ## Design pt (`--dpt`)
 
+The compact composer preview uses 14dpt text and native horizontal scrolling.
+Touch panning reads the draft without expanding the composer; a tap still expands
+and focuses it. During dictation it follows the latest text until the reader touches
+the preview, and resumes following when the reader scrolls back to the end.
+
 `--dpt` is `1px` everywhere except Capacitor native shells, where
 `packages/ui/src/lib/designPtScale.ts` overwrites it.
 

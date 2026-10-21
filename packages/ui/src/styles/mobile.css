@@ -3815,15 +3815,22 @@ button.oc-mobile-worktree-label-trigger:active,
   position: absolute;
   /* Leave room for attach (left) and trailing scroll/stop (right). */
   inset: 0 2.75rem;
-  display: flex;
+  display: block;
   min-width: 0;
-  align-items: center;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   color: var(--foreground);
-  font-size: calc(16 * var(--dpt));
+  font-size: calc(14 * var(--dpt));
+  line-height: 2.75rem;
   white-space: nowrap;
-  text-overflow: ellipsis;
-  pointer-events: none;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  pointer-events: inherit;
+}
+
+.oc-mobile-composer-compact-preview::-webkit-scrollbar {
+  display: none;
 }
 
 .oc-mobile-composer-compact-chrome--with-scroll

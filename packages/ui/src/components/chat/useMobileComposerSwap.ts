@@ -408,6 +408,9 @@ export const useMobileComposerSwap = (args: {
         const compact = target.closest('[data-oc-composer-compact-surface="true"]');
         if (!compact) return;
         if (target.closest('[data-composer-action="true"]')) return;
+        const preview = target.closest('.oc-mobile-composer-compact-preview');
+        if (event.type === 'pointerdown' && preview) return;
+        if (event.type === 'click' && !preview) return;
         if ('preventDefault' in event) event.preventDefault();
         if ('stopPropagation' in event) event.stopPropagation();
         // Focus/keyboard normally pins expanded, but a tap that never lands
@@ -466,6 +469,7 @@ export const useMobileComposerSwap = (args: {
     useEventListener('touchend', handleTouchEnd, scrollTarget, passive);
     useEventListener('touchcancel', handleTouchCancel, scrollTarget, passive);
     useEventListener('pointerdown', handleCompactActivate, scopeTarget);
+    useEventListener('click', handleCompactActivate, scopeTarget);
     useEventListener('focusin', syncPin, scopeTarget);
     useEventListener('focusout', syncPin, scopeTarget);
     useEventListener('oc:keyboard-intent', syncPin, windowTarget);
