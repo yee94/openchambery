@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.6-beta.1] - 2026-10-21
+
+### 修复
+
+- 修复移动端输入框撑满模式下弹出或收起键盘后高度不跟随的问题：原生外壳键盘布局完成后会重新计算撑满高度，不再依赖 WebView 不触发的视口 resize。
+
 ## [2.1.5] - 2026-10-21
 
 ### 改进
