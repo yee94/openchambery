@@ -1,5 +1,35 @@
 # Chat components
 
+## Generated avatars
+
+`AgentAvatar` uses local DiceBear Bottts Neutral artwork with rounded corners and
+each Agent's badge color as its background. Agent names are trimmed and
+case-normalized for both artwork and badge color; task/session IDs never seed
+Agent faces. `useAgentAvatarPalette` reads the current theme's resolved tokens,
+so theme changes repaint the same face without render-time DOM probes.
+Only the tiny message-header badge face passes `shape="square"`. Composer faces
+are 20px on desktop/VS Code and 24px on mobile web (22pt in native iOS); other
+surfaces retain their existing sizes.
+Assistant consumers
+explicitly pass `kind="assistant"` to select Gaze. `lib/generatedAvatar.ts` imports
+only those two style definitions, with pinned package versions, deterministic
+seeds and no remote avatar requests. Gaze animates only while working (list,
+conversation header and live processing avatar); idle and native PNG faces are
+static. Avatar frames lock min/max width and height and clip animated artwork.
+Assistant IDs and Agent names
+are the respective seeds. Explicit emoji overrides remain supported. The memoized
+component generates only on seed/style/emoji/palette changes, not draft or streaming
+updates. SVG images isolate internal definition IDs and preserve attribution
+metadata; see `THIRD_PARTY_NOTICES.md` for artwork credits.
+
+Native iOS composer receives an optional `agentIcon` PNG generated only when its
+Agent identity or palette changes. Late rasterizations are fenced on identity/availability
+changes; text echo does not resend the image. Old shells retain the identicon
+payload fallback. Native Assistant share catalogs carry optional Gaze `avatarPng`
+data, generated serially; a newer publication cancels older work. Native share
+UI and shortcut donations prefer the PNG, retaining emoji and legacy catalog
+fallbacks. A new native build is required for PNG-consuming native surfaces.
+
 ## Image presentation
 
 Markdown content, attachment thumbnails/gallery, Assistant contact images and composer attachments use `LoadingImage` from shared UI on desktop and mobile, over direct or Relay connections. URL acquisition and browser decode are separate pending phases; both show the shared dotted shimmer canvas. Desktop body-image placeholders cap at 320px; mobile body-image placeholders fill their message width, both defaulting to 16:9. Thumbnail slots retain their existing square size. Fullscreen previews and file sheets use `ImageLoadingPlaceholder` during resource acquisition. Failures end loading and preserve the owning surface's error/retry path; image preview/save metadata continues to carry the original source. Legacy Markdown keeps its DOM presentation owner and only marks streamed images loaded after the actual image load event. See `../ui/DOCUMENTATION.md#image-loading`.
@@ -123,7 +153,12 @@ Move/up/cancel listeners run on window capture and filter by the initiating
 pointer ID. Leaving the textarea or losing element pointer capture does not
 cancel; actual pointercancel, backgrounding, or draft disposal does. The gesture
 does not depend on textarea pointer capture surviving layout/keyboard changes.
-Idle leaves render no additional input chrome.
+The hold-to-talk leaf renders no additional idle chrome. With ASR enabled and
+capture supported, both compact and expanded mobile footers also expose a
+microphone button. It opens the existing `ComposerDictation` recording overlay;
+its active lifecycle disables hold-to-talk so the two entry points cannot capture
+simultaneously. The click-to-record leaf is keyed by DraftKey and uses stable props
+at its memo boundary, including the overlay accessory.
 
 Captions and volume updates are owned by the leaf, not ChatInput or a
 global store. ASR-enabled mobile uses the web input surface, including Capacitor

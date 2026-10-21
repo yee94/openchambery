@@ -1,11 +1,14 @@
 import React from 'react';
 import { getAgentColor } from '@/lib/agentColors';
-import { getAgentIdenticonMatrix } from '@/lib/agentIdenticon';
+import { generatedAvatarDataUri, type AvatarKind } from '@/lib/generatedAvatar';
+import { useAgentAvatarPalette } from '@/lib/useAgentAvatarPalette';
 import { cn } from '@/lib/utils';
 
 type AgentAvatarProps = {
   /** Agent name seed — drives both pattern and theme color. */
   name: string | undefined;
+  kind?: AvatarKind;
+  animated?: boolean;
   /** Optional glyph used in place of the generated identicon. */
   emoji?: string;
   size?: number;
@@ -13,17 +16,21 @@ type AgentAvatarProps = {
    * `rounded` keeps the compact agent-badge chip; `circle` is the Assistant
    * contact face (list / header / settings) so emoji and identicon match.
    */
-  shape?: 'rounded' | 'circle';
+  shape?: 'rounded' | 'circle' | 'square';
   className?: string;
   /** Accessible name when the surrounding control no longer shows text. */
   label?: string;
 };
 
 /**
- * Compact hash avatar for sub-agents (GitHub-style identicon + agent color token).
+ * Deterministic local DiceBear avatar; explicit emoji remains a custom override.
+ * Agents paint their own computed accent color; the plate always carries that
+ * accent so its face never drifts from the matching agent badge.
  */
-export const AgentAvatar: React.FC<AgentAvatarProps> = ({
+export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
   name,
+  kind = 'agent',
+  animated = false,
   emoji,
   size = 16,
   shape = 'rounded',
@@ -31,19 +38,24 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   label,
 }) => {
   const color = getAgentColor(name);
-  const matrix = React.useMemo(() => getAgentIdenticonMatrix(name), [name]);
+  const palette = useAgentAvatarPalette(name);
+  const avatar = React.useMemo(() => {
+    if (emoji) return undefined;
+    if (kind !== 'agent') return generatedAvatarDataUri(kind, name, animated);
+    // Every Agent owns one computed accent token; its plate reuses that exact
+    // color so the face never drifts from the matching agent badge.
+    return generatedAvatarDataUri(kind, name, animated, palette);
+  }, [palette, emoji, kind, name, animated]);
 
   return (
     <span
       className={cn(
-        'inline-flex aspect-square shrink-0 overflow-hidden',
-        shape === 'circle' ? 'rounded-full' : 'rounded-sm',
+        'inline-flex aspect-square shrink-0 overflow-clip',
+        shape === 'square' ? 'rounded-none' : shape === 'circle' ? 'rounded-full' : 'rounded-sm',
         emoji && 'items-center justify-center select-none',
         color.class,
         className,
       )}
-      // currentColor is the reliable SVG paint path; presentation-attribute
-      // fill="var(--agent-color)" often resolves transparent in Chromium.
       // Emoji uses inline display+align so a caller className like `block`
       // cannot strip the flex box and leave the glyph off-center.
       style={{
@@ -63,6 +75,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
           : null),
       }}
       data-agent-avatar=""
+      data-avatar-kind={kind}
       data-agent-avatar-shape={shape}
       role={label ? 'img' : undefined}
       aria-label={label}
@@ -81,30 +94,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
         >
           {emoji}
         </span>
-      ) : <svg
-        width={size}
-        height={size}
-        viewBox="0 0 5 5"
-        shapeRendering="crispEdges"
-        className="oc-agent-avatar block h-full w-full"
-        aria-hidden="true"
-      >
-        <rect width="5" height="5" fill="currentColor" opacity={0.14} />
-        {matrix.map((row, y) =>
-          row.map((on, x) =>
-            on ? (
-              <rect
-                key={`${x}-${y}`}
-                x={x}
-                y={y}
-                width="1"
-                height="1"
-                fill="currentColor"
-              />
-            ) : null,
-          ),
-        )}
-      </svg>}
+      ) : <img src={avatar} alt="" draggable={false} className="block h-full w-full max-h-full max-w-full object-contain" aria-hidden="true" />}
     </span>
   );
-};
+});

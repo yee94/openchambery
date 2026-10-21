@@ -4,6 +4,7 @@ import { AssistantUnreadBadge } from './AssistantUnreadBadge';
 import { AssistantMarkAllReadButton } from './AssistantMarkAllReadButton';
 import { useEvent } from '@reactuses/core';
 import { AssistantWorkingAvatar } from './AssistantWorkingAvatar';
+import { AssistantContactStatus } from './AssistantContactStatus';
 import { useAssistantWorking } from './assistantWorking';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
@@ -30,7 +31,7 @@ import { ASSISTANT_MESSAGE_PREVIEW_CLASS, getAssistantMessagePreview } from './a
 import { resolveAssistantWorkspacePresentation } from './assistantWorkspaceState';
 
 type MobileAssistantConversationHeaderProps = {
-  assistant?: Pick<AssistantDTO, 'id' | 'name' | 'assignedSessionIDs' | 'working'> | null;
+  assistant?: Pick<AssistantDTO, 'id' | 'name' | 'avatarSeed' | 'assignedSessionIDs' | 'working' | 'activeContactTurn' | 'latestMessagePreview'> | null;
   onBack: () => void;
   onOpenSettings?: (assistantID: string) => void;
 };
@@ -56,11 +57,16 @@ const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHea
           <span className="inline-flex min-w-0 items-center gap-2.5">
             <AssistantWorkingAvatar
               name={assistant.id}
-              emoji={presentation?.avatarEmoji}
-              size={28}
+              avatarSeed={assistant.avatarSeed}
+              size={40}
               label={displayName}
+              working={Boolean(assistant.working || assistant.activeContactTurn)}
+              showWorkingDot={false}
             />
-            <span className="truncate font-medium tracking-[-0.01em]">{displayName || t('assistants.title')}</span>
+            <span className="min-w-0">
+              <span className="block truncate font-medium leading-5 tracking-[-0.01em]">{displayName || t('assistants.title')}</span>
+              <AssistantContactStatus assistantID={assistant.id} serverWorking={Boolean(assistant.working || assistant.activeContactTurn)} lastContactAt={assistant.latestMessagePreview?.createdAt} />
+            </span>
           </span>
         ) : (displayName || t('assistants.title'))
       }
@@ -73,11 +79,11 @@ const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHea
 };
 
 type AssistantListItemProps = {
+  avatarSeed?: string;
   unreadCount: number;
   summary: string;
   assistantID: string;
   displayName: string;
-  avatarEmoji?: string;
   selected: boolean;
   enabled: boolean;
   editLabel: string;
@@ -90,11 +96,11 @@ type AssistantListItemProps = {
 };
 
 const AssistantListItem: React.FC<AssistantListItemProps> = ({
+  avatarSeed,
   unreadCount,
   summary,
   assistantID,
   displayName,
-  avatarEmoji,
   selected,
   enabled,
   editLabel,
@@ -140,10 +146,10 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
           />
         }
       >
-        <AssistantWorkingAvatar name={assistantID} emoji={avatarEmoji} size={24} label={displayName} working={working} />
+        <AssistantWorkingAvatar name={assistantID} avatarSeed={avatarSeed} size={44} label={displayName} working={working} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate typography-ui-label font-medium">{displayName}</span>
-          <span className={cn(ASSISTANT_MESSAGE_PREVIEW_CLASS, 'mt-1.5')}>{summary}</span>
+          <span className={cn('block truncate typography-ui-label leading-5', selected ? 'font-semibold' : 'font-medium')}>{displayName}</span>
+          <span className={cn(ASSISTANT_MESSAGE_PREVIEW_CLASS, 'mt-1 leading-5')}>{summary}</span>
         </span>
         <AssistantUnreadBadge count={unreadCount} />
       </ContextMenuTrigger>
@@ -278,10 +284,10 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
                   <AssistantListItem
                     key={item.id}
                     assistantID={item.id}
+                    avatarSeed={item.avatarSeed}
                     unreadCount={item.unreadCount ?? 0}
                     summary={getAssistantMessagePreview(item.latestMessagePreview, t)}
                     displayName={itemPresentation.displayName}
-                    avatarEmoji={itemPresentation.avatarEmoji ?? undefined}
                     selected={selected}
                     enabled={item.enabled}
                     editLabel={t('assistants.menu.edit')}
@@ -308,12 +314,10 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
           <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} onOpenSettings={onMobileOpenSettings} />
         ) : (
           <header className="flex h-16 shrink-0 items-center gap-3.5 border-b border-[var(--surface-subtle)]/70 px-5 sm:px-7">
-            <AssistantWorkingAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={30} label={presentation.displayName || assistant.name} />
+            <AssistantWorkingAvatar name={assistant.id} avatarSeed={assistant.avatarSeed} size={40} label={presentation.displayName || assistant.name} working={Boolean(assistant.working || assistant.activeContactTurn)} showWorkingDot={false} />
             <div className="min-w-0 flex-1">
-              <div className="truncate typography-ui-label font-semibold tracking-[-0.01em] text-foreground">{presentation.displayName}</div>
-              <div className="mt-1 truncate typography-micro leading-none text-muted-foreground/55">
-                {t('assistants.conversation.contactHint')}
-              </div>
+              <div className="truncate typography-ui-label font-semibold leading-5 tracking-[-0.01em] text-foreground">{presentation.displayName}</div>
+              <AssistantContactStatus assistantID={assistant.id} serverWorking={Boolean(assistant.working || assistant.activeContactTurn)} lastContactAt={assistant.latestMessagePreview?.createdAt} />
             </div>
             <Button
               type="button"

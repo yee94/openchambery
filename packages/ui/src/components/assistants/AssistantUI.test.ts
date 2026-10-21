@@ -180,22 +180,21 @@ describe('Assistant UI product contract', () => {
     expect(english).toContain("'assistants.settings.scheduledTasks.title': 'Scheduled tasks'");
   });
 
-  test('fills the mobile Assistant avatar while preserving its circular frame', async () => {
+  test('fills the mobile Assistant avatar while preserving a fixed rounded square', async () => {
     const [mobileTab, mobileStyles, agentAvatar, workingAvatar] = await Promise.all([
       read('../../mobile/assistant/MobileAssistantTab.tsx'),
       read('../../styles/mobile.css'),
       read('../chat/AgentAvatar.tsx'),
       read('AssistantWorkingAvatar.tsx'),
     ]);
-    expect(mobileTab).toContain("'oc-mobile-assistant-avatar'");
-    expect(mobileTab).toContain("'oc-mobile-assistant-avatar--emoji'");
-    expect(mobileTab).toContain("'oc-mobile-assistant-avatar--visual'");
-    expect(mobileTab).toContain('size={40}');
+    expect(mobileTab).toContain('className="oc-mobile-assistant-avatar"');
+    expect(mobileTab).not.toContain('avatarEmoji');
+    expect(mobileTab).toContain('size={44}');
     expect(mobileTab).not.toContain('size={avatarEmoji ? 40 : 38}');
     expect(mobileTab).not.toContain('oc-mobile-assistant-avatar oc-mobile-glass-control');
-    // Working avatar must not force `block` — that strips AgentAvatar flex and off-centers emoji.
     expect(workingAvatar).not.toContain('className="block"');
-    expect(workingAvatar).toContain('shape="circle"');
+    expect(workingAvatar).toContain('shape="rounded"');
+    expect(workingAvatar).toContain('rounded-[0.5rem]');
     expect(agentAvatar).toContain("shape = 'rounded'");
     expect(agentAvatar).toContain("shape === 'circle' ? 'rounded-full' : 'rounded-sm'");
     expect(agentAvatar).toContain('data-agent-avatar=""');
@@ -208,26 +207,14 @@ describe('Assistant UI product contract', () => {
       mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
     );
     expect(avatarStyles).toContain('overflow: visible');
-    expect(avatarStyles).toContain('border-radius: 999px');
+    expect(avatarStyles).toContain('border-radius: 0.5rem');
     expect(avatarStyles).toContain(':is(img, svg)');
     expect(avatarStyles).toContain('object-fit: cover');
-    expect(avatarStyles).toContain('.oc-mobile-assistant-avatar > [data-agent-avatar]');
-    expect(avatarStyles).toContain('overflow: hidden !important');
-    expect(avatarStyles).toContain('overflow-y: hidden !important');
-    expect(avatarStyles).toContain('border-radius: 999px !important');
+    expect(avatarStyles).toContain('.oc-mobile-assistant-avatar [data-agent-avatar]');
+    expect(avatarStyles).toContain('overflow: clip !important');
+    expect(avatarStyles).toContain('border-radius: 0.5rem !important');
     expect(avatarStyles).toContain('scrollbar-width: none');
-    expect(avatarStyles).toContain('.oc-mobile-assistant-avatar--emoji');
-    expect(avatarStyles).toContain('padding: 0');
-    expect(avatarStyles).toContain('font-size: 1.75rem !important');
-    expect(avatarStyles).toContain('display: inline-flex !important');
-    expect(avatarStyles).toContain('transform: translateY(0.06em)');
-    expect(avatarStyles).toContain('background: var(--interactive-selection)');
-    const visualStyles = avatarStyles.slice(
-      avatarStyles.indexOf('.oc-mobile-assistant-avatar--visual {'),
-      avatarStyles.indexOf('.oc-mobile-assistant-avatar :is(img, svg)'),
-    );
-    expect(visualStyles).toContain('padding: 0');
-    expect(visualStyles).not.toContain('background: var(--surface-muted)');
+    expect(avatarStyles).not.toContain('.oc-mobile-assistant-avatar--emoji');
     // mobile-pointer rewrite must not reopen the face as a scrollport.
     expect(mobileStyles).toContain('[data-agent-avatar]');
     expect(mobileStyles).toContain('[data-assistant-working-avatar] .overflow-hidden');
@@ -260,10 +247,11 @@ describe('Assistant UI product contract', () => {
       mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
     );
     expect(cardStyles).toContain('gap: 0.875rem');
-    expect(cardStyles).toContain('min-height: 7rem');
-    expect(cardStyles).toContain('align-items: flex-start');
+    expect(cardStyles).toContain('min-height: 4.75rem');
+    expect(cardStyles).toContain('align-items: center');
     expect(cardStyles).toContain('padding: 1rem');
-    expect(cardStyles).toContain('-webkit-line-clamp: 2');
+    expect(cardStyles).toContain('white-space: nowrap');
+    expect(cardStyles).toContain('text-overflow: ellipsis');
   });
 
   test('separates mobile disabled guidance, empty onboarding, and unavailable states', async () => {
@@ -386,7 +374,8 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('data-assistant-contact-run-start');
     expect(conversation).toContain('sameAssistantRun');
     expect(conversation).toContain('showAvatar');
-    expect(conversation).toContain('data-assistant-contact-streaming-caret');
+    expect(conversation).not.toContain('data-assistant-contact-streaming-caret');
+    expect(conversation).toContain('data-assistant-contact-status-slot');
     expect(conversation).toContain('animate-pulse');
     expect(conversation).not.toContain('animate-bounce');
     expect(conversation).toContain('subscribeOpenchamberEvents');
@@ -453,7 +442,7 @@ describe('Assistant UI product contract', () => {
     expect(await read('contactCardChrome.ts')).toContain('ring-[var(--surface-subtle)]');
     expect(card).toContain('readSessionChangeSummary');
     expect(card).toContain('directoryName(directory)');
-    expect(card).toContain('relative inline-block size-6');
+    expect(card).toContain('relative inline-block size-10');
     expect(card).toContain('absolute right-0 bottom-0');
     expect(card).not.toContain('<Button');
     expect(card).not.toContain('assistants.contact.card.session.open');
@@ -463,7 +452,7 @@ describe('Assistant UI product contract', () => {
     expect(assistantCard).toContain('role="button"');
     expect(assistantCard).toContain('onClick={openContact}');
     expect(assistantCard).toContain('CONTACT_CARD_COVER_CLASS');
-    expect(assistantCard).toContain('relative inline-block size-6');
+    expect(assistantCard).toContain('relative inline-block size-10');
     expect(assistantCard).not.toContain('<Button');
     expect(assistantCard).not.toContain('assistants.contact.card.assistant.open');
     expect(scheduleCard).toContain("setActiveMainTab('schedule')");
@@ -472,7 +461,7 @@ describe('Assistant UI product contract', () => {
     expect(scheduleCard).toContain('role="button"');
     expect(scheduleCard).toContain('onClick={openSchedule}');
     expect(scheduleCard).toContain('CONTACT_CARD_COVER_CLASS');
-    expect(scheduleCard).toContain('relative inline-block size-6');
+    expect(scheduleCard).toContain('relative inline-block size-10');
     expect(scheduleCard).not.toContain('<Button');
     expect(scheduleCard).not.toContain('assistants.contact.card.schedule.open');
     expect(english).not.toContain('assistants.contact.card.assistant.open');
@@ -859,9 +848,9 @@ describe('Assistant UI product contract', () => {
   test('shows retry for an empty stale snapshot and truncates long assistant names in conversation chrome', async () => {
     const view = await read('AssistantView.tsx');
     expect(view).toContain("snapshotQuery.isError ? t('assistants.state.staleSnapshot')");
-    expect(view).toContain('truncate typography-ui-label font-semibold tracking-[-0.01em]');
-    expect(view).toContain("assistants.conversation.contactHint");
-    expect(view).toContain('typography-micro leading-none text-muted-foreground/55');
+    expect(view).toContain('truncate typography-ui-label font-semibold leading-5 tracking-[-0.01em]');
+    expect(view).toContain('<AssistantContactStatus');
+    expect(view).toContain('lastContactAt={assistant.latestMessagePreview?.createdAt}');
     expect(view).toContain('presentation.displayName || assistant.name');
   });
 

@@ -15,9 +15,11 @@ import { useInputStore } from '@/sync/input-store';
 import { handlePendingNativeAssistantOpen, openNativeAssistantConversation } from './nativeAssistantShortcut';
 import { MobileShareRecipientPicker } from './MobileShareRecipientPicker';
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
+import { generatedAvatarDataUri } from '@/lib/generatedAvatar';
+import { rasterizePngBase64 } from '@/lib/rasterizePng';
 
-type NativeAssistantCatalogEntry = Omit<AssistantCatalogEntry, 'name'> & { name: string; avatarEmoji?: string };
-type NativeAssistantInteraction = { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string; avatarEmoji?: string };
+type NativeAssistantCatalogEntry = Omit<AssistantCatalogEntry, 'name'> & { name: string; avatarPng?: string };
+type NativeAssistantInteraction = { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string; avatarPng?: string };
 type NativeShareAttachment = { stagedPath: string; originalName: string; mime: string; byteSize: number };
 export type NativeShareEnvelope = { version: 1; operationID: string; serverInstanceID: string; assistantID: string; text?: string; attachments: NativeShareAttachment[]; source: 'ios-share' | 'android-share'; createdAt: number; expiresAt: number };
 type OpenChamberSharePlugin = {
@@ -123,7 +125,7 @@ export const refreshNativeAssistantCatalog = async (): Promise<void> => {
       serverInstanceID,
       assistantID: assistant.id,
       name: assistant.name,
-      avatarSeed: assistant.id,
+      avatarSeed: assistant.avatarSeed ?? assistant.id,
       serverLabel: connection.label,
       connectionKey,
       enabled: capability.enabled && assistant.enabled,
@@ -136,22 +138,28 @@ export const refreshNativeAssistantCatalog = async (): Promise<void> => {
   }
 };
 
+let nativeCatalogPublication = 0;
 export const publishNativeAssistantCatalog = async (): Promise<void> => {
   if (!nativeAvailable()) return;
-  const entries = Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).flatMap((partition) => partition.entries).map((entry): NativeAssistantCatalogEntry => {
+  const publication = ++nativeCatalogPublication;
+  const entries: NativeAssistantCatalogEntry[] = [];
+  for (const entry of Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).flatMap((partition) => partition.entries)) {
     const presentation = getAssistantPresentation(entry.name);
-    return {
+    const avatarPng = await rasterizePngBase64(generatedAvatarDataUri('assistant', entry.avatarSeed), 128);
+    if (publication !== nativeCatalogPublication) return;
+    entries.push({
       ...entry,
       name: presentation.displayName || entry.name,
-      ...(presentation.avatarEmoji ? { avatarEmoji: presentation.avatarEmoji } : {}),
-    };
-  });
+      ...(avatarPng ? { avatarPng } : {}),
+    });
+  }
   await OpenChamberShare.updateCatalog({ entries });
 };
 
 export const donateNativeAssistantInteraction = async (target: NativeAssistantInteraction): Promise<void> => {
   if (Capacitor.getPlatform() !== 'ios') return;
-  await OpenChamberShare.donateAssistantInteraction(target);
+  const avatarPng = await rasterizePngBase64(generatedAvatarDataUri('assistant', target.avatarSeed), 128);
+  await OpenChamberShare.donateAssistantInteraction({ ...target, ...(avatarPng ? { avatarPng } : {}) });
 };
 
 const deliver = (envelope: NativeShareEnvelope): Promise<void> => {

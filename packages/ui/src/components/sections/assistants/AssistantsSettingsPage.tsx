@@ -79,6 +79,7 @@ const emptyDraft = (defaultName = ''): AssistantDraft => {
   return {
     enabled: true,
     name: defaultName,
+    avatarSeed: crypto.randomUUID(),
     defaultPrompt: '',
     workspacePath: null,
     providerID: defaultModel?.providerID ?? '',
@@ -88,6 +89,7 @@ const emptyDraft = (defaultName = ''): AssistantDraft => {
 };
 
 const draftFromAssistant = (assistant: AssistantDTO): AssistantDraft => ({
+  avatarSeed: assistant.avatarSeed ?? assistant.id,
   enabled: assistant.enabled,
   name: assistant.name,
   defaultPrompt: assistant.defaultPrompt,
@@ -102,6 +104,7 @@ const draftFromAssistant = (assistant: AssistantDTO): AssistantDraft => ({
  * server keeps prior values (undefined → retain; null would clear).
  */
 const toAssistantSettingsUpdateDraft = (draft: AssistantDraft): AssistantDraft => ({
+  avatarSeed: draft.avatarSeed,
   enabled: draft.enabled,
   name: draft.name,
   defaultPrompt: draft.defaultPrompt,
@@ -433,7 +436,7 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
                 selectSettingsAssistant(assistant.id);
                 onItemSelect?.();
               }}
-              icon={<AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} shape="circle" />}
+              icon={<AgentAvatar kind="assistant" name={assistant.avatarSeed ?? assistant.id} size={32} label={presentation.displayName || assistant.name} shape="rounded" className="rounded-[0.5rem]" />}
             />
           );
         }) : (
@@ -600,7 +603,12 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
         {selectedID ? (
           <>
             <div className="mb-4 flex items-center gap-3">
-              <AgentAvatar name={selected?.id ?? 'new'} emoji={draftPresentation.avatarEmoji} size={38} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} shape="circle" />
+              <div className="group/avatar relative shrink-0">
+                <AgentAvatar kind="assistant" name={draft.avatarSeed ?? selected?.id ?? 'new'} size={40} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} shape="rounded" className="rounded-[0.5rem]" />
+                <Button variant="link" size="icon" disabled={saving} className="absolute inset-0 h-full w-full p-0 text-muted-foreground opacity-0 transition-opacity hover:no-underline group-hover/avatar:opacity-100 group-focus-within/avatar:opacity-100 [@media(hover:none)]:opacity-100" aria-label={t('assistants.settings.randomAvatar')} title={t('assistants.settings.randomAvatar')} onClick={() => patchDraft('avatarSeed', crypto.randomUUID())}>
+                  <Icon name="refresh" className="absolute -right-0.5 -bottom-0.5 size-3.5" />
+                </Button>
+              </div>
               <div className="min-w-0 flex-1">
                 <h2 className="truncate typography-ui-header font-semibold text-foreground">{selected ? selectedPresentation?.displayName : t('assistants.settings.create')}</h2>
                 {draft.providerID && draft.modelID ? (
@@ -685,7 +693,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
           </>
         ) : (
           <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-            <AgentAvatar name="assistants-empty" size={44} shape="circle" />
+            <AgentAvatar kind="assistant" name="assistants-empty" size={44} shape="rounded" className="rounded-[0.5rem]" />
             <p className="typography-ui">{t('assistants.settings.empty')}</p>
             <Button data-settings-item="assistants.create" size="sm" onClick={startCreate}><Icon name="add" className="size-4" />{t('assistants.settings.create')}</Button>
           </div>

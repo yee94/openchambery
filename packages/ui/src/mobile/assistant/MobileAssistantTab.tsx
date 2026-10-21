@@ -126,10 +126,10 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
 }
 
 type MobileAssistantCardProps = {
+  avatarSeed?: string;
   unreadCount: number;
   assistantID: string;
   displayName: string;
-  avatarEmoji?: string;
   summary: string;
   enabled: boolean;
   editLabel: string;
@@ -142,10 +142,10 @@ type MobileAssistantCardProps = {
 };
 
 function MobileAssistantCard({
+  avatarSeed,
   unreadCount,
   assistantID,
   displayName,
-  avatarEmoji,
   summary,
   enabled,
   editLabel,
@@ -235,16 +235,11 @@ function MobileAssistantCard({
             />
           }
         >
-          <span className={cn(
-            'oc-mobile-assistant-avatar',
-            avatarEmoji
-              ? 'oc-mobile-assistant-avatar--emoji'
-              : 'oc-mobile-assistant-avatar--visual',
-          )}>
+          <span className="oc-mobile-assistant-avatar">
             <AssistantWorkingAvatar
               name={assistantID}
-              emoji={avatarEmoji}
-              size={40}
+              avatarSeed={avatarSeed}
+              size={44}
               label={displayName}
               working={working}
             />
@@ -352,9 +347,9 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
               <MobileAssistantCard
                 key={assistant.id}
                 assistantID={assistant.id}
+                avatarSeed={assistant.avatarSeed}
                 unreadCount={assistant.unreadCount ?? 0}
                 displayName={displayName}
-                avatarEmoji={presentation.avatarEmoji ?? undefined}
                 summary={summary}
                 enabled={assistant.enabled}
                 editLabel={editLabel}

@@ -44,5 +44,5 @@ export function AssistantReadMarker({ assistantID, position }: { assistantID: st
   useEventListener('scroll', report, () => marker.current?.closest<HTMLElement>('[data-assistant-contact-transcript]'), { passive: true });
   useMutationObserver(report, () => document.documentElement, { attributes: true, attributeFilter: ['class'] });
   useInterval(report, 15_000);
-  return <span ref={marker} aria-hidden="true" className="block h-px w-px shrink-0" data-assistant-read-marker="" />;
+  return <span ref={marker} aria-hidden="true" className="absolute bottom-0 left-0 block h-px w-px" data-assistant-read-marker="" />;
 }

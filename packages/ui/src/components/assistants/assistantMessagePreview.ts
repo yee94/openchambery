@@ -1,6 +1,6 @@
 import type { AssistantLatestMessagePreview } from '@/queries/assistantDTO';
 
-export const ASSISTANT_MESSAGE_PREVIEW_CLASS = 'line-clamp-2 min-w-0 max-w-full overflow-clip whitespace-normal [overflow-wrap:anywhere] typography-micro text-muted-foreground';
+export const ASSISTANT_MESSAGE_PREVIEW_CLASS = 'block min-w-0 max-w-full truncate typography-micro text-muted-foreground';
 
 const fallbackKeys = {
   image: 'assistants.contact.attachment.image',

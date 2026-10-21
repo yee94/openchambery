@@ -482,7 +482,7 @@ describe('progressive activity presentation', () => {
     });
 
     test('summarizes active task agents while retaining every completed participant', () => {
-        expect(progressiveGroupSource).toContain("if (toolName !== 'task' && toolName !== 'subagent') continue;");
+        expect(progressiveGroupSource).toContain('if (!isTaskToolName(part.tool)) continue;');
         expect(progressiveGroupSource).toContain("stateRecord.status === 'pending' || stateRecord.status === 'running'");
         expect(progressiveGroupSource).toContain('const taskId = typeof part.id === \'string\' ? part.id.trim() : \'\'');
         expect(progressiveGroupSource).toContain('return { active, all };');

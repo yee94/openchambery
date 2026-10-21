@@ -43,7 +43,7 @@ describe('Assistant snapshot message preview', () => {
     expect(getAssistantMessagePreview({ ...preview, text: ' \n ' }, t)).toBe('assistants.contact.empty');
   });
 
-  test('shares two-line wrapping across both lists using snapshot only', async () => {
+  test('shares single-line truncation across both lists using snapshot only', async () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const sources = await Promise.all(['AssistantView.tsx', '../../mobile/assistant/MobileAssistantTab.tsx'].map((path) => readFile(join(here, path), 'utf8')));
     for (const source of sources) {
@@ -52,7 +52,7 @@ describe('Assistant snapshot message preview', () => {
       expect(source).not.toContain('defaultPrompt.trim()');
       expect(source).not.toContain('useAssistantContactMessagesQuery');
     }
-    expect(ASSISTANT_MESSAGE_PREVIEW_CLASS).toContain('line-clamp-2');
-    expect(ASSISTANT_MESSAGE_PREVIEW_CLASS).toContain('[overflow-wrap:anywhere]');
+    expect(ASSISTANT_MESSAGE_PREVIEW_CLASS).toContain('truncate');
+    expect(ASSISTANT_MESSAGE_PREVIEW_CLASS).not.toContain('line-clamp-2');
   });
 });

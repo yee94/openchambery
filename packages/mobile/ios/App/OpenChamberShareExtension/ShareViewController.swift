@@ -201,7 +201,7 @@ class ShareViewController: UIViewController, UITextViewDelegate {
         card.layer.cornerCurve = .continuous
         card.translatesAutoresizingMaskIntoConstraints = false
 
-        let avatar = UIImageView(image: Self.avatarImage(seed: target?["avatarSeed"] as? String ?? target?["assistantID"] as? String ?? "OpenChamber", emoji: target?["avatarEmoji"] as? String))
+        let avatar = UIImageView(image: Self.avatarImage(seed: target?["avatarSeed"] as? String ?? target?["assistantID"] as? String ?? "OpenChamber", emoji: target?["avatarEmoji"] as? String, png: target?["avatarPng"] as? String))
         avatar.layer.cornerRadius = 22
         avatar.clipsToBounds = true
         avatar.isAccessibilityElement = true
@@ -491,7 +491,8 @@ class ShareViewController: UIViewController, UITextViewDelegate {
         return label
     }
 
-    private static func avatarImage(seed: String, emoji: String?) -> UIImage {
+    private static func avatarImage(seed: String, emoji: String?, png: String?) -> UIImage {
+        if let png, let data = Data(base64Encoded: png), let image = UIImage(data: data) { return image }
         let size = CGSize(width: 88, height: 88)
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false

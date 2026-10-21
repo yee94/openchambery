@@ -6,6 +6,7 @@ export type NativeAssistantCatalogEntry = {
   name: string;
   avatarSeed: string;
   avatarEmoji?: string;
+  avatarPng?: string;
   serverLabel: string;
   connectionKey: string;
   enabled: boolean;
@@ -59,7 +60,7 @@ export type NativeAssistantOpenRequest = {
 
 export interface OpenChamberSharePlugin {
   updateCatalog(options: { entries: NativeAssistantCatalogEntry[] }): Promise<void>;
-  donateAssistantInteraction(options: { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string; avatarEmoji?: string }): Promise<void>;
+  donateAssistantInteraction(options: { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string; avatarEmoji?: string; avatarPng?: string }): Promise<void>;
   listPending(): Promise<{ envelopes: NativeShareEnvelope[] }>;
   ack(options: { operationID: string }): Promise<void>;
   releaseFiles(options: { operationID: string }): Promise<void>;

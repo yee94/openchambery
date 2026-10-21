@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { getAssistantPresentation } from './assistantPresentation';
 
 describe('getAssistantPresentation', () => {
@@ -6,17 +6,17 @@ describe('getAssistantPresentation', () => {
     expect(getAssistantPresentation('Code Helper')).toEqual({ displayName: 'Code Helper' });
   });
 
-  test('uses the leading emoji as the avatar and removes it from the display name', () => {
-    expect(getAssistantPresentation('🤖 Code Helper')).toEqual({ avatarEmoji: '🤖', displayName: 'Code Helper' });
+  test('preserves leading emoji as part of the name instead of extracting an avatar', () => {
+    expect(getAssistantPresentation('🤖 Code Helper')).toEqual({ displayName: '🤖 Code Helper' });
   });
 
   test('keeps compound emoji together', () => {
-    expect(getAssistantPresentation('👩🏽‍💻 Developer')).toEqual({ avatarEmoji: '👩🏽‍💻', displayName: 'Developer' });
-    expect(getAssistantPresentation('🇨🇳 Translator')).toEqual({ avatarEmoji: '🇨🇳', displayName: 'Translator' });
+    expect(getAssistantPresentation('👩🏽‍💻 Developer')).toEqual({ displayName: '👩🏽‍💻 Developer' });
+    expect(getAssistantPresentation('🇨🇳 Translator')).toEqual({ displayName: '🇨🇳 Translator' });
   });
 
-  test('removes an emoji-only name from the display label', () => {
-    expect(getAssistantPresentation('🌟')).toEqual({ avatarEmoji: '🌟', displayName: '' });
+  test('keeps an emoji-only name visible', () => {
+    expect(getAssistantPresentation('🌟')).toEqual({ displayName: '🌟' });
   });
 
   test('leaves emoji outside the first grapheme in the display name', () => {

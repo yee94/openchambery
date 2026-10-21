@@ -1,5 +1,27 @@
 # Assistants Module
 
+## Avatar identity
+
+`avatarSeed` is an optional nonempty string (maximum 256 characters) on create
+and update. SQLite schema v14 adds nullable `avatar_seed`; existing contacts
+retain their ID-based face. DTOs return the stored seed or assistant ID. Omitted
+updates preserve the seed, and revision conflicts cannot overwrite it. Avatar
+changes do not reset sessions or alter the assistant identity.
+
+Contacts can call `update_avatar({ seed? })` to change their own avatar through
+the existing revision-checked update path. Omitting seed generates a fresh key;
+an explicit seed restores a face. The server binds the contact ID; other targets
+and unsupported customization arguments are rejected. Results include the old
+and saved seeds; unchanged seeds do not bump revision. Storage failures remain
+tool errors, and revision conflicts retry once.
+
+DiceBear guidance is progressively disclosed: the short tool description points
+to `get_assistant_settings({ topic: 'avatar' })`. Only that result includes the
+local SVG/Moods rendering explanation, deterministic-seed semantics, restoration,
+and limitations (no semantic image prompts, style/color controls, uploads or URLs).
+Ordinary settings reads expose `avatarSeed` without the full guide. Background
+read-only turns cannot call the mutation tool.
+
 ## Contact model variants
 
 Assistant Settings uses the shared model picker to choose a model and its
@@ -57,7 +79,7 @@ attachments is a different request.
 
 The in-app Assistant is an OpenChamber-owned **contact**. OpenCode is only the LLM gateway (`POST /api/openchamber/llm/chat/completions`) using already-connected `{providerID, modelID}`. Composer send runs `@earendil-works/pi-agent-core` with `thinkingLevel: 'off'`. When the assistant has an effective workspace, the harness attaches pi's four coding tools (`read`, `write`, `edit`, `bash`) via `NodeExecutionEnv` in that directory, applies `defaultPrompt`, and merges skills from `~/.claude/skills`, `~/.agents/skills`, plus the project's `.claude/skills` and `.agents/skills` (project wins on name). OpenChamber API tools remain (`new_conversation`, `clear_chat_history`, `list_projects`, `list_sessions`, `get_assistant_settings`, `update_default_prompt`, `create_assistant`, `schedule_task`, `message_assistant`, `assign_session`, `watch_session`, `read_session`, `steer_session`, `stop_session`, `archive_session`, `delete_session`). It does not use `SessionPrompt` / `session.prompt` as the conversation engine. The LLM gateway throwaway session still denies OpenCode tools (`session.create` PermissionRuleset deny-all + `session.prompt` tools map + hidden `openchamber-llm` agent `permission: { "*": deny }`); file and shell work runs in-process through pi. The contact system prompt includes **full argument schemas** for both pi coding tools and OpenChamber contact tools. Skill directory entries are instructions loaded via `read`, not native/MCP tool names.
 
-User contact turns retain all eighteen OpenChamber operation tools alongside the four
+User contact turns retain the OpenChamber operation tools alongside the four
 pi tools. Skill discovery contributes instructions to this combined tool set.
 Assignment intent includes “建个会话” and “再建个会话”. Watch intent includes
 “监听会话”; stop intent includes “停止会话”. The single missed-call

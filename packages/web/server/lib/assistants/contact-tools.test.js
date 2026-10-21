@@ -434,6 +434,7 @@ describe('createContactTools', () => {
       LIST_SESSIONS_TOOL_NAME,
       'read_session',
       GET_ASSISTANT_SETTINGS_TOOL_NAME,
+      'update_avatar',
       UPDATE_DEFAULT_PROMPT_TOOL_NAME,
       CREATE_ASSISTANT_TOOL_NAME,
       SCHEDULE_TASK_TOOL_NAME,
@@ -814,6 +815,26 @@ describe('createContactTools', () => {
     });
     expect(result.content[0].text).toContain('defaultPrompt: (empty)');
     expect(result.terminate).toBe(false);
+  });
+
+  it('discloses DiceBear guidance only on demand and validates self avatar mutations', async () => {
+    const updateAvatar = vi.fn(async (seed) => ({ updated: true, avatarSeed: seed ?? 'random', previousAvatarSeed: 'old' }));
+    const tools = createContactTools({ updateAvatar, readAssistantSettings: async () => ({ id: 'self', avatarSeed: 'old' }) });
+    const read = tools.find((tool) => tool.name === GET_ASSISTANT_SETTINGS_TOOL_NAME);
+    expect((await read.execute('read', {})).content[0].text).not.toContain('DiceBear');
+    const guide = await read.execute('guide', { topic: 'avatar' });
+    expect(guide.details.settings.avatarSeed).toBe('old');
+    expect(guide.content[0].text).toContain('Moods');
+    expect(guide.content[0].text).toContain('not an image prompt');
+    const change = tools.find((tool) => tool.name === 'update_avatar');
+    expect((await change.execute('random', {})).details.avatarSeed).toBe('random');
+    expect((await change.execute('restore', { seed: 'old' })).details.avatarSeed).toBe('old');
+    for (const params of [{ seed: '' }, { seed: null }, { seed: 1 }, { seed: 'x'.repeat(257) }, { toAssistantID: 'other' }, { color: 'blue' }]) {
+      expect((await change.execute('invalid', params)).details.error).toBe('validation_error');
+    }
+    expect(updateAvatar).toHaveBeenCalledTimes(2);
+    updateAvatar.mockRejectedValueOnce(new AssignError('revision_conflict', 'Conflict'));
+    expect((await change.execute('conflict', {})).details.error).toBe('revision_conflict');
   });
 
   it('updates default prompt, no-ops when unchanged, and reports callback failures', async () => {

@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useEvent } from '@reactuses/core';
+import { generatedAvatarDataUri } from '@/lib/generatedAvatar';
+import { useAgentAvatarPalette } from '@/lib/useAgentAvatarPalette';
 
 import { findAttachmentCitationRanges } from '@/components/chat/attachmentCitations';
 import type { ComposerAutocompleteListRow } from '@/lib/composer-autocomplete';
@@ -144,6 +146,8 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
   const lastTextPresetEpochRef = useRef(-1);
   const replacedNativeTextRef = useRef<string | null>(null);
   const modelIconRef = useRef('');
+  const agentIconRef = useRef('');
+  const agentPalette = useAgentAvatarPalette(args.agentName);
   const previewRef = useRef<NativeIosComposerAttachmentPreview[]>([]);
   const autocompleteRef = useRef<NativeIosComposerAutocomplete>(emptyNativeComposerAutocomplete());
 
@@ -232,6 +236,7 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     agentLabel: args.agentLabel,
     agentColor: nativeIosComposerAgentColor(args.agentName || undefined),
     agentIdenticon: packNativeIosComposerIdenticon(args.agentName || undefined),
+    agentIcon: agentIconRef.current,
     suppressed: args.suppressed,
     showScrollToBottom: args.showScrollToBottom,
     scrollAria: args.scrollAria,
@@ -263,6 +268,21 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     };
     // retain/release is tied to availability. Page remounts share one overlay.
   }, [available]);
+
+  useEffect(() => {
+    if (!available) return;
+    let cancelled = false;
+    const publish = (agentIcon: string) => {
+      agentIconRef.current = agentIcon;
+      if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, agentIcon };
+      void getNativeIosComposerPlugin().update({ agentIcon });
+    };
+    publish('');
+    void rasterizeLogoPngBase64(generatedAvatarDataUri('agent', args.agentName || undefined, false, agentPalette)).then((base64) => {
+      if (!cancelled) publish(base64 ?? '');
+    });
+    return () => { cancelled = true; };
+  }, [available, args.agentName, agentPalette]);
 
   useEffect(() => {
     if (!available) return;

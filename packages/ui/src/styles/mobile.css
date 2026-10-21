@@ -1200,8 +1200,8 @@ button.oc-mobile-worktree-label-trigger:active,
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 7rem;
-  align-items: flex-start;
+  min-height: 4.75rem;
+  align-items: center;
   gap: 0.75rem;
   border: 0;
   border-radius: var(--oc-mobile-surface-radius);
@@ -1226,72 +1226,36 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-assistant-avatar {
   display: flex;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
   flex: none;
   align-items: center;
   justify-content: center;
   /* Visible so the Grok-Bot working dot can sit on the corner. */
   overflow: visible;
   box-sizing: border-box;
-  border-radius: 999px;
+  border-radius: 0.5rem;
   background: transparent;
 }
 
-/* Face is always a circle (emoji + identicon). Keep it a clipper — the
-   mobile-pointer `.overflow-hidden → overflow-y: auto` rewrite would paint a
-   native scrollbar thumb beside the 40px glyph. */
-.oc-mobile-assistant-avatar > [data-agent-avatar],
-.oc-mobile-assistant-avatar > [role="img"] {
+/* Keep the animated face inside its fixed, softly rounded square. */
+.oc-mobile-assistant-avatar [data-agent-avatar] {
   width: 100% !important;
   min-width: 100% !important;
   max-width: 100% !important;
   height: 100% !important;
   min-height: 100% !important;
   max-height: 100% !important;
-  overflow: hidden !important;
-  overflow-x: hidden !important;
-  overflow-y: hidden !important;
-  border-radius: 999px !important;
+  overflow: clip !important;
+  border-radius: 0.5rem !important;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-.oc-mobile-assistant-avatar > [data-agent-avatar]::-webkit-scrollbar,
-.oc-mobile-assistant-avatar > [role="img"]::-webkit-scrollbar {
+.oc-mobile-assistant-avatar [data-agent-avatar]::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
-}
-
-.oc-mobile-assistant-avatar--emoji {
-  padding: 0;
-  background: var(--interactive-selection);
-}
-
-.oc-mobile-assistant-avatar--emoji > [data-agent-avatar],
-.oc-mobile-assistant-avatar--emoji > [role="img"] {
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
-  background: var(--interactive-selection);
-}
-
-.oc-mobile-assistant-avatar--emoji [data-agent-avatar] > span,
-.oc-mobile-assistant-avatar--emoji [role="img"] > span {
-  display: flex !important;
-  width: 100%;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.75rem !important;
-  line-height: 1 !important;
-  /* Match AgentAvatar optical nudge so the glyph sits in the circle. */
-  transform: translateY(0.06em);
-}
-
-.oc-mobile-assistant-avatar--visual {
-  padding: 0;
 }
 
 .oc-mobile-assistant-avatar :is(img, svg) {
@@ -1304,22 +1268,22 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-assistant-name {
   font-size: 0.9375rem;
-  line-height: 1.25rem;
+  line-height: 1.5rem;
   letter-spacing: -0.02em;
 }
 
 .oc-mobile-assistant-card-content {
-  padding-top: 0.0625rem;
+  padding-top: 0;
 }
 
 .oc-mobile-assistant-summary {
-  display: -webkit-box;
-  margin-top: 0.625rem;
+  display: block;
+  margin-top: 0.25rem;
   overflow: hidden;
   font-size: var(--text-micro);
-  line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  line-height: 1rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .oc-mobile-assistant-content > * {

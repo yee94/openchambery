@@ -13,6 +13,8 @@ export function sanitizeForTTS(text) {
   return text
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`[^`]*`/g, ' ')
+    // Remove inline images before URL and punctuation cleanup.
+    .replace(/!\[(?:\\.|[^\]\\])*\]\((?:\\.|[^()\\]|\((?:\\.|[^()\\])*\))*\)/g, ' ')
     .replace(/[*_~`#]/g, '')
     .replace(/^\s*[$#>]\s*/gm, '')
     .replace(/[|&;<>]/g, ' ')

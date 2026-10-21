@@ -189,12 +189,13 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
     // inside the still-collapsed pill before the morph started).
     React.useLayoutEffect(() => {
         onActiveChange?.(status !== 'idle');
+        return () => onActiveChange?.(false);
     }, [status, onActiveChange]);
 
     // Keyboard shortcut (toggle_dictation): idle -> start recording,
     // recording -> confirm and insert. Dispatched by useKeyboardShortcuts.
     React.useEffect(() => {
-        if (!supported || !dictationEnabled) return;
+        if (!supported || !dictationEnabled || disabled) return;
         const onToggle = () => {
             if (statusRef.current === 'idle') {
                 void startDictation();
@@ -205,7 +206,7 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
         };
         window.addEventListener('openchamber:dictation-toggle', onToggle);
         return () => window.removeEventListener('openchamber:dictation-toggle', onToggle);
-    }, [supported, dictationEnabled, startDictation, confirmDictation]);
+    }, [supported, dictationEnabled, disabled, startDictation, confirmDictation]);
 
     // While recording: Enter confirms (insert), Escape cancels. Capture-phase
     // so the composer's own Enter-to-send never fires underneath the overlay.

@@ -60,7 +60,7 @@ export function MobileShareRecipientPicker({ draft, entries, busy, onSelect, onC
                   className="flex w-full items-center gap-3 border-b border-border/60 px-3 py-4 text-left text-foreground transition-colors last:border-b-0 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
                   onClick={() => handleSelect(entry)}
                 >
-                  <AgentAvatar name={entry.avatarSeed} emoji={presentation.avatarEmoji} size={36} label={displayName} />
+                  <AgentAvatar kind="assistant" name={entry.avatarSeed} size={40} label={displayName} shape="rounded" className="rounded-[0.5rem]" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-semibold">{displayName}</span>
                     <span className="block truncate typography-small text-muted-foreground">{entry.serverLabel}</span>

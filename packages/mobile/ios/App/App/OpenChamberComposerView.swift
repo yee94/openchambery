@@ -90,6 +90,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private var hasAppliedAgentLabel = false
     private var agentNameHideWorkItem: DispatchWorkItem?
     private var agentIdenticon: [Int] = []
+    private var agentIcon = ""
     private var agentColor = UIColor.systemGreen
     private var showScrollToBottom = false
     private var scrollAria = ""
@@ -161,6 +162,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         agentLabel: String?,
         agentColor: String?,
         agentIdenticon: [Int]?,
+        agentIcon: String?,
         showScrollToBottom nextShowScroll: Bool?,
         scrollAria: String?,
         forceText: Bool,
@@ -215,6 +217,10 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         if let agentIdenticon {
             if agentIdenticon != self.agentIdenticon { agentChanged = true }
             self.agentIdenticon = agentIdenticon
+        }
+        if let agentIcon, agentIcon != self.agentIcon {
+            self.agentIcon = agentIcon
+            agentChanged = true
         }
         if let modelIcon {
             modelIconImage = Self.decodePng(modelIcon)
@@ -578,8 +584,8 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             scrollButton.widthAnchor.constraint(equalToConstant: 20),
             scrollButton.heightAnchor.constraint(equalToConstant: 20),
 
-            agentButton.widthAnchor.constraint(equalToConstant: 16),
-            agentButton.heightAnchor.constraint(equalToConstant: 16),
+            agentButton.widthAnchor.constraint(equalToConstant: 22),
+            agentButton.heightAnchor.constraint(equalToConstant: 22),
             agentNameLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 120),
 
             attachmentStrip.topAnchor.constraint(equalTo: card.contentView.topAnchor, constant: 8),
@@ -927,10 +933,16 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     }
 
     private func refreshAgentButton() {
-        let stamp = "\(agentIdenticon.map(String.init).joined())|\(agentColor)|\(appearanceIsDark)"
+        let stamp = "\(agentIcon)|\(agentIdenticon.map(String.init).joined())|\(agentColor)|\(appearanceIsDark)"
         if stamp != lastAgentStamp {
             lastAgentStamp = stamp
-            agentButton.setImage(Self.identiconImage(bits: agentIdenticon, color: agentColor, size: 16), for: .normal)
+            let image = Self.decodePng(agentIcon).map { source in
+                UIGraphicsImageRenderer(size: CGSize(width: 22, height: 22)).image { _ in
+                    UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: 22, height: 22), cornerRadius: 2).addClip()
+                    source.draw(in: CGRect(x: 0, y: 0, width: 22, height: 22))
+                }.withRenderingMode(.alwaysOriginal)
+            } ?? Self.identiconImage(bits: agentIdenticon, color: agentColor, size: 22)
+            agentButton.setImage(image, for: .normal)
         }
         agentButton.isHidden = false
         agentCluster.accessibilityLabel = agentAria

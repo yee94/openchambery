@@ -12,6 +12,7 @@ describe('Assistant DTO parsing', () => {
     const share = parseShareOperation(assistantContractFixtures.shareOperation);
     const history = parseAssistantHistoryPage(assistantContractFixtures.historicalMessages);
     expect(snapshot.assistants[0]?.sessionID).toBe('ses-1');
+    expect(snapshot.assistants[0]?.avatarSeed).toBe('assistant-1');
     expect(snapshot.assistants[0]?.sessionGeneration).toBe(2);
     expect(snapshot.assistants[0]?.effectiveWorkspacePath).toBe('/project');
     expect(snapshot.assistants[0]?.managedWorkspacePath).toBe('/managed');
@@ -26,6 +27,7 @@ describe('Assistant DTO parsing', () => {
       enabled: true,
       assistants: [{
         ...assistantContractFixtures.assistant,
+        avatarSeed: 'saved-face',
         working: true,
         activeContactTurn: {
           turnID: 'turn_1',
@@ -36,6 +38,7 @@ describe('Assistant DTO parsing', () => {
       }],
     }).assistants[0];
     expect(withActive?.working).toBe(true);
+    expect(withActive?.avatarSeed).toBe('saved-face');
     expect(withActive?.activeContactTurn).toEqual({
       turnID: 'turn_1',
       messageID: 'turn_1',

@@ -11,6 +11,8 @@ export function sanitizeForTTS(text: string): string {
         // routinely inline meaningful words ("You are on `main`").
         .replace(/```[\s\S]*?```/g, '')
         .replace(/`([^`\n]*)`/g, '$1')
+        // Remove inline images before URL and punctuation cleanup.
+        .replace(/!\[(?:\\.|[^\]\\])*\]\((?:\\.|[^()\\]|\((?:\\.|[^()\\])*\))*\)/g, ' ')
         // Remove markdown formatting
         .replace(/[*_~#]/g, '')
         // Remove URLs

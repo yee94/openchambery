@@ -38,3 +38,10 @@ buildSessionPath({ sessionId, tab: 'git' })  // → /session/$id/git
 ```
 
 `createAppNavigation`: `goSchedule()` / `goAssistant()` / `goSession()`.
+
+The shared `useRouter` state bridge gives the active assistant/schedule primary
+precedence over a retained new-session draft. Selecting an Assistant writes
+`/assistant/$id`; initial links and browser Back/Forward restore that selection
+without selecting an OpenCode session. Changing or clearing the Assistant drops
+the previous Assistant's focused child-session suffix. Returning to Chat restores
+`/session/new` when its draft is still open and no session is selected.

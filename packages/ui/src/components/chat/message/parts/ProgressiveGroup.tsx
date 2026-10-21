@@ -39,6 +39,7 @@ import { useSessionSurface } from '../../SessionSurfaceContext';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useI18n } from '@/lib/i18n';
 import { AgentAvatar } from '../../AgentAvatar';
+import { isTaskToolName, resolveTaskAgentName } from './taskToolModel';
 import { formatActivityDuration } from './formatActivityDuration';
 import { Button } from '@/components/ui/button';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -422,7 +423,7 @@ type AggregatedRow =
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
 
-/** Collect task-tool part ids for header avatars (seed by task id, not agent name). */
+/** Collect Agent name seeds so header faces match task rows and work status. */
 const getTaskAvatarSeeds = (parts: TurnActivityPart[]): { active: string[]; all: string[] } => {
     const active: string[] = [];
     const all: string[] = [];
@@ -430,8 +431,7 @@ const getTaskAvatarSeeds = (parts: TurnActivityPart[]): { active: string[]; all:
     for (const activity of parts) {
         if (activity.kind !== 'tool') continue;
         const part = activity.part as ToolPartType;
-        const toolName = part.tool?.trim().toLowerCase() ?? '';
-        if (toolName !== 'task' && toolName !== 'subagent') continue;
+        if (!isTaskToolName(part.tool)) continue;
 
         const taskId = typeof part.id === 'string' ? part.id.trim() : '';
         if (!taskId) continue;
@@ -440,9 +440,10 @@ const getTaskAvatarSeeds = (parts: TurnActivityPart[]): { active: string[]; all:
         if (!state || typeof state !== 'object') continue;
         const stateRecord = state as Record<string, unknown>;
 
-        all.push(taskId);
+        const agent = resolveTaskAgentName(stateRecord.input, stateRecord.metadata, part.metadata) || 'subagent';
+        all.push(agent);
         if (stateRecord.status === 'pending' || stateRecord.status === 'running') {
-            active.push(taskId);
+            active.push(agent);
         }
     }
 

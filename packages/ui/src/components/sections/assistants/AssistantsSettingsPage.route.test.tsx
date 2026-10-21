@@ -20,7 +20,7 @@ const fixture = vi.hoisted(() => {
 });
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
-vi.mock('@/components/chat/AgentAvatar', () => ({ AgentAvatar: () => null }));
+vi.mock('@/components/chat/AgentAvatar', () => ({ AgentAvatar: ({ name }: { name: string }) => <span data-avatar-seed={name} /> }));
 vi.mock('@/components/sections/agents/ModelSelector', () => ({
   ModelSelector: ({ variant, onChange }: { variant?: string; onChange: (provider: string, model: string, variant?: string) => void }) => (
     <div data-testid="model-picker" data-variant={variant}>
@@ -76,6 +76,29 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const button = (label: string) => Array.from(host.querySelectorAll('button')).find((item) => item.textContent === label)!;
+
+test('random avatar previews only in the draft, saves the seed, and discards unsaved edits on leaving', async () => {
+  const render = () => root.render(<AssistantsSettingsPage assistantID="asst_route" />);
+  const seed = () => host.querySelector('[data-avatar-seed]')?.getAttribute('data-avatar-seed');
+  const shuffle = () => host.querySelector<HTMLButtonElement>('[aria-label="assistants.settings.randomAvatar"]')!.click();
+  await act(async () => render());
+  expect(seed()).toBe('asst_route');
+  await act(async () => shuffle());
+  const first = seed();
+  expect(first).not.toBe('asst_route');
+  await act(async () => shuffle());
+  const second = seed();
+  expect(second).not.toBe(first);
+  expect(fixture.update).not.toHaveBeenCalled();
+  await act(async () => button('assistants.settings.save').click());
+  expect(fixture.update).toHaveBeenCalledWith(fixture.assistant, expect.objectContaining({ avatarSeed: second }));
+  fixture.update.mockClear();
+  await act(async () => shuffle());
+  await act(async () => root.render(null));
+  await act(async () => render());
+  expect(seed()).toBe('asst_route');
+  expect(fixture.update).not.toHaveBeenCalled();
+});
 
 test('route ID owns displayed and saved assistant while the Settings tab selection stays independent', async () => {
   await act(async () => root.render(<AssistantsSettingsPage assistantID="asst_route" />));

@@ -3,6 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeForTTS, summarizeText } from './summarization.js';
 
 describe('text summarization stubs', () => {
+  it.each([
+    '![]()',
+    '![](https://example.com/image.png)',
+    '![Screenshot](./image.png "Preview")',
+    '![Screenshot](https://example.com/image_(1).png)',
+    '![Screenshot \\] detail](./image.png)',
+  ])('removes the entire TTS image: %s', (image) => {
+    expect(sanitizeForTTS(`Before${image}After`)).toBe('Before After');
+    expect(sanitizeForTTS(image)).toBe('');
+  });
+
   it('removes code from TTS text before stripping markdown punctuation', () => {
     expect(sanitizeForTTS('Read `const value = 1` aloud')).toBe('Read aloud');
     expect(sanitizeForTTS('Before\n```js\nconst value = 1\n```\nAfter')).toBe('Before After');

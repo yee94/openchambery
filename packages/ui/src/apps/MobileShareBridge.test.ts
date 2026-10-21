@@ -125,13 +125,15 @@ describe('MobileShareBridge contract', () => {
     expect(picker).not.toContain('max-h-[min(75dvh,36rem)]');
   });
 
-  test('publishes the Assistant display name and leading emoji avatar to native shortcuts', async () => {
+  test('publishes the complete Assistant display name and local Gaze PNG to native shortcuts', async () => {
     const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
 
     expect(source).toContain("import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';");
     expect(source).toContain('const presentation = getAssistantPresentation(entry.name);');
     expect(source).toContain('name: presentation.displayName || entry.name,');
-    expect(source).toContain('avatarEmoji: presentation.avatarEmoji');
+    expect(source).not.toContain('avatarEmoji');
+    expect(source).toContain("generatedAvatarDataUri('assistant', entry.avatarSeed)");
+    expect(source).toContain('...(avatarPng ? { avatarPng } : {})');
   });
 
   test('validates the active server identity before switching a stable connection that may currently use direct transport', async () => {
