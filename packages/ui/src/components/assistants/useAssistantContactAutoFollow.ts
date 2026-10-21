@@ -83,7 +83,7 @@ export const useAssistantContactAutoFollow = ({
   const [scrollNode, setScrollNode] = React.useState<HTMLDivElement | null>(null)
   const [contentNode, setContentNode] = React.useState<HTMLDivElement | null>(null)
   const followingRef = React.useRef(true)
-  const anchorRef = React.useRef<{ id: string; offset: number } | null>(null)
+  const anchorRef = React.useRef<{ id: string; offset: number; scrollTop: number } | null>(null)
   const activeIdentityRef = React.useRef<string | null>(null)
   const baselineNodeRef = React.useRef<HTMLDivElement | null>(null)
   const lastScrollTopRef = React.useRef(0)
@@ -116,14 +116,17 @@ export const useAssistantContactAutoFollow = ({
     const top = root.getBoundingClientRect().top
     const row = Array.from(root.querySelectorAll<HTMLElement>('[data-message-id]'))
       .find((node) => node.getBoundingClientRect().bottom > top)
-    anchorRef.current = row ? { id: row.dataset.messageId!, offset: row.getBoundingClientRect().top - top } : null
+    anchorRef.current = row ? { id: row.dataset.messageId!, offset: row.getBoundingClientRect().top - top, scrollTop: root.scrollTop } : null
   })
   const restoreAnchor = useEvent(() => {
     const root = scrollNodeRef.current
     const anchor = anchorRef.current
-    if (!root || !anchor || !activeRef.current || followingRef.current) return
+    if (!root || !activeRef.current || followingRef.current) return
+    if (!anchor) { captureAnchor(); return }
     // Native gestures can move the DOM before their scroll event reaches React.
-    if (Math.abs(root.scrollTop - lastScrollTopRef.current) > 0.5) {
+    const scrolled = root.scrollTop - anchor.scrollTop
+    // A held finger owns the position: a write here would cancel the pan.
+    if (Math.abs(scrolled) > 0.5 && touchRef.current) {
       lastScrollTopRef.current = root.scrollTop
       captureAnchor()
       return
@@ -131,9 +134,12 @@ export const useAssistantContactAutoFollow = ({
     const row = Array.from(root.querySelectorAll<HTMLElement>('[data-message-id]'))
       .find((node) => node.dataset.messageId === anchor.id)
     if (!row) { captureAnchor(); return }
-    const delta = row.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
+    // Wheel/scrollbar input already applied by the compositor moves the anchor
+    // by exactly `scrolled`; only growth beyond that is compensated.
+    const delta = row.getBoundingClientRect().top - root.getBoundingClientRect().top - (anchor.offset - scrolled)
     if (Math.abs(delta) > 0.5) root.scrollTop += delta
     lastScrollTopRef.current = root.scrollTop
+    anchorRef.current = { id: anchor.id, offset: row.getBoundingClientRect().top - root.getBoundingClientRect().top, scrollTop: root.scrollTop }
   })
   const preparePrepend = useEvent(() => {
     stopFollowAnimation()
@@ -235,7 +241,10 @@ export const useAssistantContactAutoFollow = ({
     }
 
     const intent = currentUserIntent()
-    captureAnchor()
+    // Re-capturing here would adopt any same-frame growth above the reader
+    // (image/Markdown hydration during momentum) as the new baseline before the
+    // resize observer can compensate it. restoreAnchor compensates, then re-captures.
+    restoreAnchor()
     if (geometry.scrollTop <= 80 && intent === 'up') onLoadEarlier?.()
     if (movedDown && isAtBottom(geometry) && (intent === 'down' || intent === 'scrollbar')) {
       followingRef.current = true

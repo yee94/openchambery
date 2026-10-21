@@ -57,6 +57,27 @@ public class MainActivity extends BridgeActivity {
         // only once at WebView construction and setTextZoom is an absolute
         // override, so re-applying covers any unexpected restore path.
         applyDeviceParityTextZoom();
+        applyPreferredRefreshRate();
+    }
+
+    private void applyPreferredRefreshRate() {
+        android.view.Display display = getWindow().getDecorView().getDisplay();
+        if (display == null) return;
+        android.view.Display.Mode current = display.getMode();
+        float preferred = current.getRefreshRate();
+        for (android.view.Display.Mode mode : display.getSupportedModes()) {
+            if (mode.getPhysicalWidth() == current.getPhysicalWidth()
+                    && mode.getPhysicalHeight() == current.getPhysicalHeight()) {
+                preferred = Math.max(preferred, mode.getRefreshRate());
+            }
+        }
+        // Vote for refresh rate without pinning resolution or a display mode.
+        // Battery saver and device thermal policy retain the final decision.
+        android.view.WindowManager.LayoutParams attributes = getWindow().getAttributes();
+        if (attributes.preferredRefreshRate != preferred) {
+            attributes.preferredRefreshRate = preferred;
+            getWindow().setAttributes(attributes);
+        }
     }
 
     private void applyDeviceParityTextZoom() {
@@ -77,6 +98,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) applyPreferredRefreshRate();
         if (hasFocus && imeSyncBridge != null) {
             imeSyncBridge.hideNavigationBar();
         }

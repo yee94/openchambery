@@ -480,6 +480,30 @@ describe('useAssistantContactAutoFollow', () => {
     expect(geometry.writes).toBe(0)
   })
 
+  test('compensates growth above the reader that lands in the same frame as a wheel scroll', async () => {
+    const geometry: Geometry = { top: 0, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    const row = probe.nested
+    let rowTop = 450
+    row.getBoundingClientRect = () => ({ top: rowTop - geometry.top, bottom: rowTop + 50 - geometry.top } as DOMRect)
+    probe.scroller.getBoundingClientRect = () => ({ top: 0, bottom: geometry.client } as DOMRect)
+
+    wheel(probe.scroller, -120)
+    geometry.top = 400
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    const offset = rowTop - geometry.top
+    geometry.writes = 0
+
+    // An image above the reader grows 160px and the same frame applies a
+    // -120px wheel step; only the growth may be compensated.
+    rowTop += 160
+    geometry.height += 160
+    geometry.top = 280
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    expect(rowTop - geometry.top).toBe(offset + 120)
+    expect(geometry.writes).toBe(1)
+  })
+
   test('resumes follow after downward touch and inertia reach the true bottom', async () => {
     const geometry: Geometry = { top: 0, height: 900, client: 300, writes: 0 }
     const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })

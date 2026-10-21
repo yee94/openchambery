@@ -8,7 +8,7 @@ import { useAssistantContactWorkingStore } from './assistantWorking';
 const contactEvents = vi.hoisted(() => ({
   handler: null as ((event: Record<string, unknown>) => void) | null,
 }));
-const contactQueryState = vi.hoisted(() => ({ extraMessages: 0, earlier: 0, imageFilePart: false as false | 'legacy' | 'cached', hasPreviousPage: false, isFetchingPreviousPage: false, previousPageError: null as Error | null, fetchPreviousPage: vi.fn(), hasMessageGap: false, isFillingMessageGap: false, retryMessageGap: vi.fn() }));
+const contactQueryState = vi.hoisted(() => ({ cardSharingBubble: false, extraMessages: 0, earlier: 0, imageFilePart: false as false | 'legacy' | 'cached', hasPreviousPage: false, isFetchingPreviousPage: false, previousPageError: null as Error | null, fetchPreviousPage: vi.fn(), hasMessageGap: false, isFillingMessageGap: false, retryMessageGap: vi.fn() }));
 const attachmentIO = vi.hoisted(() => ({ upload: vi.fn(), send: vi.fn(), abort: vi.fn(), display: vi.fn(), blob: vi.fn(), release: vi.fn() }));
 const unreadUI = vi.hoisted(() => ({ settingsOpen: false }));
 const failureUI = vi.hoisted(() => ({ failed: false }));
@@ -89,6 +89,12 @@ vi.mock('@/queries/assistantQueries', () => ({
           text: 'hello',
           cards: [],
         },
+        // Server shape: a text bubble and a card in one turn share bubbleIndex 0.
+        ...(contactQueryState.cardSharingBubble ? (['bubble:1', 'card:1'] as const).map((suffix, index) => ({
+          messageID: `${assistantID}:card-turn:${suffix}`, assistantID, role: 'assistant', turnID: `${assistantID}:card-turn`, bubbleIndex: 0, createdAt: 3, ordinal: 2 + index, status: 'complete', fromAssistantID: null, fromAssistantName: null,
+          parts: suffix === 'card:1' ? [{ type: 'card', cardType: 'session', sessionID: 'ses_card', directory: '/workspace', title: 'card' }] : [{ type: 'text', text: 'opening a session' }],
+          text: '', cards: [],
+        })) : []),
         ...(contactQueryState.imageFilePart ? [{
           messageID: `${assistantID}:image`,
           assistantID,
@@ -198,6 +204,7 @@ afterEach(async () => {
     mounted.host.remove();
   }
   contactEvents.handler = null;
+  contactQueryState.cardSharingBubble = false;
   contactQueryState.extraMessages = 0;
   contactQueryState.earlier = 0;
   contactQueryState.imageFilePart = false;
@@ -505,6 +512,23 @@ describe('AssistantConversationSurface scroll ownership', () => {
     await act(async () => { button.click(); });
     expect(contactQueryState.fetchPreviousPage).toHaveBeenCalledTimes(2);
     await act(async () => finish());
+  });
+
+  test('a card sharing its turn bubble index renders once per message ID with unique React keys', async () => {
+    contactQueryState.cardSharingBubble = true;
+    const keyErrors: string[] = [];
+    const consoleError = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      if (String(args[0]).includes('same key')) keyErrors.push(String(args[0]));
+    });
+    try {
+      const { host } = await mountSurface();
+      const ids = Array.from(host.querySelectorAll<HTMLElement>('[data-message-id]'), (row) => row.dataset.messageId);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids).toContain('assistant-a:card-turn:card:1');
+      expect(keyErrors).toEqual([]);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   test('prepend restores the first visible message ID and offset synchronously', async () => {

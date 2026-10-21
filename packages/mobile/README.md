@@ -6,6 +6,16 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 
 ## Runtime Model
 
+- Native high refresh rate: Android votes for the highest supported refresh rate
+  at the current resolution on resume/window focus, leaving power/thermal policy
+  to the OS. iOS keeps the ProMotion plist opt-in and disables WebKit's exact
+  `PreferPageRenderingUpdatesNear60FPSEnabled` preference when its SPI exists.
+  Missing SPI leaves defaults intact; this uses private API and has App Store
+  review implications. No perpetual display link or forced WebView layout is used.
+  These are native-build changes, not OTA changes. Neither a refresh-rate request
+  nor CADisplayLink cadence proves WebView presentation FPS; verify on high-refresh
+  physical devices. Hosted browsers retain their own refresh-rate policy.
+
 - Chat overflow → Auto-read replies is local to the current open conversation.
   `OpenChamberScreenAwake` keeps the foreground screen on while enabled: iOS
   uses `UIApplication.isIdleTimerDisabled`; Android uses `FLAG_KEEP_SCREEN_ON`.

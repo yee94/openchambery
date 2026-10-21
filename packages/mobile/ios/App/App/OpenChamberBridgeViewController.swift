@@ -144,7 +144,35 @@ class OpenChamberBridgeViewController: CAPBridgeViewController {
         // Opaque progressive image URLs: openchamber-asset://v/{assetId}
         // Must not collide with Capacitor's local scheme (capacitor / ionic / https).
         configuration.setURLSchemeHandler(virtualAssetHandler, forURLScheme: OpenChamberVirtualAssetStore.scheme)
+        preferHighRefreshRate(configuration.preferences)
         return configuration
+    }
+
+    private func preferHighRefreshRate(_ preferences: WKPreferences) {
+        // WebKit SPI: best effort, independent of UIKit's existing ProMotion
+        // plist opt-in. No display-link polling or forced layout is required.
+        let preferencesClass: AnyObject = WKPreferences.self
+        let keySelector = NSSelectorFromString("key")
+        let collections = [
+            ("_features", "_setEnabled:forFeature:"),
+            ("_experimentalFeatures", "_setEnabled:forExperimentalFeature:")
+        ]
+        for (collection, setter) in collections {
+            let getter = NSSelectorFromString(collection)
+            let selector = NSSelectorFromString(setter)
+            guard preferencesClass.responds(to: getter), preferences.responds(to: selector),
+                  let features = preferencesClass.perform(getter)?.takeUnretainedValue() as? [NSObject]
+            else { continue }
+            for feature in features where feature.responds(to: keySelector) {
+                guard let key = feature.perform(keySelector)?.takeUnretainedValue() as? String,
+                      key == "PreferPageRenderingUpdatesNear60FPSEnabled" else { continue }
+                // The setter takes an Objective-C BOOL, not an NSNumber object.
+                typealias SetFeature = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
+                let setFeature = unsafeBitCast(preferences.method(for: selector), to: SetFeature.self)
+                setFeature(preferences, selector, false, feature)
+                return
+            }
+        }
     }
 
     override func capacitorDidLoad() {
