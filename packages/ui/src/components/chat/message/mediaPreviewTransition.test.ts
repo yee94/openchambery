@@ -2,11 +2,14 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { animateMediaPreview } from './mediaPreviewTransition';
 
 const original = Object.getOwnPropertyDescriptor(document, 'startViewTransition');
+const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
 afterEach(() => {
     vi.restoreAllMocks();
     document.body.replaceChildren();
     if (original) Object.defineProperty(document, 'startViewTransition', original);
     else Reflect.deleteProperty(document, 'startViewTransition');
+    if (originalAnimate) Object.defineProperty(Element.prototype, 'animate', originalAnimate);
+    else Reflect.deleteProperty(Element.prototype, 'animate');
 });
 
 function setup() {
@@ -71,4 +74,38 @@ test.each(['removed', 'offscreen', 'reduced-motion'] as const)('%s bypasses shar
     animateMediaPreview(state.source, state.target, state.viewer, true, complete);
     expect(state.start).not.toHaveBeenCalled();
     expect(complete).toHaveBeenCalledTimes(1);
+});
+
+test.each([[180, 600], [600, 180]])('image %s×%s returns through a square crop without snapshots and cleans up on cancellation', (width, height) => {
+    const state = setup();
+    const thumbnail = document.createElement('img');
+    thumbnail.style.objectFit = 'cover';
+    thumbnail.style.objectPosition = '50% 50%';
+    state.source.append(thumbnail);
+    vi.spyOn(thumbnail, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 40, 100, 100));
+    const full = document.createElement('img');
+    state.viewer.append(full);
+    Object.defineProperties(full, { complete: { value: true }, naturalWidth: { value: width }, naturalHeight: { value: height } });
+    vi.spyOn(full, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, width, height));
+    const cancelAnimation = vi.fn();
+    const animate = vi.fn().mockReturnValue({
+        finished: new Promise(() => {}), cancel: cancelAnimation,
+    } as unknown as Animation);
+    Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: animate });
+    const complete = vi.fn();
+    const cancel = animateMediaPreview(state.source, full, state.viewer, true, complete);
+    expect(state.start).not.toHaveBeenCalled();
+    const frame = document.querySelector<HTMLElement>('[data-media-crop-animation]');
+    expect(frame?.style.overflow).toBe('hidden');
+    expect(frame?.style.contain).toBe('paint');
+    expect(animate.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ width: `${width}px`, height: `${height}px` }),
+        expect.objectContaining({ width: '100px', height: '100px', transform: 'translate(20px, 40px)' }),
+    ]);
+    expect(full.style.visibility).toBe('hidden');
+    cancel();
+    expect(document.querySelector('[data-media-crop-animation]')).toBeNull();
+    expect(full.style.visibility).toBe('');
+    expect(cancelAnimation).toHaveBeenCalledTimes(3);
+    expect(complete).not.toHaveBeenCalled();
 });
