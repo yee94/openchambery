@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.7-beta.1] - 2026-10-21
+
+### 修复
+
+- 修复移动端语音输入期间输入框高度被冻结、转写文字变多后不再自动撑高的问题；现在转写过程中仍按内容增高到原有上限，手动调整高度时仍由手动档位接管。
+
 ## [2.1.6] - 2026-10-21
 
 ### 改进
