@@ -109,3 +109,30 @@ test.each([[180, 600], [600, 180]])('image %s×%s returns through a square crop 
     expect(cancelAnimation).toHaveBeenCalledTimes(3);
     expect(complete).not.toHaveBeenCalled();
 });
+
+test.each([false, true])('completed image animation keeps closing fade until deferred viewer cleanup (closing=%s)', async (closing) => {
+    const state = setup();
+    const thumb = document.createElement('img');
+    thumb.style.objectFit = 'cover';
+    thumb.style.objectPosition = '50% 50%';
+    state.source.append(thumb);
+    vi.spyOn(thumb, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 40, 100, 100));
+    const full = document.createElement('img');
+    state.viewer.append(full);
+    Object.defineProperties(full, { complete: { value: true }, naturalWidth: { value: 180 }, naturalHeight: { value: 600 } });
+    vi.spyOn(full, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 180, 600));
+    const animations = Array.from({ length: 3 }, () => ({ finished: Promise.resolve(), cancel: vi.fn() }));
+    const animate = vi.fn()
+        .mockReturnValueOnce(animations[0]).mockReturnValueOnce(animations[1]).mockReturnValueOnce(animations[2]);
+    Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: animate });
+    const complete = vi.fn();
+    const cleanup = animateMediaPreview(state.source, full, state.viewer, closing, complete);
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+    expect(document.querySelector('[data-media-crop-animation]')).toBeNull();
+    expect(animations[0].cancel).toHaveBeenCalled();
+    expect(animations[1].cancel).toHaveBeenCalled();
+    expect(animations[2].cancel).toHaveBeenCalledTimes(closing ? 0 : 1);
+    state.viewer.remove();
+    cleanup();
+    expect(animations[2].cancel).toHaveBeenCalledTimes(closing ? 1 : 2);
+});

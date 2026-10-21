@@ -115,6 +115,8 @@ fixed, paint-contained crop frame and one image. Thumbnail `object-fit`, percent
 return geometry. Frame bounds and image translation/scale animate together in both
 directions; no React state updates or DOM measurements occur per animation frame.
 Completion and cancellation remove the temporary layer and restore image visibility.
+Successful close retains the viewer's opacity-zero animation until overlay cleanup,
+so deferred React unmount cannot briefly repaint the fullscreen image or backdrop.
 Non-image previews retain View Transitions; unavailable geometry and reduced motion
 retain the shared fallback. All `MediaPreviewOverlay` image consumers use this path.
 

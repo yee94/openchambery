@@ -110,12 +110,36 @@ export const sessionContentSearchQueryOptions = (
   });
 };
 
-export const sessionContentIndexStatusOptions = () => queryOptions({
+export type SessionContentIndexStatus = {
+  phase: 'pending' | 'indexing' | 'ready' | 'partial' | 'error';
+  total: number;
+  completed: number;
+  failed: number;
+  messages: number;
+  // Older Hosts expose progress without the durable onboarding contract.
+  initializationRequired?: boolean;
+  indexStartedAt?: number | null;
+  indexCompletedAt?: number | null;
+  coveredSince?: number | null;
+  verifiedAt?: number | null;
+  updatedAt?: number | null;
+};
+
+export const sessionContentIndexStatusOptions = (fetch = runtimeFetch) => queryOptions({
   queryKey: [getRuntimeTransportIdentity(), 'contentSearchStatus', getRuntimeGeneration()],
   queryFn: async ({ signal }) => {
-    const response = await runtimeFetch('/api/openchamber/content-search', { signal });
+    const response = await fetch('/api/openchamber/content-search', { signal });
+    if (response.status === 404 || response.status === 501) return null;
     if (!response.ok) throw new Error(`Content index unavailable (${response.status})`);
-    return (await response.json() as { index: { phase: string; total: number; completed: number; failed: number; messages: number } }).index;
+    const { index } = await response.json() as { index?: SessionContentIndexStatus };
+    if (!index || !['pending', 'indexing', 'ready', 'partial', 'error'].includes(index.phase)
+      || ![index.total, index.completed, index.failed, index.messages].every((value) => Number.isFinite(value) && value >= 0)
+      || (index.initializationRequired !== undefined && typeof index.initializationRequired !== 'boolean')
+      || [index.indexStartedAt, index.indexCompletedAt, index.coveredSince, index.verifiedAt, index.updatedAt]
+        .some((value) => value != null && !Number.isFinite(value))) {
+      throw new Error('Invalid content index status');
+    }
+    return index;
   },
   refetchInterval: 3000,
   staleTime: 0,

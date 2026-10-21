@@ -2,6 +2,100 @@ import { expect, test } from 'vitest';
 import { createContentSearchService } from './service.js';
 import { createContentSearchRuntime } from './runtime.js';
 
+test('persists initialization times only after all thirty-day history is covered and resumes partial work', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  const day = 86400000;
+  let clock = 40 * day;
+  let fail = true;
+  const reads = [];
+  const dependencies = { service, getRuntimeKey: () => 'host', now: () => clock,
+    listSessions: async () => ({ data: ['a', 'b'].map((id) => ({ id, time: { updated: 40 * day } })), cursor: {} }),
+    listMessages: async ({ sessionID }) => {
+      reads.push(sessionID);
+      if (sessionID === 'b' && fail) throw new Error('offline');
+      return { data: [{ type: 'user', id: sessionID, sessionID, time: { created: 12 * day }, text: 'old history' }], cursor: {} };
+    },
+  };
+  let runtime = createContentSearchRuntime(dependencies);
+  expect(runtime.status().initializationRequired).toBe(true);
+  await runtime.sync();
+  expect(runtime.status()).toMatchObject({ phase: 'partial', initializationRequired: true, indexStartedAt: clock, indexCompletedAt: null });
+  await runtime.stop();
+  clock += 1000;
+  fail = false;
+  runtime = createContentSearchRuntime(dependencies);
+  await runtime.sync();
+  expect(reads).toEqual(['a', 'b', 'b']);
+  expect(runtime.status()).toMatchObject({ phase: 'ready', initializationRequired: false, indexStartedAt: 40 * day, indexCompletedAt: clock });
+  expect(service.search('host', 'old history')).toHaveLength(2);
+  await runtime.stop();
+  runtime = createContentSearchRuntime(dependencies);
+  expect(runtime.status()).toMatchObject({ initializationRequired: false, indexCompletedAt: clock });
+  service.removeSession('host', 'a');
+  await runtime.sync();
+  expect(reads).toEqual(['a', 'b', 'b', 'a']);
+  expect(service.search('host', 'old history')).toHaveLength(2);
+  await runtime.stop(); service.close();
+});
+
+test('expired rows cannot leave a checkpoint claiming coverage that was pruned', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  service.replaceSession('host', { id: 's', time: { updated: 10 } }, [], 1);
+  service.prune('host', 5, new Set(['s']));
+  expect(service.updated('host', 's', 1)).toBeUndefined();
+  expect(service.updated('host', 's', 5)).toBe(10);
+  service.close();
+});
+
+test('catalog failure and malformed pages never certify coverage or remove existing results', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  service.replaceSession('host', { id: 's', time: { updated: 10 } }, [
+    { info: { id: 'm', role: 'user', time: { created: 10 } }, parts: [{ type: 'text', text: 'preserved' }] },
+  ], 0);
+  for (const data of [undefined, [{ id: 'bad' }]]) {
+    const runtime = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', now: () => 100,
+      listSessions: async () => ({ data, cursor: {} }), listMessages: async () => { throw new Error('unexpected'); },
+    });
+    await runtime.sync();
+    expect(runtime.status()).toMatchObject({ phase: 'error', initializationRequired: true, indexCompletedAt: null });
+    expect(service.search('host', 'preserved')).toHaveLength(1);
+    await runtime.stop();
+  }
+  const empty = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', now: () => 200,
+    listSessions: async () => ({ data: [], cursor: {} }), listMessages: async () => { throw new Error('unexpected'); },
+  });
+  await empty.sync();
+  expect(empty.status()).toMatchObject({ phase: 'ready', initializationRequired: false, indexCompletedAt: 200, messages: 0 });
+  await empty.stop(); service.close();
+});
+
+test('a large warm catalog verifies without rereading transcripts and backfill keeps two-worker concurrency', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  const sessions = Array.from({ length: 1000 }, (_, index) => ({ id: String(index), time: { updated: 10 } }));
+  let reads = 0;
+  let active = 0;
+  let peak = 0;
+  const runtime = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', now: () => 100,
+    listSessions: async ({ cursor }) => {
+      const start = Number(cursor ?? 0);
+      return { data: sessions.slice(start, start + 100), cursor: { next: start + 100 < sessions.length ? String(start + 100) : undefined } };
+    },
+    listMessages: async () => {
+      reads++; peak = Math.max(peak, ++active);
+      await Promise.resolve();
+      active--;
+      return { data: [], cursor: {} };
+    },
+  });
+  await runtime.sync();
+  expect(runtime.status()).toMatchObject({ initializationRequired: false, completed: 1000 });
+  expect(peak).toBe(2);
+  expect(reads).toBe(1000);
+  await runtime.sync();
+  expect(reads).toBe(1000);
+  await runtime.stop(); service.close();
+});
+
 test('expands existing seven-day checkpoints to thirty days even when sessions are unchanged', async () => {
   const service = createContentSearchService({ dbPath: ':memory:' });
   const day = 86400000;
@@ -105,5 +199,7 @@ test('runtime switch rejects in-flight message pages', async () => {
   await work;
   expect(service.search('one', 'stale')).toEqual([]);
   expect(service.search('two', 'stale')).toEqual([]);
+  expect(service.coverage('one').indexCompletedAt).toBeNull();
+  expect(runtime.status()).toMatchObject({ runtime: 'two', initializationRequired: true, indexStartedAt: null, indexCompletedAt: null });
   await runtime.stop(); service.close();
 });

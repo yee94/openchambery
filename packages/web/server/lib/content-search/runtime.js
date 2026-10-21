@@ -16,7 +16,9 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
   const deleted = new Set();
   const status = () => {
     const runtime = getRuntimeKey();
-    return { ...(state.runtime === runtime ? state : { runtime, phase: 'pending', since: now() - RETENTION, total: 0, completed: 0, failed: 0, updatedAt: null }), ...service.stats(runtime) };
+    const coverage = service.coverage(runtime);
+    return { ...(state.runtime === runtime ? state : { runtime, phase: 'pending', since: now() - RETENTION, total: 0, completed: 0, failed: 0, updatedAt: null }),
+      ...coverage, initializationRequired: coverage.indexCompletedAt === null, ...service.stats(runtime) };
   };
   const sync = () => {
     if (stopped) return Promise.resolve();
@@ -29,6 +31,8 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
     const previous = state.runtime === runtime ? state.updatedAt : null;
     state = { runtime, phase: previous ? 'ready' : 'indexing', since: now() - RETENTION, total: state.total, completed: 0, failed: 0, updatedAt: previous };
     flight = (async () => {
+      if (service.coverage(runtime).indexCompletedAt === null) service.beginInitialization(runtime, now());
+      const pendingDirty = new Set(dirty);
       const sessions = [];
       const ids = new Set();
       let cursor;
@@ -38,7 +42,8 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
         if (!current()) return;
         if (!Array.isArray(page?.data)) throw new Error('Invalid global session page');
         for (const session of page.data) {
-          if (!session.id || ids.has(session.id)) continue;
+          if (typeof session?.id !== 'string' || !session.id || !Number.isFinite(session.time?.updated)) throw new Error('Invalid global session checkpoint');
+          if (ids.has(session.id)) continue;
           ids.add(session.id);
           if (Number(session.time?.updated) >= state.since && !deleted.has(session.id)) sessions.push(session);
         }
@@ -48,6 +53,12 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
       } while (cursor && current());
       state.total = sessions.length;
       state.completed = 0;
+      const recentIDs = new Set(sessions.map((session) => session.id));
+      for (const id of pendingDirty) if (!recentIDs.has(id)) dirty.delete(id);
+      if (sessions.some((session) => dirty.has(session.id) || service.updated(runtime, session.id, state.since) !== session.time.updated)) {
+        service.beginInitialization(runtime, now());
+      }
+      if (service.coverage(runtime).indexCompletedAt === null) state.phase = 'indexing';
       let index = 0;
       const worker = async () => {
         while (current() && index < sessions.length) {
@@ -76,7 +87,7 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
               // Native pages are newest-first, including control records.
               if (page.data.length && page.data.every((record) => Number(record.time?.created) < state.since)) break;
             } while (before && current());
-            if (current() && !deleted.has(session.id)) service.replaceSession(runtime, session, [...records.values()], state.since);
+            if (current() && !deleted.has(session.id)) service.replaceSession(runtime, session, [...records.values()], state.since, now());
             state.completed++;
           } catch {
             if (!current()) return;
@@ -90,6 +101,8 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
         service.prune(runtime, state.since, ids);
         state.phase = state.failed ? 'partial' : 'ready';
         state.updatedAt = now();
+        if (dirty.size) service.beginInitialization(runtime, state.updatedAt);
+        if (!state.failed && !dirty.size) service.completeInitialization(runtime, state.since, state.updatedAt);
       }
     })().catch(() => {
       if (current()) state.phase = 'error';
@@ -114,7 +127,7 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
       if (type.includes('.delta') || type.includes('.part.') || type.includes('.tool.') || type.includes('.reasoning.')) return;
       const data = payload.properties ?? payload.data ?? {};
       const id = data.sessionID ?? data.info?.sessionID ?? data.session?.id ?? (type.startsWith('session.') ? data.id ?? data.info?.id : undefined);
-      if (id && type === 'session.deleted') { deleted.add(id); service.removeSession(getRuntimeKey(), id); }
+      if (id && type === 'session.deleted') { dirty.delete(id); deleted.add(id); service.removeSession(getRuntimeKey(), id); }
       else if (id) dirty.add(id);
       // Coalesce bursts; ongoing scans retain dirty IDs for the next pass.
       schedule(1000);

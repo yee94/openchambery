@@ -1,4 +1,5 @@
 import React from 'react';
+import { ContentIndexOnboarding } from '@/components/onboarding/ContentIndexOnboarding';
 import { MobileAutoReadProvider, MobileAutoReadMenuItem } from '@/mobile/chat/MobileAutoRead';
 import { useEvent } from '@reactuses/core';
 import { useStartupCatalogRecovery } from '@/hooks/useStartupCatalogRecovery';
@@ -3507,6 +3508,7 @@ const MobileShell: React.FC<{
               <DiffView
                 hideStackedFileSidebar
                 pinSelectedFileHeaderToTopOnNavigate
+                toolbarInSheetHeader
                 diffScope="turn"
                 turnMessageId={turnDiffMessageId}
                 sessionId={turnDiffSessionId}
@@ -3540,6 +3542,7 @@ const MobileShell: React.FC<{
               {pendingChangesDiff.toolPatches?.length ? (
                 <DiffView
                   hideStackedFileSidebar
+                  toolbarInSheetHeader
                   diffScope="turn"
                   targetFilePath={pendingChangesDiff.path}
                   targetLine={pendingChangesDiff.targetLine ?? null}
@@ -4207,6 +4210,7 @@ export function MobileApp({ apis }: MobileAppProps) {
               }} />
               <Toaster position="top-center" offset="calc(var(--oc-safe-area-top, 0px) + 16px)" />
               {isInitialized ? <ConfigUpdateOverlay /> : null}
+              {isInitialized ? <ContentIndexOnboarding /> : null}
             </div>
           </TooltipProvider>
         </RuntimeAPIProvider>
