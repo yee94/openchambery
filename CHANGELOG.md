@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.7-beta.5] - 2026-10-21
+
+### 改进
+
+- 对话图片加载完成后按原始宽高比重排，横图、竖图不再被固定在缩略框里拉伸留白，加载阶段仍保留固定高度避免跳动。
+
 ## [2.1.7-beta.4] - 2026-10-21
 
 ### 改进
