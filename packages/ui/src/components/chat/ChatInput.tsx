@@ -4988,7 +4988,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const [mobileComposerManualHeight, setMobileComposerManualHeight] = React.useState(false);
     const { size: textareaSize, resize: adjustTextareaHeight } = useComposerTextareaAutosize({
         inputRef: textareaRef, message, expanded: isComposerExpanded, isMobile, dictationHeight: dictationContentHeight,
-        manualHeight: (mobileComposerSnapVisible && mobileComposerManualHeight) || (isMobile && mobileDictationActive),
+        manualHeight: mobileComposerSnapVisible && mobileComposerManualHeight,
     });
     React.useLayoutEffect(() => {
         if (!isMobile || !mobileDictationActive) return;

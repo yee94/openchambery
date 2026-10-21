@@ -86,10 +86,10 @@ one capture owner. Mobile capture only finalizes on another microphone click;
 blur, touch elsewhere, scrolling, visibility changes and keyboard actions do not
 stop it. No dictation overlay or desktop keyboard hint is mounted for this entry
 point. Draft/runtime disposal retains the existing cleanup boundary.
-While mobile click-to-record is active (including finalization), autosizing yields
-to the current textarea height. Each transcript update scrolls the textarea and
+While mobile click-to-record is active (including finalization), normal autosizing
+continues as transcript text grows, up to the existing height limit; explicit manual
+height modes retain ownership. Each transcript update scrolls the textarea and
 its underline overlay to the bottom in the same layout phase without moving focus.
-Normal autosizing resumes after capture finalization.
 Desktop also supports a 500ms left-button hold on the editable textarea, without
 modifiers. After pointer-release finalization, focus returns to the same textarea with
 the caret at the end, without scrolling. Draft disposal, backgrounding or focus moved
