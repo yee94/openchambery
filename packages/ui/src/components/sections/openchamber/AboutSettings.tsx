@@ -263,7 +263,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
       <div className="oc-settings-section-stack w-full">
         <div className="flex flex-col items-center text-center">
           <OpenChamberLogo width={72} height={72} />
-          <h2 className="mt-4 typography-ui-header font-semibold text-foreground">OpenChamber</h2>
+          <h2 className="mt-4 typography-ui-header font-semibold text-foreground">OpenChamberY</h2>
         </div>
 
         <SettingsGroup className="oc-settings-about">

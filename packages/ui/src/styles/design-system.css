@@ -30,7 +30,7 @@
     --oc-wco-right-inset: 0px;
     --oc-wco-titlebar-height: 0px;
     --ui-regular-font-weight: 400;
-    --voice-active-fill: var(--status-success);
+    --voice-active-fill: #38CD80;
     --oc-scrollbar-thumb: oklch(0.32 0.03 50 / 0.4);
     --oc-scrollbar-thumb-hover: oklch(0.32 0.03 50 / 0.6);
     /* User density setting (useUIStore.applyPadding writes this name).
@@ -120,7 +120,7 @@
   }
 
   .dark {
-    --voice-active-fill: #85C588;
+    --voice-active-fill: #3BCC80;
     /* Default Dark Theme - using OKLCH color space */
     --background: oklch(0.16 0.01 30); /* #151313 */
     --foreground: oklch(0.85 0.02 90); /* #cdccc3 */
@@ -444,6 +444,52 @@
 
 /* Agent color system using theme variables */
 @layer components {
+  .oc-dictation-caret {
+    position: relative;
+    display: inline-block;
+    width: 0;
+    vertical-align: baseline;
+    pointer-events: none;
+  }
+
+  .oc-dictation-caret::after,
+  .oc-dictation-caret-trail {
+    position: absolute;
+    bottom: -0.15em;
+    height: 1.15em;
+  }
+
+  .oc-dictation-caret::after {
+    content: '';
+    left: 0;
+    width: 2px;
+    border-radius: 999px;
+    background: var(--voice-active-fill);
+  }
+
+  .oc-dictation-caret-trail {
+    left: -0.7em;
+    width: 0.7em;
+    border-radius: 2px;
+    background: linear-gradient(to left, var(--voice-active-fill) 0%, var(--voice-active-fill) 20%, transparent 100%);
+    filter: blur(2px);
+    opacity: 0;
+    transform-origin: right;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .oc-dictation-caret-trail {
+      animation: oc-dictation-caret-trail 1600ms linear;
+    }
+  }
+
+  @keyframes oc-dictation-caret-trail {
+    0% { opacity: 0; transform: scaleX(0.8); }
+    5% { opacity: 0.6; transform: scaleX(1); }
+    25% { opacity: 0.45; transform: scaleX(1); }
+    100% { opacity: 0; transform: scaleX(0.9); }
+  }
+
   /* Agent color variants - each maps to theme colors */
   .agent-primary {
     --agent-color: var(--primary);

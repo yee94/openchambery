@@ -188,15 +188,15 @@ const buildUsage = (): TrayUsage => {
 };
 
 // Mirrors the header's instance resolution (Header.refreshCurrentInstanceLabel):
-// the local origin shows as "Local OpenChamber"; a remote host shows its
+// the local origin shows as "Local OpenChamberY"; a remote host shows its
 // configured name. Async because the host config is read over IPC.
 const resolveInstanceName = async (): Promise<string> => {
   try {
-    if (isDesktopLocalOriginActive()) return 'Local OpenChamber';
+    if (isDesktopLocalOriginActive()) return 'Local OpenChamberY';
     const localOrigin = (window as unknown as { __OPENCHAMBER_LOCAL_ORIGIN__?: string }).__OPENCHAMBER_LOCAL_ORIGIN__
       || window.location.origin;
     const runtimeApiBaseUrl = getRuntimeApiBaseUrl();
-    if (runtimeApiBaseUrl && locationMatchesHost(runtimeApiBaseUrl, localOrigin)) return 'Local OpenChamber';
+    if (runtimeApiBaseUrl && locationMatchesHost(runtimeApiBaseUrl, localOrigin)) return 'Local OpenChamberY';
     const cfg = await desktopHostsGet();
     const match = cfg.hosts.find((host) =>
       runtimeApiBaseUrl ? locationMatchesHost(runtimeApiBaseUrl, getDesktopHostApiUrl(host)) : false);

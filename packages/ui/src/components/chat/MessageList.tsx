@@ -61,6 +61,7 @@ import {
 } from './lib/markdownHydrationWindow';
 import { mergeMarkdownPinRevealStyle, resolveMarkdownPinRevealKeys } from './lib/markdownPinReveal';
 import { installBatchedResizeItem } from './lib/batchResizeUpdates';
+import { shouldAdjustHistoryScrollOnItemSizeChange } from './lib/scroll/historyItemSizeAdjustment';
 import { useMarkdownPinReveal } from './hooks/useMarkdownPinReveal';
 import {
     USER_SHELL_MARKER,
@@ -136,9 +137,9 @@ const sameKeys = (a: readonly string[] | undefined, b: readonly string[] | undef
 //   - anchorTo: 'end' — key-stable prepend preservation + end-pin on last-item growth
 //   - followOnAppend — follow new rows only when already within scrollEndThreshold
 //   - scrollToEnd / isAtEnd / getDistanceFromEnd — jump-to-latest + pin helpers
-//   - default shouldAdjustScrollPositionOnItemSizeChange (3.17.6+) — first measure
-//     any above-fold delta; remeasure only fully-above rows; skip while scrolling
-//     backward; wasAtEnd path pins total-size growth without app-level compensation
+//   - shouldAdjustHistoryScrollOnItemSizeChange — core's default (3.17.6+) first
+//     measure / fully-above remeasure rule, but also while scrolling backward;
+//     wasAtEnd path pins total-size growth without app-level compensation
 // iOS touch/momentum deferral for scroll adjustments also lives in core.
 type TanstackVirtualizerInstance = ReactVirtualizer<HTMLDivElement, HTMLDivElement>;
 type HistoryEngine = 'none' | 'tanstack';
@@ -1716,6 +1717,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     });
     useIsomorphicLayoutEffect(() => {
         if (!isTanstack) return;
+        tanstackVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = shouldAdjustHistoryScrollOnItemSizeChange;
         return installBatchedResizeItem(tanstackVirtualizer, restoreHistoryReadingAnchor);
     }, [isTanstack, tanstackVirtualizer]);
     const columnWidthRef = React.useRef<number | null>(null);
@@ -1801,11 +1803,12 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         tanstackVirtualizer.scrollToIndex(index, { align: 'start' });
         retryVirtualizationTransitionAnchor();
     }, [engine, entryKeys, isTanstack, tanstackVirtualizer, virtualizationTransitionTick]);
-    // Size-change scroll adjustment uses virtual-core's default (3.17.6+):
+    // Size-change scroll adjustment follows virtual-core's default (3.17.6+):
     // first measure compensates any above-fold row; remeasure only fully-above
-    // rows and never while scrolling backward; wasAtEnd pins total-size growth.
-    // Do not reassign shouldAdjustScrollPositionOnItemSizeChange unless product
-    // policy diverges from that chat default.
+    // rows; wasAtEnd pins total-size growth. Product policy diverges in one
+    // place (installed above): fully-above rows are also compensated while
+    // scrolling backward, because Markdown hydrating above an upward reader
+    // after load-more otherwise shifts the visible messages.
     const virtualItems = tanstackVirtualizer.getVirtualItems();
     const mountedIndexes = virtualItems.map((item) => item.index);
     const [hydratedMarkdownEntryKeys, setHydratedMarkdownEntryKeys] = React.useState(() => (

@@ -50,14 +50,14 @@ test('getMenuLabels returns English for the default and invalid locales', () => 
 
   assert.equal(en.settings, 'Settings');
   assert.equal(en.newSession, 'New Session');
-  assert.equal(en.aboutOpenChamber, 'About OpenChamber');
+  assert.equal(en.aboutOpenChamber, 'About OpenChamberY');
   assert.equal(en.newMiniChat, 'New Mini Chat');
   assert.equal(en.joinDiscord, 'Join Discord');
   assert.equal(en.trayUntitledSession, 'Untitled session');
   assert.equal(en.trayNeedsYourAttention, 'Needs your attention');
   assert.equal(en.trayUsageWithMode, 'Usage ({mode})');
-  assert.equal(en.trayShowOpenChamber, 'Show OpenChamber');
-  assert.equal(en.quit, 'Quit OpenChamber');
+  assert.equal(en.trayShowOpenChamber, 'Show OpenChamberY');
+  assert.equal(en.quit, 'Quit OpenChamberY');
   assert.equal(fallback.settings, en.settings);
   assert.equal(fallback.newWindow, en.newWindow);
   assert.equal(fallback.file, 'File');
@@ -71,7 +71,7 @@ test('getMenuLabels returns zh-CN translations for key menu and tray items', () 
   assert.equal(labels.settings, '设置');
   assert.equal(labels.newSession, '新建会话');
   assert.equal(labels.newWindow, '新建窗口');
-  assert.equal(labels.aboutOpenChamber, '关于 OpenChamber');
+  assert.equal(labels.aboutOpenChamber, '关于 OpenChamberY');
   assert.equal(labels.commandPalette, '命令面板');
   assert.equal(labels.toggleReviewPanel, '切换审阅面板');
   assert.equal(labels.keyboardShortcuts, '键盘快捷键');
@@ -80,7 +80,7 @@ test('getMenuLabels returns zh-CN translations for key menu and tray items', () 
   assert.equal(labels.trayNeedsYourAttention, '需要你的注意');
   assert.equal(labels.trayAllowOnce, '允许一次');
   assert.equal(labels.trayNoActiveSessions, '暂无活动会话');
-  assert.equal(labels.trayShowOpenChamber, '显示 OpenChamber');
+  assert.equal(labels.trayShowOpenChamber, '显示 OpenChamberY');
   assert.equal(labels.trayMoreCount, '还有 {count} 项…');
   assert.notEqual(labels.settings, getMenuLabels('en').settings);
   assert.notEqual(labels.trayNeedsYourAttention, getMenuLabels('en').trayNeedsYourAttention);
@@ -94,13 +94,13 @@ test('getMenuLabels returns French translations for key menu and tray items', ()
   assert.equal(labels.newWindow, 'Nouvelle fenêtre');
   assert.equal(labels.file, 'Fichier');
   assert.equal(labels.help, 'Aide');
-  assert.equal(labels.aboutOpenChamber, 'À propos d’OpenChamber');
+  assert.equal(labels.aboutOpenChamber, 'À propos d’OpenChamberY');
   assert.equal(labels.commandPalette, 'Palette de commandes');
   assert.equal(labels.newMiniChat, 'Nouveau Mini Chat');
   assert.equal(labels.joinDiscord, 'Rejoindre Discord');
   assert.equal(labels.trayNeedsYourAttention, 'Nécessite votre attention');
   assert.equal(labels.trayAllowAlways, 'Toujours autoriser');
-  assert.equal(labels.trayShowOpenChamber, 'Afficher OpenChamber');
+  assert.equal(labels.trayShowOpenChamber, 'Afficher OpenChamberY');
   assert.equal(labels.trayUsageWithMode, 'Utilisation ({mode})');
   assert.notEqual(labels.settings, getMenuLabels('en').settings);
   assert.notEqual(labels.trayShowOpenChamber, getMenuLabels('en').trayShowOpenChamber);

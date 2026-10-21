@@ -84,6 +84,7 @@ export type PostSessionPromptInput = PostIdleSessionPromptInput & {
 export type PostSessionInterruptInput = {
   sessionID: string
   directory?: string | null
+  resume?: boolean
   signal?: AbortSignal
 }
 
@@ -615,6 +616,7 @@ export async function postSessionInterrupt(input: PostSessionInterruptInput): Pr
   const path = `/api/session/${encodeURIComponent(input.sessionID)}/interrupt`
   const query: Record<string, string> = {}
   if (input.directory) query.directory = input.directory
+  if (input.resume !== undefined) query.resume = String(input.resume)
 
   const response = await runtimeFetch(path, {
     method: "POST",

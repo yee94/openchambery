@@ -134,7 +134,7 @@ const requireSelectionShape = (
 ): DesktopSshConfigSyncSelectionShape => {
   const shape = localPlan?.selectionShape;
   if (!shape) {
-    throw new Error('Local sync inventory missing selectionShape (update the OpenChamber desktop app)');
+    throw new Error('Local sync inventory missing selectionShape (update the OpenChamberY desktop app)');
   }
   return shape;
 };
@@ -466,7 +466,7 @@ export const applyRelayConfigSync = async (
         const agentsTar = plan.agentsRoot ? await executor.download('agents') : null;
         const authTar = plan.authFile ? await executor.download('auth') : null;
         if (!hasDesktopInvoke()) {
-          throw new Error('Relay pull apply requires the OpenChamber desktop app');
+          throw new Error('Relay pull apply requires the OpenChamberY desktop app');
         }
         // Structured-clone Uint8Array directly (desktop_relay_sync_apply_local contract).
         const applied = await invokeDesktop('desktop_relay_sync_apply_local', {
@@ -483,7 +483,7 @@ export const applyRelayConfigSync = async (
       const plan = buildPushPlan(localPlan!, selections);
       if (!planHasPayload(plan)) return emptyResult(plan);
       if (!hasDesktopInvoke()) {
-        throw new Error('Relay push apply requires the OpenChamber desktop app');
+        throw new Error('Relay push apply requires the OpenChamberY desktop app');
       }
 
       // Structured-clone Uint8Array directly (desktop_relay_sync_pack_local contract).

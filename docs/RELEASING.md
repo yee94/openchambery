@@ -1,6 +1,6 @@
 # 发布运行手册
 
-本手册覆盖 OpenChamber 的正式 GitHub Release。正式 Release 由 `.github/workflows/release.yml` 创建，Android APK/AAB 由它调用的 `.github/workflows/mobile-release.yml` 上传。iOS 外测打板（关联外测组 + Beta App Review）不是默认新版本的一部分。
+本手册覆盖 OpenChamberY 的正式 GitHub Release。正式 Release 由 `.github/workflows/release.yml` 创建，Android APK/AAB 由它调用的 `.github/workflows/mobile-release.yml` 上传。iOS 外测打板（关联外测组 + Beta App Review）不是默认新版本的一部分。
 
 用户说「发 beta / 更新 beta / 推新版本」时，**默认打 `v*`**，保证 macOS / Windows / Linux / APK 等安装包都在。不要因为 `mobile-release-plan` 是 `ota` 就改打 `mobile-beta/v*`——那条流水线只有 web bundle，没有桌面和 APK。
 
@@ -301,7 +301,7 @@ tag push 会包含 mobile-release。手动触发时使用 `release_scope=all`。
 因此，只要同一版本经历过多次 Release 运行（先 `workflow_dispatch` 再 tag push、或多次手动重跑），旧的 `-NN-android.*` 会留在 Draft 上。典型报错：
 
 ```text
-Expected exactly 16 release assets, found 18: ... OpenChamber-1.16.32-72-android.aab, ... OpenChamber-1.16.32-73-android.aab ...
+Expected exactly 16 release assets, found 18: ... OpenChamberY-1.16.32-72-android.aab, ... OpenChamberY-1.16.32-73-android.aab ...
 ```
 
 **v1.16.32 实况：** 第一次 `workflow_dispatch` 已上传 build `72` Android 资产；后续 tag push 运行号变成 `73` 又上传一套；`finalize` 因多出旧资产失败，Draft 无法转正式。

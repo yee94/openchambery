@@ -13,7 +13,7 @@ const mock = vi.hoisted(() => ({
     onPartial: (_text: string) => {},
     hookWork: vi.fn(),
     toastError: vi.fn(), toastDismiss: vi.fn(),
-    dictation: { status: 'idle', error: null as string | null,
+    dictation: { status: 'idle', isStarting: false, error: null as string | null,
         startDictation: vi.fn(), confirmDictation: vi.fn(), retryFailedDictation: vi.fn(), cancelDictation: vi.fn(), discardFailedDictation: vi.fn() },
 }));
 vi.mock('sonner', () => ({ toast: { error: mock.toastError, dismiss: mock.toastDismiss } }));
@@ -31,10 +31,9 @@ const insert = vi.fn();
 const partial = vi.fn();
 const start = vi.fn();
 const cancel = vi.fn();
-const command = vi.fn();
 const recordingChange = vi.fn();
 const inputRef = { current: null as HTMLTextAreaElement | null };
-const render = async (interactionMode: 'desktop' | 'mobile' = 'desktop') => { await act(async () => root.render(<DesktopDictationButton interactionMode={interactionMode} inputRef={inputRef} onCommandChange={command} onRecordingChange={recordingChange} onInsert={insert} onPartial={partial} onStart={start} onCancel={cancel} />)); };
+const render = async (interactionMode: 'desktop' | 'mobile' = 'desktop') => { await act(async () => root.render(<DesktopDictationButton interactionMode={interactionMode} inputRef={inputRef} onRecordingChange={recordingChange} onInsert={insert} onPartial={partial} onStart={start} onCancel={cancel} />)); };
 const button = () => host.querySelector('button')!;
 beforeEach(async () => {
     vi.clearAllMocks();
@@ -43,7 +42,7 @@ beforeEach(async () => {
     root = createRoot(host); await render();
     inputRef.current = document.createElement('textarea'); host.append(inputRef.current);
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); });
 
 it.each(['desktop', 'mobile'] as const)('%s keeps dictation hook work off repeated composer edits while final insertion sees the latest draft', async (mode) => {
     const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../chat/ChatInput.tsx'), 'utf8');
@@ -68,7 +67,8 @@ it.each(['desktop', 'mobile'] as const)('%s keeps dictation hook work off repeat
     const update = vi.fn();
     const scope = {
         React, useEvent, DesktopDictationButton, update,
-        textareaRef: inputRef, setDesktopCommandPressed: command, setDesktopRecording: recordingChange,
+        textareaRef: inputRef, setDesktopRecording: recordingChange,
+        setDesktopDictationActive: vi.fn(),
         footerIconButtonClass: '', iconSizeClass: '', beginDesktopDictation: start, cancelDesktopDictation: cancel,
         resolvedDraftBusy: false, dictationHint: null, currentSessionId: 'session', newSessionDraftOpen: false,
         setMobileDictationActive: vi.fn(),
@@ -98,47 +98,145 @@ it.each(['desktop', 'mobile'] as const)('%s keeps dictation hook work off repeat
     expect(update).toHaveBeenLastCalledWith(51, '新草稿', true);
 });
 
-it('tracks Cmd transitions without publishing ordinary typing events', async () => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true }));
-    for (let i = 0; i < 50; i++) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', metaKey: true }));
-    expect(command.mock.calls).toEqual([[true]]);
-    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
-    expect(command.mock.calls).toEqual([[true], [false]]);
-});
-
-it('holds outside the input and after releasing Cmd, then confirms on mouse release', async () => {
-    const down = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse', pointerId: 3, button: 0, metaKey: true });
+it('starts after 500ms without modifiers and confirms on release outside the input', async () => {
+    vi.useFakeTimers();
+    const down = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse', pointerId: 3, button: 0 });
     await act(async () => { inputRef.current!.dispatchEvent(down); });
-    expect(down.defaultPrevented).toBe(true);
+    expect(down.defaultPrevented).toBe(false);
+    await act(async () => { vi.advanceTimersByTime(499); });
+    expect(start).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(1); });
     expect(start).toHaveBeenCalledTimes(1);
     mock.dictation.status = 'recording'; await render();
     expect(recordingChange).toHaveBeenLastCalledWith(true);
     expect(host.textContent).toContain('chat.dictation.releaseConfirm');
     expect(host.textContent).not.toContain('chat.dictation.keyboardHint');
+    expect(document.body.querySelector('style')?.textContent).toContain('user-select: none !important');
+    expect(document.body.querySelector('style')?.textContent).toContain('cursor: none');
+    expect(document.querySelector('[data-listening-cursor]')).not.toBeNull();
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
     window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 3, clientX: 1000 }));
+    expect((document.querySelector('[data-listening-cursor]') as HTMLElement).style.transform).toBe('translate(1000px, 0px)');
     window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 4 }));
     expect(mock.dictation.confirmDictation).not.toHaveBeenCalled();
     await act(async () => { window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 3, button: 0 })); });
     expect(mock.dictation.confirmDictation).toHaveBeenCalledTimes(1);
+    mock.dictation.status = 'uploading'; await render();
+    expect(document.querySelector('[data-listening-cursor]')).toBeNull();
+    expect([...document.body.querySelectorAll('style')].some((style) => style.textContent?.includes('user-select: none !important'))).toBe(false);
 });
 
 it('finishes even when released while microphone startup is pending', async () => {
+    vi.useFakeTimers();
     let resolve!: () => void;
     mock.dictation.startDictation.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
     await act(async () => { inputRef.current!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', pointerId: 1, button: 0, metaKey: true })); });
+    await act(async () => { vi.advanceTimersByTime(1000); });
     await act(async () => { window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, button: 0 })); });
     expect(mock.dictation.confirmDictation).toHaveBeenCalledTimes(1);
     await act(async () => resolve());
 });
 
+it('shows loading without recording copy until microphone and stream initialization complete', async () => {
+    vi.useFakeTimers();
+    let resolve!: () => void;
+    mock.dictation.startDictation.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+    await act(async () => inputRef.current!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', pointerId: 8, button: 0 })));
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    mock.dictation.status = 'recording'; await render();
+    expect(document.querySelector('[data-listening-cursor]')).not.toBeNull();
+    expect(document.querySelector('[data-listening-cursor] [data-dictation-loading]')).not.toBeNull();
+    expect(button().querySelector('[data-dictation-loading]')).not.toBeNull();
+    expect(button().getAttribute('aria-busy')).toBe('true');
+    expect(host.textContent).not.toContain('chat.dictation.releaseConfirm');
+    expect(recordingChange).toHaveBeenLastCalledWith(false);
+    await act(async () => resolve());
+    expect(document.querySelector('[data-dictation-loading]')).toBeNull();
+    expect(document.querySelector('[data-listening-cursor]')).not.toBeNull();
+    expect(button().getAttribute('aria-busy')).toBe('false');
+    expect(recordingChange).toHaveBeenLastCalledWith(true);
+    expect(host.textContent).toContain('chat.dictation.releaseConfirm');
+});
+
+it('keeps loading through audio teardown and final transcript delivery', async () => {
+    let resolve!: () => void;
+    mock.dictation.confirmDictation.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+    mock.dictation.status = 'recording'; await render();
+    await act(async () => button().click());
+    expect(button().querySelector('[data-dictation-loading]')).not.toBeNull();
+    expect(button().disabled).toBe(true);
+    expect(button().getAttribute('aria-busy')).toBe('true');
+    expect(host.textContent).not.toContain('chat.dictation.keyboardHint');
+    mock.dictation.status = 'uploading'; await render();
+    expect(button().querySelector('[data-dictation-loading]')).not.toBeNull();
+    await act(async () => button().click());
+    expect(mock.dictation.confirmDictation).toHaveBeenCalledTimes(1);
+    mock.dictation.status = 'idle';
+    await act(async () => { mock.onTranscript('整理后的最终文字'); resolve(); });
+    expect(insert).toHaveBeenLastCalledWith('整理后的最终文字');
+    expect(button().querySelector('[data-dictation-loading]')).toBeNull();
+    expect(button().getAttribute('aria-busy')).toBe('false');
+});
+
+it('suppresses selection only after the hold activates and restores it on release', async () => {
+    vi.useFakeTimers();
+    const capture = vi.fn();
+    Object.defineProperty(host.querySelector('[data-dictation-control]')!, 'setPointerCapture', { value: capture });
+    inputRef.current!.value = 'existing draft';
+    inputRef.current!.setSelectionRange(14, 14);
+    inputRef.current!.focus();
+    await act(async () => inputRef.current!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', pointerId: 2, button: 0 })));
+    const pendingSelection = new Event('selectstart', { bubbles: true, cancelable: true });
+    inputRef.current!.dispatchEvent(pendingSelection);
+    expect(pendingSelection.defaultPrevented).toBe(false);
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(capture).toHaveBeenCalledWith(2);
+    expect(document.activeElement).not.toBe(inputRef.current);
+    const selection = new Event('selectstart', { bubbles: true, cancelable: true });
+    inputRef.current!.dispatchEvent(selection);
+    expect(selection.defaultPrevented).toBe(true);
+    inputRef.current!.setSelectionRange(0, 8);
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(inputRef.current!.selectionStart).toBe(inputRef.current!.selectionEnd);
+    expect(inputRef.current!.value).toBe('existing draft');
+    const move = new MouseEvent('mousemove', { bubbles: true, cancelable: true });
+    window.dispatchEvent(move);
+    expect(move.defaultPrevented).toBe(true);
+    await act(async () => window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2, button: 0 })));
+    const restored = new Event('selectstart', { bubbles: true, cancelable: true });
+    inputRef.current!.dispatchEvent(restored);
+    expect(restored.defaultPrevented).toBe(false);
+    inputRef.current!.setSelectionRange(0, 8);
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(inputRef.current!.selectionStart).toBe(0);
+    expect(inputRef.current!.selectionEnd).toBe(8);
+});
+
 it('preserves ordinary clicks and read-only inputs', async () => {
+    vi.useFakeTimers();
     for (const options of [{}, { metaKey: true, button: 2 }, { metaKey: true, pointerType: 'touch' }]) {
         inputRef.current!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', button: 0, ...options }));
     }
     inputRef.current!.readOnly = true;
     inputRef.current!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', button: 0, metaKey: true }));
+    await act(async () => { vi.advanceTimersByTime(1000); });
     expect(start).not.toHaveBeenCalled();
+});
+
+it.each(['release', 'drag', 'cancel', 'blur', 'typing', 'unmount'])('cancels a pending hold on %s', async (action) => {
+    vi.useFakeTimers();
+    await act(async () => inputRef.current!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', pointerId: 9, button: 0 })));
+    await act(async () => {
+        if (action === 'release') window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 9, button: 0 }));
+        if (action === 'drag') window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 9, clientX: 20 }));
+        if (action === 'cancel') window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 9 }));
+        if (action === 'blur') window.dispatchEvent(new Event('blur'));
+        if (action === 'typing') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+        if (action === 'unmount') root.render(null);
+    });
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(start).not.toHaveBeenCalled();
+    expect(mock.dictation.confirmDictation).not.toHaveBeenCalled();
 });
 
 it('toggles recording with a theme-filled mic and inserts the final text', async () => {

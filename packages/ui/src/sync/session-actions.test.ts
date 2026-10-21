@@ -397,7 +397,7 @@ vi.mock("@/lib/runtime-fetch", () => ({
       return new Response(null, { status: 204 })
     }
     if (urlText.includes("/interrupt")) {
-      mocks.replyCalls.push({ method: "session.interrupt", params: { url } })
+      mocks.replyCalls.push({ method: "session.interrupt", params: { url, query: init?.query } })
       if (mocks.state.abortReject) throw new Error("abort failed")
       if (mocks.state.abortResult.error || mocks.state.abortResult.data === false) throw new Error("Session interrupt failed")
       mocks.state.onInterrupt?.()
@@ -1516,6 +1516,15 @@ describe("abort queue dispatch block", () => {
   })
 
   afterEach(() => { mocks.state.interruptGate = null; vi.useRealTimers() })
+
+  test("stopping the current turn resumes pending steering input", async () => {
+    const store = createStore({}, { session: [{ id: "session-a" } as Session], session_status: { "session-a": { type: "busy" } } })
+    const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    await abortCurrentOperation("session-a")
+    const call = replyCalls.find((entry) => entry.method === "session.interrupt")!
+    expect(call.params.query).toEqual({ directory: "/test/project", resume: "true" })
+  })
 
   test("shares one request and abort block across simultaneous stop callers", async () => {
     let reply!: () => void

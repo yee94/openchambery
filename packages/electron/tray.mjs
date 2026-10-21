@@ -204,7 +204,7 @@ export const createTrayController = ({
     const approvals = Array.isArray(snapshot.approvals) ? snapshot.approvals : [];
     const header = typeof snapshot.instanceName === 'string' && snapshot.instanceName.trim()
       ? snapshot.instanceName.trim()
-      : 'OpenChamber';
+      : 'OpenChamberY';
 
     const template = [
       { label: header, enabled: false },

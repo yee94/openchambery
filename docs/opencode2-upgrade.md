@@ -6,7 +6,7 @@
 
 ## 一、结论
 
-这次不是在 1.18.x 上再修一层合并。托管进程换成真正的 `opencode2`，消息存储和投影交给它，OpenChamber 拆掉自己叠上去的正文中间层。
+这次不是在 1.18.x 上再修一层合并。托管进程换成真正的 `opencode2`，消息存储和投影交给它，OpenChamberY 拆掉自己叠上去的正文中间层。
 
 推荐方案：
 
@@ -15,7 +15,7 @@
 3. **Host**：鉴权、directory/location 路由、Basic auth 注入、HTTP/SSE/WS 桥。不再拼回合、不再镜像 parts、不再自研 reconcile。
 4. **不长期双栈**。切过去只认 v2。`@opencode-ai/sdk/v2`（1.18.4 生成客户端）不能当 v2 权威源，要换成 `@opencode/client`。
 5. **不要赌 `session.log` 补历史**。默认 `opencode serve` 的 `events.persist=false`，EventTable 是空的，log 只有 `log.synced` 再切 live。断线对齐靠 GET 投影，不靠事件回放。
-6. **不要 in-process `ServerFetch.make`**。官方 desktop 也是 sidecar + localhost HTTP。OpenChamber 继续这条路。
+6. **不要 in-process `ServerFetch.make`**。官方 desktop 也是 sidecar + localhost HTTP。OpenChamberY 继续这条路。
 
 上游 [#884 backend-agnostic-harness](https://github.com/openchamber/openchamber/pull/884) 是 Codex 适配，不是 v2 浅代理。不要把它当本方案的实现底稿。
 
@@ -36,7 +36,7 @@
 - 不把 `@opencode-ai/server` import 进 Host 当库。
 - 不复用用户已经在跑的 `opencode2 service`。
 - 不把设置、配对、Relay、项目注册、session folders、goals、输入草稿迁进 OpenCode。
-- 不等待上游 OpenChamber 先做 v2。
+- 不等待上游 OpenChamberY 先做 v2。
 - 不把 v2 尚未交付的 session sharing 当成可依赖能力。
 - 不默认打开 session warming（会打真实模型请求、烧钱）。
 
@@ -353,7 +353,7 @@ AGENTS.md 里的不变量继续有效：侧栏 index-driven、bounded snapshot�
 
 ### 8.2 Inbox 替换「本 session 队列」
 
-OpenChamber 现在的 message-queue 是跨 session、可改序、带附件、有 shadow/cutover。v2 inbox 更窄：本 session、steer/queue、compaction barrier。
+OpenChamberY 现在的 message-queue 是跨 session、可改序、带附件、有 shadow/cutover。v2 inbox 更窄：本 session、steer/queue、compaction barrier。
 
 映射：
 
@@ -363,7 +363,7 @@ OpenChamber 现在的 message-queue 是跨 session、可改序、带附件、有
 | 发送时会话忙碌 | `delivery=queue` |
 | 插队 | `POST .../inbox/:id/steer` |
 | 取消未执行 | `DELETE .../inbox/:id` |
-| 跨 session / 定时 / Assistant 投递 | 仍用 OpenChamber 意图队列，**只存指针**，投递后不再 `findMessage` 扫正文 |
+| 跨 session / 定时 / Assistant 投递 | 仍用 OpenChamberY 意图队列，**只存指针**，投递后不再 `findMessage` 扫正文 |
 
 未 promote 的 inbox 项画在输入区上方，不进 transcript。这和官方 GUI 一致。
 

@@ -150,7 +150,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       max-width: 280px;
     }
   </style>
-  <title>OpenChamber</title>
+  <title>OpenChamberY</title>
 </head>
 <body>
   <!-- Initial loading screen with simplified OpenChamber logo -->

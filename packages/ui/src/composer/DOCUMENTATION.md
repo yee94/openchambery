@@ -67,7 +67,7 @@ freshness, catalog replacement and active-surface changes.
 Desktop ASR uses `DesktopDictationButton` in the composer action row when
 dictation is enabled and capture is supported (web/Electron, not VS Code).
 The microphone stays visible as a filled glyph in primary-foreground over a
-`--voice-active-fill` (fixed `#85C588` in dark mode for both dictation and read-aloud; otherwise the theme's `--status-success` green) disc with two compact breathing halo layers while recording
+`--voice-active-fill` (fixed `#3BCC80` in dark mode and `#38CD80` in light mode for both dictation and read-aloud; see the styles module's color calibration) disc with two compact breathing halo layers while recording
 (reduced motion keeps them static). Its button has no
 background. The same `VoiceActivityIcon` treatment is used by active read-aloud;
 clicking again, plain Enter, button blur, or window/background blur after capture starts
@@ -90,13 +90,50 @@ While mobile click-to-record is active (including finalization), autosizing yiel
 to the current textarea height. Each transcript update scrolls the textarea and
 its underline overlay to the bottom in the same layout phase without moving focus.
 Normal autosizing resumes after capture finalization.
-Desktop also supports Cmd + left-button hold on the editable textarea. Cmd changes
-the placeholder to hold-to-talk; hovering the textarea with Cmd held and all active
-desktop recordings use `--voice-active-fill` for the 1px composer border without an
-additional focus ring. Held recording shows “Release to confirm” beside the mic. The initiating
-pointer is tracked on window capture: leaving the field or releasing Cmd does not
+Desktop also supports a 500ms left-button hold on the editable textarea, without
+modifiers. Short clicks retain native focus; dragging more than 6px, keyboard input,
+pointer cancellation or backgrounding cancels the pending hold. The timer rechecks
+editability and text selection before capture. The idle placeholder preserves the usual
+input instructions and appends mouse hold-to-talk guidance inline, without adding a line break or changing input height.
+The desktop dictation lifecycle uses `--voice-active-fill` for the 1px composer
+border without an additional focus ring, including microphone/connection initialization
+and finalization. Loading and listening share the active composer presentation,
+including its caret, placeholder and border. Throughout desktop capture startup, recording and finalization, other footer
+controls become 40% opaque, including the complete agent, model and variant selector
+group. Opacity applies once per group, not again to nested buttons; the dictation
+control stays fully visible.
+Held capture replaces the mouse pointer with a small theme-green animated three-bar
+listening indicator. Its position follows pointer events through a DOM transform without
+React updates; reduced motion leaves the bars static. Release restores the normal pointer.
+During microphone and stream initialization, the microphone button shows the B2 lens
+animation (three orbiting dots with depth blur, theme green, static under reduced motion)
+without visible loading text; the pointer shows the same B2 animation, then switches
+to listening bars when ready. The desktop leaf waits for the
+complete `startDictation()` promise (audio plus initial stream setup) before replacing
+the loading glyphs with recording glyphs and the microphone-side release hint.
+Mobile footer microphones also show B2 during initialization and finalization.
+`components/dictation/DictationLoading` is the single B2 renderer shared by the desktop
+pointer, desktop/mobile microphone buttons and mobile fullscreen overlay, including
+both initialization and finalization. It adds no visible label, background or halo.
+Mobile hold-to-talk keeps its overlay in B2 loading after release, without gesture
+targets or visible loading text, until confirmation completes; edit focus resumes then.
+Release awaits the complete `confirmDictation()` operation: audio teardown flushes
+remaining samples, then stream finalization returns the corrected transcript. During
+that entire wait the desktop mic shows B2 loading and the composer stays active;
+repeated confirmation is blocked. Final success or failure ends that local wait.
+Desktop recording renders a green caret
+at the end of the existing text overlay, without changing textarea metrics. Text updates
+illuminate a compact, vertically contained halo extending behind the caret: an 80ms
+attack followed by a slow fade across a 1600ms animation; an idle caret does not
+pulse. Reduced motion disables the halo. The native text caret is hidden.
+Release, cancellation and capture teardown remove the global selection override.
+At hold activation the non-input dictation control captures the pointer and the
+textarea blurs, ending native drag selection. During held capture, selection-start and mouse-drag defaults are suppressed and
+textarea/document selections are collapsed; pending holds retain native selection.
+Held recording shows “Release to confirm” beside the mic. The initiating
+pointer is tracked on window capture: leaving the field does not
 stop capture; left-button release finalizes into the draft without sending.
-Pointer cancellation cancels recognition. Modifier and recording transitions alone
+Pointer cancellation cancels recognition. Recording transitions alone
 are published to ChatInput; ordinary keystrokes and pointer movement add no renders.
 While recording, a small muted hint to the right of the microphone shows Enter
 to confirm. Capture-phase Enter handling suppresses composer

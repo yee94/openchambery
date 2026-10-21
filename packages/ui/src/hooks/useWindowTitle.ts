@@ -5,7 +5,7 @@ import { desktopHostsGet, getDesktopHostApiUrl, locationMatchesHost, redactSensi
 import { setDesktopWindowTitle } from '@/lib/desktopNative';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 
-const APP_TITLE = 'OpenChamber';
+const APP_TITLE = 'OpenChamberY';
 
 const getProjectNameFromPath = (path: string): string => {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');

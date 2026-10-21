@@ -129,7 +129,7 @@ flowchart TD
         SSE["★变更 SSE reducer → setQueryData"]:::change
     end
 
-    subgraph HOST ["OpenChamber Host：权威读取"]
+    subgraph HOST ["OpenChamberY Host：权威读取"]
         TURN["保留 turn-page API"]:::same
         REC["★新增 anchor reconcile API"]:::new
         STREAM["★变更 replay → ready barrier"]:::change
@@ -159,7 +159,7 @@ sequenceDiagram
     participant UI as Chat / Context Panel
     participant IQ as Session InfiniteQuery
     participant PQ as Transport Page Query
-    participant Host as OpenChamber Host
+    participant Host as OpenChamberY Host
     participant Merge as Sync Merge
     participant Cache as QueryCache
 
@@ -350,7 +350,7 @@ active observer 持有完整已加载 pages。页面加载历史后保持稳定�
 sequenceDiagram
     participant Browser as Browser / Electron Renderer
     participant Pipeline as Event Pipeline
-    participant Host as OpenChamber Host
+    participant Host as OpenChamberY Host
     participant Replay as Host Replay Buffer
     participant Tasks as Query Recovery Tasks
     participant API as Anchor Reconcile API

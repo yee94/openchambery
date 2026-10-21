@@ -31,7 +31,7 @@ export const buildSlashCommandRows = (
   const badge = command.isSkill
     ? labels.skill
     : command.isOpenChamber
-      ? 'OpenChamber'
+      ? 'OpenChamberY'
       : command.isBuiltIn
         ? labels.system
         : command.scope || command.agent || labels.command;
