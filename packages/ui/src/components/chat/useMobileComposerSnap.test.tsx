@@ -80,6 +80,35 @@ it('cancels pointer ownership and restores the starting snap without remounting 
   expect(handle.releasePointerCapture).toHaveBeenCalledWith(1);
 });
 
+it('fits full mode to native keyboard layout changes without a visual viewport resize', async () => {
+  vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
+  let bottom = 780;
+  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+    const inputHeight = parseFloat(host.querySelector('textarea')?.style.height ?? '') || 120;
+    const height = this.tagName === 'HEADER' ? 64 : this.tagName === 'TEXTAREA' ? inputHeight : inputHeight + 40;
+    const edge = this.tagName === 'HEADER' ? 64 : this.tagName === 'TEXTAREA' ? bottom - 40 : bottom;
+    return { x: 0, y: edge - height, top: edge - height, bottom: edge, left: 0, right: 390, width: 390, height, toJSON() {} };
+  });
+  await act(async () => root.render(<Probe />));
+  const input = host.querySelector('textarea')!;
+  input.focus(); input.setSelectionRange(2, 2);
+  await act(async () => result.settleAt('full'));
+  expect(input.style.height).toBe('676px');
+  for (const edge of [480, 440, 780, 480, 780]) {
+    bottom = edge;
+    await act(async () => window.dispatchEvent(new CustomEvent('oc:keyboard-settled')));
+    expect(input.style.height).toBe(`${edge - 64 - 40}px`);
+    expect(result.snapPoint).toBe('full');
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(2);
+  }
+  await act(async () => result.settleAt('min'));
+  const measure = vi.spyOn(window, 'getComputedStyle'); measure.mockClear();
+  await act(async () => window.dispatchEvent(new CustomEvent('oc:keyboard-settled')));
+  expect(measure).not.toHaveBeenCalled();
+  expect(input.style.height).toBe('40px');
+});
+
 it('keeps the feature disabled on excluded surfaces', async () => {
   await act(async () => root.render(<Probe enabled={false} />));
   expect(result.visible).toBe(false);

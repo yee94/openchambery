@@ -25,7 +25,9 @@ conversation navigation. The absolute handle sits inside the card's top padding;
 the handle fits within the existing 10px top inset without changing textarea padding or card height, and
 the mobile status row has no extra bottom margin, whether or not the handle is present. Full mode
 reaches the header's bottom edge. Visual viewport resize/scroll recomputes full
-height without changing the selected mode. Clearing text or switching DraftKey resets
+height without changing the selected mode. Native shell `oc:keyboard-settled` also
+recomputes full height after keyboard layout is applied: resize-none WebViews do not
+emit a visual viewport resize when the shell shrinks. Clearing text or switching DraftKey resets
 to auto. Full mode and active resizing pin the existing compact/expanded swap.
 
 `useHeightSnap` owns pointer capture, coalesced height writes, cancellation, snapping,

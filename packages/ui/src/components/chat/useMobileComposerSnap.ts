@@ -55,6 +55,7 @@ export function useMobileComposerSnap({ enabled, hasContent, draftID, inputRef }
     if (active && controller.snapPoint === 'full') controller.settleAt('full', undefined, false);
   });
   useEventListener('resize', refresh, () => active ? window : null);
+  useEventListener('oc:keyboard-settled', refresh, () => active ? window : null);
   useEventListener('resize', refresh, () => active ? window.visualViewport : null);
   useEventListener('scroll', refresh, () => active ? window.visualViewport : null);
   return {
