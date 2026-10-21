@@ -356,7 +356,14 @@ final class OpenChamberShareStore {
     private static String safeName(String name) { return nonEmpty(name) ? name.replaceAll("[^A-Za-z0-9._-]", "_") : "shared-image"; }
     private static void writeAtomic(File file, byte[] bytes) throws Exception { File tmp = new File(file.getParentFile(), "." + file.getName()); try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(bytes); out.getFD().sync(); } if (!tmp.renameTo(file)) throw new IllegalStateException("Could not write share envelope."); }
     private static void delete(File file) { if (file.isDirectory()) { File[] files = file.listFiles(); if (files != null) for (File child : files) delete(child); } file.delete(); }
-    private static Icon assistantShortcutIcon(String seed, String emoji) {
+    private static Icon assistantShortcutIcon(String seed, String emoji, String png) {
+        if (png != null && !png.isEmpty()) {
+            try {
+                byte[] data = android.util.Base64.decode(png, android.util.Base64.DEFAULT);
+                android.graphics.Bitmap image = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.length);
+                if (image != null) return Icon.createWithBitmap(image);
+            } catch (IllegalArgumentException ignored) {}
+        }
         int size = 192;
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
@@ -423,7 +430,7 @@ final class OpenChamberShareStore {
                 shortcuts.add(new android.content.pm.ShortcutInfo.Builder(context, id)
                     .setShortLabel(name)
                     .setLongLabel(name)
-                    .setIcon(assistantShortcutIcon(avatarSeed, avatarEmoji))
+                    .setIcon(assistantShortcutIcon(avatarSeed, avatarEmoji, entry.optString("avatarPng")))
                     .setCategories(java.util.Collections.singleton(ShareReceiverActivity.SHARE_TARGET_CATEGORY))
                     .setExtras(target)
                     .setIntent(launcherIntent)

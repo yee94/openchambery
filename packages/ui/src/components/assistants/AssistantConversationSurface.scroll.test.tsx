@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import type { AssistantDTO } from '@/queries/assistantDTO';
+import { useAssistantContactWorkingStore } from './assistantWorking';
 
 const contactEvents = vi.hoisted(() => ({
   handler: null as ((event: Record<string, unknown>) => void) | null,
@@ -144,11 +145,6 @@ vi.mock('./AssistantAssistantCard', () => ({ AssistantAssistantCard: () => null 
 vi.mock('./AssistantScheduleCard', () => ({ AssistantScheduleCard: () => null }));
 vi.mock('./AssistantSessionCard', () => ({ AssistantSessionCard: () => null }));
 vi.mock('./AssistantWorkingAvatar', () => ({ AssistantWorkingAvatar: () => null }));
-vi.mock('./assistantWorking', () => ({
-  useAssistantContactWorkingStore: (selector: (state: { setWorking: () => void }) => unknown) => (
-    selector({ setWorking: () => undefined })
-  ),
-}));
 
 import { AssistantConversationSurface } from './AssistantConversationSurface';
 import { AssistantContactAttachment } from './AssistantContactAttachment';
@@ -218,6 +214,87 @@ afterEach(async () => {
 });
 
 describe('AssistantConversationSurface scroll ownership', () => {
+  test('working transitions reuse the reserved footer without adding transcript rows', async () => {
+    const { host } = await mountSurface();
+    const row = host.querySelector('[data-message-id="assistant-a:user"]');
+    const slot = host.querySelector('[data-assistant-contact-status-slot]');
+    expect(slot).toBeTruthy();
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-turn-start', assistantID: 'assistant-a', turnID: 'assistant-a:turn', occurredAt: 2,
+    }));
+    expect(host.querySelectorAll('[data-message-id]')).toHaveLength(1);
+    expect(host.querySelector('[data-assistant-contact-processing]')?.parentElement).toBe(slot);
+    expect(host.querySelector('[data-assistant-contact-processing]')?.closest('[data-message-id]')).toBeNull();
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-turn-end', assistantID: 'assistant-a', turnID: 'assistant-a:turn', status: 'complete', occurredAt: 3,
+    }));
+    expect(host.querySelector('[data-assistant-contact-processing]')).toBeNull();
+    expect(host.querySelector('[data-assistant-contact-status-slot]')).toBe(slot);
+    expect(host.querySelectorAll('[data-message-id]')).toHaveLength(1);
+    expect(host.querySelector('[data-message-id="assistant-a:user"]')).toBe(row);
+  });
+
+  test('preserves the bubble and markdown DOM when a live preview becomes authoritative', async () => {
+    const { host, root } = await mountSurface();
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-bubble-delta', assistantID: 'assistant-a', turnID: 'assistant-a:refetch-turn:0',
+      bubbleIndex: 0, delta: 'refetched 0', done: true, occurredAt: 2,
+    }));
+    const row = host.querySelector('[data-message-id="assistant-a:refetch-turn:0:preview:0"]');
+    const body = row?.querySelector('[data-assistant-contact-text]');
+    expect(body).toBeTruthy();
+    contactQueryState.extraMessages = 1;
+    await act(async () => root.render(<AssistantConversationSurface assistant={assistant('assistant-a')} active />));
+    const settled = host.querySelector('[data-message-id="assistant-a:refetch:0"]');
+    expect(settled).toBe(row);
+    expect(settled?.querySelector('[data-assistant-contact-text]')).toBe(body);
+  });
+
+  test.each(['send', 'upload'] as const)('starts avatar animation synchronously before %s admission and clears it on failure', async (stage) => {
+    let fail!: (error: Error) => void;
+    const pending = new Promise((_, reject) => { fail = reject; });
+    attachmentIO[stage].mockReset().mockImplementationOnce(() => {
+      expect(useAssistantContactWorkingStore.getState().workingByID['assistant-a']).toBe(true);
+      return pending;
+    });
+    const { host } = await mountSurface();
+    await act(async () => {
+      const textarea = host.querySelector('textarea')!;
+      textarea.value = 'Start now';
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      if (stage === 'upload') {
+        const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+        Object.defineProperty(input, 'files', { value: [new File(['img'], 'shot.png', { type: 'image/png' })] });
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-send]')!.click());
+    expect(attachmentIO[stage]).toHaveBeenCalledTimes(1);
+    expect(useAssistantContactWorkingStore.getState().workingByID['assistant-a']).toBe(true);
+    await act(async () => fail(new Error('Admission failed')));
+    expect(useAssistantContactWorkingStore.getState().workingByID['assistant-a']).toBe(false);
+  });
+
+  test('time separators span the transcript and keep message anchors stable as replies stream', async () => {
+    const { host } = await mountSurface();
+    const firstRow = host.querySelector('[data-message-id="assistant-a:user"]');
+    expect(host.querySelectorAll('[data-assistant-contact-time]')).toHaveLength(1);
+    expect(host.querySelector('time')?.getAttribute('datetime')).toBe(new Date(1).toISOString());
+    expect(firstRow?.previousElementSibling?.hasAttribute('data-assistant-contact-time')).toBe(true);
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-bubble-delta', assistantID: 'assistant-a', turnID: 'later-turn', bubbleIndex: 0,
+      delta: 'A later reply', done: false, occurredAt: 600001,
+    }));
+    expect(host.querySelectorAll('[data-assistant-contact-time]')).toHaveLength(2);
+    expect(host.querySelector('[data-message-id="assistant-a:user"]')).toBe(firstRow);
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-bubble-delta', assistantID: 'assistant-a', turnID: 'later-turn', bubbleIndex: 0,
+      delta: ' with more text', done: true, occurredAt: 600100,
+    }));
+    expect(host.querySelectorAll('[data-assistant-contact-time]')).toHaveLength(2);
+    expect(host.querySelector('[data-message-id="assistant-a:user"]')).toBe(firstRow);
+  });
+
   test('remount restores a published intermediate reply and processing dots without live events', async () => {
     const { host, root } = await mountSurface();
     await act(async () => root.render(null));

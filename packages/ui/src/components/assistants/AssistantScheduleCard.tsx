@@ -17,7 +17,10 @@ type AssistantScheduleCardProps = {
 export const AssistantScheduleCard: React.FC<AssistantScheduleCardProps> = ({ card }) => {
   const { t } = useI18n()
   const title = card.name
-  const when = [card.kind, card.time, card.timezone].filter(Boolean).join(' ')
+  const kind = card.kind === 'daily' || card.kind === 'weekly' || card.kind === 'once' || card.kind === 'cron'
+    ? t(`sessions.scheduledTasks.editor.scheduleType.${card.kind}`)
+    : card.kind
+  const when = [kind, card.time].filter(Boolean).join(' · ')
   const metadata = when.trim() || (typeof card.prompt === 'string' ? card.prompt.trim() : '')
   const openSchedule = useEvent(() => {
     useUIStore.getState().setActiveMainTab('schedule')
@@ -37,16 +40,16 @@ export const AssistantScheduleCard: React.FC<AssistantScheduleCardProps> = ({ ca
       onClick={openSchedule}
       onKeyDown={onActivateKeyDown}
     >
-      <div className="flex items-center gap-2.5">
-        <span className="relative inline-block size-6 shrink-0 leading-none">
-          <span className="flex size-6 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-muted-foreground">
-            <Icon name="calendar" className="size-3" />
+      <div className="flex items-center gap-3">
+        <span className="relative inline-block size-10 shrink-0 leading-none" aria-hidden>
+          <span className="flex size-10 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-foreground">
+            <Icon name="calendar" className="size-5" />
           </span>
         </span>
-        <div className="min-w-0 flex-1 space-y-1">
-          <h3 className="min-w-0 truncate typography-ui-label font-medium text-foreground">{title}</h3>
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <h3 className="min-w-0 line-clamp-2 break-words typography-ui-label font-medium leading-5 text-foreground">{title}</h3>
           {metadata ? (
-            <p className="truncate typography-micro text-muted-foreground">{metadata}</p>
+            <p className="truncate typography-micro font-normal leading-4 text-muted-foreground">{metadata}</p>
           ) : null}
         </div>
       </div>

@@ -25,7 +25,7 @@ export {
 } from './assistantContactMessages';
 export type AssistantSnapshot = AssistantSnapshotDTO;
 export type AssistantCapability = AssistantCapabilityDTO;
-export interface AssistantDraft { enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; providerID: string; modelID: string; agent?: string | null; variant?: string | null; mode?: AssistantMode; }
+export interface AssistantDraft { enabled: boolean; name: string; avatarSeed?: string; defaultPrompt: string; workspacePath: string | null; providerID: string; modelID: string; agent?: string | null; variant?: string | null; mode?: AssistantMode; }
 export { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantScheduledTasksPage, parseShareOperation } from './assistantDTO';
 
 const ASSISTANT_HISTORY_PAGE_SIZE = 30;

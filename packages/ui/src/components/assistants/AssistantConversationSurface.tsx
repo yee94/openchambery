@@ -1,4 +1,5 @@
 import React from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { AssistantReadMarker } from './AssistantReadMarker'
 import { getLoadedAssistantReadPosition } from '@/queries/assistantContactMessages'
 import { useEvent } from '@reactuses/core'
@@ -25,6 +26,7 @@ import {
   useAssistantContactMessagesQuery,
   useAssistantSnapshotQuery,
   type AssistantDTO,
+  type AssistantContactMessage,
 } from '@/queries/assistantQueries'
 import { AssistantAPIError } from '@/queries/assistantDTO'
 import { getAssistantPresentation } from './assistantPresentation'
@@ -53,6 +55,7 @@ import { AssistantAssistantCard } from './AssistantAssistantCard'
 import { AssistantScheduleCard } from './AssistantScheduleCard'
 import { AssistantSessionCard } from './AssistantSessionCard'
 import { AssistantWorkingAvatar } from './AssistantWorkingAvatar'
+import { createContactTimeFormatter, getContactTimeSeparators } from './contactMessageTime'
 import { useAssistantContactWorkingStore } from './assistantWorking'
 import { useAssistantContactAutoFollow } from './useAssistantContactAutoFollow'
 import {
@@ -67,6 +70,12 @@ const ToolOutputDialog = lazyWithChunkRecovery(() => import('@/components/chat/m
 
 /** Legacy internal settle markers — never render as user-visible bubbles. */
 const isInternalSettleText = (text: string) => text.trim().startsWith('oc.settle.')
+
+const contactRenderKey = (message: AssistantContactMessage): string => (
+  message.role === 'assistant' && message.parts.length > 0 && message.status !== 'error'
+    ? `${message.turnID}:assistant:${message.bubbleIndex}`
+    : message.messageID
+)
 
 type AssistantConversationSurfaceProps = {
   assistant: AssistantDTO
@@ -92,7 +101,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   active,
   overlayHeader = false,
 }) => {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const transportIdentity = useRuntimeTransportIdentity()
   const isMobile = useUIStore((state) => state.isMobile)
   const capabilityQuery = useAssistantCapabilityQuery()
@@ -166,11 +175,37 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const scopedTurnPreviews = scopeContactTurnPreviews(turnPreviews, assistant.id)
   const transcript = mergeContactTranscript(messages, scopedOptimisticTurns, assistant.id, scopedTurnPreviews)
     .filter((message) => {
+      if (message.status === 'admitted' && message.messageID.endsWith(':preview:admitted')) return false
       // Drop legacy pure oc.settle.* rows so they leave no empty avatar shell.
       const parts = Array.isArray(message.parts) ? message.parts : []
       if (parts.length === 0) return true
       return parts.some((part) => !(part.type === 'text' && isInternalSettleText(part.text)))
     })
+  const timeSeparators = getContactTimeSeparators(transcript)
+  const reducedMotion = useReducedMotion()
+  const entryScope = `${transportIdentity}:${assistant.id}`
+  const committedEntryRef = React.useRef<{ scope: string; ready: boolean; lastID: string | null } | null>(null)
+  const previousEntry = committedEntryRef.current
+  const previousTailIndex = previousEntry?.lastID
+    ? transcript.findIndex((message) => contactRenderKey(message) === previousEntry.lastID)
+    : -1
+  const animateAppends = active && !reducedMotion
+    && previousEntry?.scope === entryScope && previousEntry.ready
+    && (previousEntry.lastID === null || previousTailIndex >= 0)
+  React.useLayoutEffect(() => {
+    const lastMessage = transcript.at(-1)
+    committedEntryRef.current = {
+      scope: entryScope,
+      ready: active && contactQuery.isSuccess,
+      lastID: lastMessage ? contactRenderKey(lastMessage) : null,
+    }
+  })
+  const today = new Date().toDateString()
+  const todayLabel = t('common.date.today')
+  const formatMessageTime = React.useMemo(
+    () => createContactTimeFormatter(locale, todayLabel, new Date(today)),
+    [locale, todayLabel, today],
+  )
   const sending = contactOptimisticSending(scopedOptimisticTurns)
   const processing = contactTurnPreviewWorking(scopedTurnPreviews)
   // Server working is authoritative across remount; local preview is temporary.
@@ -333,6 +368,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       createMessageID: () => retryID || `oc_contact_${createUuid()}`,
     })
     if (!begun.ok) return
+    setContactWorking(sentAssistantID, true)
     retrySendRef.current = { assistantID: sentAssistantID, text, attachments: staged, messageID: begun.messageID }
     setOptimisticTurns((current) => [...current.filter((turn) => turn.messageID !== begun.messageID), begun.turn])
     setSendError(null)
@@ -372,8 +408,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
           serverInstanceID: capabilityQuery.data.serverInstanceID,
           assistantID: sentAssistantID,
           name: displayName,
-          avatarSeed: sentAssistantID,
-          ...(presentation.avatarEmoji ? { avatarEmoji: presentation.avatarEmoji } : {}),
+          avatarSeed: assistant.avatarSeed ?? sentAssistantID,
         }).catch(() => undefined)
       }
     } catch (error) {
@@ -434,7 +469,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       <div
         ref={scrollRef}
         className={cn(
-          'min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-9 sm:px-8 sm:pb-12',
+          'min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 sm:px-8',
           overlayHeader
             ? 'pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]'
             : 'pt-5 sm:pt-7',
@@ -453,7 +488,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
             <div className="relative">
               <AssistantWorkingAvatar
                 name={assistant.id}
-                emoji={presentation.avatarEmoji}
+                avatarSeed={assistant.avatarSeed}
                 size={44}
                 label={displayName}
               />
@@ -469,7 +504,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
           <div ref={contentRef} className="mx-auto flex h-full min-h-56 max-w-sm flex-col items-center justify-center pb-16 text-center" data-assistant-contact-empty="">
             <AssistantWorkingAvatar
               name={assistant.id}
-              emoji={presentation.avatarEmoji}
+              avatarSeed={assistant.avatarSeed}
               size={48}
               label={displayName}
               className="opacity-90"
@@ -478,7 +513,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
             <p className="mt-2 max-w-xs typography-ui leading-6 text-muted-foreground/80">{t('assistants.contact.empty')}</p>
           </div>
         ) : (
-          <div ref={contentRef} className="mx-auto flex w-full max-w-[42rem] flex-col">
+          <div ref={contentRef} className="relative mx-auto flex w-full max-w-[42rem] flex-col pb-12" data-assistant-contact-content="">
             {contactQuery.isPending ? <p role="status" className="py-3 text-center typography-micro text-muted-foreground">{t('common.loading')}</p> : null}
             {contactQuery.hasPreviousPage || contactQuery.hasMessageGap ? <div className="mb-3 flex flex-col items-center gap-1" data-assistant-contact-pagination="" aria-busy={contactQuery.isFetchingPreviousPage || contactQuery.isFillingMessageGap}>
               {contactQuery.previousPageError ? <p role="alert" className="typography-micro text-[var(--status-error)]">{t('chat.history.loadOlderFailed')}</p> : null}
@@ -488,10 +523,21 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               </Button>
             </div> : null}
             {transcript.map((message, messageIndex) => {
+              const renderKey = `${entryScope}:${contactRenderKey(message)}`
               const previousMessage = messageIndex > 0 ? transcript[messageIndex - 1] : null
+              const separatorTimestamp = timeSeparators.get(message.messageID)
+              const hasTimeSeparator = separatorTimestamp !== undefined
+              const timeSeparator = hasTimeSeparator ? (
+                <div className="flex w-full justify-center px-4 pt-7 pb-4 first:pt-1" data-assistant-contact-time="">
+                  <time dateTime={new Date(separatorTimestamp).toISOString()} className="text-[11px] font-normal leading-4 tabular-nums text-muted-foreground/70">
+                    {formatMessageTime(separatorTimestamp)}
+                  </time>
+                </div>
+              ) : null
               const isUser = message.role === 'user'
               const isPeer = message.role === 'peer'
               const sameAssistantRun = message.role === 'assistant'
+                && !hasTimeSeparator
                 && previousMessage?.role === 'assistant'
                 && previousMessage.turnID === message.turnID
               const startsTurn = previousMessage?.turnID !== message.turnID
@@ -500,14 +546,14 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               const sender = isPeer && message.fromAssistantID
                 ? snapshotQuery.data?.assistants.find((item) => item.id === message.fromAssistantID)
                 : assistant
-              const senderPresentation = sender ? getAssistantPresentation(sender.name) : null
               const optimistic = optimisticByID.get(message.messageID)
               const preview = previewByTurnID.get(message.turnID)
-              const processingRow = message.status === 'admitted' && message.messageID.endsWith(':preview:admitted')
               const failedPreviewRow = message.status === 'failed' && message.messageID.endsWith(':preview:failed')
               if (message.status === 'error' || failedPreviewRow) {
                 return (
-                  <div key={message.messageID} data-message-id={message.messageID} data-assistant-contact-error="" className="mt-3 px-1">
+                  <React.Fragment key={renderKey}>
+                  {timeSeparator}
+                  <div data-message-id={message.messageID} data-assistant-contact-error="" className={cn('relative px-1', !hasTimeSeparator && 'mt-3')}>
                     <p role="alert" className="whitespace-pre-wrap typography-micro text-[var(--status-error)] [overflow-wrap:anywhere]">
                       {message.text || preview?.error || t('assistants.contact.sendFailed')}
                     </p>
@@ -517,16 +563,21 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       position={readPosition}
                     /> : null}
                   </div>
+                  </React.Fragment>
                 )
               }
               return (
-                <div
-                  key={message.messageID}
+                <React.Fragment key={renderKey}>
+                {timeSeparator}
+                <motion.div
                   data-message-id={message.messageID}
+                  initial={animateAppends && messageIndex > previousTailIndex ? { opacity: 0, y: 4 } : false}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: reducedMotion ? 0 : 0.18, ease: 'easeOut' }}
                   className={cn(
                     'flex w-full',
                     isUser ? 'justify-end' : 'justify-start',
-                    startsTurn ? 'mt-6 first:mt-0' : sameAssistantRun ? 'mt-1.5' : 'mt-3',
+                    hasTimeSeparator ? 'mt-0' : startsTurn ? 'mt-6 first:mt-0' : sameAssistantRun ? 'mt-1.5' : 'mt-3',
                   )}
                   data-assistant-contact-role={message.role}
                   data-assistant-contact-turn-status={optimistic?.status ?? message.status}
@@ -537,9 +588,11 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       {showAvatar ? (
                         <AssistantWorkingAvatar
                           name={sender?.id || message.fromAssistantID || assistant.id}
-                          emoji={senderPresentation?.avatarEmoji}
+                          avatarSeed={sender?.avatarSeed ?? (message.fromAssistantID ? undefined : assistant.avatarSeed)}
                           size={28}
                           label={senderName}
+                            working={message.status === 'streaming' ? true : undefined}
+                          showWorkingDot={false}
                         />
                       ) : (
                         <span className="size-7" aria-hidden />
@@ -547,7 +600,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                     </div>
                   ) : null}
                   <div className={cn(
-                    'flex min-w-0 flex-col gap-1.5',
+                    'relative flex min-w-0 flex-col gap-1.5',
                     isUser ? 'max-w-[min(82%,30rem)] items-end' : 'max-w-[min(84%,34rem)] items-start',
                   )}>
                     {isPeer ? (
@@ -555,30 +608,18 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                         {t('assistants.contact.peer.from', { name: senderName })}
                       </span>
                     ) : null}
-                    {processingRow ? (
-                      <div
-                        role="status"
-                        aria-label={t('assistants.contact.processing')}
-                        className="inline-flex w-fit items-center gap-1 rounded-full bg-[var(--surface-muted)] px-3.5 py-2.5 text-muted-foreground/70"
-                        data-assistant-contact-processing=""
-                      >
-                        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.45s] [animation-duration:1.4s] motion-reduce:animate-none" />
-                        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.22s] [animation-duration:1.4s] motion-reduce:animate-none" />
-                        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-duration:1.4s] motion-reduce:animate-none" />
-                      </div>
-                    ) : null}
                     {message.parts.map((part, index) => {
                       if (part.type === 'card' && part.cardType === 'session') {
-                        return <AssistantSessionCard key={`${message.messageID}:card:${index}`} card={part} />
+                        return <AssistantSessionCard key={`${renderKey}:card:${index}`} card={part} />
                       }
                       if (part.type === 'card' && part.cardType === 'assistant') {
-                        return <AssistantAssistantCard key={`${message.messageID}:card:${index}`} card={part} />
+                        return <AssistantAssistantCard key={`${renderKey}:card:${index}`} card={part} />
                       }
                       if (part.type === 'card' && part.cardType === 'schedule') {
-                        return <AssistantScheduleCard key={`${message.messageID}:card:${index}`} card={part} />
+                        return <AssistantScheduleCard key={`${renderKey}:card:${index}`} card={part} />
                       }
                       if (part.type === 'file') {
-                        return <AssistantContactAttachment key={`${message.messageID}:file:${index}`} assistantID={assistant.id} part={part} onShowPopup={handleShowPopup} />
+                        return <AssistantContactAttachment key={`${renderKey}:file:${index}`} assistantID={assistant.id} part={part} onShowPopup={handleShowPopup} />
                       }
                       if (part.type === 'text' && isInternalSettleText(part.text)) {
                         // Legacy oc.settle.* markers: card status already shows outcome.
@@ -588,7 +629,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                         const useMarkdown = !isUser
                         return (
                           <div
-                            key={`${message.messageID}:text:${index}`}
+                            key={`${renderKey}:text:${index}`}
                             aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
                             data-assistant-contact-text=""
                             className={cn(
@@ -604,7 +645,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                             {useMarkdown ? (
                               <MarkdownRenderer
                                 content={part.text}
-                                messageId={message.messageID}
+                                messageId={renderKey}
                                 isAnimated={false}
                                 isStreaming={message.status === 'streaming'}
                                 variant="assistant"
@@ -613,20 +654,13 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                                 className="w-full min-w-0 [overflow-wrap:anywhere]"
                               />
                             ) : part.text}
-                            {message.status === 'streaming' && index === message.parts.length - 1 ? (
-                              <span
-                                aria-hidden
-                                className="ml-0.5 inline-block h-[1em] w-px translate-y-[0.12em] animate-pulse bg-current opacity-45 [animation-duration:1.1s] motion-reduce:animate-none"
-                                data-assistant-contact-streaming-caret=""
-                              />
-                            ) : null}
                           </div>
                         )
                       }
                       return null
                     })}
                     {optimistic?.status === 'sending' ? (
-                      <p className="px-1 typography-micro text-muted-foreground/75">{t('assistants.contact.sending')}</p>
+                      <p className="absolute right-1 top-full mt-1 typography-micro text-muted-foreground/75">{t('assistants.contact.sending')}</p>
                     ) : null}
                     {optimistic?.status === 'failed' ? (
                       <p className="px-1 typography-micro text-[var(--status-error)]">{optimistic.error || t('assistants.contact.sendFailed')}</p>
@@ -637,9 +671,24 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       position={readPosition}
                     /> : null}
                   </div>
-                </div>
+                </motion.div>
+                </React.Fragment>
               )
             })}
+            <div className="pointer-events-none absolute bottom-2 left-[2.625rem] flex h-8 items-center" data-assistant-contact-status-slot="">
+              {sending || processing || serverWorking ? (
+                <div
+                  role="status"
+                  aria-label={t('assistants.contact.processing')}
+                  className="inline-flex items-center gap-1 px-4 text-muted-foreground/70"
+                  data-assistant-contact-processing=""
+                >
+                  <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.45s] [animation-duration:1.4s] motion-reduce:animate-none" />
+                  <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.22s] [animation-duration:1.4s] motion-reduce:animate-none" />
+                  <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-duration:1.4s] motion-reduce:animate-none" />
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
       </div>

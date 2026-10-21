@@ -111,10 +111,10 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
       onClick={openSession}
       onKeyDown={onActivateKeyDown}
     >
-      <div className="flex items-start gap-2.5">
-        <span className="relative inline-block size-6 shrink-0 leading-none">
-          <span className="flex size-6 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-muted-foreground">
-            <Icon name="chat-3" className="size-3" />
+      <div className="flex items-start gap-3">
+        <span className="relative inline-block size-10 shrink-0 leading-none" aria-hidden>
+          <span className="flex size-10 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-foreground">
+            <Icon name="chat-3" className="size-5" />
           </span>
           {working ? (
             <span
@@ -124,9 +124,9 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
             />
           ) : null}
         </span>
-        <div className="min-w-0 flex-1 space-y-1">
+        <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-center gap-1.5">
-            <h3 className="min-w-0 flex-1 truncate typography-ui-label font-medium text-foreground">{title}</h3>
+            <h3 className="min-w-0 flex-1 line-clamp-2 break-words typography-ui-label font-medium leading-5 text-foreground">{title}</h3>
             {statusLabelKey ? (
               <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 typography-micro leading-none', statusChipClass(status))}>
                 {t(statusLabelKey)}
@@ -134,7 +134,7 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
             ) : null}
           </div>
           {metaLine.length > 0 ? (
-            <p className="truncate typography-micro text-muted-foreground">{metaLine.join(' · ')}</p>
+            <p className="truncate typography-micro font-normal leading-4 text-muted-foreground">{metaLine.join(' · ')}</p>
           ) : null}
           {changeCounts || (changes?.files !== undefined && changes.files > 0) ? (
             <p className="flex flex-wrap items-baseline gap-x-1.5 typography-micro tabular-nums">

@@ -252,6 +252,7 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
             agentLabel: call.getString("agentLabel"),
             agentColor: call.getString("agentColor"),
             agentIdenticon: Self.parseIdenticon(call.getArray("agentIdenticon")),
+            agentIcon: call.getString("agentIcon"),
             showScrollToBottom: Self.optionalBool(call, "showScrollToBottom"),
             scrollAria: call.getString("scrollAria"),
             forceText: call.getBool("forceText") ?? false,

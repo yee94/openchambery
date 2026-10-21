@@ -22,7 +22,7 @@ export const AssistantAssistantCard: React.FC<AssistantAssistantCardProps> = ({ 
   const mobileActions = useMobileAppActions()
   const isPhoneShell = Boolean(mobileActions && !isIPadApp())
   const title = card.name
-  const metadata = [`${card.providerID}/${card.modelID}`, card.mode].filter(Boolean)
+  const metadata = `${card.providerID}/${card.modelID}`
   const openContact = useEvent(() => {
     if (isPhoneShell) {
       useMobileNavigationStore.getState().openAssistant(card.assistantID)
@@ -44,17 +44,15 @@ export const AssistantAssistantCard: React.FC<AssistantAssistantCardProps> = ({ 
       onClick={openContact}
       onKeyDown={onActivateKeyDown}
     >
-      <div className="flex items-center gap-2.5">
-        <span className="relative inline-block size-6 shrink-0 leading-none">
-          <span className="flex size-6 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-muted-foreground">
-            <Icon name="robot-2" className="size-3" />
+      <div className="flex items-center gap-3">
+        <span className="relative inline-block size-10 shrink-0 leading-none" aria-hidden>
+          <span className="flex size-10 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-foreground">
+            <Icon name="robot-2" className="size-5" />
           </span>
         </span>
-        <div className="min-w-0 flex-1 space-y-1">
-          <h3 className="min-w-0 truncate typography-ui-label font-medium text-foreground">{title}</h3>
-          {metadata.length > 0 ? (
-            <p className="truncate typography-micro text-muted-foreground">{metadata.join(' · ')}</p>
-          ) : null}
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <h3 className="min-w-0 line-clamp-2 break-words typography-ui-label font-medium leading-5 text-foreground">{title}</h3>
+          <p className="truncate typography-micro font-normal leading-4 text-muted-foreground">{metadata}</p>
         </div>
       </div>
     </article>

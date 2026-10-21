@@ -3,6 +3,40 @@ import type { MessageRecord } from '@/lib/messageCompletion';
 
 import { readTaskTagSessionIdFromOutput } from './taskSessionIdParser';
 
+const asTaskAgentSource = (value: unknown): Record<string, unknown> | undefined => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+    }
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('{')) return undefined;
+    try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return parsed as Record<string, unknown>;
+        }
+    } catch {
+        return undefined;
+    }
+    return undefined;
+};
+
+/** 从 task input / metadata / 子会话解析子 Agent 名（OpenCode 子 Agent 不一定在主选择器里） */
+export const resolveTaskAgentName = (...sources: unknown[]): string | undefined => {
+    for (const source of sources) {
+        const record = asTaskAgentSource(source);
+        if (!record) continue;
+        // 优先官方 task 字段；兼容偶发的 agent / subagent 别名
+        const candidates = [record.subagent_type, record.subagentType, record.agent, record.subagent];
+        for (const raw of candidates) {
+            if (typeof raw !== 'string') continue;
+            const trimmed = raw.trim();
+            if (trimmed.length > 0) return trimmed;
+        }
+    }
+    return undefined;
+};
+
 export type TaskToolSummaryEntry = {
     id?: string;
     tool?: string;

@@ -121,6 +121,39 @@ const settleSend = async (service, assistantID, body) => {
 const assistantInput = { name: 'A', providerID: 'p', modelID: 'm' };
 
 describe('assistants service', () => {
+  it('migrates legacy avatar seeds and persists edits without changing identity', async () => {
+    const directory = root();
+    let service = setup(directory);
+    try {
+      const original = service.createAssistant(assistantInput);
+      expect(original.avatarSeed).toBe(original.id);
+      service.close();
+      const Database = require('better-sqlite3');
+      const db = new Database(path.join(directory, 'assistants.sqlite'));
+      db.exec('ALTER TABLE assistant_v2 DROP COLUMN avatar_seed');
+      db.prepare("UPDATE assistant_meta SET value='13' WHERE key='schema_version'").run();
+      db.close();
+      service = setup(directory);
+      expect(service.snapshot().assistants[0].avatarSeed).toBe(original.id);
+      const edited = await service.updateAssistant(original.id, { expectedRevision: original.revision, avatarSeed: 'random-face' });
+      expect(edited).toMatchObject({ id: original.id, avatarSeed: 'random-face', sessionID: original.sessionID, sessionGeneration: original.sessionGeneration });
+      await expect(service.updateAssistant(original.id, { expectedRevision: original.revision, avatarSeed: 'rejected-face' })).rejects.toBeDefined();
+      for (const avatarSeed of ['', null, 42, 'x'.repeat(257)]) {
+        await expect(service.updateAssistant(original.id, { expectedRevision: edited.revision, avatarSeed })).rejects.toBeDefined();
+        expect(() => service.createAssistant({ ...assistantInput, avatarSeed })).toThrow();
+      }
+      await service.updateAssistant(original.id, { expectedRevision: edited.revision, name: 'Renamed' });
+      const created = service.createAssistant({ ...assistantInput, avatarSeed: 'created-face' });
+      service.close();
+      service = setup(directory);
+      expect(service.snapshot().assistants.find((item) => item.id === original.id)).toMatchObject({ name: 'Renamed', avatarSeed: 'random-face' });
+      expect(service.snapshot().assistants.find((item) => item.id === created.id)?.avatarSeed).toBe('created-face');
+      expect(service.snapshot().assistants).toHaveLength(2);
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it('rehydrates the saved thinking variant into contact turns and preserves it on a rejected write', async () => {
     const directory = root();
     const runContactTurn = vi.fn(async () => ({ text: 'done', bubbles: ['done'] }));
@@ -209,6 +242,37 @@ describe('assistants service', () => {
     await settleSend(service, assistant.id, { messageID: `msg_fail_${operation}`, parts: [{ type: 'text', text: operation }] });
     expect(operationResult?.details.error).toBe('upstream_error');
     service.close();
+  });
+
+  it('persists self avatar tool changes, supports restore and leaves peers untouched', async () => {
+    const directory = root();
+    let result;
+    let params = {};
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ tools }) => {
+        result = await tools.find((tool) => tool.name === 'update_avatar').execute('avatar', params);
+        return { text: 'done', bubbles: ['done'] };
+      },
+    });
+    const own = service.createAssistant(assistantInput);
+    const peer = service.createAssistant({ ...assistantInput, name: 'Peer' });
+    try {
+      await settleSend(service, own.id, { messageID: 'avatar_random', parts: [{ type: 'text', text: '给自己换个头像' }] });
+      expect(result.details).toMatchObject({ updated: true, previousAvatarSeed: own.avatarSeed });
+      expect(result.details.avatarSeed).not.toBe(own.avatarSeed);
+      expect(service.snapshot().assistants.find((a) => a.id === own.id).avatarSeed).toBe(result.details.avatarSeed);
+      params = { seed: own.avatarSeed };
+      await settleSend(service, own.id, { messageID: 'avatar_restore', parts: [{ type: 'text', text: '恢复头像' }] });
+      expect(service.snapshot().assistants.find((a) => a.id === own.id)).toMatchObject({ avatarSeed: own.avatarSeed, sessionID: own.sessionID });
+      expect(service.snapshot().assistants.find((a) => a.id === peer.id)).toMatchObject({ avatarSeed: peer.avatarSeed, revision: peer.revision });
+      await settleSend(service, own.id, { messageID: 'avatar_same', parts: [{ type: 'text', text: '恢复头像' }] });
+      expect(result.details.updated).toBe(false);
+    } finally {
+      service.close();
+    }
+    const reopened = setup(directory);
+    expect(reopened.snapshot().assistants.find((a) => a.id === own.id).avatarSeed).toBe(own.avatarSeed);
+    reopened.close();
   });
 
   it('explicit stop cancels only its worker watch even when the upstream emits no event', async () => {

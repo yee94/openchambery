@@ -1,6 +1,9 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+
+const motionState = vi.hoisted(() => ({ reduced: true, animate: vi.fn() }))
+vi.mock('motion/react', () => ({ useReducedMotion: () => motionState.reduced, animate: motionState.animate }))
 
 import { useAssistantContactAutoFollow } from './useAssistantContactAutoFollow'
 
@@ -79,7 +82,7 @@ const Probe: React.FC<ProbeProps> = ({ active, assistantID, revision, geometry, 
   return (
     <div key={nodeKey} ref={attachScroller} data-test-scroller="">
       <div ref={contentRef} data-test-content="">
-        <div data-test-nested="" />
+        <div data-test-nested="" data-message-id="test-message" />
       </div>
     </div>
   )
@@ -89,6 +92,8 @@ const mountedRoots: Array<{ root: ReturnType<typeof createRoot>; host: HTMLDivEl
 const originalResizeObserver = globalThis.ResizeObserver
 
 beforeEach(() => {
+  motionState.reduced = true
+  motionState.animate.mockReset()
   TestResizeObserver.instances = []
   globalThis.ResizeObserver = TestResizeObserver as unknown as typeof ResizeObserver
 })
@@ -138,6 +143,68 @@ const touch = (target: Element, type: string, clientY?: number, clientX = 20) =>
 }
 
 describe('useAssistantContactAutoFollow', () => {
+  test('eases growth, retargets once, and cancels on upward intent without fighting the reader', async () => {
+    motionState.reduced = false
+    const stop = vi.fn()
+    motionState.animate.mockReturnValue({ stop })
+    const geometry: Geometry = { top: 0, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    expect(geometry.top).toBe(600)
+    expect(motionState.animate).not.toHaveBeenCalled()
+    geometry.height += 120
+    await probe.render({ revision: 1 })
+    expect(geometry.top).toBe(600)
+    expect(motionState.animate).toHaveBeenCalledTimes(1)
+    const first = motionState.animate.mock.calls[0][2]
+    first.onUpdate(630)
+    expect(geometry.top).toBe(630)
+    TestResizeObserver.emit(probe.content)
+    expect(motionState.animate).toHaveBeenCalledTimes(1)
+    geometry.height += 40
+    await probe.render({ revision: 2 })
+    expect(stop).toHaveBeenCalledTimes(1)
+    expect(motionState.animate).toHaveBeenLastCalledWith(630, 760, expect.any(Object))
+    wheel(probe.scroller, -20)
+    expect(stop).toHaveBeenCalledTimes(2)
+    const writes = geometry.writes
+    motionState.animate.mock.calls[1][2].onUpdate(700)
+    expect(geometry.writes).toBe(writes)
+  })
+
+  test('a pending native upward move cancels animated follow before its scroll event', async () => {
+    motionState.reduced = false
+    const stop = vi.fn()
+    motionState.animate.mockReturnValue({ stop })
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    geometry.height += 120
+    await probe.render({ revision: 1 })
+    geometry.top = 580
+    const writes = geometry.writes
+    motionState.animate.mock.calls[0][2].onUpdate(630)
+    expect(stop).toHaveBeenCalledOnce()
+    expect(geometry.top).toBe(580)
+    expect(geometry.writes).toBe(writes)
+  })
+
+  test('deactivation stops animation and reactivation positions immediately', async () => {
+    motionState.reduced = false
+    const stop = vi.fn()
+    motionState.animate.mockReturnValue({ stop })
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    geometry.height += 120
+    await probe.render({ revision: 1 })
+    await probe.render({ active: false })
+    expect(stop).toHaveBeenCalledOnce()
+    const writes = geometry.writes
+    motionState.animate.mock.calls[0][2].onUpdate(630)
+    expect(geometry.writes).toBe(writes)
+    await probe.render({ active: true })
+    expect(geometry.top).toBe(720)
+    expect(motionState.animate).toHaveBeenCalledOnce()
+  })
+
   test.each(['scrollbar', 'wheel', 'previous touch', 'touch pointer'] as const)(
     'keeps 599 with zero writes through no-growth layout, late scroll and growth after %s intent', async (input) => {
       const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }

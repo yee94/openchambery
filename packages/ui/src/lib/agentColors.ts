@@ -12,7 +12,7 @@ const AGENT_COLOR_PALETTE = [
 ];
 
 export function getAgentColor(agentName: string | undefined) {
-
+  agentName = agentName?.trim().toLowerCase();
   if (!agentName) {
     return AGENT_COLOR_PALETTE[0];
   }

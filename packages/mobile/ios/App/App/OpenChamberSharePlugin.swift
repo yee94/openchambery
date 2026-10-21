@@ -16,6 +16,7 @@ class OpenChamberSharePlugin: CAPPlugin, CAPBridgedPlugin {
               let assistantID = call.getString("assistantID"),
               let name = call.getString("name") else { call.reject("assistant identity is required"); return }
         var target: [String: Any] = ["serverInstanceID": serverInstanceID, "assistantID": assistantID, "name": name, "avatarSeed": call.getString("avatarSeed") ?? assistantID]
+        if let avatarPng = call.getString("avatarPng") { target["avatarPng"] = avatarPng }
         if let avatarEmoji = call.getString("avatarEmoji"), !avatarEmoji.isEmpty {
             target["avatarEmoji"] = avatarEmoji
         }

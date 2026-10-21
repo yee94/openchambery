@@ -207,11 +207,11 @@ export function useRouter(): void {
     const uiState = useUIStore.getState();
     const pathState = parseRoute();
     const tab = uiState.activeMainTab;
-    // New-session draft wins over exclusive primaries once draft is open and
-    // no real session is selected (openNewSessionDraft clears currentSessionId).
-    const isNewSession = Boolean(sessionState.newSessionDraft?.open)
+    // Retained chat drafts must not override the active exclusive primary.
+    const isExclusive = tab === 'schedule' || tab === 'assistant';
+    const isNewSession = !isExclusive && Boolean(sessionState.newSessionDraft?.open)
       && !sessionState.currentSessionId;
-    const isExclusive = !isNewSession && (tab === 'schedule' || tab === 'assistant');
+    const assistantId = isExclusive && tab === 'assistant' ? getSelectedAssistantID() : null;
 
     return {
       // Draft surface owns `/session/new` — do not keep a previous session id
@@ -240,10 +240,11 @@ export function useRouter(): void {
       scheduleProjectId: isExclusive && tab === 'schedule' ? pathState.scheduleProjectId : null,
       scheduleTaskId: isExclusive && tab === 'schedule' ? pathState.scheduleTaskId : null,
       // Prefer live store selection so /assistant/$id updates when user picks one
-      assistantId: isExclusive && tab === 'assistant'
-        ? (getSelectedAssistantID() ?? pathState.assistantId)
+      assistantId,
+      focusSessionId: isExclusive && pathState.tab === tab
+        && (tab !== 'assistant' || pathState.assistantId === assistantId)
+        ? pathState.focusSessionId
         : null,
-      focusSessionId: isExclusive ? pathState.focusSessionId : null,
     };
   }, []);
 
@@ -480,18 +481,12 @@ export function useRouter(): void {
     let prevAssistantId = getSelectedAssistantID();
 
     const unsubscribe = useAssistantUIStore.subscribe(() => {
-      if (isApplyingRouteRef.current) {
-        return;
-      }
-      if (useUIStore.getState().activeMainTab !== 'assistant') {
-        prevAssistantId = getSelectedAssistantID();
-        return;
-      }
       const nextId = getSelectedAssistantID();
-      if (nextId === prevAssistantId) {
+      const changed = nextId !== prevAssistantId;
+      prevAssistantId = nextId;
+      if (!changed || isApplyingRouteRef.current || useUIStore.getState().activeMainTab !== 'assistant') {
         return;
       }
-      prevAssistantId = nextId;
       syncURLFromState();
     });
 

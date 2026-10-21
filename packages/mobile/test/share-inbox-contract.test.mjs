@@ -65,13 +65,14 @@ test('native Assistant shortcuts use the shared display name and avatar presenta
 
   assert.match(bridge, /getAssistantPresentation\(entry\.name\)/);
   assert.match(bridge, /name: presentation\.displayName \|\| entry\.name/);
-  assert.match(bridge, /avatarEmoji: presentation\.avatarEmoji/);
-  assert.match(android, /\.setShortLabel\(name\)[\s\S]*\.setLongLabel\(name\)[\s\S]*\.setIcon\(assistantShortcutIcon\(avatarSeed, avatarEmoji\)\)/);
+  assert.doesNotMatch(bridge, /avatarEmoji: presentation\.avatarEmoji/);
+  assert.match(bridge, /generatedAvatarDataUri\('assistant', entry\.avatarSeed\)/);
+  assert.match(android, /\.setShortLabel\(name\)[\s\S]*\.setLongLabel\(name\)[\s\S]*\.setIcon\(assistantShortcutIcon\(avatarSeed, avatarEmoji, entry\.optString\("avatarPng"\)\)\)/);
   assert.match(android, /Icon\.createWithBitmap\(bitmap\)/);
   assert.match(android, /canvas\.drawText\(emoji,/);
-  assert.match(iosStore, /assistantImage\(seed: target\["avatarSeed"\] as\? String \?\? assistantID, emoji: target\["avatarEmoji"\] as\? String\)/);
+  assert.match(iosStore, /assistantImage\(seed: target\["avatarSeed"\] as\? String \?\? assistantID, emoji: target\["avatarEmoji"\] as\? String, png: target\["avatarPng"\] as\? String\)/);
   assert.match(iosPlugin, /target\["avatarEmoji"\] = avatarEmoji/);
-  assert.match(shareExtension, /avatarImage\(seed: target\?\["avatarSeed"\][\s\S]*emoji: target\?\["avatarEmoji"\] as\? String\)/);
+  assert.match(shareExtension, /avatarImage\(seed: target\?\["avatarSeed"\][\s\S]*emoji: target\?\["avatarEmoji"\] as\? String, png: target\?\["avatarPng"\] as\? String\)/);
   const destinationCard = shareExtension.match(/private func makeDestinationCard\(\) -> UIView \{[\s\S]*?(?=\n    private func configureButtons)/)?.[0];
   assert.ok(destinationCard);
   assert.match(destinationCard, /UIStackView\(arrangedSubviews: \[name\]\)/);

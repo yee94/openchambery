@@ -615,8 +615,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-1' : sizeVariant === 'vscode' ? 'gap-x-2' : 'gap-x-1.5';
     // Icon-only agent trigger: same square hit-target as composer + / focus / shield buttons.
     // Icon-only agent trigger: same square hit-target as composer + / focus / shield buttons.
-    const agentIconButtonClass = sizeVariant === 'mobile' ? 'h-8 w-8' : sizeVariant === 'vscode' ? 'h-5 w-5' : 'h-6 w-6';
-    const agentAvatarSize = sizeVariant === 'mobile' ? 18 : sizeVariant === 'vscode' ? 14 : 16;
+    const agentIconButtonClass = sizeVariant === 'mobile' ? 'h-8 w-8' : 'h-6 w-6';
+    const agentAvatarSize = sizeVariant === 'mobile' ? 24 : 20;
     const showAgentCycleLabel = useAgentCycleLabelReveal(uiAgentName);
 
     const currentProvider = selectionAdapter

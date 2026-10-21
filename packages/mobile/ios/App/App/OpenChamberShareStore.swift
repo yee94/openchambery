@@ -78,7 +78,7 @@ enum OpenChamberShareStore {
             completion(ShareError.missingTarget)
             return
         }
-        let image = assistantImage(seed: target["avatarSeed"] as? String ?? assistantID, emoji: target["avatarEmoji"] as? String)
+        let image = assistantImage(seed: target["avatarSeed"] as? String ?? assistantID, emoji: target["avatarEmoji"] as? String, png: target["avatarPng"] as? String)
         let recipient = INPerson(
             personHandle: INPersonHandle(value: conversationID, type: .unknown),
             nameComponents: nil,
@@ -151,7 +151,10 @@ enum OpenChamberShareStore {
         let identity = Data("\(serverInstanceID)\u{0}\(assistantID)".utf8).base64EncodedString()
         return "openchamber.assistant.v1.\(identity)"
     }
-    private static func assistantImage(seed: String, emoji: String?) -> INImage? {
+    private static func assistantImage(seed: String, emoji: String?, png: String?) -> INImage? {
+        if let png, let data = Data(base64Encoded: png), UIImage(data: data) != nil {
+            return INImage(imageData: data)
+        }
         let size = CGSize(width: 256, height: 256)
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false

@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 
 import { getAgentColor } from '@/lib/agentColors';
 import { getAgentIdenticonMatrix } from '@/lib/agentIdenticon';
+import { rasterizePngBase64 } from '@/lib/rasterizePng';
 import { isIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
@@ -103,6 +104,7 @@ export type NativeIosComposerState = {
   agentLabel: string;
   agentColor: string;
   agentIdenticon: number[];
+  agentIcon?: string;
   suppressed: boolean;
   showScrollToBottom: boolean;
   scrollAria: string;
@@ -136,6 +138,7 @@ export const hiddenNativeIosComposerWarmState = (): NativeIosComposerState => ({
   agentLabel: '',
   agentColor: NATIVE_IOS_COMPOSER_COLOR_FALLBACK,
   agentIdenticon: Array.from({ length: 25 }, () => 0),
+  agentIcon: '',
   suppressed: true,
   showScrollToBottom: false,
   scrollAria: '',
@@ -326,6 +329,7 @@ export const nativeComposerStatesEqual = (
   && left.agentLabel === right.agentLabel
   && left.agentColor === right.agentColor
   && left.agentIdenticon.join('') === right.agentIdenticon.join('')
+  && left.agentIcon === right.agentIcon
   && left.suppressed === right.suppressed
   && left.showScrollToBottom === right.showScrollToBottom
   && left.scrollAria === right.scrollAria
@@ -598,6 +602,7 @@ export const buildNativeComposerUpdatePayload = (
   assignIfChanged('agentLabel', scalarEqual);
   assignIfChanged('agentColor', scalarEqual);
   assignIfChanged('agentIdenticon', (left, right) => left.join('') === right.join(''));
+  assignIfChanged('agentIcon', scalarEqual);
   assignIfChanged('suppressed', scalarEqual);
   assignIfChanged('showScrollToBottom', scalarEqual);
   assignIfChanged('scrollAria', scalarEqual);
@@ -695,33 +700,6 @@ export const rasterizeAttachmentThumbnailBase64 = (src: string): Promise<string 
   });
 };
 
-export const rasterizeLogoPngBase64 = (src: string): Promise<string | null> => {
-  if (typeof document === 'undefined' || !src) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.decoding = 'async';
-    image.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = NATIVE_MODEL_ICON_PX;
-        canvas.height = NATIVE_MODEL_ICON_PX;
-        const context = canvas.getContext('2d');
-        if (!context) {
-          resolve(null);
-          return;
-        }
-        context.clearRect(0, 0, NATIVE_MODEL_ICON_PX, NATIVE_MODEL_ICON_PX);
-        context.drawImage(image, 0, 0, NATIVE_MODEL_ICON_PX, NATIVE_MODEL_ICON_PX);
-        const dataUrl = canvas.toDataURL('image/png');
-        const comma = dataUrl.indexOf(',');
-        resolve(comma >= 0 ? dataUrl.slice(comma + 1) : null);
-      } catch {
-        resolve(null);
-      }
-    };
-    image.onerror = () => resolve(null);
-    image.src = src;
-  });
-};
+export const rasterizeLogoPngBase64 = (src: string): Promise<string | null> => rasterizePngBase64(src, NATIVE_MODEL_ICON_PX);
 
 export const getNativeIosComposerPlugin = (): NativeIosComposerPlugin => OpenChamberComposer;

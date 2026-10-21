@@ -535,6 +535,7 @@ const renderProjectLabelWithIcon = (project: {
 
 const MemoModelControls = React.memo(ModelControls);
 const MemoComposerDictation = React.memo(ComposerDictation);
+const mobileDictationAccessory = <span data-oc-composer-dictation-active="true" className="hidden" aria-hidden="true" />;
 const MemoDesktopDictationButton = React.memo(DesktopDictationButton);
 const MemoMobileAgentButton = React.memo(MobileAgentButton);
 const MemoMobileModelButton = React.memo(MobileModelButton);
@@ -4970,6 +4971,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // absolutely over the composer, so the underlying textarea must grow for
     // the composer to grow — feed this into the autosize below.
     const [dictationContentHeight, setDictationContentHeight] = React.useState<number | null>(null);
+    const [mobileDictationActive, setMobileDictationActive] = React.useState(false);
     const handleDictationContentHeightChange = useEvent((height: number | null) => {
         setDictationContentHeight((prev) => (prev === height ? prev : height));
     });
@@ -6860,6 +6862,20 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         </span>
     ));
 
+    const mobileDictationTrigger = isMobile && holdToTalkEnabled ? (
+        <Button
+            variant="ghost"
+            size="icon"
+            className={footerIconButtonClass}
+            data-composer-action="true"
+            aria-label={t('chat.dictation.start')}
+            disabled={resolvedDraftBusy || mobileDictationActive || dictationHint !== null || (!currentSessionId && !newSessionDraftOpen)}
+            onClick={() => window.dispatchEvent(new Event('openchamber:dictation-toggle'))}
+        >
+            <Icon name="mic" className={iconSizeClass} />
+        </Button>
+    ) : null;
+
     const mobileCompactComposerChrome = isMobile ? (
             <div
                 className={cn(
@@ -6899,6 +6915,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             />
                         </div>
                     ) : null}
+                    {mobileDictationTrigger}
                     {canAbort || canSend || abortPending ? (
                         <div
                             data-mobile-composer-compact-slot="action"
@@ -6974,6 +6991,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         draftOpen={newSessionDraftOpen}
                     />
                     <SessionGoalObjectiveCounter length={message.length} />
+                    {mobileDictationTrigger}
                 </div>
                 {mobileComposerControls}
                 <div className="relative z-30 flex shrink-0 items-center justify-end gap-x-1.5">
@@ -7240,7 +7258,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             {holdToTalkEnabled && <HoldToTalkComposer
                 key={draftKey ? draftKeyString(draftKey) : currentSessionId ?? 'new'}
                 containerRef={composerFormRef}
-                disabled={(!currentSessionId && !newSessionDraftOpen) || resolvedDraftBusy}
+                disabled={(!currentSessionId && !newSessionDraftOpen) || resolvedDraftBusy || mobileDictationActive}
                 onInsert={insertMobileDictation}
                 onSend={sendMobileDictation}
                 onRelease={releaseMobileDictation}
@@ -7862,8 +7880,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 {/* Wrapper-level dictation engine + overlay: stays mounted across
                     collapsed ↔ expanded layout so a recording started from the
                     compact field survives the grow. Overlay covers the surface. */}
-                {isMobile && dictationEnabled && !holdToTalkEnabled ? (
+                {isMobile && dictationEnabled ? (
                     <MemoComposerDictation
+                        key={primaryDraftKeyID}
                         radius={chatInputRadius}
                         isMobile={isMobile}
                         footerIconButtonClass={footerIconButtonClass}
@@ -7873,8 +7892,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         onInsert={handleDictationInsert}
                         onInsertAndSend={handleDictationInsertAndSend}
                         onContentHeightChange={handleDictationContentHeightChange}
+                        onActiveChange={setMobileDictationActive}
+                        disabled={resolvedDraftBusy || dictationHint !== null || (!currentSessionId && !newSessionDraftOpen)}
                         renderTrigger={false}
-                        topAccessory={<span data-oc-composer-dictation-active="true" className="hidden" aria-hidden="true" />}
+                        topAccessory={mobileDictationAccessory}
                     />
                 ) : null}
                 </div>
@@ -7891,6 +7912,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                                 'oc-mobile-composer-compact-preview',
                                 !message.trim() && 'oc-mobile-composer-compact-preview--placeholder',
                             )}
+                            style={mobileDictationTrigger ? {
+                                right: `${0.625 + 2.5 * (1 + Number(Boolean(showScrollToBottom && onScrollToBottom)) + Number(Boolean(canAbort || canSend || abortPending)))}rem`,
+                            } : undefined}
                             aria-hidden="true"
                         >
                             {message.trim() ? message : holdToTalkEnabled ? speechPlaceholder : composerPlaceholder}

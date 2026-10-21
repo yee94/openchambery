@@ -56,6 +56,7 @@ import {
     readTaskSessionIdFromRecord,
     readTaskStatusFromRecord,
     resolveTaskRowChrome,
+    resolveTaskAgentName,
     prepareTaskOutputForDisplay,
     type TaskToolSummaryEntry,
 } from './taskToolModel';
@@ -105,40 +106,6 @@ const TOOL_ROW_DESCRIPTION_CLASS = cn('typography-meta', TOOL_ROW_TEXT_CLASS);
 /** Agent Task 内部摘要行：比工具标题小一号，行高与行距保持匀称 */
 const TASK_SUMMARY_TEXT_CLASS = 'typography-micro !text-[length:calc(var(--text-meta)-0.0625rem)] !leading-5 tracking-normal';
 const TASK_SUMMARY_LIST_CLASS = 'flex w-full min-w-0 flex-col gap-1';
-
-const asTaskAgentSource = (value: unknown): Record<string, unknown> | undefined => {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-        return value as Record<string, unknown>;
-    }
-    if (typeof value !== 'string') return undefined;
-    const trimmed = value.trim();
-    if (!trimmed.startsWith('{')) return undefined;
-    try {
-        const parsed = JSON.parse(trimmed) as unknown;
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            return parsed as Record<string, unknown>;
-        }
-    } catch {
-        return undefined;
-    }
-    return undefined;
-};
-
-/** 从 task input / metadata / 子会话解析子 Agent 名（OpenCode 子 Agent 不一定在主选择器里） */
-const resolveTaskAgentName = (...sources: unknown[]): string | undefined => {
-    for (const source of sources) {
-        const record = asTaskAgentSource(source);
-        if (!record) continue;
-        // 优先官方 task 字段；兼容偶发的 agent / subagent 别名
-        const candidates = [record.subagent_type, record.subagentType, record.agent, record.subagent];
-        for (const raw of candidates) {
-            if (typeof raw !== 'string') continue;
-            const trimmed = raw.trim();
-            if (trimmed.length > 0) return trimmed;
-        }
-    }
-    return undefined;
-};
 
 /** 与 MessageHeader / Agent 选择器一致的昵称首字母大写 */
 const formatAgentDisplayName = (name: string): string =>
@@ -2643,8 +2610,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         >
                             {isTaskTool && taskRowChrome.showAvatar ? (
                                 <AgentAvatar
-                                    // 同一 agent 可并发多个 task；identicon/颜色按 task id 区分，label 仍用 agent 展示名
-                                    name={part.id || taskAgentName || 'subagent'}
+                                    // 同一 Agent 在工具行、活动摘要和状态列使用相同的名字种子。
+                                    name={taskAgentName || 'subagent'}
                                     size={14}
                                     label={taskTitle}
                                 />

@@ -3,6 +3,7 @@ import {
   isTaskToolName,
   readTaskSessionIdFromOutput,
   readTaskSessionIdFromRecord,
+  resolveTaskAgentName,
 } from '@/components/chat/message/parts/taskToolModel';
 
 export type WorkStatusSubagentPhase = 'working' | 'done';
@@ -35,20 +36,9 @@ export type WorkStatusChildSession = {
 
 const EMPTY_TRANSCRIPT_SUBAGENTS: readonly TranscriptSubagentFace[] = [];
 
-const AGENT_NAME_KEYS = ['subagent_type', 'subagentType', 'agent', 'subagent'] as const;
-
 const readAgentLabel = (...sources: unknown[]): string => {
-  for (const source of sources) {
-    if (!source || typeof source !== 'object') continue;
-    const record = source as Record<string, unknown>;
-    for (const key of AGENT_NAME_KEYS) {
-      const value = record[key];
-      if (typeof value !== 'string') continue;
-      const trimmed = value.trim();
-      if (trimmed) return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-    }
-  }
-  return '';
+  const name = resolveTaskAgentName(...sources);
+  return name ? name.charAt(0).toUpperCase() + name.slice(1) : '';
 };
 
 const readOptionalSessionId = (value: unknown): string | undefined => {
@@ -105,7 +95,7 @@ export const projectTranscriptSubagents = (data: {
         faces.push({
           id: part.id,
           sessionID: readToolSessionId(part),
-          label: readAgentLabel(state?.input, part.metadata, state?.metadata),
+          label: readAgentLabel(state?.input, state?.metadata, part.metadata),
           description: readDescription(state?.input, part.metadata, state?.metadata),
           running: isRunningStatus(state?.status),
         });
@@ -153,7 +143,6 @@ export const transcriptSubagentsEqual = (
 type SubagentDraft = {
   key: string;
   sessionID?: string;
-  seed: string;
   description: string;
   agent: string;
   childTitle: string;
@@ -165,7 +154,7 @@ const displayLabel = (draft: SubagentDraft): string => draft.childTitle || draft
 const toFace = (draft: SubagentDraft): WorkStatusSubagent => ({
   key: draft.key,
   sessionID: draft.sessionID,
-  seed: draft.seed,
+  seed: draft.agent.trim().toLowerCase() || 'subagent',
   label: displayLabel(draft),
   phase: draft.working ? 'working' : 'done',
 });
@@ -198,7 +187,7 @@ export const mergeWorkStatusSubagents = (
     const index = indexBySession.get(sessionID);
     if (index === undefined) {
       indexBySession.set(sessionID, drafts.length);
-      drafts.push({ ...draft, key: sessionID, seed: sessionID, sessionID });
+      drafts.push({ ...draft, key: sessionID, sessionID });
       return;
     }
     const current = drafts[index];
@@ -217,7 +206,6 @@ export const mergeWorkStatusSubagents = (
     absorb({
       key: task.id,
       sessionID: task.sessionID,
-      seed: task.id,
       description: task.description,
       agent: task.label,
       childTitle: child?.title?.trim() || '',
@@ -229,7 +217,6 @@ export const mergeWorkStatusSubagents = (
     absorb({
       key: child.id,
       sessionID: child.id,
-      seed: child.id,
       description: '',
       agent: '',
       childTitle: child.title?.trim() || '',

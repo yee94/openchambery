@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock } from 'bun:test';
+import { test } from 'vitest';
 
 type EffectSlot = {
   cleanup?: () => void;
@@ -93,10 +94,18 @@ const createHookHarness = () => {
 const harness = createHookHarness();
 const sessionSubscribers = new Set<(state: typeof sessionState) => void>();
 const uiSubscribers = new Set<(state: typeof uiState) => void>();
+const assistantSubscribers = new Set<() => void>();
+let selectedAssistantID: string | null = null;
+const selectAssistant = (id: string | null) => {
+  selectedAssistantID = id;
+  assistantSubscribers.forEach((subscriber) => subscriber());
+};
 const settingsDialogOpenCalls: boolean[] = [];
 const setCurrentSessionCalls: Array<{ sessionId: string; directory: string }> = [];
 
 const sessionState = {
+  newSessionDraft: { open: false },
+  openNewSessionDraft: () => { sessionState.newSessionDraft.open = true; },
   currentSessionId: 'session-1' as string | null,
   currentSessionDirectory: '/repo' as string | null,
   setCurrentSession: (sessionId: string, directory: string) => {
@@ -106,11 +115,14 @@ const sessionState = {
   },
 };
 const uiState = {
-  activeMainTab: 'chat' as const,
+  activeMainTab: 'chat' as 'chat' | 'assistant' | 'schedule',
   isSettingsDialogOpen: false,
   settingsPage: 'home',
   pendingDiffFile: null as string | null,
-  setActiveMainTab: () => undefined,
+  setActiveMainTab: (tab: 'chat' | 'assistant' | 'schedule') => {
+    uiState.activeMainTab = tab;
+    uiSubscribers.forEach((subscriber) => subscriber(uiState));
+  },
   setSettingsDialogOpen: (isOpen: boolean) => {
     settingsDialogOpenCalls.push(isOpen);
     uiState.isSettingsDialogOpen = isOpen;
@@ -129,7 +141,7 @@ let resolvedSessionDirectory = '/repo';
 let urlRoute = {
   sessionId: 'session-1' as string | null,
   isNewSession: false,
-  tab: null as 'chat' | null,
+  tab: null as 'chat' | 'assistant' | 'schedule' | null,
   settingsPath: null as string | null,
   settingsEntityId: null as string | null,
   diffFile: null as string | null,
@@ -188,11 +200,14 @@ mock.module('@/lib/router', () => ({
     sessionId: string | null;
     isSettingsOpen: boolean;
     settingsPath: string;
+    tab?: typeof uiState.activeMainTab;
+    assistantId?: string | null;
+    focusSessionId?: string | null;
   }) => {
     urlRoute = {
       sessionId: state.sessionId,
       isNewSession: Boolean((state as { isNewSession?: boolean }).isNewSession),
-      tab: null,
+      tab: state.tab ?? null,
       settingsPath: state.isSettingsOpen ? state.settingsPath : null,
       settingsEntityId: null,
       diffFile: null,
@@ -200,8 +215,8 @@ mock.module('@/lib/router', () => ({
       scheduleView: null,
       scheduleProjectId: null,
       scheduleTaskId: null,
-      assistantId: null,
-      focusSessionId: null,
+      assistantId: state.assistantId ?? null,
+      focusSessionId: state.focusSessionId ?? null,
     };
   },
 }));
@@ -234,10 +249,13 @@ mock.module('@/sync/openSessionWithFeedback', () => ({
   openSessionWithFeedback: () => ({ ok: false, reason: 'missing-directory', sessionId: null }),
 }));
 mock.module('@/stores/useAssistantUIStore', () => ({
-  getSelectedAssistantID: () => null,
+  getSelectedAssistantID: () => selectedAssistantID,
   useAssistantUIStore: {
-    getState: () => ({ selectAssistant: () => undefined }),
-    subscribe: () => () => undefined,
+    getState: () => ({ selectAssistant }),
+    subscribe: (subscriber: () => void) => {
+      assistantSubscribers.add(subscriber);
+      return () => assistantSubscribers.delete(subscriber);
+    },
   },
 }));
 mock.module('@/router/sessionLookup', () => ({
@@ -279,6 +297,9 @@ describe('useRouter', () => {
     harness.reset();
     sessionSubscribers.clear();
     uiSubscribers.clear();
+    assistantSubscribers.clear();
+    selectedAssistantID = null;
+    sessionState.newSessionDraft.open = false;
     runtimeEndpointListeners.clear();
     settingsDialogOpenCalls.length = 0;
     setCurrentSessionCalls.length = 0;
@@ -326,6 +347,62 @@ describe('useRouter', () => {
 
     expect(uiState.isSettingsDialogOpen).toBe(true);
     expect(settingsDialogOpenCalls).toEqual([true]);
+  });
+
+  test('gives each assistant its own route while a new-session draft remains open', async () => {
+    sessionState.currentSessionId = null;
+    sessionState.newSessionDraft.open = true;
+    urlRoute = { ...urlRoute, sessionId: null, isNewSession: true, tab: 'chat' };
+    harness.render(useRouter);
+    await Promise.resolve();
+
+    selectAssistant('assistant-a');
+    uiState.setActiveMainTab('assistant');
+    expect(urlRoute).toMatchObject({ tab: 'assistant', assistantId: 'assistant-a', isNewSession: false, sessionId: null });
+
+    selectAssistant('assistant-b');
+    expect(urlRoute).toMatchObject({ tab: 'assistant', assistantId: 'assistant-b', isNewSession: false, sessionId: null });
+    expect(setCurrentSessionCalls).toEqual([]);
+
+    uiState.setActiveMainTab('chat');
+    expect(urlRoute).toMatchObject({ tab: 'chat', isNewSession: true, sessionId: null });
+  });
+
+  test('restores the addressed assistant over persisted selection and a retained draft', async () => {
+    sessionState.currentSessionId = null;
+    sessionState.newSessionDraft.open = true;
+    selectedAssistantID = 'assistant-old';
+    urlRoute = { ...urlRoute, sessionId: null, tab: 'assistant', assistantId: 'assistant-a' };
+    harness.render(useRouter);
+    await Promise.resolve();
+
+    expect(selectedAssistantID).toBe('assistant-a');
+    expect(urlRoute).toMatchObject({ tab: 'assistant', assistantId: 'assistant-a', isNewSession: false });
+
+    selectAssistant('assistant-b');
+    urlRoute = { ...urlRoute, tab: 'assistant', assistantId: 'assistant-a' };
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(selectedAssistantID).toBe('assistant-a');
+    selectAssistant('assistant-b');
+    expect(urlRoute.assistantId).toBe('assistant-b');
+    urlRoute = { ...urlRoute, tab: 'assistant', assistantId: 'assistant-a' };
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    urlRoute = { ...urlRoute, tab: 'assistant', assistantId: 'assistant-b' };
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(selectedAssistantID).toBe('assistant-b');
+    expect(setCurrentSessionCalls).toEqual([]);
+  });
+
+  test('does not carry another assistant focus or revive a cleared assistant selection', async () => {
+    urlRoute = { ...urlRoute, sessionId: null, tab: 'assistant', assistantId: 'assistant-a', focusSessionId: 'child-a' };
+    harness.render(useRouter);
+    await Promise.resolve();
+    expect(urlRoute.focusSessionId).toBe('child-a');
+
+    selectAssistant('assistant-b');
+    expect(urlRoute).toMatchObject({ assistantId: 'assistant-b', focusSessionId: null });
+    selectAssistant(null);
+    expect(urlRoute).toMatchObject({ tab: 'assistant', assistantId: null, focusSessionId: null });
   });
 
   test('keeps Settings open while the resolved session is absent from a summary refresh', async () => {

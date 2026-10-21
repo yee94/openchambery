@@ -76,7 +76,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                                 )}
                             >
                                 {/* 与选择 Agent 一致：用 identicon 头像代替通用机器人图标 */}
-                                <AgentAvatar name={agentName} size={10} />
+                                <AgentAvatar name={agentName} size={10} shape="square" />
                                 <span>
                                     {agentName.charAt(0).toUpperCase() + agentName.slice(1)}
                                 </span>

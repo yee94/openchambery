@@ -68,6 +68,13 @@ const state = (overrides: Partial<NativeIosComposerState> = {}): NativeIosCompos
 });
 
 describe('native iOS composer contract', () => {
+  test('avatar PNG changes publish independently and unchanged faces stay off typing payloads', () => {
+    const previous = state({ agentIcon: 'first-png' });
+    const next = state({ agentIcon: 'next-png' });
+    expect(nativeComposerStatesEqual(previous, next)).toBe(false);
+    expect(buildNativeComposerUpdatePayload(previous, next, { omitText: true, forceText: false })).toEqual({ agentIcon: 'next-png' });
+    expect(buildNativeComposerUpdatePayload(next, { ...next, text: 'typing' }, { omitText: true, forceText: false })).toBeNull();
+  });
   test('is available only on Capacitor iOS with the plugin and a mobile layout', () => {
     expect(evaluateNativeIosComposerAvailability({
       isCapacitor: true,

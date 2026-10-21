@@ -11,7 +11,7 @@ import { AssistantSessionCard } from './AssistantSessionCard'
 import { CONTACT_CARD_COVER_CLASS, CONTACT_SESSION_CARD_COVER_CLASS } from './contactCardChrome'
 
 // Render the production card markup with deterministic runtime data. Chrome owns layout.
-vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key.endsWith('.busy') ? 'Working' : key.endsWith('.question') ? '需要你' : key }) }))
+vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key.endsWith('.busy') ? 'Working' : key.endsWith('.question') ? '需要你' : key.endsWith('.daily') ? 'Daily' : key }) }))
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }))
 vi.mock('@/apps/mobileAppContext', () => ({ useMobileAppActions: () => null }))
 vi.mock('@/lib/platform', () => ({ isIPadApp: () => false }))
@@ -45,7 +45,7 @@ function cards(short = false) {
 type Measurement = {
   kind: string; short: boolean; width: number; parentWidth: number; right: number; parentRight: number
   scrollWidth: number; clientWidth: number; titleWidth: number; titleScrollWidth: number
-  ellipsis: string; titleFont: number; statusWidth: number; statusScrollWidth: number; statusRight: number
+  lineClamp: string; titleHeight: number; lineHeight: number; titleFont: number; statusWidth: number; statusScrollWidth: number; statusRight: number
 }
 
 describe('contact card width', () => {
@@ -98,7 +98,7 @@ describe('contact card width', () => {
                 width: rect.width, parentWidth: parent.width, right: rect.right, parentRight: parent.right,
                 scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
                 titleWidth: title.clientWidth, titleScrollWidth: title.scrollWidth,
-                ellipsis: getComputedStyle(title).textOverflow, titleFont: parseFloat(getComputedStyle(title).fontSize),
+                lineClamp: getComputedStyle(title).webkitLineClamp, titleHeight: title.clientHeight, lineHeight: parseFloat(getComputedStyle(title).lineHeight), titleFont: parseFloat(getComputedStyle(title).fontSize),
                 statusWidth: status?.clientWidth ?? 0, statusScrollWidth: status?.scrollWidth ?? 0,
                 statusRight: status?.getBoundingClientRect().right ?? 0 };
             });
@@ -111,9 +111,10 @@ describe('contact card width', () => {
             expect(m.right, label).toBeLessThanOrEqual(width - 16 + 1)
             expect(m.scrollWidth, label).toBeLessThanOrEqual(m.clientWidth + 1)
             expect(m.titleFont, label).toBe(14 * scale)
-            expect(m.ellipsis, label).toBe('ellipsis')
+            expect(m.lineClamp, label).toBe('2')
+            expect(m.titleHeight, label).toBeLessThanOrEqual(m.lineHeight * 2 + 1)
             expect(m.titleWidth, label).toBeGreaterThan(0)
-            if (!m.short) expect(m.titleScrollWidth, label).toBeGreaterThan(m.titleWidth)
+            expect(m.titleScrollWidth, label).toBeLessThanOrEqual(m.titleWidth + 1)
             if (m.kind === 'session') {
               expect(m.statusWidth, label).toBeGreaterThan(0)
               expect(m.statusScrollWidth, label).toBeLessThanOrEqual(m.statusWidth + 1)

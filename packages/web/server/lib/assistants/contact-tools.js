@@ -40,6 +40,16 @@ export const GET_ASSISTANT_SETTINGS_TOOL_NAME = 'get_assistant_settings';
 export const UPDATE_DEFAULT_PROMPT_TOOL_NAME = 'update_default_prompt';
 const SEARCH_MEMORY_TOOL_NAME = 'search_memory';
 const READ_MEMORY_TOOL_NAME = 'read_memory';
+const UPDATE_AVATAR_TOOL_NAME = 'update_avatar';
+const AVATAR_GUIDE = [
+  'DiceBear avatars are generated locally as SVG; no image upload or external API request is used.',
+  'Assistant contacts use Moods. Coding agents use Bottts Neutral; update_avatar changes this contact only.',
+  'The same seed, style, library version and rendering options reproduce the same face. Different seeds can still look alike.',
+  'A seed is an opaque randomness key, not an image prompt: "blue cat" does not guarantee a blue cat.',
+  'Call update_avatar with no arguments to randomize, or with seed to restore a previous face. Seeds must be nonblank strings of at most 256 characters.',
+  'Only seed is editable here; style, colors, facial features, custom URLs and uploaded images are not supported.',
+  'Keep the current avatarSeed to restore it later. Avatar changes preserve identity and conversations.',
+].join('\n');
 const CONTACT_TOOL_FENCE = 'openchamber-tool';
 export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
 export const WATCHED_SESSION_FALLBACK_BUBBLE = 'Watching that coding session.';
@@ -104,6 +114,7 @@ const INTENT_NEGATION = /不要|别|不用|不开|don't|do\s+not/iu;
 const newConversationParameters = typeboxObject({});
 const clearChatHistoryParameters = typeboxObject({});
 const getAssistantSettingsParameters = typeboxObject({
+  topic: typeboxOptional(typeboxString('Use "avatar" to load DiceBear guidance on demand. Omit for ordinary settings.')),
   to: typeboxOptional(typeboxString('Target assistant display name. Omit to read this contact. Same as message_assistant `to`.')),
   name: typeboxOptional(typeboxString('Target assistant display name if `to` is omitted.')),
   toAssistantID: typeboxOptional(typeboxString('Target assistant id when the display name is ambiguous.')),
@@ -536,6 +547,9 @@ export function detectRequestedContactTools(userText, allowedNames = []) {
     requested.push(SEARCH_MEMORY_TOOL_NAME, ...[READ_MEMORY_TOOL_NAME].filter((name) => allowed.has(name)));
   }
   // Prefer write intent when both settings phrases match (e.g. 把默认提示词改成 X).
+  if (allowed.has(UPDATE_AVATAR_TOOL_NAME) && !INTENT_NEGATION.test(text) && /(?:换|改|设置|更新)[^。\n]{0,24}头像|(?:change|update|set|randomize)[^。\n]{0,24}avatar/iu.test(text)) {
+    requested.push(UPDATE_AVATAR_TOOL_NAME);
+  }
   if (allowed.has(UPDATE_DEFAULT_PROMPT_TOOL_NAME) && UPDATE_DEFAULT_PROMPT_INTENT.test(text)) {
     requested.push(UPDATE_DEFAULT_PROMPT_TOOL_NAME);
   } else if (allowed.has(GET_ASSISTANT_SETTINGS_TOOL_NAME) && GET_ASSISTANT_SETTINGS_INTENT.test(text)) {
@@ -860,6 +874,7 @@ export function pickAssistantSettings(dto) {
   return {
     id,
     name: typeof dto.name === 'string' ? dto.name : '',
+    avatarSeed: typeof dto.avatarSeed === 'string' ? dto.avatarSeed : id,
     defaultPrompt: typeof dto.defaultPrompt === 'string' ? dto.defaultPrompt : '',
     providerID: typeof dto.providerID === 'string' ? dto.providerID : '',
     modelID: typeof dto.modelID === 'string' ? dto.modelID : '',
@@ -881,6 +896,7 @@ export function formatAssistantSettingsContent(settings) {
     `Assistant settings for ${row.name || row.id || 'this contact'}:`,
     `id: ${row.id || ''}`,
     `name: ${row.name || ''}`,
+    `avatarSeed: ${row.avatarSeed || row.id || ''}`,
     promptLine,
     `providerID: ${row.providerID || ''}`,
     `modelID: ${row.modelID || ''}`,
@@ -911,6 +927,7 @@ export function createContactTools({
   readAssistantSettings,
   searchMemory,
   readMemory,
+  updateAvatar,
   updateAssistantSettings,
   currentAssistant,
   onCard,
@@ -1213,12 +1230,33 @@ export function createContactTools({
             throw new AssignError('upstream_error', 'Assistant settings failed to load.');
           }
           return {
-            content: [{ type: 'text', text: formatAssistantSettingsContent(settings) }],
+            content: [{ type: 'text', text: formatAssistantSettingsContent(settings) + (params?.topic === 'avatar' ? `\n\n${AVATAR_GUIDE}` : '') }],
             details: { settings },
             terminate: false,
           };
         } catch (error) {
           return toolFailure(error, 'get_assistant_settings_failed', 'Could not read assistant settings.');
+        }
+      },
+    },
+    {
+      name: UPDATE_AVATAR_TOOL_NAME,
+      label: 'Update avatar',
+      description: 'Change this contact’s avatar (给自己换头像). Omit seed to randomize; supply seed to restore a face. For DiceBear capabilities and limitations, read get_assistant_settings with topic="avatar". Only report success after this tool succeeds.',
+      parameters: typeboxObject({ seed: typeboxOptional(typeboxString('Opaque DiceBear seed, not an image prompt. Nonblank, max 256 characters. Omit for random.')) }),
+      execute: async (_toolCallId, params) => {
+        try {
+          if (params && Object.keys(params).some((key) => key !== 'seed')) {
+            throw new AssignError('validation_error', 'Only seed is supported; this tool updates this contact only.');
+          }
+          if (params?.seed !== undefined && (typeof params.seed !== 'string' || !params.seed.trim() || params.seed.length > 256)) {
+            throw new AssignError('validation_error', 'seed must be a nonblank string of at most 256 characters.');
+          }
+          if (typeof updateAvatar !== 'function') throw new AssignError('upstream_error', 'Updating avatar is unavailable.');
+          const result = await updateAvatar(params?.seed);
+          return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, terminate: false };
+        } catch (error) {
+          return toolFailure(error, 'update_avatar_failed', 'Could not update avatar.');
         }
       },
     },

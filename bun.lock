@@ -102,7 +102,7 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "2.0.11-beta.23",
+      "version": "2.1.4",
       "dependencies": {
         "@openchambery/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
@@ -117,7 +117,7 @@
     },
     "packages/mobile": {
       "name": "@openchamber/mobile",
-      "version": "2.0.11-beta.23",
+      "version": "2.1.4",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@capacitor-mlkit/barcode-scanning": "^8.1.0",
@@ -139,7 +139,7 @@
     },
     "packages/relay-server": {
       "name": "@openchambery/relay-server",
-      "version": "2.0.11-beta.23",
+      "version": "2.1.4",
       "bin": {
         "openchamber-relay": "./bin/openchamber-relay.js",
       },
@@ -149,7 +149,7 @@
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "2.0.11-beta.23",
+      "version": "2.1.4",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@base-ui/react": "^1.4.0",
@@ -179,6 +179,8 @@
         "@codemirror/search": "^6.6.0",
         "@codemirror/state": "^6.5.4",
         "@codemirror/view": "6.39.13",
+        "@dicebear/core": "10.7.0",
+        "@dicebear/styles": "10.6.0",
         "@dnd-kit/core": "^6.3.1",
         "@dnd-kit/sortable": "^10.0.0",
         "@dnd-kit/utilities": "^3.2.2",
@@ -261,7 +263,7 @@
     },
     "packages/vscode": {
       "name": "openchamber",
-      "version": "2.0.11-beta.23",
+      "version": "2.1.4",
       "dependencies": {
         "@openchamber/ui": "workspace:*",
         "@opencode/client": "2.0.23",
@@ -288,7 +290,7 @@
     },
     "packages/web": {
       "name": "@openchambery/web",
-      "version": "2.0.11-beta.23",
+      "version": "2.1.4",
       "bin": {
         "openchamber": "./bin/cli.js",
         "openchambery": "./bin/cli.js",
@@ -742,6 +744,10 @@
     "@date-fns/tz": ["@date-fns/tz@1.4.1", "", {}, "sha512-P5LUNhtbj6YfI3iJjw5EL9eUAG6OitD0W3fWQcpQjDRc/QIsL0tRNuO1PcDvPccWL1fSTXXdE1ds+l95DV/OFA=="],
 
     "@develar/schema-utils": ["@develar/schema-utils@2.6.5", "", { "dependencies": { "ajv": "^6.12.0", "ajv-keywords": "^3.4.1" } }, "sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig=="],
+
+    "@dicebear/core": ["@dicebear/core@10.7.0", "", {}, "sha512-JUOzKOd8RUByJJo8ZL+C7YE/pvEsWewfpbWUmR8OIQZWv/PvUQHnohdevySC3icyyxe6EIU/8B/rQgA42us1QA=="],
+
+    "@dicebear/styles": ["@dicebear/styles@10.6.0", "", {}, "sha512-KhxbEVI+z8TaenX58+ZhIRFBt7adggu/F+8g6ZYLu43H2/lgLuWA3Kg8vHBrCVWdfTTTt1p2wUhQomIkkypTuQ=="],
 
     "@dnd-kit/accessibility": ["@dnd-kit/accessibility@3.1.1", "", { "dependencies": { "tslib": "^2.0.0" }, "peerDependencies": { "react": ">=16.8.0" } }, "sha512-2P+YgaXF+gRsIihwwY1gCsQSYnu9Zyj2py8kY5fFvUM1qm2WA2u639R6YNVfU4GWr+ZM5mqEsfHZZLoRONbemw=="],
 
