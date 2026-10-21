@@ -166,7 +166,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
             </div>
             <div className="oc-speech-content" data-starting={isStarting || processing}>
                 {error && !processing ? <p role="alert" className="oc-speech-caption oc-speech-error">{error}</p> : <div role="status" aria-live="polite" aria-atomic="true" className="oc-speech-caption">
-                    {isStarting || processing ? <DictationLoading />
+                    {isStarting || processing ? <DictationLoading size={72} />
                         : partialTranscript ? <span className="oc-speech-interim">{partialTranscript}</span> : t(status === 'uploading' ? 'chat.dictation.processing' : 'chat.dictation.listening')}
                 </div>}
             </div>

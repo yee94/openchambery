@@ -64,6 +64,8 @@ it('shows the overlay and a loading indicator while iOS opens the microphone', a
     expect(document.querySelector('.oc-speech-overlay')).not.toBeNull();
     expect(document.querySelector('[role="status"]')?.textContent).toBe('');
     expect(document.querySelector('[data-dictation-loading]')).not.toBeNull();
+    expect((document.querySelector('[data-dictation-loading]') as HTMLElement).style.width).toBe('72px');
+    expect((document.querySelector('[data-dictation-loading]') as HTMLElement).style.height).toBe('72px');
     expect(document.querySelector('[data-dictation-loading] > span')?.classList.length).toBe(1);
     expect(document.querySelectorAll('[data-dictation-loading] > span > span')).toHaveLength(3);
     speech.isStarting = false;
@@ -331,6 +333,7 @@ it.each(['send', 'edit'])('shows loading on %s release until finalization comple
     if (intent === 'send') await pointer('pointermove', 290);
     await pointer('pointerup');
     expect(document.querySelector('.oc-speech-overlay [data-dictation-loading]')).not.toBeNull();
+    expect((document.querySelector('[data-dictation-loading]') as HTMLElement).style.width).toBe('72px');
     expect(document.querySelector('.oc-speech-gesture-stage')).toBeNull();
     expect(onRelease).toHaveBeenCalledExactlyOnceWith('待整理的文字');
     expect(onHintChange).toHaveBeenLastCalledWith('processing');

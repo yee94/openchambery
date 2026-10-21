@@ -54,7 +54,16 @@
 }
 .oc-speech-caption > * { flex-shrink: 0; }
 .oc-speech-overlay[data-error="true"] { pointer-events: auto; touch-action: none; }
-.oc-speech-content[data-starting="true"] { animation: none; }
+.oc-speech-content[data-starting="true"] {
+    animation: none;
+}
+.oc-speech-content[data-starting="true"] .oc-speech-caption {
+    align-items: center;
+    justify-content: center;
+    max-height: none;
+    overflow: visible;
+    animation: none;
+}
 .oc-speech-loading { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 26px; }
 .oc-speech-loading > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: oc-speech-dot 1050ms ease-in-out infinite; }
 .oc-speech-loading > span:nth-child(2) { animation-delay: 150ms; }
