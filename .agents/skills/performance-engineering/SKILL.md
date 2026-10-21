@@ -117,6 +117,7 @@ Prefer indexes keyed by stable IDs. Keep high-frequency runtime state out of met
 - Ensure hidden or disabled surfaces perform no ongoing work.
 - Preserve scroll position synchronously with `useLayoutEffect`; do not wait visible frames before compensation.
 - Distinguish viewport resize from content growth and avoid fighting browser scroll anchoring.
+- Transcript scroll ownership, prepend compensation, and jump measurement: `.agents/skills/scroll-anchoring/SKILL.md`.
 - Avoid textarea auto-size shrink/expand cycles when content only grows.
 - Freeze structural ordering during high-frequency updates and reorder at an explicit lifecycle edge.
 

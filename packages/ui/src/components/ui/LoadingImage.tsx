@@ -6,10 +6,11 @@ import { ImageLoadingPlaceholder } from './ImageLoadingPlaceholder';
 type LoadingImageProps = React.ImgHTMLAttributes<HTMLImageElement> & {
   resourceError?: string | null;
   fill?: boolean;
-  placeholderAspectRatio?: number;
+  /** Transcript content image: one fixed-height frame for every phase. */
+  contentFrame?: boolean;
 };
 
-function ImagePresentation({ resourceError, fill, placeholderAspectRatio, onLoad, onError, style, ...props }: LoadingImageProps) {
+function ImagePresentation({ resourceError, fill, contentFrame, onLoad, onError, style, ...props }: LoadingImageProps) {
   const isMobile = useUIStore((state) => state.isMobile);
   const { t } = useI18n();
   const imageRef = React.useRef<HTMLImageElement>(null);
@@ -24,8 +25,7 @@ function ImagePresentation({ resourceError, fill, placeholderAspectRatio, onLoad
       className="oc-image-frame"
       data-image-state={phase}
       data-image-fill={fill || undefined}
-      data-image-content={placeholderAspectRatio ? (isMobile ? 'mobile' : 'desktop') : undefined}
-      style={placeholderAspectRatio && phase !== 'loaded' ? { aspectRatio: placeholderAspectRatio } : undefined}
+      data-image-content={contentFrame ? (isMobile ? 'mobile' : 'desktop') : undefined}
       aria-busy={phase === 'loading'}
     >
       <img
@@ -47,6 +47,6 @@ function ImagePresentation({ resourceError, fill, placeholderAspectRatio, onLoad
 }
 
 /** Presentation only: callers retain ownership of resource loading and retry. */
-export const LoadingImage = React.memo(function LoadingImage({ resourceError, fill, placeholderAspectRatio, ...props }: LoadingImageProps) {
-  return <ImagePresentation key={`${props.src ?? ''}\n${props.srcSet ?? ''}`} {...props} resourceError={resourceError} fill={fill} placeholderAspectRatio={placeholderAspectRatio} />;
+export const LoadingImage = React.memo(function LoadingImage({ resourceError, fill, contentFrame, ...props }: LoadingImageProps) {
+  return <ImagePresentation key={`${props.src ?? ''}\n${props.srcSet ?? ''}`} {...props} resourceError={resourceError} fill={fill} contentFrame={contentFrame} />;
 });

@@ -115,6 +115,7 @@ Project skills live under `.agents/skills/*/SKILL.md`. Before editing, load ever
 | Electron main/preload, IPC, native UI, updater, deep links, SSH, packaging, or child processes | `desktop-shell` |
 | Session sync, bootstrap/reconnect, reducers, polling, optimistic state, queues, live status, reconciliation, or directory-scoped caches | `sync-state-invariants` |
 | Composer input/adjacent controls, render/store/event hot paths, large lists, caching/indexing, high CPU/memory, lag, jank, freezes, or performance regressions | `performance-engineering` |
+| Transcript scrolling, history prepend/load-more, reading anchors, auto-follow, row render keys, or a viewport that jumps | `scroll-anchoring` |
 | WebSocket, SSE, streaming transport, runtime transport internals, or private relay | `relay-transport` |
 | UI components, styling, colors, buttons, or icons | `theme-system` |
 | User-facing or accessible UI text, labels, aria, toasts, dialogs, or navigation copy | `locale-ui-patterns` |

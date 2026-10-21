@@ -1,6 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import type { VirtualItem } from '@tanstack/react-virtual';
 import { shouldAdjustHistoryScrollOnItemSizeChange } from './historyItemSizeAdjustment';
+
+const messageListSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../../MessageList.tsx'),
+    'utf8',
+);
 
 const item = (start: number, size: number): VirtualItem => ({ index: 0, key: 'row', start, size, end: start + size, lane: 0 });
 const state = (scrollOffset: number, measured?: number) => ({
@@ -18,6 +26,14 @@ describe('history row-size scroll adjustment', () => {
     test('never compensates a row spanning the fold, so growth below the anchor stays put', () => {
         expect(shouldAdjustHistoryScrollOnItemSizeChange(item(1800, 600), 40, state(2039, 600))).toBe(false);
         expect(shouldAdjustHistoryScrollOnItemSizeChange(item(2100, 300), 40, state(2039, 300))).toBe(false);
+    });
+
+    test('MessageList installs the rule on the history virtualizer before batched resize', () => {
+        // The rule is inert unless wired: TanStack falls back to its default,
+        // which skips rows above an upward reader and reintroduces load-more jumps.
+        expect(messageListSource).toMatch(
+            /\.shouldAdjustScrollPositionOnItemSizeChange = shouldAdjustHistoryScrollOnItemSizeChange;\s*return installBatchedResizeItem\(/,
+        );
     });
 
     test('first measurement compensates any row starting above the fold', () => {
