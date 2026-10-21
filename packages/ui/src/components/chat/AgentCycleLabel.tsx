@@ -15,6 +15,8 @@ type AgentCycleLabelProps = {
   avatarSize: number;
   /** Fixed square that matches other composer icon buttons while collapsed. */
   slotClassName: string;
+  /** Distance between avatar and name; compact layouts tighten it. */
+  labelGapClassName?: string;
   colorVar?: string;
 };
 
@@ -28,6 +30,7 @@ export const AgentCycleLabel: React.FC<AgentCycleLabelProps> = ({
   revealed,
   avatarSize,
   slotClassName,
+  labelGapClassName = 'pl-1.5 pr-0.5',
   colorVar,
 }) => {
   return (
@@ -53,7 +56,10 @@ export const AgentCycleLabel: React.FC<AgentCycleLabelProps> = ({
       >
         <span className="flex min-w-0 items-center overflow-hidden">
           <span
-            className="inline-block whitespace-nowrap pl-1.5 pr-0.5 typography-micro leading-none font-medium"
+            className={cn(
+              'inline-block whitespace-nowrap typography-micro leading-none font-medium',
+              labelGapClassName,
+            )}
             style={colorVar ? { color: `var(${colorVar})` } : undefined}
           >
             {label}

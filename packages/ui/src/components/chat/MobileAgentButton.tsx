@@ -91,6 +91,7 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAge
                 revealed={showAgentCycleLabel}
                 avatarSize={16}
                 slotClassName="h-[26px] w-6"
+                labelGapClassName="pl-1 pr-0.5"
                 colorVar={agentColor.var}
             />
         </button>
