@@ -1498,6 +1498,7 @@ describe('client auth routes', () => {
     const listed = await request(app).get('/api/client-auth/clients');
     expect(listed.status).toBe(200);
     expect(listed.body.clients).toEqual([{ ...other.body.client, connected: false }]);
+    expect(listed.body.currentClientId).toBe(other.body.client.id);
 
     const denied = await request(app).delete(`/api/client-auth/clients/${current.body.client.id}`);
     expect(denied.status).toBe(403);
@@ -1534,6 +1535,7 @@ describe('client auth routes', () => {
     expect(listed.status).toBe(200);
     const listedIds = listed.body.clients.map((client) => client.id).sort();
     expect(listedIds).toEqual([desktop.body.client.id, other.body.client.id].sort());
+    expect(listed.body.currentClientId).toBe(desktop.body.client.id);
 
     const revoked = await request(app).delete(`/api/client-auth/clients/${other.body.client.id}`);
     expect(revoked.status).toBe(200);

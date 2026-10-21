@@ -93,10 +93,12 @@ it('keeps autosize suspended until settlement finishes so animated scrollHeight 
   vi.mocked(window.matchMedia).mockReturnValue({ matches: false } as MediaQueryList);
   let finish!: () => void;
   let animating = false;
-  const finished = new Promise<void>((resolve) => { finish = resolve; });
   Object.defineProperty(input, 'animate', { configurable: true, value: vi.fn(() => {
     animating = true;
-    return { finished, cancel: () => { animating = false; } };
+    const native = { onfinish: null as (() => void) | null, currentTime: 0,
+      cancel: () => { animating = false; } };
+    finish = () => native.onfinish?.();
+    return native;
   }) });
   vi.spyOn(HTMLTextAreaElement.prototype, 'scrollHeight', 'get').mockImplementation(() => animating ? 370 : contentHeight);
   await act(async () => result.settleAt('auto', 370));
@@ -128,10 +130,63 @@ it('retains content-sized sheet expansion, collapse and downward dismissal throu
   handle.setPointerCapture = vi.fn(); handle.hasPointerCapture = () => true; handle.releasePointerCapture = vi.fn();
   const event = (type: string, y: number) => new PointerEvent(type, { bubbles: true, pointerId: 2, isPrimary: true, clientY: y });
   await act(async () => handle.dispatchEvent(event('pointerdown', 600)));
+  const canvas = sheet.surfaceRef.current!;
+  const frozenHeight = canvas.style.height;
+  const initialTranslate = canvas.style.translate;
+  expect(canvas.style.position).toBe('absolute');
+  expect(canvas.style.bottom).toBe('0px');
   const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect'); measure.mockClear();
   for (let i = 0; i < 50; i++) await act(async () => handle.dispatchEvent(event('pointermove', 601 + i * 2)));
+  await act(async () => { await new Promise(requestAnimationFrame); });
   expect(measure).not.toHaveBeenCalled();
+  expect(canvas.style.height).toBe(frozenHeight);
+  expect(canvas.style.translate).not.toBe(initialTranslate);
   await act(async () => handle.dispatchEvent(event('pointerup', 700)));
   expect(dismiss).toHaveBeenCalledTimes(1);
   expect(sheet.dragging).toBe(false);
+  await act(async () => sheet.reset());
+  expect(canvas.style.position).toBe('');
+  expect(canvas.style.translate).toBe('');
+  expect(canvas.style.height).toBe('');
+});
+
+it.each(['clear', 'draft switch', 'unmount'])('cancels an in-flight Motion settlement on %s', async (change) => {
+  await act(async () => root.render(<Probe />));
+  const input = host.querySelector('textarea')!;
+  const cancel = vi.fn();
+  Object.defineProperty(input, 'animate', { configurable: true, value: () => ({ cancel, currentTime: 0 }) });
+  vi.mocked(window.matchMedia).mockReturnValue({ matches: false } as MediaQueryList);
+  await act(async () => result.settleAt('full'));
+  expect(result.manualHeight).toBe(true);
+  await act(async () => root.render(change === 'unmount' ? null
+    : <Probe text={change === 'clear' ? '' : 'draft'} draftID={change === 'draft switch' ? 'two' : 'one'} />));
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(input.hasAttribute('data-height-snap-active')).toBe(false);
+  if (change !== 'unmount') {
+    expect(result.manualHeight).toBe(false);
+    expect(result.snapPoint).toBe('auto');
+  }
+});
+
+it('settles a sheet using independent translate and restores its canvas after Motion completes', async () => {
+  let sheet!: ReturnType<typeof useMobileSheetSnap>;
+  function SheetProbe() {
+    sheet = useMobileSheetSnap({ fitContent: true });
+    return <div ref={sheet.surfaceRef} style={{ transform: 'translateY(7px)' }} />;
+  }
+  await act(async () => root.render(<SheetProbe />));
+  const canvas = sheet.surfaceRef.current!;
+  const native = { onfinish: null as (() => void) | null, currentTime: 0, cancel: vi.fn() };
+  const animate = vi.fn<(keyframes: PropertyIndexedKeyframes) => typeof native>(() => native);
+  Object.defineProperty(canvas, 'animate', { configurable: true, value: animate });
+  vi.mocked(window.matchMedia).mockReturnValue({ matches: false } as MediaQueryList);
+  await act(async () => sheet.handleClick());
+  expect(canvas.style.position).toBe('absolute');
+  expect(canvas.style.transform).toBe('translateY(7px)');
+  expect(animate.mock.calls[0]?.[0]).toHaveProperty('translate');
+  await act(async () => native.onfinish?.());
+  expect(canvas.style.position).toBe('');
+  expect(canvas.style.translate).toBe('');
+  expect(canvas.style.height).toBe('');
+  expect(canvas.style.transform).toBe('translateY(7px)');
 });
