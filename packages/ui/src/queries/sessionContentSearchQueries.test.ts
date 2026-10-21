@@ -6,6 +6,7 @@ import {
   SESSION_CONTENT_SEARCH_LIMIT,
   searchSessionContent,
   sessionContentSearchQueryOptions,
+  sessionContentIndexStatusOptions,
 } from './sessionContentSearchQueries';
 
 const scope = {
@@ -65,6 +66,31 @@ describe('searchSessionContent', () => {
 
     const failed = vi.fn(async () => jsonResponse(500, { error: 'boom' }));
     await expect(searchSessionContent({ scope, query: 'budget', fetch: failed })).rejects.toThrow('500');
+  });
+});
+
+describe('sessionContentIndexStatusOptions', () => {
+  test('passes the signal and returns durable initialization coverage', async () => {
+    const index = { phase: 'partial', total: 2, completed: 1, failed: 1, messages: 5,
+      initializationRequired: true, indexStartedAt: 100, indexCompletedAt: null, updatedAt: 200 };
+    const fetch = vi.fn(async () => jsonResponse(200, { index }));
+    const options = sessionContentIndexStatusOptions(fetch);
+    const signal = new AbortController().signal;
+    expect(await options.queryFn?.({ signal } as never)).toEqual(index);
+    expect(fetch).toHaveBeenCalledWith('/api/openchamber/content-search', { signal });
+  });
+
+  test('distinguishes unsupported, legacy progress, failure and malformed coverage', async () => {
+    for (const status of [404, 501]) {
+      const options = sessionContentIndexStatusOptions(async () => jsonResponse(status, {}));
+      expect(await options.queryFn?.({} as never)).toBeNull();
+    }
+    const legacy = { phase: 'ready', total: 0, completed: 0, failed: 0, messages: 0 };
+    expect(await sessionContentIndexStatusOptions(async () => jsonResponse(200, { index: legacy })).queryFn?.({} as never)).toEqual(legacy);
+    for (const [status, index] of [[503, legacy], [200, undefined], [200, { ...legacy, initializationRequired: 'false' }]]) {
+      const options = sessionContentIndexStatusOptions(async () => jsonResponse(Number(status), { index }));
+      await expect(options.queryFn?.({} as never)).rejects.toThrow();
+    }
   });
 });
 

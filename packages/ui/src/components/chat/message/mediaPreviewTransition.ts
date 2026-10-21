@@ -65,15 +65,18 @@ function animateImageCrop(source: HTMLElement, image: HTMLImageElement, viewer: 
         viewer.animate({ opacity: closing ? [1, 0] : [0, 1] }, options),
     ];
     let cancelled = false;
-    const restore = () => {
+    const restore = (keepViewerFade = false) => {
         frame.remove();
         image.style.visibility = visibility;
-        animations.forEach(animation => animation.cancel());
+        animations.forEach((animation, index) => {
+            if (!keepViewerFade || index !== 2) animation.cancel();
+        });
     };
     void Promise.all(animations.map(animation => animation.finished)).then(() => {
         if (cancelled) return;
+        // React may commit the close later; keep the fullscreen viewer transparent until cleanup.
+        restore(closing);
         complete();
-        restore();
     }, () => { if (!cancelled) { restore(); complete(); } });
     return () => { cancelled = true; restore(); };
 }

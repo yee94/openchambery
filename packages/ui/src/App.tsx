@@ -67,6 +67,7 @@ import { useAppFontEffects } from '@/apps/useAppFontEffects';
 import { startPerfDiagnosticsController } from '@/sync/perf-diagnostics';
 import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { StartupSessionSyncOverlay } from '@/components/session/StartupSessionSyncOverlay';
+import { ContentIndexOnboarding } from '@/components/onboarding/ContentIndexOnboarding';
 import { DesktopRuntimeSwitchOverlay } from '@/components/desktop/DesktopRuntimeSwitchOverlay';
 import { SessionStartupCoordinator } from '@/components/session/SessionStartupCoordinator';
 import { useStartupCatalogRecovery } from '@/hooks/useStartupCatalogRecovery';
@@ -1095,6 +1096,7 @@ function App({ apis }: AppProps) {
                   {!isBootShell && (
                     <>
                       <ConfigUpdateOverlay />
+                      <ContentIndexOnboarding />
                       <AboutDialogWrapper />
                       {showMemoryDebug && (
                         <MemoryDebugPanel onClose={() => setShowMemoryDebug(false)} />

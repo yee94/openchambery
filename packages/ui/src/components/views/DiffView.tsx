@@ -21,6 +21,7 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { MobileSheetHeaderActions } from '@/components/ui/MobileResizableSheet';
 import { TruncatedPath } from '@/components/ui/truncated-path';
 import { toast } from '@/components/ui';
 
@@ -1042,6 +1043,7 @@ interface DiffViewProps {
     flushContent?: boolean;
     /** Render only the file selected by the surrounding context panel. */
     singleFileView?: boolean;
+    toolbarInSheetHeader?: boolean;
     /** Scroll the selected file's diff to this modified-file line. */
     targetLine?: number | null;
     /** Exact file patches selected from one edit/apply_patch tool invocation. */
@@ -1067,6 +1069,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     toolPatches = null,
     flushContent = false,
     singleFileView = false,
+    toolbarInSheetHeader = false,
     preloadFullFiles = false,
     navigationRequestKey,
 }) => {
@@ -1899,10 +1902,9 @@ export const DiffView: React.FC<DiffViewProps> = ({
         return renderStackedDiffView();
     };
 
-    return (
-        <div className="flex h-full flex-col overflow-hidden bg-background">
-            {!singleFileView ? <div className="@container/diff-toolbar flex min-w-0 items-center gap-1.5 px-2 py-1.5 bg-background">
-                {!isMobile && (
+    const toolbar = !singleFileView ? (
+        <>
+                {!isMobile && !toolbarInSheetHeader && (
                     activeDiffScope === 'working' || activeDiffScope === 'staged' || activeDiffScope === 'turn' ? (
                         <ChangeScopeSelector
                             scope={activeDiffScope}
@@ -1941,7 +1943,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                             name="expand-up-down"
                             className="size-4"
                         />
-                        <span className="diff-toolbar__expand-label typography-code">
+                        <span className={cn('diff-toolbar__expand-label typography-code', toolbarInSheetHeader && 'hidden')}>
                             {expandedFiles.size > 0 ? t('diffView.actions.collapseAll') : t('diffView.actions.expandAll')}
                         </span>
                     </Button>
@@ -1960,7 +1962,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                         ) : (
                             <Icon name="search-eye" className="size-4" />
                         )}
-                        <span className="diff-toolbar__review-label typography-code">
+                        <span className={cn('diff-toolbar__review-label typography-code', toolbarInSheetHeader && 'hidden')}>
                             {t('diffView.actions.review')}
                         </span>
                     </Button>
@@ -2007,7 +2009,18 @@ export const DiffView: React.FC<DiffViewProps> = ({
                         onModeChange={handleHeaderLayoutChange}
                     />
                 )}
-            </div> : null}
+        </>
+    ) : null;
+
+    return (
+        <div className="flex h-full flex-col overflow-hidden bg-background">
+            {toolbar ? toolbarInSheetHeader ? (
+                <MobileSheetHeaderActions>{toolbar}</MobileSheetHeaderActions>
+            ) : (
+                <div className="@container/diff-toolbar flex min-w-0 items-center gap-1.5 px-2 py-1.5 bg-background">
+                    {toolbar}
+                </div>
+            ) : null}
 
             <ReviewFlowDialog
                 open={reviewDialogOpen}

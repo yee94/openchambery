@@ -1,8 +1,45 @@
 import { afterEach, expect, test } from 'vitest';
 import { createContentSearchService } from './service.js';
+import Database from 'better-sqlite3';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const services = [];
 afterEach(() => services.splice(0).forEach((service) => service.close()));
+
+test.each([false, true])('upgrades old checkpoints (existing boundary: %s) without inventing coverage and persists initialization across database reopen', (hasBoundary) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'content-index-'));
+  const dbPath = path.join(directory, 'index.sqlite');
+  let service;
+  try {
+    const old = new Database(dbPath);
+    old.exec(`CREATE TABLE search_session(runtime TEXT, id TEXT, directory TEXT, title TEXT, updated REAL, PRIMARY KEY(runtime,id));
+      INSERT INTO search_session VALUES('host','s','/repo','History',50);`);
+    if (hasBoundary) old.exec('ALTER TABLE search_session ADD COLUMN since REAL; UPDATE search_session SET since=0');
+    old.close();
+    service = createContentSearchService({ dbPath });
+    expect(service.updated('host', 's', 0)).toBeUndefined();
+    expect(service.coverage('host').indexCompletedAt).toBeNull();
+    service.beginInitialization('host', 100);
+    service.beginInitialization('host', 101);
+    service.close();
+    service = createContentSearchService({ dbPath });
+    expect(service.coverage('host')).toMatchObject({ indexStartedAt: 100, indexCompletedAt: null });
+    service.replaceSession('host', { id: 's', time: { updated: 50 } }, [], 0);
+    service.completeInitialization('host', 0, 200);
+    service.close();
+    service = createContentSearchService({ dbPath });
+    expect(service.coverage('host')).toEqual({ indexStartedAt: 100, indexCompletedAt: 200, coveredSince: 0, verifiedAt: 200 });
+    expect(service.updated('host', 's', 0)).toBe(50);
+    expect(service.coverage('other').indexCompletedAt).toBeNull();
+    service.beginInitialization('host', 300);
+    expect(service.coverage('host')).toMatchObject({ indexStartedAt: 300, indexCompletedAt: null, verifiedAt: 200 });
+  } finally {
+    service?.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test('indexes only admitted text and replaces FTS entries atomically', () => {
   const service = createContentSearchService({ dbPath: ':memory:' });
