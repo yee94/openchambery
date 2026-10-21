@@ -113,6 +113,12 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
   if (!hasSlotAt) {
     db.exec('ALTER TABLE scheduled_task_run ADD COLUMN slot_at INTEGER');
   }
+  db.transaction(() => {
+    const columns = new Set(db.prepare("SELECT name FROM pragma_table_info('scheduled_task_run')").all().map((row) => row.name));
+    if (!columns.has('result_pending')) db.exec('ALTER TABLE scheduled_task_run ADD COLUMN result_pending INTEGER NOT NULL DEFAULT 0');
+    if (!columns.has('execution_prompt')) db.exec('ALTER TABLE scheduled_task_run ADD COLUMN execution_prompt TEXT');
+    db.exec("CREATE INDEX IF NOT EXISTS scheduled_task_run_pending_result ON scheduled_task_run(started_at DESC, run_id DESC) WHERE result_pending=1 AND status IN ('success','error')");
+  })();
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS scheduled_task_run_scheduled_slot
       ON scheduled_task_run (project_id, task_id, slot_at)
@@ -161,9 +167,9 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
       db.prepare(`
         INSERT INTO scheduled_task_run (
           run_id, project_id, task_id, task_name, trigger, status,
-          session_id, directory, error, started_at, finished_at, duration_ms, slot_at
-        ) VALUES (?, ?, ?, ?, ?, 'running', NULL, ?, NULL, ?, NULL, NULL, ?)
-      `).run(id, projectId, taskId, taskName, trigger, directory, startedAt, slotAt);
+          session_id, directory, error, started_at, finished_at, duration_ms, slot_at, result_pending, execution_prompt
+        ) VALUES (?, ?, ?, ?, ?, 'running', NULL, ?, NULL, ?, NULL, NULL, ?, 1, ?)
+      `).run(id, projectId, taskId, taskName, trigger, directory, startedAt, slotAt, typeof record.prompt === 'string' ? record.prompt : null);
     } catch (error) {
       if (slotAt !== null && SQLITE_UNIQUE_CODES.has(error?.code)) {
         const claimed = new Error('scheduled slot already claimed');
@@ -220,6 +226,7 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
     const updated = db.prepare(`
       UPDATE scheduled_task_run
       SET status = ?,
+          result_pending = CASE WHEN status='running' THEN 1 ELSE result_pending END,
           session_id = ?,
           error = ?,
           finished_at = ?,
@@ -231,7 +238,7 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
     return rowToDto(db.prepare('SELECT * FROM scheduled_task_run WHERE run_id = ?').get(id));
   };
 
-  const listRuns = ({ before, limit, projectID, taskID, projectId, taskId } = {}, runningOnly = false) => {
+  const listRuns = ({ before, limit, projectID, taskID, projectId, taskId } = {}, runningOnly = false, pendingOnly = false) => {
     assertOpen();
     const cursor = decodeCursor(before);
     const resolvedLimit = (() => {
@@ -249,6 +256,7 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
     if (runningOnly) {
       filters.push("status = 'running'");
     }
+    if (pendingOnly) filters.push("result_pending=1 AND status IN ('success','error')");
     const params = [];
     const resolvedProjectID = asNonEmptyString(projectID ?? projectId);
     const resolvedTaskID = asNonEmptyString(taskID ?? taskId);
@@ -278,7 +286,7 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
     const hasMore = rows.length > resolvedLimit;
     const last = pageRows[pageRows.length - 1];
     return {
-      runs: pageRows.map(rowToDto),
+      runs: pageRows.map((row) => pendingOnly ? { ...rowToDto(row), prompt: row.execution_prompt } : rowToDto(row)),
       nextCursor: hasMore && last
         ? encodeCursor({ startedAt: last.started_at, runID: last.run_id })
         : null,
@@ -300,6 +308,11 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
     finishRun,
     listRuns,
     listRunningRuns: (options) => listRuns(options, true),
+    listPendingResults: (options) => listRuns(options, false, true),
+    acknowledgeResult: (runID) => {
+      assertOpen();
+      db.prepare("UPDATE scheduled_task_run SET result_pending=0 WHERE run_id=? AND status IN ('success','error')").run(runID);
+    },
     close,
   };
 };

@@ -337,6 +337,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       onSystemSessionPersisted,
       upsertScheduledTask: (projectID, task) => projectConfigRuntime.upsertScheduledTask(projectID, task),
       syncScheduledTaskProject: (projectID) => scheduledTasksRuntime.syncProject(projectID),
+      setTaskResultHandler: (handler) => scheduledTasksRuntime.setTaskResultHandler(handler),
       refreshAllowedRoots: refreshAssistantAllowedRoots,
       globalEventHub: globalMessageStreamHub,
       onRevisionTip: (tip) => broadcastAssistantRevisionTip({

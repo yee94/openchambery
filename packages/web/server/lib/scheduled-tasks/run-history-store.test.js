@@ -33,6 +33,57 @@ const startSample = (store, overrides = {}) => store.startRun({
 });
 
 describe('scheduled task run history store', () => {
+  it('keeps terminal result handoffs durable, with the execution prompt private and running runs excluded', () => {
+    const dbPath = createTempDbPath();
+    let store = createScheduledTaskRunHistoryStore({ dbPath });
+    try {
+      store.startRun({ id: 'report', projectId: 'p', taskId: 't', prompt: 'Deliver research findings' });
+      expect(store.listPendingResults().runs).toEqual([]);
+      store.finishRun('report', { status: 'success' });
+      expect(store.listRuns().runs[0]).not.toHaveProperty('prompt');
+      store.close();
+      store = createScheduledTaskRunHistoryStore({ dbPath });
+      expect(store.listPendingResults().runs).toEqual([expect.objectContaining({ id: 'report', prompt: 'Deliver research findings' })]);
+      store.acknowledgeResult('report');
+      store.close();
+      store = createScheduledTaskRunHistoryStore({ dbPath });
+      expect(store.listPendingResults().runs).toEqual([]);
+    } finally { store.close(); }
+  });
+
+  it('migrates old history without replaying completed runs and enrolls recovered in-flight work', () => {
+    const dbPath = createTempDbPath();
+    const first = createScheduledTaskRunHistoryStore({ dbPath });
+    startSample(first, { id: 'old-complete' });
+    first.finishRun('old-complete', { status: 'success' });
+    startSample(first, { id: 'old-running' });
+    first.close();
+    const Database = require('better-sqlite3');
+    const db = new Database(dbPath);
+    db.exec('DROP INDEX scheduled_task_run_pending_result; ALTER TABLE scheduled_task_run DROP COLUMN result_pending; ALTER TABLE scheduled_task_run DROP COLUMN execution_prompt');
+    db.close();
+    const store = createScheduledTaskRunHistoryStore({ dbPath });
+    try {
+      expect(store.listPendingResults().runs).toEqual([]);
+      store.finishRun('old-running', { status: 'error', error: 'actual failure' });
+      expect(store.listPendingResults().runs).toEqual([expect.objectContaining({ id: 'old-running', status: 'error', prompt: null })]);
+    } finally { store.close(); }
+  });
+
+  it('does not publish a result when the terminal history write rolls back', () => {
+    const dbPath = createTempDbPath();
+    const store = createScheduledTaskRunHistoryStore({ dbPath });
+    startSample(store, { id: 'failed-write' });
+    const Database = require('better-sqlite3');
+    const db = new Database(dbPath);
+    db.exec("CREATE TRIGGER reject_finish BEFORE UPDATE OF status ON scheduled_task_run BEGIN SELECT RAISE(ABORT, 'disk write failed'); END");
+    try {
+      expect(() => store.finishRun('failed-write', { status: 'success' })).toThrow('disk write failed');
+      expect(store.listRuns().runs[0].status).toBe('running');
+      expect(store.listPendingResults().runs).toEqual([]);
+    } finally { db.close(); store.close(); }
+  });
+
   it('lists runs newest-first and supports stable keyset pagination', () => {
     let now = 1_000;
     const store = createScheduledTaskRunHistoryStore({

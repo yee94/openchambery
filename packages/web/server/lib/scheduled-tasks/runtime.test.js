@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAssistantsService } from '../assistants/service.js';
+import { runContactTurn as reviewTaskResult } from '../assistants/harness.js';
 
 vi.mock('../opencode/v2-client.js', () => ({
   makeOpenCodeV2Client: vi.fn(),
@@ -313,6 +315,135 @@ describe('scheduled-tasks history recovery', () => {
       expect(messageList).not.toHaveBeenCalled();
     } finally {
       runtime.stop();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('scheduled task result handoff', () => {
+  it.each(['report', 'silent', 'failure'])('connects a real scheduled run to the owner contact with %s delivery', async (mode) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'scheduled-contact-'));
+    const store = createScheduledTaskRunHistoryStore({ dbPath: path.join(directory, 'runs.sqlite') });
+    let task = { ...scheduledTask, execution: { ...scheduledTask.execution, prompt: mode === 'report' ? 'Research and send a summary' : 'Do background work; no success report needed' } };
+    let releaseWorker;
+    const workerResult = new Promise((resolve) => { releaseWorker = resolve; });
+    const messageList = vi.fn(() => workerResult);
+    const client = {
+      session: {
+        create: vi.fn(async () => ({ id: 'worker' })),
+        prompt: vi.fn(async () => ({ id: 'inbox', type: 'user' })),
+        active: vi.fn(async () => ({})),
+      },
+      message: { list: messageList },
+      provider: { list: async () => ({ data: [] }) },
+      model: { list: async () => ({ data: [] }) },
+    };
+    makeOpenCodeV2Client.mockReturnValue(client);
+    const listProjects = async () => [{ id: 'project-1', path: directory }];
+    const projectConfigRuntime = {
+      listScheduledTasks: async () => [task],
+      upsertScheduledTask: async (_project, input) => ({ task: { ...task, ...input, id: 'task-1' } }),
+      updateScheduledTaskState: async (_project, _id, state) => {
+        task = { ...task, state: { ...task.state, ...state } };
+        return { task };
+      },
+    };
+    const notifyTaskRun = vi.fn();
+    const onContactTurnComplete = vi.fn();
+    const reviews = vi.fn(async (input) => {
+      expect(input.userText).toContain(task.execution.prompt);
+      if (mode === 'failure') expect(input.userText).toContain('upstream failed');
+      else expect(input.userText).toContain('Actual research findings');
+      return reviewTaskResult({ ...input, createChatCompletion: async () => ({ text: mode === 'silent'
+        ? '```openchamber-final\n{"status":"silent","text":""}\n```'
+        : mode === 'failure' ? '任务执行失败，需要检查服务。' : '资料汇总：有两项值得关注的更新。' }) });
+    });
+    const runtime = createRuntime(null, {
+      projectConfigRuntime, listProjects, runHistoryStore: store, notifyTaskRun,
+      waitForOpenCodeReady: async () => {},
+    });
+    const service = createAssistantsService({
+      dbPath: path.join(directory, 'assistants.sqlite'), dataDir: directory,
+      getAllowedRoots: () => [directory], listProjects, clientFactory: () => client,
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096', getOpenCodeAuthHeaders: () => ({}),
+      upsertScheduledTask: projectConfigRuntime.upsertScheduledTask,
+      syncScheduledTaskProject: (id) => runtime.syncProject(id),
+      onContactTurnComplete,
+      runContactTurn: async (input) => {
+        if (input.readOnly) return reviews(input);
+        await input.tools.find((tool) => tool.name === 'schedule_task').execute('schedule', {
+          name: 'Task', prompt: task.execution.prompt, time: '23:59', timezone: 'UTC',
+        });
+        return { bubbles: ['已安排'] };
+      },
+    });
+    const detach = runtime.setTaskResultHandler((run) => service.reportScheduledTaskResult(run));
+    try {
+      service.setEnabled({ enabled: true, expectedRevision: service.snapshot().revision });
+      const owner = service.createAssistant({ name: 'Research', providerID: 'openai', modelID: 'gpt-4.1' });
+      const sent = await service.send(owner.id, { messageID: 'schedule', parts: [{ type: 'text', text: 'Create the recurring task' }] });
+      await service.whenContactTurnSettled(sent.messageID);
+      onContactTurnComplete.mockClear();
+      const run = runtime.runNow('project-1', 'task-1');
+      await vi.waitFor(() => expect(messageList).toHaveBeenCalled());
+      expect(reviews).not.toHaveBeenCalled();
+      releaseWorker({ data: [{ id: 'result', type: 'assistant', text: 'Actual research findings', time: { created: 1, completed: 2 }, finish: 'stop', ...(mode === 'failure' ? { error: { name: 'ProviderError', message: 'upstream failed' } } : {}) }] });
+      const result = await run;
+      expect(result.status).toBe(mode === 'failure' ? 'error' : 'success');
+      await vi.waitFor(() => expect(store.listPendingResults().runs).toEqual([]));
+      expect(reviews).toHaveBeenCalledOnce();
+      expect(notifyTaskRun).not.toHaveBeenCalled();
+      expect(onContactTurnComplete).toHaveBeenCalledTimes(mode === 'silent' ? 0 : 1);
+      expect(service.snapshot().assistants[0].working).toBe(false);
+    } finally {
+      detach(); runtime.stop(); service.close(); store.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('recovers durable results after restart and isolates a failed handoff from other runs', async () => {
+    vi.useFakeTimers();
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'scheduled-result-recovery-'));
+    const dbPath = path.join(directory, 'runs.sqlite');
+    let store = createScheduledTaskRunHistoryStore({ dbPath });
+    const retryIDs = Array.from({ length: 4 }, (_, index) => `z-retry-${index}`);
+    const healthyIDs = Array.from({ length: 21 }, (_, index) => `healthy-${index}`);
+    for (const id of [...retryIDs, ...healthyIDs, 'unowned']) {
+      store.startRun({ id, projectId: 'project-1', taskId: 'task-1', prompt: 'Original instruction' });
+      store.finishRun(id, { status: 'success' });
+    }
+    store.close();
+    store = createScheduledTaskRunHistoryStore({ dbPath });
+    let broken = true;
+    let active = 0;
+    let peak = 0;
+    const handler = vi.fn(async (run) => {
+      expect(run.prompt).toBe('Original instruction');
+      active += 1;
+      peak = Math.max(peak, active);
+      try {
+        await Promise.resolve();
+        if (retryIDs.includes(run.id) && broken) throw new Error('temporary handoff failure');
+        return run.id !== 'unowned';
+      } finally { active -= 1; }
+    });
+    const notifyTaskRun = vi.fn();
+    const runtime = createRuntime(vi.fn(async () => ({ task: scheduledTask })), { runHistoryStore: store, notifyTaskRun });
+    const detach = runtime.setTaskResultHandler(handler);
+    try {
+      await runtime.start();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(store.listPendingResults().runs.map((run) => run.id).sort()).toEqual(retryIDs);
+      expect(notifyTaskRun).toHaveBeenCalledOnce();
+      broken = false;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(store.listPendingResults().runs).toEqual([]);
+      for (const id of healthyIDs) expect(handler.mock.calls.filter(([run]) => run.id === id)).toHaveLength(1);
+      expect(peak).toBeLessThanOrEqual(4);
+    } finally {
+      detach(); runtime.stop(); store.close();
+      fs.rmSync(directory, { recursive: true, force: true });
       vi.useRealTimers();
     }
   });

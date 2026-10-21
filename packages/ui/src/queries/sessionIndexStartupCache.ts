@@ -83,11 +83,24 @@ const parseCache = (raw: string | null): SessionIndexCache | null => {
   }
 };
 
+/**
+ * Over budget: drop the oldest runtime entries first. The newest entry (last
+ * key) is the current runtime; skipping its write would leave an old snapshot
+ * that repaints a stale list order on the next cold start.
+ */
 const writeCache = (storage: SessionIndexStartupStorage, cache: SessionIndexCache): void => {
   try {
-    const serialized = JSON.stringify(cache);
-    if (serialized.length > MAX_CACHE_BYTES) return;
-    storage.setItem(STORAGE_KEY, serialized);
+    const keys = Object.keys(cache.entries);
+    while (keys.length > 0) {
+      const entries = Object.fromEntries(keys.map((key) => [key, cache.entries[key]!]));
+      const serialized = JSON.stringify({ version: cache.version, entries });
+      if (serialized.length <= MAX_CACHE_BYTES) {
+        storage.setItem(STORAGE_KEY, serialized);
+        return;
+      }
+      if (keys.length === 1) return;
+      keys.shift();
+    }
   } catch {
     // Storage availability does not affect the live Query result.
   }
@@ -125,7 +138,10 @@ export const writeSessionIndexStartupSnapshot = (
     return;
   }
   const parsed = parseCache(raw);
-  const entries = { ...(parsed?.entries ?? {}), [runtimeKey]: snapshot };
+  // Re-insert so the current runtime is always the most recent key.
+  const { [runtimeKey]: _previous, ...others } = parsed?.entries ?? {};
+  void _previous;
+  const entries = { ...others, [runtimeKey]: snapshot };
   const retainedKeys = Object.keys(entries).slice(-MAX_RUNTIME_ENTRIES);
   const retainedEntries = Object.fromEntries(
     retainedKeys.map((key) => [key, entries[key]!]),

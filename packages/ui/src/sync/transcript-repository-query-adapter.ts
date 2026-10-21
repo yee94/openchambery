@@ -928,6 +928,22 @@ export function createQueryTranscriptRepository(
     }
   }
 
+  // Controller (InfiniteQuery) loads bypass `apply`, so cold initial / prepend
+  // pages must persist here or the next app start has nothing to seed from.
+  const persistControllerLoad = (
+    scope: TranscriptScope,
+    identity: ReturnType<typeof resolveScopeIdentity>,
+    skip?: ReadonlySet<string>,
+  ) => {
+    if (!durableQueue || suppressDurableWrite > 0 || !liveIdentityMatches(identity)) return
+    const transcript = projectTranscript(scope)
+    for (const id of transcript.messageOrder) {
+      if (skip?.has(id)) continue
+      const info = transcript.messagesByID[id]
+      if (info) persistSettledRecord(identity, info, transcript.partsByMessageID[id])
+    }
+  }
+
   const fetchAuthorityTail = async (
     identity: ReturnType<typeof resolveScopeIdentity>,
   ): Promise<TranscriptTransportPage> => {
@@ -1852,6 +1868,7 @@ export function createQueryTranscriptRepository(
       cacheBudget.noteScopeObserved(toCacheScope(scope))
       enforceBudgetAfterWrite(scope)
       const transcript = repository.getTranscript(scope)
+      persistControllerLoad(scope, captured)
       indexLoadedSearchTranscript(scope, captured)
       recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
         kind: "ensure-initial",
@@ -1883,6 +1900,7 @@ export function createQueryTranscriptRepository(
       prependFlights.add(flightKey)
       notify(scope)
       const startedAt = Date.now()
+      const loadedBefore = new Set(repository.getTranscript(scope).messageOrder)
       try {
         const controller = ensureController(scope)
         await controller.fetchPreviousPage(pageSize)
@@ -1892,6 +1910,7 @@ export function createQueryTranscriptRepository(
         // Active transcript retains all pages; enforce only bounds inactive peers.
         enforceBudgetAfterWrite(scope)
         const transcript = repository.getTranscript(scope)
+        persistControllerLoad(scope, captured, loadedBefore)
         indexLoadedSearchTranscript(scope, captured)
         recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
           kind: "http-page",

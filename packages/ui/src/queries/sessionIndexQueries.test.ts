@@ -59,6 +59,21 @@ describe('sessionIndexQueries', () => {
       .toEqual(['transport-b', 'sessionIndex', 'snapshot']);
   });
 
+  test('drops older runtime entries instead of skipping the write when over budget', () => {
+    const storage = memoryStorage();
+    const bulky = (revision: number, directory: string): SessionIndexSnapshot => ({
+      ...snapshot(revision, directory),
+      directories: [{ ...snapshot(revision, directory).directories[0]!, directory: directory + 'x'.repeat(400_000) }],
+    });
+    writeSessionIndexStartupSnapshot('runtime-old-a', bulky(1, '/a'), storage);
+    writeSessionIndexStartupSnapshot('runtime-old-b', bulky(2, '/b'), storage);
+    writeSessionIndexStartupSnapshot('runtime-current', bulky(3, '/c'), storage);
+
+    expect(readSessionIndexStartupSnapshot('runtime-current', storage)?.revision).toBe(3);
+    expect(readSessionIndexStartupSnapshot('runtime-old-a', storage)).toBeNull();
+    expect(readSessionIndexStartupSnapshot('runtime-old-b', storage)?.revision).toBe(2);
+  });
+
   test('isolates startup storage by runtimeKey and ignores malformed values', () => {
     const storage = memoryStorage();
     writeSessionIndexStartupSnapshot('runtime-a', snapshot(1, '/a'), storage);

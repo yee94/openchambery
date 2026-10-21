@@ -47,6 +47,7 @@ export const registerAssistantRoutes = (app, dependencies) => {
     createChatCompletion: boundCompletion,
   });
   setAssignedSessionSettleHandler(({ sessionId, status }) => service.reportAssignedSessionSettle(sessionId, status));
+  const unsubscribeTaskResults = dependencies.setTaskResultHandler?.((run) => service.reportScheduledTaskResult(run));
   app.use('/api/openchamber/assistants', (req, res, next) => Promise.resolve(dependencies.refreshAllowedRoots?.()).then(next).catch((error) => respond(res, () => { throw error; })));
   app.get('/api/openchamber/assistants/capability', (_req, res) => respond(res, () => service.capability()));
   app.get('/api/openchamber/assistants', (_req, res) => respond(res, () => service.snapshot())); app.get('/api/openchamber/assistants/snapshot', (_req, res) => respond(res, () => service.snapshot())); app.put('/api/openchamber/assistants/settings', (req, res) => respond(res, () => service.setEnabled(req.body)));
@@ -107,5 +108,5 @@ export const registerAssistantRoutes = (app, dependencies) => {
   // Contact send admits the user message at 202; assistant bubbles stream on SSE.
   app.post('/api/openchamber/assistants/:assistantID/messages', (req, res) => respond(res, () => service.send(req.params.assistantID, req.body), 202)); app.post('/api/openchamber/assistants/:assistantID/share', (req, res) => respond(res, () => service.share(req.params.assistantID, req.body), 202)); app.get('/api/openchamber/assistants/share-operations/:operationID', (req, res) => respond(res, () => { const operation = service.shareOperation(req.params.operationID); if (!operation) throw new AssistantError('not_found'); return operation; }));
   app.use('/api/openchamber/assistants/topics', gone); app.use('/api/openchamber/assistants/:assistantID/topics', gone);
-  return { service, close: () => { setAssignedSessionSettleHandler(null); service.close(); } };
+  return { service, close: () => { unsubscribeTaskResults?.(); setAssignedSessionSettleHandler(null); service.close(); } };
 };

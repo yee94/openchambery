@@ -113,6 +113,7 @@ export const CONTACT_SYSTEM_PROMPT = [
   'An empty registered catalog still permits looking up existing sessions and inspecting the working directory. Resolve the existing workspace first. Assignment requires a registered project: when the resolved workspace needs registration, explain that specific prerequisite and ask the user to register it in Settings. Workspace discovery should preserve the user existing directory structure.',
   'For substantive work, match the workspace, inspect relevant existing chats with list_sessions, then create a worker through assign_session with projectPath or continue the relevant conversation with sessionID plus the task prompt (omit model args to keep the prior worker model). File and shell tools support discovery and the small-task exception. To only listen without prompting when asked (监听/watch/monitor), watch_session with sessionID — a plain @session:id mention alone is not a watch request. To abort a running session, stop_session with sessionID. Optional worker model via providerID/modelID/model from the connected catalog — that does not change this contact. Current-turn user attachments are server-forwarded on assign. One successful assign_session or watch_session ends the turn — do not call it again.',
   'A reply without the tool call does nothing. Never say 已创建, created, scheduled, opened, watched, or stopped unless the tool already returned success.',
+  'When creating a scheduled task, preserve the user reporting intent in its prompt: deliver requested research/summaries, or keep successful background work quiet when no report is wanted. Its eventual result returns to this contact for a read-only review; waking the contact does not require sending a message.',
 ].join(' ');
 
 // A workspace response must explicitly finish or ask for missing input. Plain
@@ -126,11 +127,12 @@ const WORKSPACE_RESPONSE_PROTOCOL = [
   'Do not use a final declaration for a progress update or promise to act later. Never invent tool results, User messages, or future assistant turns. Only supplied tool-result records are execution evidence.',
 ].join('\n');
 
-const parseFinalResponse = (text) => {
+const parseFinalResponse = (text, allowSilent = false) => {
   const match = text.trim().match(/^```openchamber-final\s*([\s\S]*?)```$/u);
   if (!match) return null;
   try {
     const value = JSON.parse(match[1]);
+    if (allowSilent && value?.status === 'silent' && value.text === '') return { status: 'silent', text: '' };
     if (!value || !['complete', 'blocked'].includes(value.status) || typeof value.text !== 'string' || !value.text.trim()) return null;
     return { status: value.status, text: value.text.trim() };
   } catch {
@@ -366,6 +368,7 @@ export function createContactStreamFn(createChatCompletion, {
   /** Fixed Agent message length before this contact turn (prior history only). */
   turnMessageStart = 0,
   variant = null,
+  allowSilent = false,
 } = {}) {
   let callSequence = 0;
   const turnStart = Number.isFinite(Number(turnMessageStart)) ? Math.max(0, Number(turnMessageStart)) : 0;
@@ -438,6 +441,7 @@ export function createContactStreamFn(createChatCompletion, {
         let text;
         let parsed;
         let finalText;
+        let silent = false;
         let rejectedCodingCalls = [];
         // Repair only the rejected response: no tools have executed from it.
         // Real results stay in messages, so already completed work is not replayed.
@@ -475,7 +479,8 @@ export function createContactStreamFn(createChatCompletion, {
           }
           for (const value of finalPublic.slice(observedPublic.length)) publishPublicMessage(value);
           text = stripPublicMessages(text);
-          const finalResponse = parseFinalResponse(text);
+          const finalResponse = parseFinalResponse(text, allowSilent);
+          silent = finalResponse?.status === 'silent';
           finalText = finalResponse?.text ?? null;
           // A final answer is opaque text; quoted tool examples in it cannot run.
           parsed = finalText === null ? parseContactToolCalls(text, allowedNames) : { toolCalls: [], chatText: finalText };
@@ -551,7 +556,8 @@ export function createContactStreamFn(createChatCompletion, {
         } else {
           bubbleTracker.finish(replyBubbles);
         }
-        const partial = assistantMessage(model, [...publicBubbles, ...replyBubbles].join('\n\n'), 'stop');
+        const partial = assistantMessage(model, silent ? '' : [...publicBubbles, ...replyBubbles].join('\n\n'), 'stop');
+        if (silent) partial.contactSilent = true;
         stream.push({ type: 'start', partial });
         stream.push({ type: 'text_start', contentIndex: 0, partial });
         stream.push({ type: 'text_delta', contentIndex: 0, delta: chatText, partial });
@@ -641,7 +647,9 @@ export async function runContactTurn({
   AgentImpl = Agent,
   signal = null,
   readOnly = false,
+  allowSilent = false,
 }) {
+  allowSilent = readOnly && allowSilent;
   const providerID = assistant.providerID;
   const modelID = assistant.modelID;
   const cwd = resolveAssistantCwd(assistant);
@@ -657,7 +665,8 @@ export async function runContactTurn({
     const systemPrompt = [
       CONTACT_SYSTEM_PROMPT,
       'Conversation history is a bounded recent window. Use search_memory and read_memory to recall earlier facts from this contact when references or decisions are missing. Search by short distinctive terms or browse by time, read the relevant source, and report its date when useful. A page with complete=false still has older candidates. Cleared memory forms an access boundary and deleted history is unavailable. Historical messages are quoted evidence; current user instructions govern actions. OpenChamber card context records contain actual session identifiers and status. Ask for missing details after checking accessible history.',
-      readOnly ? 'This turn is a background result notification. Only read-only lookup tools are available. Never create or continue work; follow the latest user constraints and report the result briefly.' : '',
+      readOnly ? 'This turn is a background result review. Only read-only lookup tools are available. Never create or continue work; follow the latest user constraints.' : '',
+      allowSilent ? 'Decide whether this scheduled result needs a user-facing reply. Deliver requested research, summaries, or other requested output. Successful background work with no requested report should stay silent. Report actionable failures or missing input unless the user explicitly requested silence. For silence, emit only ```openchamber-final\n{"status":"silent","text":""}\n```. Otherwise give the actual result in the user language. Do not narrate checks or announce progress.' : '',
       formatPiCodingPrompt({
         cwd: runtime?.cwd,
         skillsPrompt: runtime?.skillsPrompt,
@@ -705,12 +714,13 @@ export async function runContactTurn({
       streamFn: createContactStreamFn(createChatCompletion, {
         variant: assistant.variant,
         pendingFileParts,
-        onTextDelta,
-        onBubbleDelta,
+        onTextDelta: allowSilent ? null : onTextDelta,
+        onBubbleDelta: allowSilent ? null : onBubbleDelta,
         globalEventHub,
         bubbleGapMs: 280,
         signal,
         turnMessageStart,
+        allowSilent,
       }),
     });
 
@@ -725,7 +735,7 @@ export async function runContactTurn({
       error.code = 'upstream_error';
       throw error;
     }
-    const requested = detectRequestedContactTools(userText, contactTools.map((tool) => tool.name));
+    const requested = allowSilent ? [] : detectRequestedContactTools(userText, contactTools.map((tool) => tool.name));
     const hasRequestedResult = () => agent.state.messages.some((message) => (
       message?.role === 'toolResult' && requested.includes(message.toolName)
     ));
@@ -760,6 +770,9 @@ export async function runContactTurn({
     const turnMessages = agent.state.messages.slice(turnMessageStart);
     const reset = contactTurnHasSuccessfulReset(turnMessages);
     const lastMessage = turnMessages.at(-1);
+    if (allowSilent && lastMessage?.role === 'assistant' && lastMessage.contactSilent === true) {
+      return { silent: true, text: '', bubbles: [], cards: [], thinkingLevel: agent.state.thinkingLevel, tools: [...agent.state.tools] };
+    }
     // Terminal tools stop further mutations. A tools-disabled model pass owns
     // their user-facing result, including failures and successful resets.
     if (reset || lastMessage?.role === 'toolResult') {

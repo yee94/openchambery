@@ -22,6 +22,7 @@ import { useI18n } from '@/lib/i18n';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import type { ProjectEntry } from '@/lib/api/types';
 import type { GlobalScheduledTask, ScheduledTask, ScheduledTaskStatus } from '@/lib/scheduledTasksApi';
+import { openScheduledTask } from '@/lib/scheduledTaskNavigation';
 import {
   createAssistant,
   deleteAssistant,
@@ -40,7 +41,6 @@ import {
 import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useUIStore } from '@/stores/useUIStore';
 import { useScopedProvidersQuery } from '@/queries/agentQueries';
 
 const MANAGED_WORKSPACE_VALUE = '__managed_workspace__';
@@ -227,10 +227,6 @@ const AssistantScheduledTasksGroup: React.FC<{ assistantID: string }> = ({ assis
     || globalTasksQuery.isError
     || failedFallbackProject
     || hasUnresolvedMappedTask;
-  const openScheduledTasks = useEvent(() => {
-    useUIStore.getState().setActiveMainTab('schedule');
-    useUIStore.getState().setScheduledTasksDialogOpen(true);
-  });
   const retry = useEvent(() => {
     void scheduledTasksQuery.refetch();
     if (fallbackEnabled) {
@@ -287,7 +283,7 @@ const AssistantScheduledTasksGroup: React.FC<{ assistantID: string }> = ({ assis
               variant="ghost"
               size="icon"
               className="absolute inset-0 z-10 h-auto w-auto rounded-none bg-transparent p-0 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
-              onClick={openScheduledTasks}
+              onClick={() => openScheduledTask(entry.projectId, entry.task.id)}
               aria-label={t('assistants.settings.scheduledTasks.open', { name: entry.task.name })}
             >
               <span className="sr-only">{t('assistants.settings.scheduledTasks.open', { name: entry.task.name })}</span>

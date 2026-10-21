@@ -1507,6 +1507,51 @@ describe("Query repository durable cache wiring", () => {
     second.destroy()
   })
 
+  test("a cold network load persists so the next app start paints from disk", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const older = settledAssistant("msg_older", "older")
+    const settled = settledAssistant("msg_done", "done")
+    const first = createQueryTranscriptRepository({
+      client,
+      durableStore: inner,
+      durablePartition: () => "device-a",
+      probe: { getTransport: () => "direct:lan", getGeneration: () => 1 },
+      fetcher: async (args) => args.before
+        ? transportPage([{ info: { ...older.info, time: { created: 1 } } as Message, parts: older.parts }], { complete: true })
+        : transportPage([{ info: settled.info, parts: settled.parts }], { complete: false, cursor: "msg_done" }),
+    })
+    const coldScope = { directory: DIRECTORY, sessionID: SESSION }
+    await first.ensureInitial(coldScope)
+    await first.fetchPreviousPage(coldScope)
+    const durable = { transport: "device-a", generation: 0, directory: DIRECTORY, sessionID: SESSION }
+    await waitUntil(async () => (await inner.readSession(durable)).records.length === 2)
+    first.destroy()
+
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const second = createQueryTranscriptRepository({
+      client: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      durableStore: inner,
+      durablePartition: () => "device-a",
+      probe: { getTransport: () => "direct:lan", getGeneration: () => 1 },
+      fetcher: async () => {
+        await gate
+        return transportPage([{ info: settled.info, parts: settled.parts }], { complete: false, cursor: "msg_done" })
+      },
+    })
+    const paints: string[][] = []
+    second.subscribe(coldScope, () => {
+      paints.push([...second.getTranscript(coldScope).messageOrder])
+    })
+    const pending = second.ensureInitial(coldScope)
+    await waitUntil(() => paints.some((order) => order.includes("msg_done") && order.includes("msg_older")))
+    release()
+    await pending
+    second.destroy()
+  })
+
   test("partitioned durable writes from a replaced runtime are dropped", async () => {
     const inner = createMemoryTranscriptDurableStore()
     let generation = 1

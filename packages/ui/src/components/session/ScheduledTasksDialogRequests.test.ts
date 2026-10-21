@@ -34,9 +34,9 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, 'ScheduledTasksDialog.tsx'), 'utf8'),
       readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
     ]);
-    expect(content).toContain('<MobileOverlayPanel');
+    expect(content).toContain('<MobileResizableSheet');
     expect(content).toContain('<ScheduledTasksWorkspace presentation="mobile-panel" open={open} onOpenChange={setOpen} />');
-    expect(content).toContain('containedBody');
+    expect(content).toContain('<MobileSheetHeaderActions>');
     expect(content).not.toContain('fetchScheduledTasks(');
     expect(content).not.toContain('selectedProjectID');
     expect(content).not.toContain('projectSelector');

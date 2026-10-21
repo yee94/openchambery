@@ -223,6 +223,35 @@ describe("refreshTranscriptFromAuthority", () => {
     unbindTranscriptRepository()
     repo.destroy()
   })
+
+  test("background enter-revalidation does not mark a user refresh in flight", async () => {
+    unbindTranscriptRepository()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const repo = createQueryTranscriptRepository({
+      client: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      transport: "transport-a",
+      generation: 1,
+      initialLimit: 2,
+      fetcher: async () => {
+        await gate
+        return { records: [], cursor: undefined, complete: true, turnCount: 0 }
+      },
+      probe: {
+        getTransport: () => "transport-a",
+        getGeneration: () => 1,
+      },
+    })
+    bindTranscriptRepositoryInstance(repo)
+    const pending = refreshTranscriptFromAuthority("/ws", "ses_1", { background: true })
+    expect(isTranscriptAuthorityRefreshInFlight("ses_1", "/ws")).toBe(false)
+    release()
+    await pending
+    unbindTranscriptRepository()
+    repo.destroy()
+  })
 })
 
 describe("retryTranscriptInitial", () => {

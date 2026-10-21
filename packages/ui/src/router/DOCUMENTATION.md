@@ -39,6 +39,17 @@ buildSessionPath({ sessionId, tab: 'git' })  // → /session/$id/git
 
 `createAppNavigation`: `goSchedule()` / `goAssistant()` / `goSession()`.
 
+Individual tasks use `/schedule/tasks/$projectId/$taskId`. The scheduled workspace
+restores the composite identity on initial load and browser Back/Forward; list
+selection, save, and editor dismissal write the matching task/list path.
+`openScheduledTask` is the shared Assistant card/Settings-row entry. It also
+queues a transient UI open request for already-mounted workspaces and URL-disabled
+hosts (VS Code/embedded); the active host consumes it once, without persisting it.
+Mobile task links and list selections open the shared `MobileResizableSheet`,
+including cold links. Desktop retains the workspace detail panel. Missing tasks
+and failed project loads retain the requested identity and show unavailable/retry,
+never an empty create form. The sheet's close and drag-dismiss share the dirty-draft guard.
+
 The shared `useRouter` state bridge gives the active assistant/schedule primary
 precedence over a retained new-session draft. Selecting an Assistant writes
 `/assistant/$id`; initial links and browser Back/Forward restore that selection
