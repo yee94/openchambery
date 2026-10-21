@@ -19,13 +19,29 @@ import type { TranscriptTransportPage } from "./transcript-repository"
  *
  * Query `TranscriptScope` still treats transport/generation as optional; the
  * store does not. Callers must resolve live identity before crossing this seam.
+ *
+ * With a `partition` (stable runtime instance key), the durable scope ignores
+ * the in-memory transport fingerprint and generation counter: both change on
+ * every cold start and LAN⇄relay swap, which would make settled bodies
+ * unreachable after an app restart. Generation is pinned to 0 in that mode.
  */
-export function toTranscriptDurableScope(identity: {
-  transport: string
-  generation: number
-  directory: string
-  sessionID: string
-}): TranscriptDurableScope {
+export function toTranscriptDurableScope(
+  identity: {
+    transport: string
+    generation: number
+    directory: string
+    sessionID: string
+  },
+  partition?: string,
+): TranscriptDurableScope {
+  if (partition) {
+    return {
+      transport: partition,
+      generation: 0,
+      directory: identity.directory,
+      sessionID: identity.sessionID,
+    }
+  }
   return {
     transport: identity.transport,
     generation: identity.generation,

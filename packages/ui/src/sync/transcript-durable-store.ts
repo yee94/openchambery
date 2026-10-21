@@ -9,6 +9,10 @@ import { allowsAuthoritativeShrink, isSlimPart } from "./displayParts"
  * store does not. A row written under generation N must not reappear after a
  * transport recycle, and directory/session alone is not enough to keep two
  * runtimes apart.
+ *
+ * Production partitions by the stable runtime key instead (`transport` holds
+ * `getRuntimeKey()`, `generation` is 0) so rows survive app restarts; see
+ * `toTranscriptDurableScope` and sync DOCUMENTATION "Durable transcript partition".
  */
 export type TranscriptDurableScope = {
   readonly transport: string
