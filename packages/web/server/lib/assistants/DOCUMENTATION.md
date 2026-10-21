@@ -43,6 +43,45 @@ reasoning display.
 
 ## Acceptance criteria
 
+### Scheduled-task result review
+
+- `schedule_task` retains the existing assistant/project/task mapping. The task
+  prompt preserves the user's delivery intent. A terminal run is handed from the
+  scheduler to `reportScheduledTaskResult`; prompt admission and intermediate
+  session events do not wake the contact. Associations created after the run
+  started do not receive its historical result.
+- Each enabled owner receives a read-only contact-lane turn with the captured
+  contact configuration, the run's original task prompt, authoritative outcome,
+  error and bounded worker output. `read_session` can fetch the full result.
+  The existing live contact-turn state drives working indicators; no synthetic
+  user message is inserted. The review cannot execute the task again.
+- The model decides whether to deliver requested findings or remain quiet for
+  successful background work. Scheduled reviews alone accept an exact
+  `openchamber-final` declaration `{ "status": "silent", "text": "" }`.
+  Empty/malformed responses remain errors. Background progress is buffered until
+  this decision; silent reviews produce no transcript bubble, unread message,
+  or contact notification. Read-only worker-watch follow-ups keep their existing
+  reply behavior.
+- The additive `assistant_scheduled_result` table records terminal review
+  receipts by assistant/run, including silence and cancellation. Stable turn IDs
+  also reconcile already-persisted replies. Duplicate delivery and reopening the
+  service do not replay completed reviews. The scheduler retains an unacknowledged
+  result when the service closes or admission/preparation fails. User interruption
+  follows the existing automatic-turn cancellation policy.
+- Assistant-owned results bypass the generic scheduled-task notification;
+  contact notification settings apply only when the review speaks. Disabled
+  contacts consume the handoff without waking. Deleted/unowned associations use
+  the scheduler's ordinary notification path. Per-owner receipts let one failed
+  owner retry without replaying other completed owners.
+- This is Host-owned behavior for web, Electron, hosted mobile, Capacitor and
+  clients connected to that Host. It requires a running Host, not an open UI.
+  The extension-owned VS Code runtime does not gain a scheduler.
+- Integration coverage in `scheduled-tasks/runtime.test.js` runs the real
+  scheduler, SQLite stores, assistant mapping/lane and pi response protocol with
+  only upstream execution and model responses replaced. It covers report,
+  silence, task failure and restart recovery. This does not measure live model
+  decision quality or device push delivery.
+
 ### Contact memory recall
 
 - `search_memory({ query?, from?, to?, limit?, cursor? })` searches this contact's authored text beyond the automatically trimmed recent window. Empty query browses history. Search is literal (SQLite ASCII case folding, Chinese text preserved), with inclusive timezone-qualified ISO time bounds. Results contain source `messageID`, role, creation time, snippet, Unicode character offset and total length. Default 10 matches, maximum 20; each call examines at most 200 indexed message candidates. Empty matches with `complete:false` are partial, and the model must follow `nextCursor` before concluding that accessible history has no match.

@@ -1327,7 +1327,53 @@ export const createScheduledTasksRuntime = (deps) => {
         runID,
         error: safeErrorMessage(error),
       });
-      return { error };
+      return { persistenceError: error };
+    }
+  };
+
+  let taskResultHandler = null;
+  let resultRecoveryCursor;
+  let resultRecoveryFlight = false;
+  const deliveringResults = new Set();
+  const deliverTaskResult = async (run) => {
+    if (deliveringResults.has(run.id) || deliveringResults.size >= 4) return;
+    deliveringResults.add(run.id);
+    const handler = taskResultHandler;
+    try {
+      const handled = handler ? await handler(run) : false;
+      if (handler !== taskResultHandler) return;
+      if (!handled) {
+        await notifyTaskRun?.({
+          projectID: run.projectId, taskID: run.taskId, taskName: run.taskName,
+          status: run.status, reason: run.trigger,
+          ...(run.sessionId ? { sessionId: run.sessionId } : {}),
+          ...(run.error ? { errorMessage: run.error } : {}),
+        });
+      }
+      runHistoryStore?.acknowledgeResult?.(run.id);
+    } catch (error) {
+      logger.warn?.('[ScheduledTasks] result delivery failed', { runID: run.id, error: safeErrorMessage(error) });
+    } finally {
+      deliveringResults.delete(run.id);
+    }
+  };
+  const recoverTaskResults = async () => {
+    if (resultRecoveryFlight || !taskResultHandler || typeof runHistoryStore?.listPendingResults !== 'function') return;
+    resultRecoveryFlight = true;
+    try {
+      const page = runHistoryStore.listPendingResults({ before: resultRecoveryCursor, limit: 20 });
+      resultRecoveryCursor = page.nextCursor || undefined;
+      let index = 0;
+      await Promise.all(Array.from({ length: Math.min(4, page.runs.length) }, async () => {
+        while (index < page.runs.length && taskResultHandler) {
+          const run = page.runs[index++];
+          await deliverTaskResult(run);
+        }
+      }));
+    } catch (error) {
+      logger.warn?.('[ScheduledTasks] result recovery failed', { error: safeErrorMessage(error) });
+    } finally {
+      resultRecoveryFlight = false;
     }
   };
 
@@ -1375,6 +1421,7 @@ export const createScheduledTasksRuntime = (deps) => {
             trigger: reason === 'manual' ? 'manual' : 'scheduled',
             directory: projectPath,
             startedAt: runStartedAt,
+            prompt: task.execution?.prompt,
             ...(resolvedSlotAt !== undefined ? { slotAt: resolvedSlotAt } : {}),
           });
         } catch (error) {
@@ -1587,9 +1634,9 @@ export const createScheduledTasksRuntime = (deps) => {
         ...(sessionID ? { sessionId: sessionID } : {}),
         ...(status === 'error' ? { error: errorMessage || 'Unknown error' } : {}),
       });
-      if (historyFinalize?.error) {
+      if (historyFinalize?.persistenceError) {
         status = 'error';
-        errorMessage = errorMessage || safeErrorMessage(historyFinalize.error);
+        errorMessage = errorMessage || safeErrorMessage(historyFinalize.persistenceError);
       }
 
       try {
@@ -1606,15 +1653,21 @@ export const createScheduledTasksRuntime = (deps) => {
       // Notification fanout for scheduled (non-manual) runs; the notification
       // runtime owns every delivery gate (settings toggle, channels).
       try {
-        await notifyTaskRun?.({
-          projectID,
-          taskID,
-          taskName,
-          status,
-          reason,
-          ...(sessionID ? { sessionId: sessionID } : {}),
-          ...(status === 'error' ? { errorMessage } : {}),
-        });
+        if (taskResultHandler && historyFinalize && !historyFinalize.persistenceError) {
+          // Reviewing a result is independent of the scheduler's execution slot.
+          void deliverTaskResult({ ...historyFinalize, prompt: task.execution?.prompt });
+        } else {
+          await notifyTaskRun?.({
+            projectID,
+            taskID,
+            taskName,
+            status,
+            reason,
+            ...(sessionID ? { sessionId: sessionID } : {}),
+            ...(status === 'error' ? { errorMessage } : {}),
+          });
+          if (!historyFinalize?.persistenceError && runID) runHistoryStore?.acknowledgeResult?.(runID);
+        }
       } catch (error) {
         logger.warn?.('[ScheduledTasks] task-run notification failed', {
           projectID,
@@ -1813,6 +1866,7 @@ export const createScheduledTasksRuntime = (deps) => {
     if (controller.signal.aborted) return;
     await recoverTaskStates(controller);
     if (controller.signal.aborted) return;
+    void recoverTaskResults();
     historyRecoveryTimer = setTimeout(() => {
       void recoverRunHistory(controller, nextCursor || undefined);
     }, 5_000);
@@ -1994,5 +2048,9 @@ export const createScheduledTasksRuntime = (deps) => {
     runNow,
     getStatus,
     observeSessionEvent,
+    setTaskResultHandler: (handler) => {
+      taskResultHandler = handler;
+      return () => { if (taskResultHandler === handler) taskResultHandler = null; };
+    },
   };
 };

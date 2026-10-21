@@ -271,16 +271,25 @@ export async function retryTranscriptInitial(
  * delete only in-range non-optimistic absences. Failure keeps the prior
  * transcript. Do not use ensureInitial (enter-and-sync reconcile without
  * that delete pass) or destructiveReset (ensure failure blanks the chat).
+ *
+ * `background` marks an automatic enter-revalidation (session open / sync):
+ * it skips the user-refresh flight so a cache-painted transcript does not
+ * show the sync whisper for the whole GET.
  */
 export async function refreshTranscriptFromAuthority(
   directory: string,
   sessionID: string,
+  options?: { background?: boolean },
 ): Promise<void> {
   const repository = requireTranscriptRepository() as TranscriptRepository & {
     refreshFromAuthority?: (scope: TranscriptScope) => Promise<unknown>
   }
   if (typeof repository.refreshFromAuthority !== "function") {
     throw new Error("TranscriptRepository does not support refreshFromAuthority")
+  }
+  if (options?.background) {
+    await repository.refreshFromAuthority(transcriptScope(directory, sessionID))
+    return
   }
   beginTranscriptAuthorityRefresh(directory, sessionID)
   try {

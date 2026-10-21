@@ -10,6 +10,31 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
 - This module is OpenChamber feature logic; it is intentionally separate from OpenCode proxy/runtime internals.
 - Prompt and goal execution preserve hash-prefixed text literally; no snippet discovery or expansion occurs before dispatch.
 
+## Assistant result handoff
+
+`setTaskResultHandler(handler)` installs the Host's assistant result consumer and
+returns its cleanup function. The feature-route composition wires it to the
+assistant service. A handler returns `true` once associated contacts have reviewed
+the result (including explicit silence); `false` retains ordinary scheduled-task
+notification delivery. The scheduler releases its execution slot independently
+of assistant inference. Handler failures keep the result pending.
+
+Run history stores the original execution prompt privately alongside a
+`result_pending` marker. The same terminal history update makes the result
+eligible for delivery, including an in-flight run reconciled after restart.
+`listPendingResults` uses bounded keyset pages of 20; the existing five-second
+recovery pass retries handoffs with at most four in flight per runtime. A failing
+page does not prevent the cursor from reaching later results. `acknowledgeResult`
+clears only the delivery marker, never the execution result. Execution failure,
+history-persistence failure, and assistant delivery failure remain distinct.
+
+The additive migration leaves already-terminal old history acknowledged, avoiding
+an upgrade notification backlog. Old running records enroll when they really
+settle. Public history DTOs expose neither the prompt nor internal delivery state.
+Assistant receipts deduplicate completed reviews, including silent ones; this is
+a retryable handoff, not an exactly-once guarantee for model requests or device
+pushes during crashes/concurrent Hosts. Result review is read-only.
+
 ## Built-in new-session skill
 
 `session-skill.js` intercepts new `POST /api/session` admissions on a Host using

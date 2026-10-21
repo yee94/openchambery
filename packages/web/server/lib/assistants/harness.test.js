@@ -1793,6 +1793,27 @@ it('rejects simulated tool results even without a final fence', async () => {
   expect((await stream.result()).content.filter((part) => part.type === 'toolCall')).toHaveLength(1)
 })
 
+it('lets a scheduled follow-up finish silently without publishing progress or a notification marker', async () => {
+  const onBubbleDelta = vi.fn()
+  const createChatCompletion = vi.fn(async () => ({ text: '```openchamber-message\n{"text":"Checking the result"}\n```\n```openchamber-final\n{"status":"silent","text":""}\n```' }))
+  const result = await runContactTurn({
+    assistant: { providerID: 'p', modelID: 'm' },
+    readOnly: true, allowSilent: true, history: [], userText: 'Scheduled maintenance succeeded; no report requested.',
+    createChatCompletion, onBubbleDelta,
+  })
+  expect(result).toMatchObject({ silent: true, text: '', bubbles: [], cards: [] })
+  expect(onBubbleDelta).not.toHaveBeenCalled()
+  expect(createChatCompletion).toHaveBeenCalledOnce()
+})
+
+it.each(['', '```openchamber-final\n{"status":"silent","text":""}\n```'])('does not turn an empty or unauthorized response into successful silence', async (text) => {
+  await expect(runContactTurn({
+    assistant: { providerID: 'p', modelID: 'm' }, readOnly: true,
+    allowSilent: text === '', history: [], userText: 'Review the result',
+    createChatCompletion: async () => ({ text }),
+  })).rejects.toMatchObject({ code: 'upstream_error' })
+})
+
 it('rejects a background model attempt to restart a session before executing its tool', async () => {
   const assignWork = vi.fn()
   const createChatCompletion = vi.fn(async () => ({ text: '```openchamber-tool\n{"name":"assign_session","arguments":{"sessionID":"ses_completed","prompt":"restart"}}\n```' }))

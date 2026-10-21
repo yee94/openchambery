@@ -319,7 +319,7 @@ export function useSync() {
         if (options?.purpose === "prepend" || options?.before) {
           await fetchTranscriptPreviousPage(targetDirectory, sessionID)
         } else {
-          await refreshTranscriptFromAuthority(targetDirectory, sessionID)
+          await refreshTranscriptFromAuthority(targetDirectory, sessionID, { background: true })
         }
       } catch {
         return

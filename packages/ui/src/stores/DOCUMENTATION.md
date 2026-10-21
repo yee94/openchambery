@@ -19,6 +19,10 @@ while recovering symlink aliases. Page length alone cannot establish exhaustion.
 
 Not all state in the UI belongs here.
 
+`useUIStore.scheduledTaskOpenRequest` is a transient exact-task navigation intent,
+consumed once by the active scheduled-task host. It is excluded from persistence;
+browser reload/history selection comes from `/schedule/tasks/$projectId/$taskId`.
+
 `useUpdateStore` owns update-dialog orchestration. Electron and Capacitor use the
 same OTA channel override and beta→stable confirmation flow; Electron delegates
 checks/download/relaunch to main-process IPC, while Capacitor uses mobileUpdates.

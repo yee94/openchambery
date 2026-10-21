@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
-import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { MobileResizableSheet, MobileSheetHeaderActions } from '@/components/ui/MobileResizableSheet';
 import { toast } from '@/components/ui';
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
@@ -41,6 +41,7 @@ import { MobileTabPageHeader } from '@/mobile/MobileTabPageHeader';
 import { openSessionWithFeedback } from '@/sync/openSessionWithFeedback';
 import { isIPadApp } from '@/lib/platform';
 import { parseRoute, updateBrowserURL } from '@/lib/router';
+import { openScheduledTask } from '@/lib/scheduledTaskNavigation';
 
 const scheduleTimes = (task: ScheduledTask): string[] => {
   const raw = Array.isArray(task.schedule.times)
@@ -251,20 +252,31 @@ export function ScheduledTasksDialog() {
   const open = useUIStore((state) => state.isScheduledTasksDialogOpen);
   const setOpen = useUIStore((state) => state.setScheduledTasksDialogOpen);
   const isMobile = useUIStore((state) => state.isMobile);
+  React.useEffect(() => {
+    if (!isMobile) return;
+    const restoreTaskRoute = (event?: PopStateEvent) => {
+      const route = parseRoute();
+      if (route.tab === 'schedule' && route.scheduleProjectId && route.scheduleTaskId) setOpen(true);
+      else if (event && route.tab !== 'schedule') setOpen(false);
+    };
+    restoreTaskRoute();
+    window.addEventListener('popstate', restoreTaskRoute);
+    return () => window.removeEventListener('popstate', restoreTaskRoute);
+  }, [isMobile, setOpen]);
   if (!isMobile) return null;
 
   return (
-    <MobileOverlayPanel
+    <MobileResizableSheet
+      id="scheduled-tasks"
       open={open}
       title={t('sessions.scheduledTasks.dialog.title')}
-      onClose={() => requestScheduledTasksDialogClose()}
-      className="h-[min(92dvh,760px)] max-w-none sm:max-w-2xl"
-      contentMaxHeightClassName="max-h-none"
-      renderHeader={() => null}
-      containedBody
+      ariaLabel={t('sessions.scheduledTasks.dialog.title')}
+      closeAriaLabel={t('mobile.surface.closeAria')}
+      resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+      onOpenChange={(nextOpen) => { if (!nextOpen) requestScheduledTasksDialogClose(); }}
     >
       <ScheduledTasksWorkspace presentation="mobile-panel" open={open} onOpenChange={setOpen} />
-    </MobileOverlayPanel>
+    </MobileResizableSheet>
   );
 }
 
@@ -297,13 +309,21 @@ export function ScheduledTasksWorkspace({
   const globalScheduledTaskRunsQueryKey = React.useMemo(() => [transport, 'scheduled-task-runs'] as const, [transport]);
   const reduceMotion = useReducedMotion();
   const isMobile = useUIStore((state) => state.isMobile);
+  const taskOpenRequest = useUIStore((state) => state.scheduledTaskOpenRequest);
+  const dialogOpen = useUIStore((state) => state.isScheduledTasksDialogOpen);
   const setMainTabGuard = useUIStore((state) => state.setMainTabGuard);
   const projects = useProjectsStore((state) => state.projects);
   const activeProject = useProjectsStore((state) => state.getActiveProject());
   const preferredProjectID = activeProject?.id || projects[0]?.id || '';
   const [createProjectID, setCreateProjectID] = React.useState(preferredProjectID);
-  const [selectedTaskIdentity, setSelectedTaskIdentity] = React.useState<TaskIdentity | null>(null);
-  const [editorMode, setEditorMode] = React.useState<WorkspaceEditorMode>('closed');
+  const [selectedTaskIdentity, setSelectedTaskIdentity] = React.useState<TaskIdentity | null>(() => {
+    if (isMobile && presentation !== 'mobile-panel') return null;
+    const route = parseRoute();
+    return route.scheduleProjectId && route.scheduleTaskId
+      ? { projectId: route.scheduleProjectId, taskId: route.scheduleTaskId }
+      : null;
+  });
+  const [editorMode, setEditorMode] = React.useState<WorkspaceEditorMode>(() => selectedTaskIdentity ? 'edit' : 'closed');
   const [filter, setFilter] = React.useState<WorkspaceFilter>('all');
   const [workspaceView, setWorkspaceView] = React.useState<WorkspaceView>(() => {
     const route = parseRoute();
@@ -339,19 +359,43 @@ export function ScheduledTasksWorkspace({
     return () => onEditorActiveChange?.(false);
   }, [editorMode, isMobileTab, onEditorActiveChange]);
 
-  // Path → UI: when deep-linked to /schedule/history (or browser back), mirror view.
+  // Path → UI: restore exact task selection as well as the workspace view.
   React.useEffect(() => {
     if (!open) return;
-    const onPop = () => {
+    const onPop = (event?: PopStateEvent) => {
       const route = parseRoute();
-      if (route.tab === 'schedule' || useUIStore.getState().activeMainTab === 'schedule') {
+      if (route.tab === 'schedule') {
+        if (isMobile && presentation !== 'mobile-panel' && route.scheduleTaskId) {
+          setSelectedTaskIdentity(null);
+          setEditorMode('closed');
+          updateDraftDirty(false);
+          return;
+        }
         const next = route.scheduleView === 'history' ? 'history' : 'tasks';
         setWorkspaceView((prev) => (prev === next ? prev : next));
+        const identity = route.scheduleProjectId && route.scheduleTaskId
+          ? { projectId: route.scheduleProjectId, taskId: route.scheduleTaskId }
+          : null;
+        setSelectedTaskIdentity(identity);
+        setEditorMode(identity ? 'edit' : 'closed');
+        updateDraftDirty(false);
+      } else if (event && presentation === 'mobile-panel') {
+        onOpenChange?.(false);
       }
     };
+    onPop();
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, [open]);
+  }, [open, isMobile, presentation, onOpenChange, updateDraftDirty]);
+
+  React.useEffect(() => {
+    if (!open || !taskOpenRequest || (isMobile && presentation !== 'mobile-panel' && dialogOpen)) return;
+    setSelectedTaskIdentity(taskOpenRequest);
+    setEditorMode('edit');
+    setWorkspaceView('tasks');
+    updateDraftDirty(false);
+    useUIStore.getState().setScheduledTaskOpenRequest(null);
+  }, [open, taskOpenRequest, isMobile, presentation, dialogOpen, updateDraftDirty]);
 
   React.useEffect(() => {
     if (projects.some((project) => project.id === createProjectID)) return;
@@ -455,13 +499,6 @@ export function ScheduledTasksWorkspace({
     };
   }, [globalScheduledTasksQueryKey, globalScheduledTaskRunsQueryKey]);
 
-  React.useEffect(() => {
-    if (editorMode === 'edit' && selectedTaskIdentity && !selectedTaskEntry && tasksQuery.isSuccess) {
-      setSelectedTaskIdentity(null);
-      setEditorMode('closed');
-    }
-  }, [editorMode, selectedTaskEntry, selectedTaskIdentity, tasksQuery.isSuccess]);
-
   const saveTaskMutation = useMutation({
     mutationFn: ({ projectID, taskDraft }: { projectID: string; taskDraft: Partial<ScheduledTask> }) => upsertScheduledTask(projectID, taskDraft),
     onSuccess: (nextTasks, { projectID }) => {
@@ -529,9 +566,14 @@ export function ScheduledTasksWorkspace({
     if (!confirmDraftChange()) {
       return;
     }
+    if (isMobile && presentation !== 'mobile-panel') {
+      openScheduledTask(identity.projectId, identity.taskId);
+      return;
+    }
     setSelectedTaskIdentity(identity);
     setEditorMode('edit');
     updateDraftDirty(false);
+    syncScheduledPath('tasks', identity);
   });
 
   const handleCreate = useEvent(() => {
@@ -541,6 +583,7 @@ export function ScheduledTasksWorkspace({
     setSelectedTaskIdentity(null);
     setEditorMode('create');
     updateDraftDirty(false);
+    syncScheduledPath('tasks', null);
   });
 
   const syncScheduledPath = useEvent((nextView: WorkspaceView, task?: { projectId: string; taskId: string } | null) => {
@@ -622,9 +665,19 @@ export function ScheduledTasksWorkspace({
     setSelectedTaskIdentity(null);
     setEditorMode('closed');
     updateDraftDirty(false);
+    syncScheduledPath('tasks', null);
   });
 
   const requestClose = useEvent(() => {
+    if (presentation === 'mobile-panel') {
+      if (!confirmDraftChange()) return true;
+      setSelectedTaskIdentity(null);
+      setEditorMode('closed');
+      updateDraftDirty(false);
+      syncScheduledPath('tasks', null);
+      onOpenChange?.(false);
+      return true;
+    }
     if (editorMode !== 'closed') {
       handleCancelEditor(false);
       return true;
@@ -689,6 +742,7 @@ export function ScheduledTasksWorkspace({
     if (nextSelectedTask) {
       setSelectedTaskIdentity({ projectId: projectID, taskId: nextSelectedTask.id });
       setEditorMode('edit');
+      syncScheduledPath('tasks', { projectId: projectID, taskId: nextSelectedTask.id });
     }
     updateDraftDirty(false);
     toast.success(t('sessions.scheduledTasks.dialog.toast.saved'));
@@ -708,6 +762,7 @@ export function ScheduledTasksWorkspace({
         setSelectedTaskIdentity(null);
         setEditorMode('closed');
         updateDraftDirty(false);
+        syncScheduledPath('tasks', null);
       }
       toast.success(t('sessions.scheduledTasks.dialog.toast.deleted'));
     } catch (error) {
@@ -798,26 +853,19 @@ export function ScheduledTasksWorkspace({
       >
       {isMobileTab ? <MobileTabPageHeader title={t('sessions.scheduledTasks.dialog.title')} /> : null}
       {isMobilePanel && !isMobileTab ? (
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/40 px-2">
+        <MobileSheetHeaderActions>
           {editorMode !== 'closed' ? (
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="size-11 shrink-0 rounded-lg"
-              onClick={requestClose}
+              onClick={() => handleCancelEditor(false)}
               aria-label={t('header.actions.backAria')}
             >
               <Icon name="arrow-left" className="size-5" />
             </Button>
           ) : null}
-          <h2 className="min-w-0 flex-1 truncate px-1 typography-ui-label font-semibold text-foreground">
-            {editorMode === 'edit'
-              ? t('sessions.scheduledTasks.editor.title.edit')
-              : editorMode === 'create'
-                ? t('sessions.scheduledTasks.editor.title.new')
-                : t('sessions.scheduledTasks.dialog.title')}
-          </h2>
           {editorMode === 'edit' && selectedTaskEntry ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -856,21 +904,8 @@ export function ScheduledTasksWorkspace({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : editorMode === 'closed' ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-11 shrink-0 rounded-lg"
-              onClick={requestClose}
-              aria-label={t('mobile.surface.closeAria')}
-            >
-              <Icon name="close" className="size-5" />
-            </Button>
-          ) : (
-            <span className="size-11 shrink-0" aria-hidden="true" />
-          )}
-        </header>
+          ) : null}
+        </MobileSheetHeaderActions>
       ) : null}
       <section className={cn(
         'min-w-0 flex-col transition-[width] duration-300 ease-out',
@@ -1627,9 +1662,17 @@ export function ScheduledTasksWorkspace({
       </section>
       </div>
 
+      {editorMode === 'edit' && !selectedTask ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4" role="status">
+          {tasksQuery.isPending ? t('sessions.scheduledTasks.dialog.loading') : t('common.unavailable')}
+          {!tasksQuery.isPending ? (
+            <Button variant="outline" size="sm" onClick={() => void tasksQuery.refetch()}>{t('assistants.actions.retry')}</Button>
+          ) : null}
+        </div>
+      ) : null}
       {!isMobile ? (
         <AnimatePresence initial={false}>
-          {editorMode !== 'closed' ? (
+          {editorMode === 'create' || (editorMode === 'edit' && selectedTask) ? (
           <motion.div
             key="scheduled-task-details"
             initial={reduceMotion ? { opacity: 1, width: 0 } : { opacity: 0, width: 0, x: 24 }}
@@ -1659,7 +1702,7 @@ export function ScheduledTasksWorkspace({
           </motion.div>
           ) : null}
         </AnimatePresence>
-      ) : editorMode !== 'closed' ? (
+      ) : editorMode === 'create' || (editorMode === 'edit' && selectedTask) ? (
         <div
           ref={isMobileTab ? mobileNavigationSurfaceRef : undefined}
           className={cn(

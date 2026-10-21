@@ -767,6 +767,7 @@ interface UIStore {
   openCodeStatusText: string;
   isSessionCreateDialogOpen: boolean;
   isScheduledTasksDialogOpen: boolean;
+  scheduledTaskOpenRequest: { projectId: string; taskId: string } | null;
   isArchivedSessionsDialogOpen: boolean;
   isSettingsDialogOpen: boolean;
   isNewWorktreeDialogOpen: boolean;
@@ -959,6 +960,7 @@ interface UIStore {
   setOpenCodeStatusText: (text: string) => void;
   setSessionCreateDialogOpen: (open: boolean) => void;
   setScheduledTasksDialogOpen: (open: boolean) => void;
+  setScheduledTaskOpenRequest: (target: { projectId: string; taskId: string } | null) => void;
   setArchivedSessionsDialogOpen: (open: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
   setNewWorktreeDialogOpen: (open: boolean) => void;
@@ -1139,6 +1141,7 @@ export const useUIStore = create<UIStore>()(
         openCodeStatusText: '',
         isSessionCreateDialogOpen: false,
         isScheduledTasksDialogOpen: false,
+        scheduledTaskOpenRequest: null,
         isArchivedSessionsDialogOpen: false,
         isSettingsDialogOpen: false,
         isNewWorktreeDialogOpen: false,
@@ -2047,6 +2050,9 @@ export const useUIStore = create<UIStore>()(
 
         setScheduledTasksDialogOpen: (open) => {
           set({ isScheduledTasksDialogOpen: open });
+        },
+        setScheduledTaskOpenRequest: (target) => {
+          set({ scheduledTaskOpenRequest: target });
         },
 
         setArchivedSessionsDialogOpen: (open) => {

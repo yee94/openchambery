@@ -172,8 +172,7 @@ describe('Assistant UI product contract', () => {
     expect(settings).toContain('useAssistantContactMessagesQuery(assistantID, fallbackEnabled)');
     expect(settings).toContain('useGlobalScheduledTasksQuery(fallbackEnabled)');
     expect(settings).toContain("card.cardType === 'schedule'");
-    expect(settings).toContain("setActiveMainTab('schedule')");
-    expect(settings).toContain('setScheduledTasksDialogOpen(true)');
+    expect(settings).toContain('openScheduledTask(entry.projectId, entry.task.id)');
     expect(settings).toContain('scheduledTasksQuery.isError');
     expect(settings).toContain("t('assistants.settings.scheduledTasks.loadError')");
     expect(settings).toContain("t('assistants.settings.scheduledTasks.empty')");
@@ -455,8 +454,7 @@ describe('Assistant UI product contract', () => {
     expect(assistantCard).toContain('relative inline-block size-10');
     expect(assistantCard).not.toContain('<Button');
     expect(assistantCard).not.toContain('assistants.contact.card.assistant.open');
-    expect(scheduleCard).toContain("setActiveMainTab('schedule')");
-    expect(scheduleCard).toContain('setScheduledTasksDialogOpen(true)');
+    expect(scheduleCard).toContain('openScheduledTask(card.projectID, card.taskID)');
     expect(scheduleCard).toContain('data-assistant-contact-card="schedule"');
     expect(scheduleCard).toContain('role="button"');
     expect(scheduleCard).toContain('onClick={openSchedule}');

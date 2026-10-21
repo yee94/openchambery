@@ -3213,6 +3213,59 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it.each([true, false])('wakes the owning assistant after a scheduled result, with silent=%s and durable deduplication', async (silent) => {
+    const directory = root();
+    const onContactTurnComplete = vi.fn();
+    const backgroundTurns = [];
+    const runContactTurn = async (input) => {
+      if (input.readOnly) {
+        backgroundTurns.push(input);
+        return realRunContactTurn({
+          ...input,
+          createChatCompletion: async () => ({ text: silent
+            ? '```openchamber-final\n{"status":"silent","text":""}\n```'
+            : '资料已整理：本周有两项相关更新。' }),
+        });
+      }
+      await input.tools.find((tool) => tool.name === 'schedule_task').execute('schedule', {
+        name: 'Daily task', prompt: 'Summarize research', time: '18:00', timezone: 'UTC',
+      });
+      return { text: '已安排', bubbles: ['已安排'] };
+    };
+    const options = {
+      listProjects: async () => [{ id: 'project', path: directory }],
+      upsertScheduledTask: async (_project, task) => ({ task: { ...task, id: 'task' } }),
+      syncScheduledTaskProject: async () => {}, runContactTurn, onContactTurnComplete,
+    };
+    let service = setup(directory, { messages: async () => [{ info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Verified research results' }] }] }, options);
+    try {
+      const owner = service.createAssistant(assistantInput);
+      service.createAssistant({ ...assistantInput, name: 'Unrelated' });
+      await settleSend(service, owner.id, { messageID: 'schedule', parts: [{ type: 'text', text: 'Schedule daily research' }] });
+      const before = service.contactMessages(owner.id).messages.length;
+      onContactTurnComplete.mockClear();
+      const run = { id: 'run-1', projectId: 'project', taskId: 'task', taskName: 'Daily task', status: 'success', sessionId: 'worker', directory, startedAt: Date.now(), finishedAt: Date.now(), prompt: 'Summarize research' };
+      expect(await service.reportScheduledTaskResult(run)).toBe(true);
+      expect(backgroundTurns).toHaveLength(1);
+      expect(backgroundTurns[0].userText).toContain('Verified research results');
+      expect(backgroundTurns[0].userText).toContain('Summarize research');
+      expect(backgroundTurns[0].allowSilent).toBe(true);
+      expect(service.snapshot().assistants.find((item) => item.id === owner.id).working).toBe(false);
+      const after = service.contactMessages(owner.id).messages;
+      expect(after).toHaveLength(before + (silent ? 0 : 1));
+      expect(onContactTurnComplete).toHaveBeenCalledTimes(silent ? 0 : 1);
+      expect(await service.reportScheduledTaskResult(run)).toBe(true);
+      service.close();
+      service = setup(directory, {}, options);
+      expect(await service.reportScheduledTaskResult(run)).toBe(true);
+      expect(backgroundTurns).toHaveLength(1);
+      expect(await service.reportScheduledTaskResult({ ...run, id: 'foreign', projectId: 'other' })).toBe(false);
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('injects registered projects into the contact turn and assigns after a name match', async () => {
     const directory = root();
     const project = path.join(directory, 'sample-app');

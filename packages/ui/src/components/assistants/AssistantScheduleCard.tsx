@@ -3,7 +3,7 @@ import { useEvent } from '@reactuses/core'
 import { Icon } from '@/components/icon/Icon'
 import { useI18n } from '@/lib/i18n'
 import type { AssistantContactScheduleCardPart } from '@/queries/assistantQueries'
-import { useUIStore } from '@/stores/useUIStore'
+import { openScheduledTask } from '@/lib/scheduledTaskNavigation'
 import { CONTACT_CARD_COVER_CLASS, activateContactCardOnKeyDown } from './contactCardChrome'
 
 type AssistantScheduleCardProps = {
@@ -23,8 +23,7 @@ export const AssistantScheduleCard: React.FC<AssistantScheduleCardProps> = ({ ca
   const when = [kind, card.time].filter(Boolean).join(' · ')
   const metadata = when.trim() || (typeof card.prompt === 'string' ? card.prompt.trim() : '')
   const openSchedule = useEvent(() => {
-    useUIStore.getState().setActiveMainTab('schedule')
-    useUIStore.getState().setScheduledTasksDialogOpen(true)
+    openScheduledTask(card.projectID, card.taskID)
   })
   const onActivateKeyDown = useEvent((event: React.KeyboardEvent<HTMLElement>) => {
     activateContactCardOnKeyDown(event, openSchedule)
