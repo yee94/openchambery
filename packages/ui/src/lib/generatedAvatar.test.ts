@@ -1,9 +1,48 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
+import { Avatar } from '@dicebear/core';
 import { generatedAvatarDataUri, type AvatarColorSet } from './generatedAvatar';
 
 const svg = (uri: string) => decodeURIComponent(uri.slice(uri.indexOf(',') + 1));
 
 describe('local generated avatars', () => {
+  test('reuses artwork across message rows while keeping palette and animation variants distinct', () => {
+    const generate = vi.spyOn(Avatar.prototype, 'toDataUri');
+    try {
+      const colors = { background: '#22c55e' };
+      const first = generatedAvatarDataUri('agent', 'shared-row-face', false, colors);
+      for (let index = 0; index < 50; index += 1) {
+        expect(generatedAvatarDataUri('agent', ' SHARED-ROW-FACE ', true, { ...colors })).toBe(first);
+      }
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(generatedAvatarDataUri('agent', 'shared-row-face', false, { background: '#a855f7' })).not.toBe(first);
+      expect(generate).toHaveBeenCalledTimes(2);
+      const still = generatedAvatarDataUri('assistant', 'shared-row-face');
+      expect(generatedAvatarDataUri('assistant', 'shared-row-face', true)).not.toBe(still);
+      expect(generate).toHaveBeenCalledTimes(4);
+      expect(generatedAvatarDataUri('agent', 'shared-row-face', false, colors)).toBe(first);
+      expect(generate).toHaveBeenCalledTimes(4);
+    } finally {
+      generate.mockRestore();
+    }
+  });
+
+  test('bounds retained artwork by entry count and bytes', () => {
+    const generate = vi.spyOn(Avatar.prototype, 'toDataUri').mockReturnValue('data:image/svg+xml,small');
+    try {
+      generatedAvatarDataUri('agent', 'evicted-face');
+      for (let index = 0; index < 128; index += 1) generatedAvatarDataUri('agent', `bounded-face-${index}`);
+      generate.mockClear();
+      generatedAvatarDataUri('agent', 'evicted-face');
+      expect(generate).toHaveBeenCalledTimes(1);
+      generate.mockReturnValue(`data:image/svg+xml,${'x'.repeat(1024 * 1024)}`);
+      generatedAvatarDataUri('agent', 'oversize-face');
+      generatedAvatarDataUri('agent', 'oversize-face');
+      expect(generate).toHaveBeenCalledTimes(3);
+    } finally {
+      generate.mockRestore();
+    }
+  });
+
   test('Gaze animates only when requested, with reduced-motion support', () => {
     const active = svg(generatedAvatarDataUri('assistant', 'identity', true));
     expect(active).toContain('@keyframes');

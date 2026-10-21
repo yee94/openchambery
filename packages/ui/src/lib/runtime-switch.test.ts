@@ -1,8 +1,38 @@
-import { describe, expect, test } from 'bun:test';
-import { getRuntimeApiBaseUrl, getRuntimeGeneration, getRuntimeTransportIdentity, isRuntimeEndpointIdentityChange, isRuntimeInstanceChange, switchRuntimeEndpoint } from './runtime-switch';
+import { describe, expect, test } from 'vitest';
+import { getRuntimeApiBaseUrl, getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity, isRuntimeEndpointIdentityChange, isRuntimeInstanceChange, switchRuntimeEndpoint } from './runtime-switch';
 import { clearRuntimeUrlAuthToken, setRuntimeExtraHeaders } from './runtime-auth';
 
 describe('runtime endpoint switching', () => {
+  test('reads same-origin identity without repeatedly constructing invalid URLs and observes later injection', () => {
+    const originalURL = globalThis.URL;
+    const injected = Object.getOwnPropertyDescriptor(window, '__OPENCHAMBER_API_BASE_URL__');
+    let emptyUrlConstructions = 0;
+    globalThis.URL = new Proxy(originalURL, {
+      construct(target, args: ConstructorParameters<typeof URL>) {
+        if (args[0] === '') emptyUrlConstructions += 1;
+        return Reflect.construct(target, args);
+      },
+    });
+    try {
+      Object.defineProperty(window, '__OPENCHAMBER_API_BASE_URL__', { configurable: true, writable: true, value: '' });
+      for (let index = 0; index < 1000; index += 1) {
+        expect(getRuntimeKey()).toBe('url:default');
+        expect(getRuntimeTransportIdentity()).toBe('direct:url:default');
+      }
+      expect(emptyUrlConstructions).toBe(0);
+      Reflect.set(window, '__OPENCHAMBER_API_BASE_URL__', 'https://injected.example/api/?query=ignored#hash');
+      expect(getRuntimeKey()).toBe('url:https://injected.example/api');
+      expect(getRuntimeTransportIdentity()).toBe('direct:url:https://injected.example/api');
+      Reflect.set(window, '__OPENCHAMBER_API_BASE_URL__', '');
+      expect(getRuntimeKey()).toBe('url:default');
+      expect(getRuntimeTransportIdentity()).toBe('direct:url:default');
+    } finally {
+      globalThis.URL = originalURL;
+      if (injected) Object.defineProperty(window, '__OPENCHAMBER_API_BASE_URL__', injected);
+      else Reflect.deleteProperty(window, '__OPENCHAMBER_API_BASE_URL__');
+    }
+  });
+
   test('does not classify credential refreshes on the same runtime as an identity change', () => {
     expect(isRuntimeEndpointIdentityChange({
       apiBaseUrl: 'http://127.0.0.1:57123/',

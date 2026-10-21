@@ -1,6 +1,7 @@
 import { Avatar, Style } from '@dicebear/core';
 import gaze from '@dicebear/styles/gaze.json';
 import botttsNeutral from '@dicebear/styles/bottts-neutral.json';
+import { DualLimitLru } from './dualLimitLru';
 
 export type AvatarKind = 'assistant' | 'agent';
 
@@ -17,6 +18,8 @@ const styles = {
   agent: new Style(botttsNeutral),
 };
 
+const artwork = new DualLimitLru<string, string>({ maxEntries: 128, maxBytes: 1024 * 1024 });
+
 /** Local, version-pinned SVGs. Identity, style, and colors determine the face. */
 export function generatedAvatarDataUri(
   kind: AvatarKind,
@@ -25,24 +28,31 @@ export function generatedAvatarDataUri(
   colors?: AvatarColorSet,
 ): string {
   const seedValue = kind === 'agent' ? seed?.trim().toLowerCase() || 'default' : seed || 'default';
+  const background = kind === 'agent' ? (colors ?? FALLBACK_COLORS).background.replace('#', '') : '00000000';
+  const key = JSON.stringify([kind, seedValue, background, kind === 'assistant' && animated]);
+  const cached = artwork.get(key);
+  if (cached !== undefined) return cached;
+  let uri: string;
   if (kind === 'agent') {
-    const palette = colors ?? FALLBACK_COLORS;
-    return new Avatar(styles.agent, {
+    uri = new Avatar(styles.agent, {
       seed: seedValue,
       size: 128,
       idRandomization: false,
       borderRadius: 0,
-      backgroundColor: [palette.background.replace('#', '')],
+      backgroundColor: [background],
+    }).toDataUri();
+  } else {
+    uri = new Avatar(styles.assistant, {
+      seed: seedValue,
+      size: 128,
+      scale: 1.2,
+      backgroundColor: ['00000000'],
+      idRandomization: false,
+      animationVariant: animated ? 'fastest' : 'none',
     }).toDataUri();
   }
-  return new Avatar(styles.assistant, {
-    seed: seedValue,
-    size: 128,
-    scale: 1.2,
-    backgroundColor: ['00000000'],
-    idRandomization: false,
-    animationVariant: animated ? 'fastest' : 'none',
-  }).toDataUri();
+  artwork.set(key, uri, (key.length + uri.length) * 2);
+  return uri;
 }
 
 /**

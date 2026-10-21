@@ -1630,21 +1630,23 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     // the load that crosses the threshold looks like a teleport. Seeding the
     // cache with what the DOM already measured keeps the switch geometrically
     // exact; only entries added by that same commit fall back to the estimate.
+    // Read the still-mounted normal-flow rows only when activating virtualization,
+    // before the commit changes their geometry, not on every history update.
     const unvirtualizedSizesRef = React.useRef(new Map<string, number>());
     const measurementSeedRef = React.useRef<VirtualItem[] | undefined>(undefined);
     React.useLayoutEffect(() => {
         if (isTanstack) return;
-        const root = contentRef?.current;
-        if (!root) return;
-        const sizes = unvirtualizedSizesRef.current;
-        sizes.clear();
-        root.querySelectorAll<HTMLElement>('[data-turn-entry]').forEach((node) => {
-            const key = node.dataset.turnEntry;
-            if (key) sizes.set(key, node.getBoundingClientRect().height);
-        });
         measurementSeedRef.current = undefined;
     });
     if (isTanstack && measurementSeedRef.current === undefined) {
+        if (!initialMeasurements) {
+            const sizes = unvirtualizedSizesRef.current;
+            sizes.clear();
+            contentRef?.current?.querySelectorAll<HTMLElement>('[data-turn-entry]').forEach((node) => {
+                const key = node.dataset.turnEntry;
+                if (key) sizes.set(key, node.getBoundingClientRect().height);
+            });
+        }
         measurementSeedRef.current = initialMeasurements ?? buildMeasurementSeedFromSizes(
             entryKeys,
             unvirtualizedSizesRef.current,
