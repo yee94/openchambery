@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.7-beta.3] - 2026-10-21
+
+### 修复
+
+- 修复图片预览关闭动画与打开动画互相吸附、缩略图错位的问题：关闭改用独立的过渡名称，全图始终覆盖在缩略图之上并随边框裁剪，收起过程不再出现撕裂或跳位。
+
 ## [2.1.7-beta.2] - 2026-10-21
 
 ### 改进

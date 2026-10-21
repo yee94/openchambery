@@ -34,11 +34,12 @@ test.each([false, true])('hands off one shared snapshot name and restores styles
     const state = setup();
     const complete = vi.fn();
     animateMediaPreview(state.source, state.target, state.viewer, closing, complete);
-    expect(state.source.style.viewTransitionName).toBe(closing ? 'none' : 'oc-media-preview');
-    expect(state.target.style.viewTransitionName).toBe(closing ? 'oc-media-preview' : 'none');
+    const name = closing ? 'oc-media-preview-close' : 'oc-media-preview';
+    expect(state.source.style.viewTransitionName).toBe(closing ? 'none' : name);
+    expect(state.target.style.viewTransitionName).toBe(closing ? name : 'none');
     state.update();
-    expect(state.source.style.viewTransitionName).toBe(closing ? 'oc-media-preview' : 'none');
-    expect(state.target.style.viewTransitionName).toBe(closing ? 'none' : 'oc-media-preview');
+    expect(state.source.style.viewTransitionName).toBe(closing ? name : 'none');
+    expect(state.target.style.viewTransitionName).toBe(closing ? 'none' : name);
     expect(complete).not.toHaveBeenCalled();
     state.finish();
     await state.finished;
