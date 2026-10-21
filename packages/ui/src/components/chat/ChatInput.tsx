@@ -6945,7 +6945,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 </div>
                 <div
                     data-mobile-composer-compact-slot="trailing"
-                    className="ml-auto flex shrink-0 items-center justify-end gap-x-1"
+                    className="composer-mobile-actions ml-auto flex shrink-0 items-center justify-end gap-x-3"
                 >
                     {showScrollToBottom && onScrollToBottom ? (
                         <div data-composer-action="true" className="flex shrink-0 items-center">

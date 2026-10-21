@@ -12,6 +12,7 @@ import type { QueryClient } from "@tanstack/react-query"
 import { queryClient as defaultQueryClient } from "@/lib/queryRuntime"
 import {
   getRuntimeGeneration,
+  getRuntimeKey,
   getRuntimeTransportIdentity,
 } from "@/lib/runtime-switch"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -372,6 +373,9 @@ export function mountProductionTranscriptStack(
     initialLimit: getInitialSessionTurnLimit(),
     historyLimit: getHistorySessionTurnLimit(),
     durableStore: input.durableStore ?? createRuntimeTranscriptDurableStore(),
+    // Durable rows follow the stable runtime instance so settled bodies survive
+    // app restarts and LAN⇄relay swaps (transport/generation are per process).
+    durablePartition: getRuntimeKey,
   })
 
   const compensation = createTranscriptReconnectCompensationController({

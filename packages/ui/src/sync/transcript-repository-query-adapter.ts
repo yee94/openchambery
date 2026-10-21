@@ -44,7 +44,7 @@ import {
   type SessionTranscriptQueryKey,
 } from "./session-message-query"
 import { forgetPromotedInbox } from "./session-inbox-overlay"
-import type { TranscriptDurableStore } from "./transcript-durable-store"
+import type { TranscriptDurableScope, TranscriptDurableStore } from "./transcript-durable-store"
 import {
   createTranscriptDurableQueryQueue,
   toTranscriptDurableScope,
@@ -144,6 +144,12 @@ export type TranscriptQueryAdapterDeps = {
    * network path unchanged; durable data is only a first-paint continuity source.
    */
   durableStore?: TranscriptDurableStore
+  /**
+   * Stable runtime-instance key for durable rows (production: `getRuntimeKey`).
+   * When set, durable scopes survive app restarts and transport swaps, and
+   * runtime purges leave disk to the byte-budget LRU instead of clearing it.
+   */
+  durablePartition?: () => string
   contentSearchStore?: TranscriptDurableStore
   /** Override the platform durable byte budget after a successful persist. */
   getDurableByteBudget?: () => number
@@ -389,9 +395,24 @@ export function createQueryTranscriptRepository(
       parts: Map<string, readonly Part[]>
     }
   >()
+  /** Durable scope for a resolved identity (read side; seed is fenced after the await). */
+  const durableReadScopeOf = (
+    identity: Parameters<typeof toTranscriptDurableScope>[0],
+  ): TranscriptDurableScope => toTranscriptDurableScope(identity, deps.durablePartition?.())
+  /**
+   * Write-side durable scope. Partitioned scopes come from the live runtime
+   * key, so an identity from a replaced transport/generation maps to `null`:
+   * a late completion must not write into the new runtime's rows.
+   */
+  const durableScopeOf = (
+    identity: Parameters<typeof toTranscriptDurableScope>[0],
+  ): TranscriptDurableScope | null => {
+    if (deps.durablePartition && !liveIdentityMatches(identity)) return null
+    return durableReadScopeOf(identity)
+  }
   const durableQueue: TranscriptDurableQueryQueue | undefined = deps.durableStore
     ? createTranscriptDurableQueryQueue(deps.durableStore, {
-      getProtectScopes: () => activeRegistry.listRetained().map(toTranscriptDurableScope),
+      getProtectScopes: () => activeRegistry.listRetained().map((scope) => durableReadScopeOf(scope)),
       getByteBudget: deps.getDurableByteBudget,
     })
     : undefined
@@ -817,7 +838,9 @@ export function createQueryTranscriptRepository(
     if (!queue) return
     // Closed projection must never write filtered snapshots as full durable rows.
     if (queue === durableQueue && !getIncludeReasoningProjection()) return
-    void queue.persistSettled(toTranscriptDurableScope(identity), info, parts ?? [])
+    const durableScope = durableScopeOf(identity)
+    if (!durableScope) return
+    void queue.persistSettled(durableScope, info, parts ?? [])
   }
 
   const scheduleDurableAfterApply = (
@@ -832,7 +855,8 @@ export function createQueryTranscriptRepository(
     // snapshots never replace full on-disk records used on re-open.
     if (queue === durableQueue && !getIncludeReasoningProjection()) return
     if (!result.applied || !result.changed) return
-    const durableScope = toTranscriptDurableScope(identity)
+    const durableScope = durableScopeOf(identity)
+    if (!durableScope) return
     if (command.type === "remove-message") {
       void queue.removeMessage(durableScope, command.messageID)
       return
@@ -1589,8 +1613,9 @@ export function createQueryTranscriptRepository(
             cacheBudget.purgeSession(toCacheScope(scope))
             seededAuthorityPending.delete(key)
             durableSeededExact.delete(key)
-            if (deps.durableStore) {
-              void deps.durableStore.clearSession(toTranscriptDurableScope(identity)).catch(() => undefined)
+            const durableScope = durableScopeOf(identity)
+            if (deps.durableStore && durableScope) {
+              void deps.durableStore.clearSession(durableScope).catch(() => undefined)
             }
             notify(scope)
             // Schedule authority tail when a fetcher exists (best-effort).
@@ -1670,7 +1695,8 @@ export function createQueryTranscriptRepository(
       const captured = resolveScopeIdentity(scope, deps)
       const capturedProjectionRevision = getReasoningProjectionRevision()
       const flightKey = scopeKey(captured)
-      if (durableQueue) await durableQueue.wait(toTranscriptDurableScope(captured))
+      const capturedDurableScope = durableReadScopeOf(captured)
+      if (durableQueue) await durableQueue.wait(capturedDurableScope)
       if (getReasoningProjectionRevision() !== capturedProjectionRevision) {
         return repository.getTranscript(scope)
       }
@@ -1680,7 +1706,7 @@ export function createQueryTranscriptRepository(
       // paints while Host is already filtering. Re-open uses the normal path.
       if (canonicalEmpty && deps.durableStore && getIncludeReasoningProjection()) {
         try {
-          const session = await deps.durableStore.readSession(toTranscriptDurableScope(captured))
+          const session = await deps.durableStore.readSession(capturedDurableScope)
           if (
             liveIdentityMatches(captured)
             && getReasoningProjectionRevision() === capturedProjectionRevision
@@ -2057,13 +2083,14 @@ export function createQueryTranscriptRepository(
     },
 
     async destructiveReset(scope) {
-      await contentSearchQueue?.clearSession(toTranscriptDurableScope(resolveScopeIdentity(scope, deps)))
+      const resetDurableScope = durableScopeOf(resolveScopeIdentity(scope, deps))
+      if (resetDurableScope) await contentSearchQueue?.clearSession(resetDurableScope)
       const resetDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
         repository.getTranscript(scope),
       )
       const cacheScope = toCacheScope(scope)
-      if (durableQueue) {
-        await durableQueue.clearSession(toTranscriptDurableScope(resolveScopeIdentity(scope, deps)))
+      if (durableQueue && resetDurableScope) {
+        await durableQueue.clearSession(resetDurableScope)
       }
       return cacheBudget.destructiveReset(cacheScope, async () => {
         // Destroy any stale controller so the next ensure builds a fresh chain.
@@ -2201,7 +2228,10 @@ export function createQueryTranscriptRepository(
       clearDurableSeededExact(`${transport}\n${generation}\n`)
       clearHydration(`${transport}\n${generation}\n`)
       cacheBudget.purgeGeneration(transport, generation)
-      if (durableQueue) {
+      // Partitioned rows belong to the runtime instance, not this in-memory
+      // generation: keep them for the next cold start / transport and leave
+      // pruning to the byte-budget LRU.
+      if (durableQueue && !deps.durablePartition) {
         void durableQueue.clearGeneration({ transport, generation })
       }
     },

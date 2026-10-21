@@ -1457,6 +1457,83 @@ describe("Query repository durable cache wiring", () => {
     repo.destroy()
   })
 
+  test("partitioned durable rows survive a restart with a new transport and generation", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const settled = settledAssistant("msg_cached", "cached")
+    const first = createQueryTranscriptRepository({
+      client,
+      durableStore: inner,
+      durablePartition: () => "device-a",
+      probe: { getTransport: () => "direct:lan", getGeneration: () => 3 },
+    })
+    const firstScope = { directory: DIRECTORY, sessionID: SESSION }
+    first.apply(firstScope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([{ info: settled.info, parts: settled.parts }], { complete: true }),
+    })
+    await waitUntil(async () => (await inner.readSession({
+      transport: "device-a",
+      generation: 0,
+      directory: DIRECTORY,
+      sessionID: SESSION,
+    })).records.length === 1)
+    // Runtime switch / provider dispose must not drop the instance-scoped rows.
+    first.purgeGeneration("direct:lan", 3)
+    first.destroy()
+
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const second = createQueryTranscriptRepository({
+      client: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      durableStore: inner,
+      durablePartition: () => "device-a",
+      probe: { getTransport: () => "relay:device-a", getGeneration: () => 1 },
+      fetcher: async () => {
+        await gate
+        return transportPage([{ info: settled.info, parts: settled.parts }], { complete: true })
+      },
+    })
+    const paints: string[][] = []
+    second.subscribe(firstScope, () => {
+      paints.push([...second.getTranscript(firstScope).messageOrder])
+    })
+    const pending = second.ensureInitial(firstScope)
+    await waitUntil(() => paints.some((order) => order.includes("msg_cached")))
+    release()
+    await pending
+    second.destroy()
+  })
+
+  test("partitioned durable writes from a replaced runtime are dropped", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    let generation = 1
+    const repo = createQueryTranscriptRepository({
+      client,
+      durableStore: inner,
+      durablePartition: () => "device-a",
+      probe: { getTransport: () => TRANSPORT, getGeneration: () => generation },
+    })
+    const stale = settledAssistant("msg_stale", "stale")
+    const staleScope = { ...scope, generation: 1 }
+    generation = 2
+    repo.apply(staleScope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([{ info: stale.info, parts: stale.parts }], { complete: true }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await inner.readSession({
+      transport: "device-a",
+      generation: 0,
+      directory: DIRECTORY,
+      sessionID: SESSION,
+    })).records).toEqual([])
+    repo.destroy()
+  })
+
   test("identical HTTP content does not produce another durable write", async () => {
     const inner = createMemoryTranscriptDurableStore()
     const upserts: Array<"written" | "skipped"> = []
