@@ -1,4 +1,5 @@
 import React from 'react';
+import { messageHoverHandlers } from '../lib/messageHover';
 import { useEvent } from '@reactuses/core';
 import type { Part } from '@/lib/opencode/v2-types';
 
@@ -111,7 +112,7 @@ const AssistantAbsoluteTime = ({ messageId, label, focusReveal }: { messageId: s
                 'whitespace-nowrap',
                 focusReveal
                     ? (focused ? 'inline-flex' : 'hidden')
-                    : 'hidden group-hover/message:inline-flex',
+                    : 'hidden oc-message-hover-time',
             )}
             data-message-time=""
             data-message-time-visible={focusReveal ? (focused ? 'true' : 'false') : undefined}
@@ -881,7 +882,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
         return formatted.length > 0 ? formatted : null;
     }, [locale, messageCreatedAt, timeFormatPreference]);
     const actionsRowClass = cn(
-        'group/user-actions',
+        'oc-user-actions-hover-scope',
         isMobile
             ? userActionsMode === 'inline'
                 ? 'flex items-center justify-end pt-2 pb-3'
@@ -896,7 +897,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
     // carries the only disarm affordance, so a forgotten edit cannot silently
     // delete this turn on the next unrelated send.
     const editStagedBlock = !editing && editStaged && showUserActions ? (
-        <div className={actionsRowClass}>
+        <div className={actionsRowClass} {...messageHoverHandlers}>
             <div
                 className={cn(
                     MESSAGE_ACTION_GROUP_CLASS,
@@ -937,7 +938,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
     // Edit commit in flight: the row keeps its geometry but carries only the
     // highlighted label, so no action can fire against a turn being replaced.
     const editingBlock = editing && showUserActions ? (
-        <div className={actionsRowClass}>
+        <div className={actionsRowClass} {...messageHoverHandlers}>
             <div
                 className={cn(
                     MESSAGE_ACTION_GROUP_CLASS,
@@ -953,7 +954,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
         </div>
     ) : null;
     const actionsBlock = editingBlock ?? editStagedBlock ?? (((canCopyMessage && hasCopyableText) || onEdit || onRevert || effectiveOnFork) && showUserActions ? (
-        <div className={actionsRowClass}>
+        <div className={actionsRowClass} {...messageHoverHandlers}>
             <div
                 className={cn(
                     MESSAGE_ACTION_GROUP_CLASS,
@@ -962,7 +963,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
                     !isMobile && userActionsMode === 'inline' && 'translate-x-5',
                     alwaysShowActions
                         ? 'pointer-events-auto opacity-100'
-                        : 'pointer-events-none opacity-0 transition-opacity duration-150 group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-hover/user-actions:pointer-events-auto group-hover/user-actions:opacity-100 group-hover/user-shell:pointer-events-auto group-hover/user-shell:opacity-100'
+                        : 'pointer-events-none opacity-0 transition-opacity duration-150 oc-message-hover-actions'
                 )}
                 data-message-action-group="true"
             >
@@ -1095,7 +1096,8 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
 
     return (
         <div
-            className="relative w-full group/message"
+            className="relative w-full oc-message-hover-scope"
+            {...messageHoverHandlers}
             data-user-message-body="true"
             style={CONTAIN_LAYOUT_STYLE}
             onTouchStart={isTouchContext && canCopyMessage && hasCopyableText ? revealCopyHint : undefined}
@@ -2429,8 +2431,9 @@ const AssistantMessageBody = React.memo(({
          <div
               ref={messageContentRef}
               data-message-text-export-root="true"
+              {...messageHoverHandlers}
               className={cn(
-                 'relative w-full group/message'
+                 'relative w-full oc-message-hover-scope'
              )}
               style={CONTAIN_LAYOUT_STYLE}
           >

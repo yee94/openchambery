@@ -33,6 +33,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Keep hover invalidation on chrome leaves. A nested group-hover selector with
+   a universal descendant restyles the entire rich transcript on scroll. */
+@media (hover: hover) {
+  .oc-message-hover-scope[data-message-hovered] .oc-message-hover-time {
+    display: inline-flex;
+  }
+
+  .oc-message-hover-scope[data-message-hovered] .oc-message-hover-actions,
+  .oc-user-actions-hover-scope[data-message-hovered] .oc-message-hover-actions,
+  .oc-user-shell-hover-scope[data-message-hovered] .oc-message-hover-actions {
+    pointer-events: auto;
+    opacity: 1;
+  }
+}
+
 /* Buttons should never look selectable. */
 button,
 [role="button"] {

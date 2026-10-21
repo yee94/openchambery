@@ -186,4 +186,47 @@ const imageReplay = async () => {
   return { loaded: Boolean(image?.naturalWidth), source: image?.getAttribute('src'), openedSource };
 };
 
-Object.assign(window, { markstreamStyleReplay: replay, markstreamScrollReplay: scrollReplay, markstreamStreamReplay: streamReplay, markstreamImageReplay: imageReplay });
+const streamingScrollReplay = async () => {
+  const history = <div id="settled-history">{Array.from({ length: 12 }, (_, index) => (
+    <MarkstreamRenderer key={index} messageId={`live-scroll-history-${index}`} enableFileReferences={false}
+      content={Array.from({ length: 12 }, (_, paragraph) => `History ${index}, paragraph ${paragraph}: **Retain content and selection** while the live response streams.`).join('\n\n')} />
+  ))}</div>;
+  const render = (content: string, streaming: boolean) => flushSync(() => root.render(
+    <I18nProvider><div id="stream-scroll" style={{ height: 600, overflowY: 'auto', overflowAnchor: 'none' }}>
+      {history}<div id="live-response"><MarkstreamRenderer messageId="live-scroll-tail" content={content}
+        isStreaming={streaming} isAnimated={false} skipFadeIn enableFileReferences={false} /></div>
+    </div></I18nProvider>,
+  ));
+  render('Streaming begins.', true);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const scroller = document.getElementById('stream-scroll')!;
+  const settled = document.getElementById('settled-history')!;
+  const initialHeight = settled.getBoundingClientRect().height;
+  const first = settled.querySelector('p');
+  let stable = true;
+  let text = '';
+  const frames: number[] = [];
+  let last = 0;
+  let running = true;
+  const scroll = (time: number) => {
+    if (last) frames.push(time - last);
+    last = time;
+    scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) * (0.5 + 0.45 * Math.sin(time / 300));
+    if (running) requestAnimationFrame(scroll);
+  };
+  requestAnimationFrame(scroll);
+  for (let i = 0; i < 60; i++) {
+    text += `\n\n${i + 1}. Streaming **Markdown** alongside scrolling; retain every token and settled paragraph.`;
+    render(text, true);
+    await new Promise(resolve => setTimeout(resolve, 40));
+    stable &&= first === settled.querySelector('p') && settled.getBoundingClientRect().height === initialHeight;
+  }
+  render(text, false);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  running = false;
+  frames.sort((a, b) => a - b);
+  return { stable, paragraphs: document.querySelectorAll('#live-response li').length,
+    p50: frames[Math.floor(frames.length * 0.5)], p95: frames[Math.floor(frames.length * 0.95)], max: Math.max(...frames) };
+};
+
+Object.assign(window, { markstreamStyleReplay: replay, markstreamScrollReplay: scrollReplay, markstreamStreamReplay: streamReplay, markstreamImageReplay: imageReplay, markstreamStreamingScrollReplay: streamingScrollReplay });

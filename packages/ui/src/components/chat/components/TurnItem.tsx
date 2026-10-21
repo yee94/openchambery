@@ -7,6 +7,7 @@ import TurnAssistantHeader from './TurnAssistantHeader';
 import TurnActivity from './TurnActivity';
 import TurnAssistantBlock from './TurnAssistantBlock';
 import { isUserShellMessage } from '../lib/shellBridge';
+import { messageHoverHandlers } from '../lib/messageHover';
 import { SessionErrorNotice } from '../SessionErrorNotice';
 import { useSessionSurface } from '../SessionSurfaceContext';
 import { readUserMessageHeaderIdentity, resolvePendingAssistantHeader } from '../lib/pendingAssistantHeader';
@@ -73,7 +74,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
                 renderMessage(turn.userMessage, activityExpanded)
             )}
 
-            <div className="group/message">
+            <div className="oc-message-hover-scope" {...messageHoverHandlers}>
             {!isShellTurn && (pendingAssistantHeader || assistantHeaderMessage) ? (
                 <div className={`group w-full ${isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6'} pb-0`}>
                     <div className="chat-message-column relative">

@@ -1,5 +1,26 @@
 # Chat components
 
+## Scroll hot-path boundary
+
+Message hover chrome uses `lib/messageHover.ts` boundary handlers and the
+`data-message-hovered` scope marker. The handlers write only that DOM attribute;
+pointer movement must not publish React state or subscribe to scroll. Newly
+streamed footer leaves inherit the current marker. Touch does not arm hover.
+`index.css` targets the timestamp/actions leaves explicitly. Do not restore
+ancestor `group-hover` or descendant `:hover` rules around rich message bodies:
+Chromium invalidates the entire descendant tree on pointer-boundary changes,
+including boundaries crossed by scrolling under a stationary pointer. Keep
+generic `group` scopes local to individual attachment/code controls.
+
+`styles/desktopTyping.chrome.test.ts` compiles production CSS and reads the
+production message classes/handlers, then crosses 5,000-node message boundaries.
+The style-recalculation guard is fewer than 100 elements per update, independent
+of machine speed. Content DOM, selection, height, and scroll ownership remain
+with their existing owners; this boundary does not unmount or defer content.
+`markstreamStyles.chrome.test.ts` additionally replays 60 live Markdown updates
+while scrolling across settled history, requiring stable history DOM/height,
+all 60 output items, and p95 frame intervals below 50ms in production Chromium.
+
 ## Direct-send inbox presentation
 
 Composer inbox chips exclude identities already present in the current primary

@@ -1327,6 +1327,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         const model = provider?.models?.find((entry) => entry.id === primaryModelID) as { variants?: unknown } | undefined;
         return resolveModelVariantKeys(model);
     }, [primaryModelID, primaryProviderID, primarySelectionProviders]);
+    const primarySelectionCatalog = React.useMemo(() => ({
+        providers: primarySelectionProviders,
+        agents: primarySelectionAgents,
+        variants: primarySelectionVariants,
+        variantsReady: !primaryProviderConfigLoading,
+        modelsReady: !primaryProviderConfigLoading,
+        agentsReady: !primaryAgentConfigLoading,
+        ready: !primaryProviderConfigLoading && !primaryAgentConfigLoading,
+        loading: primaryProviderConfigLoading || primaryAgentConfigLoading,
+    }), [primarySelectionProviders, primarySelectionAgents, primarySelectionVariants, primaryProviderConfigLoading, primaryAgentConfigLoading]);
     const fallbackDirectory = useDirectoryStore((s) => s.currentDirectory);
     const primaryDirectory = useEffectiveDirectory() ?? fallbackDirectory;
     const { ensureSessionRenderable } = useSync();
@@ -1458,16 +1468,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             // Primary still owns global config stores, but ModelControls always
             // consumes the surface selection adapter. Ship variants here so the
             // thinking/effort control stays available after adapter-only renders.
-            catalog: {
-                providers: primarySelectionProviders,
-                agents: primarySelectionAgents,
-                variants: primarySelectionVariants,
-                variantsReady: !primaryProviderConfigLoading,
-                modelsReady: !primaryProviderConfigLoading,
-                agentsReady: !primaryAgentConfigLoading,
-                ready: !primaryProviderConfigLoading && !primaryAgentConfigLoading,
-                loading: primaryProviderConfigLoading || primaryAgentConfigLoading,
-            },
+            catalog: primarySelectionCatalog,
             flush: async () => {
                 const sessionId = useSessionUIStore.getState().currentSessionId;
                 if (!sessionId) {
@@ -1789,6 +1790,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const selectionValue = surface.selection.value;
     const selectionChange = surface.selection.change;
     const selectionCatalog = surface.selection.catalog;
+    const handleModelControlsSelectionChange = useEvent(async (selection: { providerID: string; modelID: string; agent: string | null; variant?: string }) => {
+        if (!selectionChange) throw new Error('chat-input-surface-selection-readonly');
+        await selectionChange({ ...selection, agent: selection.agent ?? undefined, variant: selection.variant });
+    });
     const modelControlsSelectionAdapter = React.useMemo(() => ({
         selection: {
             providerID: selectionValue.providerID ?? '',
@@ -1796,13 +1801,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             agent: selectionValue.agent ?? null,
             variant: selectionValue.variant,
         },
-        onChange: async (selection: { providerID: string; modelID: string; agent: string | null; variant?: string }) => {
-            if (!selectionChange) throw new Error('chat-input-surface-selection-readonly');
-            await selectionChange({ ...selection, agent: selection.agent ?? undefined, variant: selection.variant });
-        },
+        onChange: handleModelControlsSelectionChange,
         disabled: !surface.active,
         catalog: selectionCatalog,
-    }), [selectionCatalog, selectionChange, selectionValue.agent, selectionValue.modelID, selectionValue.providerID, selectionValue.variant, surface.active]);
+    }), [selectionCatalog, handleModelControlsSelectionChange, selectionValue.agent, selectionValue.modelID, selectionValue.providerID, selectionValue.variant, surface.active]);
 
     // Session switch drops a previous conversation's user-pick hold and restore key.
     React.useEffect(() => {
