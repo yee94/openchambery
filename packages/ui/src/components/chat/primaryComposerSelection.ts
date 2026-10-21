@@ -596,6 +596,8 @@ export const resolvePrimaryComposerSendConfig = (input: {
 type PrimaryComposerMessageRecord = {
   id?: string;
   role?: string;
+  nativeType?: string;
+  type?: string;
   agent?: string;
   mode?: string;
   providerID?: string;
@@ -645,7 +647,8 @@ export const parseLatestUserChoiceFromMessages = (
 ): PrimaryComposerLatestUserChoice | null => {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
-    if (message.role !== 'user') {
+    // Native control notices are user-shaped, but never supersede a user pick.
+    if (message.role !== 'user' || message.nativeType === 'synthetic' || message.type === 'synthetic') {
       continue;
     }
 
@@ -673,6 +676,9 @@ export const parseLatestAssistantExecutionFromMessages = (
 ): PrimaryComposerLatestUserChoice | null => {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
+    if (message.nativeType === 'synthetic' || message.type === 'synthetic') {
+      continue;
+    }
     if (message.role === 'user') {
       if (readUserMessageModel(message)) {
         return null;
