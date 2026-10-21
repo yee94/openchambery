@@ -534,6 +534,61 @@ describe('resolvePrimaryComposerSessionSelection', () => {
 });
 
 describe('parseLatestAssistantExecutionFromMessages', () => {
+  test.each([
+    {},
+    { nativeType: 'synthetic' },
+    { type: 'synthetic' },
+  ])('keeps a next-turn model pick through completion with notice identity %j', (identity) => {
+    const messages = [
+      { id: 'user_a', role: 'user', model: { providerID: 'openai', modelID: 'gpt-5.5' } },
+      { id: 'assistant_a', role: 'assistant', providerID: 'openai', modelID: 'gpt-5.5' },
+    ];
+    const pinnedHistoryMessageId = parseLatestUserChoiceFromMessages(messages)?.id ?? null;
+    let selectedModel = 'gpt-5.5';
+    const { config } = createConfig();
+    config.setModel = (model) => { selectedModel = model; };
+    applyPrimaryComposerSelectionChange({ providerID: 'anthropic', modelID: 'claude-sonnet' }, config);
+
+    const completedMessages = [
+      ...messages,
+      ...('nativeType' in identity || 'type' in identity ? [{ id: 'notice', role: 'user', ...identity }] : []),
+      { id: 'assistant_final', role: 'assistant', providerID: 'openai', modelID: 'gpt-5.5' },
+    ];
+    const latestUserChoice = parseLatestUserChoiceFromMessages(completedMessages);
+    if (!shouldHoldPrimaryComposerUserPick({
+      editRevision: 1,
+      pinnedHistoryMessageId,
+      latestHistoryMessageId: latestUserChoice?.id ?? null,
+    })) {
+      const restored = resolvePrimaryComposerSessionSelection({
+        sessionId: 'session', latestUserChoice,
+        latestExecution: parseLatestAssistantExecutionFromMessages(completedMessages), catalog,
+      });
+      if (restored) applyPrimaryComposerSessionRestore(restored, config, {
+        sessionId: 'session',
+        memory: {
+          saveSessionModelSelection: () => undefined,
+          saveAgentModelForSession: () => undefined,
+          saveAgentModelVariantForSession: () => undefined,
+        },
+      });
+    }
+    expect(selectedModel).toBe('claude-sonnet');
+  });
+
+  test.each([{ nativeType: 'synthetic' }, { type: 'synthetic' }])(
+    'ignores synthetic model metadata when resolving history and execution: %j', (identity) => {
+      const messages = [
+        { id: 'user', role: 'user', providerID: 'openai', modelID: 'gpt-5.5' },
+        { id: 'assistant', role: 'assistant', providerID: 'openai', modelID: 'gpt-5.5' },
+        { id: 'notice', role: 'user', ...identity, providerID: 'anthropic', modelID: 'claude-sonnet' },
+      ];
+      expect(parseLatestUserChoiceFromMessages(messages)?.id).toBe('user');
+      expect(parseLatestAssistantExecutionFromMessages(messages)?.id).toBe('assistant');
+      expect(parseLatestUserChoiceFromMessages([messages[2]])).toBeNull();
+    },
+  );
+
   test('preserves a manual next-turn pick through optimistic user arrival and flush restore', () => {
     const messages = [
       { id: 'user_a', role: 'user', model: { providerID: 'provider-a', modelID: 'model-a' } },

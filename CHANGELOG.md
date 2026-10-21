@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.6-beta.4] - 2026-10-21
+
+### 修复
+
+- 修复原生合成提示消息（如控件通知）被误当成用户发言，导致手动选择的下一轮模型、智能体或推理档位在提示或回复完成后被清掉的问题。
+
 ## [2.1.6-beta.3] - 2026-10-21
 
 ### 改进
