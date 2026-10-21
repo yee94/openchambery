@@ -84,6 +84,8 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
       image: { url, mimeType: mime, filename: name, size, gallery: [{ url, mimeType: mime, filename: name, size }], index: 0 },
     })
   })
+  // Full-size viewing belongs to the preview; the transcript shows a small,
+  // height-stable thumbnail so a failed or tiny image never leaves a large empty frame.
   if (image && url && !failed) return (
     <LoadingImage
       src={url}
