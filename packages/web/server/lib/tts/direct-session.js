@@ -31,7 +31,7 @@ export async function createSpeechTicket(settings, kind, signal) {
     transport: 'volcengine-direct', token, appId: aud[0], expiresAt: exp * 1000, resourceId,
     ...(kind === 'tts' ? {
       voice: settings.voice, speed: settings.speechRate, pitch: settings.speechPitch, volume: settings.speechVolume,
-    } : {}),
+    } : { asrContext: settings.asrContext ?? '' }),
   };
 }
 

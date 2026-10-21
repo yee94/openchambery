@@ -129,6 +129,17 @@ unified file is first saved. Each section saves its own memory-only draft. A
 successful write emits `openchamber:speech-settings-changed`; startup and reconnect
 also fetch the authoritative snapshot without requiring Settings to be opened.
 Select Volcengine separately for read-aloud and dictation.
+The Volcengine recognition context (`asrContext`) is a Host-owned editable English
+scene description, defaulting to Mandarin/English software-development dictation.
+It accepts multiline text up to 2,000 UTF-16 code units; empty text disables it.
+Missing fields in existing Host files receive the default. New UI clients reading
+older Hosts that omit the field treat it as disabled. Saves affect the next recording.
+Direct ASR tickets snapshot this text; direct and legacy Host streaming requests
+send it as `request.corpus.context`, a JSON string containing `context_type: dialog_ctx`
+and one `context_data` text entry. No conversation history is collected automatically.
+The provider additionally applies its 800-token context limit (not equivalent to
+the local character bound). This setting does not affect TTS or the file ASR API.
+Search terms lead to the stable recognition section without switching providers.
 Missing keys return HTTP 400, not a server failure.
 Enable `seed-tts-2.0`, `volc.seedasr.sauc.duration` (live dictation),
 and optionally `volc.bigasr.auc_turbo` (file API) in the

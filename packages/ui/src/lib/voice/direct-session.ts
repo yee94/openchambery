@@ -7,6 +7,7 @@ export interface SpeechTicket {
   appId: string;
   expiresAt: number;
   resourceId: string;
+  asrContext?: string;
   voice?: string;
   speed?: number;
   pitch?: number;
@@ -43,6 +44,8 @@ export async function requestSpeechSession(kind: 'asr' | 'tts', signal: AbortSig
     || !Number.isFinite(value.speed) || value.speed < 0.5 || value.speed > 2
     || !Number.isFinite(value.pitch) || value.pitch < 0.5 || value.pitch > 2
     || !Number.isFinite(value.volume) || value.volume < 0 || value.volume > 1)) throw new Error('Invalid speech session');
+  if (kind === 'asr' && value.asrContext !== undefined
+    && (typeof value.asrContext !== 'string' || value.asrContext.length > 2000 || /\0/.test(value.asrContext))) throw new Error('Invalid speech session');
   return value as SpeechTicket;
 }
 

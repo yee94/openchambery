@@ -9,6 +9,8 @@ export const settingsDict = {
   'settings.voice.volcengine.keyHelp': 'Отримайте тут:',
   'settings.voice.volcengine.openLink': 'Натисніть, щоб відкрити',
   'settings.voice.volcengine.asrResource': 'ID ресурсу потокового ASR',
+  'settings.voice.volcengine.asrContext': 'Контекст розпізнавання',
+  'settings.voice.volcengine.asrContextHelp': 'Опишіть тему й термінологію. Очистьте, щоб вимкнути; збережіть для наступного запису. До 2 000 символів.',
   'settings.voice.volcengine.custom': 'Власний ID',
   'settings.voice.volcengine.durationHelp': 'Погодинний план, оплата за тривалість розпізнавання.',
   'settings.voice.volcengine.concurrentHelp': 'План одночасних з’єднань, використовує придбаний ліміт.',

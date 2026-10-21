@@ -9,6 +9,8 @@ export const settingsDict = {
   'settings.voice.volcengine.keyHelp': 'Uzyskaj tutaj:',
   'settings.voice.volcengine.openLink': 'Kliknij, aby otworzyć',
   'settings.voice.volcengine.asrResource': 'ID zasobu strumieniowego ASR',
+  'settings.voice.volcengine.asrContext': 'Kontekst rozpoznawania',
+  'settings.voice.volcengine.asrContextHelp': 'Opisz temat i terminologię. Wyczyść, aby wyłączyć; zapisz dla następnego nagrania. Do 2000 znaków.',
   'settings.voice.volcengine.custom': 'Własny identyfikator',
   'settings.voice.volcengine.durationHelp': 'Plan godzinowy, rozliczany według czasu rozpoznawania.',
   'settings.voice.volcengine.concurrentHelp': 'Plan równoległy, korzysta z zakupionego limitu połączeń.',

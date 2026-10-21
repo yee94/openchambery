@@ -18,6 +18,7 @@ let sockets;
 let mode;
 let audioChunks;
 let clients;
+let asrRequests;
 const ticket = () => ({ transport: 'volcengine-direct', token: 'header.payload.signature', appId: 'fixture-app', expiresAt: Date.now() + 300000,
   resourceId: 'seed-tts-2.0', voice: 'zh_female_vv_uranus_bigtts', speed: 1, pitch: 1.1, volume: 0.8 });
 const waitFor = async (fn) => { for (let n = 0; n < 200; n++) { if (fn()) return; await new Promise((r) => setTimeout(r, 5)); } throw new Error('Fixture timed out'); };
@@ -40,6 +41,7 @@ function asrResponse(text, final = false) {
 
 beforeEach(async () => {
   urls = []; sockets = []; audioChunks = []; clients = []; mode = 'success'; mocks.identity = 'host-a';
+  asrRequests = [];
   mocks.openRuntimeWebSocket.mockReset();
   mocks.runtimeFetch.mockReset().mockImplementation(async () => Response.json(ticket()));
   server = new WebSocketServer({ port: 0, host: '127.0.0.1' }); await once(server, 'listening');
@@ -63,6 +65,8 @@ beforeEach(async () => {
         if (event === 102 && mode === 'success-close') socket.close();
         if (event === 102 && mode === 'failure') socket.send(ttsResponse(153, id, { message: 'private details' }));
         if (event === 102 && mode === 'truncated') socket.close();
+      } else if ((bytes[1] >> 4) === 1) {
+        asrRequests.push(JSON.parse(bytes.subarray(8).toString()));
       } else if ((bytes[1] >> 4) === 2) {
         if (bytes[1] & 2) { if (mode === 'success') socket.send(asrResponse(undefined, true)); else socket.close(); }
         else { audioChunks.push(bytes.subarray(8)); socket.send(asrResponse(`partial-${audioChunks.length}`)); }
@@ -100,6 +104,15 @@ it('streams 100 ASR chunks in order, publishes live partials, and accepts a term
   expect(audioChunks.every((chunk, index) => chunk.equals(Buffer.alloc(6400, index)))).toBe(true);
   expect(mocks.runtimeFetch).toHaveBeenCalledTimes(1);
   expect(mocks.openRuntimeWebSocket).not.toHaveBeenCalled();
+});
+
+it.each([undefined, '', 'Mixed Mandarin and English.\nReact and "OpenCode".'])('sends the ticket context as serialized corpus or omits it: %s', async (asrContext) => {
+  mocks.runtimeFetch.mockResolvedValueOnce(Response.json({ ...ticket(), asrContext }));
+  const client = new DictationClient(); clients.push(client);
+  await client.startDictationStream('context', 'audio/pcm;rate=16000;bits=16');
+  await waitFor(() => asrRequests.length === 1);
+  if (asrContext) expect(JSON.parse(asrRequests[0].request.corpus.context)).toEqual({ context_type: 'dialog_ctx', context_data: [{ text: asrContext }] });
+  else expect(asrRequests[0].request).not.toHaveProperty('corpus');
 });
 
 it.each(['cancel', 'runtime'])('fences a late ticket after %s without opening any socket', async (reason) => {
@@ -171,5 +184,12 @@ it('rejects stale or expired tickets rather than exposing them to an external so
   await expect(requestSpeechAudio('测试', new AbortController().signal)).rejects.toThrow('Invalid speech session');
   mocks.runtimeFetch.mockImplementationOnce(async () => { mocks.identity = 'host-b'; return Response.json(ticket()); });
   await expect(requestSpeechAudio('测试', new AbortController().signal)).rejects.toThrow('runtime changed');
+  expect(urls).toHaveLength(0);
+});
+
+it.each([123, 'x'.repeat(2001), 'bad\0context'])('rejects malformed ASR context before opening a provider socket', async (asrContext) => {
+  mocks.runtimeFetch.mockResolvedValueOnce(Response.json({ ...ticket(), asrContext }));
+  const client = new DictationClient(); clients.push(client);
+  await expect(client.startDictationStream('invalid', 'audio/pcm;rate=16000;bits=16')).rejects.toThrow('Invalid speech session');
   expect(urls).toHaveLength(0);
 });

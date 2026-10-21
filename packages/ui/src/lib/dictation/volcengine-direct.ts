@@ -23,7 +23,9 @@ export class DirectDictation {
       socket.send(asrFrame(new TextEncoder().encode(JSON.stringify({
         user: { uid: 'openchamber' },
         audio: { format: 'pcm', codec: 'raw', rate: 16000, bits: 16, channel: 1 },
-        request: { model_name: 'bigmodel', result_type: 'full', enable_itn: true, enable_punc: true, enable_nonstream: true, show_utterances: true },
+        request: { model_name: 'bigmodel', result_type: 'full', enable_itn: true, enable_punc: true, enable_nonstream: true, show_utterances: true,
+          ...(ticket.asrContext?.trim() ? { corpus: { context: JSON.stringify({ context_type: 'dialog_ctx', context_data: [{ text: ticket.asrContext.trim() }] }) } } : {}),
+        },
       }))));
     } catch (error) { socket.close(); throw error; }
     this.completion = this.receive().catch((error: unknown) => {

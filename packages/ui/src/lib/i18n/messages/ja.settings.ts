@@ -9,6 +9,8 @@ export const settingsDict = {
   'settings.voice.volcengine.keyHelp': '取得はこちら：',
   'settings.voice.volcengine.openLink': 'クリックして開く',
   'settings.voice.volcengine.asrResource': 'ストリーミング ASR リソース ID',
+  'settings.voice.volcengine.asrContext': '認識コンテキスト',
+  'settings.voice.volcengine.asrContextHelp': '話題と専門用語を記述します。空欄で無効化。保存後、次の録音から適用されます。最大2,000文字。',
   'settings.voice.volcengine.custom': 'カスタム ID',
   'settings.voice.volcengine.durationHelp': '時間プラン。認識時間に応じて課金されます。',
   'settings.voice.volcengine.concurrentHelp': '同時接続プラン。購入済みの同時接続枠を使用します。',

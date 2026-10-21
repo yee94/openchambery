@@ -1,4 +1,5 @@
 export const speechDefaults = {
+    asrContext: 'The speaker is discussing software development and technical tasks with an AI assistant. Speech may mix Mandarin Chinese and English within the same sentence. The conversation may cover requirements, system design, implementation, debugging, testing, deployment, and maintenance. Common software engineering terms include alpha, beta, release, stable, version, build, branch, commit, merge, pull request, code review, bug, fix, hotfix, patch, refactor, rollback, deploy, CI/CD, API, SDK, and CLI. Technical terms, product names, acronyms, and code identifiers may be spoken in English within otherwise Chinese sentences.',
     showMessageTTSButtons: false,
     voiceProvider: 'browser' as 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say' | 'volcengine',
     speechRate: 1, speechPitch: 1, speechVolume: 1,
@@ -26,6 +27,7 @@ export function parseSpeechSettings(value: unknown): SpeechSettings {
     const result = { ...speechDefaults };
     for (const key of Object.keys(speechDefaults) as Array<keyof SpeechSettings>) {
         if (speechSecretFields.has(key)) continue;
+        if (key === 'asrContext' && record[key] === undefined) { result.asrContext = ''; continue; }
         if (typeof record[key] !== typeof speechDefaults[key]) throw new Error('Invalid speech settings');
         Object.assign(result, { [key]: record[key] });
     }

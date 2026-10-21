@@ -17,7 +17,7 @@ const response = (text, last = false) => {
   return Buffer.concat([header, fields, payload]);
 };
 
-async function fixture({ fail = false, terminalWithoutText = false, disconnectOnFinish = false } = {}) {
+async function fixture({ fail = false, terminalWithoutText = false, disconnectOnFinish = false, asrContext = '' } = {}) {
   const server = createServer();
   const wss = new WebSocketServer({ server });
   const frames = [];
@@ -39,7 +39,7 @@ async function fixture({ fail = false, terminalWithoutText = false, disconnectOn
     await new Promise((resolve) => wss.close(resolve));
     await new Promise((resolve) => server.close(resolve));
   });
-  const session = new VolcengineTranscriptionSession({ apiKey: 'test-key' }, {
+  const session = new VolcengineTranscriptionSession({ apiKey: 'test-key', asrContext }, {
     createSocket: (url, options) => {
       expect(url).toBe('wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async');
       return new WebSocket(`ws://127.0.0.1:${server.address().port}`, options);
@@ -51,6 +51,12 @@ async function fixture({ fail = false, terminalWithoutText = false, disconnectOn
 }
 
 describe('Volcengine streaming dictation', () => {
+  it.each(['', 'Mixed Mandarin and English.\nReact and "OpenCode".'])('sends configured context and omits empty context: %s', async (asrContext) => {
+    const { frames } = await fixture({ asrContext });
+    const { request } = JSON.parse(frames[0].payload);
+    if (asrContext) expect(JSON.parse(request.corpus.context)).toEqual({ context_type: 'dialog_ctx', context_data: [{ text: asrContext }] });
+    else expect(request).not.toHaveProperty('corpus');
+  });
   it('retains the last full transcript when the successful terminal frame omits text', async () => {
     const { session } = await fixture({ terminalWithoutText: true });
     const partial = new Promise((resolve) => session.once('transcript', resolve));

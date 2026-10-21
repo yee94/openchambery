@@ -89,6 +89,7 @@ export function createDictationService({ modelsDir }) {
       const session = new VolcengineTranscriptionSession({
         apiKey: saved.apiKey,
         resourceId: saved.asrResourceId,
+        asrContext: saved.asrContext,
       });
       try {
         await session.connect();

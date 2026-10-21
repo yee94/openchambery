@@ -74,7 +74,9 @@ provider, credentials, resource, language and local model from Host speech setti
 at session start (`../tts/settings.js`). Legacy `options` are ignored, including
 provider overrides. Saving during a session affects the next session; it cannot
 change an active upstream connection. Volcengine uses automatic language recognition
-and does not receive the Whisper language hint. Session copies are released on
+and snapshots the optional Host `asrContext` description into `request.corpus.context`
+as a serialized `dialog_ctx` object; empty text omits the corpus entirely. It
+does not receive the Whisper language hint. Session copies are released on
 close, and credentials are never logged.
 
 ## Invariants

@@ -70,6 +70,27 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); queryClient.clear(); onlineManager.setOnline(true); vi.restoreAllMocks(); localStorage.clear(); });
 
 describe('Host-backed speech settings', () => {
+    it('edits and clears recognition context through the Host save flow, retaining drafts on failure', async () => {
+        await mount();
+        const input = section('asr').querySelector('textarea')!;
+        expect(input.value).toBe(speechDefaults.asrContext);
+        expect(input.maxLength).toBe(2000);
+        const edit = async (value: string) => act(async () => {
+            Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, value);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await edit('Discuss beta and release.\nMixed Mandarin and English.');
+        expect(writes).toHaveLength(0);
+        runtime.fetch.mockResolvedValueOnce(new Response('{}', { status: 500 }));
+        await act(async () => button('asr').click()); await flush();
+        expect(input.value).toBe('Discuss beta and release.\nMixed Mandarin and English.');
+        await act(async () => button('asr').click()); await flush();
+        expect(saved.asrContext).toBe(input.value);
+        await edit('');
+        await act(async () => button('asr').click()); await flush();
+        expect(writes.at(-1)).toEqual({ asrContext: '' });
+        expect(saved.asrContext).toBe('');
+    });
     it('renders the settings immediately and attempts Host reads even when the mobile browser reports offline', async () => {
         onlineManager.setOnline(false);
         let complete!: (response: Response) => void;
