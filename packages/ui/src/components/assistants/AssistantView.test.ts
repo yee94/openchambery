@@ -141,7 +141,8 @@ describe('AssistantView contact surface', () => {
     expect(source).toContain('<AssistantConversationSurface')
     expect(source).not.toContain('ensureAssistantSession')
     expect(source).not.toContain('refreshBinding')
-    expect(source).toContain("t('assistants.conversation.contactHint')")
+    expect(source).toContain('<AssistantContactStatus assistantID={assistant.id}')
+    expect(source).toContain('lastContactAt={assistant.latestMessagePreview?.createdAt}')
     expect(source).toContain("t('assistants.conversation.openSettings')")
     expect(source).toContain("actions={assistant ? [{ icon: 'settings-3'")
     expect(source).toContain('<Icon name="settings-3"')
@@ -149,7 +150,7 @@ describe('AssistantView contact surface', () => {
     expect(source).toContain('flex h-16')
     expect(source).toContain('rounded-full text-muted-foreground/65')
     expect(source).toContain('border-l border-[var(--surface-subtle)]')
-    expect(source).toContain('size={28}')
+    expect(source).toContain('size={40}')
   })
 
   test('pending capability or snapshot uses a loading spinner, not unavailable copy', async () => {

@@ -2,7 +2,7 @@
 
 ## Hold-to-talk input
 
-Mobile contact composers reuse the memoized `HoldToTalkComposer` shared with primary Chat: hold an empty textarea to record, release to send, slide to cancel or edit. The dictation setting and capture/runtime support gate activation (VS Code is unsupported). Final recognition is passed explicitly into the existing contact admission path, retaining attachments, failed-send drafts and retry identity. Edit results use the reference-aware document commit. Text typed during finalization is preserved and receives the transcript without automatic submission. Inactive contacts unmount capture; the existing runtime/assistant key fences late results. Stable event callbacks isolate idle audio Hooks from ordinary typing; working contacts remain usable while admission-pending contacts are disabled.
+Mobile contact composers reuse the memoized `HoldToTalkComposer` shared with primary Chat: hold an empty textarea to record, release at center to edit, slide left to cancel or right to send. The dictation setting and capture/runtime support gate activation (VS Code is unsupported). Final recognition is passed explicitly into the existing contact admission path, retaining attachments, failed-send drafts and retry identity. Edit results use the reference-aware document commit. Text typed during finalization is preserved and receives the transcript without automatic submission. Inactive contacts unmount capture; the existing runtime/assistant key fences late results. Stable event callbacks isolate idle audio Hooks from ordinary typing; working contacts remain usable while admission-pending contacts are disabled.
 
 ## Contact session references
 
@@ -34,6 +34,11 @@ contracts.
 
 The Settings refresh icon appears at the avatar's bottom-right on hover or
 keyboard focus (always available on touch) and generates a new `avatarSeed` in the local draft only.
+Its compact circular badge uses the Settings avatar-action white background and
+black foreground tokens on both desktop and mobile; the full avatar remains the touch target.
+Mobile Settings hosts provide a navigation action container: the editor portals
+its save action there using the same glass/check control as Scheduled Tasks,
+including pending-state disabling and a spinner. Desktop keeps the footer save action.
 Save persists it through the existing revision-checked mutation; leaving without
 saving preserves the stored face. All contact avatar surfaces and native share
 PNG handoffs use this seed, falling back to the assistant ID for older servers.

@@ -1453,7 +1453,7 @@ describe('staged message edits', () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input)
       if (url.includes('/interrupt')) {
-        expect(new URL(url).searchParams.get('resume')).toBe('false')
+        expect(new URL(url, 'http://localhost').searchParams.get('resume')).toBe('false')
         sequence.push('interrupt')
         return Response.json({ interrupted: true })
       }

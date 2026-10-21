@@ -177,7 +177,7 @@ describe('stream completion reuses the streamed DOM', () => {
         // `staticTurns` and `streamingTurn` are rendered by different
         // components; releasing the tail on completion unmounts the turn and
         // rebuilds all of its Markdown from an empty node.
-        expect(messageListSource).toContain('hasLiveTail: liveTailActive || stickyLiveTailRef.current');
+        expect(messageListSource).toContain('hasLiveTail: true,');
     });
 });
 

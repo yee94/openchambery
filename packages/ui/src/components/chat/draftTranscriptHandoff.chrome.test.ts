@@ -72,6 +72,7 @@ describe('draft transcript handoff Chrome continuity', () => {
         mode: 'production',
         root: join(uiSrc, '..'),
         publicDir: false,
+        worker: { format: 'es' },
         esbuild: { jsxDev: false },
         resolve: {
           alias: [
@@ -84,19 +85,20 @@ describe('draft transcript handoff Chrome continuity', () => {
           ],
         },
         build: {
+          rolldownOptions: { output: { codeSplitting: false } },
           emptyOutDir: false,
           minify: false,
           outDir: work,
           lib: {
             entry: join(here, 'draftTranscriptHandoff.chrome.fixture.tsx'),
-            formats: ['iife'],
+            formats: ['es'],
             name: 'DraftTranscriptHandoffChromeFixture',
-            fileName: () => 'browser-entry.iife.js',
+            fileName: () => 'browser-entry.js',
           },
         },
       });
 
-      const browserBundle = readFileSync(join(work, 'browser-entry.iife.js'), 'utf8');
+      const browserBundle = readFileSync(join(work, 'browser-entry.js'), 'utf8');
       writeFileSync(htmlPath, `<!doctype html>
 <html>
 <head>
@@ -117,7 +119,7 @@ describe('draft transcript handoff Chrome continuity', () => {
       window.__draftHandoffHarnessError = String(event.reason && event.reason.stack || event.reason);
     });
   </script>
-  <script>${browserBundle}</script>
+  <script type="module">${browserBundle}</script>
 </body>
 </html>`, 'utf8');
 

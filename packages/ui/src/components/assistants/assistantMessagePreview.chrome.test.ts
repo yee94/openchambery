@@ -5,7 +5,7 @@ import { expect, test } from 'vitest';
 import { compileProductionCssAsync, evidenceRoot, keepEvidence, openChromeSession, openPageSession, resolveChrome } from '../ui/chromeCdpHarness';
 import { ASSISTANT_MESSAGE_PREVIEW_CLASS } from './assistantMessagePreview';
 
-test.skipIf(!resolveChrome())('assistant previews clamp long Chinese and English to two lines at 375px', async () => {
+test.skipIf(!resolveChrome())('assistant previews truncate long Chinese and English to one line at 375px', async () => {
   const root = evidenceRoot();
   const css = await compileProductionCssAsync(join(dirname(fileURLToPath(import.meta.url)), '../..'));
   const htmlPath = join(root, 'assistant-preview.html');
@@ -32,11 +32,11 @@ test.skipIf(!resolveChrome())('assistant previews clamp long Chinese and English
     const measures = await page.evaluate<Array<{ clamp: string; height: number; lineHeight: number; scrollHeight: number; width: number; scrollWidth: number }>>(`Array.from(document.querySelectorAll('[data-preview]')).map(el => { const s = getComputedStyle(el); return { clamp: s.webkitLineClamp, height: el.getBoundingClientRect().height, lineHeight: parseFloat(s.lineHeight), scrollHeight: el.scrollHeight, width: el.clientWidth, scrollWidth: el.scrollWidth }; })`);
     console.info('Assistant preview Chrome measurements', measures);
     for (const measure of measures) {
-      expect(measure.clamp).toBe('2');
-      expect(measure.height).toBeCloseTo(measure.lineHeight * 2, 0);
-      expect(measure.scrollHeight).toBeGreaterThan(measure.height);
+      expect(measure.height).toBeCloseTo(measure.lineHeight, 0);
+      expect(measure.scrollWidth).toBeGreaterThan(measure.width);
     }
     expect(await page.evaluate<number>('document.documentElement.scrollWidth')).toBeLessThanOrEqual(375);
+    expect(await page.evaluate<boolean>(`Array.from(document.querySelectorAll('[data-preview]')).every(el => getComputedStyle(el).textOverflow === 'ellipsis' && getComputedStyle(el).whiteSpace === 'nowrap')`)).toBe(true);
     expect(await page.evaluate<boolean>(`Array.from(document.querySelectorAll('[data-preview]')).every(el => ['clip', 'hidden'].includes(getComputedStyle(el).overflowX) && el.getBoundingClientRect().right <= 375)`)).toBe(true);
     expect(await page.evaluate<boolean>(`(() => { const button = document.querySelector('button'); button.focus(); return document.activeElement === button; })()`)).toBe(true);
     await page.screenshotPng(join(root, 'assistant-preview-375.png'));

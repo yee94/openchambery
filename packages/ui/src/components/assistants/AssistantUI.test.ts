@@ -503,13 +503,15 @@ describe('Assistant UI product contract', () => {
     expect(promptComposer).toContain('onRemoveAttachment');
     expect(chatInput).toContain('<MemoModelControls');
     expect(chatInput.indexOf('const painted = await beginDraftEstablishingPaint({')).toBeLessThan(chatInput.indexOf('await fetchResponseStyleInstruction()'));
-    expect(chatInput.indexOf('const painted = await beginDraftEstablishingPaint({')).toBeLessThan(chatInput.indexOf('primaryText = await expandText(primaryText)'));
+    const establishingPaint = chatInput.indexOf('const painted = await beginDraftEstablishingPaint({');
+    expect(establishingPaint).toBeGreaterThan(-1);
+    expect(chatInput.indexOf("replacePlainDocument('');", establishingPaint)).toBeGreaterThan(establishingPaint);
     // Establishing is claimed with the flight, before the paint await, so a
     // second send during create stages a follow-up chip instead of a session.
     expect(chatInput.indexOf('.beginEstablishing({')).toBeLessThan(chatInput.indexOf('const painted = await beginDraftEstablishingPaint({'));
     // Optimistic ticket owns the message ID when present; the draft send falls back to its pinned ID.
     expect(chatInput).toContain('? { messageID: optimisticTicket.messageID, ticket: optimisticTicket }');
-    expect(chatInput).toContain('? { messageID: draftMessageID }');
+    expect(chatInput).toContain('? { messageID: nativeQueueMessageID ?? draftMessageID }');
   });
 
   test('reuses ChatPromptComposer send/focus chrome as a contact message box', async () => {

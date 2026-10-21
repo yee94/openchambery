@@ -35,6 +35,8 @@
   --oc-settings-row-divider: var(--form-row-divider);
   --oc-settings-row-inset: 0.875rem;
   --oc-settings-desktop-value-max-width: 12.5rem;
+  --oc-settings-avatar-action-background: white;
+  --oc-settings-avatar-action-foreground: black;
 }
 
 .oc-settings-section-stack,

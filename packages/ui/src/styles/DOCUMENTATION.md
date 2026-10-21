@@ -54,6 +54,10 @@ button:not([role="radio"]):not([role="checkbox"]):not([role="switch"]),
 actions keep the same 36px floor as native `<button>` siblings.
 
 Also note nearby spacing overrides such as `.py-2` padding inflation under the same gate.
+Composer textareas (`data-chat-input`) and their paint-only highlight layers
+(`data-composer-highlight`) are excluded: both must retain their shared text-layout
+padding, including the height handle's top inset. Overriding only the textarea moves
+the caret away from the visible text and attachment chips on touch devices.
 
 Dense UI that intentionally uses sub-36px controls **must opt out**. Tailwind `h-6` / `w-3` alone does **not** win against this min size: the button still expands, gaps look huge, and row height jumps.
 
