@@ -6,7 +6,8 @@
   hover/click popover fetches the active runtime's authorized devices only while
   open; failed refreshes retain the previous snapshot with an error message.
   Device rows include only live authenticated event-stream connections reported
-  by the host, excluding the local desktop itself. The panel refreshes every five
+   by the host, excluding the local desktop and the authenticated current device
+   identified by the host's `currentClientId`. The panel refreshes every five
   seconds while open and never treats missing presence support as empty success.
   The non-persisted
   `devicePairingRequested` UI intent opens the existing remote-instance pairing

@@ -29,6 +29,10 @@ shrinking. Height preferences are local, not durable draft state.
 While manual height owns the textarea, the autosize effect also drops text from its
 dependencies instead of running and immediately returning on each edit. Returning
 to auto reintroduces the latest text and measures once.
+The composer keeps real textarea resizing while sheets use a translated frozen canvas.
+Both share recent-velocity flick selection and an interruptible critically damped spring;
+short flicks can change stops, while holding before release falls back to proximity.
+The textarea's CSS minimum remains authoritative during downward resistance.
 
 ## Generated avatars
 

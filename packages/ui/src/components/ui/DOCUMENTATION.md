@@ -26,6 +26,26 @@ composer edits cannot refresh a hidden sheet's release-handler effect. Animation
 pointer cleanup runs in layout teardown before a removed composer handle returns
 height ownership to its parent's autosize effect.
 
+`heightSnapPhysics` owns recent (100ms) release velocity, direction reversal, flick
+projection/adjacent-stop selection and bounded overscroll resistance. Motion's mini
+animate and spring generator own critically damped WAAPI settlement (576 stiffness,
+48 damping); unit-bearing height/translate keyframes use normalized progress velocity
+and rest thresholds. Completion commits the final style before autosize resumes;
+cancellation removes the effect before remeasurement. Slow movement uses distance; a short deliberate
+flick can advance without crossing the midpoint, and a held finger loses momentum.
+Cancellation restores the initial point without fling. Settlement inherits velocity
+and can be interrupted from its current visible height.
+
+Sheets use `renderMode: 'translate'`: at press the canvas is frozen once at maximum
+height plus spring headroom, temporarily positioned absolutely at the overlay's bottom
+to avoid flex shrinking/auto-margin displacement. Only its independent CSS `translate`
+changes while tracking/settling; MobileWindowMotion retains `transform` for present/dismiss.
+The selected CSS height and original positioning return together after settlement.
+Fit-content measurement is cached before entering this canvas mode. Snap targets also
+respect the overlay's available height (including keyboard insets). Downward flick
+dismissal is eligible from the collapsed position; an expanded sheet first collapses
+unless the gesture actually reaches the distance-based dismissal region.
+
 `MobileWindowMotion` owns mobile overlay motion. React owns discrete presence and modal state. Interaction frames write only the component-owned scrim and surface `transform` and `opacity` styles.
 
 `begin(operation)` accepts `present` and `dismiss` and returns whether the interaction started. `update(progress)` receives the current operation completion from `0` through `1`: present maps directly to visible progress, dismiss maps to `1 - progress`. `finish(commit | cancel)` resolves through the recipe: present commits visible and cancels hidden; dismiss commits hidden and cancels visible.
@@ -42,7 +62,7 @@ Frame updates use one rAF to coalesce input. Interaction frames avoid root CSS v
 
 `MobileWindowMotionRegistry` provides a narrow imperative bridge and unregisters controllers when the component unmounts or its id changes. Controller lifetime remains independent from surface presence. The mobile Sessions sheet is the current first caller and starts its header-swipe preview with `begin('present')`. Future callers may use the registry for local gesture ownership while keeping presence, modal state, and visual-frame ownership inside `MobileWindowMotion`.
 
-The Sessions sheet exposes a dedicated top resize handle with `72dvh` and `98dvh` snap points. Drag frames write height directly to the motion surface through `surfaceElementRef`, one write per animation frame; release settles with a height animation and React commits the selected snap class. The handle is reserved from the sheet-wide dismiss recognizer, while list-edge downward gestures continue to own dismissal. Current-turn and direct single-file mobile diffs open at `98dvh` and use the same resize behavior. Both presentations include backdrop dismissal and an explicit close action.
+The Sessions sheet exposes a dedicated top resize handle with `72dvh` and `98dvh` snap points. Drag frames write translate directly to the frozen motion surface through `surfaceElementRef`, one write per animation frame; release uses the shared velocity-aware spring and commits the selected snap class. The handle is reserved from the sheet-wide dismiss recognizer, while list-edge downward gestures continue to own dismissal. Current-turn and direct single-file mobile diffs open at `98dvh` and use the same resize behavior. Both presentations include backdrop dismissal and an explicit close action.
 
 `MobileWindowMotion` owns dismissal configuration through `dismissGesture`: its default is disabled, `true` uses defaults, and an object enables the gesture with option overrides. Motion attaches the hook to its real surface, which supplies the edge and surface travel size. The hook supports `top`, `bottom`, `left`, and `right`; it locks scroll ownership at `touchstart` by choosing the nearest target-axis scrollable ancestor. A matching selector provides a checked fallback within the surface. A target scroll container keeps the full gesture when the touch starts away from its matching edge, and a later touch starting at that edge becomes eligible for dismissal. Commit distance uses its own ratio and min/max bounds, separate from the surface-sized animation travel; a correctly directed fling can also commit.
 

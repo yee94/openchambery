@@ -16,10 +16,10 @@ const deviceConnectionsQueryOptions = () => queryOptions({
   queryFn: async ({ signal }) => {
     const response = await runtimeFetch('/api/client-auth/clients', { signal });
     if (!response.ok) throw new Error('Device list unavailable');
-    const data = await response.json() as { clients?: RemoteClientRecord[] };
+    const data = await response.json() as { clients?: RemoteClientRecord[]; currentClientId?: string | null };
     if (!Array.isArray(data.clients)) throw new Error('Invalid device list');
     if (data.clients.some((client) => typeof client.connected !== 'boolean')) throw new Error('Presence unavailable');
-    return data.clients.filter((client) => !client.revokedAt && client.connected && client.clientKind !== 'desktop-local');
+    return data.clients.filter((client) => !client.revokedAt && client.connected && client.clientKind !== 'desktop-local' && client.id !== data.currentClientId);
   },
   staleTime: 0,
   retry: false,

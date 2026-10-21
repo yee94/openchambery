@@ -63,25 +63,29 @@ export const useMobileSheetSnap = ({
   const controller = useHeightSnap<MobileSheetSnapPoint>({
     surfaceRef,
     initialPoint: initialSnapPoint,
+    renderMode: 'translate',
     minimumHeight: onDismiss ? 0 : undefined,
     getPoints: () => {
       const viewport = getMobileViewportHeight();
-      if (fitContent && pointRef.current === MOBILE_SHEET_COLLAPSED_SNAP && surfaceRef.current && surfaceRef.current.style.willChange !== 'height') {
+      const availableHeight = surfaceRef.current?.parentElement?.clientHeight || viewport;
+      if (fitContent && pointRef.current === MOBILE_SHEET_COLLAPSED_SNAP && surfaceRef.current && !surfaceRef.current.hasAttribute('data-height-snap-active')) {
         collapsedHeightRef.current = getMobileSheetCollapsedHeight(viewport, surfaceRef.current.getBoundingClientRect().height);
       }
       return [
-        { id: MOBILE_SHEET_COLLAPSED_SNAP, height: getMobileSheetCollapsedHeight(viewport, fitContent ? collapsedHeightRef.current : undefined) },
-        { id: MOBILE_SHEET_EXPANDED_SNAP, height: viewport * MOBILE_SHEET_EXPANDED_SNAP },
+        { id: MOBILE_SHEET_COLLAPSED_SNAP, height: Math.min(availableHeight, getMobileSheetCollapsedHeight(viewport, fitContent ? collapsedHeightRef.current : undefined)) },
+        { id: MOBILE_SHEET_EXPANDED_SNAP, height: Math.min(availableHeight, viewport * MOBILE_SHEET_EXPANDED_SNAP) },
       ];
     },
-    onRelease: (height) => {
-      if (!onDismiss || !shouldDismissMobileSheetSnap(height, getMobileViewportHeight(), dismissThresholdPx, fitContent ? collapsedHeightRef.current : undefined)) return false;
+    onRelease: (height, velocity, startHeight) => {
+      const availableHeight = surfaceRef.current?.parentElement?.clientHeight || getMobileViewportHeight();
+      const collapsed = Math.min(availableHeight, getMobileSheetCollapsedHeight(getMobileViewportHeight(), fitContent ? collapsedHeightRef.current : undefined));
+      const flickClosed = velocity < -0.55 && startHeight <= collapsed + 1 && height < collapsed - 8;
+      if (!onDismiss || (!flickClosed && height > collapsed - dismissThresholdPx)) return false;
       onDismiss();
       return true;
     },
     onCommit: (point) => {
       pointRef.current = point;
-      if (surfaceRef.current) surfaceRef.current.style.height = '';
     },
   });
   const reset = useEvent(() => {
