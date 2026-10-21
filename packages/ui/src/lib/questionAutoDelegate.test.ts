@@ -81,7 +81,8 @@ describe('question auto-delegate authoritative query', () => {
       return Promise.resolve(Response.json(data('a', reads === 2 ? 2 : 3).snapshot));
     });
     const observer = new QueryObserver(queryClient, questionAutoDelegateQueryOptions());
-    const unsubscribe = observer.subscribe(() => {});
+    const errors: unknown[] = [];
+    const unsubscribe = observer.subscribe((result) => { if (result.isError) errors.push(result.error); });
     await refreshQuestionAutoDelegate();
     expect(signals[0].aborted).toBe(true);
     expect(getQuestionAutoDelegateSnapshot()?.snapshot.revision).toBe(2);
@@ -90,5 +91,6 @@ describe('question auto-delegate authoritative query', () => {
     expect(getQuestionAutoDelegateSnapshot()?.snapshot.revision).toBe(3);
     expect(signals[2].aborted).toBe(true);
     unsubscribe(); observer.destroy();
+    expect(errors).toEqual([]);
   });
 });

@@ -1,5 +1,16 @@
 # Chat components
 
+## Direct-send inbox presentation
+
+Composer inbox chips exclude identities already present in the current primary
+transcript, including optimistic user rows. Prompt admission and enqueue events
+can precede consumption; that gap must not flash a second copy in the queue.
+The inbox ledger remains intact for authoritative reconciliation and recovery.
+Pending items without a transcript row still appear normally. This projection
+reuses the existing session-message subscription and skips transcript work when
+the inbox is empty. `ChatInput.hooks.test.tsx` covers admission, consumption and
+pending recovery through the production projection.
+
 ## Mobile composer height snaps
 
 Web composers with text expose the shared height handle (native iOS composer is excluded).
@@ -11,8 +22,8 @@ interaction transitions. Ordinary typing performs zero leaf Hook/effect/listener
 `useMobileComposerSnap` owns draft-local `auto`, `min`, and `full` positions: existing
 eight-line autosize, the empty textarea minimum, and the available space below the
 conversation navigation. The absolute handle sits inside the card's top padding;
-the textarea reserves space for it without increasing the empty/minimum height, and
-the status row has no extra bottom margin while the handle is present. Full mode
+the handle fits within the existing 10px top inset without changing textarea padding or card height, and
+the mobile status row has no extra bottom margin, whether or not the handle is present. Full mode
 reaches the header's bottom edge. Visual viewport resize/scroll recomputes full
 height without changing the selected mode. Clearing text or switching DraftKey resets
 to auto. Full mode and active resizing pin the existing compact/expanded swap.
@@ -415,6 +426,8 @@ Primary composer history parsing reads authoritative top-level `providerID` / `m
 `TurnItem` mounts `SessionErrorNotice` inside the latest turn, following its assistant content and model header. The composer owns no execution-error banner. Failures before an assistant exists use the user turn's header identity, including on reload; an existing pending/assistant header stays the sole header. The notice combines `useLatestSessionError(sessionId)` with the directory-scoped `useSessionErrorAt` marker, preserves feedback after a notification is viewed, and hides when the authoritative marker clears. Inactive/read-only surfaces and known directory mismatches suppress the notice; a tail assistant's inline error owns presentation when present. The component reuses the assistant error formatter, semantic error colors, `role="alert"`, and localized fallback text. Sync owns error-marker creation and retry cleanup. `SessionErrorNotice.test.tsx` and `pendingAssistantHeaderContinuity.regression.test.tsx` cover these presentation gates; the Chrome continuity fixture checks that provider errors sit directly below the model header at desktop/mobile widths. Live event delivery requires integration verification.
 
 ## Question auto-delegation
+
+Snapshot refresh silently cancels superseded GETs without reverting newer mutation snapshots. Cancellation is not a query failure; actual refresh failures retain their error feedback and previous snapshot. This prevents a false status-error flash when interaction pauses automatic delegation during an in-flight read.
 
 `questionDraftStore.ts` owns in-memory answer drafts by runtime generation, session and request ID. Selection, custom text, active tab, interaction hold and pause-flight/error state survive QuestionCard remounts and snapshot changes. Each card subscribes only to its own selection/mode/completion fields; non-empty custom typing does not republish those fields. Successful reply/dismiss, authoritative settled snapshots and runtime changes release drafts; unmount and failed mutations do not. Drafts are not written to browser storage.
 

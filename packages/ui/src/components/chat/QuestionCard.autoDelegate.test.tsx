@@ -75,6 +75,28 @@ afterEach(async () => {
 const bar = () => host.querySelector<HTMLElement>('[data-question-delegate-bar]');
 
 describe('QuestionCard auto delegation', () => {
+  test('taking over a question during a status refresh never flashes a refresh error', async () => {
+    await mount();
+    let finishRefresh!: (response: Response) => void;
+    mocks.fetch.mockImplementation((_path: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        snapshot = { ...snapshot, revision: snapshot.revision + 1, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'interaction' }] };
+        return Promise.resolve(Response.json({ outcome: 'paused', snapshot }));
+      }
+      return new Promise<Response>((resolve) => { finishRefresh = resolve; });
+    });
+    let priorRefresh!: Promise<void>;
+    await act(async () => { priorRefresh = refreshQuestionAutoDelegate(); });
+    await click('Option A');
+    await priorRefresh;
+    expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector('[data-question-delegation-controls]')).toBeNull();
+    await act(async () => { finishRefresh(Response.json(snapshot)); });
+    await flush();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
   test('allows changing a selected answer repeatedly after delegation is paused', async () => {
     snapshot = { ...snapshot, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'interaction' }] };
     await queryClient.fetchQuery(questionAutoDelegateQueryOptions());

@@ -75,7 +75,7 @@ export const getQuestionAutoDelegateSnapshot = () => queryClient.getQueryData(qu
 export const ensureQuestionAutoDelegate = () => queryClient.ensureQueryData(questionAutoDelegateQueryOptions());
 export const refreshQuestionAutoDelegate = async () => {
   const queryKey = key(capture());
-  await queryClient.cancelQueries({ queryKey, exact: true }, { revert: false });
+  await queryClient.cancelQueries({ queryKey, exact: true }, { revert: false, silent: true });
   await queryClient.invalidateQueries({ queryKey, exact: true });
 };
 
