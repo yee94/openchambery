@@ -1,4 +1,7 @@
 import React, { act } from 'react';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { LoadingImage } from './LoadingImage';
@@ -47,7 +50,7 @@ test('a decoded cached image is immediately revealed without waiting for another
 test('desktop shows a constrained content placeholder and preserves image events', async () => {
   boundary.mobile = false;
   const onLoad = vi.fn();
-  await act(async () => root.render(<LoadingImage src="/image.png" placeholderAspectRatio={16 / 9} onLoad={onLoad} />));
+  await act(async () => root.render(<LoadingImage src="/image.png" contentFrame onLoad={onLoad} />));
   expect(host.querySelector('[data-image-content="desktop"][data-image-state="loading"]')).not.toBeNull();
   expect(host.querySelector('.oc-image-loading')).not.toBeNull();
   expect(host.querySelector('[data-image-content="mobile"]')).toBeNull();
@@ -56,14 +59,35 @@ test('desktop shows a constrained content placeholder and preserves image events
   expect(host.querySelector('.oc-image-loading')).toBeNull();
 });
 
-test('content reserves the requested ratio only while pending and resets on source change', async () => {
-  await act(async () => root.render(<LoadingImage src="/wide.png" placeholderAspectRatio={16 / 9} />));
+test('content frame keeps one CSS-owned height through every phase', async () => {
+  // Height lives in image-loading.css (`--oc-content-image-height`). No phase
+  // may set inline geometry: a per-phase height lets late bytes move the reader.
+  await act(async () => root.render(<LoadingImage src="/wide.png" contentFrame />));
   const frame = host.querySelector<HTMLElement>('[data-image-content]')!;
-  expect(parseFloat(frame.style.aspectRatio)).toBeCloseTo(16 / 9);
+  expect(frame.getAttribute('style')).toBeNull();
   await act(async () => host.querySelector('img')!.dispatchEvent(new Event('load')));
-  expect(frame.style.aspectRatio).toBe('');
-  await act(async () => root.render(<LoadingImage src="/portrait.png" placeholderAspectRatio={3 / 4} />));
-  expect(parseFloat(host.querySelector<HTMLElement>('[data-image-content]')!.style.aspectRatio)).toBe(0.75);
+  expect(host.querySelector<HTMLElement>('[data-image-content]')).toBe(frame);
+  expect(frame.getAttribute('style')).toBeNull();
+  await act(async () => root.render(<LoadingImage src="/missing.png" contentFrame />));
+  await act(async () => host.querySelector('img')!.dispatchEvent(new Event('error')));
+  expect(host.querySelector('[data-image-content][data-image-state="error"]')?.getAttribute('style')).toBeNull();
+});
+
+test('content images size inside the fixed frame instead of by intrinsic height', () => {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'image-loading.css'), 'utf8');
+  const frameRule = css.match(/\.oc-image-frame\[data-image-content\] \{([^}]*)\}/)?.[1] ?? '';
+  const imageRule = css.match(/\.oc-image-frame\[data-image-content\] > img \{([^}]*)\}/)?.[1] ?? '';
+  const legacyRule = css.match(/\[data-md-image-presentation='true'\] \{([^}]*)\}/)?.[1] ?? '';
+  const legacyImageRule = css.match(/\[data-md-image-presentation='true'\] > img \{([^}]*)\}/)?.[1] ?? '';
+  for (const rule of [frameRule, legacyRule]) {
+    expect(rule).toContain('height: var(--oc-content-image-height)');
+    // A percentage width in a shrink-to-fit bubble collapses image-only bubbles.
+    expect(rule).not.toMatch(/(?<!max-)width:\s*[^;]*%/);
+  }
+  for (const rule of [imageRule, legacyImageRule]) {
+    expect(rule).toContain('height: 100%');
+    expect(rule).toContain('object-fit: contain');
+  }
 });
 
 test('thumbnail fill never adopts the content placeholder sizing', async () => {

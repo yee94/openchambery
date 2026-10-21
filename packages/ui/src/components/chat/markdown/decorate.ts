@@ -569,7 +569,7 @@ const MARKDOWN_IMAGE_CLASS = [
   'focus-visible:outline-[var(--interactive-focus-ring)]',
 ];
 const MARKDOWN_IMAGE_INTERACTIVE_CLASS = ['cursor-pointer', 'hover:bg-interactive-hover/60'];
-const MARKDOWN_IMAGE_PLACEHOLDER_CLASS = ['aspect-video', 'h-auto', 'w-full', 'max-w-xl', 'object-contain'];
+const MARKDOWN_IMAGE_PLACEHOLDER_CLASS = ['object-contain'];
 
 const ensureMarkdownImagePresentation = (image: HTMLImageElement): HTMLElement => {
   const parent = image.parentElement;

@@ -21,13 +21,13 @@ function RuntimeImage({ node }: NodeComponentProps<ImageNodeShape>) {
   });
   return (
     <LoadingImage
-      placeholderAspectRatio={16 / 9}
+      contentFrame
       src={resource.source || undefined}
       resourceError={resource.error}
       data-md-image-source={node.src}
       alt={node.alt}
       title={node.title ?? undefined}
-      className="max-w-full h-auto object-contain rounded-lg"
+      className="rounded-lg"
       role={onShowPopup ? 'button' : undefined}
       tabIndex={onShowPopup ? 0 : undefined}
       onKeyDown={onShowPopup ? handleKeyDown : undefined}
