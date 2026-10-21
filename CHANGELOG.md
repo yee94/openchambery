@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.5-beta.3] - 2026-10-21
+
+### 改进
+
+- 移动端手动调整输入框高度后，继续输入不再触发多余的自动高度测量，恢复自动高度时一次性重新计算。
+
 ## [2.1.5-beta.2] - 2026-10-21
 
 ### 改进
