@@ -109,15 +109,7 @@ fallbacks. A new native build is required for PNG-consuming native surfaces.
 
 ## Image presentation
 
-All `MediaPreviewOverlay` consumers share `message/mediaPreviewTransition` (attachments,
-Markdown, Assistant contacts, file previews and Mermaid). Opening and closing use
-direction-specific snapshot names: the full-size snapshot stays above the thumbnail,
-with `object-fit: cover` and clipping throughout the interpolated frame-size animation.
-This continuously crops differing aspect ratios instead of snapping to the thumbnail
-crop at completion. Snapshot crossfades are disabled; the existing reduced-motion,
-unavailable-source and unsupported-browser fallbacks remain in the shared helper.
-
-Markdown content, attachment thumbnails/gallery, Assistant contact images and composer attachments use `LoadingImage` from shared UI on desktop and mobile, over direct or Relay connections. URL acquisition and browser decode are separate pending phases; both show the shared dotted shimmer canvas. Body images use one fixed-height frame (`contentFrame`, 15rem) in every phase so late image bytes never shift the transcript: 320px wide on desktop, full message width on mobile, with the image contained inside and full size available in the preview. Thumbnail slots retain their existing square size. Fullscreen previews and file sheets use `ImageLoadingPlaceholder` during resource acquisition. Failures end loading and preserve the owning surface's error/retry path; image preview/save metadata continues to carry the original source. Legacy Markdown keeps its DOM presentation owner and only marks streamed images loaded after the actual image load event. See `../ui/DOCUMENTATION.md#image-loading`.
+Markdown content, attachment thumbnails/gallery, Assistant contact images and composer attachments use `LoadingImage` from shared UI on desktop and mobile, over direct or Relay connections. URL acquisition and browser decode are separate pending phases; both show the shared dotted shimmer canvas. Body images use one fixed-height frame (`contentFrame`, 10rem) in every phase so late image bytes never shift the transcript: 320px wide on desktop, full message width on mobile, with the image contained inside and full size available in the preview. Thumbnail slots retain their existing square size. Fullscreen previews and file sheets use `ImageLoadingPlaceholder` during resource acquisition. Failures end loading and preserve the owning surface's error/retry path; image preview/save metadata continues to carry the original source. Legacy Markdown keeps its DOM presentation owner and only marks streamed images loaded after the actual image load event. See `../ui/DOCUMENTATION.md#image-loading`.
 
 ## Mobile automatic read-aloud
 
