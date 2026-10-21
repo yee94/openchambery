@@ -42,8 +42,8 @@ const MEBIBYTE = 1024 * 1024
 /** Durable transcript body budget on VS Code (4 MiB). */
 export const VSCODE_TRANSCRIPT_DURABLE_BYTE_BUDGET = 4 * MEBIBYTE
 
-/** Durable transcript body budget on mobile surfaces (12 MiB). */
-export const MOBILE_TRANSCRIPT_DURABLE_BYTE_BUDGET = 12 * MEBIBYTE
+/** Durable transcript body budget on mobile surfaces (32 MiB). */
+export const MOBILE_TRANSCRIPT_DURABLE_BYTE_BUDGET = 32 * MEBIBYTE
 
 /** Durable transcript body budget on desktop / web (40 MiB). */
 export const DEFAULT_TRANSCRIPT_DURABLE_BYTE_BUDGET = 40 * MEBIBYTE

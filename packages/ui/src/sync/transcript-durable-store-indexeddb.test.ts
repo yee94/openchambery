@@ -92,6 +92,44 @@ describe("IndexedDB transcript durable two-store driver", () => {
     expect(await store.readMessage(SCOPE, "msg_orphan")).toBeUndefined()
   })
 
+  test("under-budget eviction does not rescan every index row after the first check", async () => {
+    const inner = new MemoryTranscriptDurableTwoStoreDriver()
+    let fullScans = 0
+    const driver = {
+      transaction: <T,>(action: Parameters<typeof inner.transaction<T>>[0]) =>
+        inner.transaction<T>((transaction) => action({
+          ...transaction,
+          getAllIndexes: () => {
+            fullScans += 1
+            return transaction.getAllIndexes()
+          },
+        })),
+      destroy: () => inner.destroy(),
+    }
+    const store = createIndexedDBTranscriptDurableStore({ driver })
+    const budget = 1024 * 1024
+    for (let index = 0; index < 5; index += 1) {
+      const { info, parts } = user(`msg_${index}`, index)
+      await store.upsertSettled(SCOPE, info, parts)
+      await store.evictToBytes(budget)
+    }
+    expect(fullScans).toBeLessThanOrEqual(1)
+    expect((await store.readSession(SCOPE)).records).toHaveLength(5)
+  })
+
+  test("tracked byte total still evicts once writes exceed the budget", async () => {
+    const store = createIndexedDBTranscriptDurableStore({ driver: new MemoryTranscriptDurableTwoStoreDriver() })
+    const first = user("msg_old", 1, "x".repeat(400))
+    await store.upsertSettled(SCOPE, first.info, first.parts)
+    const firstSize = (await store.readMessage(SCOPE, "msg_old"))!.byteSize
+    expect((await store.evictToBytes(firstSize)).evicted).toBe(0)
+    const second = user("msg_new", 2, "y".repeat(400))
+    await store.upsertSettled(SCOPE, second.info, second.parts)
+    const result = await store.evictToBytes(firstSize + 10)
+    expect(result.evicted).toBe(1)
+    expect((await store.readSession(SCOPE)).records.map((record) => record.messageID)).toEqual(["msg_new"])
+  })
+
   test("clearAll drops index and content together and accepts a later write", async () => {
     const driver = new MemoryTranscriptDurableTwoStoreDriver()
     const store = createIndexedDBTranscriptDurableStore({ driver })
