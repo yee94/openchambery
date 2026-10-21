@@ -27,7 +27,7 @@ export function animateMediaPreview(
     const imageName = image.style.viewTransitionName;
     const visibility = viewer.style.visibility;
     let cancelled = false;
-    const name = 'oc-media-preview';
+    const name = closing ? 'oc-media-preview-close' : 'oc-media-preview';
     source.style.viewTransitionName = closing ? 'none' : name;
     image.style.viewTransitionName = closing ? name : 'none';
     if (!closing) viewer.style.visibility = 'hidden';

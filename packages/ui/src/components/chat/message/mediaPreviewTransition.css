@@ -28,20 +28,34 @@
     border-radius: 999px;
 }
 
-::view-transition-group(oc-media-preview) {
+::view-transition-group(oc-media-preview),
+::view-transition-group(oc-media-preview-close) {
     animation-duration: 280ms;
     animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
 ::view-transition-old(oc-media-preview),
-::view-transition-new(oc-media-preview) {
+::view-transition-new(oc-media-preview),
+::view-transition-old(oc-media-preview-close),
+::view-transition-new(oc-media-preview-close) {
+    animation: none;
+    mix-blend-mode: normal;
     width: 100%;
     height: 100%;
+    overflow: clip;
     object-fit: contain;
 }
 
+/* Keep the full image above the thumbnail and crop it as the frame changes shape. */
+::view-transition-new(oc-media-preview),
+::view-transition-old(oc-media-preview-close) {
+    z-index: 1;
+    object-fit: cover;
+}
+
 @media (prefers-reduced-motion: reduce) {
-    ::view-transition-group(oc-media-preview) {
+    ::view-transition-group(oc-media-preview),
+    ::view-transition-group(oc-media-preview-close) {
         animation-duration: 0s;
     }
 }
