@@ -75,6 +75,7 @@ window.addEventListener('error',e=>{
         expect(Math.abs(opened.max - opened.top), 'cold open must reach the bottom without an out-of-range initial offset').toBeLessThan(3);
         await page.evaluate('window.historyScrollFixture.prepare()');
         const prepared = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
+        let releasedReadingDistance: number | null = null;
         expect(prepared.loads).toBe(0);
         if (partialTurn) {
             expect(await page.evaluate('getComputedStyle(document.querySelector("[data-history-scroller]")).overflowY')).toBe('auto');
@@ -118,11 +119,20 @@ window.addEventListener('error',e=>{
             await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 400, deltaX: 0, deltaY: -100 });
         } else if (fastEntry) {
             await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 200 }] });
-            await page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 180, y: 550 }] });
+            await page.evaluate('new Promise(requestAnimationFrame)');
+            await page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 180, y: 280 }] });
             expect((await page.evaluate<Sample>('window.historyScrollFixture.sample()')).pinned,
                 'the first new drag must release entry-stick before the next fling frame').toBe(false);
-            await page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 180, y: 780 }] });
+            // Frame-paced, equal-distance samples give Chromium a real fling
+            // velocity instead of two IPC-timed jumps whose prediction can reverse.
+            for (const y of [360, 440, 520, 600, 680, 760]) {
+                await page.evaluate('new Promise(requestAnimationFrame)');
+                await page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 180, y }] });
+            }
             await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            const released = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
+            releasedReadingDistance = released.max - released.top;
+            expect(releasedReadingDistance, 'the drag must actually move away from the live edge').toBeGreaterThan(400);
         } else {
             await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 400 }] });
             await page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 180, y: 420 }] });
@@ -144,7 +154,13 @@ window.addEventListener('error',e=>{
         if (scenario.startsWith('desktop-warmup')) {
             expect(await page.evaluate('window.warmupHides'), 'background history must never hide the painted transcript').toEqual([]);
         }
-        if (scenario !== 'desktop-short' && !pinnedWarmup) expect(after.max - after.top).toBeGreaterThan(scenario === 'virtualize-transition' || scenario === 'desktop-warmup' ? 100 : desktop && fastEntry ? 500 : 1000);
+        if (releasedReadingDistance !== null) {
+            // Preserve the distance the real gesture reached. Native inertia
+            // may carry it farther, but prepending must never pull it back.
+            expect(after.max - after.top).toBeGreaterThanOrEqual(releasedReadingDistance - 24);
+        } else if (scenario !== 'desktop-short' && !pinnedWarmup) {
+            expect(after.max - after.top).toBeGreaterThan(scenario === 'virtualize-transition' || scenario === 'desktop-warmup' ? 100 : desktop && fastEntry ? 500 : 1000);
+        }
         if (pinnedWarmup) expect(Math.abs(after.max - after.top)).toBeLessThan(1);
         if (scenario === 'desktop-warmup-small-pinned') {
             expect(await page.evaluate('document.querySelectorAll("[data-turn-entry][data-index]").length'), 'short desktop history must stay in normal flow below twelve history entries').toBe(0);

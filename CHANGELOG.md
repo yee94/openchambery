@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.5-beta.6] - 2026-10-21
+
+### 其他
+
+- 对话历史滚动回归测试改为按帧采样触摸位移，断言基于真实拖动距离，减少无惯性手势下的误判。应用行为无变化。
+
 ## [2.1.5-beta.5] - 2026-10-21
 
 ### 改进
