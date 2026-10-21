@@ -55,15 +55,17 @@ export function useComposerTextareaAutosize({ inputRef, message, expanded, isMob
             ? prev : { height: sized.height, maxHeight: sized.maxHeight });
     });
 
+    const autosizeMessage = manualHeight ? null : message;
     useLayoutEffect(() => {
         const previous = previousLayout.current;
+        const length = autosizeMessage?.length ?? 0;
         // Growing transcript never shrinks mid-recording (matches typing);
         // dictation ending (null) releases the height back to the message.
-        const allowShrink = !previous || previous.manualHeight || message.length < previous.length || expanded !== previous.expanded
+        const allowShrink = !previous || previous.manualHeight || length < previous.length || expanded !== previous.expanded
             || (previous.dictationHeight !== null && dictationHeight === null);
-        previousLayout.current = { length: message.length, expanded, dictationHeight, manualHeight };
+        previousLayout.current = { length, expanded, dictationHeight, manualHeight };
         resize({ allowShrink });
-    }, [message, expanded, isMobile, dictationHeight, manualHeight, inputRef, resize]);
+    }, [autosizeMessage, expanded, isMobile, dictationHeight, manualHeight, inputRef, resize]);
 
     return { size, resize };
 }

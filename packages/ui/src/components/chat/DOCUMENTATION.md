@@ -26,6 +26,9 @@ autosize reads an animated scrollHeight as the resting content height. Settlemen
 cancels its fill before handing height ownership back to autosize. Typing in manual
 modes performs no sizing measurements, and returning to auto explicitly permits
 shrinking. Height preferences are local, not durable draft state.
+While manual height owns the textarea, the autosize effect also drops text from its
+dependencies instead of running and immediately returning on each edit. Returning
+to auto reintroduces the latest text and measures once.
 
 ## Generated avatars
 
