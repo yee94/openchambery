@@ -34,7 +34,7 @@ const cancel = vi.fn();
 const command = vi.fn();
 const recordingChange = vi.fn();
 const inputRef = { current: null as HTMLTextAreaElement | null };
-const render = async () => { await act(async () => root.render(<DesktopDictationButton inputRef={inputRef} onCommandChange={command} onRecordingChange={recordingChange} onInsert={insert} onPartial={partial} onStart={start} onCancel={cancel} />)); };
+const render = async (interactionMode: 'desktop' | 'mobile' = 'desktop') => { await act(async () => root.render(<DesktopDictationButton interactionMode={interactionMode} inputRef={inputRef} onCommandChange={command} onRecordingChange={recordingChange} onInsert={insert} onPartial={partial} onStart={start} onCancel={cancel} />)); };
 const button = () => host.querySelector('button')!;
 beforeEach(async () => {
     vi.clearAllMocks();
@@ -45,7 +45,7 @@ beforeEach(async () => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 
-it('keeps dictation hook work off repeated composer edits while final insertion sees the latest draft', async () => {
+it.each(['desktop', 'mobile'] as const)('%s keeps dictation hook work off repeated composer edits while final insertion sees the latest draft', async (mode) => {
     const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../chat/ChatInput.tsx'), 'utf8');
     const ast = ts.createSourceFile('ChatInput.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const declarations = new Map<string, string>();
@@ -56,7 +56,8 @@ it('keeps dictation hook work off repeated composer edits while final insertion 
                 declarations.set(node.name.text, `const ${node.getText(ast)};`);
             }
         }
-        if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(ast) === 'MemoDesktopDictationButton') {
+        if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(ast) === 'MemoDesktopDictationButton'
+            && node.getText(ast).includes('interactionMode="mobile"') === (mode === 'mobile')) {
             buttonJsx = node.getText(ast);
         }
         ts.forEachChild(node, visit);
@@ -69,6 +70,8 @@ it('keeps dictation hook work off repeated composer edits while final insertion 
         React, useEvent, DesktopDictationButton, update,
         textareaRef: inputRef, setDesktopCommandPressed: command, setDesktopRecording: recordingChange,
         footerIconButtonClass: '', iconSizeClass: '', beginDesktopDictation: start, cancelDesktopDictation: cancel,
+        resolvedDraftBusy: false, dictationHint: null, currentSessionId: 'session', newSessionDraftOpen: false,
+        setMobileDictationActive: vi.fn(),
     };
     const compiled = ts.transpileModule(`
         ${declarations.get('MemoDesktopDictationButton')}
@@ -155,6 +158,44 @@ it('toggles recording with a theme-filled mic and inserts the final text', async
 it('finishes when the microphone button loses focus', async () => {
     mock.dictation.status = 'recording'; await render();
     await act(async () => { button().focus(); button().blur(); });
+    expect(mock.dictation.confirmDictation).toHaveBeenCalledTimes(1);
+});
+
+it('mobile streams inline across touch, scroll, blur and keyboard events until the microphone is clicked again', async () => {
+    await render('mobile');
+    await act(async () => button().click());
+    expect(start).toHaveBeenCalledTimes(1);
+    mock.dictation.status = 'recording'; await render('mobile');
+    await act(async () => {
+        button().focus(); button().blur();
+        document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+        document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }));
+        window.dispatchEvent(new Event('scroll'));
+        window.dispatchEvent(new Event('blur'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        window.dispatchEvent(new Event('openchamber:dictation-toggle'));
+    });
+    mock.onPartial('持续识别');
+    expect(partial).toHaveBeenLastCalledWith('持续识别');
+    expect(mock.dictation.confirmDictation).not.toHaveBeenCalled();
+    expect(mock.dictation.cancelDictation).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(host.textContent).not.toContain('chat.dictation.keyboardHint');
+    await act(async () => button().click());
+    expect(mock.dictation.confirmDictation).toHaveBeenCalledTimes(1);
+    mock.onTranscript('持续识别的最终文字');
+    expect(insert).toHaveBeenLastCalledWith('持续识别的最终文字');
+});
+
+it('mobile compact trigger controls the same recording owner', async () => {
+    await render('mobile');
+    await act(async () => window.dispatchEvent(new Event('openchamber:mobile-dictation-toggle')));
+    expect(mock.dictation.startDictation).toHaveBeenCalledTimes(1);
+    mock.dictation.status = 'recording'; await render('mobile');
+    expect(button().getAttribute('aria-pressed')).toBe('true');
+    await act(async () => window.dispatchEvent(new Event('openchamber:mobile-dictation-toggle')));
     expect(mock.dictation.confirmDictation).toHaveBeenCalledTimes(1);
 });
 

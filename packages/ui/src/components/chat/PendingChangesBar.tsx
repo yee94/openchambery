@@ -119,7 +119,7 @@ export const PendingChangesBar: React.FC = React.memo(() => {
         <div className="relative" ref={popoverRef}>
             <button
                 type="button"
-                className={cn(statusBarTriggerClassName, 'max-w-full text-left')}
+                className={cn(statusBarTriggerClassName, 'oc-pending-changes-trigger max-w-full text-left')}
                 onClick={handleToggleExpanded}
                 aria-expanded={isExpanded}
             >

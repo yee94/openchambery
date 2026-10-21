@@ -2372,6 +2372,10 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: 36px;
   }
 
+  :root.mobile-pointer:not(.desktop-runtime) button.oc-pending-changes-trigger {
+    min-height: 28px !important;
+  }
+
   /* Toast undo is a dense cluster. The 36px touch floor would inflate the
      pill and let the countdown ring paint outside the glass. */
   :root.mobile-pointer:not(.desktop-runtime) .session-mutation-undo-action {
@@ -3628,6 +3632,15 @@ button.oc-mobile-worktree-label-trigger:active,
   background-color: var(--surface-subtle) !important;
   box-shadow: none !important;
   filter: none !important;
+}
+
+.oc-mobile-composer-surface[data-composer-height-snap] {
+  max-height: none;
+}
+
+.oc-mobile-composer-surface[data-composer-height-manual] textarea[data-chat-input="true"] {
+  max-height: none !important;
+  overflow-y: auto !important;
 }
 
 /* Sub-agent read-only card: no elevation halo (Android reads soft shadows as a

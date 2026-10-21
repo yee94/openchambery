@@ -71,6 +71,16 @@ The desktop dictation leaf is memoized at the ChatInput boundary with stable
 event callbacks, including final transcript insertion. Ordinary draft edits do
 not rerun its dictation/audio Hooks or callback synchronization effects; local
 recording state and subscribed settings still update the leaf normally.
+Mobile footer microphones reuse this leaf with `interactionMode="mobile"` and
+the same inline provisional-text decoration. Compact and expanded controls share
+one capture owner. Mobile capture only finalizes on another microphone click;
+blur, touch elsewhere, scrolling, visibility changes and keyboard actions do not
+stop it. No dictation overlay or desktop keyboard hint is mounted for this entry
+point. Draft/runtime disposal retains the existing cleanup boundary.
+While mobile click-to-record is active (including finalization), autosizing yields
+to the current textarea height. Each transcript update scrolls the textarea and
+its underline overlay to the bottom in the same layout phase without moving focus.
+Normal autosizing resumes after capture finalization.
 Desktop also supports Cmd + left-button hold on the editable textarea. Cmd changes
 the placeholder to hold-to-talk; hovering the textarea with Cmd held and all active
 desktop recordings use `--voice-active-fill` for the 1px composer border without an

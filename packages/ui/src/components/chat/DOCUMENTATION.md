@@ -1,5 +1,32 @@
 # Chat components
 
+## Mobile composer height snaps
+
+Web composers with text expose the shared height handle (native iOS composer is excluded).
+`MobileComposerHeightHandle` is a memoized leaf mounted only while that handle is
+available. It receives a stable textarea ref, DraftKey string, translated label and
+the parent's stable manual-height setter, never draft text. Snap/viewport Hooks and
+DOM mode attributes live in that leaf; it publishes height ownership only on discrete
+interaction transitions. Ordinary typing performs zero leaf Hook/effect/listener work.
+`useMobileComposerSnap` owns draft-local `auto`, `min`, and `full` positions: existing
+eight-line autosize, the empty textarea minimum, and the available space below the
+conversation navigation. The absolute handle sits inside the card's top padding;
+the textarea reserves space for it without increasing the empty/minimum height, and
+the status row has no extra bottom margin while the handle is present. Full mode
+reaches the header's bottom edge. Visual viewport resize/scroll recomputes full
+height without changing the selected mode. Clearing text or switching DraftKey resets
+to auto. Full mode and active resizing pin the existing compact/expanded swap.
+
+`useHeightSnap` owns pointer capture, coalesced height writes, cancellation, snapping,
+and reduced-motion-aware settlement for both composers and sheets. The same textarea
+stays mounted. `useComposerTextareaAutosize` yields height ownership during dragging
+and manual modes, including the entire snap settlement. The default max-height must
+remain released until WAAPI finishes; otherwise it clips the animated height and
+autosize reads an animated scrollHeight as the resting content height. Settlement
+cancels its fill before handing height ownership back to autosize. Typing in manual
+modes performs no sizing measurements, and returning to auto explicitly permits
+shrinking. Height preferences are local, not durable draft state.
+
 ## Generated avatars
 
 `AgentAvatar` uses local DiceBear Bottts Neutral artwork with rounded corners and
@@ -155,10 +182,15 @@ cancel; actual pointercancel, backgrounding, or draft disposal does. The gesture
 does not depend on textarea pointer capture surviving layout/keyboard changes.
 The hold-to-talk leaf renders no additional idle chrome. With ASR enabled and
 capture supported, both compact and expanded mobile footers also expose a
-microphone button. It opens the existing `ComposerDictation` recording overlay;
-its active lifecycle disables hold-to-talk so the two entry points cannot capture
+microphone button. Both control one `DesktopDictationButton` leaf in mobile
+interaction mode: provisional text is inserted and underlined inline using the
+same preview ownership as desktop, without a recording overlay. Only another
+microphone click finalizes; touching elsewhere, scrolling, button/window blur,
+visibility changes and keyboard shortcuts do not finalize or cancel mobile capture.
+Its active lifecycle disables hold-to-talk so the two entry points cannot capture
 simultaneously. The click-to-record leaf is keyed by DraftKey and uses stable props
-at its memo boundary, including the overlay accessory.
+at its memo boundary. Draft/runtime disposal still releases capture and fences late
+results; capture errors retain their existing recovery behavior.
 
 Captions and volume updates are owned by the leaf, not ChatInput or a
 global store. ASR-enabled mobile uses the web input surface, including Capacitor
