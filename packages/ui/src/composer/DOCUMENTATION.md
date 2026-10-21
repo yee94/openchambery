@@ -115,6 +115,9 @@ Mobile footer microphones also show B2 during initialization and finalization.
 `components/dictation/DictationLoading` is the single B2 renderer shared by the desktop
 pointer, desktop/mobile microphone buttons and mobile fullscreen overlay, including
 both initialization and finalization. It adds no visible label, background or halo.
+The fullscreen overlay horizontally centers its 72px loading indicator in the normal
+ASR caption area, retaining that area's existing vertical position;
+compact microphone and pointer indicators retain their own sizing.
 Mobile hold-to-talk keeps its overlay in B2 loading after release, without gesture
 targets or visible loading text, until confirmation completes; edit focus resumes then.
 Release awaits the complete `confirmDictation()` operation: audio teardown flushes

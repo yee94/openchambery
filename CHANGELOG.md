@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.6-beta.7] - 2026-10-21
+
+### 改进
+
+- 移动端按住说话的转写动画改为可按尺寸缩放，覆盖层内放大到 72px 并取消文字的裁剪与淡入，等待与处理状态更醒目。
+
 ## [2.1.6-beta.6] - 2026-10-21
 
 ### 改进
