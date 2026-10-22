@@ -3,9 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
+import { collectMagpieAuth, restoreMagpieAuth, validateMagpieAuth, verifyMagpieAuth } from './magpie-auth.js';
 
 const MAX_BYTES = 64 * 1024 * 1024;
-const CONFIG_FILES = ['providers.json', 'settings.json', 'profiles.json', 'library.json', 'plugins.json'];
+const CONFIG_FILES = ['providers.json', 'settings.json', 'profiles.json', 'library.json', 'plugins.json', 'plugin-auth.json', 'logins.json'];
 const exists = async (file) => {
   try { return await fs.stat(file); }
   catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null; throw error; }
@@ -103,7 +104,7 @@ export function createMagpieSync({
 
   const inventory = async () => {
     const binary = await locate();
-    return { available: await hasConfig(await dataDir(binary)), installed: Boolean(binary) };
+    return { available: Boolean(binary) && await hasConfig(await dataDir(binary)), installed: Boolean(binary) };
   };
 
   const downloadBytes = async (url, limit) => {
@@ -119,9 +120,38 @@ export function createMagpieSync({
     return Buffer.concat(chunks);
   };
 
+  const publishExecutable = async (binary) => {
+    const entry = path.join(home(), '.local', 'bin', platform === 'win32' ? 'magpie.exe' : 'magpie');
+    if (await exists(entry)) {
+      if (await fs.realpath(entry) === binary) return binary;
+      const version = await run(entry, ['--version'], { env, timeout: 10_000 });
+      if (!/^magpie\s+\S+/m.test(version)) throw new Error('Magpie command conflicts with an existing executable');
+      if (await dataDir(await fs.realpath(entry)) !== await dataDir(binary)) {
+        throw new Error('Magpie command uses a different portable configuration; resolve the command conflict before syncing');
+      }
+      return binary;
+    }
+    await fs.mkdir(path.dirname(entry), { recursive: true });
+    try {
+      if (platform === 'win32' && await dataDir(binary) === configDir()) await fs.link(binary, entry);
+      else await fs.symlink(binary, entry, 'file');
+    } catch (error) {
+      if (error.code !== 'EEXIST' || !await exists(entry)) throw new Error('Unable to publish Magpie command for plugins');
+    }
+    return binary;
+  };
+
+  const repairInstallation = async () => {
+    const binary = managedBinary();
+    if (!(await exists(binary))?.isFile()) return;
+    const version = await run(binary, ['--version'], { env, timeout: 10_000 });
+    if (!/^magpie\s+\S+/m.test(version)) throw new Error('Invalid managed Magpie executable');
+    await publishExecutable(await fs.realpath(binary));
+  };
+
   const ensure = async () => {
     const binary = await locate();
-    if (binary) return binary;
+    if (binary) return publishExecutable(binary);
     if (installing) return installing;
     installing = (async () => {
       const cpu = { x64: 'amd64', arm64: 'arm64' }[arch];
@@ -146,7 +176,7 @@ export function createMagpieSync({
         if (!/^magpie\s+\S+/m.test(version)) throw new Error('Invalid downloaded Magpie CLI');
         await fs.rename(staging, target);
       } finally { await fs.rm(staging, { force: true }); }
-      return target;
+      return publishExecutable(target);
     })();
     try { return await installing; }
     finally { installing = null; }
@@ -165,6 +195,7 @@ export function createMagpieSync({
 
   return {
     inventory,
+    repairInstallation,
     download: () => exclusive(async () => {
       if (!(await inventory()).available) throw new Error('No Magpie configuration found on source');
       const binary = await ensure();
@@ -174,7 +205,14 @@ export function createMagpieSync({
         const stat = await fs.stat(file);
         if (stat.size > MAX_BYTES) throw new Error('Magpie backup exceeds size limit');
         const backup = await fs.readFile(file);
-        return Buffer.from(JSON.stringify({ format: 'magpie-sync-v1', passphrase, backup: backup.toString('base64') }));
+        let authorization;
+        try {
+          const accounts = JSON.parse(await run(binary, ['accounts', '--json'], { env }));
+          authorization = await collectMagpieAuth(await dataDir(binary), accounts);
+        } catch { throw new Error('Unable to export Magpie authorizations'); }
+        const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v2', passphrase, backup: backup.toString('base64'), authorization }));
+        if (payload.length > MAX_BYTES * 2) throw new Error('Magpie sync exceeds size limit');
+        return payload;
       });
     }),
     import: (payload) => exclusive(async () => {
@@ -183,8 +221,9 @@ export function createMagpieSync({
       try {
         if (payload.length > MAX_BYTES * 2) throw new Error();
         decoded = JSON.parse(Buffer.from(payload).toString());
-        if (decoded.format !== 'magpie-sync-v1' || !/^[a-f0-9]{64}$/.test(decoded.passphrase)
+        if (!['magpie-sync-v1', 'magpie-sync-v2'].includes(decoded.format) || !/^[a-f0-9]{64}$/.test(decoded.passphrase)
           || typeof decoded.backup !== 'string') throw new Error();
+        if (decoded.format === 'magpie-sync-v2') validateMagpieAuth(decoded.authorization);
         backup = Buffer.from(decoded.backup, 'base64');
         if (!backup.length || backup.length > MAX_BYTES || JSON.parse(backup.toString()).format !== 'magpie-backup') throw new Error();
       } catch { throw new Error('Invalid Magpie sync payload'); }
@@ -197,8 +236,38 @@ export function createMagpieSync({
         if (/Couldn't add the plugin/i.test(output)) throw new Error('Magpie restore partially completed: plugin installation failed. Check the target Magpie plugins.');
         if (/Library:.*couldn't/i.test(output)) throw new Error('Magpie restore partially completed: library application failed. Check the target Magpie library.');
         if (/Needs a key/i.test(output)) throw new Error('Magpie restore partially completed: some providers still require API keys.');
+        let needsSignIn = /not signed in on this computer/i.test(output);
+        if (decoded.format === 'magpie-sync-v2') {
+          const dir = await dataDir(binary);
+          try {
+            await restoreMagpieAuth(dir, decoded.authorization, async (auth) => {
+              const credentialFile = path.join(path.dirname(file), 'codex.json');
+              try {
+                await fs.writeFile(credentialFile, JSON.stringify(auth), { mode: 0o600, flag: 'wx' });
+                await run(binary, ['accounts', 'import', 'codex', credentialFile, '--yes'], { env });
+              } finally { await fs.rm(credentialFile, { force: true }); }
+            });
+            const accounts = JSON.parse(await run(binary, ['accounts', '--json'], { env }));
+            verifyMagpieAuth(decoded.authorization, accounts);
+            const configured = JSON.parse(await fs.readFile(path.join(dir, 'providers.json'), 'utf8').catch((error) => {
+              if (error.code === 'ENOENT') return '{"providers":[]}';
+              throw error;
+            }));
+            if (!Array.isArray(configured.providers)) throw new Error();
+            const signedIn = new Set(accounts.map((account) => account.agent));
+            needsSignIn = decoded.authorization.incomplete || configured.providers.some((provider) =>
+              !provider.hidden && provider.id && !['chat', 'responses', 'anthropic', 'gemini'].some((key) => provider[key])
+              && !signedIn.has(provider.id));
+            if (/Left as they are/i.test(output)) {
+              output = await run(binary, ['restore', file], { env, input: `${decoded.passphrase}\n` });
+              if (/Couldn't add the plugin|Needs a key|Library:.*couldn't/i.test(output)) throw new Error();
+            }
+          } catch {
+            throw new Error('Magpie authorization sync or verification failed; some configuration and accounts may already be applied. Retry to finish.');
+          }
+        }
         const magpieWarnings = [];
-        if (/not signed in on this computer/i.test(output)) magpieWarnings.push('sign_in_required');
+        if (needsSignIn) magpieWarnings.push('sign_in_required');
         if (/Left as they are/i.test(output)) magpieWarnings.push('agent_settings_skipped');
         return { ok: true, ...(magpieWarnings.length ? { magpieWarnings } : {}) };
       });

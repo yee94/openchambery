@@ -512,6 +512,10 @@ export const applyRelayConfigSync = async (
       await executor.prepare(plan, syncRunId);
       let magpieWarnings: string[] = [];
       try {
+        if (plan.magpie) {
+          if (!packed.magpiePayload?.byteLength) throw new Error('Magpie transfer incomplete');
+          await executor.putTar('magpie', packed.magpiePayload, syncRunId);
+        }
         if (packed.configTar && packed.configTar.byteLength > 0) {
           await executor.putTar('config', packed.configTar, syncRunId);
         }
@@ -520,10 +524,6 @@ export const applyRelayConfigSync = async (
         }
         if (packed.credentialPayload && packed.credentialPayload.byteLength > 0) {
           await executor.putTar('credentials', packed.credentialPayload, syncRunId);
-        }
-        if (plan.magpie) {
-          if (!packed.magpiePayload?.byteLength) throw new Error('Magpie transfer incomplete');
-          await executor.putTar('magpie', packed.magpiePayload, syncRunId);
         }
         magpieWarnings = await executor.finalize(syncRunId);
       } catch (error) {

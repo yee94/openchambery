@@ -101,6 +101,7 @@ const createRuntime = (overrides = {}, stateRef = null) => {
     normalizeApiPrefix: vi.fn(() => ''),
     applyOpencodeBinaryFromSettings: vi.fn(async () => null),
     ensureOpencodeCliEnv: vi.fn(),
+    prepareMagpieInstallation: vi.fn(async () => {}),
     ensureLocalOpenCodeServerPassword: vi.fn(async () => 'password'),
     resolveManagedOpenCodeLaunchSpec: vi.fn((binary) => ({ binary, args: [], wrapperType: null })),
     setOpenCodePort: vi.fn((port) => {
@@ -195,14 +196,16 @@ describe('OpenCode lifecycle', () => {
   it('launches managed OpenCode with the managed PATH', async () => {
     delete process.env.OPENCODE_BINARY;
     const child = createMockChild();
+    const prepareMagpieInstallation = vi.fn(async () => {});
     spawnMock.mockImplementationOnce(() => {
+      expect(prepareMagpieInstallation).toHaveBeenCalledTimes(1);
       queueMicrotask(() => {
         child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
       });
       return child;
     });
 
-    const runtime = createRuntime();
+    const runtime = createRuntime({ prepareMagpieInstallation });
     const server = await runtime.startOpenCode();
     const [binary, args, options] = spawnMock.mock.calls[0];
 
@@ -1100,13 +1103,15 @@ describe('shared official OpenCode service', () => {
     const sharedService = createSharedService();
     const adoptOpenCodeServerPassword = vi.fn();
     const stateRef = {};
-    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService, adoptOpenCodeServerPassword }, stateRef);
+    const prepareMagpieInstallation = vi.fn(async () => {});
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService, adoptOpenCodeServerPassword, prepareMagpieInstallation }, stateRef);
     const fetchMock = stubSharedFetch();
 
     await runtime.bootstrapOpenCodeAtStartup();
 
     expect(spawnMock).not.toHaveBeenCalled();
     expect(sharedService.start).toHaveBeenCalledTimes(1);
+    expect(prepareMagpieInstallation.mock.invocationCallOrder[0]).toBeLessThan(sharedService.start.mock.invocationCallOrder[0]);
     const startInput = sharedService.start.mock.calls[0][0];
     expect(startInput.binary).toBe('/mock/opencode');
     expect(startInput.env.OPENCODE_SERVER_PASSWORD).toBeUndefined();

@@ -6,6 +6,7 @@ import { readOpenCode2BinaryVersion } from './ensure-cli.js';
 import { createRevokedRuntimeContract, evaluateRuntimeContract } from './runtime-contract.js';
 import { OPENCODE_V1_MIGRATION_PATH, fetchV1MigrationGate } from './v1-migration-gate.js';
 import { isProcessAlive } from './shared-service.js';
+import { createMagpieSync } from '../config-sync/magpie.js';
 
 const parsePositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -71,6 +72,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     buildAugmentedPath,
     buildManagedOpenCodePath,
     getManagedOpenCodeShellEnvSnapshot,
+    prepareMagpieInstallation = () => createMagpieSync().repairInstallation(),
     managedCapabilitiesRuntime = null,
     getActiveSessionCount = () => 0,
     // Official background service (shared-service.js). null keeps the private
@@ -691,6 +693,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
    * or the registration is missing/malformed; the caller decides rollback.
    */
   const connectSharedOpenCodeService = async ({ binaryPath } = {}) => {
+    await prepareMagpieInstallation();
     if (!binaryPath) {
       await applyOpencodeBinaryFromSettings({ strict: true });
       if (typeof ensurePinnedOpenCode2CliEnv === 'function') {
@@ -793,6 +796,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const startOpenCodeOnce = async () => {
+    await prepareMagpieInstallation();
     // New managed instance — drop any prior permit before spawn/probes.
     const generationAtStart = revokeRuntimeExecutionPermit('managed-start');
     const requestedPort = env.ENV_CONFIGURED_OPENCODE_PORT;

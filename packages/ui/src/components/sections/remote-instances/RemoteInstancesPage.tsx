@@ -548,24 +548,21 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
             />
             {t('settings.remoteInstances.page.sync.section.providerCredentials')}
           </label>
-          {preview?.plan.magpieAvailable && (
-            <label className="flex items-center gap-2 typography-meta">
-              <Checkbox
-                checked={selections.magpie === true}
-                disabled={isApplying || phase !== 'review'}
-                ariaLabel={t('settings.remoteInstances.page.sync.section.magpie')}
-                onChange={(checked) => {
-                  const next = { ...selections, magpie: checked };
-                  setSelections(next);
-                  void runCompareRemote(direction, next);
-                }}
-              />
-              {t('settings.remoteInstances.page.sync.section.magpie')}
-            </label>
-          )}
         </div>
         {preview?.plan.magpieAvailable && (
-          <p className="typography-micro text-muted-foreground">{t('settings.remoteInstances.page.sync.magpie.description')}</p>
+          <SettingsGroup description={t('settings.remoteInstances.page.sync.magpie.description')}>
+            <SettingsToggleRow
+              checked={selections.magpie === true}
+              disabled={isApplying || phase !== 'review'}
+              label={t('settings.remoteInstances.page.sync.section.magpie')}
+              ariaLabel={t('settings.remoteInstances.page.sync.section.magpie')}
+              onChange={(checked) => {
+                const next = { ...selections, magpie: checked };
+                setSelections(next);
+                void runCompareRemote(direction, next);
+              }}
+            />
+          </SettingsGroup>
         )}
 
         <div className="space-y-2">

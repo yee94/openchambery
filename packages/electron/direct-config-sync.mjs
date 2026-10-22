@@ -279,12 +279,12 @@ export const createDirectConfigSyncController = ({
         const credentialPayload = plan.providerCredentials ? await executor.download('credentials') : null;
         const magpiePayload = plan.magpie ? await executor.download('magpie') : null;
         await prepareLocalSyncDestination(home, plan, { syncRunId });
+        const magpieResult = magpiePayload ? await getLocalExecutor().importMagpie(magpiePayload) : null;
         if (configTar?.length) await extractTarGzBuffer(configTar, path.join(home, '.config', 'opencode'));
         if (agentsTar?.length) await extractTarGzBuffer(agentsTar, home);
         if (credentialPayload?.length) {
           await getLocalExecutor().importCredentials(credentialPayload);
         }
-        const magpieResult = magpiePayload ? await getLocalExecutor().importMagpie(magpiePayload) : null;
         await finalizeLocalSyncDestination(home, { syncRunId });
         return {
           ok: true,

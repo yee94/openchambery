@@ -23,13 +23,13 @@ const write = async (file, content = '{}') => {
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))); });
 
 describe('Magpie discovery and native transfer', () => {
-  it('discovers config-only sources through XDG without installing during preview', async () => {
+  it('hides config-only sources until Magpie is installed, without installing during preview', async () => {
     const { home, options } = await machine();
     const fetchImpl = vi.fn();
     const sync = createMagpieSync({ ...options, fetchImpl });
     expect(await sync.inventory()).toEqual({ available: false, installed: false });
     await write(path.join(home, '.config', 'magpie', 'providers.json'));
-    expect(await sync.inventory()).toEqual({ available: true, installed: false });
+    expect(await sync.inventory()).toEqual({ available: false, installed: false });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -55,6 +55,7 @@ describe('Magpie discovery and native transfer', () => {
     await write(path.join(source.home, '.config', 'magpie', 'providers.json'));
     const runSource = vi.fn(async (_binary, args, ctx) => {
       if (args[0] === '--version') return 'magpie 0.1.0';
+      if (args[0] === 'accounts') return '[]';
       expect(args[0]).toBe('backup');
       expect(ctx.input).toMatch(/^[a-f0-9]{64}\n$/);
       expect(args).not.toContain(ctx.input.trim());
@@ -70,19 +71,114 @@ describe('Magpie discovery and native transfer', () => {
       } } }) : new Response(bytes));
     const runTarget = vi.fn(async (_binary, args, ctx) => {
       if (args[0] === '--version') return 'magpie 0.1.0';
+      if (args[0] === 'accounts') return '[]';
       expect(args[0]).toBe('restore');
       expect(ctx.input.trim()).toBe(JSON.parse(payload).passphrase);
       expect(JSON.parse(await fs.readFile(args[1], 'utf8')).format).toBe('magpie-backup');
+      await write(path.join(target.home, '.config', 'magpie', 'providers.json'), '{"providers":[]}');
       return 'restored';
     });
     const destination = createMagpieSync({ ...target.options, fetchImpl, run: runTarget });
     await expect(destination.import(payload)).resolves.toEqual({ ok: true });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(await fs.realpath(path.join(target.home, '.local/bin/magpie'))).toBe(await fs.realpath(path.join(target.home, '.config/openchamber/tools/magpie/magpie')));
     await expect(destination.import(payload)).resolves.toEqual({ ok: true });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     for (const item of [source, target]) {
       expect((await fs.readdir(item.home)).filter((name) => name.startsWith('openchamber-magpie-'))).toEqual([]);
     }
+  });
+
+  it('repairs a previously managed installation without downloading or overwriting a user command', async () => {
+    const { home, options } = await machine();
+    const managed = path.join(home, '.config/openchamber/tools/magpie/magpie');
+    const entry = path.join(home, '.local/bin/magpie');
+    const fetchImpl = vi.fn();
+    const run = vi.fn(async () => 'magpie 0.1.1319');
+    const sync = createMagpieSync({ ...options, fetchImpl, run });
+    await sync.repairInstallation();
+    expect(run).not.toHaveBeenCalled();
+    await write(managed, 'fixture');
+    await sync.repairInstallation();
+    await sync.repairInstallation();
+    expect(await fs.realpath(entry)).toBe(await fs.realpath(managed));
+    await fs.unlink(entry);
+    await write(entry, 'user installation');
+    await sync.repairInstallation();
+    expect(await fs.readFile(entry, 'utf8')).toBe('user installation');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('round-trips plugin accounts and Codex through v2 and verifies the final account inventory', async () => {
+    const source = await machine();
+    const target = await machine();
+    for (const item of [source, target]) await write(path.join(item.home, '.local/bin/magpie'), 'fixture');
+    const sourceDir = path.join(source.home, '.config/magpie');
+    const targetDir = path.join(target.home, '.config/magpie');
+    await write(path.join(sourceDir, 'providers.json'), '{"providers":[{"id":"astra"},{"id":"codex"}]}');
+    await write(path.join(sourceDir, 'plugin-auth.json'), JSON.stringify({ 'astra#one': { type: 'api', key: 'fixture-key' } }));
+    await write(path.join(sourceDir, 'logins.json'), JSON.stringify([
+      { agent: 'codex', user: 'fixture@example.invalid', auth: { tokens: { access_token: 'fixture-token' } } },
+    ]));
+    const payload = await createMagpieSync({ ...source.options, run: async (_binary, args) => {
+      if (args[0] === '--version') return 'magpie 0.1.1319';
+      if (args[0] === 'accounts') return '[{"agent":"astra"},{"agent":"codex","user":"fixture@example.invalid"}]';
+      await write(args[1], '{"format":"magpie-backup"}');
+      return '';
+    } }).download();
+    expect(JSON.parse(payload).format).toBe('magpie-sync-v2');
+    await write(path.join(targetDir, 'plugin-auth.json'), '{"destination-only":{"type":"api","key":"keep"}}');
+    let recognized = true;
+    const run = vi.fn(async (_binary, args) => {
+      if (args[0] === '--version') return 'magpie 0.1.1319';
+      if (args[0] === 'restore') {
+        await write(path.join(targetDir, 'providers.json'), await fs.readFile(path.join(sourceDir, 'providers.json')));
+        return 'not signed in on this computer';
+      }
+      if (args[1] === 'import') {
+        expect(args).not.toContain('fixture-token');
+        expect(JSON.parse(await fs.readFile(args[3], 'utf8')).tokens.access_token).toBe('fixture-token');
+        expect((await fs.stat(args[3])).mode & 0o777).toBe(0o600);
+        return '';
+      }
+      return JSON.stringify(recognized ? [{ agent: 'astra' }, { agent: 'codex', user: 'fixture@example.invalid' }] : []);
+    });
+    const sync = createMagpieSync({ ...target.options, run });
+    await expect(sync.import(payload)).resolves.toEqual({ ok: true });
+    await expect(sync.import(payload)).resolves.toEqual({ ok: true });
+    const stored = JSON.parse(await fs.readFile(path.join(targetDir, 'plugin-auth.json'), 'utf8'));
+    expect(Object.keys(stored)).toEqual(['destination-only', 'astra#one']);
+    recognized = false;
+    await expect(sync.import(payload)).rejects.toThrow('authorization sync or verification failed');
+    expect((await fs.readdir(target.home)).filter((name) => name.startsWith('openchamber-magpie-'))).toEqual([]);
+  });
+
+  it('rejects malformed v2 authorization before installing or restoring', async () => {
+    const { options } = await machine();
+    const run = vi.fn();
+    const fetchImpl = vi.fn();
+    const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v2', passphrase: 'a'.repeat(64),
+      backup: Buffer.from('{"format":"magpie-backup"}').toString('base64'),
+      authorization: { plugins: {}, logins: [{ agent: 'codex', home: '/source/path', auth: {} }], incomplete: false } }));
+    await expect(createMagpieSync({ ...options, run, fetchImpl }).import(payload)).rejects.toThrow('Invalid Magpie sync payload');
+    expect(run).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('retries agent settings after authorizations instead of keeping a pre-login skip warning', async () => {
+    const { home, options } = await machine();
+    await write(path.join(home, '.local/bin/magpie'), 'fixture');
+    let restores = 0;
+    const run = async (_binary, args) => {
+      if (args[0] === '--version') return 'magpie 0.1.1319';
+      if (args[0] === 'accounts') return '[]';
+      return ++restores === 1 ? 'Left as they are' : 'restored';
+    };
+    const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v2', passphrase: 'a'.repeat(64),
+      backup: Buffer.from('{"format":"magpie-backup"}').toString('base64'),
+      authorization: { plugins: {}, logins: [], incomplete: false } }));
+    await expect(createMagpieSync({ ...options, run }).import(payload)).resolves.toEqual({ ok: true });
+    expect(restores).toBe(2);
   });
 
   it('does not install on malformed payload and refuses partial restore without leaking CLI output', async () => {
@@ -123,6 +219,10 @@ describe('Magpie discovery and native transfer', () => {
     const result = await applyConfigSyncPlan({ plan, executor, syncRunId: 'test', sourceHomedir: home, collectMagpie: async () => Buffer.from('fixture') });
     expect(result.magpieWarnings).toEqual(['sign_in_required']);
     expect(received).toEqual([{ kind: 'magpie', payload: Buffer.from('fixture') }]);
+    received.length = 0;
+    await applyConfigSyncPlan({ plan: { ...plan, files: [{ path: 'opencode.json' }] }, executor, syncRunId: 'ordered', sourceHomedir: home,
+      collectTar: async () => Buffer.from('config'), collectMagpie: async () => Buffer.from('fixture') });
+    expect(received.map((entry) => entry.kind)).toEqual(['magpie', 'config']);
     const pull = planOpenCodeConfigSyncFromInventory({ files: [], directories: [], magpie: { available: true } }, { selections });
     expect(pull.magpieAvailable).toBe(true);
     expect(pull.magpie).toEqual({ bytes: 0 });

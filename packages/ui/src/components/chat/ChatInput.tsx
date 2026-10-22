@@ -135,13 +135,11 @@ import {
     mentionRangesToHighlightRanges,
     resolveAtomicReferenceSelection,
     resolveSkillMentionDeletion,
-    tokenizeMarkdown,
     type HighlightRange,
     type MentionRange,
 } from './composerHighlight';
 import { ComposerTriggerIconMark } from './ComposerTriggerIconMark';
 import { focusComposerTextarea, preventComposerActionPointerFocus, resolveComposerTextarea, shouldApplyComposerDomCorrection } from './composerFocus';
-import { highlightFencedCode } from './composerCodeHighlight';
 import {
     assignImageAttachmentFilenames,
     buildAttachmentCitationText,
@@ -2164,7 +2162,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     }, [inputMode, knownSlashNames, message]);
 
     // @mention spans use the shared reference color. Computed as character ranges
-    // so they can be merged with markdown highlight ranges in a single overlay.
+    // so they can be merged with other reference decorations in a single overlay.
     const composerMentionRanges = React.useMemo<MentionRange[]>(() => {
         if (!message || !message.includes('@') || inputMode === 'shell') {
             return [];
@@ -2210,8 +2208,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         });
     }, [inputMode, message, sendableAttachedFiles]);
 
-    // Combined source-mode highlight: markdown syntax + @mentions. Returns null
-    // when there's nothing to highlight so the overlay stays off for plain text.
     const { globallyEnabled: dictationEnabled, enabled: holdToTalkEnabled, hint: dictationHint,
         onHintChange: setDictationHint } = useHoldToTalkInput({ available: isMobile });
     const speechPlaceholder = t(dictationHint === 'recording' ? 'chat.dictation.releaseSend' : dictationHint === 'cancelling' ? 'chat.dictation.releaseCancel' : dictationHint === 'editing' ? 'chat.dictation.releaseEdit' : dictationHint === 'processing' ? 'chat.dictation.processing' : 'chat.dictation.inputPlaceholder');
@@ -2226,8 +2222,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             return null;
         }
         const ranges = [
-            ...(nativeComposerOwnedInput ? [] : tokenizeMarkdown(message)),
-            ...(nativeComposerOwnedInput ? [] : highlightFencedCode(message)),
             ...mentionRangesToHighlightRanges(composerMentionRanges),
             ...composerCommandRanges,
             ...attachmentCitationRanges,
@@ -2245,7 +2239,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             })),
         ];
         return buildHighlightParts(message, ranges);
-    }, [attachmentCitationRanges, composerCommandRanges, composerMentionRanges, composerDocument.references, inputMode, message, nativeComposerOwnedInput, desktopDictationPreview, primaryDraftKeyID]);
+    }, [attachmentCitationRanges, composerCommandRanges, composerMentionRanges, composerDocument.references, inputMode, message, desktopDictationPreview, primaryDraftKeyID]);
 
     const [autocompleteOverlayPosition, setAutocompleteOverlayPosition] = React.useState<AutocompleteOverlayPosition | null>(null);
     const abortTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);

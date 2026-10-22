@@ -4760,16 +4760,16 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (plan.magpie && !magpiePayload) throw new Error('Magpie transfer incomplete');
       if (plan.providerCredentials && !credentialPayload) throw new Error('Provider credentials transfer incomplete');
       await prepareLocalSyncDestination(home, plan, { syncRunId });
+      let magpieResult;
+      if (magpiePayload) {
+        if (!plan.magpie) throw new Error('Magpie was not selected');
+        magpieResult = await getLocalSyncExecutor().importMagpie(magpiePayload);
+      }
       if (configTar) await extractTarGzBuffer(configTar, path.join(home, '.config', 'opencode'));
       if (agentsTar) await extractTarGzBuffer(agentsTar, home);
       if (credentialPayload) {
         if (!plan.providerCredentials) throw new Error('Provider credentials were not selected');
         await getLocalSyncExecutor().importCredentials(credentialPayload);
-      }
-      let magpieResult;
-      if (magpiePayload) {
-        if (!plan.magpie) throw new Error('Magpie was not selected');
-        magpieResult = await getLocalSyncExecutor().importMagpie(magpiePayload);
       }
       await finalizeLocalSyncDestination(home, { syncRunId });
       return {

@@ -6,6 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { afterEach, expect, it, vi } from 'vitest';
+import { buildHighlightParts, mentionRangesToHighlightRanges, tokenizeMarkdown } from './composerHighlight';
+import { highlightFencedCode } from './composerCodeHighlight';
 
 const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'ChatInput.tsx'), 'utf8');
 const ast = ts.createSourceFile('ChatInput.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -42,6 +44,38 @@ function surface<Props extends object>(body: string, scope: Record<string, unkno
 const host = document.createElement('div');
 const root = createRoot(host);
 afterEach(async () => { await act(async () => root.render(null)); vi.restoreAllMocks(); });
+
+it('keeps pasted Markdown literal without a highlight overlay across repeated draft edits', async () => {
+    const markdown = vi.fn(tokenizeMarkdown);
+    const code = vi.fn(highlightFencedCode);
+    let highlighted!: ReturnType<typeof buildHighlightParts>;
+    const Surface = surface<{ message: string; mention?: boolean }>(`
+        const { message } = props;
+        const composerMentionRanges = props.mention ? [{ start: 0, end: 7, kind: 'file' }] : [];
+        ${declarations.get('highlightedComposerContent')}
+        capture(highlightedComposerContent);
+        return null;
+    `, {
+        inputMode: 'normal', nativeComposerOwnedInput: false,
+        tokenizeMarkdown: markdown, highlightFencedCode: code,
+        buildHighlightParts, mentionRangesToHighlightRanges,
+        composerCommandRanges: [], attachmentCitationRanges: [],
+        composerDocument: { references: [] }, desktopDictationPreview: null, primaryDraftKeyID: 'draft',
+        capture: (value: typeof highlighted) => { highlighted = value; },
+    });
+    const text = '# 标题\n**重点** `inline` [链接](https://example.com)\n> 引用\n- 列表\n```js\nconst value = 1;\n```\n';
+    for (let i = 1; i <= 50; i++) {
+        await act(async () => root.render(<Surface message={text.repeat(i)} />));
+        expect(highlighted).toBeNull();
+    }
+    expect(markdown).not.toHaveBeenCalled();
+    expect(code).not.toHaveBeenCalled();
+    const withMention = '@src.ts ' + text;
+    await act(async () => root.render(<Surface message={withMention} mention />));
+    expect(highlighted!.map(part => part.text).join('')).toBe(withMention);
+    expect(highlighted![0].className).toBe('text-[var(--primary)]');
+    expect(highlighted!.slice(1).every(part => part.className === 'text-foreground')).toBe(true);
+});
 
 it('keeps model-control Hooks asleep through 50 draft edits and delivers the latest selection callback', async () => {
     let evaluations = 0;
