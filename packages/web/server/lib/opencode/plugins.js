@@ -79,6 +79,25 @@ function readPluginConfigLayers(workingDirectory) {
   return readConfigLayers(workingDirectory);
 }
 
+function readPluginArray(config) {
+  if (Array.isArray(config.plugins)) return config.plugins;
+  return Array.isArray(config.plugin) ? config.plugin : [];
+}
+
+function writePluginArray(config, plugin, filePath) {
+  const next = { ...config };
+  delete next.plugin;
+  if (plugin.length > 0) {
+    next.plugins = plugin.map((raw) => {
+      const parsed = parsePluginRaw(raw);
+      return Array.isArray(raw) ? serializePluginEntry(parsed) : raw;
+    });
+  } else {
+    delete next.plugins;
+  }
+  writeConfig(next, filePath);
+}
+
 function validateFileName(fileName) {
   if (typeof fileName !== 'string' || !fileName) {
     throw codedError('Plugin file name is required', 'INVALID_FILENAME');
@@ -125,9 +144,8 @@ function getPluginTarget(id, workingDirectory) {
   validateScope(scope);
   const layers = readPluginConfigLayers(workingDirectory);
   const source = configSources(layers).find((candidate) => candidate.scope === scope
-    && Array.isArray(candidate.config?.plugin)
-    && candidate.config.plugin.some((raw) => parsePluginRaw(raw).spec === spec));
-  const plugin = Array.isArray(source?.config?.plugin) ? source.config.plugin : [];
+    && readPluginArray(candidate.config).some((raw) => parsePluginRaw(raw).spec === spec));
+  const plugin = source ? [...readPluginArray(source.config)] : [];
   const index = plugin.findIndex((raw) => parsePluginRaw(raw).spec === spec);
   if (!source || index === -1) {
     return null;
@@ -181,13 +199,16 @@ function parsePluginRaw(raw) {
   if (Array.isArray(raw) && raw.length === 2 && isRecord(raw[1])) {
     return { spec: validatePluginSpec(raw[0]), options: { ...raw[1] } };
   }
-  throw codedError('Plugin spec must be a string or [string, object]', 'INVALID_SPEC');
+  if (isRecord(raw) && (raw.options === undefined || isRecord(raw.options))) {
+    return { spec: validatePluginSpec(raw.package), ...(raw.options === undefined ? {} : { options: { ...raw.options } }) };
+  }
+  throw codedError('Plugin spec must be a string or { package, options } object', 'INVALID_SPEC');
 }
 
 function serializePluginEntry(entry) {
   const spec = validatePluginSpec(entry?.spec);
   if (hasOptions(entry?.options)) {
-    return [spec, { ...entry.options }];
+    return { package: spec, options: { ...entry.options } };
   }
   return spec;
 }
@@ -195,10 +216,7 @@ function serializePluginEntry(entry) {
 function listPluginEntries(workingDirectory) {
   const layers = readPluginConfigLayers(workingDirectory);
   return configSources(layers).flatMap((source) => {
-    if (!Array.isArray(source.config?.plugin)) {
-      return [];
-    }
-    return source.config.plugin.map((raw) => {
+    return readPluginArray(source.config).map((raw) => {
       const parsed = parsePluginRaw(raw);
       return {
         id: encodePluginId('config', `${source.scope}:${parsed.spec}`),
@@ -225,8 +243,7 @@ function createPluginEntry(entry, workingDirectory) {
   const layers = readPluginConfigLayers(workingDirectory);
   const existing = configSources(layers).find((source) => (
     source.scope === scope
-    && Array.isArray(source.config?.plugin)
-    && source.config.plugin.some((raw) => parsePluginRaw(raw).spec === spec)
+    && readPluginArray(source.config).some((raw) => parsePluginRaw(raw).spec === spec)
   ));
   if (existing) {
     throw codedError(`Plugin "${spec}" already exists`, 'ENTRY_EXISTS');
@@ -242,11 +259,7 @@ function createPluginEntry(entry, workingDirectory) {
     config = getConfigForPath(layers, targetPath);
   }
 
-  if (!Array.isArray(config.plugin)) {
-    config.plugin = [];
-  }
-  config.plugin.push(serializePluginEntry({ spec, options: entry.options }));
-  writeConfig(config, targetPath);
+  writePluginArray(config, [...readPluginArray(config), serializePluginEntry({ spec, options: entry.options })], targetPath);
 }
 
 function updatePluginEntry(id, updates, workingDirectory) {
@@ -258,7 +271,7 @@ function updatePluginEntry(id, updates, workingDirectory) {
   const nextSpec = updates?.spec === undefined ? existing.spec : validatePluginSpec(updates.spec);
   const nextOptions = updates?.options === undefined ? existing.options : updates.options;
   target.plugin[target.index] = serializePluginEntry({ spec: nextSpec, options: nextOptions });
-  writeConfig(target.source.config, target.source.filePath);
+  writePluginArray(target.source.config, target.plugin, target.source.filePath);
 }
 
 function deletePluginEntry(id, workingDirectory) {
@@ -267,10 +280,7 @@ function deletePluginEntry(id, workingDirectory) {
     throw codedError('Plugin entry not found', 'NOT_FOUND');
   }
   target.plugin.splice(target.index, 1);
-  if (target.plugin.length === 0) {
-    delete target.source.config.plugin;
-  }
-  writeConfig(target.source.config, target.source.filePath);
+  writePluginArray(target.source.config, target.plugin, target.source.filePath);
 }
 
 function listPluginDirFiles(workingDirectory) {

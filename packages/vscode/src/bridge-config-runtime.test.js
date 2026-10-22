@@ -304,7 +304,8 @@ describe('VS Code config bridge plugin parity', () => {
     expect(updated?.success).toBe(true);
 
     const config = JSON.parse(fs.readFileSync(path.join(root, '.opencode', 'opencode.json'), 'utf8'));
-    expect(config.plugin).toEqual([['plugin-b', { enabled: true }]]);
+    expect(config.plugins).toEqual([{ package: 'plugin-b', options: { enabled: true } }]);
+    expect(config).not.toHaveProperty('plugin');
 
     const relisted = await handleConfigBridgeMessage({
       id: 'relist',
@@ -361,7 +362,7 @@ describe('VS Code config bridge plugin parity', () => {
     const configDir = path.join(root, 'custom-config');
     const configPath = path.join(configDir, 'opencode.json');
     fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(configPath, JSON.stringify({ plugin: ['custom-plugin'] }, null, 2), 'utf8');
+    fs.writeFileSync(configPath, JSON.stringify({ plugin: [['custom-plugin', { enabled: false }]], model: 'example/model' }, null, 2), 'utf8');
     process.env.OPENCODE_CONFIG = configPath;
     const ctx = createCtx(root);
 
@@ -385,7 +386,7 @@ describe('VS Code config bridge plugin parity', () => {
       },
     }, ctx, deps);
     expect(updated?.success).toBe(true);
-    expect(readJson(configPath).plugin).toEqual(['custom-plugin-next']);
+    expect(readJson(configPath)).toEqual({ plugins: [{ package: 'custom-plugin-next', options: { enabled: false } }], model: 'example/model' });
 
     const relisted = await handleConfigBridgeMessage({
       id: 'relist-custom',
@@ -400,7 +401,7 @@ describe('VS Code config bridge plugin parity', () => {
       payload: { method: 'DELETE', target: 'entry', directory: root, pluginId: updatedEntry?.id },
     }, ctx, deps);
     expect(deleted?.success).toBe(true);
-    expect(readJson(configPath).plugin).toBeUndefined();
+    expect(readJson(configPath)).toEqual({ model: 'example/model' });
   });
 
   test('writes user plugin files next to OPENCODE_CONFIG', async () => {
@@ -450,6 +451,25 @@ describe('VS Code config bridge plugin parity', () => {
     expect(created?.data).toMatchObject({ success: true, requiresReload: false, application: 'watch' });
     expect(created?.data?.warning).toBeUndefined();
     expect(ctx.restart).not.toHaveBeenCalled();
-    expect(readJson(path.join(root, '.opencode', 'opencode.json')).plugin).toEqual(['plugin-restart']);
+    expect(readJson(path.join(root, '.opencode', 'opencode.json')).plugins).toEqual(['plugin-restart']);
+  });
+
+  test.each([
+    [{ plugin: [['old', { enabled: false }]] }, [{ package: 'old', options: { enabled: false } }, 'new']],
+    [{ plugin: ['shadowed'], plugins: [{ package: 'native', options: {} }] }, [{ package: 'native', options: {} }, 'new']],
+    [{ plugin: ['shadowed'], plugins: [] }, ['new']],
+  ])('saves native plugin entries with legacy fallback and V2 precedence: %j', async (seed, expected) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-vscode-plugin-migration-'));
+    tempRoots.push(root);
+    const configPath = path.join(root, '.opencode', 'opencode.json');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({ ...seed, model: 'example/model' }));
+    const result = await handleConfigBridgeMessage({
+      id: 'migrate-plugin',
+      type: 'api:config/plugins',
+      payload: { method: 'POST', target: 'entry', directory: root, body: { scope: 'project', spec: 'new' } },
+    }, createCtx(root), deps);
+    expect(result?.success).toBe(true);
+    expect(readJson(configPath)).toEqual({ plugins: expected, model: 'example/model' });
   });
 });

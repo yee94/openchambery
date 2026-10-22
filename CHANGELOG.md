@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.5] - 2026-10-22
+
+### 修复
+
+- 修复 Web 与 VS Code 插件配置读写格式不兼容的问题：支持 `plugins` 与对象形式的插件选项，兼容读取旧配置，并在保存时转换为新格式。
+
 ## [2.1.8-beta.4] - 2026-10-22
 
 ### 改进

@@ -476,13 +476,16 @@ const parsePluginRaw = (raw: unknown): { spec: string; options?: Record<string, 
   if (Array.isArray(raw) && typeof raw[0] === 'string' && isPlainObject(raw[1])) {
     return { spec: validatePluginSpec(raw[0]), options: { ...raw[1] } };
   }
-  throw codedError('Plugin spec must be a string or [string, object]', 'INVALID_SPEC');
+  if (isPlainObject(raw) && (raw.options === undefined || isPlainObject(raw.options))) {
+    return { spec: validatePluginSpec(raw.package), ...(raw.options === undefined ? {} : { options: { ...raw.options } }) };
+  }
+  throw codedError('Plugin spec must be a string or { package, options } object', 'INVALID_SPEC');
 };
 
-const serializePluginEntry = (entry: { spec?: unknown; options?: unknown }): string | [string, Record<string, unknown>] => {
+const serializePluginEntry = (entry: { spec?: unknown; options?: unknown }): string | { package: string; options: Record<string, unknown> } => {
   const spec = validatePluginSpec(entry.spec);
   if (isPlainObject(entry.options) && Object.keys(entry.options).length > 0) {
-    return [spec, { ...entry.options }];
+    return { package: spec, options: { ...entry.options } };
   }
   return spec;
 };
@@ -548,14 +551,21 @@ const getPluginConfigSources = (workingDirectory?: string | null): Array<{ scope
   }));
 };
 
-const readPluginArray = (config: Record<string, unknown>): unknown[] => Array.isArray(config.plugin) ? config.plugin : [];
+const readPluginArray = (config: Record<string, unknown>): unknown[] => {
+  if (Array.isArray(config.plugins)) return config.plugins;
+  return Array.isArray(config.plugin) ? config.plugin : [];
+};
 
 const writePluginArray = (config: Record<string, unknown>, plugin: unknown[]): Record<string, unknown> => {
   const next = { ...config };
+  delete next.plugin;
   if (plugin.length > 0) {
-    next.plugin = plugin;
+    next.plugins = plugin.map((raw) => {
+      const parsed = parsePluginRaw(raw);
+      return Array.isArray(raw) ? serializePluginEntry(parsed) : raw;
+    });
   } else {
-    delete next.plugin;
+    delete next.plugins;
   }
   return next;
 };

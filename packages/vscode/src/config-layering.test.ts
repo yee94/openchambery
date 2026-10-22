@@ -65,7 +65,8 @@ describe('VS Code physical config parity', () => {
     expect(readConfigFile(json).provider).toBeUndefined();
     const plugin = api.listPluginEntries().find((entry) => entry.spec === 'lower-plugin')!;
     api.updatePluginEntry(plugin.id, { spec: 'updated-plugin' });
-    expect(readConfigFile(json).plugin).toEqual(['updated-plugin']);
+    expect(readConfigFile(json).plugins).toEqual(['updated-plugin']);
+    expect(readConfigFile(json).plugin).toBeUndefined();
     expect(readConfigFile(jsonc).plugin).toEqual(['higher-plugin']);
   });
 
