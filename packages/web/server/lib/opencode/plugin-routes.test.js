@@ -316,7 +316,7 @@ describe('opencode plugin routes', () => {
 
     const after = await request(app).get('/api/config/plugins').expect(200);
     expect(after.body.entries).toEqual([]);
-    expect(readJson(userConfigPath).plugin).toBeUndefined();
+    expect(readJson(userConfigPath).plugins).toBeUndefined();
     expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
   });
 

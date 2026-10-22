@@ -66,7 +66,8 @@ describe('Web/Electron entity physical provenance', () => {
     fs.writeFileSync(jsonc, '{ // retained\n"plugin":["higher-plugin"]}');
     const entry = plugins.listPluginEntries().find((item) => item.spec === 'lower-plugin');
     plugins.updatePluginEntry(entry.id, { spec: 'updated-plugin' });
-    expect(readConfigFile(json).plugin).toEqual(['updated-plugin']);
+    expect(readConfigFile(json).plugins).toEqual(['updated-plugin']);
+    expect(readConfigFile(json).plugin).toBeUndefined();
     expect(readConfigFile(jsonc).plugin).toEqual(['higher-plugin']);
   });
 });
