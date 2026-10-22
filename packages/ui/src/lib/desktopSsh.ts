@@ -436,7 +436,7 @@ export type DesktopSshConfigSyncAgentsRoot = {
   bytes: number;
 };
 
-export type DesktopSshConfigSyncAuthFile = {
+export type DesktopSshConfigSyncProviderCredentials = {
   bytes: number;
 };
 
@@ -447,7 +447,8 @@ export type DesktopSshConfigSyncSelections = {
   singleFiles: boolean[];
   directories: boolean[];
   agentsRoot: boolean;
-  authFile: boolean;
+  providerCredentials: boolean;
+  magpie?: boolean;
 };
 
 /** Allowlist cardinality from the desktop local-scan IPC (drives default selection arrays). */
@@ -459,11 +460,11 @@ export type DesktopSshConfigSyncSelectionShape = {
 
 /**
  * Build an all-selected whitelist snapshot from a scan-reported shape.
- * `authFile` stays opt-in (default unchecked); users can enable it in the sync wizard.
+ * `providerCredentials` stays opt-in (default unchecked); users can enable it in the sync wizard.
  */
 export const buildDefaultSyncSelections = (
   shape: DesktopSshConfigSyncSelectionShape,
-  options?: { includeAuthFile?: boolean },
+  options?: { includeProviderCredentials?: boolean },
 ): DesktopSshConfigSyncSelections => {
   const fileGroups = Math.max(0, Math.trunc(Number(shape.fileGroups) || 0));
   const singleFiles = Math.max(0, Math.trunc(Number(shape.singleFiles) || 0));
@@ -473,7 +474,8 @@ export const buildDefaultSyncSelections = (
     singleFiles: Array.from({ length: singleFiles }, () => true),
     directories: Array.from({ length: directories }, () => true),
     agentsRoot: true,
-    authFile: options?.includeAuthFile === true,
+    providerCredentials: options?.includeProviderCredentials === true,
+    magpie: false,
   };
 };
 
@@ -483,7 +485,9 @@ export type DesktopSshConfigSyncPlan = {
   directories: { path: string; fileCount: number; bytes: number }[];
   agentsRoot: DesktopSshConfigSyncAgentsRoot | null;
   /** Provider credentials at `~/.local/share/opencode/auth.json` only. */
-  authFile: DesktopSshConfigSyncAuthFile | null;
+  providerCredentials: DesktopSshConfigSyncProviderCredentials | null;
+  magpieAvailable?: boolean;
+  magpie?: { bytes: number } | null;
   deletes: string[];
   totalBytes: number;
   selections?: DesktopSshConfigSyncSelections;
@@ -495,7 +499,7 @@ export type DesktopSshConfigSyncPreview = {
   plan: DesktopSshConfigSyncPlan;
   remoteExisting: string[];
   remoteAgentsRootExists: boolean;
-  remoteAuthFileExists: boolean;
+  remoteProviderCredentialsExists: boolean;
   selectionShape?: DesktopSshConfigSyncSelectionShape;
 };
 
@@ -527,8 +531,8 @@ export type DesktopSshConfigSyncResult = {
   totalBytes: number;
   /** Present when `~/.agents` was synced; mirrors plan.agentsRoot.fileCount. */
   agentsRoot: { fileCount: number } | null;
-  /** Present when provider auth.json was synced; mirrors plan.authFile.bytes. */
-  authFile: DesktopSshConfigSyncAuthFile | null;
+  /** Present when provider credentials were synced through the API. */
+  providerCredentials: DesktopSshConfigSyncProviderCredentials | null;
 };
 
 const parseConfigSyncFileEntry = (value: unknown): { path: string; bytes: number } | null => {
@@ -559,7 +563,7 @@ const parseConfigSyncAgentsRoot = (value: unknown): DesktopSshConfigSyncAgentsRo
   return { fileCount, bytes };
 };
 
-const parseConfigSyncAuthFile = (value: unknown): DesktopSshConfigSyncAuthFile | null => {
+const parseConfigSyncProviderCredentials = (value: unknown): DesktopSshConfigSyncProviderCredentials | null => {
   if (value == null) return null;
   if (!isRecord(value)) return null;
   const bytes = readNumber(value, 'bytes');
@@ -590,9 +594,9 @@ const parseConfigSyncPlan = (value: unknown): DesktopSshConfigSyncPlan | null =>
     agentsRootRaw == null ? null : parseConfigSyncAgentsRoot(agentsRootRaw);
   if (agentsRootRaw != null && agentsRoot === null) return null;
 
-  // Missing/invalid authFile → null (backward comfort with older payloads).
-  const authFileRaw = value.authFile ?? value.auth_file;
-  const authFile = authFileRaw == null ? null : parseConfigSyncAuthFile(authFileRaw);
+  if (!('providerCredentials' in value)) return null;
+  const providerCredentials = parseConfigSyncProviderCredentials(value.providerCredentials);
+  if (value.providerCredentials !== null && providerCredentials === null) return null;
   const direction = value.direction === 'pull' || value.direction === 'push'
     ? value.direction
     : undefined;
@@ -609,7 +613,8 @@ const parseConfigSyncPlan = (value: unknown): DesktopSshConfigSyncPlan | null =>
           ? selectionsRaw.directories.map((entry) => entry !== false)
           : [],
         agentsRoot: selectionsRaw.agentsRoot !== false,
-        authFile: selectionsRaw.authFile === true,
+        providerCredentials: selectionsRaw.providerCredentials === true,
+        magpie: selectionsRaw.magpie === true,
       }
     : undefined;
   const selectionShape = parseSelectionShape(value.selectionShape ?? value.selection_shape);
@@ -618,7 +623,9 @@ const parseConfigSyncPlan = (value: unknown): DesktopSshConfigSyncPlan | null =>
     files,
     directories,
     agentsRoot,
-    authFile,
+    providerCredentials,
+    magpieAvailable: value.magpieAvailable === true,
+    magpie: parseConfigSyncProviderCredentials(value.magpie),
     deletes,
     totalBytes,
     ...(direction ? { direction } : {}),
@@ -651,10 +658,7 @@ const parseConfigSyncPreview = (value: unknown): DesktopSshConfigSyncPreview | n
       readBoolean(value, 'remoteAgentsRootExists')
       ?? readBoolean(value, 'remote_agents_root_exists')
       ?? false,
-    remoteAuthFileExists:
-      readBoolean(value, 'remoteAuthFileExists')
-      ?? readBoolean(value, 'remote_auth_file_exists')
-      ?? false,
+    remoteProviderCredentialsExists: readBoolean(value, 'remoteProviderCredentialsExists') ?? false,
     ...(selectionShape ? { selectionShape } : {}),
   };
 };
@@ -679,10 +683,11 @@ const parseConfigSyncResult = (value: unknown): DesktopSshConfigSyncResult | nul
     agentsRoot = { fileCount };
   }
 
-  const authFileRaw = value.authFile ?? value.auth_file;
-  const authFile = authFileRaw == null ? null : parseConfigSyncAuthFile(authFileRaw);
+  if (!('providerCredentials' in value)) return null;
+  const providerCredentials = parseConfigSyncProviderCredentials(value.providerCredentials);
+  if (value.providerCredentials !== null && providerCredentials === null) return null;
 
-  return { ok: true, files, directories, deletes, totalBytes, agentsRoot, authFile };
+  return { ok: true, files, directories, deletes, totalBytes, agentsRoot, providerCredentials };
 };
 
 export const desktopSshSyncOpencodeConfigLocalScan = async (

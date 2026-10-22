@@ -92,8 +92,8 @@ describe('config-sync contract', () => {
     await fsp.writeFile(path.join(configDir, 'AGENTS.md'), 'hi\n');
     await fsp.writeFile(path.join(configDir, 'skills', 'a.md'), 'a\n');
 
-    const full = planOpenCodeConfigSync(home, { direction: SYNC_DIRECTION_PUSH, includeAuthFile: false });
-    const selections = buildDefaultSyncSelections({ includeAuthFile: false });
+    const full = planOpenCodeConfigSync(home, { direction: SYNC_DIRECTION_PUSH, includeProviderCredentials: false });
+    const selections = buildDefaultSyncSelections({ includeProviderCredentials: false });
     selections.fileGroups = selections.fileGroups.map((_, index) => index === 0);
     selections.singleFiles = selections.singleFiles.map(() => false);
     selections.directories = selections.directories.map((__, index) => index === 2); // skills
@@ -103,20 +103,20 @@ describe('config-sync contract', () => {
     expect(filtered.files.map((entry) => entry.path)).toEqual(['opencode.jsonc']);
     expect(filtered.directories.map((entry) => entry.path)).toEqual(['skills']);
     expect(filtered.agentsRoot).toBeNull();
-    expect(filtered.authFile).toBeNull();
+    expect(filtered.providerCredentials).toBeNull();
 
     const inventoryPlan = planOpenCodeConfigSyncFromInventory({
       files: [{ path: 'opencode.jsonc', bytes: 3 }],
       directories: [{ path: 'skills', fileCount: 1, bytes: 2 }],
       agentsRoot: null,
-      authFile: { bytes: 9 },
+      providerCredentials: { bytes: 9 },
     }, {
       direction: SYNC_DIRECTION_PULL,
-      selections: { ...selections, authFile: true },
-      includeAuthFile: true,
+      selections: { ...selections, providerCredentials: true },
+      includeProviderCredentials: true,
     });
     expect(inventoryPlan.direction).toBe('pull');
-    expect(inventoryPlan.authFile).toEqual({ bytes: 9 });
+    expect(inventoryPlan.providerCredentials).toEqual({ bytes: 9 });
     expect(inventoryPlan.files.map((entry) => entry.path)).toEqual(['opencode.jsonc']);
   });
 });
@@ -132,7 +132,7 @@ describe('local pull destination backups', () => {
       directories: [],
       deletes: ['config.json', 'opencode.json'],
       agentsRoot: null,
-      authFile: null,
+      providerCredentials: null,
     };
 
     await prepareLocalSyncDestination(home, plan, { syncRunId: 'pull-01', generations: 2 });
@@ -206,7 +206,7 @@ describe('remote inventory script', () => {
       await fsp.writeFile(path.join(skill, '.venv-asc', 'lib', 'binary.so'), 'x'.repeat(4096));
       await fsp.writeFile(path.join(skill, 'SKILL.md'), 'keep');
     }
-    const local = planOpenCodeConfigSync(home, { includeAuthFile: false });
+    const local = planOpenCodeConfigSync(home, { includeProviderCredentials: false });
     expect(local.agentsRoot).toEqual({ fileCount: 1, bytes: 4 });
     expect(local.directories.find((entry) => entry.path === 'skills')).toMatchObject({ fileCount: 1, bytes: 4 });
     const stdout = execFileSync('sh', ['-c', buildRemoteSyncInventoryScript()], {
@@ -241,7 +241,7 @@ describe('remote inventory script', () => {
     expect(files).toContain('AGENTS.md');
     const directories = inventory.directories.map((entry) => entry.path);
     expect(directories).toContain('agents');
-    expect(inventory.authFile).toEqual({ bytes: 3 });
+    expect(inventory).not.toHaveProperty('providerCredentials');
     for (const entry of inventory.files) {
       expect(typeof entry.path).toBe('string');
       expect(typeof entry.bytes).toBe('number');
@@ -263,6 +263,6 @@ describe('remote inventory script', () => {
     expect(inventory.files).toEqual([]);
     expect(inventory.directories).toEqual([]);
     expect(inventory.agentsRoot).toBeNull();
-    expect(inventory.authFile).toBeNull();
+    expect(inventory).not.toHaveProperty('providerCredentials');
   });
 });

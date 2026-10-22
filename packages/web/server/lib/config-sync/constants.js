@@ -21,11 +21,8 @@ export const OPENCODE_CONFIG_SYNC_ALLOWLIST = {
 export const OPENCODE_CONFIG_SYNC_BACKUP_DIR = '.openchamber.sync-backup';
 /** Backup root for `$HOME/.agents` (outside `~/.agents` so rm -rf does not eat it). */
 export const OPENCODE_AGENTS_SYNC_BACKUP_DIR = '.openchamber.sync-backup-agents';
-/** Backup root for provider `auth.json` (outside `~/.local/share`). */
-export const OPENCODE_AUTH_SYNC_BACKUP_DIR = '.openchamber.sync-backup-auth';
 
 export const OPENCODE_AGENTS_ROOT_PROBE_MARKER = '__AGENTS_ROOT__';
-export const OPENCODE_AUTH_FILE_PROBE_MARKER = '__AUTH_FILE__';
 
 export const OPENCODE_CONFIG_SYNC_MAX_BYTES = 512 * 1024 * 1024;
 export const OPENCODE_CONFIG_SYNC_MAX_FILES = 20000;

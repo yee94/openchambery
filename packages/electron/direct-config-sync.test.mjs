@@ -25,7 +25,7 @@ describe('direct config sync helpers', () => {
       capabilities: {
         posixShell: false,
         tarExtract: false,
-        authFileWrite: true,
+        providerCredentialsWrite: true,
         ocHttp: true,
       },
     });
@@ -43,8 +43,8 @@ describe('direct config sync helpers', () => {
         json: async () => ({
           remoteExisting: ['opencode.jsonc'],
           remoteAgentsRootExists: false,
-          remoteAuthFileExists: false,
-          inventory: { files: [{ path: 'opencode.jsonc', bytes: 2 }], directories: [], agentsRoot: null, authFile: null },
+          remoteProviderCredentialsExists: false,
+          inventory: { files: [{ path: 'opencode.jsonc', bytes: 2 }], directories: [], agentsRoot: null, providerCredentials: null },
         }),
       };
     };
@@ -60,5 +60,14 @@ describe('direct config sync helpers', () => {
 
   test('direct sync IPC commands are not remote-safe', () => {
     expect(isRemoteIpcCommandAllowed('desktop_ssh_sync_opencode_config', { targetKind: 'direct' })).toBe(false);
+  });
+
+  test('rejects malformed responses instead of reporting a successful credential import', async () => {
+    const executor = createDirectTargetExecutor({
+      host: { apiUrl: 'https://host.example' },
+      fetchImpl: async () => new Response('<html>old host</html>'),
+    });
+    await expect(executor.credentialInventory()).rejects.toThrow('Invalid provider credential inventory');
+    await expect(executor.importCredentials(Buffer.from('{}'))).rejects.toThrow('failed');
   });
 });

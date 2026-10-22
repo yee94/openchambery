@@ -60,7 +60,7 @@ export const walkAllowlistDirectory = (absPath, excludeNames, seenRealpaths) => 
 };
 
 /**
- * Pure planner: source-home allowlist + optional `~/.agents` + optional provider auth.json.
+ * Pure planner: source-home allowlist + optional `~/.agents` + provider credential metadata.
  * Plan is computed on the source side; executors run it on the target side.
  * `direction` is a first-class field (`push` today; `pull` reuses the same shape).
  *
@@ -70,7 +70,9 @@ export const walkAllowlistDirectory = (absPath, excludeNames, seenRealpaths) => 
  *   syncRunId?: string,
  *   sourceTargetId?: string,
  *   targetId?: string,
- *   includeAuthFile?: boolean,
+ *   includeProviderCredentials?: boolean,
+ *   providerCredentials?: { bytes: number } | null,
+ *   magpie?: { available: boolean, installed: boolean },
  *   selections?: import('./selections.js').SyncSelections,
  * }} [options]
  * @returns {{
@@ -81,7 +83,7 @@ export const walkAllowlistDirectory = (absPath, excludeNames, seenRealpaths) => 
  *   files: { path: string, bytes: number }[],
  *   directories: { path: string, fileCount: number, bytes: number }[],
  *   agentsRoot: { fileCount: number, bytes: number } | null,
- *   authFile: { bytes: number } | null,
+ *   providerCredentials: { bytes: number } | null,
  *   deletes: string[],
  *   totalBytes: number,
  *   selections?: import('./selections.js').SyncSelections,
@@ -93,15 +95,13 @@ export const planOpenCodeConfigSync = (sourceHomedir, options = {}) => {
   if (!SYNC_DIRECTIONS.includes(direction)) {
     throw new Error(`Unsupported sync direction: ${String(direction)}`);
   }
-  // Credential transfer requires an explicit per-target grant (ticket 03).
-  // Callers that have not authorized the target pass includeAuthFile: false so
-  // auth.json is skipped rather than failing the whole sync.
+  // Credential values never enter the filesystem inventory or preview plan.
   const selections = options.selections
-    ? normalizeSyncSelections(options.selections, { includeAuthFile: options.selections.authFile === true })
+    ? normalizeSyncSelections(options.selections, { includeProviderCredentials: options.selections.providerCredentials === true })
     : null;
-  const includeAuthFile = selections
-    ? selections.authFile === true
-    : options.includeAuthFile !== false;
+  const includeProviderCredentials = selections
+    ? selections.providerCredentials === true
+    : options.includeProviderCredentials !== false;
 
   const root = path.join(home, '.config', 'opencode');
   /** @type {{ path: string, bytes: number }[]} */
@@ -191,22 +191,9 @@ export const planOpenCodeConfigSync = (sourceHomedir, options = {}) => {
   }
 
   /** @type {{ bytes: number } | null} */
-  let authFile = null;
-  if (includeAuthFile) {
-    const authAbs = path.join(home, '.local', 'share', 'opencode', 'auth.json');
-    let authStat;
-    try {
-      // fs.stat follows symlinks (auth.json is sometimes a symlink).
-      authStat = fs.statSync(authAbs);
-    } catch {
-      authStat = null;
-    }
-    if (authStat?.isFile()) {
-      authFile = { bytes: authStat.size };
-      totalBytes += authStat.size;
-      // Single credential file — does not count against the 20000 file-count cap.
-    }
-  }
+  const providerCredentials = includeProviderCredentials && options.providerCredentials ? { bytes: options.providerCredentials.bytes } : null;
+  if (selections?.magpie && !options.magpie?.available) throw new Error('Magpie source configuration is unavailable');
+  if (providerCredentials) totalBytes += providerCredentials.bytes;
 
   if (totalBytes > OPENCODE_CONFIG_SYNC_MAX_BYTES || totalFileCount > OPENCODE_CONFIG_SYNC_MAX_FILES) {
     throw new Error('OpenCode config sync exceeds size limit (512MB)');
@@ -222,7 +209,9 @@ export const planOpenCodeConfigSync = (sourceHomedir, options = {}) => {
     files,
     directories,
     agentsRoot,
-    authFile,
+    providerCredentials,
+    magpieAvailable: options.magpie?.available === true,
+    magpie: options.selections?.magpie === true && options.magpie?.available === true ? { bytes: 0 } : null,
     deletes,
     totalBytes,
   };
@@ -237,7 +226,7 @@ export const planOpenCodeConfigSync = (sourceHomedir, options = {}) => {
  *   syncRunId?: string,
  *   sourceTargetId?: string,
  *   targetId?: string,
- *   includeAuthFile?: boolean,
+ *   includeProviderCredentials?: boolean,
  *   selections?: import('./selections.js').SyncSelections,
  * }} [options]
  */
@@ -247,21 +236,25 @@ export const planOpenCodeConfigSyncFromInventory = (inventory, options = {}) => 
     throw new Error(`Unsupported sync direction: ${String(direction)}`);
   }
   const selections = options.selections
-    ? normalizeSyncSelections(options.selections, { includeAuthFile: options.selections.authFile === true })
+    ? normalizeSyncSelections(options.selections, { includeProviderCredentials: options.selections.providerCredentials === true })
     : null;
-  const includeAuthFile = selections
-    ? selections.authFile === true
-    : options.includeAuthFile !== false;
+  const includeProviderCredentials = selections
+    ? selections.providerCredentials === true
+    : options.includeProviderCredentials !== false;
 
   const files = Array.isArray(inventory?.files) ? inventory.files.filter((entry) => entry?.path) : [];
+  if (selections?.magpie && !inventory?.magpie?.available) throw new Error('Magpie source configuration is unavailable');
+  if (includeProviderCredentials && !Object.hasOwn(inventory || {}, 'providerCredentials')) {
+    throw new Error('Provider credential inventory is missing');
+  }
   const directories = Array.isArray(inventory?.directories)
     ? inventory.directories.filter((entry) => entry?.path)
     : [];
   const agentsRoot = inventory?.agentsRoot && typeof inventory.agentsRoot === 'object'
     ? inventory.agentsRoot
     : null;
-  const authFile = includeAuthFile && inventory?.authFile && typeof inventory.authFile === 'object'
-    ? inventory.authFile
+  const providerCredentials = includeProviderCredentials && inventory?.providerCredentials && typeof inventory.providerCredentials === 'object'
+    ? inventory.providerCredentials
     : null;
 
   /** @type {string[]} */
@@ -293,8 +286,8 @@ export const planOpenCodeConfigSyncFromInventory = (inventory, options = {}) => 
     totalBytes += Number(agentsRoot.bytes) || 0;
     totalFileCount += Number(agentsRoot.fileCount) || 0;
   }
-  if (authFile) {
-    totalBytes += Number(authFile.bytes) || 0;
+  if (providerCredentials) {
+    totalBytes += Number(providerCredentials.bytes) || 0;
   }
   if (totalBytes > OPENCODE_CONFIG_SYNC_MAX_BYTES || totalFileCount > OPENCODE_CONFIG_SYNC_MAX_FILES) {
     throw new Error('OpenCode config sync exceeds size limit (512MB)');
@@ -310,7 +303,9 @@ export const planOpenCodeConfigSyncFromInventory = (inventory, options = {}) => 
     files,
     directories,
     agentsRoot,
-    authFile,
+    providerCredentials,
+    magpieAvailable: inventory?.magpie?.available === true,
+    magpie: options.selections?.magpie === true && inventory?.magpie?.available === true ? { bytes: 0 } : null,
     deletes,
     totalBytes,
   };

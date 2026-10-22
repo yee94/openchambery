@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.2] - 2026-10-22
+
+### 改进
+
+- 远程实例与桌面端的配置同步新增 Magpie 数据同步：自动发现本机 Magpie 安装、识别其配置文件位置，并支持在设备之间备份与恢复。
+- 配置同步的凭据处理收敛到服务端统一管理，不再经由渲染进程传递，移除了旧的 auth 文件备份通道。
+
 ## [2.1.8-beta.1] - 2026-10-22
 
 ### 改进

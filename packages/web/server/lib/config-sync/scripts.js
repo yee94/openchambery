@@ -3,8 +3,6 @@ import path from 'node:path';
 import {
   OPENCODE_AGENTS_ROOT_PROBE_MARKER,
   OPENCODE_AGENTS_SYNC_BACKUP_DIR,
-  OPENCODE_AUTH_FILE_PROBE_MARKER,
-  OPENCODE_AUTH_SYNC_BACKUP_DIR,
   OPENCODE_CONFIG_SYNC_ALLOWLIST,
   OPENCODE_CONFIG_SYNC_BACKUP_DIR,
   OPENCODE_CONFIG_SYNC_BACKUP_GENERATIONS,
@@ -60,7 +58,7 @@ const generationalBackupSetupLines = ({ backupVar, runVar, quotedRunId, generati
  * {@link OPENCODE_CONFIG_SYNC_BACKUP_GENERATIONS} are pruned; prepare no longer
  * `rm -rf`s the entire backup root at start.
  *
- * @param {{ files: { path: string }[], directories: { path: string }[], deletes: string[], agentsRoot?: { fileCount: number, bytes: number } | null, authFile?: { bytes: number } | null }} plan
+ * @param {{ files: { path: string }[], directories: { path: string }[], deletes: string[], agentsRoot?: { fileCount: number, bytes: number } | null }} plan
  * @param {{ syncRunId: string, generations?: number }} options
  * @returns {string}
  */
@@ -134,19 +132,6 @@ export const buildRemoteSyncPrepareScript = (plan, options) => {
     lines.push('rm -rf -- "$HOME/.agents"');
   }
 
-  if (plan?.authFile) {
-    lines.push(`AUTH_BK="$HOME/${OPENCODE_AUTH_SYNC_BACKUP_DIR}"`);
-    lines.push(...generationalBackupSetupLines({
-      backupVar: 'AUTH_BK',
-      runVar: 'AUTH_RUN_BK',
-      quotedRunId,
-      generations,
-    }));
-    lines.push('if [ -e "$HOME/.local/share/opencode/auth.json" ]; then');
-    lines.push('  cp -a "$HOME/.local/share/opencode/auth.json" "$AUTH_RUN_BK/auth.json"');
-    lines.push('fi');
-  }
-
   lines.push("printf 'SYNC_READY\\n'");
   return lines.join('\n');
 };
@@ -163,9 +148,6 @@ export const buildRemoteSyncProbeScript = (uniqueProbePaths) => {
   });
   lines.push(
     `[ -e "$HOME/.agents" ] && printf '%s\\n' ${shellQuote(OPENCODE_AGENTS_ROOT_PROBE_MARKER)}`,
-  );
-  lines.push(
-    `[ -e "$HOME/.local/share/opencode/auth.json" ] && printf '%s\\n' ${shellQuote(OPENCODE_AUTH_FILE_PROBE_MARKER)}`,
   );
   lines.push('exit 0');
   return lines.join('\n');
@@ -228,14 +210,9 @@ export const buildRemoteSyncInventoryScript = () => {
   lines.push("  ABYTES=\"$(find \"$HOME/.agents\" -type f ! -path '*/node_modules/*' ! -path '*/.venv-asc/*' ! -name '*.backup' -exec wc -c {} + 2>/dev/null | awk 'END{print $1+0}')\"");
   lines.push('  AGENTS="{\\"fileCount\\":$ACOUNT,\\"bytes\\":$ABYTES}"');
   lines.push('fi');
-  lines.push('AUTH="null"');
-  lines.push('if [ -f "$HOME/.local/share/opencode/auth.json" ]; then');
-  lines.push('  AUBYTES="$(wc -c < "$HOME/.local/share/opencode/auth.json" | tr -d \' \')"');
-  lines.push('  AUTH="{\\"bytes\\":$AUBYTES}"');
-  lines.push('fi');
   lines.push('FILES="${FILES%,}"');
   lines.push('DIRS="${DIRS%,}"');
-  lines.push('printf \'SYNC_INVENTORY={"files":[%s],"directories":[%s],"agentsRoot":%s,"authFile":%s}\\n\' "$FILES" "$DIRS" "$AGENTS" "$AUTH"');
+  lines.push('printf \'SYNC_INVENTORY={"files":[%s],"directories":[%s],"agentsRoot":%s}\\n\' "$FILES" "$DIRS" "$AGENTS"');
   lines.push('exit 0');
   return lines.join('\n');
 };
@@ -263,11 +240,6 @@ export const buildRemoteConfigTarScript = (plan) => {
 export const buildRemoteAgentsTarScript = () => [
   'set -e',
   `cd "$HOME" && tar ${OPENCODE_CONFIG_SYNC_TAR_EXCLUDES.map(shellQuote).join(' ')} -h -czf - .agents`,
-].join('\n');
-
-export const buildRemoteAuthTarScript = () => [
-  'set -e',
-  'cd "$HOME/.local/share/opencode" && tar -h -czf - auth.json',
 ].join('\n');
 
 export { shellQuote };

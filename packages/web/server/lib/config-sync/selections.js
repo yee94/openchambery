@@ -6,13 +6,14 @@ import { OPENCODE_CONFIG_SYNC_ALLOWLIST } from './constants.js';
  *   singleFiles: boolean[],
  *   directories: boolean[],
  *   agentsRoot: boolean,
- *   authFile: boolean,
+ *   providerCredentials: boolean,
+ *   magpie?: boolean,
  * }} SyncSelections
  */
 
 /**
- * Default: everything selected except authFile (credentials stay opt-in).
- * @param {{ includeAuthFile?: boolean }} [options]
+ * Default: everything selected except providerCredentials (credentials stay opt-in).
+ * @param {{ includeProviderCredentials?: boolean }} [options]
  * @returns {SyncSelections}
  */
 export const buildDefaultSyncSelections = (options = {}) => ({
@@ -20,13 +21,14 @@ export const buildDefaultSyncSelections = (options = {}) => ({
   singleFiles: OPENCODE_CONFIG_SYNC_ALLOWLIST.singleFiles.map(() => true),
   directories: OPENCODE_CONFIG_SYNC_ALLOWLIST.directories.map(() => true),
   agentsRoot: true,
-  authFile: options.includeAuthFile === true,
+  providerCredentials: options.includeProviderCredentials === true,
+  magpie: false,
 });
 
 /**
  * Normalize a partial selections object against the allowlist shape.
  * @param {Partial<SyncSelections> | null | undefined} raw
- * @param {{ includeAuthFile?: boolean }} [options]
+ * @param {{ includeProviderCredentials?: boolean }} [options]
  * @returns {SyncSelections}
  */
 export const normalizeSyncSelections = (raw, options = {}) => {
@@ -48,7 +50,8 @@ export const normalizeSyncSelections = (raw, options = {}) => {
     singleFiles,
     directories,
     agentsRoot: raw.agentsRoot !== false,
-    authFile: raw.authFile === true,
+    providerCredentials: raw.providerCredentials === true,
+    magpie: raw.magpie === true,
   };
 };
 
@@ -59,7 +62,7 @@ export const normalizeSyncSelections = (raw, options = {}) => {
  * @param {SyncSelections} selections
  */
 export const filterPlanBySelections = (plan, selections) => {
-  const selected = normalizeSyncSelections(selections, { includeAuthFile: selections?.authFile === true });
+  const selected = normalizeSyncSelections(selections, { includeProviderCredentials: selections?.providerCredentials === true });
   const selectedFileNames = new Set();
   const selectedDeleteNames = new Set();
 
@@ -91,13 +94,13 @@ export const filterPlanBySelections = (plan, selections) => {
   const directories = (Array.isArray(plan?.directories) ? plan.directories : []).filter((entry) => selectedDirNames.has(entry.path));
   const deletes = (Array.isArray(plan?.deletes) ? plan.deletes : []).filter((name) => selectedDeleteNames.has(name) || selectedDirLegacy.has(name));
   const agentsRoot = selected.agentsRoot ? (plan?.agentsRoot ?? null) : null;
-  const authFile = selected.authFile ? (plan?.authFile ?? null) : null;
+  const providerCredentials = selected.providerCredentials ? (plan?.providerCredentials ?? null) : null;
 
   let totalBytes = 0;
   for (const entry of files) totalBytes += Number(entry.bytes) || 0;
   for (const entry of directories) totalBytes += Number(entry.bytes) || 0;
   if (agentsRoot) totalBytes += Number(agentsRoot.bytes) || 0;
-  if (authFile) totalBytes += Number(authFile.bytes) || 0;
+  if (providerCredentials) totalBytes += Number(providerCredentials.bytes) || 0;
 
   return {
     ...plan,
@@ -105,7 +108,8 @@ export const filterPlanBySelections = (plan, selections) => {
     directories,
     deletes,
     agentsRoot,
-    authFile,
+    providerCredentials,
+    magpie: selected.magpie && plan?.magpieAvailable ? { bytes: 0 } : null,
     totalBytes,
     selections: selected,
   };

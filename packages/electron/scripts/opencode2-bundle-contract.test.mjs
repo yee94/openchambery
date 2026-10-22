@@ -49,7 +49,7 @@ test('ssh-manager installs @opencode/cli and probes opencode', () => {
   assert.match(ssh, /'opencode --version/);
   assert.doesNotMatch(ssh, /OPENCODE_NPM_PACKAGE = 'opencode-ai'/);
   assert.doesNotMatch(ssh, /'opencode2 --version/);
-  assert.match(main, /PINNED_OPENCODE2_VERSION|opencode2-pin/);
+  assert.doesNotMatch(main, /opencodeCliVersion\s*:/);
   assert.doesNotMatch(main, /@opencode-ai\/sdk/);
 });
 

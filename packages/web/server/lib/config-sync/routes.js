@@ -2,7 +2,7 @@ import { createConfigSyncReceiver } from './receiver.js';
 
 /**
  * Register HTTP config-sync receive/download routes for direct (and later relay) hosts.
- * Auth is the global `/api` UI/client-token gate. Selected kinds (including auth)
+ * Auth is the global `/api` UI/client-token gate. Selected kinds (including credentials)
  * sync when present in the plan — no extra credential grant checks.
  *
  * @param {import('express').Express} app
@@ -70,11 +70,32 @@ export const registerConfigSyncRoutes = (app, deps = {}) => {
     }
   });
 
+  app.get('/api/openchamber/config-sync/magpie/inventory', async (_req, res) => {
+    try { res.json({ magpie: await receiver.magpieInventory() }); }
+    catch (error) { sendError(res, error); }
+  });
+
+  app.put('/api/openchamber/config-sync/magpie', async (req, res) => {
+    try { res.json(await receiver.importMagpie(req)); }
+    catch (error) { sendError(res, error); }
+  });
+
+  app.get('/api/openchamber/config-sync/credentials/inventory', async (_req, res) => {
+    try { res.json({ providerCredentials: await receiver.credentialInventory() }); }
+    catch (error) { sendError(res, error); }
+  });
+
+  app.put('/api/openchamber/config-sync/credentials', async (req, res) => {
+    try { res.json(await receiver.importCredentials(req)); }
+    catch (error) { sendError(res, error); }
+  });
+
   app.get('/api/openchamber/config-sync/download/:kind', async (req, res) => {
     try {
       const kind = String(req.params.kind || '').trim();
       const buffer = await receiver.download({ kind });
-      res.setHeader('Content-Type', 'application/gzip');
+      res.setHeader('Content-Type', kind === 'credentials' || kind === 'magpie' ? 'application/octet-stream' : 'application/gzip');
+      res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Content-Length', String(buffer.byteLength));
       res.send(buffer);
     } catch (error) {

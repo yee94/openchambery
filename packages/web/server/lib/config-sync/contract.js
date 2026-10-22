@@ -8,7 +8,7 @@ import {
  * @typedef {{
  *   posixShell: boolean,
  *   tarExtract: boolean,
- *   authFileWrite: boolean,
+ *   providerCredentialsWrite: boolean,
  *   ocHttp?: boolean,
  * }} SyncTargetCapabilities
  *
@@ -21,7 +21,7 @@ import {
  * @typedef {{
  *   remoteExisting: string[],
  *   remoteAgentsRootExists: boolean,
- *   remoteAuthFileExists: boolean,
+ *   remoteProviderCredentialsExists: boolean,
  * }} SyncProbeResult
  *
  * Payload for putTar. Callers always hand a fully buffered archive
@@ -31,7 +31,7 @@ import {
  * @typedef {{
  *   probe: (plan: object) => Promise<SyncProbeResult>,
  *   prepare: (plan: object, ctx: { syncRunId: string }) => Promise<void>,
- *   putTar: (args: { kind: 'config' | 'agents' | 'auth', payload: SyncTarPayload }) => Promise<void>,
+ *   putTar: (args: { kind: 'config' | 'agents' | 'credentials' | 'magpie', payload: SyncTarPayload }) => Promise<void>,
  *   finalize: (plan: object, ctx: { syncRunId: string }) => Promise<{ ok: true }>,
  * }} TargetExecutor
  */
@@ -39,34 +39,34 @@ import {
 export const EMPTY_SYNC_CAPABILITIES = Object.freeze({
   posixShell: false,
   tarExtract: false,
-  authFileWrite: false,
+  providerCredentialsWrite: false,
   ocHttp: false,
 });
 
 export const MANAGED_SSH_SYNC_CAPABILITIES = Object.freeze({
   posixShell: true,
   tarExtract: true,
-  authFileWrite: true,
+  providerCredentialsWrite: true,
   ocHttp: false,
 });
 
 export const DIRECT_HOST_SYNC_CAPABILITIES = Object.freeze({
   posixShell: false,
   tarExtract: false,
-  authFileWrite: true,
+  providerCredentialsWrite: true,
   ocHttp: true,
 });
 
 export const RELAY_HOST_SYNC_CAPABILITIES = Object.freeze({
   posixShell: false,
   tarExtract: false,
-  authFileWrite: true,
+  providerCredentialsWrite: true,
   ocHttp: true,
 });
 
 /**
  * Build a namespaced SyncTarget for an SSH instance.
- * Managed remotes expose posixShell/tarExtract/authFileWrite; others expose none
+ * Managed remotes expose posixShell/tarExtract/providerCredentialsWrite; others expose none
  * (semantic equivalent of the former mode==='managed' hard gate).
  *
  * @param {string} instanceId

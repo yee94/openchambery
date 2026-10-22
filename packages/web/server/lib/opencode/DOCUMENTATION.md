@@ -73,11 +73,12 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Public exports (auth.js)
 - `configureOpenCodeCredentials(resolveClient)`: host composition injects a call-time SDK client resolver; `null` detaches it. Web/Electron share server wiring; VS Code wires its manager in extension activation. Mobile clients use their host.
+- `currentClient()`: trusted host-only client resolver used by config-sync to retain full V2 credential account records instead of the active-account quota projection.
 - `openCodeCredentialSource({ buildOpenCodeUrl, getOpenCodeAuthHeaders })`: resolves the current endpoint/auth at each read rather than capturing a previous runtime.
 - `readOpenCodeCredentials()`: async SDK `credential.list()` read of the running service; validates entries and projects only active accounts into the quota/TTS credential shape. OAuth `metadata.accountID` becomes `accountId`. No local `auth.json`, local environment, or local provider-config fallback; external service environment-only keys are not exposed by the credential API.
 - `getProviderAuth(providerId)`: async selected stored credential or authoritative `null`; network/auth/schema failures reject with a sanitized error, never empty success.
 - `removeProviderAuth(providerId)`: deletes every stored account for that integration through SDK `credential.remove`, preserving unrelated integrations. Partial failure rejects explicitly; retry lists remaining accounts. Auth-only disconnect requires no process restart.
-- Credential values remain host-only. `credential-boundary.js` blocks raw credential list/creation responses (GET/HEAD/POST `/api/credential`, including encoded/trailing-slash forms) in Web proxy and VS Code bridge because v2 replies contain keys. Provider-source responses expose only existence; errors never include upstream credential bodies/headers. Explicit legacy config-sync file transfer is not a current-service credential source or login operation.
+- Credential values remain host-only outside explicitly selected instance sync. `credential-boundary.js` blocks raw credential list/creation responses (GET/HEAD/POST `/api/credential`, including encoded/trailing-slash forms) in Web proxy and VS Code bridge because v2 replies contain keys. Provider-source responses expose only existence; errors never include upstream credential bodies/headers. The authenticated config-sync routes own explicit V2 credential transfer; previews and run logs contain only metadata.
 
 ## Public exports (shared.js)
 - `OPENCODE_CONFIG_DIR`, `AGENT_DIR`, `COMMAND_DIR`, `SKILL_DIR`, `CONFIG_FILE`, `CUSTOM_CONFIG_FILE`: Path constants.
