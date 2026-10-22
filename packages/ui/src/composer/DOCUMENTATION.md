@@ -13,6 +13,7 @@ Typing is the highest-priority interactive path. This contract applies to primar
 
 ### Work ownership
 
+- Composer text is literal, including Markdown and fenced code. `ChatInput` never runs Markdown/code tokenization for input decoration. The overlay is reserved for references, commands, attachment citations and provisional dictation; without those decorations, the textarea paints its own text and owns caret/selection in the same layer.
 - Keep text echo, caret/selection and IME composition immediate. Defer ancillary work, never the authoritative input value. Preserve paste, undo/redo, references, send snapshots and draft durability semantics.
 - Per-keystroke work is bounded by the edited document and active suggestions, not total projects, sessions, branches, models, agents or transcript history. Subscribe to the current draft's exact fields; unrelated entity updates must not fan out into composer work.
 - Closed pickers perform **zero catalog enumeration and zero row/label construction** during typing, including after opening and closing once. Render expensive children as components inside the popup/sheet presence boundary. JSX `.map()` arguments execute in the parent even when a portal eventually returns `null`; CSS hiding and memoizing the outer popup do not establish this boundary. Let the existing presence owner retain rows through exit animation.

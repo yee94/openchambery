@@ -2377,6 +2377,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
         const magpiePayload = plan.magpie ? await this.createSshCredentialExecutor(session).download('magpie') : null;
 
         await prepareLocalSyncDestination(home, plan, { syncRunId });
+        const magpieResult = magpiePayload ? await this.getLocalSyncExecutor().importMagpie(magpiePayload) : null;
         if (configTar && configTar.length > 0) {
           await extractTarGzBuffer(configTar, path.join(home, '.config', 'opencode'));
         }
@@ -2386,7 +2387,6 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
         if (credentialPayload && credentialPayload.length > 0) {
           await this.getLocalSyncExecutor().importCredentials(credentialPayload);
         }
-        const magpieResult = magpiePayload ? await this.getLocalSyncExecutor().importMagpie(magpiePayload) : null;
         await finalizeLocalSyncDestination(home, { syncRunId });
         this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config pull completed');
         return {

@@ -65,6 +65,7 @@ export const applyConfigSyncPlan = async ({
 
   await executor.prepare(plan, { syncRunId });
 
+  if (magpiePayload) await executor.putTar({ kind: 'magpie', payload: magpiePayload });
   if (configTarBuffer) {
     await executor.putTar({ kind: 'config', payload: configTarBuffer });
   }
@@ -75,7 +76,6 @@ export const applyConfigSyncPlan = async ({
     // Versioned credential payload; never a database or filesystem archive.
     await executor.putTar({ kind: 'credentials', payload: credentialPayload });
   }
-  if (magpiePayload) await executor.putTar({ kind: 'magpie', payload: magpiePayload });
 
   const receipt = await executor.finalize(plan, { syncRunId });
 
