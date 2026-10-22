@@ -1715,6 +1715,15 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         },
         initialMeasurementsCache: measurementSeedRef.current,
     });
+    React.useEffect(() => {
+        const container = scrollRef?.current;
+        if (!isTanstack || !container || tanstackVirtualizer.scrollElement === container) return;
+        // Activity restores child layout effects before the parent's scroll ref.
+        // Reattach after refs settle, adopting the current viewport before core writes it.
+        tanstackVirtualizer.scrollOffset = container.scrollTop;
+        tanstackVirtualizer._willUpdate();
+        tanstackVirtualizer.options.onChange?.(tanstackVirtualizer, false);
+    });
     useIsomorphicLayoutEffect(() => {
         if (!isTanstack) return;
         tanstackVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = shouldAdjustHistoryScrollOnItemSizeChange;

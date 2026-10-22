@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.6] - 2026-10-22
+
+### 修复
+
+- 修复对话视图恢复显示后历史列表虚拟化未重新绑定滚动容器的问题，重新绑定时保留当前阅读位置。
+
 ## [2.1.8-beta.5] - 2026-10-22
 
 ### 修复
