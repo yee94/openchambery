@@ -71,9 +71,10 @@ The textarea's CSS minimum remains authoritative during downward resistance.
 ## Generated avatars
 
 `AgentAvatar` uses local DiceBear Bottts Neutral artwork with rounded corners and
-each Agent's badge color as its background. Agent names are trimmed and
-case-normalized for both artwork and badge color; task/session IDs never seed
-Agent faces. `useAgentAvatarPalette` reads the current theme's resolved tokens,
+each identity's computed accent color as its background. Ordinary Agent faces use
+trimmed, case-normalized Agent names. Subagent task faces use the child session ID
+(tool part ID until assigned), consistently across task rows, activity headers,
+and work status. `useAgentAvatarPalette` reads the current theme's resolved tokens,
 so theme changes repaint the same face without render-time DOM probes.
 Only the tiny message-header badge face passes `shape="square"`. Composer faces
 are 20px on desktop/VS Code and 24px on mobile web (22pt in native iOS); other
@@ -84,7 +85,7 @@ only those two style definitions, with pinned package versions, deterministic
 seeds and no remote avatar requests. Gaze animates only while working (list,
 conversation header and live processing avatar); idle and native PNG faces are
 static. Avatar frames lock min/max width and height and clip animated artwork.
-Assistant IDs and Agent names
+Assistant IDs, ordinary Agent names, and subagent task IDs
 are the respective seeds. Explicit emoji overrides remain supported. The memoized
 component generates only on seed/style/emoji/palette changes, not draft or streaming
 updates. SVG images isolate internal definition IDs and preserve attribution

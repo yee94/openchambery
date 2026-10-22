@@ -359,6 +359,9 @@ describe('progressive activity presentation', () => {
     });
 
     test('keeps task agent avatars and status-specific counts in active and completed headers', () => {
+        expect(progressiveGroupSource).toContain('const seed = readTaskToolSessionId(part) || taskId;');
+        expect(progressiveGroupSource).toContain('all.push(seed);');
+        expect(progressiveGroupSource).toContain('active.push(seed);');
         expect(progressiveGroupSource).toContain('{displayedTaskAvatarSeeds.length > 0 ? (');
         expect(progressiveGroupSource).toContain('<AgentAvatar');
         expect(progressiveGroupSource).toContain('inline-flex shrink-0 items-center gap-0.5');

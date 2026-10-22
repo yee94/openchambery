@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { Part } from '@/lib/opencode/v2-types';
-import { resolveTaskAgentName } from '@/components/chat/message/parts/taskToolModel';
+import { readTaskToolSessionId } from '@/components/chat/message/parts/taskToolModel';
 import { generatedAvatarDataUri } from '@/lib/generatedAvatar';
 import { getAgentColor } from '@/lib/agentColors';
 import {
@@ -27,11 +27,24 @@ it('uses the same face and badge color across tool rows, headers and status rows
   const faces = mergeWorkStatusSubagents(projectTranscriptSubagents({
     messageOrder: ['msg'], partsByMessageID: { msg: [part] },
   }), [{ id: 'child-unrelated-id', title: 'Echo test', busy: false }]);
-  const toolSeed = resolveTaskAgentName(input);
-  expect(faces[0]?.seed).toBe('general');
+  const toolSeed = readTaskToolSessionId(part as Extract<Part, { type: 'tool' }>);
+  expect(faces[0]?.seed).toBe('child-unrelated-id');
   expect(generatedAvatarDataUri('agent', faces[0]?.seed)).toBe(generatedAvatarDataUri('agent', toolSeed));
   expect(getAgentColor(faces[0]?.seed)).toBe(getAgentColor(toolSeed));
   expect(getAgentColor(' Build ')).toBe(getAgentColor('build'));
+});
+
+it('gives three tasks of the same agent distinct faces keyed by their task sessions', () => {
+  const ids = ['ses_task_one', 'ses_task_two', 'ses_task_three'];
+  const parts = ids.map((sessionID, index) => toolPart({
+    id: `tool-${index}`,
+    state: { status: 'completed', input: { agent: 'general' }, metadata: { sessionID } },
+  }));
+  const faces = mergeWorkStatusSubagents(projectTranscriptSubagents({
+    messageOrder: ['msg'], partsByMessageID: { msg: parts },
+  }), []);
+  expect(faces.map((face) => face.seed)).toEqual(ids);
+  expect(new Set(faces.map((face) => generatedAvatarDataUri('agent', face.seed))).size).toBe(3);
 });
 
 it('projects a completed task tool as done and a running one as working', () => {
@@ -83,9 +96,9 @@ it('keeps one face when a child session is the task target, and promotes a finis
     { id: 'child-3', title: 'Only child', busy: false },
   ]);
   expect(merged).toEqual([
-    { key: 'child-1', sessionID: 'child-1', seed: 'explore', label: 'Explore session', phase: 'working' },
-    { key: 'child-2', sessionID: 'child-2', seed: 'plan', label: 'Plan session', phase: 'done' },
-    { key: 'child-3', sessionID: 'child-3', seed: 'subagent', label: 'Only child', phase: 'done' },
+    { key: 'child-1', sessionID: 'child-1', seed: 'child-1', label: 'Explore session', phase: 'working' },
+    { key: 'child-2', sessionID: 'child-2', seed: 'child-2', label: 'Plan session', phase: 'done' },
+    { key: 'child-3', sessionID: 'child-3', seed: 'child-3', label: 'Only child', phase: 'done' },
   ]);
 });
 
@@ -96,7 +109,7 @@ it('treats a linked session as working when its status is busy and the catalog r
     new Set(['child-1']),
   );
   expect(merged).toEqual([
-    { key: 'child-1', sessionID: 'child-1', seed: 'explore', label: 'Explore', phase: 'working' },
+    { key: 'child-1', sessionID: 'child-1', seed: 'child-1', label: 'Explore', phase: 'working' },
   ]);
 });
 
@@ -151,7 +164,7 @@ it('keeps one row per session id and prefers the live title after a rename', () 
     [{ id: 'child-1', title: '改过的标题', busy: false }],
   );
   expect(merged).toEqual([
-    { key: 'child-1', sessionID: 'child-1', seed: 'general', label: '改过的标题', phase: 'working' },
+    { key: 'child-1', sessionID: 'child-1', seed: 'child-1', label: '改过的标题', phase: 'working' },
   ]);
 });
 
@@ -164,7 +177,7 @@ it('keeps the create-time description when a continuation has no live title yet'
     [],
   );
   expect(merged).toEqual([
-    { key: 'child-1', sessionID: 'child-1', seed: 'general', label: '创建时标题', phase: 'done' },
+    { key: 'child-1', sessionID: 'child-1', seed: 'child-1', label: '创建时标题', phase: 'done' },
   ]);
 });
 
@@ -208,6 +221,6 @@ it('links a task whose session id is only in the tool output so the child is not
   expect(mergeWorkStatusSubagents(faces, [
     { id: 'child-1', title: '查标题', busy: false },
   ])).toEqual([
-    { key: 'child-1', sessionID: 'child-1', seed: 'general', label: '查标题', phase: 'done' },
+    { key: 'child-1', sessionID: 'child-1', seed: 'child-1', label: '查标题', phase: 'done' },
   ]);
 });

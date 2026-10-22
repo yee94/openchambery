@@ -28,12 +28,49 @@ vi.mock('@/components/code/WorkerHighlightedCode', () => ({ WorkerHighlightedCod
 vi.mock('@pierre/diffs/react', () => ({ PatchDiff: () => null }));
 
 import ToolPart from './ToolPart';
+import { AgentAvatar } from '../../AgentAvatar';
+import { mergeWorkStatusSubagents, projectTranscriptSubagents } from '../../work-status/workStatusSubagents';
 import { normalizeSessionProjectionMessage } from '@/sync/session-projection-api';
 import { applyTranscriptDirectoryEvent, type TranscriptEventDraft } from '@/sync/transcript-event-reducer';
 
 let root: ReturnType<typeof createRoot> | undefined;
 afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks(); });
 afterAll(() => { vi.unstubAllGlobals(); });
+
+test('task message avatars match sidebar faces for distinct tasks, late identity and continuation', async () => {
+    live.store = createStore(() => ({ status: { type: 'idle' } as SessionStatus }));
+    live.messages = [];
+    const host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    const render = async (sessionIDs: (string | undefined)[], suffix = '') => {
+        const parts = sessionIDs.map((sessionID, index) => ({
+            id: `tool-${index}${suffix}`, sessionID: 'ses_parent', messageID: 'msg_parent',
+            type: 'tool', tool: 'subagent', callID: `call-${index}${suffix}`,
+            state: {
+                status: 'completed', input: { agent: 'general' }, metadata: { sessionID },
+                output: '', title: 'General', time: { start: 100, end: 110 },
+            },
+        } as ToolPartType));
+        const faces = mergeWorkStatusSubagents(projectTranscriptSubagents({
+            messageOrder: ['msg_parent'], partsByMessageID: { msg_parent: parts },
+        }), []);
+        await act(async () => root!.render(<>
+            <div data-messages>{parts.map((part) => <ToolPart key={part.id} part={part} isExpanded={false} onToggle={() => {}} isMobile={false} />)}</div>
+            <div data-sidebar>{faces.map((face) => <AgentAvatar key={face.key} name={face.seed} />)}</div>
+        </>));
+        const images = (selector: string) => Array.from(host.querySelectorAll(`${selector} [data-agent-avatar] img`), (img) => img.getAttribute('src'));
+        const messages = images('[data-messages]');
+        expect(messages).toHaveLength(3);
+        expect(new Set(messages).size).toBe(3);
+        expect(messages).toEqual(images('[data-sidebar]'));
+        return messages;
+    };
+    await render([undefined, undefined, undefined]);
+    const ids = ['ses_task_one', 'ses_task_two', 'ses_task_three'];
+    const assigned = await render(ids);
+    expect(await render(ids, '-continued')).toEqual(assigned);
+});
 
 test.each(['completed', 'error'])('tool elapsed time survives projection, remount and %s settlement', async (status) => {
     live.store = createStore(() => ({ status: { type: 'busy' } as SessionStatus }));

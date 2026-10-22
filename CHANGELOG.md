@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.7-beta.11] - 2026-10-22
+
+### 修复
+
+- 修复同一智能体并发运行多个子任务时头像重复、点击后可能跳到另一个子任务的问题；头像改为按子任务会话身份区分，与任务行和工位状态使用同一套会话解析规则。
+
 ## [2.1.7-beta.10] - 2026-10-22
 
 ### 改进
