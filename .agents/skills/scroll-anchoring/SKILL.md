@@ -19,6 +19,8 @@ One scroll writer per transcript. Find it before editing; read its module doc fo
 
 A new compensation lives inside the owner. A second writer (rAF loop, MutationObserver, watchdog) fights the first and produces exactly the jitter it was added to fix.
 
+- Activity-hidden lists must reattach their virtualizer after re-show and parent ref attachment, then reconcile the current viewport and rendered range.
+
 ## Root causes, in order of likelihood
 
 Work down this list; each has caused a real regression.

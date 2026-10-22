@@ -302,6 +302,8 @@ On PC surfaces with fewer than 12 authored-user turns loaded, `useDesktopHistory
 
 `StaticHistoryList` retains the same root/row-parent structure when history crosses the virtualization threshold. It seeds the first virtual range with the mounted viewport dimensions and the keyed reading position shifted by the prepend, so there is no empty-range commit that destroys visible rows. Already painted Markdown stays hydrated. The repository prepend retains unchanged message/part references; the real-browser `desktop-warmup` fixture asserts the existing message and Markdown nodes survive a 50-message background prepend with subpixel reading-offset preservation.
 
+After an Activity-hidden history becomes visible, `StaticHistoryList` reattaches the virtualizer in a passive effect after parent refs settle, adopting the current DOM scroll offset and notifying the rendered range while retaining measured row sizes.
+
 Normal-flow history does not measure every row on every commit just to prepare
 that seed. On virtualization activation, it reads the still-mounted old rows
 before the virtualized commit changes their geometry; only newly prepended rows
