@@ -1267,6 +1267,8 @@ export const settingsDict = {
   "settings.remoteInstances.page.sync.section.directories": "Каталоги",
   "settings.remoteInstances.page.sync.section.providerCredentials": "Ключі провайдера",
   "settings.remoteInstances.page.sync.section.magpie": "Конфігурація Magpie та ключі API",
+  "settings.remoteInstances.page.sync.magpie.signInRequired": "Конфігурацію Magpie синхронізовано. До облікових записів підписок і плагінів потрібно ввійти на цільовому пристрої; резервна копія не містить їхніх даних входу.",
+  "settings.remoteInstances.page.sync.magpie.agentsSkipped": "Частину налаштувань агентів Magpie пропущено, оскільки агенти або моделі недоступні на цільовому пристрої.",
   "settings.remoteInstances.page.sync.magpie.description": "Синхронізує конфігурацію, ключі API, профілі, моделі агентів і бібліотеку через резервне копіювання та відновлення Magpie. Установлює CLI, якщо його немає. Дані входу до підписок і плагінів не переносяться.",
   "settings.remoteInstances.page.sync.section.agentsRoot": "Навички агента (~/.agents)",
   "settings.remoteInstances.page.sync.section.agentsRootCount": "{count} файлів",

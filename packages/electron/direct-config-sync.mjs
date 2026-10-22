@@ -93,6 +93,7 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'Magpie sync failed on destination');
+      return result;
     },
 
     async credentialInventory() {
@@ -283,7 +284,7 @@ export const createDirectConfigSyncController = ({
         if (credentialPayload?.length) {
           await getLocalExecutor().importCredentials(credentialPayload);
         }
-        if (magpiePayload) await getLocalExecutor().importMagpie(magpiePayload);
+        const magpieResult = magpiePayload ? await getLocalExecutor().importMagpie(magpiePayload) : null;
         await finalizeLocalSyncDestination(home, { syncRunId });
         return {
           ok: true,
@@ -294,6 +295,7 @@ export const createDirectConfigSyncController = ({
           agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
           providerCredentials: plan.providerCredentials ? { bytes: plan.providerCredentials.bytes } : null,
           plan,
+          ...(magpieResult?.magpieWarnings?.length ? { magpieWarnings: magpieResult.magpieWarnings } : {}),
         };
       }
 

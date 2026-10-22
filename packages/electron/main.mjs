@@ -4766,9 +4766,10 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         if (!plan.providerCredentials) throw new Error('Provider credentials were not selected');
         await getLocalSyncExecutor().importCredentials(credentialPayload);
       }
+      let magpieResult;
       if (magpiePayload) {
         if (!plan.magpie) throw new Error('Magpie was not selected');
-        await getLocalSyncExecutor().importMagpie(magpiePayload);
+        magpieResult = await getLocalSyncExecutor().importMagpie(magpiePayload);
       }
       await finalizeLocalSyncDestination(home, { syncRunId });
       return {
@@ -4779,6 +4780,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         totalBytes: Number(plan.totalBytes) || 0,
         agentsRoot: plan.agentsRoot ? { fileCount: Number(plan.agentsRoot.fileCount) || 0 } : null,
         providerCredentials: plan.providerCredentials ? { bytes: Number(plan.providerCredentials.bytes) || 0 } : null,
+        ...(magpieResult?.magpieWarnings?.length ? { magpieWarnings: magpieResult.magpieWarnings } : {}),
       };
     }
 

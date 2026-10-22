@@ -208,7 +208,7 @@ type RelayExecutor = {
   prepare: (plan: object, syncRunId: string) => Promise<void>;
   putTar: (kind: 'config' | 'agents' | 'credentials' | 'magpie', payload: Uint8Array, syncRunId: string) => Promise<void>;
   download: (kind: 'config' | 'agents' | 'credentials' | 'magpie') => Promise<Uint8Array>;
-  finalize: (syncRunId: string) => Promise<void>;
+  finalize: (syncRunId: string) => Promise<string[]>;
   abort: (syncRunId: string) => Promise<void>;
   close: () => void;
 };
@@ -307,7 +307,9 @@ const createRelayHttpExecutor = (
       return new Uint8Array(await response.arrayBuffer());
     },
     async finalize(syncRunId) {
-      await jsonFetch('POST', '/api/openchamber/config-sync/finalize', { syncRunId });
+      const result = await jsonFetch('POST', '/api/openchamber/config-sync/finalize', { syncRunId });
+      return Array.isArray(result.magpieWarnings)
+        ? result.magpieWarnings.filter((entry): entry is string => entry === 'sign_in_required' || entry === 'agent_settings_skipped') : [];
     },
     async abort(syncRunId) {
       await jsonFetch('POST', '/api/openchamber/config-sync/abort', { syncRunId }).catch(() => undefined);
@@ -508,6 +510,7 @@ export const applyRelayConfigSync = async (
       if (!packed) throw new Error('Relay push local pack failed');
 
       await executor.prepare(plan, syncRunId);
+      let magpieWarnings: string[] = [];
       try {
         if (packed.configTar && packed.configTar.byteLength > 0) {
           await executor.putTar('config', packed.configTar, syncRunId);
@@ -522,7 +525,7 @@ export const applyRelayConfigSync = async (
           if (!packed.magpiePayload?.byteLength) throw new Error('Magpie transfer incomplete');
           await executor.putTar('magpie', packed.magpiePayload, syncRunId);
         }
-        await executor.finalize(syncRunId);
+        magpieWarnings = await executor.finalize(syncRunId);
       } catch (error) {
         await executor.abort(syncRunId);
         throw error;
@@ -536,6 +539,7 @@ export const applyRelayConfigSync = async (
         totalBytes: plan.totalBytes,
         agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
         providerCredentials: plan.providerCredentials ? { bytes: plan.providerCredentials.bytes } : null,
+        ...(magpieWarnings.length ? { magpieWarnings } : {}),
         plan,
       };
     } finally {

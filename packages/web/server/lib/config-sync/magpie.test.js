@@ -100,6 +100,18 @@ describe('Magpie discovery and native transfer', () => {
     expect((await fs.readdir(home)).filter((name) => name.startsWith('openchamber-magpie-'))).toEqual([]);
   });
 
+  it('reports excluded sign-ins as a warning after a successful native restore', async () => {
+    const { home, options } = await machine();
+    await write(path.join(home, '.local', 'bin', 'magpie'), 'fixture-cli');
+    const run = async (_binary, args) => args[0] === '--version' ? 'magpie 0.1.1319'
+      : "restored providers: 0 added, 8 replaced\nThe backup's settings use these, not signed in on this computer (a backup carries settings, not sign-ins; to use one here: magpie accounts add <id>): private-fixture-account\n";
+    const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v1', passphrase: 'a'.repeat(64),
+      backup: Buffer.from('{"format":"magpie-backup"}').toString('base64') }));
+    await expect(createMagpieSync({ ...options, run }).import(payload)).resolves.toEqual({
+      ok: true, magpieWarnings: ['sign_in_required'],
+    });
+  });
+
   it('requires current source discovery and supports a Magpie-only plan', async () => {
     const { home } = await machine();
     const selections = { fileGroups: [], singleFiles: [], directories: [], agentsRoot: false, providerCredentials: false, magpie: true };
@@ -107,8 +119,9 @@ describe('Magpie discovery and native transfer', () => {
     const plan = planOpenCodeConfigSync(home, { selections, magpie: { available: true, installed: true } });
     expect(plan.magpie).toEqual({ bytes: 0 });
     const received = [];
-    const executor = { prepare: vi.fn(), putTar: async (value) => received.push(value), finalize: vi.fn() };
-    await applyConfigSyncPlan({ plan, executor, syncRunId: 'test', sourceHomedir: home, collectMagpie: async () => Buffer.from('fixture') });
+    const executor = { prepare: vi.fn(), putTar: async (value) => received.push(value), finalize: vi.fn(async () => ({ magpieWarnings: ['sign_in_required'] })) };
+    const result = await applyConfigSyncPlan({ plan, executor, syncRunId: 'test', sourceHomedir: home, collectMagpie: async () => Buffer.from('fixture') });
+    expect(result.magpieWarnings).toEqual(['sign_in_required']);
     expect(received).toEqual([{ kind: 'magpie', payload: Buffer.from('fixture') }]);
     const pull = planOpenCodeConfigSyncFromInventory({ files: [], directories: [], magpie: { available: true } }, { selections });
     expect(pull.magpieAvailable).toBe(true);
@@ -141,9 +154,11 @@ describe('Magpie discovery and native transfer', () => {
     }
     await write(path.join(source.home, '.config', 'magpie', 'providers.json'), JSON.stringify({ providers: [
       { id: 'sync-fixture', name: 'Sync fixture', chat: 'https://provider.invalid/v1', key: 'fixture-not-a-real-key' },
+      { id: 'fixture-subscription' },
     ] }));
     const payload = await createMagpieSync(source.options).download();
-    await createMagpieSync(target.options).import(payload);
+    const receipt = await createMagpieSync(target.options).import(payload);
+    expect(receipt).toEqual({ ok: true, magpieWarnings: ['sign_in_required'] });
     const restored = JSON.parse(await fs.readFile(path.join(target.home, '.config', 'magpie', 'providers.json'), 'utf8'));
     expect(restored.providers).toContainEqual(expect.objectContaining({ id: 'sync-fixture', key: 'fixture-not-a-real-key' }));
   }, 60_000);

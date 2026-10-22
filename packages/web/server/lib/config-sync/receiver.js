@@ -195,7 +195,8 @@ export const createConfigSyncReceiver = (deps = {}) => {
       await credentials.import(buffer);
     } else if (kind === 'magpie') {
       if (!flight.plan?.magpie) throw new Error('Magpie was not selected');
-      await magpie.import(buffer);
+      const result = await magpie.import(buffer);
+      flight.magpieWarnings = result.magpieWarnings;
     } else {
       const error = new Error(`Unsupported put kind: ${String(kind)}`);
       error.code = 'sync_invalid_kind';
@@ -248,6 +249,7 @@ export const createConfigSyncReceiver = (deps = {}) => {
       syncRunId: flight.syncRunId,
       kinds: [...flight.kinds],
       endedAt: new Date().toISOString(),
+      ...(flight.magpieWarnings?.length ? { magpieWarnings: flight.magpieWarnings } : {}),
     };
     clearInflight(syncRunId);
     return receipt;

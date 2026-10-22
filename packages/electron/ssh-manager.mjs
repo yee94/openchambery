@@ -2037,6 +2037,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
    * @returns {import('@openchambery/web/server/lib/config-sync/contract.js').TargetExecutor}
    */
   createSshTargetExecutor(session) {
+    let magpieWarnings;
     const credentialExecutor = () => this.createSshCredentialExecutor(session);
     const timeoutSec = session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC;
     const ensureBuffer = async (payload) => {
@@ -2106,7 +2107,8 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
           return;
         }
         if (kind === 'magpie') {
-          await credentialExecutor().importMagpie(buffer);
+          const result = await credentialExecutor().importMagpie(buffer);
+          magpieWarnings = result.magpieWarnings;
           return;
         }
         throw new Error(`Unsupported putTar kind: ${String(kind)}`);
@@ -2123,7 +2125,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
         if (!String(stdout || '').includes('SYNC_DONE')) {
           throw new Error('Remote sync finalize did not report SYNC_DONE');
         }
-        return { ok: true };
+        return { ok: true, ...(magpieWarnings?.length ? { magpieWarnings } : {}) };
       },
     };
   }
@@ -2384,7 +2386,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
         if (credentialPayload && credentialPayload.length > 0) {
           await this.getLocalSyncExecutor().importCredentials(credentialPayload);
         }
-        if (magpiePayload) await this.getLocalSyncExecutor().importMagpie(magpiePayload);
+        const magpieResult = magpiePayload ? await this.getLocalSyncExecutor().importMagpie(magpiePayload) : null;
         await finalizeLocalSyncDestination(home, { syncRunId });
         this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config pull completed');
         return {
@@ -2395,6 +2397,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
           totalBytes: plan.totalBytes,
           agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
           providerCredentials: plan.providerCredentials ? { bytes: plan.providerCredentials.bytes } : null,
+          ...(magpieResult?.magpieWarnings?.length ? { magpieWarnings: magpieResult.magpieWarnings } : {}),
           plan,
         };
       }

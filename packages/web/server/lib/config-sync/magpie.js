@@ -194,10 +194,13 @@ export function createMagpieSync({
         let output;
         try { output = await run(binary, ['restore', file], { env, input: `${decoded.passphrase}\n` }); }
         catch { throw new Error('Magpie restore failed; some configuration may already have been applied. Retry to finish.'); }
-        if (/Couldn't add the plugin|Needs a key|not signed in on this computer|Left as they are|Library:.*couldn't/i.test(output)) {
-          throw new Error('Magpie restore partially completed; check missing sign-ins, plugins or agent settings in Magpie.');
-        }
-        return { ok: true };
+        if (/Couldn't add the plugin/i.test(output)) throw new Error('Magpie restore partially completed: plugin installation failed. Check the target Magpie plugins.');
+        if (/Library:.*couldn't/i.test(output)) throw new Error('Magpie restore partially completed: library application failed. Check the target Magpie library.');
+        if (/Needs a key/i.test(output)) throw new Error('Magpie restore partially completed: some providers still require API keys.');
+        const magpieWarnings = [];
+        if (/not signed in on this computer/i.test(output)) magpieWarnings.push('sign_in_required');
+        if (/Left as they are/i.test(output)) magpieWarnings.push('agent_settings_skipped');
+        return { ok: true, ...(magpieWarnings.length ? { magpieWarnings } : {}) };
       });
     }),
   };

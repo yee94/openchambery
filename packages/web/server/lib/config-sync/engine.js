@@ -77,7 +77,7 @@ export const applyConfigSyncPlan = async ({
   }
   if (magpiePayload) await executor.putTar({ kind: 'magpie', payload: magpiePayload });
 
-  await executor.finalize(plan, { syncRunId });
+  const receipt = await executor.finalize(plan, { syncRunId });
 
   return {
     ok: true,
@@ -88,6 +88,7 @@ export const applyConfigSyncPlan = async ({
     agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
     providerCredentials: plan.providerCredentials ? { bytes: plan.providerCredentials.bytes } : null,
     plan,
+    ...(receipt?.magpieWarnings?.length ? { magpieWarnings: receipt.magpieWarnings } : {}),
   };
 };
 
