@@ -2611,7 +2611,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                             {isTaskTool && taskRowChrome.showAvatar ? (
                                 <AgentAvatar
                                     // 同一 Agent 在工具行、活动摘要和状态列使用相同的名字种子。
-                                    name={taskAgentName || 'subagent'}
+                                    name={taskSessionId || part.id}
                                     size={14}
                                     label={taskTitle}
                                 />

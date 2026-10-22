@@ -39,7 +39,7 @@ import { useSessionSurface } from '../../SessionSurfaceContext';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useI18n } from '@/lib/i18n';
 import { AgentAvatar } from '../../AgentAvatar';
-import { isTaskToolName, resolveTaskAgentName } from './taskToolModel';
+import { isTaskToolName, readTaskToolSessionId } from './taskToolModel';
 import { formatActivityDuration } from './formatActivityDuration';
 import { Button } from '@/components/ui/button';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -423,7 +423,7 @@ type AggregatedRow =
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
 
-/** Collect Agent name seeds so header faces match task rows and work status. */
+/** Collect task identity seeds so header faces match task rows and work status. */
 const getTaskAvatarSeeds = (parts: TurnActivityPart[]): { active: string[]; all: string[] } => {
     const active: string[] = [];
     const all: string[] = [];
@@ -440,10 +440,10 @@ const getTaskAvatarSeeds = (parts: TurnActivityPart[]): { active: string[]; all:
         if (!state || typeof state !== 'object') continue;
         const stateRecord = state as Record<string, unknown>;
 
-        const agent = resolveTaskAgentName(stateRecord.input, stateRecord.metadata, part.metadata) || 'subagent';
-        all.push(agent);
+        const seed = readTaskToolSessionId(part) || taskId;
+        all.push(seed);
         if (stateRecord.status === 'pending' || stateRecord.status === 'running') {
-            active.push(agent);
+            active.push(seed);
         }
     }
 

@@ -1,8 +1,7 @@
 import type { Part } from '@/lib/opencode/v2-types';
 import {
   isTaskToolName,
-  readTaskSessionIdFromOutput,
-  readTaskSessionIdFromRecord,
+  readTaskToolSessionId,
   resolveTaskAgentName,
 } from '@/components/chat/message/parts/taskToolModel';
 
@@ -41,11 +40,6 @@ const readAgentLabel = (...sources: unknown[]): string => {
   return name ? name.charAt(0).toUpperCase() + name.slice(1) : '';
 };
 
-const readOptionalSessionId = (value: unknown): string | undefined => {
-  const sessionID = readTaskSessionIdFromRecord(value);
-  return sessionID || undefined;
-};
-
 const readDescription = (...sources: unknown[]): string => {
   for (const source of sources) {
     if (!source || typeof source !== 'object') continue;
@@ -55,20 +49,6 @@ const readDescription = (...sources: unknown[]): string => {
     if (trimmed) return trimmed;
   }
   return '';
-};
-
-/**
- * Same join as the transcript task row. Live `state.metadata` wins; part-level
- * metadata is only an older fallback, so a stale part id cannot merge the row
- * onto a different session than the one the tool row opens.
- */
-const readToolSessionId = (part: Extract<Part, { type: 'tool' }>): string | undefined => {
-  const state = part.state;
-  return readOptionalSessionId(state?.metadata)
-    ?? readOptionalSessionId(state)
-    ?? readOptionalSessionId(state?.input)
-    ?? readOptionalSessionId(part.metadata)
-    ?? readTaskSessionIdFromOutput(typeof state?.output === 'string' ? state.output : undefined);
 };
 
 const isRunningStatus = (status: unknown): boolean => status === 'pending' || status === 'running';
@@ -94,7 +74,7 @@ export const projectTranscriptSubagents = (data: {
         const state = part.state;
         faces.push({
           id: part.id,
-          sessionID: readToolSessionId(part),
+          sessionID: readTaskToolSessionId(part),
           label: readAgentLabel(state?.input, state?.metadata, part.metadata),
           description: readDescription(state?.input, part.metadata, state?.metadata),
           running: isRunningStatus(state?.status),
@@ -154,7 +134,7 @@ const displayLabel = (draft: SubagentDraft): string => draft.childTitle || draft
 const toFace = (draft: SubagentDraft): WorkStatusSubagent => ({
   key: draft.key,
   sessionID: draft.sessionID,
-  seed: draft.agent.trim().toLowerCase() || 'subagent',
+  seed: draft.key,
   label: displayLabel(draft),
   phase: draft.working ? 'working' : 'done',
 });

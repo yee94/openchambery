@@ -108,7 +108,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - While a task is active, the title shimmers with `--tools-title`. The following description
     line uses the same thinking-label tokens as `WorkingPlaceholder`
     (`--oc-text-shimmer-base: var(--surface-muted-foreground)`, foreground highlight). Subagent
-    names need not appear in the main agent picker — the identicon only seeds from the name string.
+    names need not appear in the main agent picker. Task avatars use the child session ID
+    (tool part ID until assigned), matching activity-header and work-status faces.
   - A successful session-status snapshot stops stale task loading when the child session is idle
     or when the task started before the snapshot request. Tasks created after that boundary wait
     for live status. The original tool part remains unchanged for history and diagnostics.

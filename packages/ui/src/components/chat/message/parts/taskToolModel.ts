@@ -183,6 +183,20 @@ export const readTaskSessionIdFromOutput = (output: string | undefined): string 
     return normalizeSessionIdCandidate(readTaskTagSessionIdFromOutput(output));
 };
 
+/**
+ * Same join as the transcript task row. Live `state.metadata` wins; part-level
+ * metadata is only an older fallback, so a stale part id cannot merge the row
+ * onto a different session than the one the tool row opens.
+ */
+export const readTaskToolSessionId = (part: Extract<Part, { type: 'tool' }>): string | undefined => {
+    const state = part.state;
+    return readTaskSessionIdFromRecord(state?.metadata)
+        ?? readTaskSessionIdFromRecord(state)
+        ?? readTaskSessionIdFromRecord(state?.input)
+        ?? readTaskSessionIdFromRecord(part.metadata)
+        ?? readTaskSessionIdFromOutput(typeof state?.output === 'string' ? state.output : undefined);
+};
+
 export const readTaskStatusFromRecord = (value: unknown): string | undefined => {
     if (!value || typeof value !== 'object') return undefined;
     const record = value as Record<string, unknown>;

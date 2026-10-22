@@ -45,13 +45,13 @@ faces stay in the disclosure. Hover and accessible labels identify each face. Th
 reads the transcript already loaded for the session and the displayed
 directory's `session_status`. It does not fetch child messages.
 
-Avatar artwork is keyed separately from row identity: task rows, activity-header
-faces, and work-status faces use the same trimmed, case-normalized Agent name.
-They share `resolveTaskAgentName` precedence (input, live metadata, legacy
-metadata). Session IDs continue to own row merging/navigation, and titles only
-own labels. Children without an Agent name use the `subagent` face until the
-loaded transcript supplies identity; this does not trigger a message fetch.
-Avatar color uses that same Agent name through `getAgentColor`, matching badges.
+Task rows, activity-header faces, and work-status faces seed avatar artwork and
+color with the task's child session ID, not its Agent name. `readTaskToolSessionId`
+shares the transcript row's authoritative metadata precedence and legacy output
+fallback. Until the session ID arrives, each task uses its own tool part ID.
+Unlinked child sessions use their own session ID immediately, so later transcript
+hydration, continuation, or renaming preserves their face. Titles and Agent names
+only own labels; no extra message fetch is needed.
 
 Changes uses a vertical plus/minus glyph and opens the Git sidebar. The branch
 and worktree copy buttons, and the changes row, use the hand cursor. The
