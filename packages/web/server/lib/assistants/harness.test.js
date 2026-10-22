@@ -613,7 +613,7 @@ describe('runContactTurn', () => {
       await expect(runContactTurn({
         assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
         history: [], userText: '请写入笔记。', skillHomeDir: path.join(workspace, 'home'), createChatCompletion, onBubbleDelta,
-      })).rejects.toThrow(/protocol/i)
+      })).rejects.toThrow('Assistant response protocol failed after two corrections; the task was not confirmed complete. Reason: A workspace response needs an actual tool call or an explicit final declaration.')
       expect(createChatCompletion).toHaveBeenCalledTimes(3)
       expect(onBubbleDelta).not.toHaveBeenCalled()
     } finally {

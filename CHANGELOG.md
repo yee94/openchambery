@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.7] - 2026-10-22
+
+### 改进
+
+- 助手响应协议连续纠正失败时，错误提示包含最后一次校验原因，便于定位问题。
+
 ## [2.1.8-beta.6] - 2026-10-22
 
 ### 修复
