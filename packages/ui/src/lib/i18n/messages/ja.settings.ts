@@ -1300,6 +1300,8 @@ export const settingsDict = {
   'settings.remoteInstances.page.sync.section.directories': 'ディレクトリ',
   'settings.remoteInstances.page.sync.section.providerCredentials': 'プロバイダーキー',
   'settings.remoteInstances.page.sync.section.magpie': 'Magpie 設定と API キー',
+  'settings.remoteInstances.page.sync.magpie.signInRequired': 'Magpie 設定を同期しました。サブスクリプションとプラグインのアカウントは同期先でログインが必要です。ログイン情報はバックアップに含まれません。',
+  'settings.remoteInstances.page.sync.magpie.agentsSkipped': '同期先にエージェントがないか、モデルが利用できないため、一部の Magpie エージェント設定をスキップしました。',
   'settings.remoteInstances.page.sync.magpie.description': 'Magpie のバックアップと復元で設定、API キー、プロファイル、エージェントモデル、ライブラリを同期します。CLI がなければ自動インストールします。サブスクリプションとプラグインのログイン情報は含みません。',
   'settings.remoteInstances.page.sync.section.agentsRoot': 'エージェントスキル（~/.agents）',
   'settings.remoteInstances.page.sync.section.agentsRootCount': '{count} ファイル',

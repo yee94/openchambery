@@ -52,7 +52,7 @@ describe('config-sync HTTP routes', () => {
     const { app } = await createApp(undefined, {
       inventory: async () => ({ available: true, installed: false }),
       download: async () => payload,
-      import: async (buffer) => { received.push(buffer); return { ok: true }; },
+      import: async (buffer) => { received.push(buffer); return { ok: true, magpieWarnings: ['sign_in_required'] }; },
     });
     const probe = await request(app).post('/api/openchamber/config-sync/probe').send({ plan: {} });
     expect(probe.body.inventory.magpie).toEqual({ available: true, installed: false });
@@ -67,7 +67,8 @@ describe('config-sync HTTP routes', () => {
     await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'magpie-run' }).expect(500);
     await request(app).put('/api/openchamber/config-sync/put/magpie?syncRunId=magpie-run')
       .set('Content-Type', 'application/octet-stream').send(payload).expect(200);
-    await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'magpie-run' }).expect(200);
+    const receipt = await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'magpie-run' }).expect(200);
+    expect(receipt.body.magpieWarnings).toEqual(['sign_in_required']);
     expect(received).toEqual([payload, payload]);
   });
 

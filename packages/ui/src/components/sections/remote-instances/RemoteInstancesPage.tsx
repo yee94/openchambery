@@ -412,7 +412,15 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       if (!result) {
         throw new Error('Sync bridge unavailable');
       }
-      toast.success(t('settings.remoteInstances.page.sync.toast.success'));
+      const notices = [
+        ...(result.magpieWarnings?.includes('sign_in_required') ? [t('settings.remoteInstances.page.sync.magpie.signInRequired')] : []),
+        ...(result.magpieWarnings?.includes('agent_settings_skipped') ? [t('settings.remoteInstances.page.sync.magpie.agentsSkipped')] : []),
+      ];
+      if (notices.length) {
+        toast.warning(t('settings.remoteInstances.page.sync.toast.success'), { description: notices.join('\n') });
+      } else {
+        toast.success(t('settings.remoteInstances.page.sync.toast.success'));
+      }
       onOpenChange(false);
     } catch (error) {
       console.error('[remote-instances] config sync apply failed', error);

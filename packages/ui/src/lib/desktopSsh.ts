@@ -525,6 +525,7 @@ export type DesktopSshSyncRunRecord = {
 
 export type DesktopSshConfigSyncResult = {
   ok: true;
+  magpieWarnings?: string[];
   files: number;
   directories: number;
   deletes: number;
@@ -687,7 +688,9 @@ const parseConfigSyncResult = (value: unknown): DesktopSshConfigSyncResult | nul
   const providerCredentials = parseConfigSyncProviderCredentials(value.providerCredentials);
   if (value.providerCredentials !== null && providerCredentials === null) return null;
 
-  return { ok: true, files, directories, deletes, totalBytes, agentsRoot, providerCredentials };
+  const magpieWarnings = asStringArray(value.magpieWarnings).filter((entry) => entry === 'sign_in_required' || entry === 'agent_settings_skipped');
+  return { ok: true, files, directories, deletes, totalBytes, agentsRoot, providerCredentials,
+    ...(magpieWarnings.length ? { magpieWarnings } : {}) };
 };
 
 export const desktopSshSyncOpencodeConfigLocalScan = async (

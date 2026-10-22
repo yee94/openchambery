@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.3] - 2026-10-22
+
+### 改进
+
+- Magpie 配置恢复遇到未登录或跳过智能体设置时不再整体失败，改为在同步回执里带出提示项，界面可以按需提示；真正影响结果的插件、库和密钥问题仍明确报错。
+
 ## [2.1.8-beta.2] - 2026-10-22
 
 ### 改进

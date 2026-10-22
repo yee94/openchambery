@@ -1267,6 +1267,8 @@ export const settingsDict = {
   'settings.remoteInstances.page.sync.section.directories': '디렉터리',
   'settings.remoteInstances.page.sync.section.providerCredentials': '공급자 키',
   'settings.remoteInstances.page.sync.section.magpie': 'Magpie 설정 및 API 키',
+  'settings.remoteInstances.page.sync.magpie.signInRequired': 'Magpie 설정이 동기화되었습니다. 구독 및 플러그인 계정은 대상에서 로그인해야 합니다. 로그인 자격 증명은 백업에 포함되지 않습니다.',
+  'settings.remoteInstances.page.sync.magpie.agentsSkipped': '대상에 에이전트가 설치되지 않았거나 모델을 사용할 수 없어 일부 Magpie 에이전트 설정을 건너뛰었습니다.',
   'settings.remoteInstances.page.sync.magpie.description': 'Magpie 백업과 복원으로 설정, API 키, 프로필, 에이전트 모델 및 라이브러리를 동기화합니다. CLI가 없으면 자동 설치합니다. 구독 및 플러그인 로그인 자격 증명은 포함되지 않습니다.',
   'settings.remoteInstances.page.sync.section.agentsRoot': '에이전트 스킬(~/.agents)',
   'settings.remoteInstances.page.sync.section.agentsRootCount': '파일 {count}개',

@@ -1267,6 +1267,8 @@ export const settingsDict = {
   "settings.remoteInstances.page.sync.section.directories": "Directorios",
   "settings.remoteInstances.page.sync.section.providerCredentials": "Claves del proveedor",
   "settings.remoteInstances.page.sync.section.magpie": "Configuración de Magpie y claves API",
+  "settings.remoteInstances.page.sync.magpie.signInRequired": "La configuración de Magpie está sincronizada. Las cuentas de suscripciones y plugins requieren iniciar sesión en el destino; sus credenciales de acceso no se incluyen en la copia.",
+  "settings.remoteInstances.page.sync.magpie.agentsSkipped": "Se omitieron algunos ajustes de agentes de Magpie porque los agentes o modelos no están disponibles en el destino.",
   "settings.remoteInstances.page.sync.magpie.description": "Sincroniza configuración, claves API, perfiles, modelos de agentes y biblioteca mediante la copia y restauración de Magpie. Instala el CLI si falta. No incluye los inicios de sesión de suscripciones ni plugins.",
   "settings.remoteInstances.page.sync.section.agentsRoot": "Habilidades del agente (~/.agents)",
   "settings.remoteInstances.page.sync.section.agentsRootCount": "{count} archivos",

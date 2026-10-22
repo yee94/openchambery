@@ -1156,6 +1156,8 @@
   'settings.remoteInstances.page.sync.section.directories': '目錄',
   'settings.remoteInstances.page.sync.section.providerCredentials': '供應商金鑰',
   'settings.remoteInstances.page.sync.section.magpie': 'Magpie 設定與 API 金鑰',
+  'settings.remoteInstances.page.sync.magpie.signInRequired': 'Magpie 設定已同步。訂閱與外掛帳戶需要在目標端登入，原生備份不包含這些登入憑證。',
+  'settings.remoteInstances.page.sync.magpie.agentsSkipped': '部分 Magpie Agent 設定已略過：目標端未安裝對應 Agent，或相關模型暫不可用。',
   'settings.remoteInstances.page.sync.magpie.description': '透過 Magpie 備份／還原同步設定、API 金鑰、方案、Agent 模型和技能庫。缺少 CLI 時自動安裝。不包含訂閱與外掛登入憑證。',
   'settings.remoteInstances.page.sync.section.agentsRoot': 'Agent 技能（~/.agents）',
   'settings.remoteInstances.page.sync.section.agentsRootCount': '{count} 個檔案',
