@@ -14,7 +14,7 @@ import { loadDesktopBackend } from './desktop-backend.mjs';
 import { DesktopInstaller } from './desktop-installer.mjs';
 import electronUpdater from 'electron-updater';
 import { ElectronSshManager, planOpenCodeConfigSync } from './ssh-manager.mjs';
-import { createDirectConfigSyncController } from './direct-config-sync.mjs';
+import { createDirectConfigSyncController, createDirectTargetExecutor } from './direct-config-sync.mjs';
 import { probeHostAuthentication } from './host-auth-probe.mjs';
 import { createSettingsStore } from './settings-store.mjs';
 import { createTrayController } from './tray.mjs';
@@ -300,31 +300,6 @@ const readAppMetadata = () => {
 
 const APP_METADATA = readAppMetadata();
 const APP_VERSION = APP_METADATA.version;
-const readPinnedOpenCodeCliVersion = () => {
-  const envOverride = typeof process.env.OPENCHAMBER_OPENCODE2_VERSION === 'string'
-    ? process.env.OPENCHAMBER_OPENCODE2_VERSION.trim()
-    : typeof process.env.OPENCHAMBER_OPENCODE_CLI_VERSION === 'string'
-      ? process.env.OPENCHAMBER_OPENCODE_CLI_VERSION.trim()
-      : '';
-  if (envOverride) return envOverride;
-
-  const candidates = [
-    path.resolve(__dirname, '..', 'web', 'server', 'lib', 'opencode', 'opencode2-pin.js'),
-    path.resolve(__dirname, '..', '..', 'packages', 'web', 'server', 'lib', 'opencode', 'opencode2-pin.js'),
-    path.join(app.getAppPath?.() || '', 'node_modules', '@openchambery', 'web', 'server', 'lib', 'opencode', 'opencode2-pin.js'),
-  ];
-  for (const candidate of candidates) {
-    try {
-      // Sync read of the pin module source; avoid importing ESM at top-level in CJS main.
-      const source = fs.readFileSync(candidate, 'utf8');
-      const match = source.match(/PINNED_OPENCODE2_VERSION\s*=\s*['"]([^'"]+)['"]/);
-      if (match?.[1]) return match[1];
-    } catch {
-    }
-  }
-  return null;
-};
-const OPENCODE_CLI_VERSION = readPinnedOpenCodeCliVersion();
 
 const DEFAULT_DESKTOP_PORT = 57123;
 const LOOPBACK_BIND_HOST = '127.0.0.1';
@@ -657,16 +632,21 @@ const settingsFilePath = () => {
 const settingsStore = createSettingsStore({ resolveFilePath: settingsFilePath });
 const readSettingsRoot = () => settingsStore.readRoot();
 const mutateSettingsRoot = (mutator) => settingsStore.mutate(mutator);
+const getLocalSyncExecutor = () => createDirectTargetExecutor({ host: {
+  apiUrl: state.sidecarUrl || state.localOrigin,
+  clientToken: readDesktopLocalClientToken(),
+} });
 
 const sshManager = new ElectronSshManager({
   settingsFilePath: settingsFilePath(),
   settingsStore,
   appVersion: APP_VERSION,
-  opencodeCliVersion: OPENCODE_CLI_VERSION,
+  getLocalSyncExecutor,
   emit: (event, detail) => emitToAllWindows(event, detail),
 });
 
 const directConfigSync = createDirectConfigSyncController({
+  getLocalExecutor: getLocalSyncExecutor,
   syncRunStore: sshManager.syncRunStore,
   runExclusiveForTarget: (targetId, stage, work) => sshManager.runExclusiveForTarget(targetId, stage, work),
 });
@@ -4673,11 +4653,12 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         ...(args.selections && typeof args.selections === 'object' ? { selections: args.selections } : {}),
       };
       if (args.stage === 'local') {
-        // Inventory-only: include local auth.json presence. Preview/apply still
-        // omit credentials unless this target has an explicit grant.
+        // Only fetch credential metadata when the user selects provider keys.
         return {
           plan: planOpenCodeConfigSync(os.homedir(), {
-            includeAuthFile: true,
+            magpie: await getLocalSyncExecutor().magpieInventory(),
+            providerCredentials: syncOptions.selections?.providerCredentials === true ? await getLocalSyncExecutor().credentialInventory() : null,
+            includeProviderCredentials: true,
             ...(syncOptions.selections ? { selections: syncOptions.selections } : {}),
           }),
           selectionShape: {
@@ -4750,16 +4731,15 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const agentsTar = plan.agentsRoot
         ? await collectLocalTarBuffer(['-h', '-czf', '-', '-C', home, '.agents'], { windowsHide })
         : null;
-      const authTar = plan.authFile
-        ? await collectLocalTarBuffer(
-          ['-h', '-czf', '-', '-C', path.join(home, '.local', 'share', 'opencode'), 'auth.json'],
-          { windowsHide },
-        )
+      const credentialPayload = plan.providerCredentials
+        ? await getLocalSyncExecutor().download('credentials')
         : null;
+      const magpiePayload = plan.magpie ? await getLocalSyncExecutor().download('magpie') : null;
       return {
         configTar,
         agentsTar,
-        authTar,
+        credentialPayload,
+        magpiePayload,
       };
     }
 
@@ -4773,15 +4753,22 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         if (!(value instanceof Uint8Array) || value.byteLength === 0) return null;
         return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
       };
-      await prepareLocalSyncDestination(home, plan, { syncRunId });
       const configTar = toBuffer(args.configTar);
       const agentsTar = toBuffer(args.agentsTar);
-      const authTar = toBuffer(args.authTar);
+      const credentialPayload = toBuffer(args.credentialPayload);
+      const magpiePayload = toBuffer(args.magpiePayload);
+      if (plan.magpie && !magpiePayload) throw new Error('Magpie transfer incomplete');
+      if (plan.providerCredentials && !credentialPayload) throw new Error('Provider credentials transfer incomplete');
+      await prepareLocalSyncDestination(home, plan, { syncRunId });
       if (configTar) await extractTarGzBuffer(configTar, path.join(home, '.config', 'opencode'));
       if (agentsTar) await extractTarGzBuffer(agentsTar, home);
-      if (authTar) {
-        await fsp.mkdir(path.join(home, '.local', 'share', 'opencode'), { recursive: true });
-        await extractTarGzBuffer(authTar, path.join(home, '.local', 'share', 'opencode'));
+      if (credentialPayload) {
+        if (!plan.providerCredentials) throw new Error('Provider credentials were not selected');
+        await getLocalSyncExecutor().importCredentials(credentialPayload);
+      }
+      if (magpiePayload) {
+        if (!plan.magpie) throw new Error('Magpie was not selected');
+        await getLocalSyncExecutor().importMagpie(magpiePayload);
       }
       await finalizeLocalSyncDestination(home, { syncRunId });
       return {
@@ -4791,7 +4778,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         deletes: Array.isArray(plan.deletes) ? plan.deletes.length : 0,
         totalBytes: Number(plan.totalBytes) || 0,
         agentsRoot: plan.agentsRoot ? { fileCount: Number(plan.agentsRoot.fileCount) || 0 } : null,
-        authFile: plan.authFile ? { bytes: Number(plan.authFile.bytes) || 0 } : null,
+        providerCredentials: plan.providerCredentials ? { bytes: Number(plan.providerCredentials.bytes) || 0 } : null,
       };
     }
 

@@ -27,7 +27,7 @@ afterEach(async () => {
   }
 });
 
-const createApp = async () => {
+const createApp = async (credentials, magpie) => {
   const home = await makeTempDir();
   const configDir = path.join(home, '.config', 'opencode');
   await fsp.mkdir(configDir, { recursive: true });
@@ -36,6 +36,8 @@ const createApp = async () => {
 
   const receiver = createConfigSyncReceiver({
     homedir: () => home,
+    ...(credentials ? { credentials } : {}),
+    ...(magpie ? { magpie } : {}),
   });
 
   const app = express();
@@ -44,6 +46,62 @@ const createApp = async () => {
 };
 
 describe('config-sync HTTP routes', () => {
+  it('discovers Magpie without import and requires a selected transfer before finalizing', async () => {
+    const payload = Buffer.from('fixture-magpie-payload');
+    const received = [];
+    const { app } = await createApp(undefined, {
+      inventory: async () => ({ available: true, installed: false }),
+      download: async () => payload,
+      import: async (buffer) => { received.push(buffer); return { ok: true }; },
+    });
+    const probe = await request(app).post('/api/openchamber/config-sync/probe').send({ plan: {} });
+    expect(probe.body.inventory.magpie).toEqual({ available: true, installed: false });
+    expect(received).toEqual([]);
+    const download = await request(app).get('/api/openchamber/config-sync/download/magpie').expect(200);
+    expect(download.headers['cache-control']).toBe('no-store');
+    expect(download.body).toEqual(payload);
+    await request(app).put('/api/openchamber/config-sync/magpie')
+      .set('Content-Type', 'application/octet-stream').send(payload).expect(200);
+    const plan = { files: [], directories: [], deletes: [], magpie: { bytes: 0 } };
+    await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'magpie-run' }).expect(200);
+    await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'magpie-run' }).expect(500);
+    await request(app).put('/api/openchamber/config-sync/put/magpie?syncRunId=magpie-run')
+      .set('Content-Type', 'application/octet-stream').send(payload).expect(200);
+    await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'magpie-run' }).expect(200);
+    expect(received).toEqual([payload, payload]);
+  });
+
+  it('transfers credential bytes through HTTP without putting values in inventory or filesystem backups', async () => {
+    const payload = Buffer.from(JSON.stringify({ format: 'opencode-credentials-v1', entries: [{ fixture: 'private-value' }] }));
+    const received = [];
+    const { app, home } = await createApp({
+      inventory: async () => ({ bytes: payload.length }),
+      download: async () => payload,
+      import: async (buffer) => { received.push(buffer); return { ok: true }; },
+    });
+    const plan = { direction: 'push', files: [], directories: [], deletes: [], providerCredentials: { bytes: payload.length } };
+    const inventory = await request(app).get('/api/openchamber/config-sync/credentials/inventory');
+    expect(inventory.body).toEqual({ providerCredentials: { bytes: payload.length } });
+    const download = await request(app).get('/api/openchamber/config-sync/download/credentials');
+    expect(download.headers['cache-control']).toBe('no-store');
+    expect(download.body).toEqual(payload);
+    await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'credential-run' }).expect(200);
+    await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'credential-run' }).expect(500);
+    await request(app).put('/api/openchamber/config-sync/put/credentials?syncRunId=credential-run')
+      .set('Content-Type', 'application/octet-stream').send(download.body).expect(200);
+    await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'credential-run' }).expect(200);
+    await request(app).put('/api/openchamber/config-sync/credentials')
+      .set('Content-Type', 'application/octet-stream').send(payload).expect(200);
+    expect(received).toEqual([payload, payload]);
+    await expect(fsp.stat(path.join(home, '.openchamber.sync-backup-auth'))).rejects.toThrow();
+    await expect(fsp.stat(path.join(home, '.local', 'share', 'opencode', 'auth.json'))).rejects.toThrow();
+    await request(app).post('/api/openchamber/config-sync/prepare')
+      .send({ plan: { ...plan, providerCredentials: null }, syncRunId: 'unselected' }).expect(200);
+    await request(app).put('/api/openchamber/config-sync/put/credentials?syncRunId=unselected')
+      .set('Content-Type', 'application/octet-stream').send(payload).expect(500);
+    expect(received).toHaveLength(2);
+  });
+
   it.each(['http-config', 'http-agents', 'local-pack', 'ssh-config', 'ssh-agents'])(
     '%s archive excludes inventory-skipped files, including inside followed symlinks',
     async (transport) => {
@@ -91,7 +149,7 @@ describe('config-sync HTTP routes', () => {
       directories: [],
       deletes: ['config.json', 'opencode.json'],
       agentsRoot: null,
-      authFile: null,
+      providerCredentials: null,
       totalBytes: 3,
     };
 
@@ -124,7 +182,7 @@ describe('config-sync HTTP routes', () => {
       directories: [],
       deletes: [],
       agentsRoot: null,
-      authFile: null,
+      providerCredentials: null,
       totalBytes: 2,
     };
     const first = await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'run-a' });
@@ -143,7 +201,7 @@ describe('config-sync HTTP routes', () => {
       directories: [],
       deletes: [],
       agentsRoot: null,
-      authFile: null,
+      providerCredentials: null,
       totalBytes: 0,
     };
     await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'run-stream' });
@@ -151,7 +209,7 @@ describe('config-sync HTTP routes', () => {
     // Tiny invalid tar still proves chunk aggregation reached extract.
     await expect(receiver.put({
       syncRunId: 'run-stream',
-      kind: 'auth',
+      kind: 'config',
       stream: Readable.from([Buffer.from('aa'), Buffer.from('bb')]),
     })).rejects.toThrow(/tar|failed|Local tar extract/i);
 

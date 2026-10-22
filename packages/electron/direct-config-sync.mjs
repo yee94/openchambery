@@ -13,7 +13,6 @@ import {
   syncTargetIdForDirectHost,
 } from '@openchambery/web/server/lib/config-sync/index.js';
 import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -82,12 +81,40 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
   };
 
   return {
+    async magpieInventory() {
+      const result = await jsonFetch('GET', '/api/openchamber/config-sync/magpie/inventory');
+      if (typeof result.magpie?.available !== 'boolean' || typeof result.magpie?.installed !== 'boolean') throw new Error('Invalid Magpie inventory');
+      return result.magpie;
+    },
+
+    async importMagpie(payload) {
+      const response = await fetchImpl(`${base}/api/openchamber/config-sync/magpie`, {
+        method: 'PUT', headers: { ...headers, 'Content-Type': 'application/octet-stream' }, body: payload,
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'Magpie sync failed on destination');
+    },
+
+    async credentialInventory() {
+      const result = await jsonFetch('GET', '/api/openchamber/config-sync/credentials/inventory');
+      if (!Object.hasOwn(result, 'providerCredentials')) throw new Error('Invalid provider credential inventory');
+      return result.providerCredentials;
+    },
+
+    async importCredentials(payload) {
+      const response = await fetchImpl(`${base}/api/openchamber/config-sync/credentials`, {
+        method: 'PUT', headers: { ...headers, 'Content-Type': 'application/octet-stream' }, body: payload,
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'Provider credential sync failed on destination');
+    },
+
     async probe(plan) {
       const result = await jsonFetch('POST', '/api/openchamber/config-sync/probe', { plan });
       return {
         remoteExisting: Array.isArray(result.remoteExisting) ? result.remoteExisting : [],
         remoteAgentsRootExists: result.remoteAgentsRootExists === true,
-        remoteAuthFileExists: result.remoteAuthFileExists === true,
+        remoteProviderCredentialsExists: result.remoteProviderCredentialsExists === true,
         inventory: result.inventory,
       };
     },
@@ -107,7 +134,7 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
           method: 'PUT',
           headers: {
             ...headers,
-            'Content-Type': 'application/gzip',
+            'Content-Type': kind === 'credentials' || kind === 'magpie' ? 'application/octet-stream' : 'application/gzip',
             'Content-Length': String(body.byteLength),
           },
           body,
@@ -123,6 +150,10 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
 
     async finalize(_plan, ctx) {
       return jsonFetch('POST', '/api/openchamber/config-sync/finalize', { syncRunId: ctx.syncRunId });
+    },
+
+    async abort(syncRunId) {
+      await jsonFetch('POST', '/api/openchamber/config-sync/abort', { syncRunId });
     },
 
     async download(kind) {
@@ -148,19 +179,20 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
 export const createDirectConfigSyncController = ({
   syncRunStore,
   runExclusiveForTarget,
+  getLocalExecutor,
 }) => {
   const preview = async (host, options = {}) => {
     const target = createDirectHostSyncTarget(host.id);
     const targetId = target.id;
     const direction = options.direction === SYNC_DIRECTION_PULL ? SYNC_DIRECTION_PULL : SYNC_DIRECTION_PUSH;
     const selections = normalizeSyncSelections(options.selections, {
-      includeAuthFile: options.selections?.authFile === true,
+      includeProviderCredentials: options.selections?.providerCredentials === true,
     });
 
     return runExclusiveForTarget(targetId, 'preview', async ({ syncRunId }) => {
       const executor = createDirectTargetExecutor({ host });
       if (direction === SYNC_DIRECTION_PULL) {
-        const probe = await executor.probe({});
+        const probe = await executor.probe({ selections });
         const plan = planOpenCodeConfigSyncFromInventory(probe.inventory || {}, {
           direction: SYNC_DIRECTION_PULL,
           syncRunId,
@@ -187,13 +219,13 @@ export const createDirectConfigSyncController = ({
           remoteAgentsRootExists: (() => {
             try { return fs.statSync(path.join(home, '.agents')).isDirectory(); } catch { return false; }
           })(),
-          remoteAuthFileExists: (() => {
-            try { return fs.statSync(path.join(home, '.local', 'share', 'opencode', 'auth.json')).isFile(); } catch { return false; }
-          })(),
+          remoteProviderCredentialsExists: selections.providerCredentials ? Boolean(await getLocalExecutor().credentialInventory()) : false,
         };
       }
 
       const plan = planOpenCodeConfigSync(os.homedir(), {
+        magpie: await getLocalExecutor().magpieInventory(),
+        providerCredentials: selections.providerCredentials ? await getLocalExecutor().credentialInventory() : null,
         direction: SYNC_DIRECTION_PUSH,
         syncRunId,
         sourceTargetId: 'local',
@@ -210,7 +242,7 @@ export const createDirectConfigSyncController = ({
     const targetId = target.id;
     const direction = options.direction === SYNC_DIRECTION_PULL ? SYNC_DIRECTION_PULL : SYNC_DIRECTION_PUSH;
     const selections = normalizeSyncSelections(options.selections, {
-      includeAuthFile: options.selections?.authFile === true,
+      includeProviderCredentials: options.selections?.providerCredentials === true,
     });
 
     return runExclusiveForTarget(targetId, 'apply', async ({ syncRunId }) => {
@@ -218,7 +250,7 @@ export const createDirectConfigSyncController = ({
       const home = os.homedir();
 
       if (direction === SYNC_DIRECTION_PULL) {
-        const probe = await executor.probe({});
+        const probe = await executor.probe({ selections });
         const plan = planOpenCodeConfigSyncFromInventory(probe.inventory || {}, {
           direction: SYNC_DIRECTION_PULL,
           syncRunId,
@@ -226,7 +258,7 @@ export const createDirectConfigSyncController = ({
           targetId: 'local',
           selections,
         });
-        const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.authFile);
+        const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.providerCredentials) || Boolean(plan.magpie);
         if (!hasPayload) {
           return {
             ok: true,
@@ -235,7 +267,7 @@ export const createDirectConfigSyncController = ({
             deletes: plan.deletes.length,
             totalBytes: 0,
             agentsRoot: null,
-            authFile: null,
+            providerCredentials: null,
             plan,
           };
         }
@@ -243,14 +275,15 @@ export const createDirectConfigSyncController = ({
           ? await executor.download('config')
           : null;
         const agentsTar = plan.agentsRoot ? await executor.download('agents') : null;
-        const authTar = plan.authFile ? await executor.download('auth') : null;
+        const credentialPayload = plan.providerCredentials ? await executor.download('credentials') : null;
+        const magpiePayload = plan.magpie ? await executor.download('magpie') : null;
         await prepareLocalSyncDestination(home, plan, { syncRunId });
         if (configTar?.length) await extractTarGzBuffer(configTar, path.join(home, '.config', 'opencode'));
         if (agentsTar?.length) await extractTarGzBuffer(agentsTar, home);
-        if (authTar?.length) {
-          await fsp.mkdir(path.join(home, '.local', 'share', 'opencode'), { recursive: true });
-          await extractTarGzBuffer(authTar, path.join(home, '.local', 'share', 'opencode'));
+        if (credentialPayload?.length) {
+          await getLocalExecutor().importCredentials(credentialPayload);
         }
+        if (magpiePayload) await getLocalExecutor().importMagpie(magpiePayload);
         await finalizeLocalSyncDestination(home, { syncRunId });
         return {
           ok: true,
@@ -259,19 +292,21 @@ export const createDirectConfigSyncController = ({
           deletes: plan.deletes.length,
           totalBytes: plan.totalBytes,
           agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
-          authFile: plan.authFile ? { bytes: plan.authFile.bytes } : null,
+          providerCredentials: plan.providerCredentials ? { bytes: plan.providerCredentials.bytes } : null,
           plan,
         };
       }
 
       const plan = planOpenCodeConfigSync(home, {
+        magpie: await getLocalExecutor().magpieInventory(),
+        providerCredentials: selections.providerCredentials ? await getLocalExecutor().credentialInventory() : null,
         direction: SYNC_DIRECTION_PUSH,
         syncRunId,
         sourceTargetId: 'local',
         targetId,
         selections,
       });
-      const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.authFile);
+      const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.providerCredentials) || Boolean(plan.magpie);
       if (!hasPayload) {
         return {
           ok: true,
@@ -280,7 +315,7 @@ export const createDirectConfigSyncController = ({
           deletes: plan.deletes.length,
           totalBytes: 0,
           agentsRoot: null,
-          authFile: null,
+          providerCredentials: null,
           plan,
         };
       }
@@ -291,13 +326,20 @@ export const createDirectConfigSyncController = ({
         finalize: executor.finalize,
         putTar: async ({ kind, payload }) => executor.putTar({ kind, payload, syncRunId }),
       };
-      return applyConfigSyncPlan({
-        plan,
-        executor: wrapped,
-        syncRunId,
-        sourceHomedir: home,
-        collectTar: collectLocalTarBuffer,
-      });
+      try {
+        return await applyConfigSyncPlan({
+          plan,
+          executor: wrapped,
+          syncRunId,
+          sourceHomedir: home,
+          collectTar: collectLocalTarBuffer,
+          collectCredentials: () => getLocalExecutor().download('credentials'),
+          collectMagpie: () => getLocalExecutor().download('magpie'),
+        });
+      } catch (error) {
+        await executor.abort(syncRunId).catch(() => {});
+        throw error;
+      }
     });
   };
 

@@ -58,16 +58,17 @@ type SyncRunAppendRecord = {
 };
 
 type RemoteInventory = {
+  magpie?: { available: boolean; installed: boolean };
   files?: DesktopSshConfigSyncPlan['files'];
   directories?: DesktopSshConfigSyncPlan['directories'];
   agentsRoot?: DesktopSshConfigSyncPlan['agentsRoot'];
-  authFile?: DesktopSshConfigSyncPlan['authFile'];
+  providerCredentials?: DesktopSshConfigSyncPlan['providerCredentials'];
 };
 
 type ProbeResult = {
   remoteExisting: string[];
   remoteAgentsRootExists: boolean;
-  remoteAuthFileExists: boolean;
+  remoteProviderCredentialsExists: boolean;
   inventory?: unknown;
 };
 
@@ -125,7 +126,7 @@ const emptyResult = (plan: DesktopSshConfigSyncPlan): DesktopSshConfigSyncResult
   deletes: plan.deletes.length,
   totalBytes: 0,
   agentsRoot: null,
-  authFile: null,
+  providerCredentials: null,
   plan,
 });
 
@@ -143,14 +144,15 @@ const mergeSelections = (
   shape: DesktopSshConfigSyncSelectionShape,
   options: DesktopSshConfigSyncOptions,
 ): DesktopSshConfigSyncSelections => {
-  const defaults = buildDefaultSyncSelections(shape, { includeAuthFile: false });
+  const defaults = buildDefaultSyncSelections(shape, { includeProviderCredentials: false });
   const provided = options.selections;
   return {
     fileGroups: provided?.fileGroups ?? defaults.fileGroups,
     singleFiles: provided?.singleFiles ?? defaults.singleFiles,
     directories: provided?.directories ?? defaults.directories,
     agentsRoot: provided?.agentsRoot !== false,
-    authFile: provided?.authFile === true,
+    providerCredentials: provided?.providerCredentials === true,
+    magpie: provided?.magpie === true,
   };
 };
 
@@ -162,12 +164,18 @@ const buildPullPlan = (
   const inventory = (probe.inventory && typeof probe.inventory === 'object')
     ? probe.inventory as RemoteInventory
     : null;
+  if (selections.providerCredentials && (!inventory || !Object.hasOwn(inventory, 'providerCredentials'))) {
+    throw new Error('Provider credential inventory is missing');
+  }
+  if (selections.magpie && !inventory?.magpie?.available) throw new Error('Magpie source configuration is unavailable');
   return {
     direction: 'pull',
+    magpieAvailable: inventory?.magpie?.available === true,
+    magpie: selections.magpie && inventory?.magpie?.available ? { bytes: 0 } : null,
     files: inventory?.files ?? localPlan?.files ?? [],
     directories: inventory?.directories ?? localPlan?.directories ?? [],
     agentsRoot: selections.agentsRoot ? (inventory?.agentsRoot ?? null) : null,
-    authFile: selections.authFile ? (inventory?.authFile ?? null) : null,
+    providerCredentials: selections.providerCredentials ? (inventory?.providerCredentials ?? null) : null,
     deletes: localPlan?.deletes ?? [],
     totalBytes: localPlan?.totalBytes ?? 0,
     selections,
@@ -180,7 +188,8 @@ const buildPushPlan = (
 ): DesktopSshConfigSyncPlan => ({
   ...localPlan,
   direction: 'push',
-  authFile: selections.authFile ? localPlan.authFile : null,
+  providerCredentials: selections.providerCredentials ? localPlan.providerCredentials : null,
+  magpie: selections.magpie ? localPlan.magpie : null,
   agentsRoot: selections.agentsRoot ? localPlan.agentsRoot : null,
   selections,
 });
@@ -189,15 +198,16 @@ const planHasPayload = (plan: DesktopSshConfigSyncPlan): boolean => (
   plan.files.length > 0
   || plan.directories.length > 0
   || Boolean(plan.agentsRoot)
-  || Boolean(plan.authFile)
+  || Boolean(plan.providerCredentials)
+  || Boolean(plan.magpie)
 );
 
 type RelayExecutor = {
   tunnel: RelayTunnelClient;
   probe: (plan: object) => Promise<ProbeResult>;
   prepare: (plan: object, syncRunId: string) => Promise<void>;
-  putTar: (kind: 'config' | 'agents' | 'auth', payload: Uint8Array, syncRunId: string) => Promise<void>;
-  download: (kind: 'config' | 'agents' | 'auth') => Promise<Uint8Array>;
+  putTar: (kind: 'config' | 'agents' | 'credentials' | 'magpie', payload: Uint8Array, syncRunId: string) => Promise<void>;
+  download: (kind: 'config' | 'agents' | 'credentials' | 'magpie') => Promise<Uint8Array>;
   finalize: (syncRunId: string) => Promise<void>;
   abort: (syncRunId: string) => Promise<void>;
   close: () => void;
@@ -245,7 +255,7 @@ const createRelayHttpExecutor = (
       return {
         remoteExisting: Array.isArray(result.remoteExisting) ? result.remoteExisting as string[] : [],
         remoteAgentsRootExists: result.remoteAgentsRootExists === true,
-        remoteAuthFileExists: result.remoteAuthFileExists === true,
+        remoteProviderCredentialsExists: result.remoteProviderCredentialsExists === true,
         inventory: result.inventory,
       };
     },
@@ -259,9 +269,9 @@ const createRelayHttpExecutor = (
           method: 'PUT',
           headers: {
             ...headers,
-            'Content-Type': 'application/gzip',
+            'Content-Type': kind === 'credentials' || kind === 'magpie' ? 'application/octet-stream' : 'application/gzip',
           },
-          body: new Blob([new Uint8Array(payload)], { type: 'application/gzip' }),
+          body: new Blob([new Uint8Array(payload)], { type: kind === 'credentials' || kind === 'magpie' ? 'application/octet-stream' : 'application/gzip' }),
         },
       );
       const payloadJson = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -367,7 +377,7 @@ export type RelayConfigSyncHooks = {
  * Shape-first local scan: discover allowlist cardinality, then build selections,
  * then (when needed) re-scan with those selections applied.
  */
-const resolveAuthSelectionsAndScan = async (
+const resolveSelectionsAndScan = async (
   direction: DesktopSshConfigSyncDirection,
   options: DesktopSshConfigSyncOptions,
 ) => {
@@ -399,20 +409,20 @@ export const previewRelayConfigSync = async (
 
   return runExclusive(targetId, 'preview', direction, async () => {
     await assertRelayIdentity(relay.serverId, hooks.refreshCandidates);
-    const { selectionShape, selections, localPlan } = await resolveAuthSelectionsAndScan(
+    const { selectionShape, selections, localPlan } = await resolveSelectionsAndScan(
       direction,
       options,
     );
     const executor = createRelayHttpExecutor(relay, host);
     try {
       if (direction === 'pull') {
-        const probe = await executor.probe({});
+        const probe = await executor.probe({ selections });
         const plan = buildPullPlan(probe, localPlan, selections);
         return {
           plan,
           remoteExisting: probe.remoteExisting,
           remoteAgentsRootExists: probe.remoteAgentsRootExists,
-          remoteAuthFileExists: probe.remoteAuthFileExists,
+          remoteProviderCredentialsExists: probe.remoteProviderCredentialsExists,
           selectionShape,
         };
       }
@@ -423,7 +433,7 @@ export const previewRelayConfigSync = async (
         plan,
         remoteExisting: probe.remoteExisting,
         remoteAgentsRootExists: probe.remoteAgentsRootExists,
-        remoteAuthFileExists: probe.remoteAuthFileExists,
+        remoteProviderCredentialsExists: probe.remoteProviderCredentialsExists,
         selectionShape: localPlan?.selectionShape ?? selectionShape,
       };
     } finally {
@@ -447,7 +457,7 @@ export const applyRelayConfigSync = async (
 
   return runExclusive(targetId, 'apply', direction, async ({ syncRunId }) => {
     await assertRelayIdentity(relay.serverId, hooks.refreshCandidates);
-    const { selections, localPlan } = await resolveAuthSelectionsAndScan(
+    const { selections, localPlan } = await resolveSelectionsAndScan(
       direction,
       options,
     );
@@ -456,7 +466,7 @@ export const applyRelayConfigSync = async (
       if (direction === 'pull') {
         // Probe + download over the tunnel, then Electron extracts locally.
         // Do NOT call previewRelayConfigSync — that would re-enter the mutex.
-        const probe = await executor.probe({});
+        const probe = await executor.probe({ selections });
         const plan = buildPullPlan(probe, localPlan, selections);
         if (!planHasPayload(plan)) return emptyResult(plan);
 
@@ -464,7 +474,8 @@ export const applyRelayConfigSync = async (
           ? await executor.download('config')
           : null;
         const agentsTar = plan.agentsRoot ? await executor.download('agents') : null;
-        const authTar = plan.authFile ? await executor.download('auth') : null;
+        const credentialPayload = plan.providerCredentials ? await executor.download('credentials') : null;
+        const magpiePayload = plan.magpie ? await executor.download('magpie') : null;
         if (!hasDesktopInvoke()) {
           throw new Error('Relay pull apply requires the OpenChamberY desktop app');
         }
@@ -474,7 +485,8 @@ export const applyRelayConfigSync = async (
           plan,
           configTar,
           agentsTar,
-          authTar,
+          credentialPayload,
+          magpiePayload,
         }) as DesktopSshConfigSyncResult | null;
         if (!applied?.ok) throw new Error('Relay pull local apply failed');
         return { ...applied, plan };
@@ -490,7 +502,8 @@ export const applyRelayConfigSync = async (
       const packed = await invokeDesktop('desktop_relay_sync_pack_local', { plan }) as {
         configTar?: Uint8Array | null;
         agentsTar?: Uint8Array | null;
-        authTar?: Uint8Array | null;
+        credentialPayload?: Uint8Array | null;
+        magpiePayload?: Uint8Array | null;
       } | null;
       if (!packed) throw new Error('Relay push local pack failed');
 
@@ -502,8 +515,12 @@ export const applyRelayConfigSync = async (
         if (packed.agentsTar && packed.agentsTar.byteLength > 0) {
           await executor.putTar('agents', packed.agentsTar, syncRunId);
         }
-        if (packed.authTar && packed.authTar.byteLength > 0) {
-          await executor.putTar('auth', packed.authTar, syncRunId);
+        if (packed.credentialPayload && packed.credentialPayload.byteLength > 0) {
+          await executor.putTar('credentials', packed.credentialPayload, syncRunId);
+        }
+        if (plan.magpie) {
+          if (!packed.magpiePayload?.byteLength) throw new Error('Magpie transfer incomplete');
+          await executor.putTar('magpie', packed.magpiePayload, syncRunId);
         }
         await executor.finalize(syncRunId);
       } catch (error) {
@@ -518,7 +535,7 @@ export const applyRelayConfigSync = async (
         deletes: plan.deletes.length,
         totalBytes: plan.totalBytes,
         agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
-        authFile: plan.authFile ? { bytes: plan.authFile.bytes } : null,
+        providerCredentials: plan.providerCredentials ? { bytes: plan.providerCredentials.bytes } : null,
         plan,
       };
     } finally {

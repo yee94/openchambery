@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'vitest';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 import {
   ElectronSshManager,
@@ -744,7 +745,7 @@ describe('parseVersionToken', () => {
   });
 });
 
-describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
+describe('ensureRemoteOpenCodeCli latest 2.x', () => {
   const createManager = (opencodeCliVersion) => {
     const manager = new ElectronSshManager({
       settingsFilePath: path.join(os.tmpdir(), `openchamber-ssh-opencode2-${Date.now()}.json`),
@@ -764,7 +765,7 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
         return bunPostinstallRan ? 'opencode v2.0.23\n' : '';
       }
       // The broken Bun binary precedes the healthy npm binary on PATH.
-      if (script.startsWith('bun add -g @opencode/cli@2.0.23') && script.includes('--trust')) {
+      if (script.startsWith('bun add -g @opencode/cli@2') && script.includes('--trust')) {
         bunPostinstallRan = true;
       }
       return '';
@@ -775,15 +776,15 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
     expect(await manager.currentRemoteOpenCodeVersion({}, '/tmp/cp')).toBe('2.0.23');
   });
 
-  test('empty remote installs @opencode/cli at the pinned version via opencode2 probe', async () => {
+  test('empty remote installs latest 2.x regardless of the desktop pin', async () => {
     const manager = createManager('2.0.12');
     const commands = [];
     manager.runManagedRemoteCommand = async (_parsed, _controlPath, script) => {
       commands.push(script);
       if (script.includes('opencode --version')) {
-        // First probes empty, after install returns pin.
+        // First probes empty, after install returns the registry's latest 2.x.
         const installs = commands.filter((c) => c.includes('@opencode/cli@')).length;
-        return installs > 0 ? 'opencode2 v2.0.12\n' : '';
+        return installs > 0 ? 'opencode v2.9.0\n' : '';
       }
       if (script.includes('command -v bun') || script.includes('command -v npm')) {
         return 'yes';
@@ -795,7 +796,7 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
     await manager.ensureRemoteOpenCodeCli({ user: 'u', host: 'h' }, '/tmp/cp', 'npm');
 
     expect(commands.some((c) => c.includes('opencode --version'))).toBe(true);
-    expect(commands.some((c) => c.includes('@opencode/cli@2.0.12'))).toBe(true);
+    expect(commands).toContain('npm install -g @opencode/cli@2 --force');
     expect(commands.every((c) => !c.includes('opencode-ai@') && !/\bopencode2 --version\b/.test(c))).toBe(true);
   });
 
@@ -815,15 +816,15 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
 
     await manager.ensureRemoteOpenCodeCli({ user: 'u', host: 'h' }, '/tmp/cp', 'bun');
 
-    expect(commands.some((c) => c.includes('@opencode/cli@2.0.12'))).toBe(true);
+    expect(commands).toContain('bun add -g @opencode/cli@2 --trust');
   });
 
-  test('matching target v2 pin skips install', async () => {
+  test('any working 2.x skips install but repairs login PATH', async () => {
     const manager = createManager('2.0.12');
     const commands = [];
     manager.runManagedRemoteCommand = async (_parsed, _controlPath, script) => {
       commands.push(script);
-      if (script.includes('opencode --version')) return 'opencode v2.0.12\n';
+      if (script.includes('opencode --version')) return 'opencode v2.9.0\n';
       return '';
     };
     manager.remoteCommandExists = async () => true;
@@ -831,6 +832,47 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
     await manager.ensureRemoteOpenCodeCli({ user: 'u', host: 'h' }, '/tmp/cp', 'npm');
 
     expect(commands.every((c) => !c.includes('install') && !c.includes('bun add'))).toBe(true);
+    expect(commands.some((c) => c.includes('command -v opencode'))).toBe(true);
+  });
+
+  test.each(['1.9.0', '3.0.0'])('rejects unsupported major %s after installation', async (version) => {
+    const manager = createManager('2.0.12');
+    manager.remoteCommandExists = async () => true;
+    manager.runManagedRemoteCommand = async () => version;
+    await expect(manager.ensureRemoteOpenCodeCli({}, '', 'npm')).rejects.toThrow('expected opencode v2');
+  });
+
+  test.each(['/bin/zsh', '/bin/bash'])('makes opencode usable in fresh %s shells, idempotently', async (shell) => {
+    const home = await makeTempDir();
+    const bin = path.join(home, "npm's prefix", 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, 'opencode'), '#!/bin/sh\necho 2.9.0\n', { mode: 0o755 });
+    const zdotdir = path.join(home, 'zsh config');
+    fs.mkdirSync(zdotdir);
+    const rc = path.join(shell.endsWith('zsh') ? zdotdir : home, shell.endsWith('zsh') ? '.zshrc' : '.bashrc');
+    fs.writeFileSync(rc, '# user configuration\nexport USER_SETTING=preserved\n');
+    fs.writeFileSync(path.join(home, '.bash_profile'), '# existing login configuration\n');
+    const env = { ...process.env, HOME: home, SHELL: shell, ZDOTDIR: zdotdir, PATH: '/usr/bin:/bin' };
+    const probe = () => spawnSync(shell, ['-ic', 'opencode --version'], { env, encoding: 'utf8' });
+    expect(probe().status).not.toBe(0);
+    const manager = createManager('2.0.12');
+    manager.runManagedRemoteCommand = async (_p, _c, script) => {
+      const result = spawnSync('/bin/sh', ['-c', script], {
+        env: { ...env, PATH: `${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin` }, encoding: 'utf8',
+      });
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout;
+    };
+    await manager.ensureRemoteLoginPath({}, '');
+    const first = fs.readFileSync(rc, 'utf8');
+    await manager.ensureRemoteLoginPath({}, '');
+    expect(fs.readFileSync(rc, 'utf8')).toBe(first);
+    expect(first).toContain('# user configuration\nexport USER_SETTING=preserved\n');
+    expect(probe().status).toBe(0);
+    expect(probe().stdout.trim()).toBe('2.9.0');
+    // An early return prevents the appended PATH from running; bootstrap must fail.
+    fs.writeFileSync(rc, 'return 0\n' + first);
+    await expect(manager.ensureRemoteLoginPath({}, '')).rejects.toThrow('unavailable in a fresh');
   });
 });
 
@@ -1026,14 +1068,14 @@ describe('planOpenCodeConfigSync', () => {
     expect(plan.agentsRoot.fileCount).toBeGreaterThan(0);
   });
 
-  test('missing auth.json yields authFile null', async () => {
+  test('missing API metadata yields providerCredentials null', async () => {
     const { home, configDir } = await makeHomeWithConfig();
     await fsp.writeFile(path.join(configDir, 'AGENTS.md'), 'hi\n');
     const plan = planOpenCodeConfigSync(home);
-    expect(plan.authFile).toBeNull();
+    expect(plan.providerCredentials).toBeNull();
   });
 
-  test('includes ~/.local/share/opencode/auth.json bytes when includeAuthFile is true', async () => {
+  test('uses API metadata and ignores legacy credential files', async () => {
     const { home, configDir } = await makeHomeWithConfig();
     await fsp.writeFile(path.join(configDir, 'AGENTS.md'), 'hi\n');
     const shareDir = path.join(home, '.local', 'share', 'opencode');
@@ -1042,20 +1084,20 @@ describe('planOpenCodeConfigSync', () => {
     // Sibling session DB must never be walked/counted.
     await fsp.writeFile(path.join(shareDir, 'session.db'), 'db\n');
 
-    // Default inventory (includeAuthFile unset) still discovers auth.json.
-    const plan = planOpenCodeConfigSync(home);
-    expect(plan.authFile).toEqual({ bytes: expect.any(Number) });
-    expect(plan.authFile.bytes).toBeGreaterThan(0);
+    expect(planOpenCodeConfigSync(home).providerCredentials).toBeNull();
+    const plan = planOpenCodeConfigSync(home, { providerCredentials: { bytes: 80 } });
+    expect(plan.providerCredentials).toEqual({ bytes: 80 });
+    expect(plan.providerCredentials.bytes).toBeGreaterThan(0);
     expect(plan.totalBytes).toBeGreaterThanOrEqual(
-      plan.files.reduce((sum, entry) => sum + entry.bytes, 0) + plan.authFile.bytes,
+      plan.files.reduce((sum, entry) => sum + entry.bytes, 0) + plan.providerCredentials.bytes,
     );
 
-    // Opt-out via includeAuthFile: false skips auth.json.
-    const skipped = planOpenCodeConfigSync(home, { includeAuthFile: false });
-    expect(skipped.authFile).toBeNull();
+    // Opt-out excludes the API metadata as well.
+    const skipped = planOpenCodeConfigSync(home, { includeProviderCredentials: false, providerCredentials: { bytes: 80 } });
+    expect(skipped.providerCredentials).toBeNull();
   });
 
-  test('dereferences symlinked auth.json', async () => {
+  test('ignores symlinked legacy auth.json', async () => {
     const { home } = await makeHomeWithConfig();
     const target = await makeTempDir();
     const realAuth = path.join(target, 'real-auth.json');
@@ -1064,9 +1106,8 @@ describe('planOpenCodeConfigSync', () => {
     await fsp.mkdir(shareDir, { recursive: true });
     await fsp.symlink(realAuth, path.join(shareDir, 'auth.json'));
 
-    const plan = planOpenCodeConfigSync(home, { includeAuthFile: true });
-    expect(plan.authFile).toBeTruthy();
-    expect(plan.authFile.bytes).toBeGreaterThan(0);
+    const plan = planOpenCodeConfigSync(home, { includeProviderCredentials: true });
+    expect(plan.providerCredentials).toBeNull();
   });
 });
 
@@ -1076,7 +1117,7 @@ describe('buildRemoteSyncPrepareScript', () => {
       files: [{ path: 'my file.jsonc', bytes: 1 }],
       directories: [{ path: 'commands', fileCount: 1, bytes: 1 }],
       agentsRoot: null,
-      authFile: null,
+      providerCredentials: null,
       deletes: ['opencode.json', 'commands', 'command'],
       totalBytes: 2,
     }, { syncRunId: 'run-a' });
@@ -1101,7 +1142,7 @@ describe('buildRemoteSyncPrepareScript', () => {
       files: [],
       directories: [],
       agentsRoot: { fileCount: 1, bytes: 4 },
-      authFile: null,
+      providerCredentials: null,
       deletes: [],
       totalBytes: 4,
     }, { syncRunId: 'run-agents' });
@@ -1113,21 +1154,18 @@ describe('buildRemoteSyncPrepareScript', () => {
     expect(script).not.toContain('rm -rf -- "$AGENTS_BK"\n');
   });
 
-  test('with authFile backs up auth.json outside share dir without deleting it', () => {
+  test('provider credentials never enter filesystem backup scripts', () => {
     const script = buildRemoteSyncPrepareScript({
       files: [],
       directories: [],
       agentsRoot: null,
-      authFile: { bytes: 12 },
+      providerCredentials: { bytes: 12 },
       deletes: [],
       totalBytes: 12,
     }, { syncRunId: 'run-auth' });
     expect(script).toContain('SYNC_READY');
-    expect(script).toContain('AUTH_BK="$HOME/.openchamber.sync-backup-auth"');
-    expect(script).toContain("AUTH_RUN_BK=\"$AUTH_BK\"/'run-auth'");
-    expect(script).toContain(
-      'cp -a "$HOME/.local/share/opencode/auth.json" "$AUTH_RUN_BK/auth.json"',
-    );
+    expect(script).not.toContain('auth.json');
+    expect(script).not.toContain('AUTH_BK=');
     expect(script).not.toContain('rm -rf -- "$HOME/.local/share/opencode"');
     expect(script).not.toContain('rm -f -- "$HOME/.local/share/opencode/auth.json"');
     expect(script).not.toContain('rm -rf -- "$AUTH_BK"\n');
@@ -1169,7 +1207,7 @@ describe('buildRemoteSyncProbeScript', () => {
     }
   });
 
-  test('prints __AUTH_FILE__ when auth.json exists and still exits 0', async () => {
+  test('ignores legacy auth.json presence and still exits 0', async () => {
     const os = await import('node:os');
     const fsMod = await import('node:fs');
     const { execFileSync } = await import('node:child_process');
@@ -1180,7 +1218,7 @@ describe('buildRemoteSyncProbeScript', () => {
       const script = buildRemoteSyncProbeScript([]);
       const stdout = execFileSync('sh', ['-c', script], { env: { ...process.env, HOME: tempHome } });
       const lines = stdout.toString().split('\n').filter(Boolean);
-      expect(lines).toEqual(['__AUTH_FILE__']);
+      expect(lines).toEqual([]);
     } finally {
       fsMod.rmSync(tempHome, { recursive: true, force: true });
     }
@@ -1202,7 +1240,7 @@ describe('runExclusiveForTarget sync response shape', () => {
       files: [{ path: 'opencode.jsonc', bytes: 10 }],
       directories: [],
       agentsRoot: null,
-      authFile: null,
+      providerCredentials: null,
       deletes: [],
       totalBytes: 10,
     };
@@ -1210,7 +1248,7 @@ describe('runExclusiveForTarget sync response shape', () => {
       plan,
       remoteExisting: ['opencode.jsonc'],
       remoteAgentsRootExists: false,
-      remoteAuthFileExists: false,
+      remoteProviderCredentialsExists: false,
     }));
 
     // The renderer's parseConfigSyncPreview requires value.plan to be a valid

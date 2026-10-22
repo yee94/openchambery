@@ -1,0 +1,150 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { createMagpieSync } from './magpie.js';
+import { planOpenCodeConfigSync, planOpenCodeConfigSyncFromInventory } from './plan.js';
+import { applyConfigSyncPlan } from './engine.js';
+
+const dirs = [];
+const machine = async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'oc-magpie-test-'));
+  dirs.push(home);
+  return { home, options: {
+    homedir: () => home, tempdir: () => home, platform: 'linux', arch: 'x64',
+    env: { HOME: home, PATH: '', XDG_CONFIG_HOME: path.join(home, '.config') },
+  } };
+};
+const write = async (file, content = '{}') => {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, content);
+};
+afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))); });
+
+describe('Magpie discovery and native transfer', () => {
+  it('discovers config-only sources through XDG without installing during preview', async () => {
+    const { home, options } = await machine();
+    const fetchImpl = vi.fn();
+    const sync = createMagpieSync({ ...options, fetchImpl });
+    expect(await sync.inventory()).toEqual({ available: false, installed: false });
+    await write(path.join(home, '.config', 'magpie', 'providers.json'));
+    expect(await sync.inventory()).toEqual({ available: true, installed: false });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('resolves a symlinked client executable and its portable configuration', async () => {
+    const { home, options } = await machine();
+    const app = path.join(home, 'portable', 'magpie.app', 'Contents', 'MacOS', 'magpie');
+    await write(app, 'fixture-binary');
+    await write(path.join(home, 'portable', '.portable'), '');
+    await write(path.join(home, 'portable', 'data', 'providers.json'));
+    const link = path.join(home, 'magpie');
+    await fs.symlink(app, link);
+    const run = vi.fn(async () => 'magpie 0.1.0');
+    const sync = createMagpieSync({ ...options, env: { ...options.env, MAGPIE_BINARY: link }, run });
+    expect(await sync.inventory()).toEqual({ available: true, installed: true });
+    expect(run.mock.calls[0][0]).toBe(await fs.realpath(app));
+  });
+
+  it('exports noninteractively, installs a verified destination CLI and cleans temporary files', async () => {
+    const source = await machine();
+    const target = await machine();
+    const binary = path.join(source.home, '.local', 'bin', 'magpie');
+    await write(binary, 'fixture-cli');
+    await write(path.join(source.home, '.config', 'magpie', 'providers.json'));
+    const runSource = vi.fn(async (_binary, args, ctx) => {
+      if (args[0] === '--version') return 'magpie 0.1.0';
+      expect(args[0]).toBe('backup');
+      expect(ctx.input).toMatch(/^[a-f0-9]{64}\n$/);
+      expect(args).not.toContain(ctx.input.trim());
+      await write(args[1], JSON.stringify({ format: 'magpie-backup', data: 'fixture-encrypted' }));
+      return 'saved';
+    });
+    const payload = await createMagpieSync({ ...source.options, run: runSource }).download();
+    const bytes = Buffer.from('fixture-installed-cli');
+    const fetchImpl = vi.fn(async (url) => url === 'https://usemagpie.ai/api/latest'
+      ? Response.json({ assets: { 'magpie-cli-linux-amd64': {
+        url: 'https://github.com/yetone/magpie-releases/releases/download/v0.1.0/magpie-cli-linux-amd64',
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      } } }) : new Response(bytes));
+    const runTarget = vi.fn(async (_binary, args, ctx) => {
+      if (args[0] === '--version') return 'magpie 0.1.0';
+      expect(args[0]).toBe('restore');
+      expect(ctx.input.trim()).toBe(JSON.parse(payload).passphrase);
+      expect(JSON.parse(await fs.readFile(args[1], 'utf8')).format).toBe('magpie-backup');
+      return 'restored';
+    });
+    const destination = createMagpieSync({ ...target.options, fetchImpl, run: runTarget });
+    await expect(destination.import(payload)).resolves.toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    await expect(destination.import(payload)).resolves.toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    for (const item of [source, target]) {
+      expect((await fs.readdir(item.home)).filter((name) => name.startsWith('openchamber-magpie-'))).toEqual([]);
+    }
+  });
+
+  it('does not install on malformed payload and refuses partial restore without leaking CLI output', async () => {
+    const { home, options } = await machine();
+    const fetchImpl = vi.fn();
+    const run = vi.fn(async (_binary, args) => args[0] === '--version'
+      ? 'magpie 0.1.0' : "Couldn't add the plugin private-fixture-value");
+    const sync = createMagpieSync({ ...options, fetchImpl, run });
+    await expect(sync.import(Buffer.from('{}'))).rejects.toThrow('Invalid Magpie sync payload');
+    expect(fetchImpl).not.toHaveBeenCalled();
+    await write(path.join(home, '.local', 'bin', 'magpie'), 'fixture-cli');
+    const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v1', passphrase: 'a'.repeat(64),
+      backup: Buffer.from('{"format":"magpie-backup"}').toString('base64') }));
+    await expect(sync.import(payload)).rejects.toThrow('Magpie restore partially completed');
+    expect((await fs.readdir(home)).filter((name) => name.startsWith('openchamber-magpie-'))).toEqual([]);
+  });
+
+  it('requires current source discovery and supports a Magpie-only plan', async () => {
+    const { home } = await machine();
+    const selections = { fileGroups: [], singleFiles: [], directories: [], agentsRoot: false, providerCredentials: false, magpie: true };
+    expect(() => planOpenCodeConfigSync(home, { selections })).toThrow('unavailable');
+    const plan = planOpenCodeConfigSync(home, { selections, magpie: { available: true, installed: true } });
+    expect(plan.magpie).toEqual({ bytes: 0 });
+    const received = [];
+    const executor = { prepare: vi.fn(), putTar: async (value) => received.push(value), finalize: vi.fn() };
+    await applyConfigSyncPlan({ plan, executor, syncRunId: 'test', sourceHomedir: home, collectMagpie: async () => Buffer.from('fixture') });
+    expect(received).toEqual([{ kind: 'magpie', payload: Buffer.from('fixture') }]);
+    const pull = planOpenCodeConfigSyncFromInventory({ files: [], directories: [], magpie: { available: true } }, { selections });
+    expect(pull.magpieAvailable).toBe(true);
+    expect(pull.magpie).toEqual({ bytes: 0 });
+  });
+
+  it('rejects a corrupt installer before executing or publishing it', async () => {
+    const { home, options } = await machine();
+    const run = vi.fn();
+    const fetchImpl = async (url) => url === 'https://usemagpie.ai/api/latest'
+      ? Response.json({ assets: { 'magpie-cli-linux-amd64': {
+        url: 'https://github.com/yetone/magpie-releases/releases/download/v0.1.0/magpie-cli-linux-amd64',
+        sha256: '0'.repeat(64),
+      } } }) : new Response('corrupt');
+    const sync = createMagpieSync({ ...options, fetchImpl, run });
+    const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v1', passphrase: 'a'.repeat(64),
+      backup: Buffer.from('{"format":"magpie-backup"}').toString('base64') }));
+    await expect(sync.import(payload)).rejects.toThrow('checksum mismatch');
+    expect(run).not.toHaveBeenCalled();
+    await expect(fs.stat(path.join(home, '.config', 'openchamber', 'tools', 'magpie', 'magpie'))).rejects.toThrow();
+  });
+
+  it.skipIf(!process.env.OPENCHAMBER_MAGPIE_TEST_BINARY)('round-trips isolated configuration with the installed real CLI', async () => {
+    const source = await machine();
+    const target = await machine();
+    for (const item of [source, target]) {
+      item.options.env = { ...item.options.env, MAGPIE_BINARY: process.env.OPENCHAMBER_MAGPIE_TEST_BINARY,
+        MAGPIE_NO_ACCOUNTS: '1', PATH: '/usr/bin:/bin', XDG_CACHE_HOME: path.join(item.home, '.cache') };
+      await write(path.join(item.home, '.config', 'magpie', 'settings.json'), JSON.stringify({ noAccountDiscovery: true, noStats: true, noUsageStats: true, noAutoUpdate: true }));
+    }
+    await write(path.join(source.home, '.config', 'magpie', 'providers.json'), JSON.stringify({ providers: [
+      { id: 'sync-fixture', name: 'Sync fixture', chat: 'https://provider.invalid/v1', key: 'fixture-not-a-real-key' },
+    ] }));
+    const payload = await createMagpieSync(source.options).download();
+    await createMagpieSync(target.options).import(payload);
+    const restored = JSON.parse(await fs.readFile(path.join(target.home, '.config', 'magpie', 'providers.json'), 'utf8'));
+    expect(restored.providers).toContainEqual(expect.objectContaining({ id: 'sync-fixture', key: 'fixture-not-a-real-key' }));
+  }, 60_000);
+});

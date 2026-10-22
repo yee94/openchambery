@@ -1,11 +1,9 @@
 import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
 import {
   OPENCODE_AGENTS_ROOT_PROBE_MARKER,
-  OPENCODE_AUTH_FILE_PROBE_MARKER,
   OPENCODE_CONFIG_SYNC_ALLOWLIST,
   OPENCODE_CONFIG_SYNC_MAX_BYTES,
   OPENCODE_CONFIG_SYNC_MAX_FILES,
@@ -18,6 +16,8 @@ import {
 import { walkAllowlistDirectory } from './plan.js';
 import { sanitizeSyncRunIdForPath } from './scripts.js';
 import { collectLocalTarBuffer } from './tar.js';
+import { createCredentialSync } from './credentials.js';
+import { createMagpieSync } from './magpie.js';
 
 /**
  * In-process receiver for HTTP config-sync (direct/relay hosts).
@@ -26,6 +26,8 @@ import { collectLocalTarBuffer } from './tar.js';
 export const createConfigSyncReceiver = (deps = {}) => {
   const {
     homedir = () => os.homedir(),
+    credentials = createCredentialSync(),
+    magpie = createMagpieSync({ homedir }),
   } = deps;
 
   let inflight = null;
@@ -58,7 +60,7 @@ export const createConfigSyncReceiver = (deps = {}) => {
     }
   };
 
-  const buildInventory = () => {
+  const buildInventory = async ({ includeCredentials = false } = {}) => {
     const home = homedir();
     const root = path.join(home, '.config', 'opencode');
     const files = [];
@@ -118,33 +120,22 @@ export const createConfigSyncReceiver = (deps = {}) => {
       // missing
     }
 
-    let authFile = null;
-    let remoteAuthFileExists = false;
-    try {
-      const authAbs = path.join(home, '.local', 'share', 'opencode', 'auth.json');
-      const st = fs.statSync(authAbs);
-      if (st.isFile()) {
-        remoteAuthFileExists = true;
-        authFile = { bytes: st.size };
-      }
-    } catch {
-      // missing
-    }
+    const providerCredentials = includeCredentials ? await credentials.inventory() : null;
+    const remoteProviderCredentialsExists = Boolean(providerCredentials);
 
     return {
-      inventory: { files, directories, agentsRoot, authFile },
+      inventory: { files, directories, agentsRoot, providerCredentials, magpie: await magpie.inventory() },
       remoteExisting,
       remoteAgentsRootExists,
-      remoteAuthFileExists,
+      remoteProviderCredentialsExists,
       markers: {
         agentsRoot: OPENCODE_AGENTS_ROOT_PROBE_MARKER,
-        authFile: OPENCODE_AUTH_FILE_PROBE_MARKER,
       },
     };
   };
 
   const probe = async (plan) => {
-    const snapshot = buildInventory();
+    const snapshot = await buildInventory({ includeCredentials: plan?.selections?.providerCredentials === true || Boolean(plan?.providerCredentials) });
     const existing = new Set(snapshot.remoteExisting);
     const planPaths = [
       ...(Array.isArray(plan?.files) ? plan.files.map((entry) => entry.path) : []),
@@ -199,9 +190,12 @@ export const createConfigSyncReceiver = (deps = {}) => {
       await extractTarGzBuffer(buffer, path.join(home, '.config', 'opencode'));
     } else if (kind === 'agents') {
       await extractTarGzBuffer(buffer, home);
-    } else if (kind === 'auth') {
-      await fsp.mkdir(path.join(home, '.local', 'share', 'opencode'), { recursive: true });
-      await extractTarGzBuffer(buffer, path.join(home, '.local', 'share', 'opencode'));
+    } else if (kind === 'credentials') {
+      if (!flight.plan?.providerCredentials) throw new Error('Provider credentials were not selected');
+      await credentials.import(buffer);
+    } else if (kind === 'magpie') {
+      if (!flight.plan?.magpie) throw new Error('Magpie was not selected');
+      await magpie.import(buffer);
     } else {
       const error = new Error(`Unsupported put kind: ${String(kind)}`);
       error.code = 'sync_invalid_kind';
@@ -220,7 +214,7 @@ export const createConfigSyncReceiver = (deps = {}) => {
   const download = async ({ kind }) => {
     const home = homedir();
     if (kind === 'config') {
-      const snapshot = buildInventory();
+      const snapshot = await buildInventory();
       const entries = [
         ...snapshot.inventory.files.map((entry) => entry.path),
         ...snapshot.inventory.directories.map((entry) => entry.path),
@@ -235,9 +229,10 @@ export const createConfigSyncReceiver = (deps = {}) => {
     if (kind === 'agents') {
       return collectTarGz(home, ['.agents']);
     }
-    if (kind === 'auth') {
-      return collectTarGz(path.join(home, '.local', 'share', 'opencode'), ['auth.json']);
+    if (kind === 'credentials') {
+      return credentials.download();
     }
+    if (kind === 'magpie') return magpie.download();
     const error = new Error(`Unsupported download kind: ${String(kind)}`);
     error.code = 'sync_invalid_kind';
     throw error;
@@ -245,6 +240,8 @@ export const createConfigSyncReceiver = (deps = {}) => {
 
   const finalize = async ({ syncRunId }) => {
     const flight = requireInflight(syncRunId);
+    if (flight.plan?.providerCredentials && !flight.kinds.has('credentials')) throw new Error('Provider credentials transfer incomplete');
+    if (flight.plan?.magpie && !flight.kinds.has('magpie')) throw new Error('Magpie transfer incomplete');
     await finalizeLocalSyncDestination(homedir(), { syncRunId: flight.syncRunId });
     const receipt = {
       ok: true,
@@ -274,5 +271,9 @@ export const createConfigSyncReceiver = (deps = {}) => {
     abort,
     getInflight: () => inflight,
     buildInventory,
+    credentialInventory: () => credentials.inventory(),
+    magpieInventory: () => magpie.inventory(),
+    importMagpie: async (stream) => magpie.import(await readStreamToBuffer(stream, { maxBytes: OPENCODE_CONFIG_SYNC_MAX_BYTES })),
+    importCredentials: async (stream) => credentials.import(await readStreamToBuffer(stream, { maxBytes: OPENCODE_CONFIG_SYNC_MAX_BYTES })),
   };
 };

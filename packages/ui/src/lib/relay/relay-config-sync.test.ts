@@ -8,7 +8,7 @@ const invokeDesktop = vi.hoisted(() => vi.fn(async (command: string) => {
     return {
       configTar: new Uint8Array([1, 2, 3]),
       agentsTar: null,
-      authTar: null,
+      credentialPayload: null,
     };
   }
   if (command === 'desktop_relay_sync_apply_local') {
@@ -19,7 +19,7 @@ const invokeDesktop = vi.hoisted(() => vi.fn(async (command: string) => {
       deletes: 2,
       totalBytes: 2,
       agentsRoot: null,
-      authFile: null,
+      providerCredentials: null,
     };
   }
   return null;
@@ -29,7 +29,7 @@ const localScan = vi.hoisted(() => vi.fn(async () => ({
   files: [{ path: 'opencode.jsonc', bytes: 2 }],
   directories: [],
   agentsRoot: null,
-  authFile: { bytes: 4 },
+  providerCredentials: { bytes: 4 },
   deletes: ['config.json', 'opencode.json'],
   totalBytes: 6,
   selectionShape: { fileGroups: 3, singleFiles: 2, directories: 7 },
@@ -60,10 +60,36 @@ import {
   RELAY_IDENTITY_CHANGED_CODE,
   RelayIdentityChangedError,
   previewRelayConfigSync,
+  applyRelayConfigSync,
 } from './relay-config-sync';
 import { buildDefaultSyncSelections } from '@/lib/desktopSsh';
 
 describe('relay config sync', () => {
+  it('uses the actual pull source for Magpie discovery and carries a Magpie-only payload to desktop', async () => {
+    const host = {
+      id: 'magpie-host', label: 'Magpie', url: 'relay://srv_magpie', clientToken: 'fixture-token',
+      relay: { relayUrl: 'wss://relay.example/ws', serverId: 'srv_magpie', hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'a', y: 'b' } },
+    };
+    const selections = { fileGroups: [false, false, false], singleFiles: [false, false], directories: Array(7).fill(false),
+      agentsRoot: false, providerCredentials: false, magpie: false };
+    tunnelFetch.mockImplementation(async (url: string) => {
+      if (url.endsWith('/download/magpie')) return new Response(new Uint8Array([7, 8, 9]));
+      return Response.json({ remoteExisting: [], inventory: {
+        files: [], directories: [], agentsRoot: null, providerCredentials: null,
+        magpie: { available: true, installed: true },
+      } });
+    });
+    const push = await previewRelayConfigSync(host, { direction: 'push', selections });
+    expect(push.plan.magpieAvailable).toBeFalsy();
+    const pull = await previewRelayConfigSync(host, { direction: 'pull', selections });
+    expect(pull.plan.magpieAvailable).toBe(true);
+    expect(pull.plan.magpie).toBeNull();
+    await applyRelayConfigSync(host, { direction: 'pull', selections: { ...selections, magpie: true } });
+    expect(invokeDesktop).toHaveBeenCalledWith('desktop_relay_sync_apply_local', expect.objectContaining({
+      magpiePayload: new Uint8Array([7, 8, 9]), plan: expect.objectContaining({ magpie: { bytes: 0 } }),
+    }));
+  });
+
   beforeEach(() => {
     close.mockReset();
     tunnelFetch.mockReset();
@@ -90,7 +116,7 @@ describe('relay config sync', () => {
     expect(RelayIdentityChangedError).toBeTruthy();
   });
 
-  it('probes over the tunnel with bearer auth and skips authFile by default', async () => {
+  it('probes over the tunnel with bearer auth and skips provider credentials by default', async () => {
     tunnelFetch.mockImplementation(async (path: string) => {
       expect(path).toBe('/api/openchamber/config-sync/probe');
       return {
@@ -98,12 +124,12 @@ describe('relay config sync', () => {
         json: async () => ({
           remoteExisting: ['opencode.jsonc'],
           remoteAgentsRootExists: false,
-          remoteAuthFileExists: false,
+          remoteProviderCredentialsExists: false,
           inventory: {
             files: [{ path: 'opencode.jsonc', bytes: 2 }],
             directories: [],
             agentsRoot: null,
-            authFile: { bytes: 4 },
+            providerCredentials: { bytes: 4 },
           },
         }),
       };
@@ -125,7 +151,7 @@ describe('relay config sync', () => {
       { refreshCandidates: async () => ({ serverId: 'srv_a' }) },
     );
 
-    expect(preview.plan.authFile).toBeNull();
+    expect(preview.plan.providerCredentials).toBeNull();
     expect(preview.remoteExisting).toEqual(['opencode.jsonc']);
     expect(preview.selectionShape).toEqual({ fileGroups: 3, singleFiles: 2, directories: 7 });
     expect(close).toHaveBeenCalled();
@@ -134,18 +160,19 @@ describe('relay config sync', () => {
     expect(localScan).toHaveBeenCalledTimes(2);
   });
 
-  it('includes authFile when selections.authFile is true without requiring a grant', async () => {
+  it('includes provider credentials when selected without requiring a grant', async () => {
     tunnelFetch.mockImplementation(async () => ({
       ok: true,
       json: async () => ({
+        providerCredentials: { bytes: 4 },
         remoteExisting: ['opencode.jsonc'],
         remoteAgentsRootExists: false,
-        remoteAuthFileExists: false,
+        remoteProviderCredentialsExists: false,
         inventory: {
           files: [{ path: 'opencode.jsonc', bytes: 2 }],
           directories: [],
           agentsRoot: null,
-          authFile: { bytes: 4 },
+          providerCredentials: { bytes: 4 },
         },
       }),
     }));
@@ -167,24 +194,24 @@ describe('relay config sync', () => {
         direction: 'push',
         selections: {
           ...defaults,
-          authFile: true,
+          providerCredentials: true,
         },
       },
       { refreshCandidates: async () => ({ serverId: 'srv_a' }) },
     );
 
-    expect(preview.plan.authFile).toEqual({ bytes: 4 });
+    expect(preview.plan.providerCredentials).toEqual({ bytes: 4 });
     expect(close).toHaveBeenCalled();
   });
 
   it('buildDefaultSyncSelections mirrors selectionShape cardinality', () => {
     const selections = buildDefaultSyncSelections({ fileGroups: 2, singleFiles: 1, directories: 4 }, {
-      includeAuthFile: true,
+      includeProviderCredentials: true,
     });
     expect(selections.fileGroups).toEqual([true, true]);
     expect(selections.singleFiles).toEqual([true]);
     expect(selections.directories).toEqual([true, true, true, true]);
     expect(selections.agentsRoot).toBe(true);
-    expect(selections.authFile).toBe(true);
+    expect(selections.providerCredentials).toBe(true);
   });
 });

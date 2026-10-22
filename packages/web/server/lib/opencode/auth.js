@@ -49,7 +49,7 @@ async function listCredentials(client) {
   }
 }
 
-function currentClient() {
+export function currentClient() {
   if (!getClient) throw credentialError();
   try { return getClient(); } catch { throw credentialError(); }
 }

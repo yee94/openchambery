@@ -5,7 +5,6 @@ import { spawn } from 'node:child_process';
 
 import {
   OPENCODE_AGENTS_SYNC_BACKUP_DIR,
-  OPENCODE_AUTH_SYNC_BACKUP_DIR,
   OPENCODE_CONFIG_SYNC_ALLOWLIST,
   OPENCODE_CONFIG_SYNC_BACKUP_DIR,
   OPENCODE_CONFIG_SYNC_BACKUP_GENERATIONS,
@@ -106,18 +105,6 @@ export const prepareLocalSyncDestination = async (homedir, plan, options) => {
     await pruneGenerations(agentsBackupRoot, syncRunId, generations);
     await copyPathIfExists(path.join(home, '.agents'), path.join(agentsRun, 'agents'));
     await fsp.rm(path.join(home, '.agents'), { recursive: true, force: true });
-  }
-
-  if (plan?.authFile) {
-    const authBackupRoot = path.join(home, OPENCODE_AUTH_SYNC_BACKUP_DIR);
-    const authRun = path.join(authBackupRoot, syncRunId);
-    await fsp.rm(authRun, { recursive: true, force: true });
-    await fsp.mkdir(authRun, { recursive: true });
-    await pruneGenerations(authBackupRoot, syncRunId, generations);
-    await copyPathIfExists(
-      path.join(home, '.local', 'share', 'opencode', 'auth.json'),
-      path.join(authRun, 'auth.json'),
-    );
   }
 
   return { runBackup };

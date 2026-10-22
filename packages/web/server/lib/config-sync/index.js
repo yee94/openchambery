@@ -2,9 +2,7 @@ export {
   OPENCODE_CONFIG_SYNC_ALLOWLIST,
   OPENCODE_CONFIG_SYNC_BACKUP_DIR,
   OPENCODE_AGENTS_SYNC_BACKUP_DIR,
-  OPENCODE_AUTH_SYNC_BACKUP_DIR,
   OPENCODE_AGENTS_ROOT_PROBE_MARKER,
-  OPENCODE_AUTH_FILE_PROBE_MARKER,
   OPENCODE_CONFIG_SYNC_MAX_BYTES,
   OPENCODE_CONFIG_SYNC_MAX_FILES,
   OPENCODE_CONFIG_SYNC_BACKUP_GENERATIONS,
@@ -42,7 +40,6 @@ export {
   buildRemoteSyncInventoryScript,
   buildRemoteConfigTarScript,
   buildRemoteAgentsTarScript,
-  buildRemoteAuthTarScript,
   sanitizeSyncRunIdForPath,
   shellQuote,
 } from './scripts.js';

@@ -152,7 +152,7 @@ const EMPTY_SYNC_SELECTIONS: DesktopSshConfigSyncSelections = {
   singleFiles: [],
   directories: [],
   agentsRoot: true,
-  authFile: false,
+  providerCredentials: false,
 };
 
 const readSelectionShape = (plan: DesktopSshConfigSyncPlan): SyncSelectionShape | null => {
@@ -329,7 +329,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       setSelectionShape(shape);
       const resolvedSelections = canReuseSelections
         ? nextSelections
-        : buildDefaultSyncSelections(shape, { includeAuthFile: false });
+        : buildDefaultSyncSelections(shape, { includeProviderCredentials: false });
       setSelections(resolvedSelections);
       setLocalPlan(plan);
       await runCompareRemote(nextDirection, resolvedSelections);
@@ -362,7 +362,8 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     && (plan.files.length > 0
       || plan.directories.length > 0
       || plan.agentsRoot != null
-      || plan.authFile != null),
+      || plan.providerCredentials != null
+      || plan.magpie != null),
   );
   const isApplying = phase === 'applying';
   const isReview = phase === 'review' || (phase === 'applying' && step === 3);
@@ -384,7 +385,9 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     setDirection(next);
     setPreview(null);
     setLocalPlan(null);
-    void runScanLocal(next, selections);
+    const nextSelections = { ...selections, magpie: false };
+    setSelections(nextSelections);
+    void runScanLocal(next, nextSelections);
   });
 
   const handleConfirm = useEvent(async () => {
@@ -525,19 +528,37 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
           </label>
           <label className="flex items-center gap-2 typography-meta">
             <Checkbox
-              checked={selections.authFile}
+              checked={selections.providerCredentials}
               disabled={isApplying || !scopeReady}
-              ariaLabel={t('settings.remoteInstances.page.sync.section.authFile')}
+              ariaLabel={t('settings.remoteInstances.page.sync.section.providerCredentials')}
               onChange={(checked) => {
                 if (!scopeReady) return;
-                const next = { ...selections, authFile: checked };
+                const next = { ...selections, providerCredentials: checked };
                 setSelections(next);
                 if (phase === 'review') void runCompareRemote(direction, next);
               }}
             />
-            {t('settings.remoteInstances.page.sync.section.authFile')}
+            {t('settings.remoteInstances.page.sync.section.providerCredentials')}
           </label>
+          {preview?.plan.magpieAvailable && (
+            <label className="flex items-center gap-2 typography-meta">
+              <Checkbox
+                checked={selections.magpie === true}
+                disabled={isApplying || phase !== 'review'}
+                ariaLabel={t('settings.remoteInstances.page.sync.section.magpie')}
+                onChange={(checked) => {
+                  const next = { ...selections, magpie: checked };
+                  setSelections(next);
+                  void runCompareRemote(direction, next);
+                }}
+              />
+              {t('settings.remoteInstances.page.sync.section.magpie')}
+            </label>
+          )}
         </div>
+        {preview?.plan.magpieAvailable && (
+          <p className="typography-micro text-muted-foreground">{t('settings.remoteInstances.page.sync.magpie.description')}</p>
+        )}
 
         <div className="space-y-2">
           {SYNC_STEP_KEYS.map((key, index) => {
@@ -630,20 +651,28 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                     );
                   })}
 
-                  {plan.authFile ? (
+                  {plan.providerCredentials ? (
                     <div className="flex h-8 items-center gap-2 px-2">
                       <Icon name="shield-keyhole" className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate font-mono typography-micro text-foreground" title="~/.local/share/opencode/auth.json">
-                        <span className="sr-only">{t('settings.remoteInstances.page.sync.section.authFile')}: </span>
-                        ~/.local/share/opencode/auth.json
+                      <span className="min-w-0 flex-1 truncate typography-micro text-foreground">
+                        {t('settings.remoteInstances.page.sync.section.providerCredentials')}
                       </span>
                       <span className="shrink-0 tabular-nums typography-micro text-muted-foreground">
-                        {formatSyncBytes(plan.authFile.bytes)}
+                        {formatSyncBytes(plan.providerCredentials.bytes)}
                       </span>
-                      <span className={cn('shrink-0 typography-micro', preview?.remoteAuthFileExists ? 'text-[var(--status-warning)]' : 'text-[var(--status-success)]')}>
-                        {preview?.remoteAuthFileExists
+                      <span className={cn('shrink-0 typography-micro', preview?.remoteProviderCredentialsExists ? 'text-[var(--status-warning)]' : 'text-[var(--status-success)]')}>
+                        {preview?.remoteProviderCredentialsExists
                           ? t('settings.remoteInstances.page.sync.status.overwrite')
                           : t('settings.remoteInstances.page.sync.status.add')}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {plan.magpie ? (
+                    <div className="flex h-8 items-center gap-2 px-2">
+                      <Icon name="tools" className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate typography-micro text-foreground">
+                        {t('settings.remoteInstances.page.sync.section.magpie')}
                       </span>
                     </div>
                   ) : null}

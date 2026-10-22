@@ -13,6 +13,8 @@ import { collectLocalTarBuffer } from './tar.js';
  *   syncRunId: string,
  *   sourceHomedir: string,
  *   collectTar?: typeof collectLocalTarBuffer,
+ *   collectCredentials?: () => Promise<Buffer>,
+ *   collectMagpie?: () => Promise<Buffer>,
  * }} args
  */
 export const applyConfigSyncPlan = async ({
@@ -21,6 +23,8 @@ export const applyConfigSyncPlan = async ({
   syncRunId,
   sourceHomedir,
   collectTar = collectLocalTarBuffer,
+  collectCredentials,
+  collectMagpie,
 }) => {
   assertPlanDirection(plan);
   const home = String(sourceHomedir || '');
@@ -31,9 +35,9 @@ export const applyConfigSyncPlan = async ({
   ];
   const hasConfigPayload = tarEntries.length > 0;
   const hasAgentsPayload = Boolean(plan.agentsRoot);
-  const hasAuthPayload = Boolean(plan.authFile);
+  const hasCredentialPayload = Boolean(plan.providerCredentials);
 
-  if (!hasConfigPayload && !hasAgentsPayload && !hasAuthPayload) {
+  if (!hasConfigPayload && !hasAgentsPayload && !hasCredentialPayload && !plan.magpie) {
     // Nothing to upload — preserve the historical short-circuit (no remote prepare).
     return {
       ok: true,
@@ -42,7 +46,7 @@ export const applyConfigSyncPlan = async ({
       deletes: plan.deletes.length,
       totalBytes: plan.totalBytes,
       agentsRoot: null,
-      authFile: null,
+      providerCredentials: null,
       plan,
     };
   }
@@ -54,10 +58,10 @@ export const applyConfigSyncPlan = async ({
   const agentsTarBuffer = hasAgentsPayload
     ? await collectTar(['-h', '-czf', '-', '-C', home, '.agents'], { windowsHide })
     : null;
-  const authShareDir = path.join(home, '.local', 'share', 'opencode');
-  const authTarBuffer = hasAuthPayload
-    ? await collectTar(['-h', '-czf', '-', '-C', authShareDir, 'auth.json'], { windowsHide })
+  const credentialPayload = hasCredentialPayload
+    ? await collectCredentials()
     : null;
+  const magpiePayload = plan.magpie ? await collectMagpie() : null;
 
   await executor.prepare(plan, { syncRunId });
 
@@ -67,10 +71,11 @@ export const applyConfigSyncPlan = async ({
   if (agentsTarBuffer) {
     await executor.putTar({ kind: 'agents', payload: agentsTarBuffer });
   }
-  if (authTarBuffer) {
-    // Only auth.json — never the rest of ~/.local/share/opencode (session DBs live there).
-    await executor.putTar({ kind: 'auth', payload: authTarBuffer });
+  if (credentialPayload) {
+    // Versioned credential payload; never a database or filesystem archive.
+    await executor.putTar({ kind: 'credentials', payload: credentialPayload });
   }
+  if (magpiePayload) await executor.putTar({ kind: 'magpie', payload: magpiePayload });
 
   await executor.finalize(plan, { syncRunId });
 
@@ -81,7 +86,7 @@ export const applyConfigSyncPlan = async ({
     deletes: plan.deletes.length,
     totalBytes: plan.totalBytes,
     agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
-    authFile: plan.authFile ? { bytes: plan.authFile.bytes } : null,
+    providerCredentials: plan.providerCredentials ? { bytes: plan.providerCredentials.bytes } : null,
     plan,
   };
 };

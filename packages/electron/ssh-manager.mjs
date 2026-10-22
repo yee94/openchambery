@@ -9,8 +9,6 @@ import { spawn } from 'node:child_process';
 import {
   OPENCODE_AGENTS_ROOT_PROBE_MARKER,
   OPENCODE_AGENTS_SYNC_BACKUP_DIR,
-  OPENCODE_AUTH_FILE_PROBE_MARKER,
-  OPENCODE_AUTH_SYNC_BACKUP_DIR,
   OPENCODE_CONFIG_SYNC_ALLOWLIST,
   OPENCODE_CONFIG_SYNC_BACKUP_DIR,
   SYNC_DIRECTION_PULL,
@@ -18,7 +16,6 @@ import {
   applyConfigSyncPlan,
   assertTargetCapability,
   buildRemoteAgentsTarScript,
-  buildRemoteAuthTarScript,
   buildRemoteConfigTarScript,
   buildRemoteSyncFinalizeScript,
   buildRemoteSyncInventoryScript,
@@ -36,6 +33,7 @@ import {
 } from '@openchambery/web/server/lib/config-sync/index.js';
 
 import { createSettingsStore } from './settings-store.mjs';
+import { createDirectTargetExecutor } from './direct-config-sync.mjs';
 import {
   createSyncRunStore,
   summarizeSyncPlan,
@@ -46,8 +44,6 @@ export {
   OPENCODE_CONFIG_SYNC_ALLOWLIST,
   OPENCODE_CONFIG_SYNC_BACKUP_DIR,
   OPENCODE_AGENTS_SYNC_BACKUP_DIR,
-  OPENCODE_AUTH_SYNC_BACKUP_DIR,
-  OPENCODE_AUTH_FILE_PROBE_MARKER,
   planOpenCodeConfigSync,
   buildRemoteSyncProbeScript,
 };
@@ -1047,11 +1043,11 @@ export const parseVersionToken = (raw) => {
   return null;
 };
 
-const isOpenCode1xVersionToken = (value) => {
+const isOpenCode2xVersionToken = (value) => {
   if (typeof value !== 'string') return false;
   const normalized = value.trim().replace(/^v/i, '');
   if (!normalized) return false;
-  return /^1(?:\.|$)/.test(normalized);
+  return /^2\./.test(normalized);
 };
 
 const parseProbeStatusLine = (line, prefix) => {
@@ -1065,6 +1061,7 @@ const isLivenessHttpStatus = (status) => (status >= 200 && status <= 299) || isA
 
 export class ElectronSshManager {
   constructor(options) {
+    this.getLocalSyncExecutor = options.getLocalSyncExecutor;
     this.settingsFilePath = options.settingsFilePath;
     this.settingsStore = options.settingsStore
       || createSettingsStore({ filePath: options.settingsFilePath });
@@ -1073,7 +1070,6 @@ export class ElectronSshManager {
         resolveDataDir: () => path.dirname(this.settingsStore.resolveFilePath()),
       });
     this.appVersion = options.appVersion;
-    this.opencodeCliVersion = options.opencodeCliVersion;
     this.emit = options.emit;
     this.logs = new Map();
     this.statuses = new Map();
@@ -1700,18 +1696,15 @@ export class ElectronSshManager {
 
   async ensureRemoteOpenCodeCli(parsed, controlPath, preferred) {
     const installedVersion = await this.currentRemoteOpenCodeVersion(parsed, controlPath);
-    // 1.x leftovers must be replaced; only matching opencode2 pin is a hit.
-    if (
-      installedVersion
-      && !isOpenCode1xVersionToken(installedVersion)
-      && (!this.opencodeCliVersion || installedVersion === this.opencodeCliVersion)
-    ) {
+    // Reuse any working 2.x; new installs resolve the latest stable 2.x.
+    if (isOpenCode2xVersionToken(installedVersion)) {
+      await this.ensureRemoteLoginPath(parsed, controlPath);
       return;
     }
 
     const hasBun = await this.remoteCommandExists(parsed, controlPath, 'bun');
     const hasNpm = await this.remoteCommandExists(parsed, controlPath, 'npm');
-    const packageSpec = this.opencodeCliVersion ? `${OPENCODE_NPM_PACKAGE}@${this.opencodeCliVersion}` : OPENCODE_NPM_PACKAGE;
+    const packageSpec = `${OPENCODE_NPM_PACKAGE}@2`;
     const commands = [];
     if (preferred === 'npm') {
       if (hasNpm) commands.push(`npm install -g ${packageSpec} --force`);
@@ -1729,19 +1722,70 @@ export class ElectronSshManager {
       try {
         await this.runManagedRemoteCommand(parsed, controlPath, command);
         const installed = await this.currentRemoteOpenCodeVersion(parsed, controlPath);
-        if (
-          installed
-          && !isOpenCode1xVersionToken(installed)
-          && (!this.opencodeCliVersion || installed === this.opencodeCliVersion)
-        ) {
-          return;
-        }
+        if (isOpenCode2xVersionToken(installed)) break;
         lastError = new Error('OpenCode CLI installation completed but the expected opencode v2 version is unavailable');
       } catch (error) {
         lastError = error;
       }
     }
-    throw lastError || new Error('Failed to install OpenCode CLI on remote host');
+    if (!isOpenCode2xVersionToken(await this.currentRemoteOpenCodeVersion(parsed, controlPath))) {
+      throw lastError || new Error('Failed to install OpenCode CLI on remote host');
+    }
+    await this.ensureRemoteLoginPath(parsed, controlPath);
+  }
+
+  async ensureRemoteLoginPath(parsed, controlPath) {
+    // Persist only the selected executable directories, not the managed process's entire PATH.
+    const script = String.raw`
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const home = process.env.HOME;
+const shell = process.env.SHELL || '/bin/sh';
+const kind = path.basename(shell);
+const quote = (value) => "'" + value.replace(/'/g, "'\\''") + "'";
+const directories = [...new Set([...process.argv.slice(1).filter(Boolean).map((p) => path.dirname(p)), path.dirname(process.execPath)])];
+const files = [];
+if (kind === 'zsh') {
+  const probe = spawnSync(shell, ['-c', 'printf "%s" "$ZDOTDIR"'], { encoding: 'utf8', timeout: 15000 });
+  const zdotdir = probe.stdout || home;
+  if (probe.status !== 0 || !path.isAbsolute(zdotdir)) throw new Error('OpenCode CLI: cannot resolve zsh startup directory');
+  files.push(path.join(zdotdir, '.zprofile'), path.join(zdotdir, '.zshrc'));
+} else if (kind === 'bash') {
+  files.push(path.join(home, '.bashrc'));
+  files.push(['.bash_profile', '.bash_login', '.profile'].map((name) => path.join(home, name)).find((file) => fs.existsSync(file)) || path.join(home, '.profile'));
+} else if (kind === 'sh' || kind === 'dash' || kind === 'ksh') {
+  files.push(path.join(home, '.profile'));
+} else if (kind === 'fish') {
+  files.push(path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'fish', 'config.fish'));
+} else {
+  throw new Error('OpenCode CLI: unsupported login shell ' + kind);
+}
+const envFile = path.join(home, '.config', 'openchamber', kind === 'fish' ? 'ssh-path.fish' : 'ssh-path.sh');
+fs.mkdirSync(path.dirname(envFile), { recursive: true });
+const content = kind === 'fish'
+  ? 'set -gx PATH ' + directories.map(quote).join(' ') + ' $PATH\n'
+  : 'export PATH=' + quote(directories.join(':')) + ':"$PATH"\n';
+fs.writeFileSync(envFile + '.tmp', content, { mode: 0o600 });
+fs.renameSync(envFile + '.tmp', envFile);
+const line = (kind === 'fish' ? 'source ' : '. ') + quote(envFile) + ' # OpenChamber SSH CLI PATH';
+for (const file of files) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  if (!existing.split('\n').includes(line)) fs.appendFileSync(file, '\n' + line + '\n');
+}
+// Drop the managed PATH so a successful probe proves startup files actually work.
+for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-lic', '-ic'] : ['-lc'])) {
+  const result = spawnSync(shell, [flags, 'opencode --version'], {
+    env: { ...process.env, PATH: '/usr/local/bin:/usr/bin:/bin' }, encoding: 'utf8', timeout: 20000,
+  });
+  if (result.status !== 0 || !/(?:^|\s)v?2\.\d+\.\d+(?:\S*)?(?:\s|$)/m.test(result.stdout)) {
+    throw new Error('OpenCode CLI is unavailable in a fresh ' + kind + ' shell; check shell startup PATH overrides');
+  }
+}
+`;
+    await this.runManagedRemoteCommand(parsed, controlPath,
+      `node -e ${shellQuote(script)} "$(command -v opencode)" "$(command -v openchamber)"`);
   }
 
   async ensureRemoteOpenChamberNativeBinding(parsed, controlPath) {
@@ -1763,7 +1807,7 @@ export class ElectronSshManager {
         'opencode --version 2>/dev/null || true',
       );
       const version = parseVersionToken(output);
-      if (!version || isOpenCode1xVersionToken(version)) return null;
+      if (!isOpenCode2xVersionToken(version)) return null;
       return version;
     } catch {
       return null;
@@ -1993,6 +2037,7 @@ export class ElectronSshManager {
    * @returns {import('@openchambery/web/server/lib/config-sync/contract.js').TargetExecutor}
    */
   createSshTargetExecutor(session) {
+    const credentialExecutor = () => this.createSshCredentialExecutor(session);
     const timeoutSec = session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC;
     const ensureBuffer = async (payload) => {
       if (Buffer.isBuffer(payload)) return payload;
@@ -2014,11 +2059,11 @@ export class ElectronSshManager {
           .map((line) => line.trim())
           .filter(Boolean);
         const remoteAgentsRootExists = remoteLines.includes(OPENCODE_AGENTS_ROOT_PROBE_MARKER);
-        const remoteAuthFileExists = remoteLines.includes(OPENCODE_AUTH_FILE_PROBE_MARKER);
+        const remoteProviderCredentialsExists = plan.providerCredentials ? Boolean(await credentialExecutor().credentialInventory()) : false;
         const remoteExisting = remoteLines.filter(
-          (line) => line !== OPENCODE_AGENTS_ROOT_PROBE_MARKER && line !== OPENCODE_AUTH_FILE_PROBE_MARKER,
+          (line) => line !== OPENCODE_AGENTS_ROOT_PROBE_MARKER,
         );
-        return { remoteExisting, remoteAgentsRootExists, remoteAuthFileExists };
+        return { remoteExisting, remoteAgentsRootExists, remoteProviderCredentialsExists };
       },
 
       async prepare(plan, ctx) {
@@ -2056,15 +2101,12 @@ export class ElectronSshManager {
           );
           return;
         }
-        if (kind === 'auth') {
-          // Only auth.json — never the rest of ~/.local/share/opencode (session DBs live there).
-          await runRemoteCommandWithInput(
-            session.parsed,
-            session.controlPath,
-            'mkdir -p "$HOME/.local/share/opencode" && tar -xzf - -C "$HOME/.local/share/opencode"',
-            buffer,
-            timeoutSec,
-          );
+        if (kind === 'credentials') {
+          await credentialExecutor().importCredentials(buffer);
+          return;
+        }
+        if (kind === 'magpie') {
+          await credentialExecutor().importMagpie(buffer);
           return;
         }
         throw new Error(`Unsupported putTar kind: ${String(kind)}`);
@@ -2169,7 +2211,7 @@ export class ElectronSshManager {
   normalizeSyncOptions(raw = {}) {
     const direction = raw?.direction === SYNC_DIRECTION_PULL ? SYNC_DIRECTION_PULL : SYNC_DIRECTION_PUSH;
     const selections = normalizeSyncSelections(raw?.selections, {
-      includeAuthFile: raw?.selections?.authFile === true,
+      includeProviderCredentials: raw?.selections?.providerCredentials === true,
     });
     return { direction, selections };
   }
@@ -2187,7 +2229,13 @@ export class ElectronSshManager {
    * Collect remote allowlist inventory for pull planning.
    * @param {{ parsed: object, controlPath: string, instance?: object }} session
    */
-  async collectRemoteInventory(session) {
+  createSshCredentialExecutor(session) {
+    const host = this.readSettingsRoot().desktopHosts?.find((entry) => entry.id === session.instance.id);
+    if (!host) throw new Error('SSH host credential connection unavailable');
+    return createDirectTargetExecutor({ host });
+  }
+
+  async collectRemoteInventory(session, includeCredentials = false) {
     const timeoutSec = session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC;
     const stdout = await runRemoteCommand(
       session.parsed,
@@ -2207,6 +2255,8 @@ export class ElectronSshManager {
     if (!parsed || typeof parsed !== 'object') {
       throw new Error('Remote sync inventory payload is malformed');
     }
+    parsed.providerCredentials = includeCredentials ? await this.createSshCredentialExecutor(session).credentialInventory() : null;
+    parsed.magpie = await this.createSshCredentialExecutor(session).magpieInventory();
     return parsed;
   }
 
@@ -2222,7 +2272,7 @@ export class ElectronSshManager {
       const { direction, selections } = this.normalizeSyncOptions(options);
 
       if (direction === SYNC_DIRECTION_PULL) {
-        const inventory = await this.collectRemoteInventory(session);
+        const inventory = await this.collectRemoteInventory(session, selections.providerCredentials);
         const plan = planOpenCodeConfigSyncFromInventory(inventory, {
           direction: SYNC_DIRECTION_PULL,
           syncRunId,
@@ -2247,29 +2297,26 @@ export class ElectronSshManager {
         } catch {
           localAgentsRootExists = false;
         }
-        let localAuthFileExists = false;
-        try {
-          localAuthFileExists = fs.statSync(path.join(home, '.local', 'share', 'opencode', 'auth.json')).isFile();
-        } catch {
-          localAuthFileExists = false;
-        }
+        const localProviderCredentialsExists = selections.providerCredentials ? Boolean(await this.getLocalSyncExecutor().credentialInventory()) : false;
         return {
           plan,
           remoteExisting: localExisting,
           remoteAgentsRootExists: localAgentsRootExists,
-          remoteAuthFileExists: localAuthFileExists,
+          remoteProviderCredentialsExists: localProviderCredentialsExists,
         };
       }
 
       const plan = planOpenCodeConfigSync(os.homedir(), {
+        magpie: await this.getLocalSyncExecutor().magpieInventory(),
+        providerCredentials: selections.providerCredentials ? await this.getLocalSyncExecutor().credentialInventory() : null,
         direction: SYNC_DIRECTION_PUSH,
         syncRunId,
         sourceTargetId: 'local',
         targetId,
         selections,
       });
-      if (plan.authFile) {
-        assertTargetCapability(target, 'authFileWrite');
+      if (plan.providerCredentials) {
+        assertTargetCapability(target, 'providerCredentialsWrite');
       }
       const executor = this.createSshTargetExecutor(session);
       const probe = await executor.probe(plan);
@@ -2291,7 +2338,7 @@ export class ElectronSshManager {
       const { direction, selections } = this.normalizeSyncOptions(options);
 
       if (direction === SYNC_DIRECTION_PULL) {
-        const inventory = await this.collectRemoteInventory(session);
+        const inventory = await this.collectRemoteInventory(session, selections.providerCredentials);
         const plan = planOpenCodeConfigSyncFromInventory(inventory, {
           direction: SYNC_DIRECTION_PULL,
           syncRunId,
@@ -2300,7 +2347,7 @@ export class ElectronSshManager {
           selections,
         });
         this.appendLogWithLevel(trimmed, 'INFO', 'Pulling OpenCode config from remote');
-        const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.authFile);
+        const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.providerCredentials) || Boolean(plan.magpie);
         if (!hasPayload) {
           this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config sync: nothing to download');
           return {
@@ -2310,7 +2357,7 @@ export class ElectronSshManager {
             deletes: plan.deletes.length,
             totalBytes: plan.totalBytes,
             agentsRoot: null,
-            authFile: null,
+            providerCredentials: null,
             plan,
           };
         }
@@ -2322,9 +2369,10 @@ export class ElectronSshManager {
         const agentsTar = plan.agentsRoot
           ? await runRemoteCommandBinary(session.parsed, session.controlPath, buildRemoteAgentsTarScript(), timeoutSec)
           : null;
-        const authTar = plan.authFile
-          ? await runRemoteCommandBinary(session.parsed, session.controlPath, buildRemoteAuthTarScript(), timeoutSec)
+        const credentialPayload = plan.providerCredentials
+          ? await this.createSshCredentialExecutor(session).download('credentials')
           : null;
+        const magpiePayload = plan.magpie ? await this.createSshCredentialExecutor(session).download('magpie') : null;
 
         await prepareLocalSyncDestination(home, plan, { syncRunId });
         if (configTar && configTar.length > 0) {
@@ -2333,10 +2381,10 @@ export class ElectronSshManager {
         if (agentsTar && agentsTar.length > 0) {
           await extractTarGzBuffer(agentsTar, home);
         }
-        if (authTar && authTar.length > 0) {
-          await fsp.mkdir(path.join(home, '.local', 'share', 'opencode'), { recursive: true });
-          await extractTarGzBuffer(authTar, path.join(home, '.local', 'share', 'opencode'));
+        if (credentialPayload && credentialPayload.length > 0) {
+          await this.getLocalSyncExecutor().importCredentials(credentialPayload);
         }
+        if (magpiePayload) await this.getLocalSyncExecutor().importMagpie(magpiePayload);
         await finalizeLocalSyncDestination(home, { syncRunId });
         this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config pull completed');
         return {
@@ -2346,23 +2394,25 @@ export class ElectronSshManager {
           deletes: plan.deletes.length,
           totalBytes: plan.totalBytes,
           agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
-          authFile: plan.authFile ? { bytes: plan.authFile.bytes } : null,
+          providerCredentials: plan.providerCredentials ? { bytes: plan.providerCredentials.bytes } : null,
           plan,
         };
       }
 
       const plan = planOpenCodeConfigSync(home, {
+        magpie: await this.getLocalSyncExecutor().magpieInventory(),
+        providerCredentials: selections.providerCredentials ? await this.getLocalSyncExecutor().credentialInventory() : null,
         direction: SYNC_DIRECTION_PUSH,
         syncRunId,
         sourceTargetId: 'local',
         targetId,
         selections,
       });
-      if (plan.authFile) {
-        assertTargetCapability(target, 'authFileWrite');
+      if (plan.providerCredentials) {
+        assertTargetCapability(target, 'providerCredentialsWrite');
       }
       this.appendLogWithLevel(trimmed, 'INFO', 'Syncing OpenCode config to remote');
-      const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.authFile);
+      const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.providerCredentials) || Boolean(plan.magpie);
       if (!hasPayload) {
         this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config sync: nothing to upload');
         return {
@@ -2372,7 +2422,7 @@ export class ElectronSshManager {
           deletes: plan.deletes.length,
           totalBytes: plan.totalBytes,
           agentsRoot: null,
-          authFile: null,
+          providerCredentials: null,
           plan,
         };
       }
@@ -2382,6 +2432,8 @@ export class ElectronSshManager {
         executor,
         syncRunId,
         sourceHomedir: home,
+        collectCredentials: () => this.getLocalSyncExecutor().download('credentials'),
+        collectMagpie: () => this.getLocalSyncExecutor().download('magpie'),
       });
       this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config sync completed');
       return result;
