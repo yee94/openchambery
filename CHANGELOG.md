@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.1] - 2026-10-22
+
+### 改进
+
+- 引用消息的展示加宽缩进与行距，多段引用之间更容易区分。
+
+### 修复
+
+- 修复会话成功完成后侧边栏与文件变更没有及时刷新、需要手动切换才更新的问题。
+- 补充识别 `multiedit`、`create`、`file_write` 等写文件的工具调用，改动后及时刷新 Git 状态。
+
 ## [2.1.7] - 2026-10-22
 
 ### 改进

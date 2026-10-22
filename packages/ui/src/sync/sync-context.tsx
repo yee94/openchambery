@@ -13,6 +13,7 @@ import type { OpenCodeClient } from '@/lib/opencode/v2-types'
 import { createEventPipeline } from "./event-pipeline"
 import { sessionDisplayStatus, sessionDisplayStatusObservedAt } from "./session-interrupt"
 import { refreshQuestionAutoDelegate } from "@/lib/questionAutoDelegate"
+import { sessionEvents } from "@/lib/sessionEvents"
 import { QuestionAutoDelegateNotifications } from "@/components/chat/QuestionAutoDelegateStatus"
 import { bindStreamReconnect, noteStreamActivity, requestStreamReconnect } from "./stream-liveness"
 import { isVSCodeRuntime } from "@/lib/desktop"
@@ -2563,6 +2564,9 @@ export function handleEvent(
       // succeeded then idle is one completion. A lone idle (legacy) still notifies.
       const duplicateSuccess = isSuccessCompletion && payload.type === "session.idle" && turnCompleteNotified.has(sessionID)
       if (!duplicateSuccess) {
+        if (isSuccessCompletion && resolvedDirectory && resolvedDirectory !== "global") {
+          sessionEvents.requestGitRefresh({ directory: resolvedDirectory })
+        }
         appendNotification({
           directory: resolvedDirectory,
           session: sessionID,

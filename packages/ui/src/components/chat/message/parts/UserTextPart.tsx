@@ -288,7 +288,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
             )}
             {quotedConversation && quotedConversation.quotes.length > 0 ? (
                 <div
-                    className="mb-1 flex flex-col gap-0.5"
+                    className="mb-2 flex flex-col gap-1"
                     data-conversation-quotes
                     aria-label={t('chat.message.conversationQuotesLabel')}
                 >
@@ -296,7 +296,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                         <p
                             key={`${part.id || messageId}-quote-${index}`}
                             data-conversation-quote
-                            className="m-0 whitespace-pre-wrap break-words border-l-2 border-border pl-1.5 typography-meta text-muted-foreground"
+                            className="m-0 whitespace-pre-wrap break-words border-l-2 border-border pl-3 typography-meta text-muted-foreground"
                         >
                             {quote}
                         </p>

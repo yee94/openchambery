@@ -230,7 +230,10 @@ const normalizeToolName = (toolName: string | undefined | null): string => {
 const GIT_REFRESH_MUTATING_TOOLS = new Set([
     'bash',
     'edit',
+    'multiedit',
     'write',
+    'create',
+    'file_write',
     'apply_patch',
     'patch',
     'task',

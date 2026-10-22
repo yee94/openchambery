@@ -17,6 +17,7 @@ import {
 import { clearTurnCompleteNotificationGuardForTests, handleEvent, setActiveSession } from "./sync-context";
 import type { ChildStoreManager } from "./child-store";
 import { INITIAL_STATE, type Event, type State } from "./types";
+import { sessionEvents } from "@/lib/sessionEvents";
 
 function directoryState(overrides: Partial<State> = {}): State {
   return {
@@ -426,6 +427,31 @@ describe("session.execution.succeeded unread marker", () => {
 
     expect(useNotificationStore.getState().list.filter((n) => n.type === "turn-complete")).toHaveLength(1);
     expect(useNotificationStore.getState().sessionUnseenCount(SESSION)).toBe(1);
+  });
+
+  test("refreshes changes in the completed directory once, then again for the next turn", () => {
+    const hints: Array<{ directory: string }> = [];
+    const unsubscribe = sessionEvents.onGitRefreshHint((hint) => hints.push(hint));
+    try {
+      setActiveSession("/workspace/other", "ses_other");
+      dispatch("session.execution.started");
+      dispatch("session.execution.succeeded");
+      dispatch("session.idle");
+      expect(hints).toEqual([{ directory: DIRECTORY }]);
+
+      dispatch("session.execution.started");
+      expect(hints).toHaveLength(1);
+      dispatch("session.execution.succeeded");
+      expect(hints).toEqual([{ directory: DIRECTORY }, { directory: DIRECTORY }]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test("legacy completion also refreshes changes", () => {
+    const refresh = vi.spyOn(sessionEvents, "requestGitRefresh");
+    dispatch("session.idle");
+    expect(refresh).toHaveBeenCalledExactlyOnceWith({ directory: DIRECTORY });
   });
 
   test("legacy session.idle still leaves an unread marker, and the next run can notify again", () => {
