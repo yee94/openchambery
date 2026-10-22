@@ -495,7 +495,7 @@ export function createContactStreamFn(createChatCompletion, {
             || (malformedFinal ? 'The final declaration must be a single valid openchamber-final JSON fence with status and text, without other content.' : '')
             || (requiresFinal && parsed.toolCalls.length === 0 && finalText === null ? 'A workspace response needs an actual tool call or an explicit final declaration.' : '');
           if (!protocolError) break;
-          if (attempt >= 2) throw new Error('Assistant response protocol failed after two corrections; the task was not confirmed complete.');
+          if (attempt >= 2) throw new Error(`Assistant response protocol failed after two corrections; the task was not confirmed complete. Reason: ${protocolError}`);
           const rejected = parsed.toolCalls.filter((call) => isPiCodingToolName(call.name));
           if (rejected.length > 0) rejectedCodingCalls = rejected.map(({ name, arguments: args }) => ({ name, arguments: args }));
           if (publicBubbles.length > publicStart) {
