@@ -41,6 +41,33 @@ const isFullyIdle = (runtime) => (
 );
 
 describe('session index background sync runtime', () => {
+  it.each([1, 20, 21])('only advertises more when terminal pages contain over 20 visible roots (%i roots)', async (rootCount) => {
+    const service = createService();
+    const rows = Array.from({ length: Math.max(20, rootCount) }, (_, i) => ({
+      ...session(`ses_${i}`, 100 - i),
+      ...(i >= rootCount ? { parentID: 'ses_0' } : {}),
+    }));
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      fetchFn: async (url) => {
+        if (url.pathname !== '/session' || url.searchParams.has('parentID')) return new Response(JSON.stringify([]));
+        const secondPage = url.searchParams.has('cursor');
+        return new Response(JSON.stringify({
+          data: secondPage ? rows.slice(20) : rows.slice(0, 20),
+          cursor: { next: !secondPage && rows.length > 20 ? 'next-page' : null },
+        }));
+      },
+    });
+    runtime.enqueue(['/repo']);
+    await waitUntil(() => isFullyIdle(runtime));
+    expect(service.snapshot().directories[0].sessions).toHaveLength(Math.min(rootCount, 20));
+    expect(service.snapshot().directories[0].hasMore).toBe(rootCount > 20);
+    runtime.stop();
+  });
+
   it('skips a full background-tagged page without consuming the active session budget', async () => {
     const service = createService();
     const cursors = [];

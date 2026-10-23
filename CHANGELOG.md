@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.10] - 2026-10-23
+
+### 修复
+
+- 修复置顶对话拖拽时位移重复计算，导致文字漂移、相邻对话重叠及落点错位的问题。
+- 修复会话列表已加载完毕时仍显示“更多”的问题，正确识别分页结束及子会话过滤后的剩余数量。
+
 ## [2.1.8-beta.9] - 2026-10-23
 
 ### 改进

@@ -47,6 +47,10 @@
   containing block and otherwise offsets both the overlay and collision geometry.
   Mobile session menus open from the three-dot button, not long press.
   Project dragging is unchanged. Inline rename disables pinned dragging.
+  `SessionNodeItem` owns the single sortable row wrapper. The pinned section
+  supplies only its DnD scope: wrapping the renderer output again registers the
+  same id twice and applies sibling/active translations twice, drifting text out
+  of the intended slot. Mobile home supplies one wrapper around its plain row.
 - The Host persists session orders and activity baselines via
   `GET/POST /api/session-folders/order`. `useSessionOrderSync` projects the runtime
   Query snapshot into the existing sidebar store; SSE order tips, reconnect, and
