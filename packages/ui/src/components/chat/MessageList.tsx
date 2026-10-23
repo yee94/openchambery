@@ -507,11 +507,28 @@ const captureViewportMessageAnchor = (
     };
 };
 
+const captureLastMessageAnchor = (
+    container: HTMLElement,
+    scope: ParentNode,
+): ViewportMessageAnchor | null => {
+    const nodes = scope.querySelectorAll<HTMLElement>('[data-message-id]');
+    const last = nodes[nodes.length - 1];
+    const messageId = last?.dataset.messageId;
+    if (!last || !messageId) return null;
+    return {
+        messageId,
+        offsetTop: last.getBoundingClientRect().top - container.getBoundingClientRect().top,
+    };
+};
+
 const captureVirtualizationTransitionAnchor = (
     content: HTMLElement,
     container: HTMLElement,
 ): VirtualizationTransitionAnchor | null => {
-    const messageAnchor = captureViewportMessageAnchor(container, content);
+    // A reader in the live tail sees no history message; the last history
+    // message still pins the frame's geometry across the threshold commit.
+    const messageAnchor = captureViewportMessageAnchor(container, content)
+        ?? captureLastMessageAnchor(container, content);
     if (!messageAnchor) {
         return null;
     }
@@ -1346,6 +1363,7 @@ UngroupedMessageRow.displayName = 'UngroupedMessageRow';
 
 interface MessageListEntryProps {
     entry: RenderEntry;
+    hydrateMarkdown?: boolean;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
@@ -1365,6 +1383,7 @@ interface MessageListEntryProps {
 
 const MessageListEntry = React.memo(({
     entry,
+    hydrateMarkdown = true,
     onMessageContentChange,
     getAnimationHandlers,
     scrollToBottom,
@@ -1415,14 +1434,13 @@ const MessageListEntry = React.memo(({
             stickyUserHeader={stickyUserHeader}
         />
     );
-    if (!showLiveStatusRow) return body;
     return (
-        <>
+        <MarkdownHydrationProvider enabled={hydrateMarkdown}>
             {body}
-            <div className="mb-1">
+            {showLiveStatusRow ? <div className="mb-1">
                 <StatusRowContainer />
-            </div>
-        </>
+            </div> : null}
+        </MarkdownHydrationProvider>
     );
 });
 
@@ -1576,6 +1594,8 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         contentRef.current = element;
     });
     const historyReadingAnchorRef = React.useRef<ViewportMessageAnchor | null>(null);
+    const unmeasuredHistoryRowsRef = React.useRef(new Set<HTMLDivElement>());
+    const revealingHistoryRowsRef = React.useRef(new Set<HTMLDivElement>());
     const previousHistoryAnchorTokenRef = React.useRef(historyAnchorToken);
     // A held prepend must use the reading position at adoption, after the
     // user's drag/momentum, rather than the position when the request began.
@@ -1675,7 +1695,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
             // the virtual padding disagree with the DOM after a prepend.
             const height = entry?.borderBoxSize?.[0]?.blockSize;
             if (height !== undefined) return height;
-            if (!entry && cached !== undefined) return cached;
+            if (!entry) return cached ?? instance.options.estimateSize(instance.indexFromElement(element));
             return element.getBoundingClientRect().height;
         },
         scrollToFn: (offset, options, instance) => {
@@ -1727,8 +1747,38 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     useIsomorphicLayoutEffect(() => {
         if (!isTanstack) return;
         tanstackVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = shouldAdjustHistoryScrollOnItemSizeChange;
-        return installBatchedResizeItem(tanstackVirtualizer, restoreHistoryReadingAnchor);
+        const dispose = installBatchedResizeItem(tanstackVirtualizer, finishHistoryMeasurement);
+        return () => {
+            dispose();
+            for (const row of revealingHistoryRowsRef.current) row.style.removeProperty('opacity');
+            revealingHistoryRowsRef.current.clear();
+            unmeasuredHistoryRowsRef.current.clear();
+        };
     }, [isTanstack, tanstackVirtualizer]);
+    const finishHistoryMeasurement = useEvent(() => {
+        restoreHistoryReadingAnchor();
+        for (const row of revealingHistoryRowsRef.current) row.style.removeProperty('opacity');
+        revealingHistoryRowsRef.current.clear();
+    });
+    const measureHistoryElement = useEvent((element: HTMLDivElement | null) => {
+        tanstackVirtualizer.measureElement(element);
+        if (!element || !element.isConnected) return;
+        unmeasuredHistoryRowsRef.current.add(element);
+    });
+    useIsomorphicLayoutEffect(() => {
+        if (!isTanstack || unmeasuredHistoryRowsRef.current.size === 0) return;
+        // Read newly attached rows together before the browser can paint their
+        // estimated padding. The existing resize batch commits sizes, padding
+        // and the reading anchor before revealing these rows in that microtask.
+        const measurements = [...unmeasuredHistoryRowsRef.current].filter((row) => row.isConnected).map((row) => ({
+            row, index: tanstackVirtualizer.indexFromElement(row), height: row.getBoundingClientRect().height,
+        }));
+        unmeasuredHistoryRowsRef.current.clear();
+        for (const { row, index, height } of measurements) {
+            revealingHistoryRowsRef.current.add(row);
+            tanstackVirtualizer.resizeItem(index, height);
+        }
+    });
     const columnWidthRef = React.useRef<number | null>(null);
     const columnMeasureTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     if (!isTanstack) {
@@ -1944,24 +1994,23 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
 
     const renderEntry = useRenderPhaseCallback((entry: RenderEntry, hydrateMarkdown: boolean = true) => {
         return (
-            <MarkdownHydrationProvider enabled={hydrateMarkdown}>
-                <MessageListEntry
-                    key={entry.key}
-                    entry={entry}
-                    onMessageContentChange={onMessageContentChange}
-                    getAnimationHandlers={getAnimationHandlers}
-                    scrollToBottom={scrollToBottom}
-                    stickyUserHeader={stickyUserHeader}
-                    sessionIsWorking={false}
-                    activityRenderMode={activityRenderMode}
-                    turnUiStates={turnUiStates}
-                    onToggleTurnGroup={onToggleTurnGroup}
-                    chatRenderMode={chatRenderMode}
-                    shouldAnimateUserMessage={shouldAnimateUserMessage}
-                    onUserAnimationConsumed={onUserAnimationConsumed}
-                    reviewTransferDirection={reviewTransferDirection}
-                />
-            </MarkdownHydrationProvider>
+            <MessageListEntry
+                key={entry.key}
+                entry={entry}
+                hydrateMarkdown={hydrateMarkdown}
+                onMessageContentChange={onMessageContentChange}
+                getAnimationHandlers={getAnimationHandlers}
+                scrollToBottom={scrollToBottom}
+                stickyUserHeader={stickyUserHeader}
+                sessionIsWorking={false}
+                activityRenderMode={activityRenderMode}
+                turnUiStates={turnUiStates}
+                onToggleTurnGroup={onToggleTurnGroup}
+                chatRenderMode={chatRenderMode}
+                shouldAnimateUserMessage={shouldAnimateUserMessage}
+                onUserAnimationConsumed={onUserAnimationConsumed}
+                reviewTransferDirection={reviewTransferDirection}
+            />
         );
     });
 
@@ -2024,8 +2073,9 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
                             <div
                                 key={entry.key}
                                 data-index={item.index}
-                                ref={tanstackVirtualizer.measureElement}
+                                ref={measureHistoryElement}
                                 data-turn-entry={entry.key}
+                                style={{ opacity: tanstackVirtualizer.itemSizeCache.has(entry.key) ? undefined : 0 }}
                                 className="oc-chat-message-layout-boundary"
                             >
                                 {renderEntry(
@@ -2365,26 +2415,25 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
             // reveal fade on every remount reads as blinking. History content is
             // never "new" — only the tail keeps its fade.
             <FadeInDisabledProvider disabled={!isTail}>
-                <MarkdownHydrationProvider enabled={hydrateMarkdown}>
-                    <MessageListEntry
-                        entry={entry}
-                        onMessageContentChange={isTail ? onTailContentChange : onHistoryContentChange}
-                        getAnimationHandlers={getAnimationHandlers}
-                        scrollToBottom={scrollToBottom}
-                        stickyUserHeader={stickyUserHeader}
-                        sessionIsWorking={isNewest ? sessionIsWorking : false}
-                        activityRenderMode={activityRenderMode}
-                        turnUiStates={turnUiStates}
-                        onToggleTurnGroup={onToggleTurnGroup}
-                        chatRenderMode={chatRenderMode}
-                        shouldAnimateUserMessage={shouldAnimateUserMessage}
-                        onUserAnimationConsumed={onUserAnimationConsumed}
-                        activeStreamingMessageId={isNewest ? activeStreamingMessageId : null}
-                        activeStreamingPhase={isNewest ? activeStreamingPhase : null}
-                        reviewTransferDirection={reviewTransferDirection}
-                        showLiveStatusRow={isNewest}
-                    />
-                </MarkdownHydrationProvider>
+                <MessageListEntry
+                    entry={entry}
+                    hydrateMarkdown={hydrateMarkdown}
+                    onMessageContentChange={isTail ? onTailContentChange : onHistoryContentChange}
+                    getAnimationHandlers={getAnimationHandlers}
+                    scrollToBottom={scrollToBottom}
+                    stickyUserHeader={stickyUserHeader}
+                    sessionIsWorking={isNewest ? sessionIsWorking : false}
+                    activityRenderMode={activityRenderMode}
+                    turnUiStates={turnUiStates}
+                    onToggleTurnGroup={onToggleTurnGroup}
+                    chatRenderMode={chatRenderMode}
+                    shouldAnimateUserMessage={shouldAnimateUserMessage}
+                    onUserAnimationConsumed={onUserAnimationConsumed}
+                    activeStreamingMessageId={isNewest ? activeStreamingMessageId : null}
+                    activeStreamingPhase={isNewest ? activeStreamingPhase : null}
+                    reviewTransferDirection={reviewTransferDirection}
+                    showLiveStatusRow={isNewest}
+                />
             </FadeInDisabledProvider>
         );
     });
@@ -2988,7 +3037,17 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
                 const containerRect = container.getBoundingClientRect();
                 const nodes: HTMLElement[] = Array.from(container.querySelectorAll<HTMLElement>('[data-message-id]'));
-                const firstVisible = nodes.find((node) => {
+                // Prefer a message that starts inside the viewport: a message
+                // straddling the top edge can hydrate or shrink internally
+                // while its own top stays put, moving everything the reader
+                // sees below it without any anchor delta.
+                const firstStartingInView = nodes.find((node) => {
+                    const rect = node.getBoundingClientRect();
+                    return rect.top >= containerRect.top
+                        && rect.top < containerRect.bottom
+                        && (typeof window === 'undefined' || !isInsideStuckSticky(node, container, containerRect.top));
+                });
+                const firstVisible = firstStartingInView ?? nodes.find((node) => {
                     const rect = node.getBoundingClientRect();
                     if (rect.bottom <= containerRect.top + 1) {
                         return false;

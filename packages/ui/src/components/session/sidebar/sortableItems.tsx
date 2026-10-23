@@ -53,7 +53,7 @@ export type SortableDragHandleProps = {
   setActivatorNodeRef: ReturnType<typeof useSortable>['setActivatorNodeRef'];
 };
 
-export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
+export const SortableProjectItem = React.memo(function SortableProjectItem({
   id,
   disabled = false,
   projectLabel,
@@ -82,7 +82,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   openSidebarMenuKey,
   setOpenSidebarMenuKey,
   reorderEnabled = true,
-}) => {
+}: SortableProjectItemProps) {
   const { t } = useI18n();
   const {
     attributes,
@@ -345,7 +345,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
       {children}
     </div>
   );
-};
+});
 
 const SortableGroupItemBase: React.FC<{
   id: string;

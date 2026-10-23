@@ -9,6 +9,36 @@ the public hydration path with 2,000 sessions and 301 pending directories and
 guards directory reads independently of timing. Failed/completed directory
 cleanup and authoritative tail/pagination ownership keep their existing rules.
 
+Index projections share unchanged session objects after a bounded comparison of
+all JSON fields (including nested extension metadata). Identical ordered rows
+retain the active list and its derived indexes; unchanged sets/maps retain their
+references. Comparison budget exhaustion conservatively replaces the object.
+The latest authoritative revision is scoped to runtime generation and transport:
+older snapshots cannot replace the projection, and equal revisions skip session
+replacement while still reconciling observer-owned loading/refreshing state.
+Runtime reset or a newly captured runtime clears that revision fence. Persistent
+startup seeds do not advance it. Pending deletions and loaded pagination tails
+keep their existing ownership and filtering rules.
+
+The startup observer returns the projection's original state for equivalent
+snapshots; adding unchanged progress must not spread that state into a fresh
+object and notify every subscriber. The hydrate flight clears by its shared
+promise identity on both success and failure, so an early failed restore can retry.
+First paint and blocking first-install restore apply immediately. Nonblocking
+index projections and P1 enqueue run inside `scheduler.postTask` at background
+priority, or `requestIdleCallback` (500ms timeout), or a 32ms timer on runtimes
+without either API. This defers the actual external-store write; React transitions
+cannot lower a Zustand write's priority. Each task checks cancellation and runtime
+identity before committing. Tip waits attach before yielding to avoid losing an
+idle-index update while the task waits. A single projection remains synchronous
+once it starts; this policy does not claim to make that work interruptible.
+
+Session-index HTTP flights include transport identity and runtime generation.
+GETs share only within the same cancellation owner (including the shared Query
+signal); an independent reader's abort must not cancel another reader. Concurrent
+sync POSTs share canonical directory sets and release the flight after either
+success or failure. These are in-flight handles, not an additional snapshot cache.
+
 ## Purpose
 
 `useOpenInAppsStore` caches the desktop machine's installed editor catalog, not the
@@ -477,6 +507,10 @@ one complete active+archived catalog result; retention cleanup consumes that sna
 Directory refreshes preserve it, failed catalog loads preserve the prior snapshot,
 and runtime switches clear it. Initial loading and background refreshing are separate
 sets so an in-flight refresh never hides an existing session snapshot.
+Sidebar project headers subscribe to project-local boolean membership in those
+sets; the sidebar orchestration observes only the aggregate pending boolean for
+focus reconciliation. Moving a different directory between pending/completed sets
+must not invalidate every project header or recreate its rendered group body.
 Pending session deletions are runtime-memory UI orchestration state. Their IDs filter
 session-index snapshots, directory refreshes, direct upserts, pagination, archived
 refreshes, and aggregated live child-store sessions throughout the undo window;

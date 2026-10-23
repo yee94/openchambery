@@ -239,8 +239,7 @@ function App({ apis }: AppProps) {
   const isConnected = useConfigStore((s) => s.isConnected);
   const error = useSessionUIStore((s) => s.error);
   const clearError = useSessionUIStore((s) => s.clearError);
-  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
+  const bootstrapDirectory = useSessionUIStore((state) => !(state.newSessionDraft?.open && state.currentSessionId === null));
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const setDirectory = useDirectoryStore((state) => state.setDirectory);
   const isSwitchingDirectory = useDirectoryStore((state) => state.isSwitchingDirectory);
@@ -1033,7 +1032,7 @@ function App({ apis }: AppProps) {
     releaseSessionStartupBarrier();
     return (
       <ErrorBoundary>
-        <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''} bootstrapDirectory={!(newSessionDraftOpen && currentSessionId === null)}>
+        <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''} bootstrapDirectory={bootstrapDirectory}>
           <RuntimeAPIProvider apis={apis}>
             <TooltipProvider delayDuration={300} skipDelayDuration={150}>
               <div className="h-full text-foreground bg-background">
@@ -1076,7 +1075,7 @@ function App({ apis }: AppProps) {
 
   return (
     <ErrorBoundary>
-      <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''} bootstrapDirectory={!(newSessionDraftOpen && currentSessionId === null)}>
+      <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''} bootstrapDirectory={bootstrapDirectory}>
         <RuntimeAPIProvider apis={apis}>
           <FireworksProvider>
               <TooltipProvider delayDuration={300} skipDelayDuration={150}>

@@ -47,6 +47,8 @@ import {
   selectVisibleSessionNodes,
 } from './sessionNavigationModel';
 
+const EMPTY_FOLDERS: SessionFolder[] = [];
+
 type DeleteFolderConfirm = {
   scopeKey: string;
   folderId: string;
@@ -84,7 +86,7 @@ type Props = {
   ) => React.ReactNode;
   projectRepoStatus: Map<string, boolean | null>;
   lastRepoStatus: boolean;
-  showMoreGroupSessions: (groupKey: string, currentVisibleCount: number, totalSessions: number) => void;
+  showMoreGroupSessions: (group: SessionGroup, groupKey: string, currentVisibleCount: number, totalSessions: number) => void;
   resetGroupSessionLimit: (groupKey: string) => void;
   mobileVariant: boolean;
   alwaysShowActions: boolean;
@@ -103,7 +105,7 @@ type Props = {
   expandedParents: Set<string>;
   sessionOrderByScope: SessionOrderMap;
   sessionOrderActivityByScope: SessionOrderActivityMap;
-  onReorderSessions: (sessionIds: string[], activeSessionId: string, overSessionId: string, activityBySessionId: Readonly<Record<string, number>>) => void;
+  onReorderSessions: (group: SessionGroup, sessionIds: string[], activeSessionId: string, overSessionId: string, activityBySessionId: Readonly<Record<string, number>>) => void;
   currentSessionId: string | null;
   shortcutTargetSessionId?: string | null;
   shortcutTargetVisibleIndex?: number | null;
@@ -135,7 +137,7 @@ type Props = {
       repo: string;
     } | null;
   }>;
-  onToggleCollapsedGroup: (groupKey: string) => void;
+  onToggleCollapsedGroup: (group: SessionGroup, groupKey: string, projectId?: string | null) => void;
   dragHandleProps?: SortableDragHandleProps | null;
   compactBodyPadding?: boolean;
   /**
@@ -276,7 +278,7 @@ const areGroupPropsEqual = (prev: Props, next: Props): boolean => {
   if (prev.projectId !== next.projectId) return false;
   if (prev.hideGroupLabel !== next.hideGroupLabel) return false;
   if (prev.compactBodyPadding !== next.compactBodyPadding) return false;
-  if (prev.groupSearchDataByGroup !== next.groupSearchDataByGroup) return false;
+  if (prev.groupSearchDataByGroup.get(prev.group) !== next.groupSearchDataByGroup.get(next.group)) return false;
   if (prev.visibleSessionCount !== next.visibleSessionCount) return false;
 
   if (prev.collapsedGroups !== next.collapsedGroups
@@ -384,6 +386,7 @@ const areGroupPropsEqual = (prev: Props, next: Props): boolean => {
     && prev.setRenameFolderDraft === next.setRenameFolderDraft
     && prev.setRenamingFolderId === next.setRenamingFolderId
     && prev.onToggleCollapsedGroup === next.onToggleCollapsedGroup
+    && prev.onReorderSessions === next.onReorderSessions
     && prev.dragHandleProps === next.dragHandleProps
     && prev.scrollContainerRef === next.scrollContainerRef
     && prev.shortcutTargetSessionId === next.shortcutTargetSessionId
@@ -456,7 +459,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
 
   const searchData = hasSessionSearchQuery ? groupSearchDataByGroup.get(group) : null;
   const displayMode = useSessionDisplayStore((state) => state.displayMode);
-  const foldersMap = useSessionFoldersStore((state) => state.foldersMap);
+  const scopeFolders = useSessionFoldersStore((state) => folderScopeKey ? state.foldersMap[folderScopeKey] ?? EMPTY_FOLDERS : EMPTY_FOLDERS);
   // VS Code always uses the expanded layout (see SessionNodeItem).
   const isMinimalMode = displayMode === 'minimal' && !isVSCodeRuntime();
   const paginationDirectory = group.isArchivedBucket ? null : normalizePath(group.directory ?? null);
@@ -472,10 +475,6 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
     () => [...(shouldFilterGroupContents ? (searchData?.filteredNodes ?? []) : group.sessions)]
       .sort(compareSessionNodes),
     [compareSessionNodes, group.sessions, searchData?.filteredNodes, shouldFilterGroupContents],
-  );
-  const scopeFolders = React.useMemo(
-    () => folderScopeKey ? (foldersMap[folderScopeKey] ?? []) : [],
-    [folderScopeKey, foldersMap]
   );
 
   const nodeBySessionId = React.useMemo(() => {
@@ -1101,6 +1100,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
       }}
       onSessionsReordered={(activeSessionId, overSessionId) => {
         onReorderSessions(
+          group,
           visibleSortableSessionOrder.sessionIds,
           activeSessionId,
           overSessionId,
@@ -1198,7 +1198,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
           {remainingCount > 0 || hasRemoteSessions ? (
             <button
               type="button"
-              onClick={() => showMoreGroupSessions(groupKey, baseVisibleSessions.length, totalSessions)}
+              onClick={() => showMoreGroupSessions(group, groupKey, baseVisibleSessions.length, totalSessions)}
               disabled={isLoadingRemoteSessions}
               className={cn(
                 'text-left transition-colors hover:text-muted-foreground/80 disabled:pointer-events-none',
@@ -1249,13 +1249,13 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
           SIDEBAR_ROW_HOVER_CLASS,
         )}
         style={{ paddingLeft: groupHeaderPadLeft }}
-        onClick={() => onToggleCollapsedGroup(groupKey)}
+        onClick={() => onToggleCollapsedGroup(group, groupKey, projectId)}
         role="button"
         tabIndex={0}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            onToggleCollapsedGroup(groupKey);
+            onToggleCollapsedGroup(group, groupKey, projectId);
           }
         }}
         aria-label={isCollapsed

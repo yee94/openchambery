@@ -1,3 +1,20 @@
+# Command palette subscriptions
+
+The memoized CommandPalette observes session rows/status only while open or while
+its exit animation retains results. After `onOpenChangeComplete(false)`, its
+selectors return stable inactive values. Reopening reads the current catalog.
+The page presentation keeps its existing search and focus behavior.
+`CommandPalette.mobile.test.tsx` covers 50 closed-catalog updates with zero commits
+and the existing mobile search/navigation behavior.
+
+# Render-count verification
+
+`scripts/perf/component-render-probe.mjs` counts actual component function/class
+render calls by transforming the React development response in memory. It does not
+infer work from retained Fiber flags. `componentRenderCounter.test.ts` checks leaf
+and nested memo bailouts, real updates, StrictMode, forwardRef and class calls.
+See `scripts/perf/README.md` for the counting window, region attribution and limits.
+
 # Toast mutation isolation
 
 `sonner.tsx` owns a layout-neutral `display: contents` host around its Sonner

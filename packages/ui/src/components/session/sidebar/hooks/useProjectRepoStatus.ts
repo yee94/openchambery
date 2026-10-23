@@ -41,7 +41,7 @@ export const useProjectRepoStatus = (args: Args): void => {
       if (!enabled) {
         return;
       }
-      setProjectRepoStatus(new Map());
+      setProjectRepoStatus((previous) => previous.size === 0 ? previous : new Map());
       return;
     }
 
@@ -58,7 +58,9 @@ export const useProjectRepoStatus = (args: Args): void => {
     activeProjects.forEach((project) => {
       next.set(project.id, gitRepoStatus.get(project.normalizedPath)?.isGitRepo ?? null);
     });
-    setProjectRepoStatus(next);
+    setProjectRepoStatus((previous) => previous.size === next.size
+      && [...next].every(([id, value]) => previous.has(id) && previous.get(id) === value)
+      ? previous : next);
   }, [activeProjects, gitRepoStatus, setProjectRepoStatus]);
 
   const projectGitBranchesKey = React.useMemo(() => {
@@ -157,9 +159,10 @@ export const useProjectRepoStatus = (args: Args): void => {
 
         const nowAfter = Date.now();
         setProjectRootBranches((prev) => {
-          const next = new Map(prev);
+          let next = prev;
           resolved.forEach(({ id, branch }) => {
-            if (branch) {
+            if (branch && prev.get(id) !== branch) {
+              if (next === prev) next = new Map(prev);
               next.set(id, branch);
             }
           });

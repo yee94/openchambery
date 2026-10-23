@@ -1,6 +1,5 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
-import { useSessionOrderSync } from '@/hooks/useSessionOrderSync';
 import type { Session } from '@/lib/opencode/v2-types';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -33,7 +32,7 @@ import { ScheduledTasksDialog } from './ScheduledTasksDialog';
 import { ArchivedSessionsDialog } from '@/components/sections/openchamber/ArchivedSessionsDialog';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { useArchivedAutoFolders } from './sidebar/hooks/useArchivedAutoFolders';
+import { SidebarMaintenance } from './sidebar/SidebarMaintenance';
 import { useSessionSidebarSections } from './sidebar/hooks/useSessionSidebarSections';
 import { useProjectSessionSelection } from './sidebar/hooks/useProjectSessionSelection';
 import { useGroupOrdering } from './sidebar/hooks/useGroupOrdering';
@@ -43,7 +42,6 @@ import { useSessionActions } from './sidebar/hooks/useSessionActions';
 import { useSidebarPersistence } from './sidebar/hooks/useSidebarPersistence';
 import { useProjectRepoStatus } from './sidebar/hooks/useProjectRepoStatus';
 import { useProjectSessionLists } from './sidebar/hooks/useProjectSessionLists';
-import { useSessionFolderCleanup } from './sidebar/hooks/useSessionFolderCleanup';
 import { createSessionOwnershipIndex } from './sidebar/sessionOwnership';
 import { useStickyProjectHeaders } from './sidebar/hooks/useStickyProjectHeaders';
 import { getGitHubPrStatusKey, usePrVisualSummaryByKeys, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
@@ -264,8 +262,17 @@ const useStableRenderCallback = <Args extends unknown[], Return>(
 ): ((...args: Args) => Return) => {
   const handlerRef = React.useRef(handler);
   handlerRef.current = handler;
-  return React.useCallback((...args: Args) => handlerRef.current(...args), []);
+  return React.useMemo(() => (...args: Args) => handlerRef.current(...args), []);
 };
+
+const SidebarUpdateDialog = React.memo(function SidebarUpdateDialog({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+  const update = useUpdateStore(useShallow((state) => ({
+    info: state.info, downloading: state.downloading, downloaded: state.downloaded,
+    progress: state.progress, error: state.error, runtimeType: state.runtimeType,
+    onDownload: state.downloadUpdate, onRestart: state.restartToUpdate,
+  })));
+  return <UpdateDialog open onOpenChange={onOpenChange} {...update} />;
+});
 
 interface SessionSidebarProps {
   mobileVariant?: boolean;
@@ -283,14 +290,14 @@ interface SessionSidebarProps {
   isVisible?: boolean;
 }
 
-export const SessionSidebar: React.FC<SessionSidebarProps> = ({
+export const SessionSidebar = React.memo(function SessionSidebar({
   mobileVariant = false,
   onSessionSelected,
   allowReselect = false,
   hideDirectoryControls = false,
   showOnlyMainWorkspace = false,
   isVisible = true,
-}) => {
+}: SessionSidebarProps) {
   const { t } = useI18n();
   const [updateDialogOpen, setUpdateDialogOpen] = React.useState(false);
   const [isSessionSearchOpen, setIsSessionSearchOpen] = React.useState(false);
@@ -408,20 +415,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const hasSessionSearchQuery = normalizedSessionSearchQuery.length > 0;
 
-  const updateStore = useUpdateStore(
-    useShallow((s) => ({
-      checkForUpdates: s.checkForUpdates,
-      available: s.available,
-      runtimeType: s.runtimeType,
-      info: s.info,
-      downloading: s.downloading,
-      downloaded: s.downloaded,
-      progress: s.progress,
-      error: s.error,
-      downloadUpdate: s.downloadUpdate,
-      restartToUpdate: s.restartToUpdate,
-    })),
-  );
+  const showSidebarUpdateButton = useUpdateStore((state) => state.available
+    && (state.runtimeType === 'desktop' || state.runtimeType === 'web'));
 
   // Session Folders store
   const collapsedFolderIds = useSessionFoldersStore(
@@ -429,7 +424,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   );
   const foldersMap = useSessionFoldersStore((state) => state.foldersMap);
   const sessionOrderByScope = useSessionFoldersStore((state) => state.sessionOrderByScope);
-  useSessionOrderSync();
   const sessionOrderActivityByScope = useSessionFoldersStore((state) => state.sessionOrderActivityByScope);
   const getFoldersForScope = useSessionFoldersStore((state) => state.getFoldersForScope);
   const createFolder = useSessionFoldersStore((state) => state.createFolder);
@@ -440,7 +434,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const removeSessionFromFolder = useSessionFoldersStore((state) => state.removeSessionFromFolder);
   const removeSessionsFromFolders = useSessionFoldersStore((state) => state.removeSessionsFromFolders);
   const toggleFolderCollapse = useSessionFoldersStore((state) => state.toggleFolderCollapse);
-  const cleanupSessions = useSessionFoldersStore((state) => state.cleanupSessions);
   const getSessionFolderId = useSessionFoldersStore((state) => state.getSessionFolderId);
   const reorderSessions = useSessionFoldersStore((state) => state.reorderSessions);
 
@@ -467,8 +460,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     isVisible ? state.index.session.unseenCount : EMPTY_UNSEEN,
   );
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
-  const fullCatalogSessionIds = useGlobalSessionsStore((state) => state.fullCatalogSessionIds);
-  const fullCatalogGeneration = useGlobalSessionsStore((state) => state.fullCatalogGeneration);
   const globalSessionsStatus = useGlobalSessionsStore((state) => state.status);
   const globalActiveSessions = useGlobalSessionsStore(
     (state) => state.activeSessions,
@@ -476,11 +467,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const archivedSessionsRaw = useGlobalSessionsStore(
     (state) => state.archivedSessions,
   );
-  const loadingDirectories = useGlobalSessionsStore(
-    (state) => state.loadingDirectories,
-  );
-  const refreshingDirectories = useGlobalSessionsStore(
-    (state) => state.refreshingDirectories,
+  const hasPendingSessionDirectories = useGlobalSessionsStore(
+    (state) => state.loadingDirectories.size > 0 || state.refreshingDirectories.size > 0,
   );
   const archivedLoadingDirectories = useGlobalSessionsStore(
     (state) => state.archivedLoadingDirectories,
@@ -521,7 +509,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   // unlike selecting an existing session, don't navigate. VS Code's compact view
   // is driven by the openchamber:navigate event, so switch to chat explicitly
   // (a no-op in the expanded side-by-side layout, which is always showing chat).
-  const openNewSessionDraftFromTree = React.useCallback<
+  const openNewSessionDraftFromTree = useEvent<
     typeof openNewSessionDraft
   >(
     (options) => {
@@ -532,7 +520,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         );
       }
     },
-    [isVSCode, openNewSessionDraft],
   );
   const knownSessionDirectories = React.useMemo(
     () =>
@@ -777,14 +764,14 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     ],
   );
 
-  const handleOpenUpdateDialog = React.useCallback(() => {
+  const handleOpenUpdateDialog = useEvent(() => {
     const current = useUpdateStore.getState();
     if (current.available && current.info) {
       setUpdateDialogOpen(true);
       return;
     }
 
-    void updateStore.checkForUpdates().then(() => {
+    void current.checkForUpdates().then(() => {
       const { available, error } = useUpdateStore.getState();
       if (error) {
         toast.error(t("sessions.sidebar.updateCheck.errorTitle"), {
@@ -798,7 +785,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       }
       setUpdateDialogOpen(true);
     });
-  }, [t, updateStore]);
+  });
 
   const handleOpenSettings = React.useCallback(() => {
     if (mobileVariant) {
@@ -841,11 +828,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       setSessionSwitcherOpen(false);
     }
   }, [mobileVariant, setSessionSwitcherOpen]);
-
-  const showSidebarUpdateButton =
-    updateStore.available &&
-    (updateStore.runtimeType === "desktop" ||
-      updateStore.runtimeType === "web");
 
   const archiveSession = useSessionUIStore((state) => state.archiveSession);
   const archiveSessions = useSessionUIStore((state) => state.archiveSessions);
@@ -1010,23 +992,23 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   );
 
   const stableHandleSessionSelect =
-    useStableRenderCallback(handleSessionSelect);
-  const stableHandleSessionDoubleClick = useStableRenderCallback(
+    useEvent(handleSessionSelect);
+  const stableHandleSessionDoubleClick = useEvent(
     handleSessionDoubleClick,
   );
-  const stableHandleSaveEdit = useStableRenderCallback(handleSaveEdit);
-  const stableHandleCancelEdit = useStableRenderCallback(handleCancelEdit);
-  const stableHandleShareSession = useStableRenderCallback(handleShareSession);
-  const stableHandleCopyShareUrl = useStableRenderCallback(handleCopyShareUrl);
+  const stableHandleSaveEdit = useEvent(handleSaveEdit);
+  const stableHandleCancelEdit = useEvent(handleCancelEdit);
+  const stableHandleShareSession = useEvent(handleShareSession);
+  const stableHandleCopyShareUrl = useEvent(handleCopyShareUrl);
   const stableHandleUnshareSession =
-    useStableRenderCallback(handleUnshareSession);
+    useEvent(handleUnshareSession);
   const stableHandleDeleteSession =
-    useStableRenderCallback(handleDeleteSession);
-  const stableCreateFolderAndStartRename = useStableRenderCallback(
+    useEvent(handleDeleteSession);
+  const stableCreateFolderAndStartRename = useEvent(
     createFolderAndStartRename,
   );
 
-  const showMoreGroupSessions = React.useCallback(
+  const showMoreGroupSessions = useEvent(
     (
       group: SessionGroup,
       groupId: string,
@@ -1057,10 +1039,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         void loadMoreGlobalSessionsForDirectory(directory);
       }
     },
-    [],
   );
 
-  const resetGroupSessionLimit = React.useCallback((groupId: string) => {
+  const resetGroupSessionLimit = useEvent((groupId: string) => {
     setVisibleSessionCountByGroup((prev) => {
       if (!prev.has(groupId)) {
         return prev;
@@ -1069,9 +1050,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       next.delete(groupId);
       return next;
     });
-  }, []);
+  });
 
-  const resetProjectSessionLimits = React.useCallback((projectId: string) => {
+  const resetProjectSessionLimits = useEvent((projectId: string) => {
     setVisibleSessionCountByGroup((prev) => {
       let changed = false;
       const next = new Map(prev);
@@ -1084,10 +1065,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       }
       return changed ? next : prev;
     });
-  }, []);
+  });
 
-  const collectDirectoriesForProjectId = React.useCallback(
-    (projectId: string): string[] => {
+  const collectDirectoriesForProjectId = React.useMemo(
+    () => (projectId: string): string[] => {
       const project = projects.find((entry) => entry.id === projectId);
       const projectPath = normalizePath(project?.path ?? null);
       if (!projectPath) return [];
@@ -1106,7 +1087,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   // Lazy-load sessions when a project becomes visible. Keeps cold start scoped
   // to the active project while still filling other trees on demand.
-  const ensureProjectSessionsLoaded = React.useCallback(
+  const ensureProjectSessionsLoaded = useEvent(
     (projectId: string) => {
       const directories = collectDirectoriesForProjectId(projectId);
       if (directories.length === 0) return;
@@ -1121,10 +1102,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         syncSessionsSnapshotRef.current,
       );
     },
-    [collectDirectoriesForProjectId],
   );
 
-  const syncProjectSessions = React.useCallback((projectId: string) => {
+  const syncProjectSessions = useEvent((projectId: string) => {
     const project = projects.find((entry) => entry.id === projectId);
     if (!project) return;
     void (async () => {
@@ -1164,7 +1144,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         syncSessionsSnapshotRef.current,
       );
     })();
-  }, [currentDirectory, isVSCode, projects]);
+  });
 
   // Persisted expanded projects are already open when the sidebar mounts, so
   // they never pass through toggleProject's "expanding" branch. Once collapse
@@ -1195,7 +1175,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     projects,
   ]);
 
-  const collapseAllProjects = React.useCallback(() => {
+  const collapseAllProjects = useEvent(() => {
     ignoreIntersectionUntil.current = Date.now() + 150;
     setVisibleSessionCountByGroup(new Map());
     setCollapsedProjects(() => {
@@ -1213,9 +1193,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       }
       return allIds;
     });
-  }, [projects, isVSCode, safeStorage, scheduleCollapsedProjectsPersist]);
+  });
 
-  const expandAllProjects = React.useCallback(() => {
+  const expandAllProjects = useEvent(() => {
     ignoreIntersectionUntil.current = Date.now() + 150;
     setVisibleSessionCountByGroup(new Map());
     setCollapsedProjects(() => {
@@ -1245,15 +1225,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         syncSessionsSnapshotRef.current,
       );
     }
-  }, [
-    collectDirectoriesForProjectId,
-    isVSCode,
-    projects,
-    safeStorage,
-    scheduleCollapsedProjectsPersist,
-  ]);
+  });
 
-  const toggleProject = React.useCallback(
+  const toggleProject = useEvent(
     (projectId: string) => {
       // Ignore intersection events for a short period after toggling
       ignoreIntersectionUntil.current = Date.now() + 150;
@@ -1284,16 +1258,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         return next;
       });
     },
-    [
-      ensureProjectSessionsLoaded,
-      isVSCode,
-      resetProjectSessionLimits,
-      safeStorage,
-      scheduleCollapsedProjectsPersist,
-    ],
   );
 
-  const ensureProjectExpanded = React.useCallback(
+  const ensureProjectExpanded = useEvent(
     (projectId: string) => {
       ignoreIntersectionUntil.current = Date.now() + 150;
       ensureProjectSessionsLoaded(projectId);
@@ -1317,12 +1284,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         return next;
       });
     },
-    [
-      ensureProjectSessionsLoaded,
-      isVSCode,
-      safeStorage,
-      scheduleCollapsedProjectsPersist,
-    ],
   );
 
   const normalizedProjects = React.useMemo(() => {
@@ -1453,82 +1414,21 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     enabled: isVisible,
   });
 
-  const isSessionsLoading = useSessionUIStore((state) => state.isLoading);
   const sessionOwnership = React.useMemo(
     () => createSessionOwnershipIndex(sessions, normalizedProjects, availableWorktreesByProject, isVSCode, archivedSessions),
     [archivedSessions, availableWorktreesByProject, isVSCode, normalizedProjects, sessions],
   );
-  useSessionFolderCleanup({
-    isSessionsLoading,
-    fullCatalogSessionIds,
-    fullCatalogGeneration,
-    normalizedProjects,
-    cleanupSessions,
-  });
 
   const { getSessionsForProject, getArchivedSessionsForProject } = useProjectSessionLists({
     ownership: sessionOwnership,
   });
 
-  // Per-project loading: a project is loading when any of its directories (root or
-  // worktrees) are in the in-flight set. Used for folder spinner + body copy.
-  const loadingProjectIds = React.useMemo(() => {
-    const ids = new Set<string>();
-    if (loadingDirectories.size === 0) return ids;
-    for (const project of normalizedProjects) {
-      const directories = [project.normalizedPath];
-      if (!isVSCode) {
-        const worktrees =
-          availableWorktreesByProject.get(project.normalizedPath) ?? [];
-        worktrees.forEach((worktree) => {
-          const directory = normalizePath(worktree.path);
-          if (directory) directories.push(directory);
-        });
-      }
-      if (directories.some((directory) => loadingDirectories.has(directory))) {
-        ids.add(project.id);
-      }
-    }
-    return ids;
-  }, [
-    availableWorktreesByProject,
-    isVSCode,
-    loadingDirectories,
-    normalizedProjects,
-  ]);
-  const refreshingProjectIds = React.useMemo(() => {
-    const ids = new Set<string>();
-    if (refreshingDirectories.size === 0) return ids;
-    for (const project of normalizedProjects) {
-      const directories = collectDirectoriesForProjectId(project.id);
-      if (directories.some((directory) => refreshingDirectories.has(directory)))
-        ids.add(project.id);
-    }
-    return ids;
-  }, [
-    collectDirectoriesForProjectId,
-    normalizedProjects,
-    refreshingDirectories,
-  ]);
   // Gate focus reconcile while any directory refresh is still moving the tree.
   const isProjectSessionsSyncing =
-    loadingDirectories.size > 0 ||
-    refreshingDirectories.size > 0 ||
+    hasPendingSessionDirectories ||
     globalSessionsStatus === "idle" ||
     globalSessionsStatus === "loading";
 
-  useArchivedAutoFolders({
-    normalizedProjects,
-    ownership: sessionOwnership,
-    isSessionsLoading,
-    fullCatalogSessionIds,
-    fullCatalogGeneration,
-    foldersMap,
-    createFolder,
-    addSessionToFolder,
-    cleanupSessions,
-    enabled: isVisible,
-  });
 
   // Keep last-known repo status to avoid UI jiggling during project switch
   const lastRepoStatusRef = React.useRef(false);
@@ -2157,9 +2057,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         return next;
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ensureProjectExpanded is an event; navigation intent owns this effect.
   }, [
     currentSessionId,
-    ensureProjectExpanded,
     focusedProjectTarget,
     sessionSwitchIntent,
   ]);
@@ -2419,8 +2319,20 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return result;
   }, [prVisualSummaryMap]);
 
-  const renderGroupSessions = React.useCallback(
-    (
+  const handleGroupReorder = useEvent((group: SessionGroup, sessionIds: string[], activeSessionId: string, overSessionId: string, activityBySessionId: Readonly<Record<string, number>>) => {
+    const scopeKey = group.folderScopeKey ?? normalizePath(group.directory ?? null);
+    if (scopeKey) void reorderSessions(scopeKey, sessionIds, activeSessionId, overSessionId, activityBySessionId)
+      .catch(() => toast.error(t('sessions.order.saveFailed')));
+  });
+  const handleGroupCollapse = useEvent((group: SessionGroup, key: string, projectId?: string | null) => {
+    if (group.isArchivedBucket && collapsedGroups.has(key) && projectId) {
+      ensureArchivedSessionsLoaded(projectId);
+    }
+    toggleCollapsedGroup(key);
+  });
+
+  const renderGroupSessions = React.useMemo(
+    () => (
       group: SessionGroup,
       groupKey: string,
       projectId?: string | null,
@@ -2456,9 +2368,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         renderSessionNode={renderSessionNode}
         projectRepoStatus={projectRepoStatus}
         lastRepoStatus={lastRepoStatusRef.current}
-        showMoreGroupSessions={(key, currentVisibleCount, totalSessions) =>
-          showMoreGroupSessions(group, key, currentVisibleCount, totalSessions)
-        }
+        showMoreGroupSessions={showMoreGroupSessions}
         resetGroupSessionLimit={resetGroupSessionLimit}
         mobileVariant={mobileVariant}
         alwaysShowActions={alwaysShowSidebarActions}
@@ -2477,11 +2387,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         expandedParents={expandedParents}
         sessionOrderByScope={sessionOrderByScope}
         sessionOrderActivityByScope={sessionOrderActivityByScope}
-        onReorderSessions={(sessionIds, activeSessionId, overSessionId, activityBySessionId) => {
-          const scopeKey = group.folderScopeKey ?? normalizePath(group.directory ?? null);
-          if (scopeKey) void reorderSessions(scopeKey, sessionIds, activeSessionId, overSessionId, activityBySessionId)
-            .catch(() => toast.error(t('sessions.order.saveFailed')));
-        }}
+        onReorderSessions={handleGroupReorder}
         currentSessionId={currentSessionId}
         shortcutTargetSessionId={
           focusedProjectTarget?.groupKey === groupKey
@@ -2499,12 +2405,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         liveSessionById={liveSessionById}
         alwaysVisibleSessionIds={alwaysVisibleSessionIds}
         prVisualStateByDirectoryBranch={prVisualStateByDirectoryBranch}
-        onToggleCollapsedGroup={(key) => {
-          if (group.isArchivedBucket && collapsedGroups.has(key) && projectId) {
-            ensureArchivedSessionsLoaded(projectId);
-          }
-          toggleCollapsedGroup(key);
-        }}
+        onToggleCollapsedGroup={handleGroupCollapse}
         dragHandleProps={dragHandleProps}
         scrollContainerRef={scrollContainerRef}
       />
@@ -2541,7 +2442,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       expandedParents,
       sessionOrderByScope,
       sessionOrderActivityByScope,
-      reorderSessions,
+      handleGroupReorder,
       currentSessionId,
       focusedProjectTarget,
       editingId,
@@ -2550,9 +2451,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       liveSessionById,
       alwaysVisibleSessionIds,
       prVisualStateByDirectoryBranch,
-      toggleCollapsedGroup,
-      ensureArchivedSessionsLoaded,
-      t,
+      handleGroupCollapse,
     ],
   );
 
@@ -2750,9 +2649,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         openSidebarMenuKey={openSidebarMenuKey}
         setOpenSidebarMenuKey={setOpenSidebarMenuKey}
         isInlineEditing={isInlineEditing}
-        loadingProjectIds={loadingProjectIds}
-        refreshingProjectIds={refreshingProjectIds}
-        isProjectSessionsSyncing={isProjectSessionsSyncing}
       />
       ) : null}
 
@@ -2771,6 +2667,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         />
       ) : null}
 
+      <SidebarMaintenance normalizedProjects={normalizedProjects} ownership={sessionOwnership} enabled={isVisible} />
       <SidebarFooter
         onOpenSettings={handleOpenSettings}
         onOpenShortcuts={toggleHelpDialog}
@@ -2780,18 +2677,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       />
 
       {updateDialogOpen ? (
-        <UpdateDialog
-          open={updateDialogOpen}
-          onOpenChange={setUpdateDialogOpen}
-          info={updateStore.info}
-          downloading={updateStore.downloading}
-          downloaded={updateStore.downloaded}
-          progress={updateStore.progress}
-          error={updateStore.error}
-          onDownload={updateStore.downloadUpdate}
-          onRestart={updateStore.restartToUpdate}
-          runtimeType={updateStore.runtimeType}
-        />
+        <SidebarUpdateDialog onOpenChange={setUpdateDialogOpen} />
       ) : null}
 
       {editingProject ? (
@@ -2841,4 +2727,4 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       />
     </div>
   );
-};
+});

@@ -486,9 +486,9 @@ describe('useGlobalSessionsStore', () => {
       expect(useGlobalSessionsStore.getState().startupSyncProgress.active).toBe(false);
       expect(syncBodies).toEqual([['/repo/a']]);
 
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
+      for (let i = 0; i < 100 && syncBodies.length < 2; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
       expect(syncBodies).toEqual([['/repo/a'], ['/repo/b']]);
     } finally {
       useGlobalSessionsStore.getState().resetForRuntimeSwitch();
@@ -1335,7 +1335,9 @@ describe('useGlobalSessionsStore', () => {
       };
 
       const sync = useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/a', '/repo/b']);
-      while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      for (let i = 0; i < 100 && !useGlobalSessionsStore.getState().loadingDirectories.has('/repo/a'); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
 
       expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/a')).toBe(true);
       expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/b')).toBe(false);

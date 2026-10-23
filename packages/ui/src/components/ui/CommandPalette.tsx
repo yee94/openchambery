@@ -124,7 +124,9 @@ const normalizePath = (value: string): string => {
   return normalized;
 };
 
-export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack?: () => void }> = ({ presentation = 'dialog', onBack }) => {
+const EMPTY_ACTIVE_SESSIONS: Session[] = [];
+
+export const CommandPalette = React.memo(function CommandPalette({ presentation = 'dialog', onBack }: { presentation?: 'dialog' | 'page'; onBack?: () => void }) {
   const { t } = useI18n();
   const mobileActions = useMobileAppActions();
 
@@ -145,8 +147,9 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
   const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
 
-  const activeSessions = useGlobalSessionsStore((s) => s.activeSessions);
-  const sessionsStatus = useGlobalSessionsStore((s) => s.status);
+  const observeResults = isCommandPaletteOpen || retainResults;
+  const activeSessions = useGlobalSessionsStore((s) => observeResults ? s.activeSessions : EMPTY_ACTIVE_SESSIONS);
+  const sessionsStatus = useGlobalSessionsStore((s) => observeResults ? s.status : 'idle');
   const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
   const activeProject = useProjectsStore((s) => s.getActiveProject());
   const projects = useProjectsStore((s) => s.projects);
@@ -891,4 +894,4 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
       </DialogContent>
     </Dialog>
   );
-};
+});

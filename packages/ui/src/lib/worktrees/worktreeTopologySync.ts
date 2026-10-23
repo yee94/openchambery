@@ -31,6 +31,8 @@ export const createWorktreeTopologyCoordinator = (dependencies: WorktreeTopology
   let readyEpoch = 0;
   let lifecycleEpoch = 0;
   let active = 0;
+  let receivedReady = false;
+  const activeProjects = new Set<string>();
   const queued = new Map<string, ProjectRef>();
   const timers = new Map<string, { timer: ReturnType<typeof setTimeout>; epoch: number }>();
   const syncTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -46,8 +48,9 @@ export const createWorktreeTopologyCoordinator = (dependencies: WorktreeTopology
     const target = normalizePath(directory);
     return dependencies.getProjects().find((project) => normalizePath(project.path) === target);
   };
-  const schedule = (project: ProjectRef, delay = 150) => {
+  const schedule = (project: ProjectRef, delay = 150, reusePending = false) => {
     const key = normalizePath(project.path);
+    if (reusePending && (activeProjects.has(key) || queued.has(key) || timers.has(key))) return;
     const existing = timers.get(key);
     if (existing) dependencies.clearTimer(existing.timer);
     const epoch = lifecycleEpoch;
@@ -62,15 +65,21 @@ export const createWorktreeTopologyCoordinator = (dependencies: WorktreeTopology
   const drain = (expectedEpoch = lifecycleEpoch) => {
     if (!started || expectedEpoch !== lifecycleEpoch) return;
     while (active < 2 && queued.size > 0) {
-      const [key, project] = queued.entries().next().value as [string, ProjectRef];
+      const next = [...queued.entries()].find(([key]) => !activeProjects.has(key));
+      if (!next) break;
+      const [key, project] = next;
       queued.delete(key);
       active += 1;
+      activeProjects.add(key);
       const generation = dependencies.generation();
       const epoch = lifecycleEpoch;
       void dependencies.refresh(project, { isCurrent: () => started && epoch === lifecycleEpoch && generation === dependencies.generation() }).then((result) => {
         if (!started || epoch !== lifecycleEpoch || generation !== dependencies.generation()) return;
         completedProjects.add(key);
-        for (const directory of result.addedDirectories) pendingSessionSync.add(normalizePath(directory));
+        for (const directory of result.addedDirectories) {
+          const path = normalizePath(directory);
+          if (!dependencies.needsSessionSync || dependencies.needsSessionSync(path)) pendingSessionSync.add(path);
+        }
         if (dependencies.needsSessionSync) {
           for (const worktree of result.worktrees) {
             const directory = normalizePath(worktree.path);
@@ -89,6 +98,7 @@ export const createWorktreeTopologyCoordinator = (dependencies: WorktreeTopology
       }).finally(() => {
         if (epoch !== lifecycleEpoch) return;
         active -= 1;
+        activeProjects.delete(key);
         drain(epoch);
       });
     }
@@ -119,7 +129,7 @@ export const createWorktreeTopologyCoordinator = (dependencies: WorktreeTopology
   };
   const reconcileAll = () => {
     completedProjects.clear();
-    for (const project of dependencies.getProjects()) schedule(project, 0);
+    for (const project of dependencies.getProjects()) schedule(project, 0, true);
   };
   const recoverUnknownDirectories = () => {
     const catalog = dependencies.getCatalog();
@@ -169,13 +179,18 @@ export const createWorktreeTopologyCoordinator = (dependencies: WorktreeTopology
     for (const timer of syncTimers) dependencies.clearTimer(timer);
     syncTimers.clear();
     queued.clear();
+    activeProjects.clear();
     active = 0;
   };
   const start = () => {
     if (started || dependencies.isVSCode()) return;
     started = true;
+    receivedReady = false;
     cleanups.push(dependencies.subscribeEvents((event) => {
       if (event.type === 'event-stream-ready') {
+        // Reuse pending startup enumeration, but repair completed projects too:
+        // a late subscriber's first ready may already be a real reconnect.
+        if (!receivedReady) { receivedReady = true; reconcileAll(); return; }
         readyEpoch += 1;
         advanceRecoveryEpoch();
         reconcileAll();
@@ -194,6 +209,7 @@ export const createWorktreeTopologyCoordinator = (dependencies: WorktreeTopology
     cleanups.push(dependencies.subscribeSessions(recoverUnknownDirectories));
     cleanups.push(dependencies.subscribeRuntime((identityChanged) => {
       if (identityChanged) {
+        receivedReady = false;
         readyEpoch += 1;
         advanceRecoveryEpoch();
         reconcileAll();
@@ -230,7 +246,12 @@ export const startWorktreeTopologySync = (): (() => void) => {
         for (const directory of state.cachedDirectories) directories.push(directory);
         return directories;
       },
-      needsSessionSync: (directory) => !useGlobalSessionsStore.getState().loadedDirectories.has(normalizePath(directory)),
+      needsSessionSync: (directory) => {
+        const state = useGlobalSessionsStore.getState();
+        const path = normalizePath(directory);
+        return !state.loadedDirectories.has(path) && !state.loadingDirectories.has(path)
+          && !state.refreshingDirectories.has(path);
+      },
       refresh: forceRefreshProjectWorktreeCatalog,
       syncAdded: (directories) => syncGlobalSessionsForDirectories(directories, useGlobalSessionsStore.getState().activeSessions),
       subscribeProjects: (listener) => useProjectsStore.subscribe(listener),
