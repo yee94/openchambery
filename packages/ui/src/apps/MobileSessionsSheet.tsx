@@ -1,6 +1,10 @@
 import React from 'react';
 import type { Session } from '@/lib/opencode/v2-types';
 import { useEvent } from '@reactuses/core';
+import { useSessionOrderSync } from '@/hooks/useSessionOrderSync';
+import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
+import { createSessionNodeComparator, buildSessionActivitySnapshot } from '@/components/session/sidebar/sessionSortableOrder';
+import { DraggableSessionRow, SessionFolderDndScope } from '@/components/session/sidebar/sessionFolderDnd';
 
 import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
 import { Icon } from '@/components/icon/Icon';
@@ -112,6 +116,7 @@ type MobileActionTarget =
   | { key: string; kind: 'session'; session: Session };
 
 type LongPressHandlers = {
+  onOpenActions: () => void;
   pressed: boolean;
   onPointerDown: React.PointerEventHandler<HTMLButtonElement>;
   onPointerMove: React.PointerEventHandler<HTMLButtonElement>;
@@ -418,6 +423,10 @@ const SessionRow: React.FC<{
           <SessionBusyIndicator />
         </button>
       ) : null}
+      <Button variant="ghost" size="icon" data-session-drag-ignore
+        aria-label={t('sessions.sidebar.session.menu.label')} onClick={longPressHandlers.onOpenActions}>
+        <Icon name="more-2" className="size-4" />
+      </Button>
       {onRequestArchive ? (
         <>
           {confirmingArchive ? (
@@ -518,6 +527,9 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
   const removeProject = useProjectsStore((state) => state.removeProject);
   const pinnedSessionIds = usePinnedSessionIds();
+  useSessionOrderSync();
+  const sessionOrderByScope = useSessionFoldersStore((state) => state.sessionOrderByScope);
+  const sessionOrderActivityByScope = useSessionFoldersStore((state) => state.sessionOrderActivityByScope);
   const togglePinnedSession = useTogglePinnedSession();
   const projectExpandedMap = useMobileSessionTreeStore((state) => state.projectExpanded);
   const worktreeExpandedMap = useMobileSessionTreeStore((state) => state.worktreeExpanded);
@@ -787,7 +799,10 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
 
     for (const node of nodes) {
       for (const bucket of node.buckets) {
-        bucket.sessions.sort((a, b) => getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a));
+        const scope = normalizePath(bucket.path);
+        const compare = createSessionNodeComparator(bucket.sessions.map((session) => ({ session })),
+          sessionOrderByScope[scope], sessionOrderActivityByScope[scope], pinnedSessionIds);
+        bucket.sessions.sort((a, b) => compare({ session: a }, { session: b }));
         for (const session of bucket.sessions) {
           if (!getParentId(session)) node.totalSessions += 1;
         }
@@ -795,7 +810,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     }
 
     return nodes;
-  }, [activeProjectId, projectsMeta, sessions]);
+  }, [activeProjectId, projectsMeta, sessions, sessionOrderByScope, sessionOrderActivityByScope, pinnedSessionIds]);
 
   const normalizedDirectory = normalizePath(currentDirectory);
 
@@ -829,8 +844,10 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   };
 
   const getLongPressHandlers = (target: MobileActionTarget): LongPressHandlers => ({
+    onOpenActions: () => setActionTarget(target),
     pressed: pressedActionKey === target.key || actionTarget?.key === target.key,
     onPointerDown: (event) => {
+      if (target.kind === 'session') return;
       if ((event.pointerType !== 'touch' && event.pointerType !== 'pen') || event.button !== 0) return;
       longPressControllerRef.current?.start({
         pointerId: event.pointerId,
@@ -852,7 +869,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     onContextMenu: (event) => {
       event.preventDefault();
       event.stopPropagation();
-      longPressControllerRef.current?.openFromContextMenu(target.key, () => setActionTarget(target));
+      if (target.kind !== 'session') longPressControllerRef.current?.openFromContextMenu(target.key, () => setActionTarget(target));
     },
   });
 
@@ -968,7 +985,24 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
 
     return (
       <div>
-        {visibleRoots.map((session) => renderNode(session, indent))}
+        <SessionFolderDndScope
+          scopeKey={confirmingArchiveSessionId ? null : normalizePath(bucket.path)}
+          sessionIds={visibleRoots.map((session) => session.id)}
+          folderIdBySessionId={new Map(visibleRoots.map((session) => [session.id,
+            useSessionFoldersStore.getState().getSessionFolderId(normalizePath(bucket.path), session.id)]))}
+          onSessionDroppedOnFolder={() => {}}
+          onSessionsReordered={(activeId, overId) => {
+            void useSessionFoldersStore.getState().reorderSessions(normalizePath(bucket.path),
+              visibleRoots.map((session) => session.id), activeId, overId, buildSessionActivitySnapshot(bucket.sessions))
+              .catch(() => toast.error(t('sessions.order.saveFailed')));
+          }}
+        >
+          {visibleRoots.map((session) => confirmingArchiveSessionId ? renderNode(session, indent) : (
+            <DraggableSessionRow key={session.id} sessionId={session.id} sessionDirectory={bucket.path} sessionTitle={session.title ?? ''}>
+              {renderNode(session, indent)}
+            </DraggableSessionRow>
+          ))}
+        </SessionFolderDndScope>
         <PaginationRow
           indent={indent}
           showMore={remaining > 0 || hasRemoteSessions}

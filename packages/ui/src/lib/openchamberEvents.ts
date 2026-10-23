@@ -69,6 +69,7 @@ export type ContactTurnEndEvent = {
   occurredAt: number;
 };
 export type OpenChamberEvent =
+  | { type: 'session-order-changed'; occurredAt: number }
   | { type: 'project-order-changed'; occurredAt: number }
   | { type: 'speech-settings-changed'; occurredAt: number }
   | ScheduledTaskRanEvent
@@ -250,6 +251,12 @@ export const parseOpenchamberEventEnvelope = (envelope: { type: string; properti
     const occurredAt = parsed?.occurredAt;
     if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
     return { type: 'speech-settings-changed', occurredAt };
+  }
+
+  if (envelope.type === 'openchamber:session-order-changed') {
+    const occurredAt = parsed?.occurredAt;
+    if (typeof occurredAt !== 'number') return null;
+    return { type: 'session-order-changed', occurredAt };
   }
 
   if (envelope.type === 'openchamber:project-order-changed') {

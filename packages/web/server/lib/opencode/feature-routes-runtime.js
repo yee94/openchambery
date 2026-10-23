@@ -522,6 +522,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       fsPromises,
       path,
       openchamberDataDir,
+      broadcastOpenChamberEvent,
     });
     registerFsRoutes(app, {
       os,

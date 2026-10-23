@@ -879,6 +879,20 @@ button.oc-mobile-worktree-label-trigger:active,
   box-shadow: inset 0 -1px 0 var(--oc-mobile-divider);
 }
 
+.oc-mobile-labeled-surface-group > [data-session-sortable-row]:first-child > .oc-mobile-session-row {
+  --oc-mobile-session-radius-start-start: calc(var(--oc-mobile-inset-radius) - 1px);
+  --oc-mobile-session-radius-start-end: calc(var(--oc-mobile-inset-radius) - 1px);
+}
+
+:is(.oc-mobile-labeled-surface-group, .oc-mobile-labeled-surface-group-content) > [data-session-sortable-row]:not(:has(~ [data-session-sortable-row], ~ .oc-mobile-session-row)) > .oc-mobile-session-row {
+  --oc-mobile-session-radius-end-end: calc(var(--oc-mobile-inset-radius) - 1px);
+  --oc-mobile-session-radius-end-start: calc(var(--oc-mobile-inset-radius) - 1px);
+}
+
+[data-session-sortable-row]:has(~ [data-session-sortable-row], ~ .oc-mobile-session-row) > .oc-mobile-session-row {
+  box-shadow: inset 0 -1px 0 var(--oc-mobile-divider);
+}
+
 /* “More” and “Fewer” are one pagination control, not two separately divided
    list items. Keep the divider above the control group, but remove the split
    inside it. */

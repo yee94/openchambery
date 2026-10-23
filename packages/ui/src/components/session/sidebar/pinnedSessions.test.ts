@@ -56,6 +56,22 @@ describe('derivePinnedSessions', () => {
   test('returns no rows when no session is pinned', () => {
     expect(derivePinnedSessions([session('session-a', 1)], new Set())).toEqual([]);
   });
+
+  test('keeps manual ranks across activity updates and appends new pins, ignoring missing and unpinned ids', () => {
+    const sessions = [
+      detailedSession('old', { created: 1, updated: 100 }),
+      detailedSession('new', { created: 2, updated: 200 }),
+      session('added', 4),
+      session('unpinned', 5),
+    ];
+    const order = ['missing', 'old', 'unpinned', 'new'];
+    const pins = new Set(['old', 'new', 'added']);
+    expect(derivePinnedSessions(sessions, pins, order).map((item) => item.id))
+      .toEqual(['old', 'new', 'added']);
+    expect(derivePinnedSessions(sessions.slice(1), pins, order).map((item) => item.id))
+      .toEqual(['new', 'added']);
+    expect(order).toEqual(['missing', 'old', 'unpinned', 'new']);
+  });
 });
 
 describe('listInProgressHomeSessions', () => {

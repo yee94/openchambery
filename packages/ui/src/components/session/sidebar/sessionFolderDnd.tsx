@@ -1,18 +1,27 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
+import { useEvent } from '@reactuses/core';
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
   useDroppable,
   type DragEndEvent,
+  type Modifier,
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Icon } from "@/components/icon/Icon";
 import { canReorderVisibleSessions } from './sessionSortableOrder';
+import { SessionRowDragContext } from './sessionDragState';
+import { triggerMobileHaptic } from '@/hooks/streamingHaptics';
+
+const restrictToVerticalAxis: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+const sessionDragModifiers = [restrictToVerticalAxis];
 
 export const DraggableSessionRow: React.FC<{
   sessionId: string;
@@ -25,25 +34,28 @@ export const DraggableSessionRow: React.FC<{
     data: { type: 'session', sessionId, sessionDirectory, sessionTitle },
   });
 
-  const handlePointerDown = React.useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      e.stopPropagation();
-      if (listeners?.onPointerDown) {
-        (listeners.onPointerDown as (event: React.PointerEvent) => void)(e);
-      }
-    },
-    [listeners],
-  );
+  const handleMouseDown = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('input, textarea, button[aria-label], [data-session-drag-ignore]')) return;
+    event.stopPropagation();
+    listeners?.onMouseDown?.(event);
+  });
+  const handleTouchStart = useEvent((event: React.TouchEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('input, textarea, button[aria-label], [data-session-drag-ignore]')) return;
+    event.stopPropagation();
+    listeners?.onTouchStart?.(event);
+  });
 
   return (
     <div
       ref={setNodeRef}
+      data-session-sortable-row
       {...attributes}
-      onPointerDown={handlePointerDown}
+      onMouseDown={handleMouseDown}
+      onTouchStart={handleTouchStart}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={isDragging ? 'opacity-30' : undefined}
     >
-      {children}
+      <SessionRowDragContext.Provider value={isDragging}>{children}</SessionRowDragContext.Provider>
     </div>
   );
 };
@@ -71,7 +83,8 @@ export const SessionFolderDndScope: React.FC<{
   children: React.ReactNode;
 }> = ({ scopeKey, onSessionDroppedOnFolder, sessionIds, folderIdBySessionId, onSessionsReordered, children }) => {
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 350, tolerance: 6 } }),
   );
   const [activeDragId, setActiveDragId] = React.useState<string | null>(null);
   const [activeDragTitle, setActiveDragTitle] = React.useState<string>('Session');
@@ -83,6 +96,7 @@ export const SessionFolderDndScope: React.FC<{
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
+    triggerMobileHaptic('light', { bypassCadence: true });
     setActiveDragId(null);
     setActiveDragWidth(null);
     setActiveDragHeight(null);
@@ -105,10 +119,12 @@ export const SessionFolderDndScope: React.FC<{
   return (
     <DndContext
       sensors={sensors}
+      modifiers={sessionDragModifiers}
       collisionDetection={closestCenter}
       onDragStart={(event) => {
         const data = event.active.data.current as { type?: string; sessionId?: string; sessionTitle?: string } | undefined;
         if (data?.type === 'session' && data.sessionId) {
+          triggerMobileHaptic('medium', { bypassCadence: true });
           setActiveDragId(data.sessionId);
           setActiveDragTitle(data.sessionTitle ?? 'Session');
           const width = event.active.rect.current.initial?.width;
@@ -118,6 +134,7 @@ export const SessionFolderDndScope: React.FC<{
         }
       }}
       onDragCancel={() => {
+        triggerMobileHaptic('light', { bypassCadence: true });
         setActiveDragId(null);
         setActiveDragWidth(null);
         setActiveDragHeight(null);
@@ -127,7 +144,7 @@ export const SessionFolderDndScope: React.FC<{
       <SortableContext items={sessionIds.map((sessionId) => `session-drag:${sessionId}`)} strategy={verticalListSortingStrategy}>
         {children}
       </SortableContext>
-      <DragOverlay>
+      {typeof document !== 'undefined' ? createPortal(<DragOverlay>
         {activeDragId ? (
           <div
             style={{
@@ -142,7 +159,7 @@ export const SessionFolderDndScope: React.FC<{
             </div>
           </div>
         ) : null}
-      </DragOverlay>
+      </DragOverlay>, document.body) : null}
     </DndContext>
   );
 };

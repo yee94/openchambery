@@ -21,6 +21,9 @@ import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 import { sortProjectEntries } from '@/lib/projectOrder';
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
 import { usePinnedSessionIds } from '@/queries/sessionIndexPinQueries';
+import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
+import { useSessionOrderSync } from '@/hooks/useSessionOrderSync';
+import { createSessionNodeComparator } from '@/components/session/sidebar/sessionSortableOrder';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -31,6 +34,7 @@ import {
 } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
 import {
   derivePinnedSessions,
+  PINNED_SESSION_ORDER_SCOPE,
   listInProgressHomeSessions,
 } from '@/components/session/sidebar/pinnedSessions';
 import { createSessionOwnershipIndex } from '@/components/session/sidebar/sessionOwnership';
@@ -197,6 +201,9 @@ export type MobileProjectsHomeModel = {
  * stores, project list, worktree buckets, pin/unread/busy overlays, and expansion stores.
  */
 export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
+  useSessionOrderSync();
+  const sessionOrderByScope = useSessionFoldersStore((state) => state.sessionOrderByScope);
+  const sessionOrderActivityByScope = useSessionFoldersStore((state) => state.sessionOrderActivityByScope);
   const { t } = useI18n();
   const liveSessions = useAllLiveSessions();
   const globalActiveSessions = useGlobalSessionsStore((state) => state.activeSessions);
@@ -383,7 +390,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
       };
       return [reuseMobileSessionTreeNode(previousById.get(session.id), next)];
     };
-    const nextPinned = derivePinnedSessions(sessions, pinnedSessionIds)
+    const nextPinned = derivePinnedSessions(sessions, pinnedSessionIds, sessionOrderByScope[PINNED_SESSION_ORDER_SCOPE])
       .flatMap((session) => toNode(session, true, previousPinnedById));
     const nextInProgress = listInProgressHomeSessions(
       sessions,
@@ -405,6 +412,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   }, [
     currentSessionId,
     ownership,
+    sessionOrderByScope,
     pinnedSessionIds,
     projectsMeta,
     runningSessionIds,
@@ -454,7 +462,11 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         // missing from this bucket (archived/system parents). Archive cascade
         // still walks allSessions. Pinned roots leave the project area the same
         // way the sidebar forest does: omit after parent/child attachment.
-        const rootSessions = listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds);
+        const scope = normalizePath(bucket.path);
+        const roots = listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds).map((session) => ({ session }));
+        const rootSessions = roots.sort(createSessionNodeComparator(
+          roots, sessionOrderByScope[scope], sessionOrderActivityByScope[scope], pinnedSessionIds,
+        )).map((node) => node.session);
         // Search must cover pinned roots too — they leave the project-area
         // display list, and the pinned group is hidden while searching.
         const catalogRoots = buildSessionTree(bucket.sessions, {
@@ -570,6 +582,8 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     currentSessionId,
     pinnedSessionIds,
     projectExpandedMap,
+    sessionOrderByScope,
+    sessionOrderActivityByScope,
     projectNodes,
     t,
     unseenBySession,

@@ -1,6 +1,7 @@
 import { settingsDict } from './en.settings';
 
 export const dict = {
+  'sessions.order.saveFailed': 'Could not save conversation order. Please try again.',
   'mobile.notifications.service': 'Background task notification service',
   'mobile.notifications.connected': 'Keeping the connection open to receive task notifications while the app is in the background.',
   'mobile.notifications.unavailable': 'Background notifications could not start. Reopen the app and try again.',

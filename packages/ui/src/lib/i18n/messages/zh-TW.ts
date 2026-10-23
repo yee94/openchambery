@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './zh-TW.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'sessions.order.saveFailed': '對話順序儲存失敗，請重試。',
   'mobile.notifications.service': '背景工作通知服務',
   'mobile.notifications.connected': '保持連線，以便應用程式切換至背景後接收工作通知。',
   'mobile.notifications.unavailable': '背景通知啟動失敗，請重新開啟應用程式後重試。',

@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './es.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'sessions.order.saveFailed': 'No se pudo guardar el orden de las conversaciones. Inténtalo de nuevo.',
   'commandPalette.index.progress': 'Indexando los últimos 30 días de todos los proyectos: {completed}/{total} conversaciones',
   'commandPalette.index.ready': 'Todos los proyectos · últimos 30 días · {count} mensajes indexados',
   'commandPalette.index.partial': 'No se pudo indexar parte del historial. Se muestran los resultados disponibles y se reintenta automáticamente.',

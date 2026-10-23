@@ -6,6 +6,11 @@ import {
 } from './openchamberEvents';
 
 describe('parseOpenchamberEventEnvelope', () => {
+  test('parses the session-order invalidation tip', () => {
+    expect(parseOpenchamberEventEnvelope({ type: 'openchamber:session-order-changed', properties: { occurredAt: 2 } }))
+      .toEqual({ type: 'session-order-changed', occurredAt: 2 });
+    expect(parseOpenchamberEventEnvelope({ type: 'openchamber:session-order-changed', properties: {} })).toBeNull();
+  });
   test('parses ready and valid topology envelopes', () => {
     expect(parseOpenchamberEventEnvelope({ type: 'openchamber:event-stream-ready', properties: {} })).toEqual({ type: 'event-stream-ready' });
     expect(parseOpenchamberEventEnvelope({ type: 'openchamber:worktree-topology-changed', properties: { projectDirectory: '/repo', directory: '/repo/feature', operation: 'added', occurredAt: 1 } })).toEqual({ type: 'worktree-topology-changed', projectDirectory: '/repo', directory: '/repo/feature', operation: 'added', occurredAt: 1 });

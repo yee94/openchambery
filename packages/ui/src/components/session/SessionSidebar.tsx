@@ -1,4 +1,6 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
+import { useSessionOrderSync } from '@/hooks/useSessionOrderSync';
 import type { Session } from '@/lib/opencode/v2-types';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -80,7 +82,7 @@ import {
   type SessionFocusScope,
 } from '@/stores/useSessionFocusStore';
 import { type SessionGroup, type SessionNode } from './sidebar/types';
-import { derivePinnedSessions, listInProgressHomeSessions, resolveTopSectionSecondaryMeta } from './sidebar/pinnedSessions';
+import { derivePinnedSessions, listInProgressHomeSessions, resolveTopSectionSecondaryMeta, PINNED_SESSION_ORDER_SCOPE } from './sidebar/pinnedSessions';
 import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import {
   compareSessionsByPinnedAndTime,
@@ -427,6 +429,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   );
   const foldersMap = useSessionFoldersStore((state) => state.foldersMap);
   const sessionOrderByScope = useSessionFoldersStore((state) => state.sessionOrderByScope);
+  useSessionOrderSync();
   const sessionOrderActivityByScope = useSessionFoldersStore((state) => state.sessionOrderActivityByScope);
   const getFoldersForScope = useSessionFoldersStore((state) => state.getFoldersForScope);
   const createFolder = useSessionFoldersStore((state) => state.createFolder);
@@ -1699,8 +1702,19 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     if (isVSCode) {
       return [];
     }
-    return derivePinnedSessions(sessions, pinnedSessionIds);
-  }, [isVSCode, pinnedSessionIds, sessions]);
+    return derivePinnedSessions(sessions, pinnedSessionIds, sessionOrderByScope[PINNED_SESSION_ORDER_SCOPE]);
+  }, [isVSCode, pinnedSessionIds, sessions, sessionOrderByScope]);
+
+  const handlePinnedSessionsReordered = useEvent((activeSessionId: string, overSessionId: string) => {
+    if (editingId) return;
+    void reorderSessions(
+      PINNED_SESSION_ORDER_SCOPE,
+      pinnedSessions.map((session) => session.id),
+      activeSessionId,
+      overSessionId,
+      {},
+    ).catch(() => toast.error(t('sessions.order.saveFailed')));
+  });
 
   // Top in-progress group mirrors mobile home: non-pinned, non-archived
   // busy/retry or top-level-unread rows. VS Code has no global pinned group
@@ -2465,7 +2479,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         sessionOrderActivityByScope={sessionOrderActivityByScope}
         onReorderSessions={(sessionIds, activeSessionId, overSessionId, activityBySessionId) => {
           const scopeKey = group.folderScopeKey ?? normalizePath(group.directory ?? null);
-          if (scopeKey) reorderSessions(scopeKey, sessionIds, activeSessionId, overSessionId, activityBySessionId);
+          if (scopeKey) void reorderSessions(scopeKey, sessionIds, activeSessionId, overSessionId, activityBySessionId)
+            .catch(() => toast.error(t('sessions.order.saveFailed')));
         }}
         currentSessionId={currentSessionId}
         shortcutTargetSessionId={
@@ -2537,6 +2552,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       prVisualStateByDirectoryBranch,
       toggleCollapsedGroup,
       ensureArchivedSessionsLoaded,
+      t,
     ],
   );
 
@@ -2632,6 +2648,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         {showPinnedTopSection ? (
           <SidebarPinnedSessions
             items={pinnedItems}
+            reorderEnabled
+            onSessionsReordered={handlePinnedSessionsReordered}
             inProgressItems={inProgressItems}
             renderSessionNode={renderSessionNode}
             currentSessionId={currentSessionId}

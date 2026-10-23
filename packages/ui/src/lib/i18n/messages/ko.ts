@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './ko.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'sessions.order.saveFailed': '대화 순서를 저장하지 못했습니다. 다시 시도해 주세요.',
   'mobile.notifications.service': '백그라운드 작업 알림 서비스',
   'mobile.notifications.connected': '앱이 백그라운드에 있을 때도 작업 알림을 받을 수 있도록 연결을 유지합니다.',
   'mobile.notifications.unavailable': '백그라운드 알림을 시작하지 못했습니다. 앱을 다시 열고 재시도하세요.',

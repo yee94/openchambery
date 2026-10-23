@@ -5,6 +5,8 @@ import { normalizePath } from '@/lib/pathNormalization';
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { DirectoryOwner } from './sessionOwnership';
 
+export const PINNED_SESSION_ORDER_SCOPE = '__pinned__';
+
 const getSessionCreatedAt = (session: Session): number => {
   const created = session.time?.created;
   return typeof created === 'number' && Number.isFinite(created) ? created : 0;
@@ -13,10 +15,13 @@ const getSessionCreatedAt = (session: Session): number => {
 export const derivePinnedSessions = (
   sessions: Session[],
   pinnedSessionIds: ReadonlySet<string>,
+  manualOrder: readonly string[] = [],
 ): Session[] => {
+  const rank = new Map(manualOrder.map((id, index) => [id, index]));
   return sessions
     .filter((session) => pinnedSessionIds.has(session.id))
-    .sort((a, b) => getSessionCreatedAt(b) - getSessionCreatedAt(a));
+    .sort((a, b) => (rank.get(a.id) ?? manualOrder.length) - (rank.get(b.id) ?? manualOrder.length)
+      || getSessionCreatedAt(b) - getSessionCreatedAt(a));
 };
 
 const getSessionParentId = (session: Session): string | null =>

@@ -120,7 +120,7 @@ vi.mock('@/queries/assistantQueries', () => ({
           bubbleIndex: 0,
           createdAt: index + 2,
           ordinal: index + 1,
-          status: failureUI.failed ? 'error' : 'complete',
+          status: failureUI.failed && index === 0 ? 'error' : 'complete',
           fromAssistantID: null,
           fromAssistantName: null,
           parts: [{ type: 'text', text: `refetched ${index}` }],
@@ -345,6 +345,24 @@ describe('AssistantConversationSurface scroll ownership', () => {
     expect(errorRow?.querySelector('[data-assistant-contact-text]')).toBeNull();
     expect(errorRow?.getAttribute('data-assistant-contact-role')).toBeNull();
     expect(errorRow?.getAttribute('data-message-id')).toBe('assistant-a:refetch:0');
+  });
+
+  test('dismisses an old error when a new live message arrives and keeps it hidden after reload', async () => {
+    contactQueryState.extraMessages = 1;
+    failureUI.failed = true;
+    const { host, root } = await mountSurface();
+    expect(host.querySelector('[data-assistant-contact-error]')).toBeTruthy();
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-bubble-delta', assistantID: 'assistant-a', turnID: 'new-turn', bubbleIndex: 0,
+      delta: '新的回复', done: true, occurredAt: 3,
+    }));
+    expect(host.querySelector('[data-assistant-contact-error]')).toBeNull();
+    expect(host.textContent).toContain('新的回复');
+    await act(async () => root.render(null));
+    contactQueryState.extraMessages = 2;
+    await act(async () => root.render(<AssistantConversationSurface assistant={assistant('assistant-a')} active />));
+    expect(host.querySelector('[data-assistant-contact-error]')).toBeNull();
+    expect(host.textContent).toContain('refetched 1');
   });
   test('read marker belongs to the loaded row and detaches for inactive, settings and gap surfaces', async () => {
     contactQueryState.extraMessages = 1;
