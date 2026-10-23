@@ -177,6 +177,7 @@ type Props = {
 };
 
 type QuickSessionActionProps = {
+  pinned: boolean;
   pinLabel: string;
   buttonSizeClass: string;
   iconSizeClass: string;
@@ -187,6 +188,7 @@ type QuickSessionActionProps = {
 
 // Pin-only quick action. Shift+delete lives on the archive button instead.
 const QuickSessionAction = React.memo(function QuickSessionAction({
+  pinned,
   pinLabel,
   buttonSizeClass,
   iconSizeClass,
@@ -202,7 +204,8 @@ const QuickSessionAction = React.memo(function QuickSessionAction({
         <button
           type="button"
           className={cn(
-            'inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-[color-mix(in_srgb,var(--surface-foreground)_8%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-none',
+            'inline-flex items-center justify-center rounded-md hover:text-foreground hover:bg-[color-mix(in_srgb,var(--surface-foreground)_8%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-none',
+            pinned ? 'text-foreground' : 'text-muted-foreground',
             buttonSizeClass,
           )}
           aria-label={pinLabel}
@@ -211,7 +214,7 @@ const QuickSessionAction = React.memo(function QuickSessionAction({
           onClick={onPin}
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <Icon name="pushpin-2" className={cn(iconSizeClass, 'rotate-45')} />
+          <Icon name={pinned ? 'pushpin-2-fill' : 'pushpin-2'} className={cn(iconSizeClass, !pinned && 'rotate-45')} />
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={4} className="rounded-md px-1.5 py-0.5 typography-micro">
@@ -985,28 +988,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
             <span className="h-2 w-2 rounded-full bg-[var(--status-info)]" />
           </span>
         );
-  const hideLeadingIndicatorOnHover = !isPinnedContext && !alwaysShowActions && hasChildren && isPinnedSession;
-  const showPinnedMarker = !isPinnedContext && isPinnedSession;
-  const pinnedMarkerContent = (
-    <Icon
-      name="pushpin-2-fill"
-      className="h-3 w-3 flex-shrink-0 text-foreground"
-      aria-label={t('sessions.sidebar.session.status.pinned')}
-    />
-  );
-  const leadingIndicators = showPinnedMarker ? (
-    <span
-      className={cn(
-        'pointer-events-none absolute inline-flex h-3.5 w-3.5 items-center justify-center transition-opacity',
-        isMinimalMode ? 'top-1/2 -translate-y-1/2' : 'top-[14.5px] -translate-y-1/2',
-        hideLeadingIndicatorOnHover ? 'opacity-100 group-hover:opacity-0 group-focus-within:opacity-0' : '',
-      )}
-      // Icon/chevron column = parent depth (aligns with folder glyphs above).
-      style={{ left: getSidebarRowPaddingLeft(Math.max(0, depth - 1)) }}
-    >
-      {pinnedMarkerContent}
-    </span>
-  ) : null;
   // Subsession chevron: align with the folder-icon column; idle hidden, hover only
   // (touch / alwaysShowActions keeps it visible).
   // Pinned rows stay flat — no expand chrome and no nested children (indent noise).
@@ -1285,7 +1266,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
               />
             }
           >
-          {leadingIndicators}
           {subsessionChevron}
           <div
             className="flex min-w-0 flex-1 items-center"
@@ -1423,7 +1403,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
             {/* No fade veil — title button reserves pr on hover so icons own their space. */}
             {showQuickPinAction ? (
               <QuickSessionAction
-                pinLabel={t('sessions.sidebar.session.menu.pin')}
+                pinned={isPinnedSession}
+                pinLabel={t(isPinnedSession ? 'sessions.sidebar.session.menu.unpin' : 'sessions.sidebar.session.menu.pin')}
                 buttonSizeClass={actionButtonSizeClass}
                 iconSizeClass={actionIconSizeClass}
                 onPointerDown={handleQuickPinPointerDown}
@@ -1437,7 +1418,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                   <button
                     type="button"
                     className={cn(
-                      'inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-[color-mix(in_srgb,var(--surface-foreground)_8%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-none',
+                      'inline-flex items-center justify-center rounded-md text-foreground hover:bg-[color-mix(in_srgb,var(--surface-foreground)_8%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-none',
                       actionButtonSizeClass,
                     )}
                     aria-label={t('sessions.sidebar.session.actions.pinned')}
