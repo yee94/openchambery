@@ -1,4 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { vi } from 'vitest';
+import { saveSessionOrder } from '@/queries/sessionOrderQueries';
+
+vi.mock('@/queries/sessionOrderQueries', () => ({
+  saveSessionOrder: vi.fn(async () => undefined),
+  getSessionOrderSnapshot: () => undefined,
+}));
 
 const storage = new Map<string, string>();
 let storageSetCount = 0;
@@ -43,6 +50,28 @@ const { sessionOrderActivityMatches, useSessionFoldersStore } = await import('./
 const waitForPersist = () => new Promise((resolve) => setTimeout(resolve, 350));
 
 describe('useSessionFoldersStore folder assignments', () => {
+  test('consecutive failed drags roll back to the last confirmed order, not an earlier failed drag', async () => {
+    useSessionFoldersStore.setState({ sessionOrderByScope: { __pinned__: ['a', 'b', 'c'] }, sessionOrderActivityByScope: {} });
+    vi.mocked(saveSessionOrder).mockRejectedValueOnce(new Error('offline')).mockRejectedValueOnce(new Error('offline'));
+    const first = useSessionFoldersStore.getState().reorderSessions('__pinned__', ['a', 'b', 'c'], 'b', 'a', {});
+    const second = useSessionFoldersStore.getState().reorderSessions('__pinned__', ['b', 'a', 'c'], 'c', 'b', {});
+    await Promise.allSettled([first, second]);
+    expect(useSessionFoldersStore.getState().sessionOrderByScope.__pinned__).toEqual(['a', 'b', 'c']);
+  });
+  test('failed server save rolls back only its scope and leaves unrelated orders intact', async () => {
+    useSessionFoldersStore.setState({
+      sessionOrderByScope: { __pinned__: ['a', 'b'], '/other': ['x'] },
+      sessionOrderActivityByScope: { __pinned__: {} },
+    });
+    vi.mocked(saveSessionOrder).mockRejectedValueOnce(new Error('offline'));
+    await expect(useSessionFoldersStore.getState().reorderSessions('__pinned__', ['a', 'b'], 'b', 'a', {}))
+      .rejects.toThrow('offline');
+    expect(useSessionFoldersStore.getState().sessionOrderByScope).toEqual({ __pinned__: ['a', 'b'], '/other': ['x'] });
+    useSessionFoldersStore.getState().applySessionOrderSnapshot({
+      revision: 2, sessionOrderByScope: { __pinned__: ['b', 'a'] }, sessionOrderActivityByScope: { __pinned__: {} },
+    });
+    expect(useSessionFoldersStore.getState().sessionOrderByScope.__pinned__).toEqual(['b', 'a']);
+  });
   beforeEach(() => {
     storage.clear();
     storageSetCount = 0;

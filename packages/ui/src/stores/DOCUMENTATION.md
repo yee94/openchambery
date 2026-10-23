@@ -11,6 +11,14 @@ cleanup and authoritative tail/pagination ownership keep their existing rules.
 
 ## Purpose
 
+Session ordering keeps its existing scope map and activity-baseline comparators.
+`useSessionOrderSync` projects the runtime-scoped server Query into
+`useSessionFoldersStore`; the store owns drag optimism and per-scope rollback,
+while `sessionOrderQueries` owns HTTP, serialized writes and SSE invalidation.
+Only confirmed snapshots are persisted to the local startup cache. Pending drag
+scopes cannot be overwritten by a background snapshot or imported as legacy data.
+Web/desktop/mobile share Host authority; VS Code keeps local directory ordering.
+
 `globalSessions.ts` follows the authoritative V2 cursor even when a returned page
 is short or empty: a Host can filter a project page down to one physical directory
 while recovering symlink aliases. Page length alone cannot establish exhaustion.

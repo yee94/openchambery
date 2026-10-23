@@ -1,6 +1,9 @@
 import * as React from 'react';
 import type { Session } from '@/lib/opencode/v2-types';
 import { useEvent } from '@reactuses/core';
+import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
+import { buildSessionActivitySnapshot } from '@/components/session/sidebar/sessionSortableOrder';
+import { PINNED_SESSION_ORDER_SCOPE } from '@/components/session/sidebar/pinnedSessions';
 
 import { Icon } from '@/components/icon/Icon';
 import { NewWorktreeDialog } from '@/components/session/NewWorktreeDialog';
@@ -79,6 +82,18 @@ export function MobileProjectsHomeContainer({
   const { git } = useRuntimeAPIs();
   const sharingAvailable = isSessionSharingAvailable();
   const model = useMobileProjectsHomeModel();
+  const handleReorderSessions = useEvent((scope: string, ids: string[], activeId: string, overId: string) => {
+    const store = useSessionFoldersStore.getState();
+    const scopeKey = scope === PINNED_SESSION_ORDER_SCOPE ? scope : normalizePath(scope);
+    if (!scopeKey) return;
+    if (scopeKey !== PINNED_SESSION_ORDER_SCOPE
+      && store.getSessionFolderId(scopeKey, activeId) !== store.getSessionFolderId(scopeKey, overId)) return;
+    const activity = scopeKey === PINNED_SESSION_ORDER_SCOPE ? {} : buildSessionActivitySnapshot(
+      model.allSessions.filter((session) => getSessionDirectory(session) === scopeKey),
+    );
+    void store.reorderSessions(scopeKey, ids, activeId, overId, activity)
+      .catch(() => toast.error(t('sessions.order.saveFailed')));
+  });
 
   const setProjectExpanded = useMobileSessionTreeStore((state) => state.setProjectExpanded);
   const setWorktreeExpanded = useMobileSessionTreeStore((state) => state.setWorktreeExpanded);
@@ -583,6 +598,7 @@ export function MobileProjectsHomeContainer({
           void handleArchiveSession(session);
         }}
         onOpenSessionActions={handleOpenSessionActions}
+        onReorderSessions={handleReorderSessions}
       />
 
       <MobileRowActionsSheet

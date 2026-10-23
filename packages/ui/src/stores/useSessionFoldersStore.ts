@@ -6,6 +6,8 @@ import { isRuntimeInstanceChange, subscribeRuntimeEndpointChanged } from '@/lib/
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { createUuid } from '@/lib/uuid';
+import { getRuntimeGeneration } from '@/lib/runtime-switch';
+import { getSessionOrderSnapshot, saveSessionOrder, type SessionOrderSnapshot } from '@/queries/sessionOrderQueries';
 
 // --- Types ---
 
@@ -41,6 +43,8 @@ interface SessionFoldersState {
 }
 
 interface SessionFoldersActions {
+  isSessionOrderPending: (scopeKey: string) => boolean;
+  applySessionOrderSnapshot: (snapshot: SessionOrderSnapshot) => void;
   getFoldersForScope: (scopeKey: string) => SessionFolder[];
   createFolder: (scopeKey: string, name: string, parentId?: string | null) => SessionFolder;
   renameFolder: (scopeKey: string, folderId: string, name: string) => void;
@@ -52,7 +56,7 @@ interface SessionFoldersActions {
   toggleFolderCollapse: (folderId: string) => void;
   cleanupSessions: (scopeKey: string, existingSessionIds: Set<string>) => void;
   getSessionFolderId: (scopeKey: string, sessionId: string) => string | null;
-  reorderSessions: (scopeKey: string, sessionIds: string[], activeSessionId: string, overSessionId: string, activityBySessionId: Readonly<Record<string, number>>) => void;
+  reorderSessions: (scopeKey: string, sessionIds: string[], activeSessionId: string, overSessionId: string, activityBySessionId: Readonly<Record<string, number>>) => Promise<void>;
 }
 
 type SessionFoldersStore = SessionFoldersState & SessionFoldersActions;
@@ -68,6 +72,8 @@ const DISK_WRITE_DEBOUNCE_MS = 250;
 const ARCHIVED_SCOPE_PREFIX = '__archived__:';
 
 const safeStorage = createInstanceScopedStorageAdapter(getDeferredSafeStorage());
+const pendingOrderWrites = new Map<string, symbol>();
+const orderRollback = new Map<string, { order: string[]; activity: Record<string, number> }>();
 let diskWriteTimer: ReturnType<typeof setTimeout> | null = null;
 let diskHydrated = false;
 let diskHydrationInFlight = false;
@@ -217,8 +223,16 @@ const persistSessionOrderState = (
   sessionOrderActivityByScope: SessionOrderActivityMap,
 ): void => {
   try {
-    safeStorage.setItem(SESSION_ORDER_STORAGE_KEY, JSON.stringify(sessionOrderByScope));
-    safeStorage.setItem(SESSION_ORDER_ACTIVITY_STORAGE_KEY, JSON.stringify(sessionOrderActivityByScope));
+    const order = { ...sessionOrderByScope };
+    const activity = { ...sessionOrderActivityByScope };
+    const confirmed = getSessionOrderSnapshot();
+    for (const scope of pendingOrderWrites.keys()) {
+      const baseline = orderRollback.get(scope);
+      order[scope] = confirmed?.sessionOrderByScope[scope] ?? baseline?.order ?? [];
+      activity[scope] = confirmed?.sessionOrderActivityByScope[scope] ?? baseline?.activity ?? {};
+    }
+    safeStorage.setItem(SESSION_ORDER_STORAGE_KEY, JSON.stringify(order));
+    safeStorage.setItem(SESSION_ORDER_ACTIVITY_STORAGE_KEY, JSON.stringify(activity));
   } catch {
     // Storage can be unavailable in restricted browser contexts.
   }
@@ -617,7 +631,21 @@ export const useSessionFoldersStore = create<SessionFoldersStore>()(
         return null;
       },
 
-      reorderSessions: (scopeKey, sessionIds, activeSessionId, overSessionId, activityBySessionId): void => {
+      isSessionOrderPending: (scopeKey) => pendingOrderWrites.has(scopeKey),
+
+      applySessionOrderSnapshot: (snapshot): void => {
+        const order = { ...get().sessionOrderByScope };
+        const activity = { ...get().sessionOrderActivityByScope };
+        for (const [scope, ids] of Object.entries(snapshot.sessionOrderByScope)) {
+          if (pendingOrderWrites.has(scope)) continue;
+          order[scope] = ids;
+          activity[scope] = snapshot.sessionOrderActivityByScope[scope] ?? {};
+        }
+        set({ sessionOrderByScope: order, sessionOrderActivityByScope: activity });
+        persistSessionOrderState(order, activity);
+      },
+
+      reorderSessions: async (scopeKey, sessionIds, activeSessionId, overSessionId, activityBySessionId): Promise<void> => {
         if (!scopeKey || activeSessionId === overSessionId) return;
         const visibleIds = Array.from(new Set(sessionIds));
         const activeIndex = visibleIds.indexOf(activeSessionId);
@@ -650,8 +678,45 @@ export const useSessionFoldersStore = create<SessionFoldersStore>()(
           ...get().sessionOrderActivityByScope,
           [scopeKey]: { ...activityBySessionId },
         };
+        const generation = getRuntimeGeneration();
+        const token = Symbol();
+        const previousSnapshot = getSessionOrderSnapshot();
+        if (!pendingOrderWrites.has(scopeKey)) {
+          orderRollback.set(scopeKey, {
+            order: previousSnapshot?.sessionOrderByScope[scopeKey] ?? currentOrder,
+            activity: previousSnapshot?.sessionOrderActivityByScope[scopeKey] ?? currentActivity ?? {},
+          });
+        }
+        const baseline = orderRollback.get(scopeKey)!;
+        pendingOrderWrites.set(scopeKey, token);
         set({ sessionOrderByScope: nextSessionOrderByScope, sessionOrderActivityByScope: nextSessionOrderActivityByScope });
-        persistSessionOrderState(nextSessionOrderByScope, nextSessionOrderActivityByScope);
+        try {
+          if (isVSCodeWebview()) {
+            pendingOrderWrites.delete(scopeKey);
+            orderRollback.delete(scopeKey);
+            persistSessionOrderState(nextSessionOrderByScope, nextSessionOrderActivityByScope);
+            return;
+          }
+          await saveSessionOrder(scopeKey, nextSessionOrderByScope[scopeKey], { ...activityBySessionId });
+        } catch (error) {
+          if (generation === getRuntimeGeneration() && pendingOrderWrites.get(scopeKey) === token) {
+            const confirmed = getSessionOrderSnapshot();
+            set({
+              sessionOrderByScope: { ...get().sessionOrderByScope, [scopeKey]: confirmed?.sessionOrderByScope[scopeKey] ?? baseline.order },
+              sessionOrderActivityByScope: { ...get().sessionOrderActivityByScope, [scopeKey]: confirmed?.sessionOrderActivityByScope[scopeKey] ?? baseline.activity },
+            });
+          }
+          throw error;
+        } finally {
+          if (pendingOrderWrites.get(scopeKey) === token) {
+            pendingOrderWrites.delete(scopeKey);
+            orderRollback.delete(scopeKey);
+            if (generation === getRuntimeGeneration()) {
+              const snapshot = getSessionOrderSnapshot();
+              if (snapshot) get().applySessionOrderSnapshot(snapshot);
+            }
+          }
+        }
       },
     }),
     { name: 'session-folders-store' },
@@ -731,6 +796,8 @@ const bootstrapSessionFoldersDiskHydration = (): void => {
 };
 
 const resetSessionFoldersForInstanceSwitch = (): void => {
+  pendingOrderWrites.clear();
+  orderRollback.clear();
   diskHydrationGeneration += 1;
   diskHydrated = false;
   diskHydrationInFlight = false;

@@ -71,6 +71,9 @@ const ToolOutputDialog = lazyWithChunkRecovery(() => import('@/components/chat/m
 /** Legacy internal settle markers — never render as user-visible bubbles. */
 const isInternalSettleText = (text: string) => text.trim().startsWith('oc.settle.')
 
+const isContactError = (message: AssistantContactMessage) => message.status === 'error'
+  || (message.status === 'failed' && message.messageID.endsWith(':preview:failed'))
+
 // Live previews are text-only, so only text bubbles share the turn/bubble key
 // that lets a preview hand its DOM to the authoritative row. Cards and files in
 // the same turn reuse bubble indexes; keying them alike duplicates React keys.
@@ -177,7 +180,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const messages = contactQuery.data?.messages ?? EMPTY_CONTACT_MESSAGES
   const scopedOptimisticTurns = scopeContactOptimisticTurns(optimisticTurns, assistant.id)
   const scopedTurnPreviews = scopeContactTurnPreviews(turnPreviews, assistant.id)
-  const transcript = mergeContactTranscript(messages, scopedOptimisticTurns, assistant.id, scopedTurnPreviews)
+  const visibleMessages = mergeContactTranscript(messages, scopedOptimisticTurns, assistant.id, scopedTurnPreviews)
     .filter((message) => {
       if (message.status === 'admitted' && message.messageID.endsWith(':preview:admitted')) return false
       // Drop legacy pure oc.settle.* rows so they leave no empty avatar shell.
@@ -185,6 +188,9 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       if (parts.length === 0) return true
       return parts.some((part) => !(part.type === 'text' && isInternalSettleText(part.text)))
     })
+  let latestMessageIndex = visibleMessages.length - 1
+  while (latestMessageIndex >= 0 && isContactError(visibleMessages[latestMessageIndex])) latestMessageIndex -= 1
+  const transcript = visibleMessages.filter((message, index) => !isContactError(message) || index > latestMessageIndex)
   const timeSeparators = getContactTimeSeparators(transcript)
   const reducedMotion = useReducedMotion()
   const entryScope = `${transportIdentity}:${assistant.id}`

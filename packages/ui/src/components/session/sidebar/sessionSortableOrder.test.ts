@@ -1,4 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
+vi.mock('@/queries/sessionOrderQueries', () => ({
+  saveSessionOrder: vi.fn(async () => undefined),
+  getSessionOrderSnapshot: () => undefined,
+}));
 import type { Session } from '@/lib/opencode/v2-types';
 import { useSessionFoldersStore, type SessionFolder } from '@/stores/useSessionFoldersStore';
 import { buildEffectiveSessionOrderIndex, buildVisibleSortableSessionOrder, canReorderVisibleSessions, createSessionNodeComparator } from './sessionSortableOrder';

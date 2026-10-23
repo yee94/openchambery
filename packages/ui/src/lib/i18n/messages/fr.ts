@@ -1,6 +1,7 @@
 import { settingsDict } from './fr.settings';
 
 export const dict = {
+  'sessions.order.saveFailed': 'Impossible d’enregistrer l’ordre des conversations. Veuillez réessayer.',
   'mobile.notifications.service': 'Service de notifications des tâches en arrière-plan',
   'mobile.notifications.connected': 'Connexion maintenue pour recevoir les notifications des tâches lorsque l’application est en arrière-plan.',
   'mobile.notifications.unavailable': 'Impossible de démarrer les notifications en arrière-plan. Rouvrez l’application et réessayez.',

@@ -1,6 +1,9 @@
+import { registerSessionOrderRoutes } from './order-routes.js';
+
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 export const registerSessionFoldersRoutes = (app, dependencies) => {
+  registerSessionOrderRoutes(app, dependencies);
   const {
     fsPromises,
     path,

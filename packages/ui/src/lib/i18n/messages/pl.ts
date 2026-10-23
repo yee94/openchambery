@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './pl.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'sessions.order.saveFailed': 'Nie udało się zapisać kolejności rozmów. Spróbuj ponownie.',
   'mobile.notifications.service': 'Usługa powiadomień o zadaniach w tle',
   'mobile.notifications.connected': 'Połączenie jest utrzymywane, aby odbierać powiadomienia o zadaniach, gdy aplikacja działa w tle.',
   'mobile.notifications.unavailable': 'Nie udało się uruchomić powiadomień w tle. Otwórz ponownie aplikację i spróbuj jeszcze raz.',

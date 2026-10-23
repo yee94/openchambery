@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './uk.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'sessions.order.saveFailed': 'Не вдалося зберегти порядок розмов. Спробуйте ще раз.',
   'commandPalette.index.progress': 'Індексування останніх 30 днів усіх проєктів: {completed}/{total} розмов',
   'commandPalette.index.ready': 'Усі проєкти · останні 30 днів · проіндексовано {count} повідомлень',
   'commandPalette.index.partial': 'Частину історії не вдалося проіндексувати. Показано доступні результати; автоматична повторна спроба.',

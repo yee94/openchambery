@@ -15,6 +15,8 @@ import {
   type MobileLongPressController,
 } from '@/components/ui/mobileLongPress';
 import { renderHighlightedText } from '@/components/session/sidebar/utils';
+import { DraggableSessionRow, SessionFolderDndScope } from '@/components/session/sidebar/sessionFolderDnd';
+import { PINNED_SESSION_ORDER_SCOPE } from '@/components/session/sidebar/pinnedSessions';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
@@ -108,6 +110,7 @@ export type MobileProjectsHomeProps = {
   onPinSession: (session: MobileSessionTreeNode) => void;
   onArchiveSession: (session: MobileSessionTreeNode) => void;
   onOpenSessionActions: (session: MobileSessionTreeNode) => void;
+  onReorderSessions?: (scope: string, ids: string[], activeId: string, overId: string) => void;
   className?: string;
 };
 
@@ -117,8 +120,10 @@ type SessionListProps = Pick<
   | 'onPinSession'
   | 'onArchiveSession'
   | 'onOpenSessionActions'
+  | 'onReorderSessions'
 > & {
   sessions: MobileSessionTreeNode[];
+  orderScope?: string;
   highlightQuery?: string;
 };
 
@@ -154,14 +159,22 @@ function SessionListImpl({
   onArchiveSession,
   onOpenSessionActions,
   highlightQuery,
+  orderScope,
+  onReorderSessions,
 }: SessionListProps) {
-  return (
+  const sessionIds = React.useMemo(() => sessions.filter((session) => session.kind !== 'pagination').map((session) => session.id), [sessions]);
+  const folderIdBySessionId = React.useMemo(() => new Map(sessionIds.map((id) => [id, null])), [sessionIds]);
+  const sortable = Boolean(orderScope && onReorderSessions && !highlightQuery && sessionIds.length > 1);
+  const handleReorder = useEvent((activeId: string, overId: string) => {
+    if (orderScope) onReorderSessions?.(orderScope, sessionIds, activeId, overId);
+  });
+  const rows = (
     <>
       {sessions.map((session, index) => {
         const isFollowedByPagination = session.kind === 'pagination'
           && sessions[index + 1]?.kind === 'pagination';
         const Row = session.kind === 'pagination' ? MobileSessionRow : MobileLiveSessionRow;
-        return (
+        const row = (
           <Row
             key={session.id}
             session={session}
@@ -173,9 +186,20 @@ function SessionListImpl({
             onOpenActions={onOpenSessionActions}
           />
         );
+        return sortable && session.kind !== 'pagination' ? (
+          <DraggableSessionRow key={session.id} sessionId={session.id} sessionDirectory={session.directory ?? null} sessionTitle={session.title}>
+            {row}
+          </DraggableSessionRow>
+        ) : row;
       })}
     </>
   );
+  return sortable ? (
+    <SessionFolderDndScope scopeKey={orderScope!} sessionIds={sessionIds} folderIdBySessionId={folderIdBySessionId}
+      onSessionDroppedOnFolder={() => {}} onSessionsReordered={handleReorder}>
+      {rows}
+    </SessionFolderDndScope>
+  ) : rows;
 }
 
 const SessionList = React.memo(SessionListImpl);
@@ -506,6 +530,7 @@ export function MobileProjectsHome({
   onArchiveSession,
   onOpenSessionActions,
   className,
+  onReorderSessions,
 }: MobileProjectsHomeProps) {
   const { t } = useI18n();
   const [pinnedExpanded, setPinnedExpanded] = React.useState(true);
@@ -589,6 +614,8 @@ export function MobileProjectsHome({
                   <div className="oc-mobile-labeled-surface-group">
                     <SessionList
                       sessions={pinnedSessions}
+                      orderScope={PINNED_SESSION_ORDER_SCOPE}
+                      onReorderSessions={onReorderSessions}
                       onSelectSession={onSelectSession}
                       onPinSession={onPinSession}
                       onArchiveSession={onArchiveSession}
@@ -653,6 +680,8 @@ export function MobileProjectsHome({
                     <div className="oc-mobile-labeled-surface-group">
                       <SessionList
                         sessions={mainSessions}
+                        orderScope={mainWorkspace?.path}
+                        onReorderSessions={onReorderSessions}
                         onSelectSession={onSelectSession}
                         onPinSession={onPinSession}
                         onArchiveSession={onArchiveSession}
@@ -684,6 +713,8 @@ export function MobileProjectsHome({
                         {worktreeExpanded && worktree.sessions.length > 0 ? (
                           <SessionList
                             sessions={worktree.sessions}
+                            orderScope={worktree.path}
+                            onReorderSessions={onReorderSessions}
                             onSelectSession={onSelectSession}
                             onPinSession={onPinSession}
                             onArchiveSession={onArchiveSession}

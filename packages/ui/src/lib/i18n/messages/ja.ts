@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './ja.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'sessions.order.saveFailed': '会話の順序を保存できませんでした。もう一度お試しください。',
   'mobile.notifications.service': 'バックグラウンドタスク通知サービス',
   'mobile.notifications.connected': 'アプリがバックグラウンドでもタスクの通知を受信できるよう、接続を維持しています。',
   'mobile.notifications.unavailable': 'バックグラウンド通知を開始できませんでした。アプリを開き直して再試行してください。',

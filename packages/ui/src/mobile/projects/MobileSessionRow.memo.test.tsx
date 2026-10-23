@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,30 @@ const session = (id: string): MobileSessionRowModel => ({
 });
 
 describe('MobileSessionRow default React.memo behavior', () => {
+  test('long hold does not open actions; the three-dot button still does', () => {
+    vi.useFakeTimers();
+    const onActions = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => root.render(<I18nProvider><MobileSessionRow session={session('hold')}
+        onSelect={noop} onPin={noop} onArchive={noop} onOpenActions={onActions} /></I18nProvider>));
+      const main = container.querySelector('.oc-mobile-session-row-main')!;
+      act(() => {
+        main.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', button: 0, pointerId: 1 }));
+        vi.advanceTimersByTime(700);
+        main.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 1 }));
+      });
+      expect(onActions).not.toHaveBeenCalled();
+      act(() => (container.querySelector('.oc-mobile-session-row-content > button[data-session-drag-ignore]') as HTMLButtonElement).click());
+      expect(onActions).toHaveBeenCalledOnce();
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      vi.useRealTimers();
+    }
+  });
   test('stable session identity keeps painted title across parent-only bumps', () => {
     function Host({
       bump,

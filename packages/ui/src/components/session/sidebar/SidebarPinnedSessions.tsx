@@ -10,6 +10,8 @@ import {
 import type { SessionNodeRenderExtras } from './sessionNodeItemUtils';
 import { SidebarSectionHeader } from './SidebarSectionHeader';
 import { useSessionFocusStore } from '@/stores/useSessionFocusStore';
+import { DraggableSessionRow, SessionFolderDndScope } from './sessionFolderDnd';
+import { PINNED_SESSION_ORDER_SCOPE } from './pinnedSessions';
 
 type PinnedItem = {
   node: SessionNode;
@@ -23,6 +25,8 @@ type PinnedItem = {
 
 type Props = {
   items: PinnedItem[];
+  reorderEnabled?: boolean;
+  onSessionsReordered?: (activeSessionId: string, overSessionId: string) => void;
   /** Unlabeled in-progress/unread rows rendered below the pinned rows. */
   inProgressItems?: PinnedItem[];
   renderSessionNode: (
@@ -44,6 +48,8 @@ type Props = {
 
 export function SidebarPinnedSessions({
   items,
+  reorderEnabled = false,
+  onSessionsReordered,
   inProgressItems = [],
   renderSessionNode,
   currentSessionId,
@@ -54,6 +60,9 @@ export function SidebarPinnedSessions({
 }: Props): React.ReactNode {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = React.useState(false);
+  const canReorder = reorderEnabled && !editingId && items.length > 1 && Boolean(onSessionsReordered);
+  const sessionIds = React.useMemo(() => items.map((item) => item.node.session.id), [items]);
+  const folderIdBySessionId = React.useMemo(() => new Map(sessionIds.map((id) => [id, null])), [sessionIds]);
   const pinnedFocusSessionId = useSessionFocusStore((state) => (
     state.focus?.scope === 'pinned' ? state.focus.sessionId : null
   ));
@@ -114,10 +123,9 @@ export function SidebarPinnedSessions({
     return null;
   }
 
-  const renderRows = (rows: PinnedItem[]): React.ReactNode =>
-    rows.map((item) => (
-      <React.Fragment key={`${item.projectId ?? ''}:${item.node.session.id}`}>
-        {renderSessionNode(
+  const renderRows = (rows: PinnedItem[], sortable = false): React.ReactNode =>
+    rows.map((item) => {
+      const row = renderSessionNode(
           item.node,
           0,
           item.groupDirectory,
@@ -126,9 +134,18 @@ export function SidebarPinnedSessions({
           item.secondaryMeta,
           'pinned',
           getRenderExtras(item.node),
-        )}
-      </React.Fragment>
-    ));
+      );
+      return sortable ? (
+        <DraggableSessionRow
+          key={item.node.session.id}
+          sessionId={item.node.session.id}
+          sessionDirectory={item.groupDirectory}
+          sessionTitle={item.node.session.title ?? ''}
+        >
+          {row}
+        </DraggableSessionRow>
+      ) : <React.Fragment key={item.node.session.id}>{row}</React.Fragment>;
+    });
 
   return (
     // Same grouping params as SidebarProjectsList so pinned ↔ project handoff
@@ -147,7 +164,17 @@ export function SidebarPinnedSessions({
       />
       {!collapsed ? (
         <div className="space-y-0.5">
-          {renderRows(items)}
+          {canReorder ? (
+            <SessionFolderDndScope
+              scopeKey={PINNED_SESSION_ORDER_SCOPE}
+              sessionIds={sessionIds}
+              folderIdBySessionId={folderIdBySessionId}
+              onSessionDroppedOnFolder={() => {}}
+              onSessionsReordered={(activeId, overId) => onSessionsReordered?.(activeId, overId)}
+            >
+              {renderRows(items, true)}
+            </SessionFolderDndScope>
+          ) : renderRows(items)}
           {renderRows(inProgressItems)}
         </div>
       ) : null}

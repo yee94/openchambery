@@ -5,10 +5,7 @@ import { Icon } from '@/components/icon/Icon';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
 import { renderHighlightedText } from '@/components/session/sidebar/utils';
 import { Button } from '@/components/ui/button';
-import {
-  createMobileLongPressController,
-  type MobileLongPressController,
-} from '@/components/ui/mobileLongPress';
+import { SessionRowDragContext } from '@/components/session/sidebar/sessionDragState';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -66,7 +63,7 @@ export type MobileSessionRowProps = {
   onSelect: (session: MobileSessionRowModel) => void;
   onPin: (session: MobileSessionRowModel) => void;
   onArchive: (session: MobileSessionRowModel) => void;
-  /** Opens the complete action sheet. This is also used by long press and the visible actions button. */
+  /** Opens the complete action sheet from the visible actions button. */
   onOpenActions: (session: MobileSessionRowModel) => void;
   indicator?: MobileSessionIndicator;
   className?: string;
@@ -95,13 +92,14 @@ function MobileSessionRowImpl({
   const gestureRef = React.useRef<ActiveGesture | null>(null);
   const suppressClickRef = React.useRef(false);
   const actionRailRef = React.useRef<HTMLDivElement | null>(null);
-  const longPressRef = React.useRef<MobileLongPressController | null>(null);
-
-  if (!longPressRef.current) {
-    longPressRef.current = createMobileLongPressController();
-  }
-
-  React.useEffect(() => () => longPressRef.current?.reset(), []);
+  const reorderDragging = React.useContext(SessionRowDragContext);
+  React.useEffect(() => {
+    if (!reorderDragging) return;
+    gestureRef.current = null;
+    suppressClickRef.current = true;
+    setOffset(0);
+    setDragging(false);
+  }, [reorderDragging]);
 
   React.useEffect(() => {
     const handleRevealed = (event: Event) => {
@@ -138,24 +136,15 @@ function MobileSessionRowImpl({
     };
     suppressClickRef.current = false;
 
-    longPressRef.current?.start({
-      pointerId: event.pointerId,
-      key: session.id,
-      clientX: event.clientX,
-      clientY: event.clientY,
-      onTrigger: () => {
-        onOpenActions(session);
-      },
-    });
   });
 
   const handlePointerMove = useEvent((event: React.PointerEvent<HTMLElement>) => {
+    if (reorderDragging) return;
     const gesture = gestureRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
 
     const deltaX = event.clientX - gesture.startX;
     const deltaY = event.clientY - gesture.startY;
-    longPressRef.current?.move(event.pointerId, event.clientX, event.clientY);
 
     if (gesture.intent === 'pending') {
       const absX = Math.abs(deltaX);
@@ -163,14 +152,12 @@ function MobileSessionRowImpl({
       if (absY > INTENT_LOCK_PX && absY > absX) {
         gesture.intent = 'vertical';
         gestureRef.current = null;
-        longPressRef.current?.cancel(event.pointerId);
         return;
       }
       if (absX > INTENT_LOCK_PX && absX > absY) {
         gesture.intent = 'horizontal';
         setDragging(true);
         suppressClickRef.current = true;
-        longPressRef.current?.cancel(event.pointerId);
         try {
           event.currentTarget.setPointerCapture(event.pointerId);
         } catch {
@@ -190,7 +177,6 @@ function MobileSessionRowImpl({
 
   const finishGesture = useEvent((event: React.PointerEvent<HTMLElement>) => {
     const gesture = gestureRef.current;
-    longPressRef.current?.end(event.pointerId);
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     gestureRef.current = null;
     if (gesture.intent !== 'horizontal') return;
@@ -198,16 +184,14 @@ function MobileSessionRowImpl({
     setOffset((current) => (current < -(gesture.actionWidth * 0.35) ? -gesture.actionWidth : 0));
   });
 
-  const handlePointerCancel = useEvent((event: React.PointerEvent<HTMLElement>) => {
+  const handlePointerCancel = useEvent(() => {
     const gesture = gestureRef.current;
     gestureRef.current = null;
-    longPressRef.current?.cancel(event.pointerId);
     setDragging(false);
     setOffset(gesture?.startOffset ?? 0);
   });
 
   const handleSelect = useEvent(() => {
-    if (longPressRef.current?.consumeClick(session.id)) return;
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
       return;
@@ -223,9 +207,6 @@ function MobileSessionRowImpl({
   const handleContextMenu = useEvent((event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    longPressRef.current?.openFromContextMenu(session.id, () => {
-      onOpenActions(session);
-    });
   });
 
   const handlePin = useEvent(() => {
@@ -290,6 +271,7 @@ function MobileSessionRowImpl({
           session foreground follows the finger to the left. */}
       <div
         ref={actionRailRef}
+        data-session-drag-ignore
         className={cn(
           'oc-mobile-session-actions absolute inset-y-0 right-0 z-0 flex items-stretch',
           dragging ? 'transition-none' : 'transition-transform duration-150 ease-out',
@@ -434,6 +416,7 @@ function MobileSessionRowImpl({
           size="icon"
           className="mr-1 min-h-9 min-w-9 shrink-0 rounded-full text-muted-foreground"
           aria-label={t('sessions.sidebar.session.menu.label')}
+          data-session-drag-ignore
           onClick={handleOpenActions}
         >
           <Icon name="more-2" className="size-3.5" />

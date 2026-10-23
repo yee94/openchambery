@@ -35,6 +35,29 @@
   Top-section hover cards resolve project and branch from session ownership
   (`resolveTopSectionSecondaryMeta`) because pinned roots are omitted from the
   project-tree meta index.
+- Pinned rows reorder only inside the pinned group; in-progress rows remain outside
+  that scope. PC uses mouse drag, mobile uses a 350ms hold with 6px movement
+  tolerance. A quick swipe still scrolls/reveals row actions. The same DnD scope
+  locks motion to the vertical axis on PC and mobile. Native mobile emits a
+  medium haptic on drag activation and a light haptic on release/cancel, bypassing
+  streaming-haptic cadence so both interaction boundaries receive feedback.
+  The same DnD scope
+  and preview serve desktop, mobile home, and the session sheet. The preview is
+  portaled to `document.body`: mobile glass/backdrop-filter establishes a fixed
+  containing block and otherwise offsets both the overlay and collision geometry.
+  Mobile session menus open from the three-dot button, not long press.
+  Project dragging is unchanged. Inline rename disables pinned dragging.
+- The Host persists session orders and activity baselines via
+  `GET/POST /api/session-folders/order`. `useSessionOrderSync` projects the runtime
+  Query snapshot into the existing sidebar store; SSE order tips, reconnect, and
+  foreground refresh reconcile other clients. Legacy local scopes import only
+  when absent on the Host. Failed saves roll back their scope and show an error.
+  `__pinned__` is the pinned scope: activity never promotes it, and unranked pins
+  follow saved rows in creation order. Directory scopes retain the existing
+  manual-order/activity-promotion rule on desktop and mobile. Pagination controls
+  and project rows are not session drop targets. Missing/unpinned ids are ignored
+  without pruning partial snapshots. VS Code retains local directory ordering
+  and has no pinned group; older Hosts without the order route reject saves.
 - The top section renders every pinned session plus unlabeled top-level running
   and unread rows, and supports header collapse. Running descendants keep their
   root conversation active through the shared activity projection, but are never
@@ -58,7 +81,9 @@
 - Virtualized groups share the sidebar scroll element. `getTotalSize()` excludes the group's ancestor offset, but scroll offsets and item positions include `scrollMargin`. Preserve those ancestor coordinates when scrolling to a group; do not clamp to the group's height alone. The official unpatched virtual-core is used. `virtualizerScrollMargin.test.ts` covers ancestor offsets, bounded initial end positions, and repeated Show more.
 - The mobile session tree shows 20 root sessions by default for projects without worktrees. Projects with worktrees show 5 sessions per root/worktree bucket by default; Show more and Show fewer use that bucket's default page size. Collapsing and reopening a project or worktree preserves its revealed session count until Show fewer is selected or the sessions surface closes.
 - Mobile projects home performance contract (reference isolation, not full stop): `mobileSessionTreeNode.ts` structurally shares tree node objects (`reuseMobileSessionTreeNode` / `reuseMobileSessionTreeNodeList`) so parent model rebuilds (running set / unseen map / directory churn) do not allocate a fresh node per unchanged row. `MobileSessionRow` is `React.memo`'d with `areMobileSessionRowPropsEqual` (identity-stable `session` + callbacks). `MobileProjectsHome` memoizes live rows and session lists against parent identity churn. This reduces paint work when references are stable; it does **not** claim that hiding the home surface unsubscribes every home store or stops all background derivation. Closed recent-sessions sheet list gating lives under chat `MobileSessionStatusBar` / `mobileSessionStatusBarList.ts`.
-- Mobile project, worktree, and session rows expose their matching sidebar actions through a touch-sized bottom action panel after a 500ms long press. Scrolling movement and pointer cancellation abort the gesture, and the triggering click is consumed. Dedicated mobile and the responsive Web sessions sheet share the same hold controller; Web session rows retain their desktop context menu, while project and worktree context menus open the touch action panel.
+- Mobile project/worktree rows retain their long-press action panels. Session
+  rows use long press for sorting within their list and the visible three-dot
+  button for their action panel. Web session rows retain their desktop context menu.
 - Project rows retain the persisted project-registry order while session and worktree data hydrates. Manual drag and conversation activity are peers on the current order: drag writes both the registry and `manualProjectOrder`; successful sends and live session status transitions promote the owning project on both lists while preserving the remaining relative order. Status transitions compare against the directory child-store status, falling back to the global live status map for unopened directories. Duplicate status events, hydration, and ordinary selection preserve the current order. Settings sync adopts the incoming registry and prunes removed ids from the local manual order. Explicit alphabetical/date/recent display modes retain their own comparators; drag is available in manual mode.
 - The Projects section header no longer shows a global syncing accessory. While a
   project's session directories are fetching, that project's folder icon swaps to a
