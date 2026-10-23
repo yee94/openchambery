@@ -1,4 +1,5 @@
 import React from 'react';
+import { replaceEqualDeep } from '@tanstack/react-query';
 import type { Session } from '@/lib/opencode/v2-types';
 import type { SessionGroup, SessionNode, GroupSearchData } from '../types';
 import { dedupeSessionsById, normalizePath } from '../utils';
@@ -20,6 +21,8 @@ type ProjectSection = {
   project: ProjectItem;
   groups: SessionGroup[];
 };
+
+const EMPTY_GROUP_SEARCH = new WeakMap<SessionGroup, GroupSearchData>();
 
 type Args = {
   normalizedProjects: ProjectItem[];
@@ -60,8 +63,11 @@ export const useSessionSidebarSections = (args: Args) => {
     foldersMap,
   } = args;
 
+  const committedSections = React.useRef<ProjectSection[]>([]);
   const projectSections = React.useMemo<ProjectSection[]>(() => {
-    return normalizedProjects.map((project) => {
+    const previousById = new Map(committedSections.current.map((section) => [section.project.id, section]));
+    const sections = normalizedProjects.map((project) => {
+      const previous = previousById.get(project.id);
       const projectSessions = dedupeSessionsById([
         ...getSessionsForProject(project.id),
         ...getArchivedSessionsForProject(project.id),
@@ -70,15 +76,19 @@ export const useSessionSidebarSections = (args: Args) => {
       const isRepo = projectRepoStatus.has(project.id)
         ? Boolean(projectRepoStatus.get(project.id))
         : lastRepoStatus;
+      const previousGroups = new Map(previous?.groups.map((group) => [group.id, group]));
       const groups = buildGroupedSessions(
         projectSessions,
         project.normalizedPath,
         worktreesForProject,
         projectRootBranches.get(project.id) ?? null,
         isRepo,
-      );
-      return { project, groups };
+      ).map((group) => replaceEqualDeep(previousGroups.get(group.id), group));
+      return replaceEqualDeep(previous, { project, groups });
     });
+    return sections.length === committedSections.current.length
+      && sections.every((section, index) => section === committedSections.current[index])
+      ? committedSections.current : sections;
   }, [
     normalizedProjects,
     getSessionsForProject,
@@ -90,15 +100,19 @@ export const useSessionSidebarSections = (args: Args) => {
     projectRootBranches,
   ]);
 
+  React.useLayoutEffect(() => {
+    committedSections.current = projectSections;
+  }, [projectSections]);
+
   const visibleProjectSections = React.useMemo(() => {
     return projectSections;
   }, [projectSections]);
 
   const groupSearchDataByGroup = React.useMemo(() => {
-    const result = new WeakMap<SessionGroup, GroupSearchData>();
     if (!hasSessionSearchQuery) {
-      return result;
+      return EMPTY_GROUP_SEARCH;
     }
+    const result = new WeakMap<SessionGroup, GroupSearchData>();
 
     const countNodes = (nodes: SessionNode[]): number => nodes.reduce((total, node) => total + 1 + countNodes(node.children), 0);
 

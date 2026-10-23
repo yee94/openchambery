@@ -2,7 +2,6 @@ import React from 'react';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { usePwaManifestSync } from '@/hooks/usePwaManifestSync';
 import { getQueuedMessageOwnershipGate, subscribeQueuedMessageOwnershipGate, useQueuedMessageAutoSend } from '@/hooks/useQueuedMessageAutoSend';
-import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
 import { useWindowControlsOverlayLayout } from '@/hooks/useWindowControlsOverlayLayout';
 import { setOptimisticRefs } from '@/sync/session-actions';
 import { markSessionViewed } from '@/sync/notification-store';
@@ -71,13 +70,12 @@ const MiniChatPresenceBridge: React.FC = () => {
   return null;
 };
 
-export function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
+export const SyncRuntimeEffects = React.memo(function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
   embeddedBackgroundWorkEnabled: boolean;
 }) {
   React.useEffect(mountSpeechSettingsSync, []);
   // Retention remains available from Settings, but never triggers a broad
   // catalog fetch during normal startup.
-  useSessionAutoCleanup({ enabled: embeddedBackgroundWorkEnabled, autoRun: false });
   const queueOwnershipGate = React.useSyncExternalStore(subscribeQueuedMessageOwnershipGate, getQueuedMessageOwnershipGate, getQueuedMessageOwnershipGate);
   useQueuedMessageAutoSend(embeddedBackgroundWorkEnabled && queueOwnershipGate === 'legacy-enabled');
   useQueueAbortOptimisticReconcile();
@@ -96,9 +94,9 @@ export function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
   }, []);
 
   return <SyncOptimisticBridge />;
-}
+});
 
-export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
+export const SyncAppEffects = React.memo(function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
   embeddedBackgroundWorkEnabled: boolean;
 }) {
   usePwaManifestSync();
@@ -116,4 +114,4 @@ export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
       <MiniChatPresenceBridge />
     </>
   );
-}
+});

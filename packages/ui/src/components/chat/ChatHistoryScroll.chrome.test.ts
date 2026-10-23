@@ -10,14 +10,14 @@ import { compileProductionCssAsync, evidenceRoot, keepEvidence, openChromeSessio
 
 const here = dirname(fileURLToPath(import.meta.url));
 const exec = promisify(execFile);
-type Sample = { run: string | null; prepared: boolean; top: number; max: number; anchorTop: number | null; anchorOffset: number | null; anchorBottom: number | null; fingerDelta: number; loads: number; pinned: boolean; viewportHeight: number };
+type Sample = { run: string | null; prepared: boolean; top: number; max: number; anchorTop: number | null; anchorOffset: number | null; anchorBottom: number | null; fingerDelta: number; loads: number; pinned: boolean; viewportHeight: number; displayedMessages: number };
 const workDirs: string[] = [];
 
 afterAll(() => {
     if (!keepEvidence()) for (const dir of workDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short', 'desktop-warmup', 'desktop-warmup-pinned', 'desktop-warmup-small-pinned', 'partial-turn', 'mobile-partial-turn', 'fast-entry', 'fast-entry-desktop-wheel', 'fast-entry-desktop-key', 'compact-prepend', 'compact-prepend-desktop', 'turn-prepend', 'turn-prepend-desktop'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
+test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short', 'desktop-warmup', 'desktop-warmup-scrolling', 'desktop-warmup-pinned', 'desktop-warmup-small-pinned', 'partial-turn', 'mobile-partial-turn', 'fast-entry', 'fast-entry-desktop-wheel', 'fast-entry-desktop-key', 'compact-prepend', 'compact-prepend-desktop', 'turn-prepend', 'turn-prepend-desktop'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
     const fastEntry = scenario.startsWith('fast-entry');
     const desktop = scenario.includes('desktop') || scenario === 'partial-turn';
     const width = desktop ? 1200 : 402;
@@ -76,6 +76,7 @@ window.addEventListener('error',e=>{
         await page.evaluate('window.historyScrollFixture.prepare()');
         const prepared = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
         let releasedReadingDistance: number | null = null;
+        let quietAnchorTop: number | null = null;
         expect(prepared.loads).toBe(0);
         if (partialTurn) {
             expect(await page.evaluate('getComputedStyle(document.querySelector("[data-history-scroller]")).overflowY')).toBe('auto');
@@ -94,6 +95,28 @@ window.addEventListener('error',e=>{
                         }
                     }
                 }).observe(revealRoot, { attributes: true, attributeOldValue: true, attributeFilter: ['style'] });`);
+            if (scenario === 'desktop-warmup-scrolling') {
+                await page.evaluate(`new Promise((resolve, reject) => {
+                    const started = performance.now();
+                    const tick = () => {
+                        if (window.historyScrollFixture.sample().loads === 1) return setTimeout(resolve, 150);
+                        if (performance.now() - started > 5000) return reject(new Error('warmup did not start'));
+                        requestAnimationFrame(tick);
+                    }; tick();
+                })`);
+                await page.evaluate('void (window.warmupWheel = new Promise(resolve => document.querySelector("[data-history-scroller]").addEventListener("wheel", () => requestAnimationFrame(resolve), {once:true})))');
+                await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 500, y: 400, deltaX: 0, deltaY: -20 });
+                await page.evaluate('window.warmupWheel');
+                await page.evaluate('window.historyScrollFixture.finishWarmup()');
+                for (let i = 0; i < 6; i++) {
+                    await new Promise((resolve) => setTimeout(resolve, 150));
+                    await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 500, y: 400, deltaX: 0, deltaY: -20 });
+                    expect((await page.evaluate<Sample>('window.historyScrollFixture.sample()')).displayedMessages).toBe(prepared.displayedMessages);
+                }
+                await new Promise((resolve) => setTimeout(resolve, 150));
+                quietAnchorTop = (await page.evaluate<Sample>('window.historyScrollFixture.sample()')).anchorTop;
+                expect(quietAnchorTop).not.toBeNull();
+            }
             await page.evaluate(`new Promise((resolve, reject) => {
                 const started = performance.now();
                 const tick = () => {
@@ -154,12 +177,15 @@ window.addEventListener('error',e=>{
         if (scenario.startsWith('desktop-warmup')) {
             expect(await page.evaluate('window.warmupHides'), 'background history must never hide the painted transcript').toEqual([]);
         }
+        if (quietAnchorTop !== null) {
+            expect(Math.abs(after.anchorTop! - quietAnchorTop), 'quiet adoption must retain the position reached by input').toBeLessThanOrEqual(1.1);
+        }
         if (releasedReadingDistance !== null) {
             // Preserve the distance the real gesture reached. Native inertia
             // may carry it farther, but prepending must never pull it back.
             expect(after.max - after.top).toBeGreaterThanOrEqual(releasedReadingDistance - 24);
         } else if (scenario !== 'desktop-short' && !pinnedWarmup) {
-            expect(after.max - after.top).toBeGreaterThan(scenario === 'virtualize-transition' || scenario === 'desktop-warmup' ? 100 : desktop && fastEntry ? 500 : 1000);
+            expect(after.max - after.top).toBeGreaterThan(scenario === 'virtualize-transition' || scenario.startsWith('desktop-warmup') ? 100 : desktop && fastEntry ? 500 : 1000);
         }
         if (pinnedWarmup) expect(Math.abs(after.max - after.top)).toBeLessThan(1);
         if (scenario === 'desktop-warmup-small-pinned') {

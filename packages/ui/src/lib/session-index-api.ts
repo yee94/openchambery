@@ -2,6 +2,8 @@ import type { Session } from '@/lib/opencode/v2-types';
 
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from './runtime-fetch';
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from './runtime-switch';
+import { normalizePath } from './pathNormalization';
 
 /** Session-index summary row. `time.pinned` is ISO/null (null or absent = unpinned). */
 export type SessionIndexSession = Session & {
@@ -77,7 +79,9 @@ const parseSessionIndexSnapshot = (payload: Partial<SessionIndexSnapshot> & { av
   };
 };
 
-let sessionIndexSnapshotInflight: Promise<SessionIndexSnapshot | null> | undefined;
+const sessionIndexSnapshotInflight = new Map<string, Map<AbortSignal | undefined, Promise<SessionIndexSnapshot | null>>>();
+const sessionIndexSyncInflight = new Map<string, Promise<SessionIndexSnapshot | null>>();
+const sessionIndexRequestScope = () => JSON.stringify([getRuntimeTransportIdentity(), getRuntimeGeneration()]);
 
 /**
  * Authoritative session-index GET. Concurrent callers share one in-flight request
@@ -133,7 +137,12 @@ export const loadSessionIndexSnapshot = async (
   options?: { signal?: AbortSignal },
 ): Promise<SessionIndexSnapshot | null> => {
   if (typeof window === 'undefined') return null;
-  if (sessionIndexSnapshotInflight) return sessionIndexSnapshotInflight;
+  options?.signal?.throwIfAborted();
+  const scope = sessionIndexRequestScope();
+  // Independent cancellation owners never inherit another caller's abort.
+  const requests = sessionIndexSnapshotInflight.get(scope) ?? new Map();
+  const existing = requests.get(options?.signal);
+  if (existing) return existing;
   const flight = (async (): Promise<SessionIndexSnapshot | null> => {
     const response = await runtimeFetch('/api/openchamber/session-index', {
       signal: options?.signal,
@@ -145,9 +154,11 @@ export const loadSessionIndexSnapshot = async (
   })();
   // Clear by the shared promise identity (the finally-wrapped handle), not the raw flight.
   const shared = flight.finally(() => {
-    if (sessionIndexSnapshotInflight === shared) sessionIndexSnapshotInflight = undefined;
+    if (requests.get(options?.signal) === shared) requests.delete(options?.signal);
+    if (requests.size === 0 && sessionIndexSnapshotInflight.get(scope) === requests) sessionIndexSnapshotInflight.delete(scope);
   });
-  sessionIndexSnapshotInflight = shared;
+  requests.set(options?.signal, shared);
+  sessionIndexSnapshotInflight.set(scope, requests);
   return shared;
 };
 
@@ -155,14 +166,25 @@ export const startSessionIndexBackgroundSync = async (
   directories: string[],
 ): Promise<SessionIndexSnapshot | null> => {
   if (typeof window === 'undefined') return null;
-  const response = await runtimeFetch('/api/openchamber/session-index/sync', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ directories }),
+  const normalized = [...new Set(directories.map(normalizePath).filter(Boolean))].sort();
+  const key = JSON.stringify([sessionIndexRequestScope(), normalized]);
+  const existing = sessionIndexSyncInflight.get(key);
+  if (existing) return existing;
+  const flight = (async () => {
+    const response = await runtimeFetch('/api/openchamber/session-index/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directories: normalized }),
+    });
+    if (response.status === 501) return null;
+    await ensureOk(response);
+    return response.json() as Promise<SessionIndexSnapshot>;
+  })();
+  const shared = flight.finally(() => {
+    if (sessionIndexSyncInflight.get(key) === shared) sessionIndexSyncInflight.delete(key);
   });
-  if (response.status === 501) return null;
-  await ensureOk(response);
-  return response.json() as Promise<SessionIndexSnapshot>;
+  sessionIndexSyncInflight.set(key, shared);
+  return shared;
 };
 
 /**

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import {
   DndContext,
   DragOverlay,
@@ -7,6 +8,7 @@ import {
   closestCenter,
   useSensor,
   useSensors,
+  type DragEndEvent,
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -21,6 +23,13 @@ import { useI18n } from '@/lib/i18n';
 import type { MainTab } from '@/stores/useUIStore';
 import { SidebarSectionHeader } from './SidebarSectionHeader';
 import type { ProjectSortOrder } from '@/stores/useSessionDisplayStore';
+import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { useSessionUIStore } from '@/sync/session-ui-store';
+import { isVSCodeRuntime } from '@/lib/desktop';
+import { normalizePath } from './utils';
+
+const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: 8 } };
+const KEYBOARD_SENSOR_OPTIONS = { coordinateGetter: sortableKeyboardCoordinates };
 
 /**
  * Shared tooltip group for session hover cards + action tips.
@@ -94,22 +103,13 @@ type Props = {
   openSidebarMenuKey: string | null;
   setOpenSidebarMenuKey: (key: string | null) => void;
   isInlineEditing: boolean;
-  /** Project ids whose session directories are currently fetching. */
-  loadingProjectIds: Set<string>;
-  /** Project ids refreshing a usable session snapshot in the background. */
-  refreshingProjectIds: Set<string>;
-  /** True while any project session refresh is in flight (focus reconcile gate). */
-  isProjectSessionsSyncing: boolean;
 };
 
 export function SidebarProjectsList(props: Props): React.ReactNode {
   const { t } = useI18n();
   const projectSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-  const groupSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(PointerSensor, POINTER_SENSOR_OPTIONS),
+    useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS),
   );
   const projectsHeader = !props.hasSessionSearchQuery ? (
     <SidebarSectionHeader
@@ -247,111 +247,39 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
               {props.sectionsForRender.map((section) => {
                 const project = section.project;
                 const projectKey = project.id;
-                const projectLabel = formatDirectoryName(project.normalizedPath) || project.normalizedPath;
-                const projectDescription = formatPathForDisplay(project.normalizedPath, props.homeDirectory);
-                const isCollapsed = props.collapsedProjects.has(projectKey);
-                const isActiveProject = projectKey === props.activeProjectId;
-                const isSessionsLoading = props.loadingProjectIds.has(projectKey);
-                const isSessionsRefreshing = props.refreshingProjectIds.has(projectKey);
-                const isRepo = props.projectRepoStatus.get(projectKey);
-                const orderedGroups = cachedGetOrderedGroups(projectKey, section.groups);
-                const rootGroup = orderedGroups.find((group) => group.isMain) ?? null;
-                const nestedGroups = rootGroup
-                  ? orderedGroups.filter((group) => group.id !== rootGroup.id)
-                  : orderedGroups;
-
                 return (
-                  <SortableProjectItem
+                  <SidebarProjectSection
                     key={projectKey}
-                    id={projectKey}
-                    disabled={props.projectSortOrder !== 'manual'}
-                    projectLabel={projectLabel}
-                    projectDescription={projectDescription}
-                    projectIcon={project.icon}
-                    projectColor={project.color}
-                    projectIconImage={project.iconImage}
-                    isCollapsed={isCollapsed}
-                    isActiveProject={isActiveProject}
-                    isSessionsLoading={isSessionsLoading || isSessionsRefreshing}
-                    isRepo={Boolean(isRepo)}
-                    isDesktopShell={props.isDesktopShellRuntime}
+                    project={project}
+                    orderedGroups={cachedGetOrderedGroups(projectKey, section.groups)}
+                    isCollapsed={props.collapsedProjects.has(projectKey)}
+                    isActiveProject={projectKey === props.activeProjectId}
+                    isRepo={Boolean(props.projectRepoStatus.get(projectKey))}
+                    isDesktopShellRuntime={props.isDesktopShellRuntime}
                     isStuck={props.stuckProjectHeaders.has(projectKey)}
                     hideDirectoryControls={props.hideDirectoryControls}
                     mobileVariant={props.mobileVariant}
                     alwaysShowActions={props.alwaysShowActions}
-                    onToggle={() => props.toggleProject(projectKey)}
-                    onNewSession={() => {
-                      if (projectKey !== props.activeProjectId) props.setActiveProjectIdOnly(projectKey);
-                      props.setActiveMainTab('chat');
-                      if (props.mobileVariant) props.setSessionSwitcherOpen(false);
-                      props.openNewSessionDraft({ directoryOverride: project.normalizedPath });
-                    }}
-                    onNewWorktreeSession={() => {
-                      if (projectKey !== props.activeProjectId) props.setActiveProjectIdOnly(projectKey);
-                      props.setActiveMainTab('chat');
-                      props.openNewWorktreeDialog();
-                    }}
-                    onSyncSessions={() => props.syncProjectSessions(projectKey)}
-                    onRenameStart={() => props.openProjectEditDialog(projectKey)}
-                    onClose={() => props.removeProject(projectKey)}
-                    sentinelRef={(el) => { props.projectHeaderSentinelRefs.current.set(projectKey, el); }}
-                    showCreateButtons
-                    openSidebarMenuKey={props.openSidebarMenuKey}
+                    toggleProject={props.toggleProject}
+                    setActiveProjectIdOnly={props.setActiveProjectIdOnly}
+                    setActiveMainTab={props.setActiveMainTab}
+                    setSessionSwitcherOpen={props.setSessionSwitcherOpen}
+                    openNewSessionDraft={props.openNewSessionDraft}
+                    openNewWorktreeDialog={props.openNewWorktreeDialog}
+                    syncProjectSessions={props.syncProjectSessions}
+                    openProjectEditDialog={props.openProjectEditDialog}
+                    removeProject={props.removeProject}
+                    projectHeaderSentinelRefs={props.projectHeaderSentinelRefs}
+                    openSidebarMenuKey={props.openSidebarMenuKey === `project:${projectKey}` ? props.openSidebarMenuKey : null}
                     setOpenSidebarMenuKey={props.setOpenSidebarMenuKey}
-                    reorderEnabled={props.projectReorderEnabled ?? false}
-                  >
-                    <Collapsible open={!isCollapsed}>
-                      <CollapsibleContent data-sidebar-collapse className="h-[var(--collapsible-panel-height)] transition-[height] duration-200 ease-out data-[starting-style]:h-0 data-[ending-style]:h-0 data-[open]:animate-none data-[closed]:animate-none motion-reduce:transition-none" inert={isCollapsed || undefined}>
-                      <div className="space-y-0 pt-0 pb-0.5">
-                        {isSessionsLoading && section.groups.length === 0 ? (
-                          <div
-                            className="box-border w-full py-1.5 text-left typography-ui-label font-normal text-muted-foreground/80 animate-pulse select-none"
-                            style={{ paddingLeft: getSidebarRowPaddingLeft(1) }}
-                            role="status"
-                            aria-live="polite"
-                          >
-                            {t('sessions.sidebar.project.loadingSessions')}
-                          </div>
-                        ) : section.groups.length > 0 ? (
-                          <DndContext
-                            sensors={groupSensors}
-                            collisionDetection={closestCenter}
-                            onDragEnd={(event) => {
-                              if (props.isInlineEditing) return;
-                              const { active, over } = event;
-                              if (!over || active.id === over.id) return;
-                              const oldIndex = nestedGroups.findIndex((item) => item.id === active.id);
-                              const newIndex = nestedGroups.findIndex((item) => item.id === over.id);
-                              if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-                              const nextNested = arrayMove(nestedGroups, oldIndex, newIndex).map((item) => item.id);
-                              const next = rootGroup ? [rootGroup.id, ...nextNested] : nextNested;
-                              props.setGroupOrderByProject((prev) => {
-                                const map = new Map(prev);
-                                map.set(projectKey, next);
-                                return map;
-                              });
-                            }}
-                          >
-                            {rootGroup ? props.renderGroupSessions(rootGroup, `${projectKey}:${rootGroup.id}`, projectKey, true, null, undefined, scrollContainerRef) : null}
-                            <SortableContext items={nestedGroups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
-                              {nestedGroups.map((group) => {
-                                const groupKey = `${projectKey}:${group.id}`;
-                                return (
-                                  <SortableGroupItem key={group.id} id={group.id} disabled={props.isInlineEditing}>
-                                    {(dragHandleProps) => props.renderGroupSessions(group, groupKey, projectKey, false, dragHandleProps, undefined, scrollContainerRef)}
-                                  </SortableGroupItem>
-                                );
-                              })}
-                            </SortableContext>
-                            <DragOverlay dropAnimation={null} />
-                          </DndContext>
-                        ) : (
-                          <div className={SIDEBAR_MUTED_HINT_CLASS}>{t('sessions.sidebar.empty.noSessions.title')}</div>
-                        )}
-                      </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  </SortableProjectItem>
+                    projectReorderEnabled={props.projectReorderEnabled}
+                    projectSortOrder={props.projectSortOrder}
+                    isInlineEditing={props.isInlineEditing}
+                    setGroupOrderByProject={props.setGroupOrderByProject}
+                    renderGroupSessions={props.renderGroupSessions}
+                    scrollContainerRef={scrollContainerRef}
+                    homeDirectory={props.homeDirectory}
+                  />
                 );
               })}
             </SortableContext>
@@ -363,3 +291,103 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
     </SidebarTooltipProvider>
   );
 }
+
+type ProjectSectionProps = Pick<Props,
+  'homeDirectory' | 'isDesktopShellRuntime' | 'hideDirectoryControls' | 'mobileVariant' | 'alwaysShowActions' |
+  'toggleProject' | 'setActiveProjectIdOnly' | 'setActiveMainTab' | 'setSessionSwitcherOpen' |
+  'openNewSessionDraft' | 'openNewWorktreeDialog' | 'syncProjectSessions' | 'openProjectEditDialog' | 'removeProject' |
+  'projectHeaderSentinelRefs' | 'openSidebarMenuKey' | 'setOpenSidebarMenuKey' | 'projectReorderEnabled' |
+  'projectSortOrder' | 'isInlineEditing' | 'setGroupOrderByProject' | 'renderGroupSessions'
+> & {
+  project: ProjectSection['project'];
+  orderedGroups: SessionGroup[];
+  isCollapsed: boolean;
+  isActiveProject: boolean;
+  isRepo: boolean;
+  isStuck: boolean;
+  scrollContainerRef: React.RefObject<HTMLElement | null>;
+};
+
+const SidebarProjectSection = React.memo(function SidebarProjectSection(props: ProjectSectionProps) {
+  const { t } = useI18n();
+  const { project, orderedGroups, isCollapsed, renderGroupSessions, scrollContainerRef, isInlineEditing } = props;
+  const projectKey = project.id;
+  const worktrees = useSessionUIStore((state) => isVSCodeRuntime() ? undefined : state.availableWorktreesByProject.get(project.normalizedPath));
+  const directories = React.useMemo(() => [project.normalizedPath, ...(worktrees ?? []).flatMap((worktree) => {
+    const path = normalizePath(worktree.path);
+    return path ? [path] : [];
+  })], [project.normalizedPath, worktrees]);
+  // Per-project loading: only the project's own boolean can invalidate its header.
+  const isSessionsLoading = useGlobalSessionsStore((state) => directories.some((directory) => state.loadingDirectories.has(directory)));
+  const isSessionsRefreshing = useGlobalSessionsStore((state) => directories.some((directory) => state.refreshingDirectories.has(directory)));
+  const groupSensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
+  const rootGroup = orderedGroups.find((group) => group.isMain) ?? null;
+  const nestedGroups = React.useMemo(() => rootGroup ? orderedGroups.filter((group) => group.id !== rootGroup.id) : orderedGroups, [orderedGroups, rootGroup]);
+  const onToggle = useEvent(() => props.toggleProject(projectKey));
+  const onNewSession = useEvent(() => {
+    if (!props.isActiveProject) props.setActiveProjectIdOnly(projectKey);
+    props.setActiveMainTab('chat');
+    if (props.mobileVariant) props.setSessionSwitcherOpen(false);
+    props.openNewSessionDraft({ directoryOverride: project.normalizedPath });
+  });
+  const onNewWorktreeSession = useEvent(() => {
+    if (!props.isActiveProject) props.setActiveProjectIdOnly(projectKey);
+    props.setActiveMainTab('chat');
+    props.openNewWorktreeDialog();
+  });
+  const onSyncSessions = useEvent(() => props.syncProjectSessions(projectKey));
+  const onRenameStart = useEvent(() => props.openProjectEditDialog(projectKey));
+  const onClose = useEvent(() => props.removeProject(projectKey));
+  const sentinelRef = useEvent((el: HTMLDivElement | null) => { props.projectHeaderSentinelRefs.current.set(projectKey, el); });
+  const onGroupDragEnd = useEvent((event: DragEndEvent) => {
+    if (isInlineEditing) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = nestedGroups.findIndex((item) => item.id === active.id);
+    const newIndex = nestedGroups.findIndex((item) => item.id === over.id);
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+    const nextNested = arrayMove(nestedGroups, oldIndex, newIndex).map((item) => item.id);
+    const next = rootGroup ? [rootGroup.id, ...nextNested] : nextNested;
+    props.setGroupOrderByProject((prev) => new Map(prev).set(projectKey, next));
+  });
+  const groups = React.useMemo(() => (
+    <DndContext sensors={groupSensors} collisionDetection={closestCenter} onDragEnd={onGroupDragEnd}>
+      {rootGroup ? renderGroupSessions(rootGroup, `${projectKey}:${rootGroup.id}`, projectKey, true, null, undefined, scrollContainerRef) : null}
+      <SortableContext items={nestedGroups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
+        {nestedGroups.map((group) => (
+          <SortableGroupItem key={group.id} id={group.id} disabled={isInlineEditing}>
+            {(dragHandleProps) => renderGroupSessions(group, `${projectKey}:${group.id}`, projectKey, false, dragHandleProps, undefined, scrollContainerRef)}
+          </SortableGroupItem>
+        ))}
+      </SortableContext>
+      <DragOverlay dropAnimation={null} />
+    </DndContext>
+  ), [groupSensors, onGroupDragEnd, rootGroup, renderGroupSessions, projectKey, scrollContainerRef, nestedGroups, isInlineEditing]);
+  return (
+    <SortableProjectItem
+      id={projectKey} disabled={props.projectSortOrder !== 'manual'}
+      projectLabel={formatDirectoryName(project.normalizedPath) || project.normalizedPath}
+      projectDescription={formatPathForDisplay(project.normalizedPath, props.homeDirectory)}
+      projectIcon={project.icon} projectColor={project.color} projectIconImage={project.iconImage}
+      isCollapsed={isCollapsed} isActiveProject={props.isActiveProject} isSessionsLoading={isSessionsLoading || isSessionsRefreshing}
+      isRepo={props.isRepo} isDesktopShell={props.isDesktopShellRuntime} isStuck={props.isStuck}
+      hideDirectoryControls={props.hideDirectoryControls} mobileVariant={props.mobileVariant} alwaysShowActions={props.alwaysShowActions}
+      onToggle={onToggle} onNewSession={onNewSession} onNewWorktreeSession={onNewWorktreeSession}
+      onSyncSessions={onSyncSessions} onRenameStart={onRenameStart} onClose={onClose} sentinelRef={sentinelRef}
+      showCreateButtons openSidebarMenuKey={props.openSidebarMenuKey} setOpenSidebarMenuKey={props.setOpenSidebarMenuKey}
+      reorderEnabled={props.projectReorderEnabled ?? false}
+    >
+      <Collapsible open={!isCollapsed}>
+        <CollapsibleContent data-sidebar-collapse className="h-[var(--collapsible-panel-height)] transition-[height] duration-200 ease-out data-[starting-style]:h-0 data-[ending-style]:h-0 data-[open]:animate-none data-[closed]:animate-none motion-reduce:transition-none" inert={isCollapsed || undefined}>
+          <div className="space-y-0 pt-0 pb-0.5">
+            {orderedGroups.length > 0 ? groups : isSessionsLoading ? (
+              <div className="box-border w-full py-1.5 text-left typography-ui-label font-normal text-muted-foreground/80 animate-pulse select-none" style={{ paddingLeft: getSidebarRowPaddingLeft(1) }} role="status" aria-live="polite">
+                {t('sessions.sidebar.project.loadingSessions')}
+              </div>
+            ) : <div className={SIDEBAR_MUTED_HINT_CLASS}>{t('sessions.sidebar.empty.noSessions.title')}</div>}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </SortableProjectItem>
+  );
+});

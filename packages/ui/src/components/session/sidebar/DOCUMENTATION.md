@@ -90,6 +90,45 @@
   project's session directories are fetching, that project's folder icon swaps to a
   spinner. The expanded body shows localized "Loading sessions…" only when there is
   no usable snapshot; background refresh keeps the existing rows visible.
+- `SidebarProjectSection` is the memo boundary between list orchestration and a
+  project's sortable header/body. It receives stable group arrays, callbacks and
+  project-local booleans; unrelated top-section renders do not execute its Hooks.
+  Project loading/refreshing subscribe to boolean membership in that project's root
+  and known worktree directories. `SessionSidebar` only observes whether any
+  directory is pending for focus reconciliation. Loading flags can repaint the
+  relevant header without recreating its group elements. Sensor option objects
+  retain their identity so real `useSensor`/`useSensors` results do not invalidate
+  that body memo. Event adapters use
+  `useEvent`; render callbacks retain their semantic invalidation dependencies.
+  `SidebarProjectsList.performance.test.tsx` covers 50 unrelated parent commits,
+  50 other-directory store updates, same-project loading, retained row DOM and
+  fresh action callbacks with the real sensor Hooks. ContextMenu/Tooltip roots retain their existing presence:
+  conditionally wrapping an already-focused or dragged row would remount that DOM.
+- `useSessionSidebarSections` structurally shares the last committed project's
+  JSON model, matching projects and groups by id. Unchanged groups and nodes retain
+  references across other-project updates; removed projects leave
+  the retained snapshot. The empty search map is shared. This bounds retention to
+  one committed tree and prevents unrelated group renders; it does not eliminate
+  upstream grouping calculations. Group event callbacks take the group explicitly
+  so the parent does not allocate an adapter for each render. Folder subscriptions
+  select only that group's folder scope.
+- `SidebarMaintenance` owns session-order synchronization and complete-catalog
+  folder cleanup subscriptions. Catalog generation/loading changes do not subscribe
+  the visible tree's parent to those maintenance-only inputs. Existing complete-
+  catalog and hidden-sidebar cleanup rules still apply. Update progress subscribes
+   inside the mounted update dialog; the parent selects only update-button visibility.
+- Project expand/collapse, manual sync and draft actions use stable `useEvent`
+  callbacks at the project boundary. Directory collection stays a render-time
+  memoized function, so topology changes still rerun expanded-project hydration.
+  Navigation intent owns automatic reveal; callback identity does not re-arm it.
+  `SessionSidebar.actions.performance.test.tsx` guards 50 catalog-driven parent
+  renders and confirms the click uses the latest loader.
+- Tooltip handle migration is not a drop-in replacement for this application's
+  wrapper: touch/pen long press and click suppression currently use the ancestor
+  `LongPressTooltipContext`. A detached trigger outside that ancestor loses those
+  handlers even when Base UI's handle connects it to a mounted Root. Keep the current
+  roots until a shared implementation covers touch cancellation, trigger handoff,
+  unmount cleanup, first hover/focus and stable button DOM.
 - Runtime session index cold start first hydrates through TanStack Query SWR + a
   runtimeKey-scoped client cold-start snapshot (stale paint only), then the
   authoritative SQLite-backed `GET /session-index`, then asks the runtime-owned

@@ -2306,7 +2306,10 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     }
 
     const frame = window.requestAnimationFrame(() => {
-      panelRef.current?.focus({ preventScroll: true });
+      const panel = panelRef.current;
+      if (panel && !panel.contains(document.activeElement)) {
+        panel.focus({ preventScroll: true });
+      }
     });
 
     wasOpenRef.current = true;

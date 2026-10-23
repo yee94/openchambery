@@ -19,25 +19,13 @@ const buildWindowTitle = (projectLabel: string | null, instanceLabel: string | n
 };
 
 export const useWindowTitle = () => {
-  const activeProject = useProjectsStore((state) => {
+  const projectLabel = useProjectsStore((state) => {
     if (!state.activeProjectId) {
       return null;
     }
-    return state.projects.find((project) => project.id === state.activeProjectId) ?? null;
+    const project = state.projects.find((entry) => entry.id === state.activeProjectId);
+    return project ? getProjectNameFromPath(project.path) || null : null;
   });
-
-  const projectLabel = React.useMemo(() => {
-    if (!activeProject) {
-      return null;
-    }
-
-    const pathName = getProjectNameFromPath(activeProject.path);
-    if (pathName) {
-      return pathName;
-    }
-
-    return null;
-  }, [activeProject]);
 
   const [instanceLabel, setInstanceLabel] = React.useState<string | null>(null);
 

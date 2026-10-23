@@ -30,7 +30,9 @@ Work down this list; each has caused a real regression.
 2. **Input subtracted twice, or not at all.** Compensation measures how far the row moved since capture. The user's scroll since capture must be excluded from that delta (record `scrollTop` with the anchor), otherwise a wheel step is undone or growth in the same frame is adopted as the new position.
 3. **Unstable or duplicate row keys.** Two rows with one React key make React reorder the DOM during a prepend; it reads as a jump. Keys stay unique per row and stable across preview→authoritative handoff. Server bubble indexes are not unique within a turn: text bubbles and cards reuse them.
 4. **Writing `scrollTop` during a held touch.** A write mid-pan cancels the native gesture on iOS. Under a finger, re-capture only; compensate at lift or defer the DOM change (the mobile quiet window).
-5. **First virtualization switch.** Normal-flow → virtualized at the threshold relocates rows; the transition anchor seeds the range. Expect residual offset here first.
+5. **First virtualization switch.** Normal-flow → virtualized at the threshold relocates rows; the transition anchor seeds the range. Expect residual offset here first. The anchor must exist even when the reader is in the live tail and no history row is visible (fallback: last history message), otherwise the offset equals the virtual padding.
+6. **Released reader with no owner.** Leaving the bottom ends auto-follow. A normal-flow list then has no writer until a history request arms the keeper. Upward intent hands the reader to the hydration keeper. Anchors use a message whose top is inside the viewport, not one straddling the edge: such a message can shrink internally without moving its own top.
+7. **A staged page rolls back during measurement.** Advance the displayed snapshot before child layout effects can emit programmatic scroll and trigger nested commits. A parent layout-effect ref update is too late. Test loading-to-content scroll-node attachment as well as initial mount; a listener attached to an empty stable ref can miss all later input.
 
 ## Measure before and after
 
@@ -49,6 +51,31 @@ bun scripts/perf/scroll-jump-probe.mjs --url <page> --scroller '<css>' [--mobile
 - Chrome touch emulation does not exercise WebKit's deferred compensation. iOS changes also run `IOS_HISTORY_SIM=1` on `ChatHistoryScroll.chrome.test.ts` (needs a booted simulator and `serve-sim`).
 
 ## Lock the fix in
+
+When render-call reduction is the requested performance metric, use
+`scripts/perf/component-render-probe.mjs` and its independent verifier; see
+`scripts/perf/README.md`. Count actual function/class invocations, never retained
+commit flags from memo bailout subtrees. Follow the user's fixed scenario and
+reference count. Repeated cold comparisons use at least three runs per configuration,
+medians and ranges, plus per-run normalization by actual DOM message mounts.
+Record unique/final rows, 50-message request timing and virtualization transitions
+to distinguish extra content from repeated rendering. Retain the warm prewait
+scenario. Historical reports without these dimensions cannot supply a normalized
+baseline; preserve and label them as single-run evidence.
+Do not add timing baselines or extra before-runs the user excluded.
+Frame/visual probes still verify geometry and one-frame flashes independently.
+Report region totals, whole-page totals and remaining offsets. Fewer renders do not
+prove zero displacement, and a final settled anchor does not disprove an earlier flash.
+
+For cold-prepend flash fixes, run frame and screencast probes at least eight times
+after the scroll change and again after final integration. Confirm actual history
+adoption, report final anchor drift and consecutive-frame SHIFT, and inspect saved
+frames for large signature matches. Acceptance is drift ≤1.1px and no ≥100px
+single-frame displacement. A run without an adoption is not prepend evidence;
+profile cleanup must run even when a sample is invalid.
+Adoption must occur inside the observation window. Reject frames covered by startup
+or modal overlays; a screenshot signature matching an overlay transition is not a
+transcript displacement. Retain rejected samples separately from accepted counts.
 
 Every fix lands with a guard that goes red on revert. Prove it: revert the source, run the test, watch it fail, restore.
 

@@ -82,6 +82,22 @@ describe('desktop history warmup', () => {
         expect(scroller.scrollTop).toBe(50);
     });
 
+    it('waits through wheel input at a clamped boundary even when geometry does not change', async () => {
+        const previous = scroller;
+        scroller = document.createElement('div');
+        previous.replaceWith(scroller);
+        options.scrollRef.current = scroller;
+        for (let i = 0; i < 10; i++) {
+            await advance(300);
+            scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 }));
+        }
+        expect(load).not.toHaveBeenCalled();
+        await advance(600);
+        expect(load).not.toHaveBeenCalled();
+        await advance(600);
+        expect(load).toHaveBeenCalledExactlyOnceWith(50);
+    });
+
     it('stops on failure and permits a new session to warm', async () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         load.mockRejectedValueOnce(new Error('offline'));

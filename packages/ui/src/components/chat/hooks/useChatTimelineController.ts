@@ -127,6 +127,7 @@ const VSCODE_TURN_MODEL_CACHE_MAX_MESSAGES = 30
 const MOBILE_TURN_MODEL_CACHE_MAX = 4
 const MOBILE_TURN_MODEL_CACHE_MAX_MESSAGES = 30
 const HISTORY_RENDER_WAIT_TIMEOUT_MS = 250
+const DESKTOP_PREPEND_QUIET_MS = 800
 /**
  * Pause after a stalled or failed older-history load before the next scroll
  * gesture may try again. Bounds a wheel burst at the top to one request per
@@ -797,21 +798,35 @@ export const useChatTimelineController = ({
         resolvePendingScrollRequest(false);
     });
 
-    // A partial turn may live entirely in the non-virtual tail, outside the
-    // history list's prepend staging. Do not insert its older prefix under a
-    // finger: iOS ignores the compensating scrollTop until lift-off.
-    const displayedHistoryRef = React.useRef({ scope: historyScope, messages });
-    const displayedHistory = displayedHistoryRef.current;
-    const holdNonVirtualPrepend = displayedHistory.scope === historyScope
+    // Keep the displayed snapshot while a prepend arrives during input. Mobile
+    // tail staging covers partial turns outside StaticHistoryList; desktop
+    // stages both engines through the same owner until wheel/scroll is quiet.
+    const desktopMotionRef = React.useRef({ scope: historyScope, at: -Infinity });
+    const noteDesktopMotion = () => {
+        if (!isMobile && !isMobileSurfaceRuntime()) desktopMotionRef.current = { scope: historyScope, at: Date.now() };
+    };
+    useEventListener('wheel', (event: WheelEvent) => {
+        if (event.deltaY !== 0 && event.target instanceof Node && scrollRef.current?.contains(event.target)) noteDesktopMotion();
+    }, undefined, { passive: true, capture: true });
+    useEventListener('scroll', (event: Event) => {
+        if (event.target === scrollRef.current) noteDesktopMotion();
+    }, undefined, { passive: true, capture: true });
+    const isDesktopPrependActive = () => desktopMotionRef.current.scope === historyScope
+        && Date.now() - desktopMotionRef.current.at < DESKTOP_PREPEND_QUIET_MS;
+    const [displayedHistory, setDisplayedHistory] = React.useState({ scope: historyScope, messages });
+    const mobilePrepend = isMobileSurfaceRuntime();
+    const holdHistoryPrepend = displayedHistory.scope === historyScope
         && displayedHistory.messages !== messages
-        && isMobileSurfaceRuntime()
-        && !messageListRef.current?.isHistoryVirtualized()
         && hasInsertedBeforeKnownOldest(displayedHistory.messages[0]?.info?.id ?? null, messages[0]?.info?.id ?? null, messages)
-        && isHistoryGestureActive(scrollRef.current);
-    const renderedMessages = holdNonVirtualPrepend ? displayedHistory.messages : messages;
-    useIsomorphicLayoutEffect(() => {
-        displayedHistoryRef.current = { scope: historyScope, messages: renderedMessages };
-    }, [historyScope, renderedMessages]);
+        && (mobilePrepend
+            ? !messageListRef.current?.isHistoryVirtualized() && isHistoryGestureActive(scrollRef.current)
+            : !isMobile && displayedHistory.messages.at(-1) === messages.at(-1) && isDesktopPrependActive());
+    const renderedMessages = holdHistoryPrepend ? displayedHistory.messages : messages;
+    if (displayedHistory.scope !== historyScope || displayedHistory.messages !== renderedMessages) {
+        // Adopt before child layout effects can synchronously measure and emit
+        // scroll. Those programmatic events must never reinstate the old page.
+        setDisplayedHistory({ scope: historyScope, messages: renderedMessages });
+    }
     const [, checkHistoryGesture] = React.useReducer((tick: number) => tick + 1, 0);
 
     useIsomorphicLayoutEffect(() => {
@@ -871,7 +886,8 @@ export const useChatTimelineController = ({
 
     useInterval(useEvent(() => {
         const container = scrollRef.current;
-        if (!container || !holdNonVirtualPrepend) return;
+        if (!container || !holdHistoryPrepend) return;
+        if (!mobilePrepend && isDesktopPrependActive()) return;
         // Sample the still-displayed DOM immediately before allowing adoption.
         // Markdown can resize during the hold without changing renderedMessages;
         // a fetch-time height would mix that resize into the prepend delta.
@@ -891,7 +907,7 @@ export const useChatTimelineController = ({
             };
         }
         checkHistoryGesture();
-    }), holdNonVirtualPrepend ? 50 : null);
+    }), holdHistoryPrepend ? 50 : null);
 
     const trackedHistoryScrollerRef = React.useRef<{ container: HTMLElement; scope: typeof historyScope } | null>(null);
     useIsomorphicLayoutEffect(() => {
@@ -1581,6 +1597,15 @@ export const useChatTimelineController = ({
     // 0, so no scroll event would run. Same decision helper; only the pin gate
     // differs from ordinary scroll.
     const handleHistoryUpwardIntent = useEvent(() => {
+        // Leaving the bottom releases auto-follow, the only owner that kept a
+        // pinned normal-flow viewport steady. Rows above can still hydrate
+        // (deferred Markdown swaps its estimate for real content), so desktop
+        // hands the released reader to the idle-retiring hydration keeper.
+        // Request-owned keepers and virtualized lists keep their owners.
+        if (!isMobileRef.current && !isLoadingOlderRef.current
+            && !messageListRef.current?.isHistoryVirtualized()) {
+            startKeeper()?.settle();
+        }
         decideAndLoadEarlier('upward-intent');
     });
 

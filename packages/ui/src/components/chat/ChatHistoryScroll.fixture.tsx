@@ -44,6 +44,7 @@ export default function Fixture() {
     const turnPrepend = scenario?.startsWith('turn-prepend');
     const partial = scenario === 'partial-turn' || scenario === 'mobile-partial-turn';
     const warmup = scenario?.startsWith('desktop-warmup') ?? false;
+    const releaseWarmupResponse = React.useRef<(() => void) | null>(null);
     const [warmupEnabled, setWarmupEnabled] = React.useState(false);
     const [rows, setRows] = React.useState(() => partial
         ? [partialAssistant('partial-process', 'HIDDEN_PARTIAL_PROCESS', 'tool-calls'),
@@ -90,6 +91,7 @@ export default function Fixture() {
             anchorTop: node ? node.getBoundingClientRect().top - el.getBoundingClientRect().top : null,
             anchorBottom: node ? node.getBoundingClientRect().bottom - el.getBoundingClientRect().top : null,
             loads: loads.current, pinned: auto.isPinned,
+            displayedMessages: el.querySelectorAll('[data-message-id]').length,
             viewportHeight: el.clientHeight,
         };
     });
@@ -100,6 +102,9 @@ export default function Fixture() {
         anchorOffset.current = anchor?.offsetTop ?? null;
         loadFingerY.current = fingerY.current;
         await wait(100);
+        if (scenario === 'desktop-warmup-scrolling') {
+            await new Promise<void>((resolve) => { releaseWarmupResponse.current = resolve; });
+        }
         const older = partial
             ? [...makeRows(0, 1), partialAssistant('partial-older', 'HIDDEN_EARLIER_PROCESS', 'tool-calls')]
             : turnPrepend ? makeTurns(0, 12)
@@ -157,6 +162,7 @@ export default function Fixture() {
                 if (warmup) setWarmupEnabled(true);
             },
             sample,
+            finishWarmup: () => releaseWarmupResponse.current?.(),
             resume: () => resumeToBottomInstant(),
             grow: () => setTailHeight((height) => height + 300),
         };

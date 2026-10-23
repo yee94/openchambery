@@ -473,7 +473,8 @@ describe('batched virtualizer resize writes', () => {
     test('TanStack resizeItem and LegendList row measure share the microtask batch helper', () => {
         const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
         const timelineSource = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
-        expect(messageListSource).toContain('installBatchedResizeItem(tanstackVirtualizer, restoreHistoryReadingAnchor)');
+        expect(messageListSource).toContain('installBatchedResizeItem(tanstackVirtualizer, finishHistoryMeasurement)');
+        expect(messageListSource).toContain('restoreHistoryReadingAnchor();');
         expect(timelineSource).toContain('createSharedElementSizeBatch');
         expect(timelineSource).not.toContain('const height = node.offsetHeight');
     });

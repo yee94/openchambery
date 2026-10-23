@@ -309,6 +309,43 @@ beforeEach(() => {
 });
 
 describe('history failure feedback with production toast store', () => {
+    test.each([false, true])('desktop stages prefix responses until 800ms quiet and adopts the latest once (virtual=%s)', async (virtualized) => {
+        const handle = await mountController({ showScroller: false, isMobile: false, isPinned: false,
+            loadMoreMessages: vi.fn(async () => undefined),
+            geometry: { scrollHeight: 2000, clientHeight: 400, scrollTop: 1000 } });
+        await handle.setState({ showScroller: true, messageListApi: { isHistoryVirtualized: () => virtualized,
+            captureViewportAnchor: () => null, cancelViewportAnchorHold: () => {} } as unknown as MessageListHandle });
+        const initial = handle.state.messages;
+        const container = handle.scrollRef.current!;
+        container.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 }));
+        const first = [message('old-1'), ...initial];
+        await handle.setState({ messages: first });
+        expect(handle.api!.renderedMessages).toBe(initial);
+        await waitMs(420);
+        container.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 }));
+        const latest = [message('old-2'), ...first];
+        await handle.setState({ messages: latest });
+        await waitMs(500);
+        expect(handle.api!.renderedMessages).toBe(initial);
+        await waitMs(400);
+        expect(handle.api!.renderedMessages).toBe(latest);
+        expect(container.scrollTop).toBe(1000);
+    });
+
+    test('desktop staged history yields to a live tail change or a new session', async () => {
+        const handle = await mountController({ isMobile: false, isPinned: false, loadMoreMessages: vi.fn(async () => undefined) });
+        const initial = handle.state.messages;
+        handle.scrollRef.current!.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 }));
+        await handle.setState({ messages: [message('old'), ...initial] });
+        expect(handle.api!.renderedMessages).toBe(initial);
+        const live = [...handle.state.messages, message('new-live')];
+        await handle.setState({ messages: live });
+        expect(handle.api!.renderedMessages).toBe(live);
+        const nextSession = [message('new-session')];
+        await handle.setState({ sessionId: 'another', messages: nextSession });
+        expect(handle.api!.renderedMessages).toBe(nextSession);
+    });
+
     test.each([0, 180])('first fast history load preserves the live viewport with %spx actual growth', async (growth) => {
         runtimeSurface.mobileProbe = true;
         let finishLoad: (() => void) | undefined;
@@ -404,6 +441,34 @@ describe('history failure feedback with production toast store', () => {
         expect(load).not.toHaveBeenCalled();
         await act(async () => handle.api!.handleHistoryUpwardIntent());
         expect(load).toHaveBeenCalledTimes(1);
+    });
+
+    test('desktop upward intent keeps a released normal-flow reader steady while rows above hydrate', async () => {
+        const handle = await mountController({
+            isMobile: false, isPinned: false, loadMoreMessages: vi.fn(async () => undefined),
+            geometry: { scrollHeight: 8000, clientHeight: 400, scrollTop: 2000 },
+        });
+        const container = handle.scrollRef.current!;
+        const reading = document.createElement('div');
+        reading.dataset.messageId = 'msg_reading';
+        container.firstElementChild!.appendChild(reading);
+        let readingTop = 46;
+        container.getBoundingClientRect = () => ({ top: 0, bottom: 400, height: 400 } as DOMRect);
+        reading.getBoundingClientRect = () => ({ top: readingTop, bottom: readingTop + 300, height: 300 } as DOMRect);
+        handle.state.messageListApi = {
+            isHistoryVirtualized: () => false,
+            captureViewportAnchor: () => ({ messageId: 'msg_reading', offsetTop: readingTop }),
+        } as unknown as MessageListHandle;
+        await handle.render();
+
+        await act(async () => handle.api!.handleHistoryUpwardIntent());
+        // Deferred Markdown above the reader swaps its estimate for shorter
+        // rendered content: the reading row moves up 28px with no scroll.
+        readingTop = 18;
+        container.firstElementChild!.setAttribute('style', 'height: 7972px');
+        await flushMicrotasks();
+
+        expect(container.scrollTop).toBe(1972);
     });
 
     test('desktop upward intent outside the threshold loads when scrolling enters it', async () => {

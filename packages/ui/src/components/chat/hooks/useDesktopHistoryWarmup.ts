@@ -1,5 +1,5 @@
 import React from 'react';
-import { useEvent, useInterval } from '@reactuses/core';
+import { useEvent, useEventListener, useInterval } from '@reactuses/core';
 
 const TARGET_TURNS = 12;
 const WARMUP_PAGE_SIZE = 50;
@@ -31,6 +31,11 @@ export function useDesktopHistoryWarmup(options: {
     React.useEffect(() => {
         sample.current = null;
     }, [scope, eligible, cursor, messages]);
+
+    useEventListener('wheel', (event: WheelEvent) => {
+        if (eligible && event.deltaY !== 0 && event.target instanceof Node
+            && scrollRef.current?.contains(event.target)) sample.current = null;
+    }, undefined, { passive: true, capture: true });
 
     useInterval(useEvent(() => {
         const container = scrollRef.current;

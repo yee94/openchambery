@@ -160,6 +160,33 @@ const sleepWithAbort = (ms: number, signal: AbortSignal): Promise<void> => new P
   signal.addEventListener('abort', onAbort, { once: true });
 });
 
+// External-store writes are synchronous even inside startTransition. Schedule
+// the actual projection work after input; first paint and blocking restore stay urgent.
+const scheduleSessionIndexTask = (run: () => void, signal: AbortSignal): Promise<void> => {
+  if (signal.aborted) return Promise.resolve();
+  const scheduler = (globalThis as typeof globalThis & {
+    scheduler?: { postTask: (callback: () => void, options: { priority: 'background'; signal: AbortSignal }) => Promise<void> };
+  }).scheduler;
+  if (scheduler?.postTask) {
+    return scheduler.postTask(() => { if (!signal.aborted) run(); }, { priority: 'background', signal })
+      .catch((error: unknown) => { if (!signal.aborted) throw error; });
+  }
+  return new Promise((resolve, reject) => {
+    const idle = typeof globalThis.requestIdleCallback === 'function';
+    const finish = () => {
+      signal.removeEventListener('abort', abort);
+      try { if (!signal.aborted) run(); resolve(); } catch (error) { reject(error); }
+    };
+    const handle = idle ? globalThis.requestIdleCallback(finish, { timeout: 500 }) : globalThis.setTimeout(finish, 32);
+    const abort = () => {
+      if (idle) globalThis.cancelIdleCallback(handle as number);
+      else globalThis.clearTimeout(handle);
+      resolve();
+    };
+    signal.addEventListener('abort', abort, { once: true });
+  });
+};
+
 let inflightLoad: Promise<LoadResult> | null = null;
 // Bumped on runtime switch: an in-flight load from the previous instance must
 // not apply its (stale) snapshot after the reset.
@@ -187,11 +214,24 @@ type SessionIndexRuntimeCapture = {
   transportIdentity: string;
 };
 
-const captureSessionIndexRuntime = (): SessionIndexRuntimeCapture => ({
-  loadGeneration,
-  runtimeGeneration: getRuntimeGeneration(),
-  transportIdentity: getRuntimeTransportIdentity(),
-});
+let appliedSessionIndexRuntime: SessionIndexRuntimeCapture | undefined;
+let appliedSessionIndexRevision: number | undefined;
+
+const captureSessionIndexRuntime = (): SessionIndexRuntimeCapture => {
+  const capture = {
+    loadGeneration,
+    runtimeGeneration: getRuntimeGeneration(),
+    transportIdentity: getRuntimeTransportIdentity(),
+  };
+  if (!appliedSessionIndexRuntime
+    || appliedSessionIndexRuntime.loadGeneration !== capture.loadGeneration
+    || appliedSessionIndexRuntime.runtimeGeneration !== capture.runtimeGeneration
+    || appliedSessionIndexRuntime.transportIdentity !== capture.transportIdentity) {
+    appliedSessionIndexRuntime = capture;
+    appliedSessionIndexRevision = undefined;
+  }
+  return capture;
+};
 
 const isCurrentSessionIndexRuntime = (capture: SessionIndexRuntimeCapture): boolean => (
   capture.loadGeneration === loadGeneration
@@ -728,11 +768,46 @@ const replaceSessionsForDirectoriesPreservingLoadedTail = (
   return sortSessionsByUpdated([...incomingById.values(), ...kept]);
 };
 
+// Compare every JSON field, including extension metadata, without serialization or
+// a field allowlist. Excessive nesting/work conservatively declines sharing.
+const sameIndexValue = (left: unknown, right: unknown, depth = 0, budget = { remaining: 4096 }): boolean => {
+  if (Object.is(left, right)) return true;
+  if (--budget.remaining < 0 || depth > 32
+    || left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false;
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  const a = left as Record<string, unknown>;
+  const b = right as Record<string, unknown>;
+  return leftKeys.every((key) => Object.prototype.hasOwnProperty.call(b, key)
+    && sameIndexValue(a[key], b[key], depth + 1, budget));
+};
+
+const shareIndexSet = <T,>(previous: Set<T>, next: Set<T>): Set<T> => (
+  previous.size === next.size && [...next].every((value) => previous.has(value)) ? previous : next
+);
+
+const shareIndexMap = <T,>(previous: Map<string, T>, next: Map<string, T>): Map<string, T> => {
+  let unchanged = previous.size === next.size;
+  for (const [key, value] of next) {
+    if (previous.has(key) && sameIndexValue(previous.get(key), value)) {
+      next.set(key, previous.get(key)!);
+    } else {
+      unchanged = false;
+    }
+  }
+  return unchanged ? previous : next;
+};
+
 const applySessionIndexSnapshotState = (
   state: GlobalSessionsState,
   snapshot: SessionIndexSnapshot,
   authoritative: boolean,
 ): Partial<GlobalSessionsState> => {
+  if (appliedSessionIndexRevision !== undefined && snapshot.revision < appliedSessionIndexRevision) return state;
+  const repeatedRevision = authoritative && snapshot.revision === appliedSessionIndexRevision;
+  if (authoritative) appliedSessionIndexRevision = snapshot.revision;
   const snapshotDirectories = new Set(snapshot.directories.map((entry) => entry.directory));
   const cachedByDirectory = new Map<string, Session[]>();
   for (const entry of snapshot.directories) {
@@ -770,7 +845,7 @@ const applySessionIndexSnapshotState = (
       );
     }
   }
-  const activeSessions = authoritative
+  let activeSessions = repeatedRevision ? state.activeSessions : authoritative
     ? replaceSessionsForDirectoriesPreservingLoadedTail(
       state.activeSessions,
       cachedByDirectory,
@@ -779,7 +854,20 @@ const applySessionIndexSnapshotState = (
       preserveTailDirectories,
     )
     : sortSessionsByUpdated(mergeSessionLists(state.activeSessions, cachedSessions));
-  const sessionsByDirectory = buildSessionsByDirectory(activeSessions);
+  if (activeSessions !== state.activeSessions) {
+    const existingById = new Map(state.activeSessions.map((session) => [session.id, session]));
+    activeSessions = activeSessions.map((session) => {
+      const existing = existingById.get(session.id);
+      return existing && sameIndexValue(existing, session) ? existing : session;
+    });
+    if (activeSessions.length === state.activeSessions.length
+      && activeSessions.every((session, index) => session === state.activeSessions[index])) {
+      activeSessions = state.activeSessions;
+    }
+  }
+  const sessionsByDirectory = activeSessions === state.activeSessions
+    ? state.sessionsByDirectory
+    : buildSessionsByDirectory(activeSessions);
   const nextPagination = new Map(state.activePaginationByDirectory);
   const nextSyncMetadata = new Map(state.sessionIndexSyncByDirectory);
   for (const entry of snapshot.directories) {
@@ -836,19 +924,22 @@ const applySessionIndexSnapshotState = (
     }
   }
 
-  return {
+  const patch: Partial<GlobalSessionsState> = {
     activeSessions,
     sessionsByDirectory,
-    reviewTransferBySessionId: buildReviewTransferMap(activeSessions),
-    cachedDirectories: snapshotDirectories,
-    sessionIndexSyncByDirectory: nextSyncMetadata,
-    activePaginationByDirectory: nextPagination,
-    loadedDirectories: nextLoaded,
-    loadingDirectories: nextLoading,
-    refreshingDirectories: nextRefreshing,
+    reviewTransferBySessionId: activeSessions === state.activeSessions
+      ? state.reviewTransferBySessionId : buildReviewTransferMap(activeSessions),
+    cachedDirectories: shareIndexSet(state.cachedDirectories, snapshotDirectories),
+    sessionIndexSyncByDirectory: shareIndexMap(state.sessionIndexSyncByDirectory, nextSyncMetadata),
+    activePaginationByDirectory: shareIndexMap(state.activePaginationByDirectory, nextPagination),
+    loadedDirectories: shareIndexSet(state.loadedDirectories, nextLoaded),
+    loadingDirectories: shareIndexSet(state.loadingDirectories, nextLoading),
+    refreshingDirectories: shareIndexSet(state.refreshingDirectories, nextRefreshing),
     hasLoaded: true,
     status: state.status === 'idle' || state.status === 'loading' ? 'ready' : state.status,
   };
+  return (Object.keys(patch) as Array<keyof GlobalSessionsState>).every((key) => patch[key] === state[key])
+    ? state : patch;
 };
 
 const applyDirectoryRefreshPatch = (
@@ -1099,6 +1190,8 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
 
   resetForRuntimeSwitch: () => {
     loadGeneration += 1;
+    appliedSessionIndexRuntime = undefined;
+    appliedSessionIndexRevision = undefined;
     resetOpenCodeReadiness();
     inflightLoad = null;
     inflightActiveDirectoryRefresh.clear();
@@ -1191,9 +1284,10 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         console.warn('[GlobalSessions] Failed to hydrate runtime session index:', error);
       }
     })();
-    sessionIndexHydrateInflight = flight.finally(() => {
-      if (sessionIndexHydrateInflight === flight) sessionIndexHydrateInflight = undefined;
+    const shared = flight.finally(() => {
+      if (sessionIndexHydrateInflight === shared) sessionIndexHydrateInflight = undefined;
     });
+    sessionIndexHydrateInflight = shared;
     return sessionIndexHydrateInflight;
   },
 
@@ -1264,11 +1358,11 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         void get().syncSessionsForDirectories(deferredDirectories, snapshot.activeSessions);
       };
       // Yield past first paint / P0 snapshot apply before enqueuing P1 work.
-      if (typeof globalThis.setTimeout === 'function') {
-        globalThis.setTimeout(schedule, 0);
-      } else {
-        void Promise.resolve().then(schedule);
-      }
+      const deferredController = new AbortController();
+      directoryAbortControllers.add(deferredController);
+      void scheduleSessionIndexTask(schedule, deferredController.signal).finally(() => {
+        directoryAbortControllers.delete(deferredController);
+      });
     };
 
     // Web and VS Code explicitly return unsupported and keep their existing
@@ -1322,28 +1416,38 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       // Successful GETs reset it; 501/null still terminates; abort/runtime change stops waits.
       let tipGetRetryDelayMs = SESSION_INDEX_TIP_GET_RETRY_DELAY_MS;
       while (!controller.signal.aborted && isCurrentSessionIndexRuntime(runtime)) {
-        set((state) => ({
-          ...applySessionIndexSnapshotState(state, current, true),
-          startupSyncProgress: shouldBlock
-            ? {
-                active: current.sync.active,
-                phase: current.sync.active ? 'syncing' : 'idle',
-                completed: current.sync.completed,
-                total: current.sync.total,
-              }
-            : state.startupSyncProgress,
-        }));
-        if (!current.sync.active) settleRootSync();
         const waitRuntime = captureSessionIndexRuntime();
+        // Subscribe before yielding: idle sync may publish its next tip while
+        // the low-priority projection is still waiting behind user input.
+        const invalidation = waitForSessionIndexInvalidation(current.revision, controller.signal, {
+          safetyTimeoutMs: current.sync.active ? undefined : null,
+        });
+        const apply = () => {
+          if (controller.signal.aborted || !isCurrentSessionIndexRuntime(runtime)) return;
+          set((state) => {
+            const next = applySessionIndexSnapshotState(state, current, true);
+            if (!shouldBlock) return next;
+            const progress: StartupSessionSyncProgress = {
+              active: current.sync.active, phase: current.sync.active ? 'syncing' : 'idle',
+              completed: current.sync.completed, total: current.sync.total,
+            };
+            const previous = state.startupSyncProgress;
+            if (previous.active === progress.active && previous.phase === progress.phase
+              && previous.completed === progress.completed && previous.total === progress.total) return next;
+            return { ...next, startupSyncProgress: progress };
+          });
+        };
+        if (shouldBlock && !rootSyncSettled) apply();
+        else await scheduleSessionIndexTask(apply, controller.signal);
+        if (controller.signal.aborted || !isCurrentSessionIndexRuntime(runtime)) break;
+        if (!current.sync.active) settleRootSync();
         // This observer never exits — it keeps watching for later tips. The
         // hang-break only rescues the POST /sync → subscribe race, so it stays
         // armed while the server is still indexing. Once sync is idle no tip is
         // in flight to be missed, and leaving it armed re-GETs the unchanged
         // snapshot every 1.5s for the life of the app, re-rendering the whole
         // sidebar each time. Idle waits are tip/stream-ready/abort driven.
-        const reason = await waitForSessionIndexInvalidation(current.revision, controller.signal, {
-          safetyTimeoutMs: current.sync.active ? undefined : null,
-        });
+        const reason = await invalidation;
         if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(waitRuntime)) break;
         if (reason === 'aborted') break;
         // Tip/ready/timeout already coalesced dense tips; one sequential GET path
@@ -1389,6 +1493,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         console.warn('[GlobalSessions] Session index tip sync failed:', error);
       }
     }).finally(() => {
+      controller.abort();
       releaseObservedDirectories();
       settleRootSync();
       if (sessionIndexPollController === controller) sessionIndexPollController = null;
@@ -1678,10 +1783,16 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     try {
       let current = snapshot;
       while (!controller.signal.aborted && isCurrentSessionIndexRuntime(runtime)) {
-        set((state) => applySessionIndexSnapshotState(state, current, true));
-        if (!current.sync.active) break;
         const waitRuntime = captureSessionIndexRuntime();
-        const reason = await waitForSessionIndexInvalidation(current.revision, controller.signal);
+        const invalidation = current.sync.active
+          ? waitForSessionIndexInvalidation(current.revision, controller.signal)
+          : null;
+        await scheduleSessionIndexTask(() => {
+          if (isCurrentSessionIndexRuntime(runtime)) set((state) => applySessionIndexSnapshotState(state, current, true));
+        }, controller.signal);
+        if (controller.signal.aborted || !isCurrentSessionIndexRuntime(runtime)) break;
+        if (!current.sync.active) break;
+        const reason = await invalidation;
         if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(waitRuntime)) break;
         if (reason === 'aborted') break;
         const loadRuntime = captureSessionIndexRuntime();
@@ -1700,6 +1811,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         console.warn('[GlobalSessions] Session index sync failed:', error);
       }
     } finally {
+      controller.abort();
       releaseObservedDirectories();
       directoryAbortControllers.delete(controller);
     }

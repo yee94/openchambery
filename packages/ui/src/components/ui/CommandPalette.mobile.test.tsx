@@ -55,9 +55,31 @@ vi.mock('@/lib/runtime-switch', () => ({
 vi.mock('@/components/chat/hooks/useChatTurnNavigation', () => ({ focusChatMessage: vi.fn() }));
 
 import { CommandPalette } from './CommandPalette';
+import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useUIStore } from '@/stores/useUIStore';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+test('closed palette performs zero commits for 50 unrelated catalog updates', async () => {
+  const host = document.createElement('div');
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const committed = vi.fn();
+  useUIStore.getState().setCommandPaletteOpen(false);
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}>
+      <React.Profiler id="palette" onRender={committed}><CommandPalette /></React.Profiler>
+    </QueryClientProvider>));
+    committed.mockClear();
+    for (let i = 0; i < 50; i++) {
+      await act(async () => useGlobalSessionsStore.setState({ activeSessions: [] }));
+    }
+    expect(committed).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+  }
+});
 
 test('page presentation has a focused search header and results without dialog chrome', async () => {
   const host = document.createElement('div');

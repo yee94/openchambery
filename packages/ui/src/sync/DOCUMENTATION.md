@@ -1,5 +1,21 @@
 # Sync architecture, event handling & store update rules
 
+`SyncAppEffects` and `SyncRuntimeEffects` isolate their subscriptions from unrelated
+parent renders. Runtime effects do not mount `useSessionAutoCleanup(autoRun:false)`:
+that unused retention controller subscribed to the full catalog without performing
+cleanup. Settings retains its explicit retention controller. Queue ownership changes,
+embedded visibility and runtime start/stop still reach their owning effects.
+`AppEffects.performance.test.tsx` covers 50 parent/catalog updates, enabled changes
+and runtime teardown; restoring the unused retention subscription fails the guard.
+
+The desktop/web App subscribes to the derived directory-bootstrap boolean rather
+than each selected session and draft object. Same-directory session changes do not
+invalidate the whole App when that policy remains true; opening an unbound draft
+still disables bootstrap. Window-title subscriptions likewise select the rendered
+project basename, so unrelated project metadata cannot invalidate App.
+`App.subscriptions.performance.test.tsx` guards 50 identity/draft updates and the
+policy's false/true transitions.
+
 ## Per-request history message budget
 
 `fetchTranscriptPreviousPage(directory, sessionID, pageSize?)` forwards an optional native message count through the repository and InfiniteQuery controller to the production projection API's `limit`. PC post-paint warmup and load-earlier requests use 50 messages per page; mobile history keeps the default native page size of 20. This override is distinct from the legacy turn budget, which native projection does not consume. Concurrent previous-page callers share the active flight and its original budget. The controller restores its normal query options after success or failure; transport-page cache keys include the effective limit, while canonical transcript identity remains runtime/directory/session scoped. A large page is merged atomically through the same pagination and viewport-preservation path, retaining unchanged message and part references.
@@ -417,7 +433,7 @@ VS Code webview tip delivery may directly call the exported `refreshQuestionAuto
 
 ### Worktree topology catalog reconciliation
 
-`worktreeTopologySync.ts` owns renderer-level worktree catalog reconciliation. It starts from `AppEffects`, remains shared through a realm ref-count, and skips VS Code. Event-stream ready envelopes, topology changes, registry topology changes, and deduplicated unknown recovery directories force per-project catalog enumeration. Recovery candidates are the union of live `activeSessions` directories and session-index snapshot `cachedDirectories`, so an empty worktree (no live sessions) still recovers catalog for other clients that only have index-backed directories. Candidate membership is semantic: a new Set/array with the same members does not force an extra catalog refresh. When a directory leaves the candidate set, its unknown/suppression bookkeeping is cleared so a later reappearance can recover again in the same ready epoch. Successful empty results authoritatively clear that project, failed reads preserve its prior catalog, and only added worktree directories start global session synchronization. Unknown-directory suppression begins only after every registered project completes successfully for its recovery epoch; failures retain bounded retry and lifecycle/runtime changes discard stale work.
+`worktreeTopologySync.ts` owns renderer-level worktree catalog reconciliation. It starts from `AppEffects`, remains shared through a realm ref-count, and skips VS Code. The first stream-ready edge reuses pending startup enumeration and revalidates completed projects; subsequent ready edges repair reconnects. Topology changes, registry topology changes, and deduplicated unknown recovery directories force per-project catalog enumeration. Active projects cannot run twice in one lifecycle; unknown recovery reuses pending work, while topology changes during a read queue one trailing read. Recovery candidates are the union of live `activeSessions` directories and session-index snapshot `cachedDirectories`, so an empty worktree (no live sessions) still recovers catalog for other clients that only have index-backed directories. Candidate membership is semantic: a new Set/array with the same members does not force an extra catalog refresh. When a directory leaves the candidate set, its unknown/suppression bookkeeping is cleared so a later reappearance can recover again in the same ready epoch. Successful empty results authoritatively clear that project, failed reads preserve its prior catalog, and added or still-unloaded worktree directories start global session synchronization only when no loading/refreshing owner already covers them. Unknown-directory suppression begins only after every registered project completes successfully for its recovery epoch; failures retain bounded retry and lifecycle/runtime changes discard stale work.
 
 | Layer / Store | Owns | Scope |
 |---|---|---|
@@ -639,7 +655,7 @@ settled (so an empty list is not shown before the restore attempt finishes).
 | Condition | Immediate POST `/session-index/sync` set | Blocking `startupSyncProgress` | Deferred (P1) |
 |---|---|---|---|
 | No SQLite cache (`hasCachedSessionIndex=false`) | Full catalog (all registered projects + worktrees + cached dirs) | Yes — wait until root sync settles | None |
-| Cache hit + resolvable active directory | **P0 only**: project that owns `useDirectoryStore.currentDirectory` + that project's known worktrees | No — hydrate returns cache; progress stays idle after restore | Remaining catalog directories via `syncSessionsForDirectories` after a `setTimeout(0)` yield |
+| Cache hit + resolvable active directory | **P0 only**: project that owns `useDirectoryStore.currentDirectory` + that project's known worktrees | No — hydrate returns cache; progress stays idle after restore | Remaining catalog directories via `syncSessionsForDirectories` in a cancellable background task |
 | Cache hit but active directory missing/unmatched | Full catalog (safe fallback) | No | None |
 
 P1 reuses the existing server enqueue + tip/GET observer path
@@ -655,8 +671,8 @@ and transport identity. Snapshot hydration, startup sync, persistence, and
 tip-driven snapshot reloads commit only while that capture remains current.
 Authoritative GET traffic goes through session-index Query helpers (which call
 `loadSessionIndexSnapshot` via `runtimeFetch` so relay stays transparent).
-`loadSessionIndexSnapshot` still shares one in-flight GET across concurrent
-callers, and `waitForSessionIndexInvalidation` debounces dense revision tips
+`loadSessionIndexSnapshot` shares one in-flight GET per runtime generation,
+transport and cancellation owner, and `waitForSessionIndexInvalidation` debounces dense revision tips
 (and stream-ready edges) before consumers issue the next full snapshot GET.
 Successful non-null POST/GET snapshots write back through the Query helper so
 memory and the runtimeKey persistent seed stay aligned.

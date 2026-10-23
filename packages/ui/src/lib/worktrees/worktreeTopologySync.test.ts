@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { createWorktreeTopologyCoordinator } from './worktreeTopologySync';
 
 const fakeTimers = () => {
@@ -26,6 +26,43 @@ const settle = async () => {
 const emptyResult: { worktrees: []; addedDirectories: string[]; removedDirectories: string[] } = { worktrees: [], addedDirectories: [], removedDirectories: [] };
 
 describe('worktree topology coordinator', () => {
+  test('startup ready and unknown candidates reuse active reads; topology changes queue one trailing read', async () => {
+    const timers = fakeTimers();
+    let event!: (event: { type: string; projectDirectory?: string }) => void;
+    let sessions!: () => void;
+    let candidates: string[] = [];
+    const first = deferred<typeof emptyResult>();
+    const checks: Array<() => boolean> = [];
+    let calls = 0;
+    const syncs: string[][] = [];
+    const coordinator = createWorktreeTopologyCoordinator({
+      isVSCode: () => false, getProjects: () => [{ id: 'a', path: '/a' }],
+      getCatalog: () => new Map(), getActiveDirectories: () => candidates,
+      refresh: async (_project, options) => { checks.push(options.isCurrent); return ++calls === 1 ? first.promise : emptyResult; },
+      syncAdded: async (directories) => { syncs.push(directories); },
+      subscribeProjects: () => () => {}, subscribeCatalog: () => () => {},
+      subscribeSessions: (listener) => { sessions = listener; return () => {}; },
+      subscribeEvents: (listener) => { event = listener; return () => {}; },
+      subscribeRuntime: () => () => {}, generation: () => 1,
+      setTimer: timers.setTimer, clearTimer: timers.clearTimer,
+    });
+    coordinator.start(); timers.flush(); await settle();
+    event({ type: 'event-stream-ready' });
+    candidates = ['/unknown']; sessions(); timers.flush(); await settle();
+    expect(calls).toBe(1);
+    expect(checks[0]()).toBe(true);
+    for (let i = 0; i < 50; i++) event({ type: 'worktree-topology-changed', projectDirectory: '/a' });
+    timers.flush(); await settle();
+    expect(calls).toBe(1);
+    first.resolve({ ...emptyResult, addedDirectories: ['/a/new'] });
+    for (let i = 0; i < 10; i++) await settle();
+    expect(calls).toBe(2);
+    expect(syncs).toEqual([['/a/new']]);
+    event({ type: 'event-stream-ready' }); timers.flush(); await settle();
+    expect(calls).toBe(3);
+    coordinator.stop();
+  });
+
   test('coalesces topology bursts and syncs added directories only once', async () => {
     let eventListener: ((event: { type: string; projectDirectory?: string }) => void) | undefined;
     const refreshed: string[] = [];
@@ -40,11 +77,11 @@ describe('worktree topology coordinator', () => {
       setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     });
     coordinator.start();
-    timers.flush(); await Promise.resolve();
+    timers.flush(); await settle();
     refreshed.length = 0; synced.length = 0;
     eventListener?.({ type: 'worktree-topology-changed', projectDirectory: '/repo' });
     eventListener?.({ type: 'worktree-topology-changed', projectDirectory: '/repo' });
-    timers.flush(); await Promise.resolve();
+    timers.flush(); await settle();
     expect(refreshed).toEqual(['/repo']);
     expect(synced).toEqual([['/repo/feature']]);
     coordinator.stop();
@@ -58,8 +95,11 @@ describe('worktree topology coordinator', () => {
       refresh: async (project) => { refreshed.push(project.path); return { worktrees: [], addedDirectories: [], removedDirectories: ['/removed'] }; }, syncAdded: async (directories) => { synced.push(directories); },
       subscribeProjects: () => () => {}, subscribeCatalog: () => () => {}, subscribeSessions: () => () => {}, subscribeEvents: (listener) => { eventListener = listener; return () => {}; }, subscribeRuntime: () => () => {}, generation: () => 1, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     });
-    coordinator.start(); timers.flush(); await Promise.resolve(); refreshed.length = 0;
-    eventListener?.({ type: 'event-stream-ready' }); timers.flush(); await Promise.resolve();
+    coordinator.start(); timers.flush(); await settle(); refreshed.length = 0;
+    eventListener?.({ type: 'event-stream-ready' }); timers.flush(); await settle();
+    expect(refreshed.sort()).toEqual(['/a', '/b']);
+    refreshed.length = 0;
+    eventListener?.({ type: 'event-stream-ready' }); timers.flush(); await settle();
     expect(refreshed.sort()).toEqual(['/a', '/b']); expect(synced).toEqual([]); coordinator.stop();
   });
 
