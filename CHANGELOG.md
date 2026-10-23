@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.11] - 2026-10-23
+
+### 改进
+
+- 已置顶的会话在顶部置顶区与所属项目分组中同时展示，项目分组里保留其子会话树与计数；顶部置顶行仍保持扁平显示。
+
 ## [2.1.8-beta.10] - 2026-10-23
 
 ### 修复

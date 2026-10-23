@@ -18,23 +18,20 @@
 - `SessionSidebar.tsx` now acts mainly as orchestration; core logic moved to focused hooks/components.
 - Sidebar is now a single multi-project tree: an optional pinned + in-progress
   top section, then projects, then worktrees/archived groups, then sessions.
-  Pinned sessions render only in the top section and are excluded from project
+  Pinned sessions render in both the top section and their original project
   groups. The shared `pinnedSessions.ts` module owns both top-section helpers:
   `derivePinnedSessions` for the pinned group and `listInProgressHomeSessions`
   for the unlabeled in-progress/unread group below it. Running and unread
   sessions still remain in their project groups — the in-progress rows are an
   additional lift, not a move. Mobile projects home uses the same contract
   together with `createSessionOwnershipIndex` for session→project assignment
-  and `buildSessionTree(..., { omitPinnedSessions: true })` so
-  pinned roots leave project/worktree lists.
-  Parent/child attachment always runs on the full session list first; pinned
-  roots are omitted from project groups only after children attach. Pinned rows
-  stay flat (no expand chevron, no nested subagents). Children of pinned parents
-  stay hidden only while the parent is pinned; unpinning restores the normal
-  parent/child tree under Projects.
+  and `buildSessionTree(..., { omitPinnedSessions: false })` so
+  pinned roots remain in project/worktree lists and their counts.
+  Parent/child attachment runs on the full session list. Top-section pinned rows
+  stay flat (no expand chevron, no nested subagents), while their original project
+  representation retains the normal parent/child tree.
   Top-section hover cards resolve project and branch from session ownership
-  (`resolveTopSectionSecondaryMeta`) because pinned roots are omitted from the
-  project-tree meta index.
+  (`resolveTopSectionSecondaryMeta`) independently of project-tree rendering.
 - Pinned rows reorder only inside the pinned group; in-progress rows remain outside
   that scope. PC uses mouse drag, mobile uses a 350ms hold with 6px movement
   tolerance. A quick swipe still scrolls/reveals row actions. The same DnD scope
@@ -164,7 +161,7 @@
    fetch children. Loading is shown on the chevron; failure preserves the tree and offers
    retry by collapsing/re-expanding. Sessions with a `parentID` are
   never promoted to project roots — if the parent is missing, archived
-  differently, system-owned (e.g. scheduled-task), or pinned-and-omitted, the
+   differently or system-owned (e.g. scheduled-task), the
    child stays hidden instead of leaking into the main list.
    The sidebar's live aggregate uses `includeChildren: true`; the ordinary global
    catalog remains root-only. This distinction is required between the on-demand
@@ -276,7 +273,7 @@
   prefetch neighboring/recent session messages because those background pages
   compete with the active chat during cold start and rapid navigation.
 - `hooks/useSessionGrouping.ts`: Builds grouped session structures and search text/filter helpers.
-- `sessionTree.ts`: Pure parent/child forest builder for project grouping (pinned roots and their descendants omitted).
+- `sessionTree.ts`: Pure parent/child forest builder for project grouping; project consumers retain pinned roots and their descendants.
 - `hooks/useSessionSidebarSections.ts`: Composes final per-project sections and group search metadata for rendering.
 - `hooks/useProjectSessionSelection.ts`: Resolves active/current project-session selection logic and session-directory context.
 - `hooks/useGroupOrdering.ts`: Applies persisted/custom group order with stable fallback ordering; archived groups are reorderable.

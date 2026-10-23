@@ -35,13 +35,13 @@ const session = (
   }) as Session;
 
 describe('listProjectAreaRootSessions', () => {
-  test('omits pinned roots from the project-area list', () => {
+  test('keeps pinned roots in the project-area list', () => {
     const roots = listProjectAreaRootSessions(
       [session('pinned', { created: 20 }), session('visible', { created: 10 })],
       new Set(['pinned']),
     );
 
-    expect(roots.map((entry) => entry.id)).toEqual(['visible']);
+    expect(roots.map((entry) => entry.id)).toEqual(['pinned', 'visible']);
   });
 
   test('does not promote children of a pinned parent', () => {
@@ -53,16 +53,16 @@ describe('listProjectAreaRootSessions', () => {
       new Set(['parent']),
     );
 
-    expect(roots).toEqual([]);
+    expect(roots.map((entry) => entry.id)).toEqual(['parent']);
   });
 });
 
 describe('useMobileProjectsHomeModel shared pin contract', () => {
-  test('reuses sidebar ownership, pinned derivation, and omit-pinned tree', () => {
+  test('reuses sidebar ownership and keeps pinned sessions in project trees', () => {
     expect(modelSource).toContain('createSessionOwnershipIndex');
     expect(modelSource).toContain('derivePinnedSessions');
     expect(modelSource).toContain('listInProgressHomeSessions');
-    expect(modelSource).toContain('omitPinnedSessions: true');
+    expect(modelSource).not.toContain('omitPinnedSessions: true');
     expect(modelSource).toContain('listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds)');
     expect(modelSource).toContain('catalogSessions: catalogRoots.map(toNode)');
     expect(modelSource).toContain('omitPinnedSessions: false');
