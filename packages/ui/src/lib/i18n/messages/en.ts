@@ -2714,6 +2714,7 @@ export const dict = {
   'openInApp.actions.openInAria': 'Open in {app}',
   'openInApp.actions.chooseAppAria': 'Choose app to open',
   'openInApp.actions.copyPath': 'Copy Path',
+  'openInApp.errors.sshConfigRequired': 'Move SSH options such as identity files and jump hosts into your SSH config, then connect using that host alias to open in {app}.',
   'openInApp.actions.refreshApps': 'Refresh Apps',
   'openInApp.toast.pathCopied': 'Path copied to clipboard',
   'projectActions.actions.addActionAria': 'Add action',

@@ -2774,6 +2774,7 @@ export const dict: Record<I18nKey, string> = {
   'openCodeStatusDialog.toast.copyFailed': 'Nie udało się skopiować statusu',
   'openInApp.actions.chooseAppAria': 'Wybierz aplikację do otwarcia',
   'openInApp.actions.copyPath': 'Kopiuj ścieżkę',
+  'openInApp.errors.sshConfigRequired': 'Przenieś opcje SSH, takie jak pliki kluczy i hosty pośredniczące, do konfiguracji SSH, a następnie połącz się za pomocą aliasu hosta, aby otworzyć projekt w {app}.',
   'openInApp.actions.open': 'Otwórz',
   'openInApp.actions.openInAria': 'Otwórz w {app}',
   'openInApp.actions.refreshApps': 'Odśwież aplikacje',

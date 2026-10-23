@@ -11,6 +11,12 @@ cleanup and authoritative tail/pagination ownership keep their existing rules.
 
 ## Purpose
 
+`useOpenInAppsStore` caches the desktop machine's installed editor catalog, not the
+active Host's apps. Discovery remains behind local-page Electron IPC but is also
+available while that trusted UI is connected to SSH. `sshEditorQueries` owns the
+runtime-scoped SSH handoff capability; `OpenInAppButton` filters the local catalog
+with that capability without mutating the shared catalog or the saved preference.
+
 Session ordering keeps its existing scope map and activity-baseline comparators.
 `useSessionOrderSync` projects the runtime-scoped server Query into
 `useSessionFoldersStore`; the store owns drag optimism and per-scope rollback,

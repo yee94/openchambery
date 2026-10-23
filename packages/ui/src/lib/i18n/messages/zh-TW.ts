@@ -2683,6 +2683,7 @@ export const dict: Record<I18nKey, string> = {
   'openInApp.actions.openInAria': '在 {app} 中開啟',
   'openInApp.actions.chooseAppAria': '選擇要開啟的應用程式',
   'openInApp.actions.copyPath': '複製路徑',
+  'openInApp.errors.sshConfigRequired': '請將金鑰檔案、跳板機等 SSH 參數寫入 SSH 設定，再使用該主機別名連線，即可在 {app} 中開啟。',
   'openInApp.actions.refreshApps': '重新整理應用程式',
   'openInApp.toast.pathCopied': '路徑已複製到剪貼簿',
   'projectActions.actions.addActionAria': '新增操作',

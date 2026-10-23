@@ -95,6 +95,12 @@ function BtwComposer({
   }, [providers, selection]);
   const [draft, setDraft] = React.useState('');
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  React.useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      textareaRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
   const send = useEvent(() => {
     const question = draft.trim();
     if (!question || pending) return;

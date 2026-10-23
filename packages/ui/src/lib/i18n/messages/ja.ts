@@ -2712,6 +2712,7 @@ export const dict: Record<I18nKey, string> = {
   'openInApp.actions.openInAria': '{app}で開く',
   'openInApp.actions.chooseAppAria': '開くアプリを選択',
   'openInApp.actions.copyPath': 'パスをコピー',
+  'openInApp.errors.sshConfigRequired': '鍵ファイルや踏み台ホストなどの SSH オプションを SSH 設定に移し、そのホストの別名で接続すると {app} で開けます。',
   'openInApp.actions.refreshApps': 'アプリを更新',
   'openInApp.toast.pathCopied': 'パスをクリップボードにコピーしました',
   'projectActions.actions.addActionAria': 'アクションを追加',

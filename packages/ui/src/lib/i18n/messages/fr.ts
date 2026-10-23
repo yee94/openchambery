@@ -2436,6 +2436,7 @@ export const dict = {
   'openInApp.actions.openInAria': 'Ouvert dans {app}',
   'openInApp.actions.chooseAppAria': 'Choisissez l\'application à ouvrir',
   'openInApp.actions.copyPath': 'Copier le chemin',
+  'openInApp.errors.sshConfigRequired': 'Placez les options SSH, comme les fichiers de clés et les hôtes de rebond, dans votre configuration SSH, puis connectez-vous via cet alias pour ouvrir le projet dans {app}.',
   'openInApp.actions.refreshApps': 'Actualiser les applications',
   'openInApp.toast.pathCopied': 'Chemin copié dans le presse-papiers',
   'projectActions.actions.addActionAria': 'Ajouter une action',

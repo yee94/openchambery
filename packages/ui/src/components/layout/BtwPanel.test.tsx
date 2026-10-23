@@ -93,6 +93,28 @@ const typeAndEnter = async (text: string) => {
 };
 
 describe('Btw side conversation panel', () => {
+  test('focuses after opening settles and does not steal focus on subsequent updates', async () => {
+    const frames: FrameRequestCallback[] = [];
+    const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    try {
+      await act(async () => root.render(<BtwPanel scope={scope} />));
+      trigger.focus();
+      await act(async () => { frames.splice(0).forEach((callback) => callback(0)); });
+      expect(document.activeElement).toBe(host.querySelector('[data-btw-composer] textarea'));
+      trigger.focus();
+      await act(async () => useSessionBtwStore.getState().addQuote(scope, 'quote'));
+      await act(async () => { frames.splice(0).forEach((callback) => callback(0)); });
+      expect(document.activeElement).toBe(trigger);
+    } finally {
+      request.mockRestore();
+    }
+  });
+
   test('opens as an empty mini chat without requesting or loading anything', async () => {
     await act(async () => root.render(<BtwPanel scope={scope} />));
     expect(host.textContent).toContain('Ask about the conversation while keeping its history unchanged.');

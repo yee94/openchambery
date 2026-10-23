@@ -2679,6 +2679,7 @@ export const dict: Record<I18nKey, string> = {
   "openInApp.actions.openInAria": "Abrir en {app}",
   "openInApp.actions.chooseAppAria": "Elegir aplicación para abrir",
   "openInApp.actions.copyPath": "Copiar ruta",
+  'openInApp.errors.sshConfigRequired': 'Mueve las opciones SSH, como los archivos de claves y los hosts de salto, a tu configuración SSH y conecta mediante ese alias para abrir el proyecto en {app}.',
   "openInApp.actions.refreshApps": "Actualizar aplicaciones",
   "openInApp.toast.pathCopied": "Ruta copiada al portapapeles",
   "projectActions.actions.addActionAria": "Añadir acción",

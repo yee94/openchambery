@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.9] - 2026-10-23
+
+### 改进
+
+- 桌面端连接远程主机时可直接用本机编辑器打开远端项目路径，支持 VS Code、Cursor、Windsurf、Zed 等，按主机缓存可用的编辑器列表。
+- 打开前校验远端路径、主机名与端口，异常配置会明确提示，不再静默失败。
+
 ## [2.1.8-beta.8] - 2026-10-23
 
 ### 改进
