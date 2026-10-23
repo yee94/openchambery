@@ -2679,6 +2679,7 @@ export const dict: Record<I18nKey, string> = {
   "openInApp.actions.openInAria": "Відкрити в {app}",
   "openInApp.actions.chooseAppAria": "Вибрати програму для відкриття",
   "openInApp.actions.copyPath": "Копіювати шлях",
+  'openInApp.errors.sshConfigRequired': 'Перенесіть параметри SSH, зокрема файли ключів і проміжні хости, до конфігурації SSH, а потім підключіться через псевдонім хоста, щоб відкрити проєкт у {app}.',
   "openInApp.actions.refreshApps": "Оновити застосунки",
   "openInApp.toast.pathCopied": "Шлях скопійовано в буфер обміну",
   "projectActions.actions.addActionAria": "Додати дію",

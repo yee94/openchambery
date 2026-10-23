@@ -929,9 +929,16 @@ export const openDesktopProjectInApp = async (
   projectPath: string,
   appId: string,
   appName: string,
+  sshHostId?: string,
 ): Promise<boolean> => {
-  if (!hasDesktopInvoke() || !isDesktopLocalOriginActive()) {
+  if (!hasDesktopInvoke() || (!sshHostId && !isDesktopLocalOriginActive())) {
     return false;
+  }
+
+  if (sshHostId) {
+    if (getRuntimeKey() !== `host:${sshHostId}`) return false;
+    await invokeDesktop('desktop_open_ssh_in_app', { projectPath, appId, hostId: sshHostId });
+    return true;
   }
 
   const trimmedProjectPath = projectPath?.trim();
@@ -1001,7 +1008,7 @@ export const fetchDesktopInstalledApps = async (
   apps: string[],
   force?: boolean
 ): Promise<FetchDesktopInstalledAppsResult> => {
-  if (!hasDesktopInvoke() || !isDesktopLocalOriginActive()) {
+  if (!hasDesktopInvoke()) {
     return { apps: [], success: false, hasCache: false, isCacheStale: false };
   }
 

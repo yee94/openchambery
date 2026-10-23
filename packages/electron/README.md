@@ -183,6 +183,53 @@ Desktop OTA writes only to userData on macOS, Windows and Linux. It does not rep
 
 The package supports macOS, Windows, and Linux desktop features. Linux AppImage builds include in-app window controls and auto-update; system tray and launch-at-login remain macOS/Windows only. Some native discovery helpers are platform-specific. For example, app icon fetching and app filtering currently only work on macOS, while opening files in installed apps and installed-app discovery work on macOS and Windows (Linux returns an empty list without errors).
 
+## Open SSH projects in editors
+
+The header's Open in App toolbar supports local instances and saved SSH instances.
+`ssh-editor.mjs` owns the editor allowlist and remote URL construction; main reads
+the saved SSH command by host ID, reparses it, and opens the URL through Electron.
+Both `desktop_ssh_editor_apps` and `desktop_open_ssh_in_app` remain local-page-only
+IPC. No renderer-supplied command, URL scheme, app executable, or SSH credential is
+used. This shell capability requires a new desktop installer.
+
+The renderer queries capabilities by runtime/host identity and filters the locally
+installed app catalog. SSH never falls back to opening a remote path as a local
+folder. Copy Path copies the unmodified remote filesystem path, and remains
+available even if no supported editor is installed (including Linux, where app
+discovery is not implemented). Ordinary direct/Relay hosts without a saved SSH
+instance have no toolbar. An SSH instance using Relay fallback retains its SSH
+identity and can still hand off to an editor independently of the API transport.
+Web, VS Code and mobile surfaces do not expose this native toolbar.
+
+Supported handoffs (research: 2026-10-23):
+
+| Apps in the existing catalog | SSH opening |
+| --- | --- |
+| VS Code / Insiders | `vscode[\-insiders]://vscode-remote/ssh-remote+authority/path`; Remote-SSH extension required |
+| Cursor | `cursor://vscode-remote/ssh-remote+authority/path`; Cursor's Remote-SSH extension required |
+| Windsurf | `windsurf://vscode-remote/ssh-remote+authority/path`; its own Remote-SSH implementation |
+| Zed | Native `zed://ssh/[user@]host[:port]/path` |
+| IntelliJ / PyCharm / WebStorm / Rider / PhpStorm / RustRover | Gateway supports remote development, but its connection link requires a remote IDE backend path/version as well as the project; not included in this host-and-path-only handoff |
+| VSCodium / Kiro / Antigravity / Trae | Remote SSH exists through product-specific or community extensions; their external launch compatibility is not validated here, so they are not enabled |
+| Finder / Terminal / iTerm2 / Ghostty / Visual Studio / Android Studio / Xcode / Sublime / Eclipse | No validated equivalent remote-folder editor link in this integration; omitted from the SSH menu |
+
+SSH config aliases are preserved so editor-side OpenSSH can apply identity files,
+jump hosts and other config. Explicit `-l` and `-p` (including `user@host:port`)
+are carried into the link; VS Code-family explicit ports use the Remote-SSH
+hex-encoded `{ hostName, user?, port }` authority. Other command-line SSH flags
+are rejected with a translated instruction to put them in SSH config and connect
+via the alias, rather than silently dropping them. Editor authentication is
+independent; OpenChamber passwords are never transferred.
+
+References: [VS Code URLs](https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls),
+[Cursor handler confirmation](https://forum.cursor.com/t/cursor-url-handling-issue-with-remote-ssh/73480),
+[Windsurf SSH](https://docs.windsurf.com/windsurf/advanced),
+[VS Code/Cursor/Windsurf link integration](https://vibekanban.com/docs/settings/general),
+[Zed remote development](https://zed.dev/docs/remote-development),
+[JetBrains Gateway](https://www.jetbrains.com/help/idea/remote-development-a.html),
+[Kiro remote extension policy](https://kiro.dev/docs/privacy-and-security),
+[Trae SSH](https://docs.trae.ai/ide/ssh-remote).
+
 ## OpenCode CLI (detect, then install)
 
 Managed Desktop / `openchamber serve` / HMR discovery still does **not** prefer a packaged extraResource binary. Discovery order: settings/env → PATH `opencode` / known install locations → a previously installed pin under `~/.config/openchamber/opencode-cli/<version>/opencode`. Automatic discovery uses only the official `opencode` name and accepts 2.x by version. If nothing usable is found, startup downloads `@opencode/cli-<os>-<arch>@pin` into that data dir. Only when that pin install fails (or `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` blocks it) does startup fall back to a staged 2.x binary named `opencode` (`opencode.exe` on Windows) under `OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR` or `process.resourcesPath/opencode-cli`. A healthy v2 `opencode serve` already listening on 4096 is reused; otherwise OpenChamber starts generic `serve` on 4096 when free. Explicit `OPENCODE_BINARY` / `settings.opencodeBinary` still win for an acceptable 2.x. SSH installation uses `@opencode/cli` and probes `opencode --version`.

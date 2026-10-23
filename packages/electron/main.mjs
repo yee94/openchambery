@@ -13,7 +13,8 @@ import { DesktopOta } from './desktop-ota.mjs';
 import { loadDesktopBackend } from './desktop-backend.mjs';
 import { DesktopInstaller } from './desktop-installer.mjs';
 import electronUpdater from 'electron-updater';
-import { ElectronSshManager, planOpenCodeConfigSync } from './ssh-manager.mjs';
+import { ElectronSshManager, planOpenCodeConfigSync, parseSshCommand } from './ssh-manager.mjs';
+import { buildSshEditorUrl, sshEditorAppIds } from './ssh-editor.mjs';
 import { createDirectConfigSyncController, createDirectTargetExecutor } from './direct-config-sync.mjs';
 import { probeHostAuthentication } from './host-auth-probe.mjs';
 import { createSettingsStore } from './settings-store.mjs';
@@ -4115,6 +4116,23 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       }
 
       shell.showItemInFolder(targetPath);
+      return null;
+    }
+
+    case 'desktop_ssh_editor_apps': {
+      const instance = sshManager.readInstances().instances.find((entry) => entry.id === args.hostId);
+      return instance ? { appIds: sshEditorAppIds() } : null;
+    }
+
+    case 'desktop_open_ssh_in_app': {
+      const instance = sshManager.readInstances().instances.find((entry) => entry.id === args.hostId);
+      if (!instance) throw new Error('SSH instance not found');
+      const url = buildSshEditorUrl({
+        appId: args.appId,
+        projectPath: args.projectPath,
+        ssh: parseSshCommand(instance.sshCommand),
+      });
+      await shell.openExternal(url);
       return null;
     }
 

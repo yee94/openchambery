@@ -2713,6 +2713,7 @@ export const dict: Record<I18nKey, string> = {
   'openInApp.actions.openInAria': '{app}에서 열기',
   'openInApp.actions.chooseAppAria': '열 앱 선택',
   'openInApp.actions.copyPath': '경로 복사',
+  'openInApp.errors.sshConfigRequired': '키 파일이나 점프 호스트 등의 SSH 옵션을 SSH 설정에 추가한 다음 해당 호스트 별칭으로 연결하면 {app}에서 열 수 있습니다.',
   'openInApp.actions.refreshApps': '앱 새로고침',
   'openInApp.toast.pathCopied': '경로를 클립보드에 복사했습니다',
   'projectActions.actions.addActionAria': '작업 추가',

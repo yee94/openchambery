@@ -2679,6 +2679,7 @@ export const dict: Record<I18nKey, string> = {
   'openInApp.actions.openInAria': '在 {app} 中打开',
   'openInApp.actions.chooseAppAria': '选择要打开的应用',
   'openInApp.actions.copyPath': '复制路径',
+  'openInApp.errors.sshConfigRequired': '请将密钥文件、跳板机等 SSH 参数写入 SSH 配置，再使用该主机别名连接，即可在 {app} 中打开。',
   'openInApp.actions.refreshApps': '刷新应用',
   'openInApp.toast.pathCopied': '路径已复制到剪贴板',
   'projectActions.actions.addActionAria': '添加操作',
