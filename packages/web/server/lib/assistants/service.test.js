@@ -4230,8 +4230,11 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('persists a durable contact error bubble so query recovery works without SSE', async () => {
-    const service = setup(root(), {}, {
+  it('delivers contact errors without persisting a transcript message', async () => {
+    const directory = root();
+    const events = [];
+    const service = setup(directory, {}, {
+      onContactTurnEvent: (event) => events.push(event),
       runContactTurn: async () => {
         const error = new Error('No connected model');
         error.code = 'no_provider';
@@ -4247,10 +4250,23 @@ describe('assistants service', () => {
     const page = service.contactMessages(assistant.id);
     expect(page.messages.map((message) => ({ role: message.role, status: message.status, text: message.text }))).toEqual([
       { role: 'user', status: 'complete', text: 'hi' },
-      { role: 'assistant', status: 'error', text: 'No connected model' },
     ]);
     expect(service.snapshot().assistants[0]).toMatchObject({ working: false, activeContactTurn: null });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'openchamber:contact-turn-end',
+      properties: expect.objectContaining({ status: 'error', error: 'No connected model' }),
+    }));
     service.close();
+    const restarted = setup(directory, {}, {
+      runContactTurn: async () => ({ text: 'ok', bubbles: ['ok'] }),
+    });
+    expect(restarted.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual(['hi']);
+    await restarted.send(assistant.id, {
+      messageID: 'after_failure', parts: [{ type: 'text', text: 'again' }],
+    });
+    await restarted.whenContactTurnSettled('after_failure');
+    expect(restarted.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual(['hi', 'again', 'ok']);
+    restarted.close();
   });
 
   it('bumps revision when queued contact turn becomes running', async () => {
@@ -4395,10 +4411,9 @@ describe('assistants service', () => {
       && event.properties?.status === 'error'
       && event.properties?.turnID === 'client_no_provider'
     ))).toBe(true);
-    // User row stays; durable error bubble enables query recovery without SSE.
+    // User row stays; error feedback is delivered only through the live event.
     expect(service.contactMessages(assistant.id).messages.map((message) => ({ role: message.role, status: message.status }))).toEqual([
       { role: 'user', status: 'complete' },
-      { role: 'assistant', status: 'error' },
     ]);
     service.close();
   });

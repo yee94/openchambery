@@ -15,17 +15,8 @@ import { getAssistantPresentation } from '@/components/assistants/assistantPrese
 import { ASSISTANT_MESSAGE_PREVIEW_CLASS, getAssistantMessagePreview } from '@/components/assistants/assistantMessagePreview';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from '@/components/ui/context-menu';
-import {
-  createMobileLongPressController,
-  type MobileLongPressController,
-} from '@/components/ui/mobileLongPress';
+import { MobileSwipeActionRail } from '@/components/ui/MobileSwipeActionRail';
+import { useMobileSwipeActions } from '@/components/ui/useMobileSwipeActions';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
@@ -157,84 +148,29 @@ function MobileAssistantCard({
   serverWorking = false,
 }: MobileAssistantCardProps) {
   const working = useAssistantWorking(assistantID, serverWorking);
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const [pressed, setPressed] = React.useState(false);
-  const longPressRef = React.useRef<MobileLongPressController | null>(null);
-
-  if (!longPressRef.current) {
-    longPressRef.current = createMobileLongPressController({
-      onPressedKeyChange: (key) => setPressed(key === assistantID),
-    });
-  }
-
-  React.useEffect(() => () => longPressRef.current?.reset(), []);
-
-  const handleOpen = useEvent(() => {
-    if (longPressRef.current?.consumeClick(assistantID)) return;
-    if (menuOpen) return;
-    onOpen();
-  });
-  const handleEdit = useEvent(() => {
-    setMenuOpen(false);
-    onEdit();
-  });
-  const handleDelete = useEvent(() => {
-    setMenuOpen(false);
-    onDelete();
-  });
-  const openMenu = useEvent(() => {
-    setPressed(false);
-    setMenuOpen(true);
-  });
-  const handlePointerDown = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
-    if ((event.pointerType !== 'touch' && event.pointerType !== 'pen') || event.button !== 0) return;
-    longPressRef.current?.start({
-      pointerId: event.pointerId,
-      key: assistantID,
-      clientX: event.clientX,
-      clientY: event.clientY,
-      onTrigger: openMenu,
-    });
-  });
-  const handlePointerMove = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
-    longPressRef.current?.move(event.pointerId, event.clientX, event.clientY);
-  });
-  const handlePointerUp = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
-    longPressRef.current?.end(event.pointerId);
-  });
-  const handlePointerCancel = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
-    longPressRef.current?.cancel(event.pointerId);
-  });
-  const handleContextMenu = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    longPressRef.current?.openFromContextMenu(assistantID, openMenu);
-  });
+  const swipe = useMobileSwipeActions(`assistant:${assistantID}`, onOpen);
 
   return (
-    <ContextMenu open={menuOpen} onOpenChange={setMenuOpen}>
-      <MobileFloatingSurface
-        data-mobile-press-surface="soft"
-        className={cn('oc-mobile-assistant-card-shell', pressed && 'bg-interactive-hover')}
-      >
-        <ContextMenuTrigger
-          render={
+      <MobileFloatingSurface className="oc-mobile-assistant-card-shell relative isolate overflow-hidden">
+        <MobileSwipeActionRail swipe={swipe} actions={[
+          { label: editLabel, icon: 'edit', onClick: onEdit },
+          { label: deleteLabel, icon: 'delete-bin', destructive: true, onClick: onDelete },
+        ]} />
             <button
               type="button"
               role="option"
               aria-selected="false"
-              data-mobile-press-surface-trigger
-              className={cn('oc-mobile-assistant-card', !enabled && 'opacity-65')}
-              onClick={handleOpen}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerCancel}
-              onContextMenu={handleContextMenu}
-              style={{ touchAction: 'pan-y' }}
-            />
-          }
-        >
+              data-mobile-press-feedback="soft"
+              className={cn('oc-mobile-assistant-card relative z-10 motion-reduce:transition-none',
+                swipe.dragging ? 'transition-none' : 'transition-transform duration-150 ease-out', !enabled && 'opacity-65')}
+              onClick={swipe.handleSelect}
+              onPointerDown={swipe.handlePointerDown}
+              onPointerMove={swipe.handlePointerMove}
+              onPointerUp={swipe.finishGesture}
+              onPointerCancel={swipe.handlePointerCancel}
+              onContextMenu={swipe.handleContextMenu}
+              style={{ touchAction: 'pan-y', transform: `translate3d(${swipe.offset}px, 0, 0)`, willChange: swipe.offset === 0 ? undefined : 'transform' }}
+            >
           <span className="oc-mobile-assistant-avatar">
             <AssistantWorkingAvatar
               name={assistantID}
@@ -253,23 +189,8 @@ function MobileAssistantCard({
             </span>
           </span>
           <AssistantUnreadBadge count={unreadCount} />
-        </ContextMenuTrigger>
+        </button>
       </MobileFloatingSurface>
-      <ContextMenuContent className="min-w-[10rem]">
-        <ContextMenuItem className="min-h-10 px-3" onClick={handleEdit}>
-          <Icon name="edit" className="size-4" />
-          {editLabel}
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          className="min-h-10 px-3 text-[var(--status-error)] focus:text-[var(--status-error)] data-[highlighted]:text-[var(--status-error)] [&_svg]:text-[var(--status-error)]"
-          onClick={handleDelete}
-        >
-          <Icon name="delete-bin" className="size-4" />
-          {deleteLabel}
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
   );
 }
 

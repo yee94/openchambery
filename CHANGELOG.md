@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8-beta.14] - 2026-10-24
+
+### 改进
+
+- 助手联系人列表把未读联系人排在最前，其余仍按最近消息时间排序。
+- 移动端助手联系人与会话行共用同一套左滑操作轨，同一时刻只展开一行，滑动与点击互不误触。
+
 ## [2.1.8-beta.13] - 2026-10-23
 
 ### 改进

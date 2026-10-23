@@ -5,6 +5,8 @@ import { Icon } from '@/components/icon/Icon';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
 import { renderHighlightedText } from '@/components/session/sidebar/utils';
 import { Button } from '@/components/ui/button';
+import { MobileSwipeActionRail } from '@/components/ui/MobileSwipeActionRail';
+import { useMobileSwipeActions } from '@/components/ui/useMobileSwipeActions';
 import { SessionRowDragContext } from '@/components/session/sidebar/sessionDragState';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -13,30 +15,6 @@ import {
   resolveMobileSessionIndicator,
   type MobileSessionIndicator,
 } from './mobileSessionIndicator';
-
-const INTENT_LOCK_PX = 10;
-
-/**
- * Cross-row coordination: only one session row stays swipe-revealed at a time.
- * When a row locks into a horizontal swipe, it broadcasts its id so every
- * other revealed row closes.
- */
-const REVEALED_ROW_EVENT = 'oc:mobile-session-row-revealed';
-
-const broadcastRowRevealed = (id: string): void => {
-  window.dispatchEvent(new CustomEvent(REVEALED_ROW_EVENT, { detail: id }));
-};
-
-type GestureIntent = 'pending' | 'horizontal' | 'vertical';
-
-type ActiveGesture = {
-  pointerId: number;
-  startX: number;
-  startY: number;
-  startOffset: number;
-  actionWidth: number;
-  intent: GestureIntent;
-};
 
 export type MobileSessionRowModel = {
   id: string;
@@ -87,137 +65,10 @@ function MobileSessionRowImpl({
   highlightQuery,
 }: MobileSessionRowProps) {
   const { t } = useI18n();
-  const [offset, setOffset] = React.useState(0);
-  const [dragging, setDragging] = React.useState(false);
-  const gestureRef = React.useRef<ActiveGesture | null>(null);
-  const suppressClickRef = React.useRef(false);
-  const actionRailRef = React.useRef<HTMLDivElement | null>(null);
   const reorderDragging = React.useContext(SessionRowDragContext);
-  React.useEffect(() => {
-    if (!reorderDragging) return;
-    gestureRef.current = null;
-    suppressClickRef.current = true;
-    setOffset(0);
-    setDragging(false);
-  }, [reorderDragging]);
-
-  React.useEffect(() => {
-    const handleRevealed = (event: Event) => {
-      const revealedId = (event as CustomEvent<string>).detail;
-      if (revealedId !== session.id) setOffset(0);
-    };
-    window.addEventListener(REVEALED_ROW_EVENT, handleRevealed);
-    return () => window.removeEventListener(REVEALED_ROW_EVENT, handleRevealed);
-  }, [session.id]);
-
-  React.useEffect(() => {
-    setOffset(0);
-  }, [session.id]);
-
-  const closeActions = useEvent(() => setOffset(0));
-  const revealed = offset !== 0;
-
-  const handlePointerDown = useEvent((event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    // Swipe reveal is touch/pen only — mouse drag on desktop left residual
-    // offsets that painted Pin/Archive over the title.
-    if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
-
-    const actionWidth = actionRailRef.current?.offsetWidth ?? 0;
-    if (actionWidth <= 0) return;
-
-    gestureRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startOffset: offset,
-      actionWidth,
-      intent: 'pending',
-    };
-    suppressClickRef.current = false;
-
-  });
-
-  const handlePointerMove = useEvent((event: React.PointerEvent<HTMLElement>) => {
-    if (reorderDragging) return;
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
-
-    if (gesture.intent === 'pending') {
-      const absX = Math.abs(deltaX);
-      const absY = Math.abs(deltaY);
-      if (absY > INTENT_LOCK_PX && absY > absX) {
-        gesture.intent = 'vertical';
-        gestureRef.current = null;
-        return;
-      }
-      if (absX > INTENT_LOCK_PX && absX > absY) {
-        gesture.intent = 'horizontal';
-        setDragging(true);
-        suppressClickRef.current = true;
-        try {
-          event.currentTarget.setPointerCapture(event.pointerId);
-        } catch {
-          // Some embedded webviews can report a pointer after capture was
-          // already released. The row can still finish from the same target.
-        }
-        broadcastRowRevealed(session.id);
-      }
-    }
-
-    if (gesture.intent !== 'horizontal') return;
-    event.preventDefault();
-    // Only swipe left to reveal trailing pin + archive actions.
-    const nextOffset = Math.max(-gesture.actionWidth, Math.min(0, gesture.startOffset + deltaX));
-    setOffset(nextOffset);
-  });
-
-  const finishGesture = useEvent((event: React.PointerEvent<HTMLElement>) => {
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    gestureRef.current = null;
-    if (gesture.intent !== 'horizontal') return;
-    setDragging(false);
-    setOffset((current) => (current < -(gesture.actionWidth * 0.35) ? -gesture.actionWidth : 0));
-  });
-
-  const handlePointerCancel = useEvent(() => {
-    const gesture = gestureRef.current;
-    gestureRef.current = null;
-    setDragging(false);
-    setOffset(gesture?.startOffset ?? 0);
-  });
-
-  const handleSelect = useEvent(() => {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
-    if (offset !== 0) {
-      closeActions();
-      return;
-    }
-    broadcastRowRevealed(session.id);
-    onSelect(session);
-  });
-
-  const handleContextMenu = useEvent((event: React.MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  });
-
-  const handlePin = useEvent(() => {
-    closeActions();
-    onPin(session);
-  });
-
-  const handleArchive = useEvent(() => {
-    closeActions();
-    onArchive(session);
-  });
+  const swipe = useMobileSwipeActions(session.id, () => onSelect(session), reorderDragging);
+  const { offset, dragging, handleSelect, handlePointerDown, handlePointerMove,
+    finishGesture, handlePointerCancel, handleContextMenu } = swipe;
 
   const handleOpenActions = useEvent(() => onOpenActions(session));
   const handleToggleChildren = useEvent(() => onToggleChildren?.());
@@ -269,43 +120,10 @@ function MobileSessionRowImpl({
     <div className={cn('oc-mobile-session-row relative isolate', className)}>
       {/* iOS-style trailing rail: it stays fixed underneath while the complete
           session foreground follows the finger to the left. */}
-      <div
-        ref={actionRailRef}
-        data-session-drag-ignore
-        className={cn(
-          'oc-mobile-session-actions absolute inset-y-0 right-0 z-0 flex items-stretch',
-          dragging ? 'transition-none' : 'transition-transform duration-150 ease-out',
-          !revealed && 'invisible pointer-events-none',
-        )}
-        style={{
-          transform: `translate3d(calc(var(--oc-mobile-session-actions-width) + ${offset}px), 0, 0)`,
-          willChange: offset === 0 ? undefined : 'transform',
-        }}
-        aria-hidden={!revealed}
-      >
-        <Button
-          type="button"
-          variant="secondary"
-          className="oc-mobile-session-action h-full flex-col rounded-none border-0 bg-interactive-selection px-1 text-interactive-selection-foreground hover:bg-interactive-active"
-          aria-label={pinLabel}
-          tabIndex={revealed ? 0 : -1}
-          onClick={handlePin}
-        >
-          <Icon name={session.pinned ? 'unpin' : 'pushpin'} className="size-[18px]" />
-          <span className="oc-mobile-session-action-label font-medium">{pinLabel}</span>
-        </Button>
-        <Button
-          type="button"
-          variant="destructive"
-          className="oc-mobile-session-action h-full flex-col rounded-none border-0 px-1"
-          aria-label={t('sessions.sidebar.bulkActions.archive')}
-          tabIndex={revealed ? 0 : -1}
-          onClick={handleArchive}
-        >
-          <Icon name="archive" className="size-[18px]" />
-          <span className="oc-mobile-session-action-label font-medium">{t('sessions.sidebar.bulkActions.archive')}</span>
-        </Button>
-      </div>
+      <MobileSwipeActionRail swipe={swipe} actions={[
+        { label: pinLabel, icon: session.pinned ? 'unpin' : 'pushpin', onClick: () => onPin(session) },
+        { label: t('sessions.sidebar.bulkActions.archive'), icon: 'archive', destructive: true, onClick: () => onArchive(session) },
+      ]} />
 
       {/* The entire solid foreground translates as one slab, including time
           and overflow menu, matching the native iOS swipe model. */}

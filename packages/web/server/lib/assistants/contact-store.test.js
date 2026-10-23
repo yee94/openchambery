@@ -120,7 +120,7 @@ describe('contact LLM history trim', () => {
       { role: 'assistant', content: 'keep-assistant' },
       { role: 'assistant', content: expect.stringContaining('\"sessionID\":\"ses_1\"') },
     ]);
-    expect(listContactMessages(db, assistantID, { limit: 50 }).messages).toHaveLength(5);
+    expect(listContactMessages(db, assistantID, { limit: 50 }).messages).toHaveLength(4);
     db.close();
   });
 
@@ -549,21 +549,40 @@ describe('contact latest message preview', () => {
     db.close();
   });
 
-  it('keeps durable error body text as the preview', () => {
+  it('never stores error rows or replaces the latest message preview with an error', () => {
     const db = openDb();
     const assistantID = 'asst_preview_err';
-    insert(db, assistantID, { role: 'user', text: 'hi' });
+    const user = insert(db, assistantID, { role: 'user', text: 'hi' });
     const err = insert(db, assistantID, {
       role: 'assistant',
       text: 'No connected model',
       status: 'error',
     });
     expect(getLatestContactMessagePreview(db, assistantID)).toMatchObject({
-      messageID: err.messageID,
-      role: 'assistant',
-      text: 'No connected model',
+      messageID: user.messageID,
+      role: 'user',
+      text: 'hi',
       fallbackKind: null,
     });
+    expect(db.prepare('SELECT * FROM assistant_contact_message WHERE message_id=?').get(err.messageID)).toBeUndefined();
+    expect(db.prepare('SELECT * FROM assistant_contact_part WHERE message_id=?').all(err.messageID)).toEqual([]);
+    db.close();
+  });
+
+  it('atomically purges legacy error messages and parts on startup', () => {
+    const db = openDb();
+    const user = insert(db, 'legacy', { role: 'user', text: 'keep' });
+    const legacy = insert(db, 'legacy', { role: 'assistant', text: 'old failure' });
+    db.prepare("UPDATE assistant_contact_message SET status='error' WHERE message_id=?").run(legacy.messageID);
+    db.exec(`CREATE TRIGGER fail_error_cleanup BEFORE DELETE ON assistant_contact_message
+      WHEN OLD.status = 'error' BEGIN SELECT RAISE(ABORT, 'cleanup failed'); END;`);
+    expect(() => ensureContactSchema(db)).toThrow('cleanup failed');
+    expect(db.prepare('SELECT * FROM assistant_contact_part WHERE message_id=?').all(legacy.messageID)).toHaveLength(1);
+    db.exec('DROP TRIGGER fail_error_cleanup');
+    ensureContactSchema(db);
+    ensureContactSchema(db);
+    expect(listContactMessages(db, 'legacy').messages.map((message) => message.messageID)).toEqual([user.messageID]);
+    expect(db.prepare('SELECT * FROM assistant_contact_part WHERE message_id=?').all(legacy.messageID)).toEqual([]);
     db.close();
   });
 
@@ -718,7 +737,7 @@ describe('contact latest message preview', () => {
 });
 
 describe('contact read watermark / unread', () => {
-  it('counts only complete/error assistant and peer replies; ignores user and settle-only', () => {
+  it('counts complete assistant and peer replies; ignores errors, user and settle-only', () => {
     expect(isContactVisiblePart({ type: 'text', text: 'hi' })).toBe(true);
     expect(isContactVisiblePart({ type: 'text', text: '  ' })).toBe(false);
     expect(isContactVisiblePart({ type: 'text', text: CONTACT_SETTLE_TEXT.complete })).toBe(false);
@@ -793,7 +812,7 @@ describe('contact read watermark / unread', () => {
     insert(db, assistantID, { role: 'peer', text: 'p1', fromAssistantID: 'other', fromAssistantName: 'Peer' });
     insert(db, assistantID, { role: 'assistant', text: 'failed', status: 'error' });
     // No watermark → all countable unread.
-    expect(countContactUnread(db, assistantID)).toBe(3);
+    expect(countContactUnread(db, assistantID)).toBe(2);
     db.close();
   });
 

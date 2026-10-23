@@ -107,6 +107,15 @@ export function ensureContactSchema(db) {
   // only counts assistant tails that belong to this delivery.
   if (!watchColumns.has('message_id')) db.exec('ALTER TABLE assistant_contact_watch ADD COLUMN message_id TEXT');
   // Attachment table ownership lives in contact-attachments.ensureContactAttachmentSchema.
+  // Errors are live feedback, not history. Remove legacy rows and their bodies atomically.
+  db.transaction(() => {
+    db.exec(`
+      DELETE FROM assistant_contact_part WHERE message_id IN (
+        SELECT message_id FROM assistant_contact_message WHERE status = 'error'
+      );
+      DELETE FROM assistant_contact_message WHERE status = 'error';
+    `);
+  })();
 }
 
 /** Current contact transcript generation for one assistant (default 0). */
@@ -719,7 +728,7 @@ export function sanitizeContactPreviewText(text, maxChars = CONTACT_PREVIEW_MAX_
  * Build AssistantDTO.latestMessagePreview from one hydrated contact message.
  * Returns null when the row is not list-visible (internal settle-only, empty,
  * unsupported role). Peer inbox rows map to role `user` (user-visible DM).
- * Visible error bubbles keep real body text. Cards/files set fallbackKind.
+ * Cards/files set fallbackKind. Error feedback never enters persisted previews.
  */
 export function buildContactMessagePreview(message) {
   if (!message || typeof message !== 'object') return null;
@@ -1003,6 +1012,7 @@ export function insertContactMessage(db, {
   fromAssistantID = null,
   fromAssistantName = null,
 }) {
+  if (status === 'error') return;
   db.prepare(
     'INSERT INTO assistant_contact_message(message_id,assistant_id,role,turn_id,bubble_index,created_at,ordinal,status,from_assistant_id,from_assistant_name) VALUES (?,?,?,?,?,?,?,?,?,?)',
   ).run(messageID, assistantID, role, turnID, bubbleIndex, createdAt, ordinal, status, fromAssistantID, fromAssistantName);

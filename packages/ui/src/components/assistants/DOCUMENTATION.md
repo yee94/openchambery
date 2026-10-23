@@ -89,12 +89,13 @@ Contact progress consists of model-authored natural-language messages delivered 
 the existing bubble SSE and persisted history. Explicit public message records arrive
 while the model and tools are still running; stable message IDs reconcile them without
 turn-end duplication. The UI adds no tool log, timer narration, or progress widget.
-Server `status:error` records and failed-turn previews render as plain `role=alert`
-feedback with status-error styling, separately from assistant avatars and speech bubbles.
+Failed-turn previews render as centered, muted 11px `role=alert`
+feedback, separately from assistant avatars and speech bubbles.
 Only errors after the latest visible message show this error feedback: a newer user,
 assistant, or peer message (including a live preview) dismisses earlier errors.
-Filtering precedes timestamp grouping and applies again on reload; durable diagnostics
-remain stored. The current error retains its message anchor and read-watermark recovery. Tool confirmation text remains
+Errors arrive only through live turn-end events; the server does not persist error
+messages and deletes legacy error rows and parts on startup. Reload does not recover
+errors from history. Temporary previews retain their message anchor. Tool confirmation text remains
 model input; the model supplies the visible result summary, including settings saves.
 
 The Assistant conversation is a Grok-like **contact**, not an OpenCode coding agent. Primary Chat still owns LegendList / Activity / tools. Assistant must not wrap `ChatContainer` as its transcript. Server-side contact turns may run pi `read` / `write` / `edit` / `bash` in the assistant workspace and load merged `.agents`/`.claude` skills; the contact UI still does not render tool traces. Contact bubbles wrap unbreakable tokens (`overflow-wrap: anywhere`); the transcript scroller is `overflow-x-hidden` so a long path cannot grow the page sideways.
@@ -200,6 +201,8 @@ A persisted session card status `cancelled` denotes a user-interrupted watch. It
 
 The contact composer exposes the existing stop control while a contact turn is processing or the server reports working, including during a pending send. Pure sending keeps the existing input and attachment lock. It calls the Assistant abort endpoint with the current binding identity (including a null session ID for contact-only execution); no OpenCode binding must be created to stop a contact. Stop failures use the existing inline error surface. The control waits for authoritative end/idle instead of locally claiming the task stopped. Repeated clicks share one in-flight stop. While working, the textarea remains editable and Enter can submit a new message; upload/admission pending retains its existing input and attachment lock even while Stop is available.
 
-Desktop and mobile contact lists share `sortAssistantContacts`: descending latest visible message `createdAt`, with stable source order for equal times. Unread counts, read watermarks, and configuration `updatedAt` never participate. Empty histories and older server previews lacking the timestamp stay below timestamped contacts. Each list memoizes the bounded snapshot sort; Settings catalog order is unchanged.
+Desktop and mobile contact lists share `sortAssistantContacts`: contacts with unread messages first, then descending latest visible message `createdAt` within each group, with stable source order for ties. Incoming and outgoing messages both advance interaction time. Unread volume and configuration `updatedAt` do not rank contacts. Marking read returns a contact to the read group. Empty histories and legacy missing timestamps stay below timestamped contacts within their group. Each list memoizes the bounded (at most 100 contacts) snapshot sort; no per-contact requests or token-frequency sorting are introduced. Settings catalog order is unchanged.
+
+Mobile contact cards expose Edit/Delete by left swipe, using the same `useMobileSwipeActions` and `MobileSwipeActionRail` as homepage session rows. Long hold does not open a menu. Vertical gestures keep scrolling, a swipe suppresses navigation, tapping a revealed row closes it, and only one rail stays open across both surfaces. Actions close the rail and reuse existing Settings/delete-confirmation flows. Desktop context actions are unchanged.
 
 The contact session mention composer uses the regular Chat Composer document/reference codecs and `ComposerTriggerIconMark` overlay for session chips. Its external draft remains queue-canonical `@session:<id>` (no inline JSON metadata); selected titles are local display data, while exact IDs survive insert/edit, atomic delete, undo/redo, copy, and cut. Clipboard references serialize canonically instead of losing identity as labels. Incoming canonical drafts materialize through the same shared session codec. Referenced transcripts are read through the assistant's bounded `read_session` tool; a mention alone does not authorize worker mutation.
