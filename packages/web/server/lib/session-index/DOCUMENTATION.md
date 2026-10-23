@@ -100,6 +100,9 @@ consume further pages within a small page budget so the newest-20 **active**
 window can still fill; exhausting the budget before the window is full is an
 explicit partial result (`hasMore` stays true). `replaceDirectory` /
 event-ingest upsert keep active-only rows (archived clears the summary and pin).
+An envelope without a next cursor is exhausted even when the final page is full.
+After exhaustion, `hasMore` is true only when visible root sessions overflow the
+20-row index window; child, archived, and system rows do not create a Show-more hint.
 It publishes an in-memory revision after every externally observable index or
 synchronization-state change. A successful empty directory refresh remains in
 the snapshot so another client can use it as a worktree-topology recovery hint.

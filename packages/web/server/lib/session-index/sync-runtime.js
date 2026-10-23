@@ -225,8 +225,9 @@ export const createSessionIndexSyncRuntime = ({
           continue;
         }
 
-        // No next token: bare-array / terminal page.
-        if (!pageFull) {
+        // An envelope without a next token is authoritative exhaustion, even
+        // when its terminal page is full. Bare arrays still use the page size.
+        if (isEnvelope || !pageFull) {
           upstreamHasMore = false;
           break;
         }
@@ -254,9 +255,13 @@ export const createSessionIndexSyncRuntime = ({
 
       // Root + system filters before filling the active-20 capacity.
       const active = [];
+      let hasOverflowSessions = false;
       for (const session of projected) {
         if (!isRootActiveCandidate(session)) continue;
-        if (active.length >= SESSION_LIMIT) break;
+        if (active.length >= SESSION_LIMIT) {
+          hasOverflowSessions = true;
+          break;
+        }
         active.push(session);
       }
 
@@ -268,7 +273,7 @@ export const createSessionIndexSyncRuntime = ({
         directory: task.directory,
         sessions: active,
         cursor: cursorNumber,
-        hasMore: upstreamHasMore || hitPageBudget || active.length === SESSION_LIMIT,
+        hasMore: upstreamHasMore || hitPageBudget || hasOverflowSessions,
         fullSync: true,
         now: now(),
       });

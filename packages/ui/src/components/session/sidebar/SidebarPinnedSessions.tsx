@@ -10,7 +10,7 @@ import {
 import type { SessionNodeRenderExtras } from './sessionNodeItemUtils';
 import { SidebarSectionHeader } from './SidebarSectionHeader';
 import { useSessionFocusStore } from '@/stores/useSessionFocusStore';
-import { DraggableSessionRow, SessionFolderDndScope } from './sessionFolderDnd';
+import { SessionFolderDndScope } from './sessionFolderDnd';
 import { PINNED_SESSION_ORDER_SCOPE } from './pinnedSessions';
 
 type PinnedItem = {
@@ -123,7 +123,7 @@ export function SidebarPinnedSessions({
     return null;
   }
 
-  const renderRows = (rows: PinnedItem[], sortable = false): React.ReactNode =>
+  const renderRows = (rows: PinnedItem[]): React.ReactNode =>
     rows.map((item) => {
       const row = renderSessionNode(
           item.node,
@@ -135,16 +135,7 @@ export function SidebarPinnedSessions({
           'pinned',
           getRenderExtras(item.node),
       );
-      return sortable ? (
-        <DraggableSessionRow
-          key={item.node.session.id}
-          sessionId={item.node.session.id}
-          sessionDirectory={item.groupDirectory}
-          sessionTitle={item.node.session.title ?? ''}
-        >
-          {row}
-        </DraggableSessionRow>
-      ) : <React.Fragment key={item.node.session.id}>{row}</React.Fragment>;
+      return <React.Fragment key={item.node.session.id}>{row}</React.Fragment>;
     });
 
   return (
@@ -172,7 +163,7 @@ export function SidebarPinnedSessions({
               onSessionDroppedOnFolder={() => {}}
               onSessionsReordered={(activeId, overId) => onSessionsReordered?.(activeId, overId)}
             >
-              {renderRows(items, true)}
+              {renderRows(items)}
             </SessionFolderDndScope>
           ) : renderRows(items)}
           {renderRows(inProgressItems)}
