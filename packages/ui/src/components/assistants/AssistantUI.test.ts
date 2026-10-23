@@ -282,7 +282,7 @@ describe('Assistant UI product contract', () => {
     expect(guideStyles).not.toContain('grid-auto-flow: column');
   });
 
-  test('offers edit and delete from assistant list context menu and long-press', async () => {
+  test('offers desktop context actions and shared mobile swipe edit/delete actions', async () => {
     const [view, mobileTab, deleteDialog, store, settingsView, english] = await Promise.all([
       read('AssistantView.tsx'),
       read('../../mobile/assistant/MobileAssistantTab.tsx'),
@@ -301,16 +301,17 @@ describe('Assistant UI product contract', () => {
     expect(view).toContain('text-[var(--status-error)]');
     expect(view).toContain('AssistantDeleteConfirmDialog');
     expect(view).toContain('ContextMenu');
-    expect(mobileTab).toContain('createMobileLongPressController');
+    expect(mobileTab).toContain('useMobileSwipeActions');
+    expect(mobileTab).not.toContain('createMobileLongPressController');
     expect(mobileTab).toContain('openAssistantSettings');
     expect(mobileTab).toContain("t('assistants.menu.edit')");
     expect(mobileTab).toContain("t('assistants.settings.delete')");
-    expect(mobileTab).toContain('name="edit"');
-    expect(mobileTab).toContain('name="delete-bin"');
-    expect(mobileTab).toContain('ContextMenuSeparator');
-    expect(mobileTab).toContain('text-[var(--status-error)]');
+    expect(mobileTab).toContain("icon: 'edit'");
+    expect(mobileTab).toContain("icon: 'delete-bin'");
+    expect(mobileTab).toContain('MobileSwipeActionRail');
+    expect(mobileTab).toContain('destructive: true');
     expect(mobileTab).toContain('AssistantDeleteConfirmDialog');
-    expect(mobileTab).toContain('openFromContextMenu');
+    expect(mobileTab).not.toContain('openFromContextMenu');
     expect(deleteDialog).toContain('deleteAssistantEntry');
     expect(deleteDialog).toContain('assistants.settings.deleteConfirm');
     expect(deleteDialog).toContain('variant="destructive"');

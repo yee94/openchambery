@@ -1,3 +1,14 @@
+# Mobile row swipe actions
+
+`useMobileSwipeActions.ts` and `MobileSwipeActionRail.tsx` own the homepage session and Assistant contact trailing
+two-action rail and gesture controller. Touch/pen intent locks after 10px; vertical
+intent yields to scrolling, horizontal movement clamps to the measured rail width,
+and release snaps at 35%. Mouse drags and long holds never reveal actions. A shared
+reveal event closes other rows; cancelled gestures restore their starting offset.
+Consumers retain their own foreground content and business actions. Pointer moves
+only update the active row, read geometry once at gesture start, and add no requests.
+Session reorder disables swipe through the existing drag context.
+
 # Command palette subscriptions
 
 The memoized CommandPalette observes session rows/status only while open or while

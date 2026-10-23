@@ -1423,31 +1423,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       throw error;
     }
   };
-  /** Durable failure bubble so APP restart can recover error without SSE. */
-  const persistContactTurnFailure = (assistantID, { userMessageID, turnID, error }) => {
-    const detail = typeof error === 'string' && error.trim() ? error.trim() : 'upstream_error';
-    const failureID = `${userMessageID}:error`;
-    if (getContactMessage(db, failureID)) return;
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      insertContactMessage(db, {
-        messageID: failureID,
-        assistantID,
-        role: 'assistant',
-        turnID,
-        bubbleIndex: 0,
-        createdAt: now(),
-        ordinal: nextContactOrdinal(db, assistantID),
-        status: 'error',
-        parts: [{ type: 'text', text: detail }],
-      });
-      bump();
-      db.exec('COMMIT');
-    } catch (writeError) {
-      db.exec('ROLLBACK');
-      throw writeError;
-    }
-  };
   const contactBubbleMessageID = (userMessageID, bubbleIndex) => `${userMessageID}:bubble:${bubbleIndex + 1}`;
   const contactCardMessageID = (userMessageID, index) => `${userMessageID}:card:${index + 1}`;
 
@@ -2695,7 +2670,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const messageID = scheduledRun ? `scheduled_${assistantID}_${scheduledRun.id}` : assignedSessionResumeMessageID(assistantID, sessionID, status, updatedAt);
     const capturedAssistant = scheduledRun ? output(row) : null;
     const turnID = messageID;
-    // Idempotent: same watch status already resumed (bubbles or durable error).
+    // Idempotent: same watch status already resumed with published output.
     if (
       getContactMessage(db, `${messageID}:bubble:1`)
       || getContactMessage(db, `${messageID}:error`)
@@ -2966,16 +2941,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
         if (bubbles.length === 0 && cards.length === 0) {
           const detail = 'Assistant returned no text';
-          try {
-            persistContactTurnFailure(assistantID, {
-              userMessageID: messageID,
-              turnID,
-              error: detail,
-            });
-            settleActiveContactTurn(assistantID, turnID);
-          } catch {
-            settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
-          }
+          settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
           emitContactTurnEvent('openchamber:contact-turn-end', {
             assistantID,
             turnID,
@@ -3021,16 +2987,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           ? error.message.trim()
           : (error?.code || 'upstream_error');
         const statusCode = error?.code === 'no_provider' ? 'no_provider' : (error?.code || 'upstream_error');
-        try {
-          persistContactTurnFailure(assistantID, {
-            userMessageID: messageID,
-            turnID,
-            error: detail,
-          });
-          settleActiveContactTurn(assistantID, turnID);
-        } catch {
-          settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
-        }
+        settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
         emitContactTurnEvent('openchamber:contact-turn-end', {
           assistantID,
           turnID,
@@ -3182,7 +3139,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         };
         const modelContext = await loadContactModelContext(controller.signal);
         try {
-          // Materialize inside turn try so failures durable-error + settle working.
+          // Materialize inside turn try so failures emit live feedback and settle working.
           // DB/UI keep descriptors; harness + assign get execution-time data URLs under budget.
           const executionHistory = await materializeContactHistory(
             db,
@@ -3340,16 +3297,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
           if (bubbles.length === 0 && cards.length === 0) {
             const detail = 'Assistant returned no text';
-            try {
-              persistContactTurnFailure(row.assistant_id, {
-                userMessageID: messageID,
-                turnID,
-                error: detail,
-              });
-              settleActiveContactTurn(row.assistant_id, turnID);
-            } catch {
-              settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
-            }
+            settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
             emitContactTurnEvent('openchamber:contact-turn-end', {
               assistantID: row.assistant_id,
               turnID,
@@ -3409,16 +3357,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             ? error.message.trim()
             : (error?.code || 'upstream_error');
           const statusCode = error?.code === 'no_provider' ? 'no_provider' : (error?.code || 'upstream_error');
-          try {
-            persistContactTurnFailure(row.assistant_id, {
-              userMessageID: messageID,
-              turnID,
-              error: detail,
-            });
-            settleActiveContactTurn(row.assistant_id, turnID);
-          } catch {
-            settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
-          }
+          settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
           emitContactTurnEvent('openchamber:contact-turn-end', {
             assistantID: row.assistant_id,
             turnID,

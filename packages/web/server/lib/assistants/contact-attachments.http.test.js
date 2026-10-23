@@ -256,7 +256,7 @@ describe('contact attachments real HTTP (core-routes + assistants routes)', () =
 });
 
 describe('contact attachment materialize failure terminal settle', () => {
-  it('deleting bytes after admit causes durable error, working=false, next turn ok', async () => {
+  it('deleting bytes after admit causes transient error, working=false, next turn ok', async () => {
     const directory = mkRoot();
     closers.push(async () => fsp.rm(directory, { recursive: true, force: true }).catch(() => {}));
 
@@ -339,7 +339,7 @@ describe('contact attachment materialize failure terminal settle', () => {
     expect(snap.activeContactTurn).toBeNull();
 
     const page = service.contactMessages(assistant.id, { limit: 20 });
-    expect(page.messages.some((m) => m.status === 'error' || (m.role === 'assistant' && m.text))).toBe(true);
+    expect(page.messages.some((m) => m.status === 'error' || (m.role === 'assistant' && m.text))).toBe(false);
     const pageJson = JSON.stringify(page);
     expect(pageJson).not.toMatch(/data:image\/png;base64,[A-Za-z0-9+/]{40,}/);
 

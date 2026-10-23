@@ -564,7 +564,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                   <React.Fragment key={renderKey}>
                   {timeSeparator}
                   <div data-message-id={message.messageID} data-assistant-contact-error="" className={cn('relative px-1', !hasTimeSeparator && 'mt-3')}>
-                    <p role="alert" className="whitespace-pre-wrap typography-micro text-[var(--status-error)] [overflow-wrap:anywhere]">
+                    <p role="alert" className="whitespace-pre-wrap text-center text-[11px] font-normal leading-4 text-muted-foreground [overflow-wrap:anywhere]">
                       {message.text || preview?.error || t('assistants.contact.sendFailed')}
                     </p>
                     {readPosition?.messageID === message.messageID ? <AssistantReadMarker
