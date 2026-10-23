@@ -172,7 +172,7 @@ export const listProjectAreaRootSessions = (
   pinnedSessionIds: ReadonlySet<string>,
 ): Session[] => buildSessionTree(sessions, {
   pinnedSessionIds,
-  omitPinnedSessions: true,
+  omitPinnedSessions: false,
 }).map((node) => node.session);
 
 // Re-exported for existing mobile imports; the shared home/sidebar contract
@@ -460,15 +460,14 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         // Mobile home is a flat parent-session list only. Subagents stay off the
         // catalog (and off search) — never promote orphans when the parent is
         // missing from this bucket (archived/system parents). Archive cascade
-        // still walks allSessions. Pinned roots leave the project area the same
-        // way the sidebar forest does: omit after parent/child attachment.
+        // still walks allSessions. Pinned roots remain in the project area,
+        // alongside their additional representation in the pinned section.
         const scope = normalizePath(bucket.path);
         const roots = listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds).map((session) => ({ session }));
         const rootSessions = roots.sort(createSessionNodeComparator(
           roots, sessionOrderByScope[scope], sessionOrderActivityByScope[scope], pinnedSessionIds,
         )).map((node) => node.session);
-        // Search must cover pinned roots too — they leave the project-area
-        // display list, and the pinned group is hidden while searching.
+        // Search covers all roots, including pinned sessions and folded rows.
         const catalogRoots = buildSessionTree(bucket.sessions, {
           pinnedSessionIds,
           omitPinnedSessions: false,
