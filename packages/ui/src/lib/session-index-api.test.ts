@@ -8,6 +8,7 @@ type OpenChamberEvent = {
   revision?: number;
   occurredAt?: number;
   sync?: { active: boolean; enriching: boolean };
+  cause?: 'change';
 };
 
 const { tipListeners } = vi.hoisted(() => ({ tipListeners: new Set<(event: OpenChamberEvent) => void>() }));
@@ -145,6 +146,31 @@ describe('session index background transport', () => {
     await vi.advanceTimersByTimeAsync(1);
     await pending;
     expect(resolved).toHaveBeenCalledExactlyOnceWith('tip');
+  });
+
+  test.each([
+    { elapsed: 0, sync: { active: true, enriching: false } },
+    { elapsed: 200, sync: { active: true, enriching: false } },
+    { elapsed: 200, sync: { active: false, enriching: true } },
+    { elapsed: 950, sync: { active: true, enriching: true } },
+  ])('external changes bypass busy throttling (%o)', async ({ elapsed, sync }) => {
+    vi.useFakeTimers();
+    const resolved = vi.fn();
+    const pending = waitForSessionIndexInvalidation(1, new AbortController().signal).then(resolved);
+    if (elapsed > 0) {
+      emitTip({ type: 'session-index-changed', revision: 2, sync });
+      await vi.advanceTimersByTimeAsync(elapsed);
+    }
+    emitTip({ type: 'session-index-changed', revision: 3, sync, cause: 'change' });
+    const delay = Math.min(100, 1000 - elapsed);
+    await vi.advanceTimersByTimeAsync(delay - 1);
+    expect(resolved).not.toHaveBeenCalled();
+    emitTip({ type: 'session-index-changed', revision: 4, sync });
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(resolved).toHaveBeenCalledExactlyOnceWith('tip');
+    expect(tipListeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   test('legacy tips retain the 100ms trailing debounce', async () => {

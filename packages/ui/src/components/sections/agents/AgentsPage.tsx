@@ -1012,9 +1012,9 @@ export const AgentsPage: React.FC = () => {
 
               <div className="border-t border-[var(--surface-subtle)] pt-3">
                 <h4 className="typography-ui-label text-foreground mb-2">{t('settings.agents.page.permissions.addCustomRule')}</h4>
-                <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <Select value={pendingRuleName} onValueChange={setPendingRuleName}>
-                    <SelectTrigger className="w-full sm:w-[160px]">
+                    <SelectTrigger className="w-auto max-w-full sm:w-[160px]">
                       {pendingRuleName ? (
                         <span className="truncate">{formatPermissionLabel(pendingRuleName)}</span>
                       ) : (
@@ -1036,7 +1036,7 @@ export const AgentsPage: React.FC = () => {
                     value={pendingRulePattern}
                     onChange={(e) => setPendingRulePattern(e.target.value)}
                     placeholder={t('settings.agents.page.permissions.patternPlaceholder')}
-                    className="h-7 flex-1 font-mono text-xs"
+                    className="h-7 min-w-0 flex-1 basis-32 font-mono text-xs"
                   />
 
                   <div className="flex gap-1">

@@ -2,6 +2,15 @@
 
 Owning module for global CSS under `packages/ui/src/styles/`, including touch-mode adaptations in `mobile.css`.
 
+## Compact Settings rows
+
+`settings.css` keeps ordinary Settings labels and values side by side, including
+cards at or below 32rem. Selects, numbers, short option groups, and checkboxes
+use a content-sized right column capped at `min(60cqw, 20rem)`; long labels wrap.
+Only explicit `oc-settings-split-row-stacked` editors and collections occupy a
+separate full-width line. The card container query must not stack all rows.
+See `components/sections/shared/SETTINGS_DESIGN_SPEC.md` for the form contract.
+
 ## Voice color calibration
 
 `design-system.css` owns `.oc-dictation-caret` and its trailing glow, including

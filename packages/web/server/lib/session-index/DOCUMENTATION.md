@@ -127,6 +127,9 @@ not reset it, and delivery reads the latest revision and sync flags. New-batch
 enqueue, idle (`active=false` and `enriching=false`), `publishChange()` (including
 pin/rename and event-driven writes), and stop bypass the window and cancel its
 pending delivery. These immediate edges are exceptions to the 500ms rate bound.
+Only a `publishChange()` broadcast carries `cause: 'change'`; it replaces any
+pending progress tip and the event-stream sink forwards it unchanged. Progress,
+enqueue, idle and stop tips omit cause, so the marker cannot leak into later tips.
 Stop publishes idle with interrupted directories marked failed; late worker
 cleanup cannot emit another revision or leave a pending tip timer. Internal
 revision increments and `waitForChange` delivery remain immediate, including the
@@ -137,6 +140,9 @@ The shared renderer independently throttles busy tips to a fixed 1000ms window
 for compatibility with older Hosts. Idle/legacy tips use 100ms debounce and
 shorten a pending busy deadline without extending it. Stream-ready and safety
 timeout repair retain their existing behavior; GET remains authoritative.
+`cause: 'change'` also selects that 100ms/earlier-deadline path while busy, keeping
+external writes responsive. Unknown causes are ignored by the client parser;
+Hosts without cause retain the existing progress-throttling behavior.
 
 The OpenCode proxy calls `noteInteractiveRequest()` for selected-session reads
 and mutations. That aborts the current background list, yields for one second,

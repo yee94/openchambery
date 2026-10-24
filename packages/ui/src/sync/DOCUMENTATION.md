@@ -684,6 +684,11 @@ The Host coalesces background progress tips in fixed 500ms trailing windows and
 flushes the latest revision immediately on a new batch, idle, external changes
 such as pin/rename, or stop. Internal revisions and long-poll waiters still advance
 on every change; tip coalescing never replaces authoritative snapshots.
+External writes carry the optional `cause: 'change'` on their immediate Host
+tip. The parser only accepts this value and ignores unknown causes without
+rejecting the event. These tips take the 100ms debounce/earlier-deadline path even
+while sync or enrichment is busy, so pin/rename/archive changes do not wait for
+the 1000ms progress window. Older Hosts without cause retain the busy-tip policy.
 Successful non-null POST/GET snapshots write back through the Query helper so
 memory and the runtimeKey persistent seed stay aligned.
 
