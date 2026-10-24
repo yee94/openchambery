@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.9-beta.2] - 2026-10-24
+
+### 改进
+
+- 中继隧道对 JSON 响应启用 gzip 压缩后再加密传输，会话列表等大响应在远程访问时更快；SSE 与二进制资源不压缩，旧客户端与旧主机保持原有帧格式。
+- 会话索引的增量刷新会带上事件修订号，避免重复拉取同一份快照。
+- 分支列表改为纯本地读取，不再逐远程执行 ls-remote，远端离线时也不会隐藏或阻塞分支显示。
+
 ## [2.1.9-beta.1] - 2026-10-24
 
 ### 改进

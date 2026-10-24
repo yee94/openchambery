@@ -677,6 +677,12 @@ transport and cancellation owner, and `waitForSessionIndexInvalidation` debounce
 Successful non-null POST/GET snapshots write back through the Query helper so
 memory and the runtimeKey persistent seed stay aligned.
 
+Tip-driven observers use `ensureSessionIndexRevisionQuery` with the latest live
+SSE revision watermark. A completed, non-invalidated live Query snapshot already
+covering that revision is shared even if another observer's GET has finished.
+Disk seeds (`dataUpdatedAt: 0`) never satisfy this check. Newer tips, reconnect,
+timeout and explicit refresh still read authority; no TTL suppresses revisions.
+
 The startup observer in `startSessionIndexStartup` never exits — it keeps
 watching for later tips — so it disables the wait hang-break
 (`safetyTimeoutMs: null`) whenever server sync is idle. An armed hang-break
@@ -691,6 +697,17 @@ Password-gated runtimes force a fresh settings hydration after authentication
 and keep the app tree behind the auth gate until persisted project paths have
 been applied. This prevents a pre-authenticated `401` settings request from
 becoming the cached startup result consumed by the session coordinator.
+
+## Empty queue bootstrap
+
+Queue snapshot descriptors authoritatively include `itemCount` at their revision.
+`message-queue-server-runtime.ts` materializes zero-count descriptors as complete
+empty scopes without a detail GET; non-empty scopes still page and validate all
+items. This applies to bootstrap, tip catch-up and snapshot-backed mutation repair.
+Supplied first pages retain normal validation. Failed snapshots preserve prior
+scopes, and runtime/generation/revision fences still reject stale commits. The
+128-scope regression checks zero empty-detail requests and populated→empty→retry
+transitions, including failed refresh preservation.
 
 ## Session message loading
 

@@ -2,7 +2,8 @@
 // responder side is built from the SAME protocol modules (createHostHandshake +
 // the tunnel codec). No network, no real WebSocket.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { gzipSync } from 'node:zlib';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import {
   exportPublicKeyJwk,
@@ -101,6 +102,7 @@ type EventsFixture = {
 };
 
 type MiniHostOptions = {
+  compressedBody?: Uint8Array;
   silent?: boolean;
   onConnect?: () => void;
   // Delay handling of the first inbound text frame: with a delay longer than
@@ -187,6 +189,12 @@ const attachMiniHost = (endpoint: FakeEndpoint, hostPrivateKey: CryptoKey, optio
       const streamId = frame.streamId;
       if (path === '/health') {
         respondJson(streamId, 200, { ok: true });
+      } else if (path === '/compressed' || path === '/compressed-open') {
+        sendFrame(encodeTunnelFrame(TunnelFrameType.HttpResponse, streamId, encodeJsonPayload({
+          status: 200, headers: { 'content-type': 'application/json' }, encoding: 'gzip',
+        })));
+        sendFrame(encodeTunnelFrame(TunnelFrameType.HttpBody, streamId, options.compressedBody ?? new Uint8Array(0)));
+        if (path === '/compressed') sendFrame(encodeTunnelFrame(TunnelFrameType.StreamEnd, streamId, new Uint8Array(0)));
       } else if (path === '/echo-body') {
         sendFrame(encodeTunnelFrame(TunnelFrameType.HttpResponse, streamId, encodeJsonPayload({ status: 200, headers: {} })));
         sendFrame(encodeTunnelFrame(TunnelFrameType.HttpBody, streamId, body));
@@ -382,6 +390,7 @@ let openClients: RelayTunnelClient[] = [];
 afterEach(() => {
   for (const client of openClients) client.close();
   openClients = [];
+  vi.unstubAllGlobals();
 });
 
 const track = (client: RelayTunnelClient): RelayTunnelClient => {
@@ -390,6 +399,47 @@ const track = (client: RelayTunnelClient): RelayTunnelClient => {
 };
 
 describe('createRelayTunnelClient', () => {
+  test('decompresses negotiated JSON and rejects corrupt compressed bodies', async () => {
+    const payload = { sessions: Array.from({ length: 128 }, (_, id) => ({ id, title: 'Session' })) };
+    const { client } = await setupClient({ compressedBody: gzipSync(JSON.stringify(payload)) });
+    track(client);
+    const response = await client.fetch('/compressed');
+    expect(await response.json()).toEqual(payload);
+    expect(response.headers.get('content-encoding')).toBeNull();
+    const broken = await setupClient({ compressedBody: textEncoder.encode('not gzip') });
+    track(broken.client);
+    await expect((await broken.client.fetch('/compressed')).text()).rejects.toThrow();
+    expect(await (await broken.client.fetch('/health')).json()).toEqual({ ok: true });
+  });
+
+  test('aborts compressed body reads and propagates cancellation to the host', async () => {
+    const aborted: number[] = [];
+    const { client } = await setupClient({ compressedBody: gzipSync('{"ok":true}'), onAbort: (id) => aborted.push(id) });
+    track(client);
+    const controller = new AbortController();
+    const response = await client.fetch('/compressed-open', { signal: controller.signal });
+    const body = response.text();
+    controller.abort();
+    await expect(body).rejects.toThrow();
+    await wait(10);
+    expect(aborted).toHaveLength(1);
+
+    const cancelled = await client.fetch('/compressed-open');
+    await cancelled.body!.cancel();
+    await wait(10);
+    expect(aborted).toHaveLength(2);
+  });
+
+  test('clients without decompression support keep legacy requests', async () => {
+    vi.stubGlobal('DecompressionStream', undefined);
+    const frames: TunnelFrame[] = [];
+    const { client } = await setupClient({ recordFrame: (frame) => frames.push(frame) });
+    track(client);
+    expect(await (await client.fetch('/health')).json()).toEqual({ ok: true });
+    const request = frames.find((frame) => frame.frameType === TunnelFrameType.HttpRequest)!;
+    expect(JSON.parse(textDecoder.decode(request.payload)).acceptEncoding).toBeUndefined();
+  });
+
   test('performs concurrent fetches over one tunnel', async () => {
     const { client } = await setupClient();
     track(client);

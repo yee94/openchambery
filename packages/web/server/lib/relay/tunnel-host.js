@@ -258,11 +258,21 @@ export const createTunnelHost = ({
       if (STRIPPED_RESPONSE_HEADERS.has(name)) continue;
       responseHeaders[name] = value;
     }
-    await sendJson(TunnelFrameType.HttpResponse, streamId, { status: response.status, headers: responseHeaders });
-
     try {
-      if (response.body) {
-        for await (const chunk of response.body) {
+      const contentType = (response.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
+      const contentLength = response.headers.has('content-encoding') ? null : response.headers.get('content-length');
+      // Compress finite JSON responses before encryption, never SSE or binary assets.
+      // Old clients omit acceptEncoding and old hosts ignore it, preserving v1 framing.
+      const gzip = request.acceptEncoding === 'gzip' && typeof CompressionStream === 'function'
+        && method !== 'HEAD' && response.body !== null
+        && (contentType === 'application/json' || /^application\/[^/]+\+json$/.test(contentType))
+        && (contentLength === null || Number(contentLength) >= 1024);
+      const body = gzip ? response.body.pipeThrough(new CompressionStream('gzip')) : response.body;
+      await sendJson(TunnelFrameType.HttpResponse, streamId, {
+        status: response.status, headers: responseHeaders, ...(gzip ? { encoding: 'gzip' } : {}),
+      });
+      if (body) {
+        for await (const chunk of body) {
           if (closed || stream.abort.signal.aborted) return;
           const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
           for (const piece of chunkPayload(bytes, MAX_TUNNEL_PAYLOAD_BYTES)) {

@@ -1,9 +1,59 @@
-import { expect, test } from 'bun:test';
+import { expect, test } from 'vitest';
 import { MessageQueueServerError, type MessageQueueScope } from '@/lib/message-queue-server';
 import { createMessageQueueServerRuntime } from './message-queue-server-runtime';
 
 const descriptor = { scopeID: 'scope-a', revision: 1, directory: '/repo', sessionID: 'session-a', worktreeState: 'active', itemCount: 1 };
 const item = { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'queued', status: 'queued', attemptCount: 0, position: 0, rowVersion: 1, createdAt: 1 };
+
+test('hydrates 128 authoritative empty scopes without detail requests and follows later revisions', async () => {
+  const cache = new Map<string, unknown>();
+  const client = {
+    setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value),
+    getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined,
+    removeQueries: () => {},
+    invalidateQueries: async () => {},
+  };
+  let revision = 1, populated = false, fail = false, scopeReads = 0;
+  const scopes = () => Array.from({ length: 128 }, (_, i) => ({
+    ...descriptor, scopeID: `scope-${i}`, sessionID: `session-${i}`, revision,
+    itemCount: populated && i === 0 ? 1 : 0,
+  }));
+  const runtime = createMessageQueueServerRuntime({
+    client: client as never,
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }),
+    current: () => true,
+    status: async () => ({ capability: true }),
+    snapshot: async () => {
+      if (fail) throw new Error('offline');
+      return { revision, scopes: scopes(), worktreeOrders: [] };
+    },
+    scope: async (scopeID) => {
+      scopeReads++;
+      const scope = scopes().find((entry) => entry.scopeID === scopeID)!;
+      return { ...scope, items: scope.itemCount ? [item] : [] };
+    },
+  });
+  const target = { transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-0' };
+  await runtime.refresh();
+  expect(scopeReads).toBe(0);
+  expect(runtime.getState().hydration).toBe('ready');
+  expect(runtime.getState().scopes.size).toBe(128);
+  expect(runtime.getScope(target)?.items).toEqual([]);
+
+  revision++; populated = true;
+  await runtime.refresh();
+  expect(scopeReads).toBe(1);
+  expect(runtime.getScope(target)?.items).toEqual([item]);
+  const complete = runtime.getScope(target);
+  fail = true; populated = false; revision++;
+  await runtime.refresh();
+  expect(runtime.getScope(target)).toBe(complete);
+  fail = false;
+  await runtime.refresh();
+  expect(scopeReads).toBe(1);
+  expect(runtime.getScope(target)?.items).toEqual([]);
+  expect(runtime.getScope(target)?.revision).toBe(3);
+});
 
 test('writes successful status, catalog, and complete scope into transport Query keys', async () => {
   const cache = new Map<string, unknown>();
@@ -745,7 +795,7 @@ test('SSE-authoritative scope before POST acknowledgement clears the pending sha
   await runtime.refresh();
   expect(await runtime.admit({ requestID: 'sse-first', scope: { directory: '/repo', sessionID: 'session-a' }, item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'queued', attachmentIssues: [], createdAt: 1 } })).toEqual({ status: 'committed' });
   for (let attempt = 0; attempt < 20 && runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' }).length; attempt++) await Promise.resolve();
-  expect(scopeCalls).toBe(1);
+  expect(scopeCalls).toBe(0);
   expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })).toEqual([]);
 });
 

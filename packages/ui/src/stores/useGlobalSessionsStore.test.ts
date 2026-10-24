@@ -12,12 +12,17 @@ type OpenChamberEvent = {
   sync?: { active: boolean; enriching: boolean };
 };
 const tipListeners = new Set<(event: OpenChamberEvent) => void>();
+let latestIndexRevision: number | undefined;
 /** Deliver a tip (or ready) event to every active OpenChamber tip subscriber. */
 const emitOpenchamberTip = (event: OpenChamberEvent) => {
+  if (event.type === 'session-index-changed' && event.revision !== undefined) {
+    latestIndexRevision = Math.max(latestIndexRevision ?? 0, event.revision);
+  }
   for (const listener of [...tipListeners]) listener(event);
 };
 const realOpenchamberEvents = await import('@/lib/openchamberEvents');
 mock.module('@/lib/openchamberEvents', () => ({
+  getLatestOpenchamberEventRevision: () => latestIndexRevision,
   subscribeOpenchamberEvents: (listener: (event: OpenChamberEvent) => void) => {
     tipListeners.add(listener);
     return () => { tipListeners.delete(listener); };
@@ -96,6 +101,7 @@ describe('useGlobalSessionsStore', () => {
   });
   beforeEach(async () => {
     tipListeners.clear();
+    latestIndexRevision = undefined;
     resetOpenCodeReadiness();
     const { queryClient } = await import('@/lib/queryRuntime');
     queryClient.clear();

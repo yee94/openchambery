@@ -75,6 +75,26 @@ See also `packages/web/server/lib/opencode/DOCUMENTATION.md` (“Catalog / OpenC
 4. **Handshake.** Over that connection pair, client and host run the E2EE handshake and derive a shared encrypted channel the relay cannot read.
 5. **Traffic.** All normal app traffic is multiplexed and encrypted through that channel. On the host, decrypted requests are dispatched to the local server over loopback; responses stream back encrypted. Reconnects re-establish a fresh channel and the app's existing retry machinery recovers.
 
+## Negotiated JSON response compression
+
+Each HTTP request may advertise `acceptEncoding: 'gzip'` in its tunnel JSON head
+when the client supports `DecompressionStream`. The Host may then set
+`encoding: 'gzip'` on the response head and stream gzip bytes as ordinary HttpBody
+frames **before encryption**. The client decompresses before exposing its Fetch
+Response; HTTP headers describe the decoded body, with no compressed content-length
+or content-encoding leaked to callers. Wire framing, batching and crypto counters
+are unchanged. Old Hosts ignore the opt-in; old clients (including native Android
+notifications) omit it and receive uncompressed bodies.
+
+Only application/json and application/*+json bodies qualify. Known decoded bodies
+under 1 KiB, HEAD/no-body responses, SSE and binary assets are not compressed.
+Unknown-length JSON is streamed rather than buffered in full; loopback fetch's
+automatic decompression is accounted for before checking length. Cancellation and
+errors propagate through the stream pipeline. Host tests cover negotiation and
+legacy/SSE/binary exclusions; client tests cover malformed gzip and cancellation;
+the authenticated compiled-Relay integration test checks decoded snapshot fidelity
+and encrypted wire-byte reduction on 4,000 session summaries.
+
 ## Candidate refresh (staying off the relay when direct works)
 
 Pairing-payload transport candidates are a snapshot: when DHCP hands the host
