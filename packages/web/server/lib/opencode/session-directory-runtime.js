@@ -8,6 +8,7 @@ const directoryOf = (session) => session?.location?.directory ?? session?.direct
 export const createSessionDirectoryRuntime = ({
   getRuntimeUrl,
   realpath = fs.realpathSync.native,
+  stat = fs.promises.stat,
   fetchFn = (...args) => globalThis.fetch(...args),
   now = Date.now,
 } = {}) => {
@@ -38,6 +39,18 @@ export const createSessionDirectoryRuntime = ({
     return resolved;
   };
   const resolveDirectory = (value) => localPath(value) ?? normalize(value);
+  const isDirectoryMissing = async (value) => {
+    const input = normalize(value);
+    if (!input || !isLocal()) return false;
+    const runtime = scope;
+    try {
+      await stat(input);
+      return false;
+    } catch (error) {
+      // Permission and I/O failures are not proof of deletion.
+      return error?.code === 'ENOENT' && isLocal() && scope === runtime;
+    }
+  };
   const projectSession = (session) => {
     if (!session || typeof session !== 'object') return session;
     const directory = resolveDirectory(directoryOf(session));
@@ -106,5 +119,5 @@ export const createSessionDirectoryRuntime = ({
     headers.set('content-type', 'application/json');
     return new Response(JSON.stringify(body), { status: response.status, headers });
   };
-  return { isLocal, resolveDirectory, projectSession, projectEvent, fetchSessionList };
+  return { isLocal, resolveDirectory, isDirectoryMissing, projectSession, projectEvent, fetchSessionList };
 };

@@ -1638,6 +1638,7 @@ async function main(options = {}) {
     getOpenCodeAuthHeaders,
     waitForOpenCodeReady,
     fetchFn: indexSessionDirectories.fetchSessionList,
+    isDirectoryMissing: indexSessionDirectories.isDirectoryMissing,
     resolveDirectory: indexSessionDirectories.resolveDirectory,
     projectSessions: (sessions) => {
       const snap = sessionMetadataStore.getSnapshotSync();

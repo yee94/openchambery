@@ -24,6 +24,68 @@ const session = (id, directory, updated = 1) => ({ id, title: id, location: { di
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 
 describe('physical session directory identity', () => {
+  it('checks deletion only on the owning local runtime and preserves uncertain failures', async () => {
+    let url = 'http://127.0.0.1:4000';
+    const stat = vi.fn(async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); });
+    const runtime = createSessionDirectoryRuntime({ getRuntimeUrl: () => url, stat });
+    expect(await runtime.isDirectoryMissing('/repo')).toBe(true);
+    stat.mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }));
+    expect(await runtime.isDirectoryMissing('/repo')).toBe(false);
+    stat.mockRejectedValueOnce(Object.assign(new Error('I/O'), { code: 'EIO' }));
+    expect(await runtime.isDirectoryMissing('/repo')).toBe(false);
+    url = 'https://remote.example';
+    stat.mockClear();
+    expect(await runtime.isDirectoryMissing('/repo')).toBe(false);
+    expect(stat).not.toHaveBeenCalled();
+    url = 'http://127.0.0.1:4000';
+    stat.mockImplementationOnce(async () => {
+      url = 'https://remote.example';
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    });
+    expect(await runtime.isDirectoryMissing('/repo')).toBe(false);
+  });
+
+  it('cleans missing empty directories, skips scans without losing history, and recovers restored paths', async () => {
+    const { real, other } = fixture();
+    const missing = path.join(other, 'deleted');
+    const history = path.join(other, 'history');
+    const partial = path.join(other, 'partial');
+    const child = path.join(other, 'child');
+    const directories = createSessionDirectoryRuntime();
+    const service = createSessionIndexService({ dbPath: ':memory:' });
+    for (const directory of [real, missing, history, partial, child]) {
+      service.replaceDirectory({ directory, sessions: directory === history ? [session('old', history)] : [], hasMore: directory === partial });
+    }
+    service.replaceChildSessions(child, 'parent', [{ id: 'child' }]);
+    service.setPinned('old', 1);
+    const fetchFn = vi.fn(async () => json([]));
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      isDirectoryMissing: directories.isDirectoryMissing,
+      buildOpenCodeUrl: (route) => `http://localhost${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchFn,
+    });
+    try {
+      await vi.waitFor(() => expect(service.snapshot().directories.map(x => x.directory)).not.toContain(missing));
+      expect(service.snapshot().directories.map(x => x.directory)).toEqual(expect.arrayContaining([real, history, partial, child]));
+      runtime.enqueue([missing, history, partial, child]);
+      await vi.waitFor(() => expect(runtime.snapshot().sync.active).toBe(false));
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect(service.findBySessionId('old')).toBeTruthy();
+      expect(service.snapshot().pinnedSessionIds).toEqual(['old']);
+      expect(service.snapshot().directories.map(x => x.directory)).not.toContain(missing);
+      fs.mkdirSync(missing);
+      runtime.enqueue([missing]);
+      await vi.waitFor(() => expect(runtime.snapshot().sync.active).toBe(false));
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      expect(service.snapshot().directories.map(x => x.directory)).toContain(missing);
+    } finally {
+      runtime.stop();
+      service.close();
+    }
+  });
+
   it('recovers unindexed alias history across pages without admitting another worktree', async () => {
     const { real, alias, other } = fixture();
     const requests = [];
