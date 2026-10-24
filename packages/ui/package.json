@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/ui",
-  "version": "2.1.9",
+  "version": "2.1.10-beta.1",
   "private": true,
   "type": "module",
   "main": "src/main.tsx",
@@ -67,6 +67,7 @@
     "dompurify": "^3.2.7",
     "express": "^5.1.0",
     "fuse.js": "^7.1.0",
+    "fuzzysort": "3.1.0",
     "ghostty-web": "^0.4.0",
     "heic2any": "^0.0.4",
     "html-to-image": "^1.11.13",

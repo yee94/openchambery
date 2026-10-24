@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useEvent } from '@reactuses/core';
-import { generatedAvatarDataUri } from '@/lib/generatedAvatar';
+import { generatedAvatarDataUri, resolveAgentAvatarColors } from '@/lib/generatedAvatar';
+import { getAgentColor } from '@/lib/agentColors';
+import { DualLimitLru } from '@/lib/dualLimitLru';
+import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useAgentAvatarPalette } from '@/lib/useAgentAvatarPalette';
 
 import { findAttachmentCitationRanges } from '@/components/chat/attachmentCitations';
@@ -36,14 +39,14 @@ import {
   type NativeIosComposerState,
 } from '@/lib/native-ios-composer';
 
-const nativeSuggestionIconCache = new Map<string, string>();
+const nativeSuggestionIconCache = new DualLimitLru<string, string>({ maxEntries: 128, maxBytes: 1024 * 1024 });
 
 const autocompleteRowSignature = (
   rows: readonly ComposerAutocompleteListRow[],
   open: boolean,
   highlightedIndex: number,
 ): string => `${open ? 1 : 0}:${highlightedIndex}:${rows.map((row) => (
-  `${row.id}\0${row.title}\0${row.subtitle ?? ''}\0${row.badge ?? ''}\0${row.iconName}`
+  `${row.id}\0${row.title}\0${row.subtitle ?? ''}\0${row.badge ?? ''}\0${row.iconName}\0${row.agentName ?? ''}`
 )).join('|')}`;
 
 const rasterizeAutocompleteRows = async (
@@ -51,11 +54,16 @@ const rasterizeAutocompleteRows = async (
 ): Promise<NativeIosComposerAutocomplete['rows']> => {
   const color = resolveCssVarToHex('--surface-foreground');
   return Promise.all(rows.slice(0, 40).map(async (row) => {
-    const cacheKey = `${row.iconName}:${color}`;
+    const palette = row.agentName !== undefined
+      ? resolveAgentAvatarColors(getAgentColor(row.agentName).var, resolveCssVarToHex)
+      : undefined;
+    const cacheKey = JSON.stringify([row.iconName, color, row.agentName, palette?.background]);
     let iconBase64 = nativeSuggestionIconCache.get(cacheKey);
     if (iconBase64 === undefined) {
-      iconBase64 = (await rasterizeSpriteIconPngBase64(row.iconName, color)) ?? '';
-      nativeSuggestionIconCache.set(cacheKey, iconBase64);
+      iconBase64 = (await (row.agentName !== undefined
+        ? rasterizeLogoPngBase64(generatedAvatarDataUri('agent', row.agentName, false, palette))
+        : rasterizeSpriteIconPngBase64(row.iconName, color))) ?? '';
+      if (iconBase64) nativeSuggestionIconCache.set(cacheKey, iconBase64, (cacheKey.length + iconBase64.length) * 2);
     }
     return {
       id: row.id,
@@ -148,6 +156,7 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
   const modelIconRef = useRef('');
   const agentIconRef = useRef('');
   const agentPalette = useAgentAvatarPalette(args.agentName);
+  const suggestionTheme = useOptionalThemeSystem()?.currentTheme;
   const previewRef = useRef<NativeIosComposerAttachmentPreview[]>([]);
   const autocompleteRef = useRef<NativeIosComposerAutocomplete>(emptyNativeComposerAutocomplete());
 
@@ -396,7 +405,7 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
       void getNativeIosComposerPlugin().update({ autocomplete: next });
     });
     return () => { cancelled = true; };
-  }, [available, suggestionSignature]);
+  }, [available, suggestionSignature, suggestionTheme]);
 
   const chipRangeSignature = available
     ? nativeComposerChipSpecsFromHighlights(args.text, args.chipHighlights).map((spec) => (

@@ -9,6 +9,45 @@ import { spriteIconSvgMarkup } from './rasterize-icon';
 import { buildMentionRows, buildSkillRows, buildSlashCommandRows } from './rows';
 
 describe('composer autocomplete icons and rows', () => {
+  test.each(['ge', 'gene'])('ranks @%s names across types, excluding description-only matches', (searchQuery) => {
+    const rows = buildMentionRows({
+      searchQuery,
+      agents: [{ name: 'general' }],
+      skills: [
+        { name: 'gpt-image-generator', scope: 'user' },
+        { name: 'poe-image-generator', scope: 'user' },
+        { name: 'wxa-skills-generate', scope: 'user' },
+        { name: 'agent-tracker-api', scope: 'user' },
+        { name: 'comic-illustration', scope: 'user', description: 'generate images' },
+      ],
+      sessions: [], recentFiles: [],
+      pathHits: [{ path: '/repo/generate.ts', name: 'generate.ts' }],
+      untitledSession: 'Untitled',
+    });
+    expect(rows[0]).toMatchObject({ title: '@general', agentName: 'general' });
+    const skillNames = rows.filter((row) => row.id.startsWith('skill:')).map((row) => row.title);
+    // These two names tie in fuzzysort; their order depends on the complete catalog.
+    expect(skillNames.slice(0, 2).sort()).toEqual(['@gpt-image-generator', '@poe-image-generator']);
+    expect(skillNames.slice(2)).toEqual(searchQuery === 'ge'
+      ? ['@wxa-skills-generate', '@agent-tracker-api']
+      : ['@wxa-skills-generate']);
+    expect(rows.map((row) => row.title)).not.toContain('@comic-illustration');
+    expect(rows.at(-1)?.title).toBe('generate.ts');
+  });
+
+  test('lets an exact skill outrank a partial agent and bounds a 300-entry catalog', () => {
+    const rows = buildMentionRows({
+      searchQuery: 'general',
+      agents: [{ name: 'general-helper' }],
+      skills: [{ name: 'general', scope: 'user' }, ...Array.from({ length: 300 }, (_, i) => ({
+        name: `general-${i}`, scope: 'project',
+      }))],
+      sessions: [], recentFiles: [], pathHits: [], untitledSession: 'Untitled',
+    });
+    expect(rows).toHaveLength(10);
+    expect(rows[0]?.id).toBe('skill:general-user');
+  });
+
   test('maps slash command names to sprite icons', () => {
     expect(resolveSlashCommandIconName({ name: 'undo' })).toBe('arrow-go-back');
     expect(resolveSlashCommandIconName({ name: 'new' })).toBe('add');
@@ -59,14 +98,14 @@ describe('composer autocomplete icons and rows', () => {
     expect(mentionRows.map((row) => row.id)).toEqual([
       'skill:review-project',
       'agent:explore',
-      'session:ses_1',
       'recent:/repo/a.ts',
       'file:/repo/src',
+      'session:ses_1',
     ]);
     expect(mentionRows[0]?.title).toBe('@review');
     expect(mentionRows[0]?.iconName).toBe('book-open');
     expect(mentionRows[1]?.title).toBe('@explore');
-    expect(mentionRows[4]?.iconName).toBe('folder-3-fill');
+    expect(mentionRows[3]?.iconName).toBe('folder-3-fill');
   });
 
   test('builds standalone SVG markup from the sprite', () => {

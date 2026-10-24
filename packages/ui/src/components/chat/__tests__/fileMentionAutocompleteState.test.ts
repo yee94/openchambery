@@ -9,7 +9,6 @@ import {
     getSessionMentionToken,
     getVisibleSessionMentionCandidates,
     mergeAndRankFileMentionPathHits,
-    rankAgentMentionCandidates,
     rankRecentFileMentionCandidates,
     replaceSessionMentionTokens,
     resolveSessionMentionDeletion,
@@ -209,18 +208,6 @@ describe('rankRecentFileMentionCandidates', () => {
             'src/search.ts',
             'packages/search-utils/readme.md',
         ]);
-    });
-});
-
-describe('rankAgentMentionCandidates', () => {
-    test('drops unmatched agents and ranks exact name ahead of a description hit', () => {
-        const ranked = rankAgentMentionCandidates([
-            { name: 'explore', description: 'look around' },
-            { name: 'build', description: 'compile search hits' },
-            { name: 'search', description: 'find files' },
-        ], 'search');
-
-        expect(ranked.map((agent) => agent.name)).toEqual(['search', 'build']);
     });
 });
 

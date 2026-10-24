@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import { rankSkillsForQuery } from './skill-rank';
 import { rankCommandsForQuery } from './slash-rank';
 
 describe('rankCommandsForQuery', () => {
@@ -21,24 +20,5 @@ describe('rankCommandsForQuery', () => {
   test('fuzzy-matches name and description', () => {
     expect(rankCommandsForQuery(commands, 'und')[0]?.name).toBe('undo');
     expect(rankCommandsForQuery(commands, 'repeat')[0]?.name).toBe('loop');
-  });
-});
-
-describe('rankSkillsForQuery', () => {
-  const skills = [
-    { name: 'review', description: 'review the diff', scope: 'user' },
-    { name: 'release', description: 'cut a beta', scope: 'project' },
-  ];
-
-  test('lists project skills first when the query is empty', () => {
-    expect(rankSkillsForQuery(skills, '').map((item) => item.name)).toEqual([
-      'release',
-      'review',
-    ]);
-  });
-
-  test('fuzzy-matches skill name and description', () => {
-    expect(rankSkillsForQuery(skills, 'beta')[0]?.name).toBe('release');
-    expect(rankSkillsForQuery(skills, 'rev')[0]?.name).toBe('review');
   });
 });
