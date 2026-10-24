@@ -189,6 +189,10 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     publish({ scopes: next }); notifyScopes(previous, next, capture.transportIdentity);
   };
   const loadScope = async (descriptor: MessageQueueScopeDescriptor, capture: MessageQueueServerRuntimeCapture, signal: AbortSignal, initialPage?: MessageQueueScope): Promise<MessageQueueScope> => {
+    signal.throwIfAborted();
+    // Snapshot descriptors carry authoritative counts at their revision. An empty
+    // scope is already complete; keep supplied pages on the validation path below.
+    if (descriptor.itemCount === 0 && !initialPage) return { ...descriptor, items: [] };
     let offset = 0, expectedRevision: number | undefined, first: MessageQueueScope | undefined;
     const items: MessageQueueItem[] = [];
     do {

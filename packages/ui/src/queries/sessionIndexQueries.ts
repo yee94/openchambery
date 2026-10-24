@@ -134,3 +134,18 @@ export const refreshSessionIndexSnapshotQuery = (
   client.getQueryCache().build(client as QueryClient, options);
   return client.fetchQuery(options);
 };
+
+/** A revision tip can reuse a live snapshot already fetched by another observer. */
+export const ensureSessionIndexRevisionQuery = (
+  minimumRevision: number,
+  client: Pick<QueryClient, 'getQueryState' | 'fetchQuery' | 'getQueryCache'> = queryClient,
+  transport = getRuntimeTransportIdentity(),
+  runtimeKey = getRuntimeKey(),
+  storage: SessionIndexStartupStorage = getDeferredSafeStorage(),
+  load: SessionIndexSnapshotLoader = loadSessionIndexSnapshot,
+): Promise<SessionIndexSnapshot | null> => {
+  const cached = client.getQueryState<SessionIndexSnapshot | null>(snapshotKey(transport));
+  if (cached?.data && cached.dataUpdatedAt > 0 && !cached.isInvalidated
+    && cached.data.revision >= minimumRevision) return Promise.resolve(cached.data);
+  return refreshSessionIndexSnapshotQuery(client, transport, runtimeKey, storage, load);
+};

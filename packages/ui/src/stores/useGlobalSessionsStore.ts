@@ -16,7 +16,9 @@ import {
 } from '@/lib/session-index-api';
 import { normalizePath } from '@/lib/pathNormalization';
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { getLatestOpenchamberEventRevision } from '@/lib/openchamberEvents';
 import {
+  ensureSessionIndexRevisionQuery,
   refreshSessionIndexSnapshotQuery,
   seedSessionIndexSnapshotQuery,
   writeSessionIndexSnapshotQuery,
@@ -1456,7 +1458,10 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         while (!controller.signal.aborted && isCurrentSessionIndexRuntime(runtime)) {
           const loadRuntime = captureSessionIndexRuntime();
           try {
-            loaded = await refreshSessionIndexSnapshotQuery();
+            const revision = reason === 'tip' ? getLatestOpenchamberEventRevision('session-index-changed') : undefined;
+            loaded = revision !== undefined && revision > current.revision
+              ? await ensureSessionIndexRevisionQuery(revision)
+              : await refreshSessionIndexSnapshotQuery();
           } catch {
             // Keep the last successful `current` (and store projection) intact.
             if (controller.signal.aborted || !isCurrentSessionIndexRuntime(runtime)) {
@@ -1798,7 +1803,10 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         const loadRuntime = captureSessionIndexRuntime();
         let next: SessionIndexSnapshot | null;
         try {
-          next = await refreshSessionIndexSnapshotQuery();
+          const revision = reason === 'tip' ? getLatestOpenchamberEventRevision('session-index-changed') : undefined;
+          next = revision !== undefined && revision > current.revision
+            ? await ensureSessionIndexRevisionQuery(revision)
+            : await refreshSessionIndexSnapshotQuery();
         } catch {
           break;
         }

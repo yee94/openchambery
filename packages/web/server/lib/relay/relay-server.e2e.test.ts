@@ -36,6 +36,9 @@ import { requestSpeechSession } from '../../../../ui/src/lib/voice/direct-sessio
 
 const timeoutMs = 10_000;
 const previewPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64');
+const initializationSnapshot = { sessions: Array.from({ length: 4000 }, (_, id) => ({
+  id: `session-${id}`, title: `Session ${id}`, directory: '/repo/project', time: { created: 1000, updated: 2000 },
+})) };
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const eventually = async (predicate: () => boolean | Promise<boolean>, message: string, timeout = timeoutMs) => {
@@ -213,6 +216,10 @@ const startOrigin = async () => {
           bearerRequests.push(String(req.headers.authorization ?? ''));
           res.json({ body: await readBody(req), hasRelayConnection: Boolean(req.headers['x-openchamber-relay-connection']) });
         });
+        return;
+      }
+      if (pathname === '/api/e2e/initialization' && req.method === 'GET') {
+        await uiAuth.requireAuth(req, res, () => res.json(initializationSnapshot));
         return;
       }
       if (pathname === '/api/agent' && req.method === 'GET') {
@@ -401,10 +408,32 @@ describe('private relay compiled-process boundary', () => {
     origin = await startOrigin();
     const identity = await buildIdentity();
     host = startRelayHost({ relayUrl: relay.url, identity, getLocalPort: () => origin.port, onStatus: () => {}, logger: { warn: () => {}, info: () => {} } });
+    let receivedBytes = 0;
     client = createRelayTunnelClient({
       relayUrl: relay.url, serverId: identity.serverId, hostEncPubJwk: identity.hostEncPubJwk,
       helloRetryMs: 50, helloTimeoutMs: 2_000, pingIntervalMs: 500, pingTimeoutMs: 250,
       reconnectBaseDelayMs: 50, reconnectMaxDelayMs: 250, batchWindowMs: 5,
+      createWireSocket: (url) => {
+        const socket = new globalThis.WebSocket(url);
+        socket.binaryType = 'arraybuffer';
+        const wire = {
+          get readyState() { return socket.readyState; },
+          send: (data: string | ArrayBuffer | Uint8Array) => socket.send(data as string | ArrayBuffer),
+          close: (code?: number, reason?: string) => socket.close(code, reason),
+          onopen: null as (() => void) | null,
+          onmessage: null as ((event: { data: unknown }) => void) | null,
+          onclose: null as ((event: { code: number; reason: string }) => void) | null,
+          onerror: null as (() => void) | null,
+        };
+        socket.onopen = () => wire.onopen?.();
+        socket.onmessage = (event) => {
+          receivedBytes += typeof event.data === 'string' ? Buffer.byteLength(event.data) : event.data.byteLength;
+          wire.onmessage?.({ data: event.data });
+        };
+        socket.onclose = (event) => wire.onclose?.({ code: event.code, reason: event.reason });
+        socket.onerror = () => wire.onerror?.();
+        return wire;
+      },
     });
 
     await eventually(() => host!.getStatus().state === 'connected' && client!.getStatus().state === 'connected', 'host and TypeScript client did not connect');
@@ -414,6 +443,12 @@ describe('private relay compiled-process boundary', () => {
     const httpResponse = await client.fetch('/api/e2e/http', { method: 'POST', headers: { authorization: 'Bearer client-token' }, body, duplex: 'half' } as RequestInit);
     expect(httpResponse.status).toBe(200);
     expect(await httpResponse.json()).toEqual({ body: 'stream-body', hasRelayConnection: true });
+
+    const beforeSnapshot = receivedBytes;
+    const compressed = await client.fetch('/api/e2e/initialization', { headers: { authorization: 'Bearer client-token' } });
+    expect(compressed.status).toBe(200);
+    expect(await compressed.json()).toEqual(initializationSnapshot);
+    expect(receivedBytes - beforeSnapshot).toBeLessThan(Buffer.byteLength(JSON.stringify(initializationSnapshot)) / 4);
 
     const sseResponse = await client.fetch('/api/e2e/sse', { headers: { authorization: 'Bearer client-token' } });
     const reader = sseResponse.body!.getReader();

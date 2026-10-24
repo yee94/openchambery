@@ -7,7 +7,7 @@
 // corrupted payload. This test must stay red until send serialization is fixed.
 // Production send path is intentionally not changed here.
 
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   MAX_TUNNEL_PAYLOAD_BYTES,
@@ -67,6 +67,42 @@ const waitFor = async (predicate, { timeoutMs = 2000, intervalMs = 5 } = {}) => 
   }
   throw new Error('waitFor timed out');
 };
+
+describe('negotiated JSON response compression', () => {
+  it.each([
+    { acceptEncoding: 'gzip', contentType: 'application/json', compressed: true },
+    { acceptEncoding: 'gzip', contentType: 'application/problem+json', compressed: true },
+    { acceptEncoding: undefined, contentType: 'application/json', compressed: false },
+    { acceptEncoding: 'gzip', contentType: 'text/event-stream', compressed: false },
+    { acceptEncoding: 'gzip', contentType: 'image/png', compressed: false },
+    { acceptEncoding: 'gzip', contentType: 'application/json', small: true, compressed: false },
+  ])('preserves body and legacy/SSE behavior for $contentType / $acceptEncoding / small=$small', async ({ acceptEncoding, contentType, small, compressed }) => {
+    const text = JSON.stringify({ rows: Array.from({ length: small ? 1 : 4000 }, (_, id) => ({ id, title: 'Session summary', directory: '/repo/project' })) });
+    const raw = textEncoder.encode(text);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(raw, {
+      headers: { 'content-type': contentType, 'content-length': String(raw.byteLength) },
+    }));
+    const frames = [];
+    const host = createTunnelHost({ connectionId: 'compression-test', getLocalPort: () => 9,
+      sendFrame: (frame) => { frames.push(decodeTunnelFrame(frame)); }, getBufferedAmount: () => 0 });
+    try {
+      await host.handleFrame(encodeTunnelFrame(TunnelFrameType.HttpRequest, 1, encodeJsonPayload({
+        method: 'GET', path: '/api/test', query: '', headers: {}, ...(acceptEncoding ? { acceptEncoding } : {}),
+      })));
+      await waitFor(() => frames.some((frame) => frame.frameType === TunnelFrameType.StreamEnd));
+      const head = JSON.parse(textDecoder.decode(frames.find((frame) => frame.frameType === TunnelFrameType.HttpResponse).payload));
+      expect(head.encoding).toBe(compressed ? 'gzip' : undefined);
+      expect(head.headers['content-length']).toBeUndefined();
+      const body = new Blob(frames.filter((frame) => frame.frameType === TunnelFrameType.HttpBody).map((frame) => frame.payload));
+      if (compressed) {
+        expect(body.size).toBeLessThan(raw.byteLength / 4);
+        expect(await new Response(body.stream().pipeThrough(new DecompressionStream('gzip'))).text()).toBe(text);
+      } else {
+        expect(await body.text()).toBe(text);
+      }
+    } finally { host.close(); fetchMock.mockRestore(); }
+  });
+});
 
 describe('isTunnelWsPathAllowed', () => {
   it('allows exact terminal/dictation/event sockets and preview proxy prefix', () => {

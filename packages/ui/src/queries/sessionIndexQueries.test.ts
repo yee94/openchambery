@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import type { SessionIndexSnapshot } from '@/lib/session-index-api';
 import {
+  ensureSessionIndexRevisionQuery,
   ensureSessionIndexSnapshotQuery,
   readSessionIndexSnapshotQuery,
   refreshSessionIndexSnapshotQuery,
@@ -228,5 +229,41 @@ describe('sessionIndexQueries', () => {
     await options.queryFn({ signal: controller.signal });
 
     expect(receivedSignal).toBe(controller.signal);
+  });
+
+  test('shares a completed revision across observers but fetches newer tips and invalidations', async () => {
+    const storage = memoryStorage();
+    let calls = 0, revision = 2;
+    const load = async () => { calls++; return snapshot(revision); };
+    await refreshSessionIndexSnapshotQuery(client, 'transport-a', 'runtime-a', storage, load);
+    for (let i = 0; i < 128; i++) {
+      expect((await ensureSessionIndexRevisionQuery(2, client, 'transport-a', 'runtime-a', storage, load))?.revision).toBe(2);
+    }
+    expect(calls).toBe(1);
+    revision = 3;
+    await Promise.all(Array.from({ length: 8 }, () => ensureSessionIndexRevisionQuery(3, client, 'transport-a', 'runtime-a', storage, load)));
+    expect(calls).toBe(2);
+    await client.invalidateQueries({ queryKey: sessionIndexSnapshotQueryOptions('transport-a').queryKey });
+    await ensureSessionIndexRevisionQuery(3, client, 'transport-a', 'runtime-a', storage, load);
+    expect(calls).toBe(3);
+    await refreshSessionIndexSnapshotQuery(client, 'transport-a', 'runtime-a', storage, load);
+    expect(calls).toBe(4);
+  });
+
+  test('revision reuse never trusts persistent seeds, another transport, or failed refreshes', async () => {
+    const storage = memoryStorage();
+    writeSessionIndexStartupSnapshot('runtime-a', snapshot(20), storage);
+    seedSessionIndexSnapshotQuery(client, 'transport-a', 'runtime-a', storage);
+    let calls = 0;
+    const load = async () => { calls++; return snapshot(21); };
+    await ensureSessionIndexRevisionQuery(20, client, 'transport-a', 'runtime-a', storage, load);
+    await ensureSessionIndexRevisionQuery(20, client, 'transport-b', 'runtime-a', storage, load);
+    expect(calls).toBe(2);
+    await expect(ensureSessionIndexRevisionQuery(22, client, 'transport-a', 'runtime-a', storage, async () => {
+      throw new Error('offline');
+    })).rejects.toThrow('offline');
+    expect(readSessionIndexSnapshotQuery(client, 'transport-a')?.revision).toBe(21);
+    await ensureSessionIndexRevisionQuery(22, client, 'transport-a', 'runtime-a', storage, load);
+    expect(calls).toBe(3);
   });
 });

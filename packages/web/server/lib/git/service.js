@@ -3235,14 +3235,9 @@ export async function getBranches(directory) {
   try {
     const result = await git.branch();
 
-    const allBranches = result.all;
-    const remoteBranches = allBranches.filter(branch => branch.startsWith('remotes/'));
-    const activeRemoteBranches = await filterActiveRemoteBranches(git, remoteBranches);
-
-    const filteredAll = [
-      ...allBranches.filter(branch => !branch.startsWith('remotes/')),
-      ...activeRemoteBranches
-    ];
+    // Listing branches is a local read. Explicit fetch updates remote-tracking
+    // refs; startup must not wait on ls-remote or hide refs when a remote is offline.
+    const filteredAll = result.all.filter(branch => !(branch.startsWith('remotes/') && branch.endsWith('/HEAD')));
 
     return {
       all: filteredAll,
@@ -3252,41 +3247,6 @@ export async function getBranches(directory) {
   } catch (error) {
     console.error('Failed to get branches:', error);
     throw error;
-  }
-}
-
-async function filterActiveRemoteBranches(git, remoteBranches) {
-  try {
-    const remotes = await git.getRemotes();
-    const branchesByRemote = new Map();
-
-    await Promise.all(remotes.map(async (remote) => {
-      try {
-        const lsRemoteResult = await git.raw(['ls-remote', '--heads', remote.name]);
-        const actualRemoteBranches = new Set();
-        const lines = lsRemoteResult.trim().split('\n');
-        for (const line of lines) {
-          if (line.includes('\trefs/heads/')) {
-            const branchName = line.split('\t')[1].replace('refs/heads/', '');
-            actualRemoteBranches.add(branchName);
-          }
-        }
-        branchesByRemote.set(remote.name, actualRemoteBranches);
-      } catch {
-        // Skip remotes that fail (e.g., unreachable)
-      }
-    }));
-
-    return remoteBranches.filter(remoteBranch => {
-      const match = remoteBranch.match(/^remotes\/[^\/]+\/(.+)$/);
-      if (!match) return false;
-      const remoteName = remoteBranch.split('/')[1];
-      const branchName = match[1];
-      return branchesByRemote.get(remoteName)?.has(branchName) ?? false;
-    });
-  } catch (error) {
-    console.warn('Failed to filter active remote branches, returning all:', error.message);
-    return remoteBranches;
   }
 }
 

@@ -226,6 +226,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
   const pingTimeoutMs = options.pingTimeoutMs ?? 15_000;
   const batchWindowMs = options.batchWindowMs ?? DEFAULT_BATCH_WINDOW_MS;
   const advertiseBatch = options.batch !== false;
+  const acceptGzip = typeof DecompressionStream === 'function';
   const reconnectBaseDelayMs = options.reconnectBaseDelayMs ?? 1_000;
   const reconnectMaxDelayMs = options.reconnectMaxDelayMs ?? 30_000;
   const hiddenOrOfflineMaxDelayMs = options.hiddenOrOfflineMaxDelayMs ?? 60_000;
@@ -691,7 +692,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     return await new Promise<Response>((resolve, reject) => {
       let responseDelivered = false;
       let finished = false;
-      let bodyController: ReadableStreamDefaultController<Uint8Array> | null = null;
+      let bodyController: ReadableStreamDefaultController<BufferSource> | null = null;
       let onAbort: (() => void) | null = null;
 
       const cleanupStream = (): void => {
@@ -739,9 +740,14 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
               return;
             }
             const nullBody = head.status === 204 || head.status === 205 || head.status === 304;
-            let body: ReadableStream<Uint8Array> | null = null;
+            if (head.encoding && (!acceptGzip || nullBody)) {
+              sendAbort('unexpected response encoding');
+              finishError(new Error('unexpected response encoding'));
+              return;
+            }
+            let body: ReadableStream<BufferSource> | null = null;
             if (!nullBody) {
-              body = new ReadableStream<Uint8Array>({
+              body = new ReadableStream<BufferSource>({
                 start(controller) {
                   bodyController = controller;
                 },
@@ -754,7 +760,9 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
               });
             }
             responseDelivered = true;
-            resolve(new Response(body, { status: head.status, headers: head.headers }));
+            resolve(new Response(head.encoding === 'gzip' && body
+              ? body.pipeThrough(new DecompressionStream('gzip'))
+              : body, { status: head.status, headers: head.headers }));
             if (nullBody) {
               finished = true;
               cleanupStream();
@@ -764,7 +772,9 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
           if (frameType === TunnelFrameType.HttpBody) {
             if (!responseDelivered || finished) return;
             try {
-              bodyController?.enqueue(payload);
+              bodyController?.enqueue(payload.buffer instanceof ArrayBuffer
+                ? new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength)
+                : new Uint8Array(payload));
             } catch {
               // Consumer already cancelled the stream.
             }
@@ -807,6 +817,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
         path: request.path,
         query: request.query,
         headers: request.headers,
+        ...(acceptGzip ? { acceptEncoding: 'gzip' as const } : {}),
       };
       channel.send(encodeTunnelFrame(TunnelFrameType.HttpRequest, streamId, encodeJsonPayload(head)));
       void (async () => {

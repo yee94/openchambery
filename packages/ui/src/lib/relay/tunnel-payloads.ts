@@ -14,7 +14,8 @@ const isStringRecord = (value: unknown): value is Record<string, string> =>
   isRecord(value) && Object.values(value).every((entry) => typeof entry === 'string');
 
 export const isHttpResponsePayload = (value: unknown): value is TunnelHttpResponsePayload =>
-  isRecord(value) && typeof value.status === 'number' && isStringRecord(value.headers);
+  isRecord(value) && typeof value.status === 'number' && isStringRecord(value.headers)
+  && (value.encoding === undefined || value.encoding === 'gzip');
 
 export const isStreamAbortPayload = (value: unknown): value is TunnelStreamAbortPayload =>
   isRecord(value) && typeof value.reason === 'string';

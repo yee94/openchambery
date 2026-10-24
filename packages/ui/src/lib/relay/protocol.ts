@@ -61,11 +61,14 @@ export interface TunnelHttpRequestPayload {
   path: string;
   query: string;
   headers: Record<string, string>;
+  /** Opt-in response compression inside E2EE; absent for legacy clients. */
+  acceptEncoding?: 'gzip';
 }
 
 export interface TunnelHttpResponsePayload {
   status: number;
   headers: Record<string, string>;
+  encoding?: 'gzip';
 }
 
 export interface TunnelStreamAbortPayload {
@@ -127,4 +130,3 @@ export const RelayCloseCode = {
   RekeyMismatch: 1008,
   ChannelFailure: 1011,
 } as const;
-
