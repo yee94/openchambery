@@ -1,7 +1,7 @@
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 
 // Clear sticky mocks from other suites before installing this file's doubles.
-mock.restore();
+vi.restoreAllMocks();
 
 type OpenChamberEvent = {
   type: string;
@@ -10,20 +10,19 @@ type OpenChamberEvent = {
   sync?: { active: boolean; enriching: boolean };
 };
 
-const tipListeners = new Set<(event: OpenChamberEvent) => void>();
+const { tipListeners } = vi.hoisted(() => ({ tipListeners: new Set<(event: OpenChamberEvent) => void>() }));
 /** Deliver a tip (or ready) event to every active OpenChamber tip subscriber. */
 const emitTip = (event: OpenChamberEvent) => {
   for (const listener of [...tipListeners]) listener(event);
 };
 
-const realOpenchamberEvents = await import('@/lib/openchamberEvents');
-mock.module('@/lib/openchamberEvents', () => ({
+vi.mock('@/lib/openchamberEvents', async (importOriginal) => ({
   subscribeOpenchamberEvents: (listener: (event: OpenChamberEvent) => void) => {
     tipListeners.add(listener);
     return () => { tipListeners.delete(listener); };
   },
   // Keep the real parser so sibling suites can still assert envelope contracts.
-  parseOpenchamberEventEnvelope: realOpenchamberEvents.parseOpenchamberEventEnvelope,
+  parseOpenchamberEventEnvelope: (await importOriginal<typeof import('@/lib/openchamberEvents')>()).parseOpenchamberEventEnvelope,
 }));
 
 import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from './runtime-url';
@@ -54,7 +53,7 @@ describe('session index background transport', () => {
   let requests: Array<{ url: string; init?: RequestInit }>;
 
   afterAll(() => {
-    mock.restore();
+    vi.restoreAllMocks();
   });
   beforeEach(() => {
     tipListeners.clear();
@@ -75,6 +74,7 @@ describe('session index background transport', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     tipListeners.clear();
     setRuntimeUrlResolver(previousResolver);
     Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
@@ -111,6 +111,86 @@ describe('session index background transport', () => {
     emitTip({ type: 'session-index-changed', revision: 3, occurredAt: 2 });
     emitTip({ type: 'session-index-changed', revision: 4, occurredAt: 3 });
     expect(await pending).toBe('tip');
+  });
+
+  test.each([{ active: true, enriching: false }, { active: false, enriching: true }])('throttles busy bursts to one resolution at 1000ms (%o)', async (sync) => {
+    vi.useFakeTimers();
+    const resolved = vi.fn();
+    const pending = waitForSessionIndexInvalidation(1, new AbortController().signal).then(resolved);
+    for (let batch = 0; batch < 10; batch += 1) {
+      for (let index = 0; index < 32; index += 1) {
+        emitTip({ type: 'session-index-changed', revision: 2 + batch * 32 + index, sync });
+      }
+      await vi.advanceTimersByTimeAsync(batch === 9 ? 99 : 100);
+    }
+    expect(resolved).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(resolved).toHaveBeenCalledExactlyOnceWith('tip');
+    expect(tipListeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test.each([200, 950])('idle tips shorten a busy window without delaying its deadline at %ims', async (elapsed) => {
+    vi.useFakeTimers();
+    const resolved = vi.fn();
+    const pending = waitForSessionIndexInvalidation(1, new AbortController().signal).then(resolved);
+    emitTip({ type: 'session-index-changed', revision: 2, sync: { active: true, enriching: false } });
+    await vi.advanceTimersByTimeAsync(elapsed);
+    emitTip({ type: 'session-index-changed', revision: 3, sync: { active: false, enriching: false } });
+    const delay = Math.min(100, 1000 - elapsed);
+    await vi.advanceTimersByTimeAsync(delay - 1);
+    expect(resolved).not.toHaveBeenCalled();
+    emitTip({ type: 'session-index-changed', revision: 4, sync: { active: false, enriching: false } });
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(resolved).toHaveBeenCalledExactlyOnceWith('tip');
+  });
+
+  test('legacy tips retain the 100ms trailing debounce', async () => {
+    vi.useFakeTimers();
+    const resolved = vi.fn();
+    const pending = waitForSessionIndexInvalidation(1, new AbortController().signal).then(resolved);
+    emitTip({ type: 'session-index-changed', revision: 2 });
+    await vi.advanceTimersByTimeAsync(80);
+    emitTip({ type: 'session-index-changed', revision: 3 });
+    await vi.advanceTimersByTimeAsync(99);
+    expect(resolved).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(resolved).toHaveBeenCalledExactlyOnceWith('tip');
+  });
+
+  test.each(['ready', 'aborted', 'timeout'] as const)('busy waits retain %s repair and cleanup', async (reason) => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const pending = waitForSessionIndexInvalidation(1, controller.signal, { safetyTimeoutMs: 400 });
+    emitTip({ type: 'session-index-changed', revision: 2, sync: { active: true, enriching: false } });
+    await vi.advanceTimersByTimeAsync(200);
+    if (reason === 'ready') {
+      emitTip({ type: 'event-stream-ready' });
+      await vi.advanceTimersByTimeAsync(100);
+    } else if (reason === 'aborted') {
+      controller.abort();
+    } else {
+      await vi.advanceTimersByTimeAsync(200);
+    }
+    expect(await pending).toBe(reason);
+    expect(tipListeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('stale busy tips cannot cross the revision fence', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const resolved = vi.fn();
+    const pending = waitForSessionIndexInvalidation(5, controller.signal, { safetyTimeoutMs: null }).then(resolved);
+    emitTip({ type: 'session-index-changed', revision: 5, sync: { active: true, enriching: false } });
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(resolved).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    controller.abort();
+    await pending;
   });
 
   test('safety-timeouts a missed tip so manual sync cannot hang forever', async () => {

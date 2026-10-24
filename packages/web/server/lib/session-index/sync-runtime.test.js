@@ -41,6 +41,127 @@ const isFullyIdle = (runtime) => (
 );
 
 describe('session index background sync runtime', () => {
+  it('coalesces hundreds of directory/child checks and immediately publishes the final revision', async () => {
+    vi.useFakeTimers();
+    try {
+      const service = createService();
+      const revisionsAtDelivery = [];
+      const tips = vi.fn(() => { revisionsAtDelivery.push(runtime.snapshot().revision); });
+      const runtime = createSessionIndexSyncRuntime({
+        sessionIndexService: service,
+        buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        onRevisionTip: tips,
+        setTimer: setTimeout,
+        clearTimer: clearTimeout,
+        fetchFn: async (url) => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          const directory = url.searchParams.get('directory');
+          return new Response(JSON.stringify({ data: url.searchParams.has('parentID') ? []
+            : Array.from({ length: 20 }, (_, i) => session(`${directory}-${i}`, 100 - i, directory)) }));
+        },
+      });
+      runtime.enqueue(Array.from({ length: 15 }, (_, i) => `/repo/${i}`));
+      expect(tips).toHaveBeenCalledTimes(1);
+      expect(tips.mock.calls[0][0]).toMatchObject({ revision: 1, sync: { active: true } });
+      await vi.advanceTimersByTimeAsync(499);
+      expect(tips).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(tips).toHaveBeenCalledTimes(2);
+      const progress = runtime.waitForChange(runtime.snapshot().revision);
+      await vi.advanceTimersByTimeAsync(10);
+      expect((await progress).revision).toBe(runtime.snapshot().revision);
+      const final = (async () => {
+        let value = runtime.snapshot();
+        while (value.sync.active || value.sync.enriching) value = await runtime.waitForChange(value.revision);
+        return value;
+      })();
+      await vi.advanceTimersByTimeAsync(2640);
+      expect(service.replaceDirectory).toHaveBeenCalledTimes(15);
+      expect(service.replaceChildSessions).toHaveBeenCalledTimes(300);
+      expect(isFullyIdle(runtime)).toBe(true);
+      expect(tips).toHaveBeenCalledTimes(8);
+      expect(tips.mock.calls.map(([tip]) => tip.revision)).toEqual(revisionsAtDelivery);
+      expect(tips.mock.lastCall[0]).toMatchObject({ revision: runtime.snapshot().revision, sync: { active: false, enriching: false } });
+      expect((await final).revision).toBe(runtime.snapshot().revision);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(tips).toHaveBeenCalledTimes(8);
+      runtime.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('publishes external changes immediately while busy and stop cancels the pending tip', async () => {
+    vi.useFakeTimers();
+    try {
+      const tips = vi.fn();
+      let releaseReady;
+      const runtime = createSessionIndexSyncRuntime({
+        sessionIndexService: createService(),
+        onRevisionTip: tips,
+        waitForOpenCodeReady: () => new Promise((resolve) => { releaseReady = resolve; }),
+        setTimer: setTimeout,
+        clearTimer: clearTimeout,
+      });
+      runtime.enqueue(['/repo']);
+      expect(vi.getTimerCount()).toBe(1);
+      runtime.publishChange();
+      expect(tips).toHaveBeenCalledTimes(2);
+      expect(tips.mock.lastCall[0].revision).toBe(runtime.snapshot().revision);
+      expect(vi.getTimerCount()).toBe(0);
+      runtime.enqueue(['/repo/second']);
+      expect(vi.getTimerCount()).toBe(1);
+      const final = runtime.waitForChange(runtime.snapshot().revision);
+      runtime.stop();
+      const stoppedRevision = runtime.snapshot().revision;
+      expect(tips).toHaveBeenCalledTimes(3);
+      expect(tips.mock.lastCall[0]).toMatchObject({ revision: stoppedRevision, sync: { active: false, enriching: false } });
+      await expect(final).resolves.toMatchObject({ revision: stoppedRevision, sync: { active: false, failedDirectories: ['/repo', '/repo/second'] } });
+      expect(vi.getTimerCount()).toBe(0);
+      releaseReady(true);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(runtime.snapshot().revision).toBe(stoppedRevision);
+      expect(tips).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stopping during enrichment flushes idle and fences late worker notifications', async () => {
+    vi.useFakeTimers();
+    try {
+      const tips = vi.fn();
+      const runtime = createSessionIndexSyncRuntime({
+        sessionIndexService: createService(),
+        buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        onRevisionTip: tips,
+        fetchFn: async (url, { signal }) => {
+          if (!url.searchParams.has('parentID')) return new Response(JSON.stringify([session('root', 1)]));
+          return new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+          });
+        },
+      });
+      runtime.enqueue(['/repo']);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(runtime.snapshot().sync.enriching).toBe(true);
+      const final = runtime.waitForChange(runtime.snapshot().revision);
+      runtime.stop();
+      const revision = runtime.snapshot().revision;
+      await expect(final).resolves.toMatchObject({ revision, sync: { active: false, enriching: false } });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(tips).toHaveBeenCalledTimes(2);
+      expect(tips.mock.lastCall[0]).toMatchObject({ revision, sync: { active: false, enriching: false } });
+      expect(runtime.snapshot().revision).toBe(revision);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([1, 20, 21])('only advertises more when terminal pages contain over 20 visible roots (%i roots)', async (rootCount) => {
     const service = createService();
     const rows = Array.from({ length: Math.max(20, rootCount) }, (_, i) => ({
