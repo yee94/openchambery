@@ -522,7 +522,6 @@ export const createSessionIndexSyncRuntime = ({
   const stop = () => {
     if (stopped) return;
     stopped = true;
-    if (cleanupTimer !== undefined) clearTimer(cleanupTimer);
     currentController?.abort();
     const interruptedDirectories = [...queuedDirectories];
     queue.length = 0;
@@ -533,7 +532,6 @@ export const createSessionIndexSyncRuntime = ({
     notify(true);
   };
 
-  let cleanupTimer;
   const cleanupMissingDirectories = async () => {
     const key = sessionIndexService.getRuntimeKey();
     let changed = false;
@@ -548,11 +546,6 @@ export const createSessionIndexSyncRuntime = ({
       if (changed && !stopped && key === sessionIndexService.getRuntimeKey()) notify(true);
     } catch (error) {
       console.warn('[SessionIndex] Directory cleanup failed:', error);
-    } finally {
-      if (!stopped) {
-        cleanupTimer = setTimer(cleanupMissingDirectories, 60_000);
-        cleanupTimer?.unref?.();
-      }
     }
   };
   if (isDirectoryMissing) void cleanupMissingDirectories();

@@ -8,7 +8,7 @@ with an empty result. Remote upstreams never use the Host filesystem as evidence
 permission and I/O errors are not deletion. Checks are not negatively cached, so
 a recreated directory participates in the next requested sync.
 
-At startup and every 60 seconds, the sync runtime checks empty, exhausted indexed
+Once at startup, the sync runtime checks empty, exhausted indexed
 directories. It removes only directory shells with no summary rows, no child rows,
 and no more pages, using one conditional SQLite deletion. Session history and pins
 are preserved. This maintenance does not touch code files or upstream projects.
@@ -16,7 +16,7 @@ Runtime switches and shutdown discard pending checks; successful cleanup publish
 a revision tip. Snapshot GETs do not perform filesystem scans. Old project paths
 may still be submitted by clients, but pre-scan checks prevent recreating empty
 shells for missing paths. App or external worktree deletion is picked up by the
-same maintenance pass (within 60 seconds, plus filesystem check time).
+next requested sync or startup pass; there is no periodic filesystem polling.
 
 ## Physical directory identity
 
