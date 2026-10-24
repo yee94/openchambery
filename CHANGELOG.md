@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.9-beta.5] - 2026-10-24
+
+### 改进
+
+- 移动端图片预览登记为模态窗口，返回手势与层叠关闭按顺序生效，不再穿透到底层页面。
+- 设置页下拉与数字输入的窄屏样式收敛，长选项文本显示省略号，数字控件不再被挤压变形。
+
 ## [2.1.9-beta.4] - 2026-10-24
 
 ### 改进

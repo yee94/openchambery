@@ -699,14 +699,14 @@ const MobileFileDetail: React.FC<{
           <ScrollShadow className="h-full overflow-auto p-4">
             <button
               type="button"
-              className="mx-auto block max-h-full max-w-full cursor-zoom-in rounded-lg border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="mx-auto block w-full cursor-zoom-in rounded-lg border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&>.oc-image-frame]:w-full"
               onClick={openImagePreview}
               aria-label={imageFilename}
             >
               <LoadingImage
                 src={previewImageSrc}
                 alt={imageFilename}
-                className="mx-auto max-h-full max-w-full rounded-lg object-contain"
+                className="h-auto w-full rounded-lg object-contain"
                  draggable={false}
                  onError={handleImageError}
               />

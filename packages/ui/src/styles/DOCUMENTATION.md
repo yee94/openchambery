@@ -9,6 +9,10 @@ cards at or below 32rem. Selects, numbers, short option groups, and checkboxes
 use a content-sized right column capped at `min(60cqw, 20rem)`; long labels wrap.
 Only explicit `oc-settings-split-row-stacked` editors and collections occupy a
 separate full-width line. The card container query must not stack all rows.
+The minimum supported mobile viewport for this layout is 350px. Compact numeric
+controls shrink around adjacent units/reset actions while retaining touch targets.
+Text-only selected values use ellipsis; intrinsic sizing includes their padding
+so nested triggers do not clip the beginning of a value.
 See `components/sections/shared/SETTINGS_DESIGN_SPEC.md` for the form contract.
 
 ## Voice color calibration

@@ -246,6 +246,14 @@
 }
 
 .oc-settings-workspace .oc-settings-group-row
+  [data-slot="select-value"]:not(:has(> *)) {
+  display: block !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-settings-workspace .oc-settings-group-row
   :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value):hover:not(:focus),
 .oc-settings-workspace .oc-settings-group-row
   [data-slot="select-trigger"][data-popup-open],
@@ -514,6 +522,12 @@
   .oc-settings-workspace .oc-settings-group-row
     :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value) {
     margin-inline-end: 0;
+  }
+
+  .oc-settings-workspace .oc-settings-group-row [data-slot="number-input"] {
+    flex-shrink: 1;
+    gap: 0 !important;
+    padding-inline: 0 !important;
   }
 }
 
