@@ -45,6 +45,8 @@ SECURITY_HARDENING_IMPLEMENTATION_PLAN.md
 build/
 .gradle/
 .*.bun-build
+/app-*.css
+/conversation-markdown-*.js
 
 # Built webview assets (generated during build)
 src/main/resources/webview/

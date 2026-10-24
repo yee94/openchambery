@@ -2,7 +2,7 @@ services:
   relay:
     build:
       context: .
-      dockerfile: Dockerfile.relay
+      dockerfile: deploy/relay/Dockerfile.relay
     # Loopback publishing supports an external TLS proxy on the host.
     # Public binding requires compose, firewall, and TLS configuration; repository defaults to loopback.
     ports:
