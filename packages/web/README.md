@@ -72,7 +72,7 @@ Use TLS at a reverse proxy and keep the default loopback listener. From the repo
 ```sh
 OPENCHAMBER_RELAY_SERVER_PUBLIC_URL=wss://relay.example.com/ws \
 OPENCHAMBER_RELAY_PUBLISHED_PORT=8787 \
-docker compose -f docker-compose.relay.yml up -d --build
+docker compose --project-directory . -f deploy/relay/docker-compose.relay.yml up -d --build
 ```
 
 Compose publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` by default. `OPENCHAMBER_RELAY_PUBLISHED_PORT` selects the host port, and a TLS reverse proxy provides the public `wss://` entry point.

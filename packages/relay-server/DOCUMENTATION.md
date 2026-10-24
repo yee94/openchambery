@@ -164,24 +164,24 @@ docker run -d \
 
 Use an immutable version tag in production. Each non-dry-run release updates `latest` together with its immutable version tag.
 
-For a complete public deployment using the published immutable image, automatic HTTPS, and an internal-only Relay listener, use [`docker-compose.relay.remote.yml`](../../docker-compose.relay.remote.yml). Docker Compose 2.23.1 or later is required for its inline Caddy config. Point the domain's `A` and/or `AAAA` record at the server, allow inbound TCP ports 80 and 443 plus UDP port 443, then run:
+For a complete public deployment using the published immutable image, automatic HTTPS, and an internal-only Relay listener, use [`docker-compose.relay.remote.yml`](../../deploy/relay/docker-compose.relay.remote.yml). Docker Compose 2.23.1 or later is required for its inline Caddy config. Run all commands from the repository root with `--project-directory .` to preserve existing project names and relative file paths. Point the domain's `A` and/or `AAAA` record at the server, allow inbound TCP ports 80 and 443 plus UDP port 443, then run:
 
 ```sh
 OPENCHAMBER_RELAY_IMAGE='<dockerhub-username>/openchamber-relay:<version>@sha256:<manifest-digest>' \
 RELAY_DOMAIN=relay.example.com \
 ACME_EMAIL=admin@example.com \
-docker compose -f docker-compose.relay.remote.yml up -d
+docker compose --project-directory . -f deploy/relay/docker-compose.relay.remote.yml up -d
 ```
 
 `OPENCHAMBER_RELAY_IMAGE` is required; the deployment file must never bind to a personal registry namespace. Supply an immutable version-and-manifest-digest reference in production. The file keeps Relay off host ports, replaces forwarded client IPs at Caddy, persists Caddy certificates and configuration, and enables trusted-proxy mode on Relay. Inspect startup and readiness with:
 
 ```sh
-docker compose -f docker-compose.relay.remote.yml ps
+docker compose --project-directory . -f deploy/relay/docker-compose.relay.remote.yml ps
 curl -fsS https://relay.example.com/healthz
 curl -fsS https://relay.example.com/readyz
 ```
 
-Layer 1 plus Push from the same immutable image uses [`docker-compose.relay-push.remote.yml`](../../docker-compose.relay-push.remote.yml). Layer 1 receives no APNs secrets. Push receives only APNs Key ID / Team ID / Bundle ID and the `.p8` Docker secret path, plus a persistent SQLite volume, with a read-only root filesystem. Caddy serves one hostname: `/v1/push/*` to `push:8788`, everything else including `/ws` to `relay:8787`, each replacing `X-Forwarded-For` once. Both services have health checks; Caddy waits until both are healthy.
+Layer 1 plus Push from the same immutable image uses [`docker-compose.relay-push.remote.yml`](../../deploy/relay/docker-compose.relay-push.remote.yml). Layer 1 receives no APNs secrets. Push receives only APNs Key ID / Team ID / Bundle ID and the `.p8` Docker secret path, plus a persistent SQLite volume, with a read-only root filesystem. Caddy serves one hostname: `/v1/push/*` to `push:8788`, everything else including `/ws` to `relay:8787`, each replacing `X-Forwarded-For` once. Both services have health checks; Caddy waits until both are healthy.
 
 ```sh
 OPENCHAMBER_RELAY_IMAGE='<dockerhub-username>/openchamber-relay:<version>@sha256:<manifest-digest>' \
@@ -191,23 +191,23 @@ OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID='<apns-key-id>' \
 OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID='<apns-team-id>' \
 OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID=com.yee94.openchamber \
 OPENCHAMBER_PUSH_RELAY_APNS_P8_FILE=/etc/openchamber/AuthKey.p8 \
-docker compose -f docker-compose.relay-push.remote.yml up -d
+docker compose --project-directory . -f deploy/relay/docker-compose.relay-push.remote.yml up -d
 ```
 
 ```sh
-docker compose -f docker-compose.relay-push.remote.yml ps
+docker compose --project-directory . -f deploy/relay/docker-compose.relay-push.remote.yml ps
 curl -fsS https://relay.example.com/healthz
 curl -fsS https://relay.example.com/readyz
 ```
 
 Public `/healthz` and `/readyz` are Layer 1. Push health remains on the internal `8788` listener and the Compose health check. Existing Layer-1-only Compose files keep their previous behavior.
 
-From the repository root, build and start the supplied service. The compatibility assets are [`Dockerfile.relay`](../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../docker-compose.relay.yml):
+From the repository root, build and start the supplied service. The deployment assets are [`Dockerfile.relay`](../../deploy/relay/Dockerfile.relay) and [`docker-compose.relay.yml`](../../deploy/relay/docker-compose.relay.yml):
 
 ```sh
 OPENCHAMBER_RELAY_SERVER_PUBLIC_URL=wss://relay.example.com/ws \
 OPENCHAMBER_RELAY_PUBLISHED_PORT=8787 \
-docker compose -f docker-compose.relay.yml up -d --build
+docker compose --project-directory . -f deploy/relay/docker-compose.relay.yml up -d --build
 ```
 
 Compose publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` by default; use `OPENCHAMBER_RELAY_PUBLISHED_PORT` to select the host port. The Compose service uses an ephemeral filesystem and keeps Host identity keys on each OpenChamber Host. Its image health check uses Node to call Layer 1 `GET /healthz`. Terminate public TLS at an external reverse proxy and publish `wss://relay.example.com/ws`. A public Relay port binding requires firewall rules and TLS; loopback publishing with a TLS reverse proxy is the deployment path.

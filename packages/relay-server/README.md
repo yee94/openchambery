@@ -395,18 +395,18 @@ docker run -d \
   <dockerhub-username>/openchamber-relay:<version>
 ```
 
-For an end-to-end public deployment with Caddy-managed HTTPS, use [`docker-compose.relay.remote.yml`](../../docker-compose.relay.remote.yml) with Docker Compose 2.23.1 or later:
+For an end-to-end public deployment with Caddy-managed HTTPS, use [`docker-compose.relay.remote.yml`](../../deploy/relay/docker-compose.relay.remote.yml) with Docker Compose 2.23.1 or later. Run these commands from the repository root; `--project-directory .` preserves existing project names and relative file paths:
 
 ```sh
 OPENCHAMBER_RELAY_IMAGE='<dockerhub-username>/openchamber-relay:<version>@sha256:<manifest-digest>' \
 RELAY_DOMAIN=relay.example.com \
 ACME_EMAIL=admin@example.com \
-docker compose -f docker-compose.relay.remote.yml up -d
+docker compose --project-directory . -f deploy/relay/docker-compose.relay.remote.yml up -d
 ```
 
 `OPENCHAMBER_RELAY_IMAGE` is required so the repository never binds this reusable deployment file to a personal registry namespace. Use an immutable version-and-digest reference in production.
 
-To run Layer 1 and Push from that same immutable image, with APNs secrets only on Push, a persistent SQLite volume, read-only root filesystems, and Caddy routing `/v1/push/*` to Push, use [`docker-compose.relay-push.remote.yml`](../../docker-compose.relay-push.remote.yml):
+To run Layer 1 and Push from that same immutable image, with APNs secrets only on Push, a persistent SQLite volume, read-only root filesystems, and Caddy routing `/v1/push/*` to Push, use [`docker-compose.relay-push.remote.yml`](../../deploy/relay/docker-compose.relay-push.remote.yml):
 
 ```sh
 OPENCHAMBER_RELAY_IMAGE='<dockerhub-username>/openchamber-relay:<version>@sha256:<manifest-digest>' \
@@ -416,19 +416,19 @@ OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID='<apns-key-id>' \
 OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID='<apns-team-id>' \
 OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID=com.yee94.openchamber \
 OPENCHAMBER_PUSH_RELAY_APNS_P8_FILE=/etc/openchamber/AuthKey.p8 \
-docker compose -f docker-compose.relay-push.remote.yml up -d
+docker compose --project-directory . -f deploy/relay/docker-compose.relay-push.remote.yml up -d
 ```
 
-The Push container reads the `.p8` from the Docker secret path `/run/secrets/apns_p8`. Layer 1 does not receive that secret. Inspect both health checks with `docker compose -f docker-compose.relay-push.remote.yml ps`. Public `/healthz` and `/readyz` are Layer 1. Push `/healthz` stays on the internal listener.
+The Push container reads the `.p8` from the Docker secret path `/run/secrets/apns_p8`. Layer 1 does not receive that secret. Inspect both health checks with `docker compose --project-directory . -f deploy/relay/docker-compose.relay-push.remote.yml ps`. Public `/healthz` and `/readyz` are Layer 1. Push `/healthz` stays on the internal listener.
 
-Existing Layer-1-only Compose files keep their current behavior: [`docker-compose.relay.yml`](../../docker-compose.relay.yml) for loopback, and [`docker-compose.relay.remote.yml`](../../docker-compose.relay.remote.yml) for public Layer 1 without Push.
+Existing Layer-1-only Compose files keep their current behavior: [`docker-compose.relay.yml`](../../deploy/relay/docker-compose.relay.yml) for loopback, and [`docker-compose.relay.remote.yml`](../../deploy/relay/docker-compose.relay.remote.yml) for public Layer 1 without Push.
 
-The repository provides optional Docker delivery assets at [`Dockerfile.relay`](../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../docker-compose.relay.yml). The Compose service publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` and accepts `OPENCHAMBER_RELAY_SERVER_PUBLIC_URL` plus selected Relay limits.
+The repository provides optional Docker delivery assets at [`Dockerfile.relay`](../../deploy/relay/Dockerfile.relay) and [`docker-compose.relay.yml`](../../deploy/relay/docker-compose.relay.yml). The Compose service publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` and accepts `OPENCHAMBER_RELAY_SERVER_PUBLIC_URL` plus selected Relay limits.
 
 ```sh
 OPENCHAMBER_RELAY_SERVER_PUBLIC_URL=wss://relay.example.com/ws \
 OPENCHAMBER_RELAY_PUBLISHED_PORT=8787 \
-docker compose -f docker-compose.relay.yml up -d --build
+docker compose --project-directory . -f deploy/relay/docker-compose.relay.yml up -d --build
 ```
 
 These assets define an optional follow-on deployment path. Validate the image, proxy integration, TLS configuration, and operational limits in the target environment before production use.

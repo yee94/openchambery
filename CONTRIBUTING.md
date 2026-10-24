@@ -13,6 +13,16 @@ bun install
 
 ## Dev Scripts
 
+### Repository layout
+
+- Keep workspace-wide configuration and contributor entrypoints at the root.
+- Put executable maintenance helpers in `scripts/` and Vite helpers in `scripts/vite/`.
+- Relay deployment files live in `deploy/relay/`; run their documented commands from the repository root with `--project-directory .` to preserve project names and relative paths.
+- `deploy/dev/` contains optional local proxy examples; `docs/qa/` contains historical design verification records.
+- `.scratch/` is ignored local working material, not a versioned documentation directory.
+- Declare business dependencies in their owning workspace. Root dependencies are reserved for shared tooling, React-based diagnostic scripts, native PTY build resolution, and the pinned Ghostty patch. Keep workspace-wide CodeMirror overrides in the root manifest.
+- The application Vite entrypoint is `packages/web/vite.config.ts`; generated assets belong in package build output directories.
+
 Run commands from the project root unless a section says otherwise.
 
 ### Web
