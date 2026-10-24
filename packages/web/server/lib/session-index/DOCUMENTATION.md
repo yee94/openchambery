@@ -77,6 +77,15 @@ Pin and unpin use `POST` / `DELETE`
 Snapshots include `pinnedSessionIds` plus `time.pinned` on any matching
 summary row.
 
+List snapshots (`GET /api/openchamber/session-index` and the `POST /sync`
+response body) share one Host projection: committed Host metadata is merged,
+Host-archived rows and pins are dropped, and metadata no list consumer reads is
+omitted (`openchamber.titleAuthority`, `openchamber.scheduledTaskSkill`,
+`titleRefresh.forMessageID` / `generatedAt` / `forkFirstSendSessionID`). Unknown
+keys pass through. Writers and the title runtime read the omitted keys from the
+session record, never from the index list. The deep-link lookup keeps the full
+projection. Both list routes return 503 when Host metadata is unavailable.
+
 The server-side global OpenCode event subscriber writes session summary events
 directly into this index. User `message.updated` events and `session.idle`
 completion events advance the separate `activity_updated_at` ordering field,
@@ -135,6 +144,13 @@ cleanup cannot emit another revision or leave a pending tip timer. Internal
 revision increments and `waitForChange` delivery remain immediate, including the
 final state. Full snapshots are materialized for waiting readers, not for each
 tip. No persisted revision, failure, or runtime-isolation semantics change.
+
+Regression budget: one batch bumps the revision per directory and per child-flag
+check (~300+ on a cold start). Before coalescing, each bump became an SSE tip and
+every Relay client re-fetched the full snapshot per burst. `sync-runtime.test.js`
+asserts that a 15-directory/300-child batch with 300+ revisions emits at most
+one tip per 500ms window plus immediate edges. Progress `notify()` calls must not
+pass `immediate`.
 
 The shared renderer independently throttles busy tips to a fixed 1000ms window
 for compatibility with older Hosts. Idle/legacy tips use 100ms debounce and

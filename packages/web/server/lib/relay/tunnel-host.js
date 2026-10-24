@@ -263,6 +263,9 @@ export const createTunnelHost = ({
       const contentLength = response.headers.has('content-encoding') ? null : response.headers.get('content-length');
       // Compress finite JSON responses before encryption, never SSE or binary assets.
       // Old clients omit acceptEncoding and old hosts ignore it, preserving v1 framing.
+      // Do not widen to text/event-stream: SSE frames must flush per event, and gzip
+      // buffers them. Compression must also stay before encryption (ciphertext is
+      // incompressible), and only when the request explicitly opted in.
       const gzip = request.acceptEncoding === 'gzip' && typeof CompressionStream === 'function'
         && method !== 'HEAD' && response.body !== null
         && (contentType === 'application/json' || /^application\/[^/]+\+json$/.test(contentType))

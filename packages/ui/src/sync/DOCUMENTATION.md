@@ -689,6 +689,14 @@ tip. The parser only accepts this value and ignores unknown causes without
 rejecting the event. These tips take the 100ms debounce/earlier-deadline path even
 while sync or enrichment is busy, so pin/rename/archive changes do not wait for
 the 1000ms progress window. Older Hosts without cause retain the busy-tip policy.
+
+Regression budget (Relay cold start): a startup publishes hundreds of busy tips
+in bursts spaced wider than 100ms, and every observer resolution is a full
+snapshot GET (~170KB per Relay round trip). Debounce-only handling measured
+12-57 snapshot GETs per mobile cold start. `useGlobalSessionsStore.test.ts`
+("dense busy tip storm") bounds a ~1.2s storm to at most 3 sequential GETs and
+requires the final idle revision to load; do not route busy tips through the
+debounce path or arm a hang-break while idle.
 Successful non-null POST/GET snapshots write back through the Query helper so
 memory and the runtimeKey persistent seed stay aligned.
 

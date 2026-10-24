@@ -80,6 +80,12 @@ describe('session index background sync runtime', () => {
       expect(service.replaceDirectory).toHaveBeenCalledTimes(15);
       expect(service.replaceChildSessions).toHaveBeenCalledTimes(300);
       expect(isFullyIdle(runtime)).toBe(true);
+      // Relay cold-start budget: 315 internal revisions must reach SSE as a handful
+      // of tips (one per 500ms window + immediate edges), never one per directory or
+      // child check. Each tip costs every Relay client a full snapshot GET; the
+      // uncoalesced Host measured ~316 tips per mobile cold start.
+      expect(runtime.snapshot().revision).toBeGreaterThan(300);
+      expect(tips.mock.calls.length).toBeLessThanOrEqual(Math.ceil(2650 / 500) + 3);
       expect(tips).toHaveBeenCalledTimes(8);
       expect(tips.mock.calls.map(([tip]) => tip.revision)).toEqual(revisionsAtDelivery);
       for (const [tip] of tips.mock.calls) expect(tip).not.toHaveProperty('cause');

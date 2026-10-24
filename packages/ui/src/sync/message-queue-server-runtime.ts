@@ -192,6 +192,8 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     signal.throwIfAborted();
     // Snapshot descriptors carry authoritative counts at their revision. An empty
     // scope is already complete; keep supplied pages on the validation path below.
+    // Removing this reintroduces one detail GET per empty scope (128 per Relay cold
+    // start measured); the 128-scope test asserts zero empty-detail requests.
     if (descriptor.itemCount === 0 && !initialPage) return { ...descriptor, items: [] };
     let offset = 0, expectedRevision: number | undefined, first: MessageQueueScope | undefined;
     const items: MessageQueueItem[] = [];
