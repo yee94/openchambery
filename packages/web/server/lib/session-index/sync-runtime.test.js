@@ -41,10 +41,10 @@ const isFullyIdle = (runtime) => (
 );
 
 describe('session index background sync runtime', () => {
-  it('rechecks missing directories periodically and stops maintenance on shutdown', async () => {
+  it('cleans missing directories once at startup without scheduling a poll', async () => {
     const service = createService([{ directory: '/repo', sessions: [], hasMore: false }]);
     service.removeEmptyDirectory = vi.fn(() => true);
-    const isDirectoryMissing = vi.fn(async () => false);
+    const isDirectoryMissing = vi.fn(async () => true);
     const timers = [];
     const clearTimer = vi.fn();
     const runtime = createSessionIndexSyncRuntime({
@@ -53,19 +53,12 @@ describe('session index background sync runtime', () => {
       setTimer: (fn, ms) => { const timer = { fn, ms }; timers.push(timer); return timer; },
       clearTimer,
     });
-    await waitUntil(() => timers.length === 1);
-    expect(timers[0].ms).toBe(60_000);
-    expect(service.removeEmptyDirectory).not.toHaveBeenCalled();
-    isDirectoryMissing.mockResolvedValue(true);
-    await timers[0].fn();
+    await waitUntil(() => runtime.snapshot().revision === 1);
     expect(service.removeEmptyDirectory).toHaveBeenCalledWith('/repo');
     expect(runtime.snapshot().revision).toBe(1);
     runtime.stop();
-    expect(clearTimer).toHaveBeenCalledWith(timers[1]);
-    const calls = isDirectoryMissing.mock.calls.length;
-    await timers[1].fn();
-    expect(isDirectoryMissing).toHaveBeenCalledTimes(calls);
-    expect(timers).toHaveLength(2);
+    expect(isDirectoryMissing).toHaveBeenCalledTimes(1);
+    expect(timers).toHaveLength(0);
   });
 
   it('coalesces hundreds of directory/child checks and immediately publishes the final revision', async () => {
