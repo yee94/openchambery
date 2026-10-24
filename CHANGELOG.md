@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.9-beta.1] - 2026-10-24
+
+### 改进
+
+- 已配对的桌面操作端发起配对时，可像所有者界面一样选择或新增 Relay 端点，不再被限制只能使用主机已有的地址。
+
 ## [2.1.8] - 2026-10-24
 
 ### 改进

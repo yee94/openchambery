@@ -2773,7 +2773,7 @@ export const RemoteInstancesPage: React.FC = () => {
                         [...(transportOptions?.relayUrls ?? []), ...(transportOptions?.relayUrl ? [transportOptions.relayUrl] : [])],
                       ));
                       const multiRelay = relayEndpoints.length > 1;
-                      const canCustom = transportOptions?.relayUrlLocked !== true && transportOptions?.remoteHost !== true;
+                      const canCustom = transportOptions?.relayUrlLocked !== true;
                       const usePicker = multiRelay && !addDeviceRelayCustom;
                       return (
                     <label className="block space-y-1.5 pt-2">
@@ -2818,8 +2818,8 @@ export const RemoteInstancesPage: React.FC = () => {
                             setAddDeviceRelayUrlError(null);
                           }}
                           placeholder={DEFAULT_PAIRING_RELAY_URL}
-                          readOnly={transportOptions?.relayUrlLocked === true || transportOptions?.remoteHost === true}
-                          aria-readonly={transportOptions?.relayUrlLocked === true || transportOptions?.remoteHost === true || undefined}
+                          readOnly={transportOptions?.relayUrlLocked === true}
+                          aria-readonly={transportOptions?.relayUrlLocked === true || undefined}
                           aria-invalid={Boolean(addDeviceRelayUrlError) || undefined}
                           aria-describedby={addDeviceRelayUrlError
                             ? 'add-device-relay-url-hint add-device-relay-url-error'
@@ -2832,9 +2832,7 @@ export const RemoteInstancesPage: React.FC = () => {
                       <span id="add-device-relay-url-hint" className="block typography-meta text-muted-foreground">
                         {transportOptions?.relayUrlLocked
                           ? t('settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint')
-                          : transportOptions?.remoteHost
-                            ? t('settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint')
-                            : t('settings.remoteInstances.clientAuth.addDevice.relayUrlHint')}
+                          : t('settings.remoteInstances.clientAuth.addDevice.relayUrlHint')}
                       </span>
                       <a
                         href={SELF_HOSTED_RELAY_DOCS_URL}
