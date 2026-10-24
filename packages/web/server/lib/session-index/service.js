@@ -679,9 +679,18 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     return result.changes > 0;
   });
 
+  const removeEmptyDirectory = (directory) => db.prepare(`
+    DELETE FROM runtime_directory WHERE runtime_key = ? AND directory = ? AND has_more = 0
+      AND NOT EXISTS (SELECT 1 FROM session_summary s
+        WHERE s.runtime_key = runtime_directory.runtime_key AND s.directory = runtime_directory.directory)
+      AND NOT EXISTS (SELECT 1 FROM session_child c
+        WHERE c.runtime_key = runtime_directory.runtime_key AND c.directory = runtime_directory.directory)
+  `).run(runtimeKey(), directory).changes > 0;
+
   try { reconcileDirectoryAliases(runtimeKey()); } catch (error) { db.close(); throw error; }
   return {
     replaceDirectory,
+    removeEmptyDirectory,
     replaceDirectories,
     upsert,
     upsertAndReportChange,

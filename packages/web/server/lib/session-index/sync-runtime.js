@@ -82,6 +82,7 @@ export const createSessionIndexSyncRuntime = ({
   projectSessions = null,
   fetchFn = globalThis.fetch,
   resolveDirectory = (value) => value,
+  isDirectoryMissing = null,
   now = Date.now,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
@@ -182,6 +183,12 @@ export const createSessionIndexSyncRuntime = ({
     .find((entry) => entry.directory === directory);
 
   const fetchDirectory = async (task) => {
+    if (isDirectoryMissing && await isDirectoryMissing(task.directory)) {
+      if (stopped || task.runtimeKey !== sessionIndexService.getRuntimeKey()) return 'discarded';
+      sessionIndexService.removeEmptyDirectory(task.directory);
+      return;
+    }
+    if (stopped || task.runtimeKey !== sessionIndexService.getRuntimeKey()) return 'discarded';
     // v2 `session.list` cursor pagination. Collect candidates across pages,
     // then re-project once before commit so a Host archive that lands mid-sync
     // cannot resurrect a row. Root/system filters run before the 20-slot budget.
@@ -325,6 +332,8 @@ export const createSessionIndexSyncRuntime = ({
   };
 
   const fetchChildFlag = async (task) => {
+    if (isDirectoryMissing && await isDirectoryMissing(task.directory)) return 'discarded';
+    if (stopped || task.runtimeKey !== sessionIndexService.getRuntimeKey()) return 'discarded';
     const controller = new AbortController();
     currentController = controller;
     currentWasPreempted = false;
@@ -513,6 +522,7 @@ export const createSessionIndexSyncRuntime = ({
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    if (cleanupTimer !== undefined) clearTimer(cleanupTimer);
     currentController?.abort();
     const interruptedDirectories = [...queuedDirectories];
     queue.length = 0;
@@ -522,6 +532,30 @@ export const createSessionIndexSyncRuntime = ({
     for (const directory of interruptedDirectories) failedDirectories.add(directory);
     notify(true);
   };
+
+  let cleanupTimer;
+  const cleanupMissingDirectories = async () => {
+    const key = sessionIndexService.getRuntimeKey();
+    let changed = false;
+    try {
+      for (const entry of sessionIndexService.snapshot().directories) {
+        if (stopped || key !== sessionIndexService.getRuntimeKey()) break;
+        if (entry.sessions.length || entry.hasMore) continue;
+        const missing = await isDirectoryMissing(entry.directory);
+        if (stopped || key !== sessionIndexService.getRuntimeKey()) break;
+        if (missing) changed = sessionIndexService.removeEmptyDirectory(entry.directory) || changed;
+      }
+      if (changed && !stopped && key === sessionIndexService.getRuntimeKey()) notify(true);
+    } catch (error) {
+      console.warn('[SessionIndex] Directory cleanup failed:', error);
+    } finally {
+      if (!stopped) {
+        cleanupTimer = setTimer(cleanupMissingDirectories, 60_000);
+        cleanupTimer?.unref?.();
+      }
+    }
+  };
+  if (isDirectoryMissing) void cleanupMissingDirectories();
 
   return { enqueue, noteInteractiveRequest, publishChange, snapshot, waitForChange, stop };
 };

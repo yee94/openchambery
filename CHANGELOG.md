@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.9-beta.7] - 2026-10-24
+
+### 改进
+
+- Host 自动跳过磁盘上已不存在的本机目录，启动及每分钟清理失效空目录索引；保留历史会话、子会话和置顶，目录恢复后可重新同步，远程路径和权限错误不作为删除依据。
+
 ## [2.1.9-beta.6] - 2026-10-24
 
 ### 改进
