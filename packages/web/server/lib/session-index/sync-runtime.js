@@ -7,6 +7,7 @@ const FULL_RECONCILE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6_000;
 const INTERACTIVE_YIELD_MS = 1_000;
 const LONG_POLL_MAX_MS = 25_000;
+const REVISION_TIP_THROTTLE_MS = 500;
 
 const normalizeDirectory = (value) => {
   if (typeof value !== 'string') return null;
@@ -64,7 +65,7 @@ export const createSessionIndexSyncRuntime = ({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   waitForOpenCodeReady,
-  /** Optional tip sink: ({ revision, sync }) after each revision bump. */
+  /** Optional tip sink: ({ revision, sync }); background progress is coalesced. */
   onRevisionTip = null,
   /**
    * Optional Host authority projection applied to each upstream list page
@@ -96,10 +97,11 @@ export const createSessionIndexSyncRuntime = ({
   const failedDirectories = new Set();
   const waiters = new Set();
   let batchDirectories = new Set();
+  let revisionTipTimer;
 
   const syncState = () => ({
-    active: running || queue.length > 0,
-    enriching: enrichingChildFlags || childFlagQueue.length > 0,
+    active: !stopped && (running || queue.length > 0),
+    enriching: !stopped && (enrichingChildFlags || childFlagQueue.length > 0),
     completed: completedDirectories.size,
     total: batchDirectories.size,
     pendingDirectories: [...queuedDirectories],
@@ -113,23 +115,38 @@ export const createSessionIndexSyncRuntime = ({
     ...sessionIndexService.snapshot(),
   });
 
-  const notify = () => {
-    revision += 1;
-    const value = snapshot();
-    for (const resolve of [...waiters]) resolve(value);
+  const broadcastRevisionTip = () => {
+    if (revisionTipTimer !== undefined) clearTimer(revisionTipTimer);
+    revisionTipTimer = undefined;
+    const sync = syncState();
     if (typeof onRevisionTip === 'function') {
       try {
         onRevisionTip({
-          revision: value.revision,
+          revision,
           sync: {
-            active: value.sync.active === true,
-            enriching: value.sync.enriching === true,
+            active: sync.active,
+            enriching: sync.enriching,
           },
           occurredAt: now(),
         });
       } catch (error) {
         console.warn('[session-index] onRevisionTip failed:', error);
       }
+    }
+  };
+
+  const notify = (immediate = false) => {
+    if (stopped && !immediate) return;
+    revision += 1;
+    if (waiters.size > 0) {
+      const value = snapshot();
+      for (const resolve of [...waiters]) resolve(value);
+    }
+    const sync = syncState();
+    if (immediate || (!sync.active && !sync.enriching)) {
+      broadcastRevisionTip();
+    } else if (revisionTipTimer === undefined && typeof onRevisionTip === 'function') {
+      revisionTipTimer = setTimer(broadcastRevisionTip, REVISION_TIP_THROTTLE_MS);
     }
   };
 
@@ -414,6 +431,7 @@ export const createSessionIndexSyncRuntime = ({
   };
 
   const enqueue = (directories) => {
+    if (stopped) return snapshot();
     const nextRuntimeKey = sessionIndexService.getRuntimeKey();
     if (nextRuntimeKey !== runtimeKey) {
       runtimeKey = nextRuntimeKey;
@@ -427,7 +445,8 @@ export const createSessionIndexSyncRuntime = ({
       failedDirectories.clear();
       batchDirectories = new Set();
     }
-    if (!running && queue.length === 0) {
+    const newBatch = !running && queue.length === 0;
+    if (newBatch) {
       completedDirectories.clear();
       failedDirectories.clear();
       batchDirectories = new Set();
@@ -443,7 +462,7 @@ export const createSessionIndexSyncRuntime = ({
       currentWasPreempted = true;
       currentController.abort();
     }
-    notify();
+    notify(newBatch);
     void run();
     return snapshot();
   };
@@ -458,7 +477,7 @@ export const createSessionIndexSyncRuntime = ({
 
   const publishChange = () => {
     if (stopped) return;
-    notify();
+    notify(true);
   };
 
   const waitForChange = (since, { signal, timeoutMs = LONG_POLL_MAX_MS } = {}) => {
@@ -481,6 +500,7 @@ export const createSessionIndexSyncRuntime = ({
   };
 
   const stop = () => {
+    if (stopped) return;
     stopped = true;
     currentController?.abort();
     const interruptedDirectories = [...queuedDirectories];
@@ -489,7 +509,7 @@ export const createSessionIndexSyncRuntime = ({
     queuedDirectories.clear();
     queuedChildFlagKeys.clear();
     for (const directory of interruptedDirectories) failedDirectories.add(directory);
-    notify();
+    notify(true);
   };
 
   return { enqueue, noteInteractiveRequest, publishChange, snapshot, waitForChange, stop };

@@ -45,6 +45,7 @@ export type SessionIndexSnapshot = {
 
 /** Coalesce dense revision tips before the next full snapshot GET. */
 const SESSION_INDEX_TIP_DEBOUNCE_MS = 100;
+const SESSION_INDEX_BUSY_TIP_THROTTLE_MS = 1_000;
 /**
  * Hang-break for tip waits: a completed background sync can publish its final
  * tip between POST /sync returning and the consumer attaching a tip listener.
@@ -191,8 +192,8 @@ export const startSessionIndexBackgroundSync = async (
  * Wait until a session-index tip arrives with revision > afterRevision, or the
  * OpenChamber event stream becomes ready (reconnect repair), or the signal aborts.
  *
- * Dense revision tips (server enrich/sync) are debounced so consumers issue one
- * snapshot GET after the tip burst settles instead of one GET per tip.
+ * Busy revision tips use a fixed throttle window; idle tips shorten that window
+ * to the normal debounce so consumers promptly read the final snapshot.
  *
  * `safetyTimeoutMs` is a hang-break for the race where the server finishes and
  * publishes tips between POST /sync returning and this subscription attaching.
@@ -222,6 +223,7 @@ export const waitForSessionIndexInvalidation = (
       : SESSION_INDEX_SAFETY_TIMEOUT_MS;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingReason: 'tip' | 'ready' | undefined;
+  let busyDeadline: number | undefined;
   const finish = (reason: 'tip' | 'ready' | 'aborted' | 'timeout') => {
     if (debounceTimer !== undefined) clearTimeout(debounceTimer);
     if (safetyTimer !== undefined) clearTimeout(safetyTimer);
@@ -231,11 +233,16 @@ export const waitForSessionIndexInvalidation = (
   };
   const schedule = (reason: 'tip' | 'ready') => {
     pendingReason = reason;
+    if (reason === 'ready') busyDeadline = undefined;
+    const delay = busyDeadline === undefined
+      ? SESSION_INDEX_TIP_DEBOUNCE_MS
+      : Math.max(0, Math.min(SESSION_INDEX_TIP_DEBOUNCE_MS, busyDeadline - Date.now()));
+    if (busyDeadline !== undefined) busyDeadline = Date.now() + delay;
     if (debounceTimer !== undefined) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
       finish(pendingReason ?? reason);
-    }, SESSION_INDEX_TIP_DEBOUNCE_MS);
+    }, delay);
   };
   const onAbort = () => finish('aborted');
   const safetyTimer = safetyTimeoutMs === null
@@ -249,6 +256,17 @@ export const waitForSessionIndexInvalidation = (
       return;
     }
     if (event.type === 'session-index-changed' && event.revision > afterRevision) {
+      if (event.sync?.active || event.sync?.enriching) {
+        pendingReason = 'tip';
+        if (debounceTimer === undefined) {
+          busyDeadline = Date.now() + SESSION_INDEX_BUSY_TIP_THROTTLE_MS;
+          debounceTimer = setTimeout(() => {
+            debounceTimer = undefined;
+            finish('tip');
+          }, SESSION_INDEX_BUSY_TIP_THROTTLE_MS);
+        }
+        return;
+      }
       schedule('tip');
       return;
     }

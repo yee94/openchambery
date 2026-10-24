@@ -121,6 +121,23 @@ observer active after startup refresh work becomes idle, and successful
 event-driven index writes with a semantic snapshot change publish a new
 revision tip immediately.
 
+Background directory and child-enrichment progress share a fixed 500ms trailing
+tip window: the first pending change arms the injected timer, later changes do
+not reset it, and delivery reads the latest revision and sync flags. New-batch
+enqueue, idle (`active=false` and `enriching=false`), `publishChange()` (including
+pin/rename and event-driven writes), and stop bypass the window and cancel its
+pending delivery. These immediate edges are exceptions to the 500ms rate bound.
+Stop publishes idle with interrupted directories marked failed; late worker
+cleanup cannot emit another revision or leave a pending tip timer. Internal
+revision increments and `waitForChange` delivery remain immediate, including the
+final state. Full snapshots are materialized for waiting readers, not for each
+tip. No persisted revision, failure, or runtime-isolation semantics change.
+
+The shared renderer independently throttles busy tips to a fixed 1000ms window
+for compatibility with older Hosts. Idle/legacy tips use 100ms debounce and
+shorten a pending busy deadline without extending it. Stream-ready and safety
+timeout repair retain their existing behavior; GET remains authoritative.
+
 The OpenCode proxy calls `noteInteractiveRequest()` for selected-session reads
 and mutations. That aborts the current background list, yields for one second,
 then resumes the same directory. Consequently a startup index refresh cannot

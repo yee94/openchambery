@@ -672,8 +672,18 @@ tip-driven snapshot reloads commit only while that capture remains current.
 Authoritative GET traffic goes through session-index Query helpers (which call
 `loadSessionIndexSnapshot` via `runtimeFetch` so relay stays transparent).
 `loadSessionIndexSnapshot` shares one in-flight GET per runtime generation,
-transport and cancellation owner, and `waitForSessionIndexInvalidation` debounces dense revision tips
-(and stream-ready edges) before consumers issue the next full snapshot GET.
+transport and cancellation owner. `waitForSessionIndexInvalidation` coalesces busy
+tips (`sync.active || sync.enriching`) in a fixed 1000ms window starting at the
+first tip; later busy tips never reset it. Idle tips (including legacy tips with
+no sync flags) retain the 100ms trailing debounce. During a busy window they
+shorten its deadline to the earlier of the existing deadline and 100ms from
+receipt, so completion promptly loads authority. Stream-ready keeps its existing
+100ms debounce; abort and the safety timeout retain their cleanup and semantics.
+This client bound also covers older Hosts that emit every background revision.
+The Host coalesces background progress tips in fixed 500ms trailing windows and
+flushes the latest revision immediately on a new batch, idle, external changes
+such as pin/rename, or stop. Internal revisions and long-poll waiters still advance
+on every change; tip coalescing never replaces authoritative snapshots.
 Successful non-null POST/GET snapshots write back through the Query helper so
 memory and the runtimeKey persistent seed stay aligned.
 
