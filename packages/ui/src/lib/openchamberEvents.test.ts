@@ -68,6 +68,19 @@ describe('parseOpenchamberEventEnvelope', () => {
     })).toEqual({ type: 'assistants-changed', revision: 8, occurredAt: 21 });
   });
 
+  test.each(['change', 'progress', 'CHANGE', '', null, 1, {}, ['change'], undefined])('only accepts the change cause on session-index tips (%j)', (cause) => {
+    expect(parseOpenchamberEventEnvelope({
+      type: 'openchamber:session-index-changed',
+      properties: { revision: 3, occurredAt: 10, sync: { active: true, enriching: false }, cause },
+    })).toEqual({
+      type: 'session-index-changed',
+      revision: 3,
+      occurredAt: 10,
+      sync: { active: true, enriching: false },
+      ...(cause === 'change' ? { cause: 'change' } : {}),
+    });
+  });
+
   test('parses contact turn streaming envelopes without revision watermarks', () => {
     expect(parseOpenchamberEventEnvelope({
       type: 'openchamber:contact-turn-start',

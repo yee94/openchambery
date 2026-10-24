@@ -256,7 +256,7 @@ export const waitForSessionIndexInvalidation = (
       return;
     }
     if (event.type === 'session-index-changed' && event.revision > afterRevision) {
-      if (event.sync?.active || event.sync?.enriching) {
+      if (event.cause !== 'change' && (event.sync?.active || event.sync?.enriching)) {
         pendingReason = 'tip';
         if (debounceTimer === undefined) {
           busyDeadline = Date.now() + SESSION_INDEX_BUSY_TIP_THROTTLE_MS;

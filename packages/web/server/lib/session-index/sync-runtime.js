@@ -115,7 +115,7 @@ export const createSessionIndexSyncRuntime = ({
     ...sessionIndexService.snapshot(),
   });
 
-  const broadcastRevisionTip = () => {
+  const broadcastRevisionTip = (cause) => {
     if (revisionTipTimer !== undefined) clearTimer(revisionTipTimer);
     revisionTipTimer = undefined;
     const sync = syncState();
@@ -128,6 +128,7 @@ export const createSessionIndexSyncRuntime = ({
             enriching: sync.enriching,
           },
           occurredAt: now(),
+          ...(cause === 'change' ? { cause } : {}),
         });
       } catch (error) {
         console.warn('[session-index] onRevisionTip failed:', error);
@@ -135,7 +136,7 @@ export const createSessionIndexSyncRuntime = ({
     }
   };
 
-  const notify = (immediate = false) => {
+  const notify = (immediate = false, cause) => {
     if (stopped && !immediate) return;
     revision += 1;
     if (waiters.size > 0) {
@@ -144,7 +145,7 @@ export const createSessionIndexSyncRuntime = ({
     }
     const sync = syncState();
     if (immediate || (!sync.active && !sync.enriching)) {
-      broadcastRevisionTip();
+      broadcastRevisionTip(cause);
     } else if (revisionTipTimer === undefined && typeof onRevisionTip === 'function') {
       revisionTipTimer = setTimer(broadcastRevisionTip, REVISION_TIP_THROTTLE_MS);
     }
@@ -477,7 +478,7 @@ export const createSessionIndexSyncRuntime = ({
 
   const publishChange = () => {
     if (stopped) return;
-    notify(true);
+    notify(true, 'change');
   };
 
   const waitForChange = (since, { signal, timeoutMs = LONG_POLL_MAX_MS } = {}) => {

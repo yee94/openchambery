@@ -1604,10 +1604,10 @@ export const McpPage: React.FC = () => {
               <span className="typography-ui-label text-foreground">{t('settings.mcp.page.server.enable')}</span>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
-              <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                 <span className="typography-ui-label text-foreground">{t('settings.mcp.page.server.transportMode')}</span>
-                <div className="flex flex-wrap items-center gap-1">
+                <div className="flex flex-wrap items-center justify-end gap-1">
                   <Button
                     variant="chip"
                     size="xs"

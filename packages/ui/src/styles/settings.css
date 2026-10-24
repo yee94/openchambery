@@ -494,19 +494,26 @@
 }
 
 @container settings-card (max-width: 32rem) {
-  .oc-settings-workspace .oc-settings-split-row {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 0.5rem;
-  }
-
-  .oc-settings-workspace .oc-settings-split-row-control {
-    width: 100%;
-    max-width: none;
-    justify-self: stretch;
-  }
-
-  .oc-settings-workspace .oc-settings-split-row:not(.oc-settings-split-row-stacked):has([role="checkbox"], input[type="checkbox"]) {
+  .oc-settings-workspace .oc-settings-split-row:not(.oc-settings-split-row-stacked) {
     grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--oc-settings-row-gap);
+  }
+
+  .oc-settings-workspace .oc-settings-split-row:not(.oc-settings-split-row-stacked) > .oc-settings-split-row-control {
+    width: auto;
+    max-width: min(60cqw, 20rem);
+    justify-self: end;
+  }
+
+  .oc-settings-workspace .oc-settings-split-row-copy {
+    overflow-wrap: anywhere;
+  }
+
+  /* Content-sized values must include their full padding in intrinsic sizing;
+     a negative margin clips text in nested full-width select triggers. */
+  .oc-settings-workspace .oc-settings-group-row
+    :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value) {
+    margin-inline-end: 0;
   }
 }
 

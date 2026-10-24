@@ -95,7 +95,7 @@ not change the spacing before or after their group.
   border without changing geometry.
 - The desktop value column, including adjacent reset actions, is capped by
   `--oc-settings-desktop-value-max-width`. Mobile uses the same semantic row
-  and collapses through the shared responsive grid.
+  and keeps compact controls beside their labels through the shared responsive grid.
 - Complex collections and editors that cannot fit in a compact value column
   add `oc-settings-split-row-stacked` to `SettingsRow`. On narrow/mobile
   surfaces the label occupies the first line and the complete control receives
@@ -162,9 +162,12 @@ placement still follow this specification.
   Entity names wrap, and skill metadata occupies a separate line.
 - Usage configuration spans the full detail width above the provider list and
   quota detail. Those results stack when the detail container is narrow.
-- Cards at or below 32rem stack field labels above controls; Boolean rows keep
-  their compact label/value layout. Container width, not viewport width,
-  determines whether a form has room for side-by-side columns.
+- Cards at or below 32rem keep ordinary fields, selects, numeric inputs, short
+  option groups, and Boolean controls inline: label on the left, content-sized
+  value on the right. The value footprint is capped at 60% of the card width
+  (up to 20rem); long labels wrap within the remaining space. Only explicit
+  `oc-settings-split-row-stacked` editors and collections use a full-width line.
+  Container width, not viewport width, determines the compact layout.
 - About version and export rows keep content-sized labels and right-aligned
   values on one line at every width. Action containers use the full row width
   without a value-column cap; buttons stay content-sized and right-aligned.

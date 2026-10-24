@@ -82,6 +82,7 @@ describe('session index background sync runtime', () => {
       expect(isFullyIdle(runtime)).toBe(true);
       expect(tips).toHaveBeenCalledTimes(8);
       expect(tips.mock.calls.map(([tip]) => tip.revision)).toEqual(revisionsAtDelivery);
+      for (const [tip] of tips.mock.calls) expect(tip).not.toHaveProperty('cause');
       expect(tips.mock.lastCall[0]).toMatchObject({ revision: runtime.snapshot().revision, sync: { active: false, enriching: false } });
       expect((await final).revision).toBe(runtime.snapshot().revision);
       expect(vi.getTimerCount()).toBe(0);
@@ -107,8 +108,10 @@ describe('session index background sync runtime', () => {
       });
       runtime.enqueue(['/repo']);
       expect(vi.getTimerCount()).toBe(1);
+      expect(tips.mock.lastCall[0]).not.toHaveProperty('cause');
       runtime.publishChange();
       expect(tips).toHaveBeenCalledTimes(2);
+      expect(tips.mock.lastCall[0]).toMatchObject({ cause: 'change', sync: { active: true } });
       expect(tips.mock.lastCall[0].revision).toBe(runtime.snapshot().revision);
       expect(vi.getTimerCount()).toBe(0);
       runtime.enqueue(['/repo/second']);
@@ -118,6 +121,7 @@ describe('session index background sync runtime', () => {
       const stoppedRevision = runtime.snapshot().revision;
       expect(tips).toHaveBeenCalledTimes(3);
       expect(tips.mock.lastCall[0]).toMatchObject({ revision: stoppedRevision, sync: { active: false, enriching: false } });
+      expect(tips.mock.lastCall[0]).not.toHaveProperty('cause');
       await expect(final).resolves.toMatchObject({ revision: stoppedRevision, sync: { active: false, failedDirectories: ['/repo', '/repo/second'] } });
       expect(vi.getTimerCount()).toBe(0);
       releaseReady(true);

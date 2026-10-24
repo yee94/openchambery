@@ -29,6 +29,7 @@ type WorktreeBootstrapStatusEvent = {
 type SessionIndexChangedEvent = {
   type: 'session-index-changed';
   revision: number;
+  cause?: 'change';
   sync?: { active: boolean; enriching: boolean };
   occurredAt: number;
 };
@@ -228,6 +229,7 @@ export const parseOpenchamberEventEnvelope = (envelope: { type: string; properti
       type: 'session-index-changed',
       revision,
       occurredAt,
+      ...(parsed?.cause === 'change' ? { cause: 'change' as const } : {}),
       ...(syncRaw
         ? {
             sync: {
