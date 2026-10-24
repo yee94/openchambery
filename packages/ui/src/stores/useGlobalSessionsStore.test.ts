@@ -919,6 +919,103 @@ describe('useGlobalSessionsStore', () => {
     }
   });
 
+  test('tip observer bounds snapshot GETs during a dense busy tip storm (relay cold-start budget)', async () => {
+    // Regression budget: a real cold start publishes ~300-360 busy tips in bursts
+    // 100-600ms apart. Over Relay each tip-driven GET is a full ~173KB snapshot, and
+    // per-burst GETs measured 12-57 snapshots per startup. The observer must route
+    // every wait through waitForSessionIndexInvalidation (1000ms busy throttle) and
+    // never GET per tip. Debounce-only behavior would issue ~9 GETs here.
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const dir = '/repo/storm';
+    const session = buildSession('https://share.example/storm', { id: 'ses_storm', directory: dir, time: { created: 1, updated: 10 } });
+    let latestRevision = 1;
+    let busy = false;
+    const snapshotAt = () => ({
+      available: true,
+      revision: latestRevision,
+      sync: {
+        active: busy,
+        enriching: false,
+        completed: busy ? 0 : 1,
+        total: 1,
+        pendingDirectories: busy ? [dir] : [],
+        completedDirectories: busy ? [] : [dir],
+        failedDirectories: [],
+      },
+      directories: [{
+        directory: dir, cursor: null, hasMore: false,
+        lastSyncedAt: 1000, lastFullSyncedAt: 1000, lastAccessedAt: 1000,
+        sessions: [session],
+      }],
+    });
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      let snapshotGets = 0;
+      let concurrentGets = 0;
+      let maxConcurrentGets = 0;
+      const appliedRevisions: number[] = [];
+      globalThis.fetch = async (input) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index/sync') {
+          return new Response(JSON.stringify(snapshotAt()), { status: 202, headers: { 'Content-Type': 'application/json' } });
+        }
+        snapshotGets += 1;
+        concurrentGets += 1;
+        maxConcurrentGets = Math.max(maxConcurrentGets, concurrentGets);
+        try {
+          const body = snapshotAt();
+          appliedRevisions.push(body.revision);
+          return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        } finally {
+          concurrentGets -= 1;
+        }
+      };
+
+      const startup = useGlobalSessionsStore.getState().startSessionIndexStartup([dir]);
+      for (let i = 0; i < 50 && tipListeners.size === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+      await startup;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const getsBeforeStorm = snapshotGets;
+
+      // ~1.2s of busy bursts, 32 tips every 150ms (wider than the 100ms debounce).
+      busy = true;
+      for (let burst = 0; burst < 8; burst += 1) {
+        for (let i = 0; i < 32; i += 1) {
+          latestRevision += 1;
+          emitOpenchamberTip({ type: 'session-index-changed', revision: latestRevision, occurredAt: latestRevision, sync: { active: true, enriching: false } });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      busy = false;
+      latestRevision += 1;
+      const finalRevision = latestRevision;
+      emitOpenchamberTip({ type: 'session-index-changed', revision: finalRevision, occurredAt: finalRevision, sync: { active: false, enriching: false } });
+      for (let i = 0; i < 100 && appliedRevisions.at(-1) !== finalRevision; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      const stormGets = snapshotGets - getsBeforeStorm;
+      // Idle completion must still load the final authoritative snapshot promptly.
+      expect(appliedRevisions.at(-1)).toBe(finalRevision);
+      expect(stormGets).toBeGreaterThanOrEqual(1);
+      expect(stormGets).toBeLessThanOrEqual(3);
+      expect(maxConcurrentGets).toBe(1);
+
+      // Idle observers wait without a hang-break poll: no further GETs.
+      const settledGets = snapshotGets;
+      await new Promise((resolve) => setTimeout(resolve, 1700));
+      expect(snapshotGets).toBe(settledGets);
+    } finally {
+      useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('tip observer stops retry after runtime switch abort', async () => {
     const originalWindow = globalThis.window;
     const originalFetch = globalThis.fetch;

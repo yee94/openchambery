@@ -52,10 +52,15 @@ export const registerSessionIndexRoutes = (app, {
     return res.json({ available: true, ...filtered });
   });
 
-  app.post('/api/openchamber/session-index/sync', (req, res) => {
+  app.post('/api/openchamber/session-index/sync', async (req, res) => {
     if (!sessionIndexSyncRuntime) return unsupported(res);
     const directories = Array.isArray(req.body?.directories) ? req.body.directories : [];
-    res.status(202).json(sessionIndexSyncRuntime.enqueue(directories));
+    const base = sessionIndexSyncRuntime.enqueue(directories);
+    if (!hostStoreWired) return res.status(202).json(base);
+    // Clients apply this body as a snapshot: same Host archive gate as GET.
+    const host = await readHostMap();
+    if (host.status === 'unavailable') return metadataUnavailable(res, host.error);
+    return res.status(202).json(applyHostArchiveToIndexSnapshot(base, host.stored));
   });
 
   app.put('/api/openchamber/session-index/directory', (req, res) => {

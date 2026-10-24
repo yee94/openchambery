@@ -102,6 +102,33 @@ describe('negotiated JSON response compression', () => {
       }
     } finally { host.close(); fetchMock.mockRestore(); }
   });
+
+  it('streams each SSE event as it arrives even when the client accepts gzip', async () => {
+    // Live activity rides SSE through the tunnel. Compressing it would buffer events
+    // until the gzip block fills, stalling session status/permissions on Relay.
+    let push;
+    const source = new ReadableStream({ start(controller) { push = controller; } });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(source, {
+      headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+    }));
+    const frames = [];
+    const host = createTunnelHost({ connectionId: 'sse-gzip-test', getLocalPort: () => 9,
+      sendFrame: (frame) => { frames.push(decodeTunnelFrame(frame)); }, getBufferedAmount: () => 0 });
+    const bodies = () => frames.filter((frame) => frame.frameType === TunnelFrameType.HttpBody).map((frame) => textDecoder.decode(frame.payload));
+    try {
+      await host.handleFrame(encodeTunnelFrame(TunnelFrameType.HttpRequest, 1, encodeJsonPayload({
+        method: 'GET', path: '/api/event', query: '', headers: {}, acceptEncoding: 'gzip',
+      })));
+      await waitFor(() => frames.some((frame) => frame.frameType === TunnelFrameType.HttpResponse));
+      const head = JSON.parse(textDecoder.decode(frames.find((frame) => frame.frameType === TunnelFrameType.HttpResponse).payload));
+      expect(head.encoding).toBeUndefined();
+      push.enqueue(textEncoder.encode('data: {"n":1}\n\n'));
+      await waitFor(() => bodies().join('').includes('"n":1'));
+      push.enqueue(textEncoder.encode('data: {"n":2}\n\n'));
+      await waitFor(() => bodies().join('').includes('"n":2'));
+      expect(frames.some((frame) => frame.frameType === TunnelFrameType.StreamEnd)).toBe(false);
+    } finally { push.close(); host.close(); fetchMock.mockRestore(); }
+  });
 });
 
 describe('isTunnelWsPathAllowed', () => {

@@ -226,6 +226,9 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
   const pingTimeoutMs = options.pingTimeoutMs ?? 15_000;
   const batchWindowMs = options.batchWindowMs ?? DEFAULT_BATCH_WINDOW_MS;
   const advertiseBatch = options.batch !== false;
+  // Per-request opt-in for Host-side gzip inside E2EE (measured ~75% fewer Relay
+  // wire bytes on JSON). Keep it capability-gated, never unconditional: clients
+  // without DecompressionStream and old Hosts must stay on uncompressed framing.
   const acceptGzip = typeof DecompressionStream === 'function';
   const reconnectBaseDelayMs = options.reconnectBaseDelayMs ?? 1_000;
   const reconnectMaxDelayMs = options.reconnectMaxDelayMs ?? 30_000;

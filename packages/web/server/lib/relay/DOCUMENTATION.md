@@ -88,6 +88,10 @@ notifications) omit it and receive uncompressed bodies.
 
 Only application/json and application/*+json bodies qualify. Known decoded bodies
 under 1 KiB, HEAD/no-body responses, SSE and binary assets are not compressed.
+SSE stays uncompressed so each event flushes immediately (a host test pushes two
+events through a gzip-accepting request and requires both before stream end);
+compression stays before encryption and behind the per-request opt-in. Measured
+mobile cold starts carried ~23-28% of decoded JSON bytes on the wire with gzip.
 Unknown-length JSON is streamed rather than buffered in full; loopback fetch's
 automatic decompression is accounted for before checking length. Cancellation and
 errors propagate through the stream pipeline. Host tests cover negotiation and

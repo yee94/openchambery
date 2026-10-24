@@ -7,6 +7,13 @@ const FULL_RECONCILE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6_000;
 const INTERACTIVE_YIELD_MS = 1_000;
 const LONG_POLL_MAX_MS = 25_000;
+/**
+ * Fixed trailing window for background progress tips. Each SSE tip makes every
+ * connected client GET the full snapshot, and one sync batch bumps the revision
+ * once per directory and once per child-flag check (~300+ per cold start). Keep
+ * progress `notify()` calls on the throttled path; only new batch, idle, stop and
+ * `publishChange()` may broadcast immediately. sync-runtime.test.js bounds this.
+ */
 const REVISION_TIP_THROTTLE_MS = 500;
 
 const normalizeDirectory = (value) => {
@@ -136,6 +143,9 @@ export const createSessionIndexSyncRuntime = ({
     }
   };
 
+  // `immediate` is reserved for edges a client must see without delay (new batch,
+  // idle, stop, external change). Progress callers must pass nothing: an immediate
+  // progress tip reintroduces one full client snapshot GET per directory/child.
   const notify = (immediate = false, cause) => {
     if (stopped && !immediate) return;
     revision += 1;

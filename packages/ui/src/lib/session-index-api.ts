@@ -45,6 +45,14 @@ export type SessionIndexSnapshot = {
 
 /** Coalesce dense revision tips before the next full snapshot GET. */
 const SESSION_INDEX_TIP_DEBOUNCE_MS = 100;
+/**
+ * Fixed (non-resetting) window for tips published while the Host is still syncing
+ * or enriching. Every resolution costs each client one full snapshot GET (~170KB
+ * per Relay round trip). A cold start publishes hundreds of busy tips in bursts
+ * spaced wider than the 100ms debounce, so debounce alone measured 12-57 GETs per
+ * mobile startup. Do not shorten this or route busy tips through `schedule()`;
+ * the observer budget test in useGlobalSessionsStore.test.ts guards the bound.
+ */
 const SESSION_INDEX_BUSY_TIP_THROTTLE_MS = 1_000;
 /**
  * Hang-break for tip waits: a completed background sync can publish its final
@@ -256,6 +264,9 @@ export const waitForSessionIndexInvalidation = (
       return;
     }
     if (event.type === 'session-index-changed' && event.revision > afterRevision) {
+      // Busy progress tips arm the fixed window once and never extend it. Only idle
+      // tips and `cause: 'change'` (pin/rename/external writes) may shorten it, so
+      // completion and user edits stay responsive without per-burst snapshot GETs.
       if (event.cause !== 'change' && (event.sync?.active || event.sync?.enriching)) {
         pendingReason = 'tip';
         if (debounceTimer === undefined) {
