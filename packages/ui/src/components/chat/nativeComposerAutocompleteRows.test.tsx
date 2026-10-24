@@ -246,7 +246,7 @@ describe('native composer autocomplete JS channel', () => {
       await flush(root, picker());
       const rows = onRowsChange.mock.lastCall?.[0].rows as ComposerAutocompleteListRow[];
       expect(rows[0]?.title).toBe('@general');
-      expect(rows.map((row) => row.title)).not.toContain('@comic-illustration');
+      expect(rows.at(-1)?.title).toBe('@comic-illustration');
       expect(document.body.textContent).not.toContain('chat.fileMentionAutocomplete.groups.');
       expect(document.body.querySelector('[data-agent-avatar]')).not.toBeNull();
       await act(async () => ref.current?.handleKeyDown('Enter'));
@@ -340,31 +340,36 @@ describe('native composer autocomplete JS channel', () => {
     root.unmount();
   });
 
-  test('mobile skill rows show a highlighted subtitle smaller than the title', async () => {
+  test('description-only skill matches can be selected and highlight the smaller mobile subtitle', async () => {
     mocks.skillsQuery.data = [{
-      name: 'paint',
+      name: 'agent-tracker-api',
       scope: 'user',
-      description: 'paint with an image model',
+      description: '通过 curl 查询 Runmark API',
     }];
     const [, { FileMentionAutocomplete }] = await loadCatalogs();
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
+    const ref = React.createRef<import('./FileMentionAutocomplete').FileMentionHandle>();
+    const onSkillSelect = vi.fn();
 
     await flush(root, (
       <FileMentionAutocomplete
-        searchQuery="paint"
+        ref={ref}
+        searchQuery="Runmark"
         onFileSelect={mocks.noop}
-        onSkillSelect={mocks.noop}
+        onSkillSelect={onSkillSelect}
         onClose={mocks.noop}
       />
     ));
 
     const subtitle = document.body.querySelector('.typography-micro');
-    expect(subtitle?.textContent).toBe('paint with an image model');
-    expect(subtitle?.querySelector('mark')?.textContent).toBe('paint');
+    expect(subtitle?.textContent).toBe('通过 curl 查询 Runmark API');
+    expect(subtitle?.querySelector('mark')?.textContent).toBe('Runmark');
     expect(subtitle?.className).toContain('typography-micro');
     expect(subtitle?.className).not.toContain('typography-meta');
+    await act(async () => ref.current?.handleKeyDown('Enter'));
+    expect(onSkillSelect).toHaveBeenCalledWith(mocks.skillsQuery.data[0]);
     root.unmount();
     mocks.skillsQuery.data = [];
   });

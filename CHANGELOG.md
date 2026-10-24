@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.2] - 2026-10-25
+
+### 改进
+
+- @提及的技能候选在名称模糊匹配之外增加描述文本的次级召回，名称命中仍优先排序，技能说明中的关键词也能被搜到。
+
 ## [2.1.10-beta.1] - 2026-10-25
 
 ### 改进

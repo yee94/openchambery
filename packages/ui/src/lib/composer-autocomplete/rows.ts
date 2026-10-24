@@ -121,12 +121,16 @@ export const buildMentionRows = ({
     });
   }
   const query = searchQuery.trim();
-  // TUI reference completion ranks names together, never descriptions or kinds.
+  // Keep TUI name ranking; skill descriptions add a lower-priority recall tier.
   const matches = query ? fuzzysort.go(query, rows, {
-    keys: ['title'],
+    keys: ['title', (row) => row.id.startsWith('skill:') ? row.subtitle ?? '' : ''],
     threshold: 0.5,
     limit: 10,
-    scoreFn: (result) => result.score * (result[0]?.target.startsWith(`@${query}`) ? 2 : 1),
+    scoreFn: (result) => {
+      const name = result[0];
+      const nameScore = (name?.score ?? 0) * (name?.target.startsWith(`@${query}`) ? 2 : 1);
+      return nameScore >= 0.5 ? 1 + nameScore : result[1]?.score ?? 0;
+    },
   }).map((result) => result.obj) : rows.slice();
   rows.length = 0;
   for (const file of recentFiles) {
