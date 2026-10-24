@@ -50,6 +50,8 @@ Resource acquisition, auth, leases, cancellation and retry remain with each call
 
 Coverage: `LoadingImage.test.tsx`, `markstreamImages.test.tsx`, `MobileFilesSurface.imagePreview.test.tsx`, and the existing attachment/preview contracts. Avatar/provider icons retain their existing icon-specific fallbacks.
 
+Mobile file-detail images fill the available content width at their natural aspect ratio, including their loading frame; tall images scroll within the sheet. Fullscreen media previews portal to the body above mobile sheets (`z-index: 80`) and join `MobileWindowStack` while open on mobile, suspending the underlying sheet's modal input ownership until the preview closes. `imageGeometry.chrome.test.ts` checks width and fullscreen hit testing; `ToolOutputDialog.preview.test.tsx` checks modal ownership and restoration.
+
 # Mobile Window Motion
 
 `useHeightSnap` is the shared dynamic pixel-height gesture/settlement owner for mobile

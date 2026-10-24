@@ -4,6 +4,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import ToolOutputDialog from './ToolOutputDialog';
 import { mobileBackNavigationCoordinator } from '@/mobile/mobileBackNavigation';
 import type { ToolPopupContent } from './types';
+import { mobileWindowStack } from '@/components/ui/MobileWindowStack';
 
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('../MarkdownRenderer', () => ({ SimpleMarkdownRenderer: ({ mermaidTheme }: { mermaidTheme?: { metadata: { variant: string } } }) => <svg viewBox="0 0 200 800" data-preview-theme={mermaidTheme?.metadata.variant} /> }));
@@ -23,6 +24,25 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const host = document.createElement('div');
 let root: ReturnType<typeof createRoot>;
 afterEach(async () => { await act(async () => root?.unmount()); vi.restoreAllMocks(); });
+
+test('mobile image preview takes modal ownership from the underlying sheet and restores it on close', async () => {
+  const sheetClose = vi.fn();
+  const removeSheet = mobileWindowStack.add({ id: 'file-sheet', onClose: sheetClose }, document.body);
+  root = createRoot(host);
+  function Preview() {
+    const [open, setOpen] = React.useState(true);
+    return <ToolOutputDialog popup={{ open, title: 'Photo', content: '', image: { url: 'data:image/png;base64,AA==' } }} onOpenChange={setOpen} isMobile />;
+  }
+  try {
+    await act(async () => root.render(<Preview />));
+    expect(mobileWindowStack.getSnapshot()).not.toBe('file-sheet');
+    await act(async () => mobileWindowStack.closeTop());
+    expect(document.querySelector('[data-media-preview]')).toBeNull();
+    expect(sheetClose).not.toHaveBeenCalled();
+    expect(mobileWindowStack.getSnapshot()).toBe('file-sheet');
+    expect(document.body.style.overflow).toBe('hidden');
+  } finally { removeSheet(); }
+});
 
 test.each(['image', 'mermaid'] as const)('%s Back closes preview immediately and preserves the underlying route', async (kind) => {
   const close = vi.fn();

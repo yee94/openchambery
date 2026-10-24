@@ -927,8 +927,8 @@ export const AgentsPage: React.FC = () => {
                       </div>
 
                       <div className="space-y-1 pl-2 mt-1">
-                        <div className="flex flex-wrap items-center justify-between gap-2 py-0.5">
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-between gap-2 py-0.5">
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                             <span className="typography-micro text-muted-foreground">{t('settings.agents.page.permissions.pattern')}</span>
                             <span className="typography-micro font-mono text-foreground bg-[var(--surface-muted)] px-1 rounded">*</span>
                             {wildcardOverride && (
@@ -951,7 +951,7 @@ export const AgentsPage: React.FC = () => {
                               upsertRule(permissionName, '*', value as PermissionAction);
                             }}
                           >
-                            <SelectTrigger className="w-[90px]">
+                            <SelectTrigger className="w-[90px] shrink-0">
                                <SelectValue>{permissionScopeLabel(wildcardValue as PermissionAction | 'global')}</SelectValue>
                              </SelectTrigger>
                              <SelectContent>
@@ -972,10 +972,10 @@ export const AgentsPage: React.FC = () => {
                           const isModified = Boolean(baselineRule && baselineRule.action !== rule.action);
 
                           return (
-                            <div key={ruleKey} className="flex flex-wrap items-center justify-between gap-2 py-0.5 border-t border-[var(--surface-subtle)]">
-                              <div className="flex items-center gap-2">
+                            <div key={ruleKey} className="flex items-center justify-between gap-2 py-0.5 border-t border-[var(--surface-subtle)]">
+                              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                                 <span className="typography-micro text-muted-foreground">{t('settings.agents.page.permissions.pattern')}</span>
-                                <span className="typography-micro font-mono text-foreground bg-[var(--surface-muted)] px-1 rounded">{rule.pattern}</span>
+                                <span className="min-w-0 break-all typography-micro font-mono text-foreground bg-[var(--surface-muted)] px-1 rounded">{rule.pattern}</span>
                                 {isAdded && <span className="typography-micro text-[var(--status-success)]">{t('settings.common.badge.new')}</span>}
                                 {isModified && <span className="typography-micro text-[var(--status-warning)]">{t('settings.common.badge.modified')}</span>}
                                 {(isAdded || isModified) && (
@@ -992,7 +992,7 @@ export const AgentsPage: React.FC = () => {
                                 value={rule.action}
                                 onValueChange={(value) => setRuleAction(rule.permission, rule.pattern, value as PermissionAction)}
                               >
-                                 <SelectTrigger className="w-[90px]">
+                                 <SelectTrigger className="w-[90px] shrink-0">
                                    <SelectValue>{permissionActionLabel(rule.action)}</SelectValue>
                                  </SelectTrigger>
                                  <SelectContent>

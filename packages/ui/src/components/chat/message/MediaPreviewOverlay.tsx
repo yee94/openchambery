@@ -6,6 +6,7 @@ import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 import { animateMediaPreview } from './mediaPreviewTransition';
+import { mobileWindowStack } from '@/components/ui/MobileWindowStack';
 
 export function PreviewCloseButton({ onClose, isMobile, size }: {
     onClose: () => void;
@@ -36,6 +37,7 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
     children: (close: () => void) => React.ReactNode;
 }) {
     const viewerRef = React.useRef<HTMLDivElement>(null);
+    const modalId = React.useId();
     const cancelRef = React.useRef<(() => void) | null>(null);
     const closingRef = React.useRef(false);
     const [closed, setClosed] = React.useState(false);
@@ -58,6 +60,7 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
         if (closed) return;
         const viewer = viewerRef.current;
         const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const removeModal = isMobile ? mobileWindowStack.add({ id: modalId, onClose: close }, document.body) : undefined;
         viewer?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
         cancelRef.current = animateMediaPreview(source,
             viewer?.querySelector<HTMLElement>('[data-preview-transition-target]') ?? null, viewer, false);
@@ -65,14 +68,15 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
             cancelRef.current?.();
             cancelRef.current = null;
             closingRef.current = false;
+            removeModal?.();
             if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
         };
-    }, [closed, open, source]);
+    }, [closed, open, source, isMobile, modalId, close]);
 
     if (!open || closed || typeof document === 'undefined') return null;
     return createPortal(<div ref={viewerRef} role="dialog" aria-modal="true" aria-label={title}
         data-media-preview={kind} data-page-scroll-lock="true" tabIndex={-1}
-        className="fixed inset-0 z-50 overflow-hidden select-none"
+        className="fixed inset-0 z-[80] overflow-hidden select-none"
         style={{
             backgroundColor: isMobile ? 'var(--oc-media-preview-background)' : `color-mix(in srgb, var(--oc-media-preview-background) ${kind === 'mermaid' ? 90 : 70}%, transparent)`,
             color: 'var(--oc-media-preview-foreground)',

@@ -121,6 +121,7 @@ placement still follow this specification.
 
 ## Responsive and platform rules
 
+- Verify mobile Settings layouts down to a 350px viewport width.
 - Desktop and mobile render the same Settings components. Do not branch into
   duplicate markup merely to change visual layout.
 - Mobile secondary pages use `MobileDetailNavigation`; pages must not recreate
