@@ -9,7 +9,7 @@ import { spriteIconSvgMarkup } from './rasterize-icon';
 import { buildMentionRows, buildSkillRows, buildSlashCommandRows } from './rows';
 
 describe('composer autocomplete icons and rows', () => {
-  test.each(['ge', 'gene'])('ranks @%s names across types, excluding description-only matches', (searchQuery) => {
+  test.each(['ge', 'gene'])('ranks @%s names before description-only matches', (searchQuery) => {
     const rows = buildMentionRows({
       searchQuery,
       agents: [{ name: 'general' }],
@@ -29,10 +29,23 @@ describe('composer autocomplete icons and rows', () => {
     // These two names tie in fuzzysort; their order depends on the complete catalog.
     expect(skillNames.slice(0, 2).sort()).toEqual(['@gpt-image-generator', '@poe-image-generator']);
     expect(skillNames.slice(2)).toEqual(searchQuery === 'ge'
-      ? ['@wxa-skills-generate', '@agent-tracker-api']
-      : ['@wxa-skills-generate']);
-    expect(rows.map((row) => row.title)).not.toContain('@comic-illustration');
+      ? ['@wxa-skills-generate', '@agent-tracker-api', '@comic-illustration']
+      : ['@wxa-skills-generate', '@comic-illustration']);
     expect(rows.at(-1)?.title).toBe('generate.ts');
+  });
+
+  test.each(['Runmark', 'runmark', 'RUNMARK'])('recalls a skill by its description with @%s', (searchQuery) => {
+    const rows = buildMentionRows({
+      searchQuery,
+      agents: [{ name: 'general', description: 'Runmark' }],
+      skills: [
+        { name: 'agent-tracker-api', scope: 'user', description: '通过 curl 查询 Runmark API，拉取会话上下文与统计。' },
+        { name: 'runmark-tools', scope: 'project', description: 'Usage reports' },
+        { name: 'drawing', scope: 'user', description: 'Generate pictures' },
+      ],
+      sessions: [], recentFiles: [], pathHits: [], untitledSession: 'Untitled',
+    });
+    expect(rows.map((row) => row.title)).toEqual(['@runmark-tools', '@agent-tracker-api']);
   });
 
   test('lets an exact skill outrank a partial agent and bounds a 300-entry catalog', () => {

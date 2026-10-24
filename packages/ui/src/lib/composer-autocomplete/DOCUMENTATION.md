@@ -28,8 +28,11 @@ Do not fetch files, commands, or skills from this folder. Ranking runs on catalo
 acceptance and native row emission. Nonempty queries rank Agent and skill names
 together with fuzzysort 3.1.0, threshold 0.5, a 2× case-sensitive `@query` prefix
 boost and a ten-row final limit, following OpenCode TUI reference completion.
-Descriptions are display-only: `@gene` puts `@general` before image-generator
-skills and does not recall a skill solely because its description says “generate”.
+Skill descriptions add a lower-priority, case-insensitive recall tier at the same
+0.5 threshold. Name matches keep their TUI ordering and always precede description-only
+matches: `@gene` puts `@general` before image-generator skills, followed by skills
+whose descriptions mention “generate”. `@Runmark` can recall `agent-tracker-api`
+through its description. Agent descriptions remain display-only.
 An exact skill can outrank a partial Agent; there is no fixed type priority.
 Empty queries retain catalog order (skills, Agents), followed by recent-file,
 ranked path and session candidates. Sessions fill remaining slots after paths so
