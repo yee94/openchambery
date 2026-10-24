@@ -395,7 +395,6 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     // [] when relay status is unavailable. Gates remote-bearer pairing requests
     // that carry a relayUrl: paired desktops may only use an endpoint the host
     // already has (echo of any configured endpoint, never a re-point).
-    getEffectiveRelayUrls = async () => [],
     // Candidates for EVERY configured relay endpoint (multi-relay), or null /
     // a non-array when only the single-endpoint accessor is available. Feeds
     // the connection-candidates refresh so paired devices learn the full
@@ -897,19 +896,8 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
       if (req.body?.relayUrl !== undefined && !requestedRelayUrl) {
         return res.status(400).json({ error: 'Relay URL must use ws:// or wss://' });
       }
-      // Changing the Host Relay endpoint set is an owner-UI or local
-      // desktop-shell action. Paired desktop operators reach this handler too,
-      // but may only name an endpoint the host already uses — anything else
-      // would re-point (or extend) the Host relay from a remote bearer.
-      if (requestedRelayUrl !== undefined && authContext?.type === 'client') {
-        const actingClient = authContext.client || await clientRecordFromAuthContext(authContext);
-        if (actingClient?.clientKind !== 'desktop-local') {
-          const effectiveRelayUrls = await getEffectiveRelayUrls();
-          if (!Array.isArray(effectiveRelayUrls) || !effectiveRelayUrls.includes(requestedRelayUrl)) {
-            return res.status(403).json({ error: 'Only the owner UI session can set a custom Relay endpoint' });
-          }
-        }
-      }
+      // The create-auth gate grants paired desktop operators the same pairing
+      // endpoint selection as the owner, including adding a new Relay endpoint.
       const candidates = await pairingServerCandidates(req, {
         preferredServerUrl: req.body?.serverUrl,
         includeRelay: typeof req.body?.includeRelay === 'boolean' ? req.body.includeRelay : undefined,

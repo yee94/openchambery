@@ -1822,19 +1822,6 @@ async function main(options = {}) {
     // Re-evaluate the relay lifecycle after pairing/device changes (a revoked or
     // redeemed device can flip relay demand on or off).
     reconcileRelay: () => (relayServiceInstance ? relayServiceInstance.reconcile() : Promise.resolve()),
-    // Canonical endpoints the host relay currently uses (primary first).
-    // Pairing-session requests from paired desktop clients may carry a relayUrl
-    // only when it matches one of these (an echo of an advertised endpoint,
-    // never a re-point or an extension).
-    getEffectiveRelayUrls: async () => {
-      if (!relayServiceInstance) return [];
-      try {
-        const status = await relayServiceInstance.getStatus();
-        return Array.isArray(status?.relayUrls) ? status.relayUrls : [];
-      } catch {
-        return [];
-      }
-    },
     // Every configured relay endpoint as a pairing candidate (multi-relay),
     // for the connection-candidates refresh.
     getRelayPairingCandidates: async () => {

@@ -990,12 +990,10 @@ describe('core-routes', () => {
     expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();
   });
 
-  it('forbids paired desktop clients from re-pointing the Relay endpoint when pairing', async () => {
-    const getRelayPairingCandidate = vi.fn();
-    const getEffectiveRelayUrls = vi.fn(async () => ['wss://relay.example/ws']);
+  it('lets paired desktop clients select a new Relay endpoint when pairing', async () => {
+    const getRelayPairingCandidate = vi.fn(async ({ relayUrl }) => ({ type: 'relay', relayUrl }));
     const { app, dependencies } = createPairingRouteApp({
       getRelayPairingCandidate,
-      getEffectiveRelayUrls,
       uiAuthController: {
         resolveAuthContext: vi.fn(async () => ({
           type: 'client',
@@ -1020,11 +1018,11 @@ describe('core-routes', () => {
 
     await request(app)
       .post('/api/client-auth/pairing/sessions')
-      .send({ includeRelay: true, relayUrl: 'wss://attacker.example/ws' })
-      .expect(403, { error: 'Only the owner UI session can set a custom Relay endpoint' });
+      .send({ includeRelay: true, relayUrl: 'wss://custom-relay.example/ws' })
+      .expect(201);
 
-    expect(getRelayPairingCandidate).not.toHaveBeenCalled();
-    expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();
+    expect(getRelayPairingCandidate).toHaveBeenCalledWith({ ensureEnabled: true, relayUrl: 'wss://custom-relay.example/ws' });
+    expect(dependencies.clientPairingRuntime.createPairingSession).toHaveBeenCalledWith(expect.objectContaining({ usesRelay: true, createdByClientId: 'remote-desktop-1' }));
   });
 
   it('lets paired desktop clients echo the current Relay endpoint when pairing', async () => {
@@ -1035,10 +1033,8 @@ describe('core-routes', () => {
       hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'aaa', y: 'bbb' },
       priority: 30,
     }));
-    const getEffectiveRelayUrls = vi.fn(async () => ['wss://relay.example/ws', 'wss://relay2.example/ws']);
     const { app } = createPairingRouteApp({
       getRelayPairingCandidate,
-      getEffectiveRelayUrls,
       uiAuthController: {
         resolveAuthContext: vi.fn(async () => ({
           type: 'client',
