@@ -17,6 +17,10 @@ describe('composer autocomplete visible rows', () => {
   test('treats copied rows with the same fields as equal', () => {
     expect(composerAutocompleteRowsEqual([row('undo')], [{ ...row('undo') }])).toBe(true);
     expect(composerAutocompleteRowsEqual([row('undo')], [row('redo')])).toBe(false);
+    expect(composerAutocompleteRowsEqual(
+      [{ ...row('agent'), agentName: 'general' }],
+      [{ ...row('agent'), agentName: 'explore' }],
+    )).toBe(false);
   });
 
   test('commit keeps the previous reference when content matches', () => {

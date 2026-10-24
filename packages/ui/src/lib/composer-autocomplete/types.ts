@@ -1,3 +1,5 @@
+import type { IconName } from '@/components/icon/icons';
+
 export type ComposerAutocompleteKind = 'slash-command' | 'mention';
 
 export type ComposerAutocompleteTrigger = {
@@ -16,7 +18,8 @@ export type ComposerAutocompleteListRow = {
   title: string;
   subtitle?: string;
   badge?: string;
-  iconName: string;
+  iconName: IconName;
+  agentName?: string;
 };
 
 export type ComposerAutocompleteVisibleRows = {

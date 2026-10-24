@@ -1,6 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import fuzzysort from 'fuzzysort';
 
 import {
   commitComposerAutocompleteRows,
@@ -11,13 +12,15 @@ import {
 const mocks = vi.hoisted(() => {
   const commands: never[] = [];
   const skills: Array<{ name: string; scope: string; description?: string }> = [];
+  const emptySessions: [] = [];
   return {
+    emptySessions,
     t: (key: string) => key,
     allowCommand: () => true,
     noop: () => undefined,
     noopSession: () => undefined,
     searchFiles: async () => [],
-    getVisibleAgents: () => [],
+    agents: [{ name: 'general', mode: 'subagent' }],
     commandQuery: { data: commands, isFetching: false },
     skillsQuery: { data: skills },
   };
@@ -39,7 +42,7 @@ vi.mock('@/sync/session-ui-store', () => {
 
 vi.mock('@/sync/sync-context', () => ({
   useSessionMessages: () => [],
-  useAllLiveSessions: () => [],
+  useAllLiveSessions: () => mocks.emptySessions,
 }));
 
 vi.mock('@/queries/commandQueries', () => ({
@@ -78,8 +81,8 @@ vi.mock('@/stores/useFileSearchStore', () => ({
 }));
 
 vi.mock('@/stores/useConfigStore', () => ({
-  useConfigStore: (selector: (state: { getVisibleAgents: typeof mocks.getVisibleAgents }) => unknown) => selector({
-    getVisibleAgents: mocks.getVisibleAgents,
+  useConfigStore: (selector: (state: { agents: typeof mocks.agents }) => unknown) => selector({
+    agents: mocks.agents,
   }),
 }));
 
@@ -98,7 +101,7 @@ vi.mock('@/stores/useFilesViewTabsStore', () => ({
 
 vi.mock('@/stores/useGlobalSessionsStore', () => ({
   useGlobalSessionsStore: (selector: (state: { activeSessions: [] }) => unknown) => selector({
-    activeSessions: [],
+    activeSessions: mocks.emptySessions,
   }),
   mergeLiveSessionCatalog: (globalSessions: unknown[]) => globalSessions,
 }));
@@ -186,6 +189,84 @@ const UnstablePolicyChild = ({
 };
 
 describe('native composer autocomplete JS channel', () => {
+  test('does not rerank 300 skills for 50 unrelated updates, and sees a refreshed agent catalog', async () => {
+    mocks.skillsQuery.data = Array.from({ length: 300 }, (_, i) => ({ name: `generator-${i}`, scope: 'user' }));
+    const originalAgents = mocks.agents;
+    const [, { FileMentionAutocomplete }] = await loadCatalogs();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const rank = vi.spyOn(fuzzysort, 'go');
+    const render = (tick: number) => <div data-tick={tick}><FileMentionAutocomplete
+      searchQuery="gene" onFileSelect={mocks.noop} onAgentSelect={mocks.noop}
+      onSkillSelect={mocks.noop} onClose={mocks.noop}
+    /></div>;
+    try {
+      await flush(root, render(0));
+      rank.mockClear();
+      for (let i = 1; i <= 50; i++) await flush(root, render(i));
+      expect(rank).not.toHaveBeenCalled();
+      expect(document.body.querySelectorAll('[data-mention-id]')).toHaveLength(10);
+      mocks.agents = [{ name: 'gene', mode: 'subagent' }];
+      await flush(root, render(51));
+      expect(document.body.querySelector('[data-mention-id]')?.getAttribute('data-mention-id')).toBe('agent:gene');
+      expect(rank).toHaveBeenCalledTimes(1);
+    } finally {
+      rank.mockRestore();
+      root.unmount();
+      mocks.skillsQuery.data = [];
+      mocks.agents = originalAgents;
+    }
+  });
+
+  test('ranks the closest agent before skills in one flat keyboard/native list', async () => {
+    mocks.skillsQuery.data = [
+      { name: 'gpt-image-generator', scope: 'user' },
+      { name: 'poe-image-generator', scope: 'user' },
+      { name: 'comic-illustration', scope: 'user', description: 'generate images' },
+    ];
+    const [, { FileMentionAutocomplete }] = await loadCatalogs();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const ref = React.createRef<import('./FileMentionAutocomplete').FileMentionHandle>();
+    const onAgentSelect = vi.fn();
+    const onSkillSelect = vi.fn();
+    const onRowsChange = vi.fn();
+    const picker = () => <FileMentionAutocomplete
+      ref={ref}
+      searchQuery="gene"
+      onFileSelect={mocks.noop}
+      onAgentSelect={onAgentSelect}
+      onSkillSelect={onSkillSelect}
+      onClose={mocks.noop}
+      onRowsChange={onRowsChange}
+    />;
+    try {
+      await flush(root, picker());
+      const rows = onRowsChange.mock.lastCall?.[0].rows as ComposerAutocompleteListRow[];
+      expect(rows[0]?.title).toBe('@general');
+      expect(rows.map((row) => row.title)).not.toContain('@comic-illustration');
+      expect(document.body.textContent).not.toContain('chat.fileMentionAutocomplete.groups.');
+      expect(document.body.querySelector('[data-agent-avatar]')).not.toBeNull();
+      await act(async () => ref.current?.handleKeyDown('Enter'));
+      expect(onAgentSelect).toHaveBeenCalledWith('general');
+      await act(async () => ref.current?.acceptIndex(1));
+      expect(onSkillSelect.mock.lastCall?.[0].name).toBe(rows[1]?.title.slice(1));
+      await act(async () => {
+        ref.current?.handleKeyDown('ArrowDown');
+        ref.current?.handleKeyDown('Tab');
+      });
+      expect(onSkillSelect.mock.lastCall?.[0].name).toBe(rows[1]?.title.slice(1));
+      mocks.skillsQuery.data = [{ name: 'gene', scope: 'user' }, ...mocks.skillsQuery.data];
+      await flush(root, picker());
+      await act(async () => ref.current?.handleKeyDown('Tab'));
+      expect(onSkillSelect.mock.lastCall?.[0].name).toBe(rows[1]?.title.slice(1));
+    } finally {
+      root.unmount();
+      mocks.skillsQuery.data = [];
+    }
+  });
   test('unstable policy plus equal-row commit does not overflow React updates', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -261,7 +342,7 @@ describe('native composer autocomplete JS channel', () => {
 
   test('mobile skill rows show a highlighted subtitle smaller than the title', async () => {
     mocks.skillsQuery.data = [{
-      name: '绘画',
+      name: 'paint',
       scope: 'user',
       description: 'paint with an image model',
     }];

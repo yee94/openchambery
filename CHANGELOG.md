@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.1] - 2026-10-25
+
+### 改进
+
+- 输入框的 @文件与斜杠命令补全改用 fuzzysort 打分排序，模糊匹配的排序更贴近输入意图，技能与文件的候选合并逻辑统一。
+- 原生 iOS 输入框与网页输入框共用同一套补全行数据，两端的候选项与排序保持一致。
+
 ## [2.1.9] - 2026-10-24
 
 ### 改进

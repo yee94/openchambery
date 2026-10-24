@@ -13,7 +13,8 @@ export const composerAutocompleteRowsEqual = (
       && row.title === other.title
       && (row.subtitle ?? '') === (other.subtitle ?? '')
       && (row.badge ?? '') === (other.badge ?? '')
-      && row.iconName === other.iconName;
+      && row.iconName === other.iconName
+      && row.agentName === other.agentName;
   });
 };
 

@@ -17,7 +17,6 @@ export {
   type SlashCommandRowLabels,
   type SlashCommandRowSource,
 } from './rows';
-export { rankSkillsForQuery, type RankableSkill } from './skill-rank';
 export { rankCommandsForQuery, type RankableSlashCommand } from './slash-rank';
 export { resolveComposerAutocompleteReplaceRange, resolveComposerAutocompleteTrigger } from './trigger';
 export {

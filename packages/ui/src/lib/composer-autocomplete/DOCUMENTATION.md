@@ -13,7 +13,7 @@ Assistant contacts also consume `resolveComposerAutocompleteTrigger` through `co
 | Trigger detection (`/`, `@`, paste guard, shell off) | `trigger.ts` |
 | Accept replace range (open trigger token, then live caret) | `trigger.ts` (`resolveComposerAutocompleteReplaceRange`) |
 | Slash-command fuzzy rank | `slash-rank.ts` |
-| `@` skill fuzzy rank | `skill-rank.ts` |
+| Joint `@` Agent / skill name rank | `rows.ts` (`buildMentionRows`) |
 | Sprite icon names | `icons.ts` |
 | Flat suggestion rows (titles, badges, icon names) | `rows.ts` |
 | Equal-row commit / emit for native and LS consumers | `visible-rows.ts` |
@@ -21,6 +21,33 @@ Assistant contacts also consume `resolveComposerAutocompleteTrigger` through `co
 | Catalog fetch, Query, and insert/submit | Existing `CommandAutocomplete` / `FileMentionAutocomplete` (skills live in the `@` list) |
 
 Do not fetch files, commands, or skills from this folder. Ranking runs on catalogs the caller already loaded.
+
+## Mention ordering and presentation
+
+`buildMentionRows` owns the single flat order used by web rendering, keyboard/touch
+acceptance and native row emission. Nonempty queries rank Agent and skill names
+together with fuzzysort 3.1.0, threshold 0.5, a 2× case-sensitive `@query` prefix
+boost and a ten-row final limit, following OpenCode TUI reference completion.
+Descriptions are display-only: `@gene` puts `@general` before image-generator
+skills and does not recall a skill solely because its description says “generate”.
+An exact skill can outrank a partial Agent; there is no fixed type priority.
+Empty queries retain catalog order (skills, Agents), followed by recent-file,
+ranked path and session candidates. Sessions fill remaining slots after paths so
+session IDs cannot displace file results. File/path ranking remains with
+`fileMentionSearch`; session suggestions retain their OpenChamber recency policy.
+
+The OpenCode graphical client's `composer/editor/interaction.ts` also searches
+labels only, but then groups by type. This surface deliberately follows the TUI's
+flat presentation instead. No group headings or type offsets are used for selection.
+Selection follows row identity across asynchronous catalog/path updates and resets
+on query or directory changes; arriving file hits cannot steal a keyboard pick.
+Agent availability subscribes to the actual catalog, excluding hidden/primary
+Agents, so a catalog refresh updates an already-open picker.
+
+Rows carry optional `agentName`; web uses `AgentAvatar`, native rasterizes the
+same generated identity/palette artwork. Skills, sessions, files and directories
+retain their own sprite icons. Native PNG reuse is bounded to 128 entries / 1 MiB,
+keyed by identity and theme colors; row equality includes the avatar identity.
 
 ## Trigger priority
 

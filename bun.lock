@@ -49,7 +49,7 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "2.1.8",
+      "version": "2.1.9",
       "dependencies": {
         "@openchambery/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
@@ -64,7 +64,7 @@
     },
     "packages/mobile": {
       "name": "@openchamber/mobile",
-      "version": "2.1.8",
+      "version": "2.1.9",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@capacitor-mlkit/barcode-scanning": "^8.1.0",
@@ -86,7 +86,7 @@
     },
     "packages/relay-server": {
       "name": "@openchambery/relay-server",
-      "version": "2.1.8",
+      "version": "2.1.9",
       "bin": {
         "openchamber-relay": "./bin/openchamber-relay.js",
       },
@@ -96,7 +96,7 @@
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "2.1.8",
+      "version": "2.1.9",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@base-ui/react": "^1.4.0",
@@ -152,6 +152,7 @@
         "dompurify": "^3.2.7",
         "express": "^5.1.0",
         "fuse.js": "^7.1.0",
+        "fuzzysort": "3.1.0",
         "ghostty-web": "^0.4.0",
         "heic2any": "^0.0.4",
         "html-to-image": "^1.11.13",
@@ -210,7 +211,7 @@
     },
     "packages/vscode": {
       "name": "openchamber",
-      "version": "2.1.8",
+      "version": "2.1.9",
       "dependencies": {
         "@openchamber/ui": "workspace:*",
         "@opencode/client": "2.0.23",
@@ -237,7 +238,7 @@
     },
     "packages/web": {
       "name": "@openchambery/web",
-      "version": "2.1.8",
+      "version": "2.1.9",
       "bin": {
         "openchamber": "./bin/cli.js",
         "openchambery": "./bin/cli.js",
@@ -2133,6 +2134,8 @@
     "functions-have-names": ["functions-have-names@1.2.3", "", {}, "sha512-xckBUXyTIqT97tq2x2AMb+g163b5JFysYk0x4qxNFwbfQkmNZoiRHb6sPzI9/QV33WeuvVYBUIiD4NzNIyqaRQ=="],
 
     "fuse.js": ["fuse.js@7.1.0", "", {}, "sha512-trLf4SzuuUxfusZADLINj+dE8clK1frKdmqiJNb1Es75fmI5oY6X2mxLVUciLLjxqw/xr72Dhy+lER6dGd02FQ=="],
+
+    "fuzzysort": ["fuzzysort@3.1.0", "", {}, "sha512-sR9BNCjBg6LNgwvxlBd0sBABvQitkLzoVY9MYYROQVX/FvfJ4Mai9LsGhDgd8qYdds0bY77VzYd5iuB+v5rwQQ=="],
 
     "gaxios": ["gaxios@7.3.1", "", { "dependencies": { "extend": "^3.0.2", "https-proxy-agent": "^7.0.1", "node-fetch": "^3.3.2" } }, "sha512-kB3rzJV7d9juLZh8/56QTXCwQfxyhdOMdyYk1HdQKFtF8TJTDTZQJtixWIwXdE9Jji91mC41DUNpjleo4L4eAQ=="],
 
