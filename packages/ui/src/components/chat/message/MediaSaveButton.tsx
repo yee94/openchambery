@@ -6,7 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { saveImageToDevice, type ImageSaveTarget } from '../imageSave';
 
 /** Key by media/runtime identity so pending completions cannot affect another preview. */
-export function MediaSaveButton({ target }: { target: ImageSaveTarget }) {
+export function MediaSaveButton({ target, isMobile }: { target: ImageSaveTarget; isMobile: boolean }) {
     const { t } = useI18n();
     const [state, setState] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const request = React.useRef<AbortController | null>(null);
@@ -30,11 +30,12 @@ export function MediaSaveButton({ target }: { target: ImageSaveTarget }) {
     const label = saving ? t('chat.image.actions.saving') : saved ? t('filesView.editor.saved')
         : t(target.kind === 'video' ? 'filesView.editor.saveFile' : 'chat.image.actions.saveImage');
     return <>
-        <Button variant="ghost" size="icon" data-media-save={state}
-            className="size-8 rounded-full [corner-shape:round] text-[var(--oc-media-preview-foreground)] hover:text-[var(--oc-media-preview-foreground)] hover:bg-[color-mix(in_srgb,var(--oc-media-preview-foreground)_12%,transparent)] disabled:opacity-100"
+        <Button variant={isMobile ? 'ghost' : 'mobileGlass'} size={isMobile ? 'icon' : 'mobileIcon'} data-media-save={state}
+            className="rounded-full [corner-shape:round] disabled:opacity-100"
             aria-label={label} aria-busy={saving} disabled={saving || saved} onClick={save}>
-            <Icon name={saving ? 'loader-4' : saved ? 'check' : 'download'}
-                className={saving ? 'size-4 motion-safe:animate-spin' : 'size-4'} />
+            {saving ? <Icon name="loader-4" className={`${isMobile ? 'size-5' : 'size-6'} motion-safe:animate-spin`} />
+                : saved ? <Icon name="check" weight="medium" className={isMobile ? 'size-5' : 'size-6'} />
+                : <Icon name="download-2-fill" className={isMobile ? 'size-5' : 'size-6'} />}
         </Button>
         <span className="sr-only" role="status" aria-live="polite">
             {state === 'error' ? t(target.kind === 'video' ? 'filesView.toast.saveFailed' : 'chat.image.actions.saveFailed')

@@ -705,17 +705,17 @@ const ImagePreviewDialog: React.FC<{
                 />}
             </div>
 
-            <MediaPreviewToolbar>
+            <MediaPreviewToolbar isMobile={isMobile}>
                     {hasMultipleImages && (
                         <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn('size-8 rounded-full', controlTone)}
+                            variant={isMobile ? 'ghost' : 'mobileGlass'}
+                            size={isMobile ? 'icon' : 'mobileIcon'}
+                            className={cn('rounded-full', isMobile && 'size-8', isMobile && controlTone)}
                             onClick={showPrevious}
                             aria-label={t('chat.toolOutputDialog.image.previousAria')}
                             title={t('chat.toolOutputDialog.image.previousAria')}
                         >
-                            <Icon name="arrow-left-s" className="size-5" />
+                            <Icon name="arrow-left-s" weight="medium" className={isMobile ? 'size-5' : 'size-6'} />
                         </Button>
                     )}
                     {hasMultipleImages && (
@@ -725,49 +725,49 @@ const ImagePreviewDialog: React.FC<{
                     )}
                     {hasMultipleImages && (
                         <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn('size-8 rounded-full', controlTone)}
+                            variant={isMobile ? 'ghost' : 'mobileGlass'}
+                            size={isMobile ? 'icon' : 'mobileIcon'}
+                            className={cn('rounded-full', isMobile && 'size-8', isMobile && controlTone)}
                             onClick={showNext}
                             aria-label={t('chat.toolOutputDialog.image.nextAria')}
                             title={t('chat.toolOutputDialog.image.nextAria')}
                         >
-                            <Icon name="arrow-right-s" className="size-5" />
+                            <Icon name="arrow-right-s" weight="medium" className={isMobile ? 'size-5' : 'size-6'} />
                         </Button>
                     )}
                     {hasMultipleImages && <span className="mx-0.5 h-4 w-px bg-current opacity-15" aria-hidden="true" />}
                     <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn('size-8 rounded-full', controlTone)}
+                        variant={isMobile ? 'ghost' : 'mobileGlass'}
+                        size={isMobile ? 'icon' : 'mobileIcon'}
+                        className={cn('rounded-full', isMobile && 'size-8', isMobile && controlTone)}
                         onClick={() => zoomAtPoint(transformRef.current.scale / 1.4, viewportCenter(), true)}
                         aria-label={t('chat.toolOutputDialog.image.zoomOutAria')}
                         title={t('chat.toolOutputDialog.image.zoomOutAria')}
                     >
-                        <Icon name="subtract" className="size-4" />
+                        <Icon name="subtract" weight="medium" className={isMobile ? 'size-5' : 'size-6'} />
                     </Button>
                     <Button
-                        variant="ghost"
-                        size="sm"
-                        className={cn('h-8 min-w-14 rounded-full px-2 tabular-nums', controlTone)}
+                        variant={isMobile ? 'ghost' : 'mobileGlass'}
+                        size={isMobile ? 'sm' : 'lg'}
+                        className={cn('rounded-full tabular-nums', isMobile ? 'min-w-14 px-2' : 'min-w-20', isMobile && controlTone)}
                         onClick={() => resetTransform(true)}
                         aria-label={t('chat.toolOutputDialog.image.resetZoomAria')}
                         title={t('chat.toolOutputDialog.image.resetZoomAria')}
                     >
-                        <Icon name="restart" className="size-3.5" />
+                        <Icon name="restart" weight="medium" className={isMobile ? 'size-4' : 'size-5'} />
                         <span ref={zoomLabelRef}>100%</span>
                     </Button>
                     <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn('size-8 rounded-full', controlTone)}
+                        variant={isMobile ? 'ghost' : 'mobileGlass'}
+                        size={isMobile ? 'icon' : 'mobileIcon'}
+                        className={cn('rounded-full', isMobile && 'size-8', isMobile && controlTone)}
                         onClick={() => zoomAtPoint(transformRef.current.scale * 1.4, viewportCenter(), true)}
                         aria-label={t('chat.toolOutputDialog.image.zoomInAria')}
                         title={t('chat.toolOutputDialog.image.zoomInAria')}
                     >
-                        <Icon name="add" className="size-4" />
+                        <Icon name="add" weight="medium" className={isMobile ? 'size-5' : 'size-6'} />
                     </Button>
-                <MediaSaveButton key={imageResource.key} target={{
+                <MediaSaveButton isMobile={isMobile} key={imageResource.key} target={{
                 sourceUrl: currentImage.url || displayImageSource, displayUrl: displayImageSource || undefined,
                 filename: currentImage.filename || popup.image?.filename || popup.title,
                 mimeType: currentImage.mimeType || popup.image?.mimeType, effectiveDirectory,

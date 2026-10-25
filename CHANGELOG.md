@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.9] - 2026-10-25
+
+### 改进
+
+- 预览工具栏在移动端靠右下角、桌面端靠左下角定位，并避开安全区；保存按钮改用新的下载图标，移动端与桌面的尺寸区分更明确。
+
 ## [2.1.10-beta.8] - 2026-10-25
 
 ### 改进

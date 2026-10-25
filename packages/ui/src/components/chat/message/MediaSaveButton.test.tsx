@@ -11,7 +11,7 @@ let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 beforeEach(() => { vi.mocked(saveImageToDevice).mockReset(); host = document.createElement('div'); root = createRoot(host); });
 afterEach(async () => { await act(async () => root.unmount()); });
-const render = (sourceUrl = 'blob:first') => act(async () => root.render(<MediaSaveButton key={sourceUrl} target={{ sourceUrl }} />));
+const render = (sourceUrl = 'blob:first') => act(async () => root.render(<MediaSaveButton isMobile key={sourceUrl} target={{ sourceUrl }} />));
 const button = () => host.querySelector('button')!;
 
 test('one click shows an icon-only spinner until saving completes, then a check without duplicate writes', async () => {
