@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.7] - 2026-10-25
+
+### 改进
+
+- 任务分组头部的智能体头像去重，同一子任务重复出现时不再生成重复头像。
+
 ## [2.1.10-beta.6] - 2026-10-25
 
 ### 改进

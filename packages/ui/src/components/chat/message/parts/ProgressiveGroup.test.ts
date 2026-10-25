@@ -360,8 +360,11 @@ describe('progressive activity presentation', () => {
 
     test('keeps task agent avatars and status-specific counts in active and completed headers', () => {
         expect(progressiveGroupSource).toContain('const seed = readTaskToolSessionId(part) || taskId;');
-        expect(progressiveGroupSource).toContain('all.push(seed);');
-        expect(progressiveGroupSource).toContain('active.push(seed);');
+        expect(progressiveGroupSource).toContain('const all = new Set<string>();');
+        expect(progressiveGroupSource).toContain('const active = new Set<string>();');
+        expect(progressiveGroupSource).toContain('all.add(seed);');
+        expect(progressiveGroupSource).toContain('active.add(seed);');
+        expect(progressiveGroupSource).toContain('return { active: [...active], all: [...all] };');
         expect(progressiveGroupSource).toContain('{displayedTaskAvatarSeeds.length > 0 ? (');
         expect(progressiveGroupSource).toContain('<AgentAvatar');
         expect(progressiveGroupSource).toContain('inline-flex shrink-0 items-center gap-0.5');
@@ -488,7 +491,7 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('if (!isTaskToolName(part.tool)) continue;');
         expect(progressiveGroupSource).toContain("stateRecord.status === 'pending' || stateRecord.status === 'running'");
         expect(progressiveGroupSource).toContain('const taskId = typeof part.id === \'string\' ? part.id.trim() : \'\'');
-        expect(progressiveGroupSource).toContain('return { active, all };');
+        expect(progressiveGroupSource).toContain('return { active: [...active], all: [...all] };');
         expect(progressiveGroupSource).toContain('const displayedTaskAvatarSeeds = isActive ? taskAvatarSeeds.active : taskAvatarSeeds.all;');
         expect(progressiveGroupSource).toContain('displayedTaskAvatarSeeds.slice(0, isMobile ? 2 : 3)');
         expect(progressiveGroupSource).toContain('<AgentAvatar');
