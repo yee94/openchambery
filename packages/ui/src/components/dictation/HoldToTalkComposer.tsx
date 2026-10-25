@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useEvent } from '@reactuses/core';
 import { useI18n } from '@/lib/i18n';
 import { useDictation } from '@/hooks/useDictation';
+import { triggerMobileHaptic } from '@/hooks/streamingHaptics';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import type { HoldToTalkHint } from './useHoldToTalkInput';
 import './hold-to-talk.css';
@@ -101,7 +102,11 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
             ? event.clientX < targets.left + targets.width / 2 ? 'cancel' : 'send'
             : dx <= -64 ? 'cancel' : dx >= 64 ? 'send' : 'edit';
         if (!current.started && Math.hypot(dx, current.y - event.clientY) > 12) { clearTimer(); gesture.current = null; return; }
-        if (current.started && next !== current.intent) { current.intent = next; setIntent(next); }
+        if (current.started && next !== current.intent) {
+            current.intent = next;
+            setIntent(next);
+            triggerMobileHaptic(next === 'edit' ? 'light' : 'medium', { bypassCadence: true });
+        }
     });
     const up = useEvent((event: PointerEvent) => {
         const current = gesture.current;

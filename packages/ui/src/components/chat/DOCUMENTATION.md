@@ -110,15 +110,21 @@ fallbacks. A new native build is required for PNG-consuming native surfaces.
 
 ## Image presentation
 
-`ToolOutputDialog` owns a preview-local save-actions host above the fullscreen
-overlay (90 above 80), including file and Assistant surfaces without a chat host.
-Image long-press/context-menu opens actions immediately; bytes are materialized
-only when saving. The toolbar also exposes save. Closing the actions keeps the
-preview open and restores its modal ownership.
+`ToolOutputDialog` image and video previews share `MediaSaveButton`: one icon-only
+download action fixed at the bottom safe area. Clicking materializes bytes and
+saves directly; pending shows an indeterminate ring, success a checkmark. There
+is no save sheet, long-press save, visible status text or success toast. Accessible
+labels/live status remain localized. A failed save restores the retryable download
+icon; native document-picker cancellation returns to idle. Browser success means
+the download was handed off to the browser, not a confirmed filesystem write.
+The control is keyed by source/runtime, rejects duplicate clicks, and aborts reads
+on close or source change. Late native completions cannot update another preview.
+Native picker/Photos confirmation remains owned by the OS. Thumbnail and Markdown
+images open the full-screen preview; they no longer own save gestures or sheets.
 
 Video attachments and Markdown video-file links open the same overlay with a
 native `video controls playsInline` player; there is no third-party player or
-autoplay. The player offers long-press/context-menu and a visible save button.
+autoplay. The player shares the bottom download control with images.
 HTTP/data/blob sources play directly. iOS shells with `OpenChamberVideo` give the
 native player an opaque loopback HTTP URL. Its Range reads pass through
 `native-video.ts` → `runtimeFetch` → the existing direct/Relay transport, capped at

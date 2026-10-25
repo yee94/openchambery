@@ -32,7 +32,6 @@ import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { openImageSaveActions } from '../imageSaveActionsBus';
 import { useResolvedImageResource } from '../imageSource';
 import {
     IMAGE_VIEWER_MAX_SCALE,
@@ -50,10 +49,9 @@ import {
 import { closeImageViewerAfterMobileTap } from './imageViewerTapGuard';
 import { MediaPreviewOverlay, PreviewCloseButton } from './MediaPreviewOverlay';
 import { VideoPreviewDialog } from './VideoPreviewDialog';
-import { ImageSaveActionsHost } from '../ImageSaveActionsHost';
+import { MediaSaveButton } from './MediaSaveButton';
 import { isVideoSource } from '../video';
 
-const IMAGE_VIEWER_LONG_PRESS_MS = 500;
 /** Ignore accidental close from the same gesture / history thrash that opened the viewer. */
 const IMAGE_VIEWER_OPEN_CLOSE_GUARD_MS = 400;
 
@@ -260,8 +258,6 @@ const ImagePreviewDialog: React.FC<{
         moved: boolean;
         targetWasCanvas: boolean;
         suppressTap: boolean;
-        longPressTimer: ReturnType<typeof setTimeout> | null;
-        longPressTriggered: boolean;
     } | null>(null);
     const pinchGestureRef = React.useRef<{
         distance: number;
@@ -282,13 +278,6 @@ const ImagePreviewDialog: React.FC<{
         return now - openedAtRef.current < IMAGE_VIEWER_OPEN_CLOSE_GUARD_MS;
     });
 
-
-    const clearLongPressTimer = useEvent(() => {
-        const gesture = singleGestureRef.current;
-        if (!gesture?.longPressTimer) return;
-        clearTimeout(gesture.longPressTimer);
-        gesture.longPressTimer = null;
-    });
 
     React.useEffect(() => {
         if (!popup.open || gallery.length === 0) {
@@ -316,20 +305,6 @@ const ImagePreviewDialog: React.FC<{
     const handleImageError = useEvent(() => setFailedImageKey(imageDisplayKey));
     const imageAccessibleLabel = currentImage?.filename || popup.title;
     const hasMultipleImages = gallery.length > 1;
-
-    const openCurrentImageActions = useEvent(() => {
-        const sourceUrl = currentImage?.url ?? popup.image?.url ?? '';
-        if (!sourceUrl && !displayImageSource) return;
-        const mimeType = currentImage?.mimeType || popup.image?.mimeType;
-        const filename = currentImage?.filename || popup.image?.filename || popup.title;
-        openImageSaveActions({
-            sourceUrl: sourceUrl || displayImageSource,
-            displayUrl: displayImageSource || undefined,
-            filename,
-            mimeType,
-            effectiveDirectory,
-        });
-    });
 
     const showPrevious = useEvent(() => {
         if (gallery.length <= 1) return;
@@ -471,9 +446,6 @@ const ImagePreviewDialog: React.FC<{
         setImageLoaded(Boolean(source?.naturalWidth));
         transformRef.current = { scale: 1, x: 0, y: 0 };
         pointersRef.current.clear();
-        if (singleGestureRef.current?.longPressTimer) {
-            clearTimeout(singleGestureRef.current.longPressTimer);
-        }
         singleGestureRef.current = null;
         pinchGestureRef.current = null;
         if (imageRef.current) {
@@ -500,11 +472,6 @@ const ImagePreviewDialog: React.FC<{
         }
         pendingFrameRef.current = null;
         pendingTransformRef.current = null;
-        const gesture = singleGestureRef.current;
-        if (gesture?.longPressTimer) {
-            clearTimeout(gesture.longPressTimer);
-            gesture.longPressTimer = null;
-        }
     }, []);
 
     const handleWheel = useEvent((event: WheelEvent) => {
@@ -549,30 +516,15 @@ const ImagePreviewDialog: React.FC<{
                 moved: false,
                 targetWasCanvas: event.target === event.currentTarget,
                 suppressTap: false,
-                longPressTimer: null,
-                longPressTriggered: false,
             };
-            // Long-press save: touch/pen always; mouse only when not dragging a zoomed image.
-            if (event.pointerType !== 'mouse' || transformRef.current.scale <= 1.01) {
-                const gesture = singleGestureRef.current;
-                gesture.longPressTimer = setTimeout(() => {
-                    if (!singleGestureRef.current || singleGestureRef.current.pointerId !== event.pointerId) return;
-                    if (singleGestureRef.current.moved) return;
-                    singleGestureRef.current.longPressTriggered = true;
-                    singleGestureRef.current.suppressTap = true;
-                    openCurrentImageActions();
-                }, IMAGE_VIEWER_LONG_PRESS_MS);
-            }
             if (canvasRef.current && transformRef.current.scale > 1) {
                 canvasRef.current.style.cursor = 'grabbing';
             }
             return;
         }
 
-        clearLongPressTimer();
         if (singleGestureRef.current) {
             singleGestureRef.current.suppressTap = true;
-            singleGestureRef.current.longPressTriggered = false;
         }
 
         const points = Array.from(pointersRef.current.values()).slice(0, 2).map((pointer) => pointer.point);
@@ -593,7 +545,6 @@ const ImagePreviewDialog: React.FC<{
         pointersRef.current.set(event.pointerId, { point, pointerType: event.pointerType });
 
         if (pointersRef.current.size >= 2 && pinchGestureRef.current) {
-            clearLongPressTimer();
             const points = Array.from(pointersRef.current.values()).slice(0, 2).map((pointer) => pointer.point);
             const dx = points[1].x - points[0].x;
             const dy = points[1].y - points[0].y;
@@ -616,7 +567,6 @@ const ImagePreviewDialog: React.FC<{
         const delta = { x: point.x - gesture.start.x, y: point.y - gesture.start.y };
         if (Math.hypot(delta.x, delta.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD) {
             gesture.moved = true;
-            clearLongPressTimer();
         }
         if (gesture.transform.scale > 1.01) {
             writeTransform(panImageViewer(gesture.transform, delta, geometryRef.current));
@@ -630,8 +580,7 @@ const ImagePreviewDialog: React.FC<{
         pointersRef.current.delete(event.pointerId);
 
         if (gesture?.pointerId === event.pointerId) {
-            clearLongPressTimer();
-            if (point && !gesture.longPressTriggered) {
+            if (point) {
                 const action = resolveImageViewerPointerRelease({
                     isMobile,
                     pointerType: gesture.pointerType,
@@ -667,8 +616,6 @@ const ImagePreviewDialog: React.FC<{
                 moved: false,
                 targetWasCanvas: false,
                 suppressTap: true,
-                longPressTimer: null,
-                longPressTriggered: false,
             };
             pinchGestureRef.current = null;
         } else if (pointersRef.current.size === 0) {
@@ -687,13 +634,9 @@ const ImagePreviewDialog: React.FC<{
     const handleContextMenu = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.stopPropagation();
-        clearLongPressTimer();
         if (singleGestureRef.current) {
-            if (singleGestureRef.current.longPressTriggered) return;
             singleGestureRef.current.suppressTap = true;
-            singleGestureRef.current.longPressTriggered = true;
         }
-        openCurrentImageActions();
     });
 
     const handleImageLoad = useEvent((event: React.SyntheticEvent<HTMLImageElement>) => {
@@ -765,7 +708,8 @@ const ImagePreviewDialog: React.FC<{
                 />}
             </div>
 
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-2 pb-2">
+            <div className="pointer-events-none absolute inset-x-0 z-10 flex justify-center px-2 pb-2"
+                style={{ bottom: 'calc(var(--oc-safe-area-bottom, 0px) + 3.75rem)' }}>
                 <div
                     className={cn('pointer-events-auto flex h-10 items-center gap-0.5 rounded-full border px-1 shadow-lg backdrop-blur-xl', toolbarTone)}
                     onPointerDown={(event) => event.stopPropagation()}
@@ -832,12 +776,13 @@ const ImagePreviewDialog: React.FC<{
                     >
                         <Icon name="add" className="size-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" className={cn('size-8 rounded-full', controlTone)}
-                        onClick={openCurrentImageActions} aria-label={t('chat.image.actions.saveImage')}>
-                        <Icon name="download" className="size-4" />
-                    </Button>
                 </div>
             </div>
+            <MediaSaveButton key={imageResource.key} target={{
+                sourceUrl: currentImage.url || displayImageSource, displayUrl: displayImageSource || undefined,
+                filename: currentImage.filename || popup.image?.filename || popup.title,
+                mimeType: currentImage.mimeType || popup.image?.mimeType, effectiveDirectory,
+            }} />
         </div>
     );
 
@@ -1205,7 +1150,6 @@ const ToolOutputDialog: React.FC<ToolOutputDialogProps> = ({ popup, onOpenChange
                 {video ? <VideoPreviewDialog video={video} onClose={close} isMobile={isMobile} /> : popup.image
                 ? <ImagePreviewDialog popup={popup} onOpenChange={close} isMobile={isMobile} />
                 : <MermaidPreviewDialog popup={popup} onOpenChange={close} isMobile={isMobile} />}
-                <ImageSaveActionsHost abovePreview />
             </>}
         </MediaPreviewOverlay>;
     }

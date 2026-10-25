@@ -9,7 +9,7 @@ vi.mock('@/lib/native-video', () => ({ openNativeVideoSource: mocks.native }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: mocks.fetch }));
 vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/workspace' }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
-vi.mock('../imageSaveActionsBus', () => ({ openImageSaveActions: mocks.save }));
+vi.mock('../imageSave', () => ({ saveImageToDevice: mocks.save }));
 vi.mock('../imageSource', async (original) => ({ ...await original<typeof import('../imageSource')>(), useRuntimeTransportIdentity: () => 'test-runtime' }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -33,7 +33,7 @@ async function render(url: string) {
   </QueryClientProvider>));
 }
 
-test('native playback stays user-initiated and long press opens original video save actions', async () => {
+test('native playback stays user-initiated and only the download icon saves the original video', async () => {
   vi.useFakeTimers();
   await render('https://example.com/clip.mp4');
   const video = host.querySelector('video')!;
@@ -45,10 +45,15 @@ test('native playback stays user-initiated and long press opens original video s
     video.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, isPrimary: true, pointerType: 'touch', button: 0 }));
     vi.advanceTimersByTime(500);
   });
-  expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ kind: 'video', sourceUrl: 'https://example.com/clip.mp4' }));
+  expect(mocks.save).not.toHaveBeenCalled();
+  const download = host.querySelector<HTMLButtonElement>('[data-media-save]')!;
+  expect(download.textContent).toBe('');
+  await act(async () => download.click());
+  expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ kind: 'video', sourceUrl: 'https://example.com/clip.mp4' }), expect.any(AbortSignal));
+  expect(download.dataset.mediaSave).toBe('saved');
 });
 
-test('dragging cancels a pending long press', async () => {
+test('video gestures never trigger saving', async () => {
   vi.useFakeTimers();
   await render('https://example.com/clip.mp4');
   const video = host.querySelector('video')!;
@@ -80,7 +85,7 @@ test('request failure shows an error and retains the download action', async () 
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
   expect(host.querySelector('[role="alert"]')).not.toBeNull();
   expect(host.querySelector('video')).toBeNull();
-  expect(host.textContent).toContain('filesView.editor.saveFile');
+  expect(host.querySelector('[data-media-save]')?.getAttribute('aria-label')).toBe('filesView.editor.saveFile');
 });
 
 test('runtime video exposes a playback URL before the complete response body arrives', async () => {

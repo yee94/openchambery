@@ -55,8 +55,8 @@ Mobile file-detail images fill the available content width at their natural aspe
 # Mobile Window Motion
 
 `MobileResizableSheet.className` forwards overlay-level styling to
-`MobileWindowMotion`; preview save actions use it to sit above the fullscreen
-media layer without raising unrelated sheets.
+`MobileWindowMotion`. Media saving uses an inline fullscreen control rather than
+an additional sheet.
 
 `useHeightSnap` is the shared dynamic pixel-height gesture/settlement owner for mobile
 sheets and composer textareas. Callers supply semantic snap IDs and measured heights;

@@ -20,8 +20,6 @@ import {
 } from './attachmentCitations';
 import { attachmentCitationDisplay } from '@/composer/inline-visual';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
-import { openImageSaveActions } from './imageSaveActionsBus';
 import { isVideoSource } from './video';
 import { useResolvedImageResource, useRuntimeTransportIdentity, imageRequiresManualLoadOverRelay, isRelayTransport } from './imageSource';
 import { LoadingImage } from '@/components/ui/LoadingImage';
@@ -168,8 +166,6 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const imageResource = useResolvedImageResource(imageUrl, effectiveDirectory);
   const displayImageUrl = imageResource.source;
-  const longPressKey = `attachment-image:${file.id}`;
-  const longPressRef = React.useRef(createMobileLongPressController());
 
   const extractFilename = (path: string): string => {
     const normalized = path.replace(/\\/g, '/');
@@ -185,19 +181,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
   const displayName = extractFilename(file.filename);
   const extension = getFileExtension(file.filename);
 
-  const openSaveActions = useEvent(() => {
-    if (!imageUrl && !displayImageUrl) return;
-    openImageSaveActions({
-      sourceUrl: imageUrl || displayImageUrl,
-      displayUrl: displayImageUrl || undefined,
-      filename: displayName,
-      mimeType: file.mimeType,
-      effectiveDirectory,
-    });
-  });
-
   const handleOpenPreview = useEvent((event: React.SyntheticEvent<HTMLElement>) => {
-    if (longPressRef.current.consumeClick(longPressKey)) return;
     if (!onShowPopup || !imageUrl) return;
 
     onShowPopup({
@@ -259,29 +243,9 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
           handleOpenPreview(event);
         }
       }}
-      onPointerDown={(event) => {
-        if (event.pointerType === 'mouse' && event.button !== 0) return;
-        longPressRef.current.start({
-          pointerId: event.pointerId,
-          key: longPressKey,
-          clientX: event.clientX,
-          clientY: event.clientY,
-          onTrigger: openSaveActions,
-        });
-      }}
-      onPointerMove={(event) => {
-        longPressRef.current.move(event.pointerId, event.clientX, event.clientY);
-      }}
-      onPointerUp={(event) => {
-        longPressRef.current.end(event.pointerId);
-      }}
-      onPointerCancel={(event) => {
-        longPressRef.current.cancel(event.pointerId);
-      }}
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        longPressRef.current.openFromContextMenu(longPressKey, openSaveActions);
       }}
       data-attachment-preview="true"
       className="relative h-10 w-10 rounded-lg border border-border/40 bg-muted/10 overflow-hidden flex-shrink-0 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

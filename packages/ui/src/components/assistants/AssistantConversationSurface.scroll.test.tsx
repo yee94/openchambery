@@ -221,6 +221,27 @@ afterEach(async () => {
 });
 
 describe('AssistantConversationSurface scroll ownership', () => {
+  test.each([
+    ['![photo](https://example.com/photo.png)', true],
+    ['  ![photo](</workspace/my photo.png> "Photo")\n', true],
+    ['![photo](/workspace/photo.png)', true],
+    ['Caption\n\n![photo](/workspace/photo.png)', false],
+    ['![photo](/workspace/photo.png) caption', false],
+    ['![one](/one.png) ![two](/two.png)', false],
+    ['[photo](/workspace/photo.png)', false],
+  ])('removes bubble padding only for standalone images: %s', async (text, compact) => {
+    const { host } = await mountSurface();
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-bubble-delta', assistantID: 'assistant-a', turnID: 'media-spacing',
+      bubbleIndex: 0, delta: text, done: true, occurredAt: 2,
+    }));
+    const bubble = host.querySelector('[data-message-id="media-spacing:preview:0"] [data-assistant-contact-text]');
+    expect(bubble).toBeTruthy();
+    expect(bubble?.classList.contains('p-0')).toBe(compact);
+    expect(bubble?.classList.contains('px-4')).toBe(!compact);
+    expect(host.querySelector('[data-message-id="assistant-a:user"] [data-assistant-contact-text]')?.classList.contains('px-4')).toBe(true);
+  });
+
   test('working transitions reuse the reserved footer without adding transcript rows', async () => {
     const { host } = await mountSurface();
     const row = host.querySelector('[data-message-id="assistant-a:user"]');

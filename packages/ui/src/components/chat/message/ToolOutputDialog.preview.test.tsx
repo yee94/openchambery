@@ -5,6 +5,7 @@ import ToolOutputDialog from './ToolOutputDialog';
 import { mobileBackNavigationCoordinator } from '@/mobile/mobileBackNavigation';
 import type { ToolPopupContent } from './types';
 import { mobileWindowStack } from '@/components/ui/MobileWindowStack';
+import { saveImageToDevice } from '../imageSave';
 
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('../MarkdownRenderer', () => ({ SimpleMarkdownRenderer: ({ mermaidTheme }: { mermaidTheme?: { metadata: { variant: string } } }) => <svg viewBox="0 0 200 800" data-preview-theme={mermaidTheme?.metadata.variant} /> }));
@@ -131,24 +132,21 @@ test('desktop Mermaid uses an explicit dark rendering theme without a dark page 
   expect(dialog.querySelector('[data-preview-theme="dark"]')).not.toBeNull();
 });
 
-test('fullscreen context menu mounts save actions above the preview without a ChatContainer host', async () => {
-  const matchMedia = window.matchMedia.bind(window);
-  vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
-    const result = matchMedia(query);
-    Object.defineProperty(result, 'matches', { value: query.includes('prefers-reduced-motion') });
-    return result;
-  });
+test('fullscreen image saves directly from its icon without a sheet or context-menu action', async () => {
+  vi.mocked(saveImageToDevice).mockClear();
   root = createRoot(host);
   await act(async () => root.render(<ToolOutputDialog popup={{ open: true, title: 'Photo', content: '', image: { url: 'data:image/png;base64,AA==' } }} onOpenChange={() => {}} isMobile />));
   const image = document.querySelector('img')!;
   const previewOwner = mobileWindowStack.getSnapshot();
   await act(async () => image.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })));
-  const sheet = document.querySelector('[data-oc-motion-id="image-save-actions-sheet"]')?.parentElement;
+  expect(saveImageToDevice).not.toHaveBeenCalled();
+  const button = document.querySelector<HTMLButtonElement>('[data-media-save]')!;
+  expect(button.textContent).toBe('');
+  await act(async () => button.click());
+  expect(saveImageToDevice).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'data:image/png;base64,AA==' }), expect.any(AbortSignal));
+  expect(button.dataset.mediaSave).toBe('saved');
+  expect(document.querySelector('[data-oc-motion-id="image-save-actions-sheet"]')).toBeNull();
   expect(document.querySelector('[data-media-preview="image"]')).not.toBeNull();
-  expect(mobileWindowStack.getSnapshot()).toBe('image-save-actions-sheet');
-  expect(sheet?.classList.contains('z-[90]')).toBe(true);
-  expect(sheet?.textContent).toContain('chat.image.actions.saveImage');
-  await act(async () => sheet?.querySelector('button')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
   expect(mobileWindowStack.getSnapshot()).toBe(previewOwner);
   expect(document.querySelector('[data-media-preview="image"]')).not.toBeNull();
 });
