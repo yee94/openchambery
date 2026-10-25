@@ -1,4 +1,5 @@
 import React from 'react';
+import { useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import { useEvent } from '@reactuses/core';
 import {
   DndContext,
@@ -348,6 +349,12 @@ const SidebarProjectSection = React.memo(function SidebarProjectSection(props: P
     if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
     const nextNested = arrayMove(nestedGroups, oldIndex, newIndex).map((item) => item.id);
     const next = rootGroup ? [rootGroup.id, ...nextNested] : nextNested;
+    const byId = new Map(nestedGroups.map((group) => [group.id, group]));
+    useWorktreeOrderStore.getState().setWorktreeOrder(projectKey, project.normalizedPath,
+      nextNested.flatMap((id) => {
+        const group = byId.get(id);
+        return group?.worktree && group.directory ? [group.directory] : [];
+      }));
     props.setGroupOrderByProject((prev) => new Map(prev).set(projectKey, next));
   });
   const groups = React.useMemo(() => (

@@ -5,6 +5,8 @@ import { useGlobalSessionStatusStore } from './global-session-status';
 import { handleEvent } from './sync-context';
 import { ChildStoreManager } from './child-store';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
+import { useSessionUIStore } from './session-ui-store';
 
 vi.mock('@/lib/runtime-fetch', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/runtime-fetch')>(),
@@ -20,6 +22,8 @@ describe('project drag and live activity ordering', () => {
     });
     useGlobalSessionStatusStore.setState({ statusById: new Map() });
     useGlobalSessionsStore.setState({ activeSessions: [], archivedSessions: [], sessionsByDirectory: new Map() });
+    useWorktreeOrderStore.setState({ orderByProject: {}, pendingProjectIDs: {} });
+    useSessionUIStore.setState({ availableWorktreesByProject: new Map() });
   });
 
   test.each([[false, false], [true, false], [false, true], [true, true]])('promotes on transitions and preserves later drags on duplicate events (synced: %s, native: %s)', (synced, native) => {
@@ -47,6 +51,30 @@ describe('project drag and live activity ordering', () => {
     expect(useProjectsStore.getState().manualProjectOrder).toEqual(['b', 'a', 'c']);
     expect(useProjectsStore.getState().projects.map(({ id }) => id)).toEqual(['b', 'a', 'c']);
     expect(useProjectsStore.getState().activeProjectId).toBe('a');
+    children.disposeAll();
+  });
+
+  test('worktree activity promotes both levels, while duplicate events preserve a subsequent drag', () => {
+    const paths = ['/trees/first', '/trees/second', '/trees/third'];
+    useSessionUIStore.setState({ availableWorktreesByProject: new Map([['/workspace/b', paths.map((path) => ({ path, projectDirectory: '/workspace/b', branch: path, label: path }))]]) });
+    useWorktreeOrderStore.getState().setWorktreeOrder('b', '/workspace/b', paths);
+    const children = new ChildStoreManager();
+    const routing: Parameters<typeof handleEvent>[3] = {
+      sessionDirectoryById: new Map(), messageSessionById: new Map(), sessionMessageIdsById: new Map(),
+    };
+    handleEvent(paths[2], { type: 'session.created', properties: { info: {
+      id: 'worktree-chat', title: 'Chat', directory: paths[2], time: { created: 1, updated: 1 },
+    } } } as Event, children, routing);
+    const status = (type: 'busy' | 'idle'): Event => ({ type: 'session.status', properties: { sessionID: 'worktree-chat', status: { type } } });
+    handleEvent(paths[2], status('busy'), children, routing);
+    expect(useWorktreeOrderStore.getState().orderByProject.b).toEqual([paths[2], paths[0], paths[1]]);
+    expect(useProjectsStore.getState().projects.map(({ id }) => id)).toEqual(['b', 'a', 'c']);
+    useWorktreeOrderStore.getState().setWorktreeOrder('b', '/workspace/b', paths);
+    const afterDrag = useWorktreeOrderStore.getState().orderByProject;
+    for (let repeat = 0; repeat < 50; repeat += 1) handleEvent(paths[2], status('busy'), children, routing);
+    expect(useWorktreeOrderStore.getState().orderByProject).toBe(afterDrag);
+    handleEvent(paths[2], status('idle'), children, routing);
+    expect(useWorktreeOrderStore.getState().orderByProject.b).toEqual([paths[2], paths[0], paths[1]]);
     children.disposeAll();
   });
 

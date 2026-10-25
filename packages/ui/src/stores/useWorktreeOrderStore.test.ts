@@ -1,5 +1,6 @@
-import { expect, test } from 'bun:test';
+import { expect, test } from 'vitest';
 import { registerWorktreeOrderWriter, useWorktreeOrderStore } from './useWorktreeOrderStore';
+import { writeInstanceScopedItem, removeInstanceScopedItem } from '@/lib/instanceScopedStorage';
 
 const reset = () => useWorktreeOrderStore.setState({
   runtimeIdentity: 'runtime-a',
@@ -8,6 +9,40 @@ const reset = () => useWorktreeOrderStore.setState({
   deferredServerOrderByProject: {},
   pendingProjectIDs: {},
   runtimeOrdersByIdentity: { 'runtime-a': { orderByProject: {}, pendingProjectIDs: {} } },
+});
+
+test('promotes the longest matching worktree, preserves peers and skips repeated writes', () => {
+  reset();
+  const paths = ['/trees/a', '/trees/a/nested', '/trees/c'];
+  const catalog = paths.map((path) => ({ path, projectDirectory: '/project', branch: path, label: path }));
+  const writes: string[][] = [];
+  const unregister = registerWorktreeOrderWriter((_id, _directory, order) => writes.push(order));
+  try {
+    useWorktreeOrderStore.getState().setWorktreeOrder('project', '/project', paths);
+    useWorktreeOrderStore.getState().promoteWorktree('project', '/project', '/trees/a/nested/src/', catalog);
+    expect(useWorktreeOrderStore.getState().orderByProject.project).toEqual([paths[1], paths[0], paths[2]]);
+    const promoted = useWorktreeOrderStore.getState();
+    for (let index = 0; index < 50; index += 1) useWorktreeOrderStore.getState().promoteWorktree('project', '/project', paths[1], catalog);
+    useWorktreeOrderStore.getState().promoteWorktree('project', '/project', '/project', catalog);
+    useWorktreeOrderStore.getState().promoteWorktree('project', '/project', '/unknown', catalog);
+    expect(useWorktreeOrderStore.getState()).toBe(promoted);
+    expect(writes).toHaveLength(2);
+  } finally { unregister(); }
+});
+
+test('first activity preserves legacy desktop peers and persists in the runtime partition', async () => {
+  reset();
+  const paths = ['/trees/a', '/trees/b', '/trees/c'];
+  const catalog = paths.map((path) => ({ path, projectDirectory: '/project', branch: path, label: path }));
+  writeInstanceScopedItem('oc.sessions.groupOrder', JSON.stringify({ project: ['main', `worktree:${paths[2]}`, `worktree:${paths[1]}`, `worktree:${paths[0]}`, 'archived'] }));
+  try {
+    useWorktreeOrderStore.getState().promoteWorktree('project', '/project', paths[0], catalog);
+    expect(useWorktreeOrderStore.getState().orderByProject.project).toEqual([paths[0], paths[2], paths[1]]);
+    await useWorktreeOrderStore.persist.rehydrate();
+    expect(useWorktreeOrderStore.getState().orderByProject.project).toEqual([paths[0], paths[2], paths[1]]);
+    useWorktreeOrderStore.getState().activateWorktreeOrderRuntime('other-runtime');
+    expect(useWorktreeOrderStore.getState().orderByProject).toEqual({});
+  } finally { removeInstanceScopedItem('oc.sessions.groupOrder'); }
 });
 
 test('applies settled remote worktree order and preserves references for equal values', () => {

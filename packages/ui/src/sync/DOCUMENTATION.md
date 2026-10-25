@@ -409,7 +409,9 @@ status (or the global live status map for unopened directories) before applying
 them. A real busy/retry/idle transition for a known visible, unarchived root
 conversation calls `promoteProjectForConversation`,
 shared with successful sends, to resolve project/worktree ownership and advance
-the current project order. Duplicate statuses preserve subsequent manual drags.
+both the owning worktree within its project and the current project order.
+`useWorktreeOrderStore.promoteWorktree` uses the longest matching catalog path,
+retains peer order, and skips already-first writes. Duplicate statuses preserve subsequent manual drags.
 Bootstrap/reconnect snapshots establish the baseline; token/part events leave
 structural project ordering unchanged. `useProjectsStore.moveProjectToTop`
 updates both registry and existing manual order, persists the result, and keeps

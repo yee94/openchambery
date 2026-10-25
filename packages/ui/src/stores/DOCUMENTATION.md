@@ -468,6 +468,11 @@ intent in runtime-scoped partitions. Server revision maps stay transient because
 the sync layer owns runtime reconciliation. Worktree order is shared across
 surfaces; expansion, selection, and session navigation state remain locally owned
 by their respective stores.
+Conversation activity promotes the matching linked worktree through the same
+writer as manual drag. Desktop groups and mobile worktrees read this shared order;
+the desktop legacy group preference remains a fallback until shared order exists.
+First promotion carries legacy peer order forward. Main workspace and archived
+bucket placement stay owned by the desktop grouping projection.
 Server responses advance a project's transient revision only. Equal and older
 revisions preserve the current authoritative paths; pending local intent retains
 its local paths while recording a newer server revision. Pending resolution always

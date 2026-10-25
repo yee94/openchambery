@@ -39,6 +39,7 @@ import { waitForPendingDraftWorktreeRequest } from "@/lib/worktrees/pendingDraft
 import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap"
 import { getWorktreeSetupWaitEnabled } from "@/lib/openchamberConfig"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
+import { useWorktreeOrderStore } from "@/stores/useWorktreeOrderStore"
 import { createUuid } from "@/lib/uuid"
 import { ascendingId } from "./message-id"
 import { buildSessionContextUsage, scanContextTokenBaseline } from "./context-token-baseline"
@@ -855,6 +856,10 @@ export const promoteProjectForConversation = (
     directory,
   )
   if (project) {
+    useWorktreeOrderStore.getState().promoteWorktree(
+      project.id, project.path, directory,
+      availableWorktreesByProject.get(normalizePath(project.path) ?? project.path) ?? [],
+    )
     projectsState.moveProjectToTop(project.id)
   }
 }

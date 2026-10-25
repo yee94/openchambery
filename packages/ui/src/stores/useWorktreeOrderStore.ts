@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { readInstanceScopedItem } from '@/lib/instanceScopedStorage';
+import { normalizePath } from '@/lib/pathNormalization';
 import type { WorktreeMetadata } from '@/types/worktree';
 
 type RuntimeOrders = { orderByProject: Record<string, string[]>; pendingProjectIDs: Record<string, true> };
@@ -28,6 +30,7 @@ type WorktreeOrderStore = {
   runtimeOrdersByIdentity: Record<string, RuntimeOrders>;
   activateWorktreeOrderRuntime: (identity: string) => void;
   setWorktreeOrder: (projectId: string, projectDirectory: string, orderedPaths: string[]) => void;
+  promoteWorktree: (projectId: string, projectDirectory: string, directory: string | null, worktrees: WorktreeMetadata[]) => void;
   markPendingWorktreeOrder: (projectId: string) => void;
   applyServerWorktreeOrder: (projectId: string, orderedPaths: string[], revision: number) => void;
   setServerRevision: (projectId: string, revision: number) => void;
@@ -62,6 +65,32 @@ export const useWorktreeOrderStore = create<WorktreeOrderStore>()(persist(
         return { orderByProject, pendingProjectIDs, runtimeOrdersByIdentity: { ...state.runtimeOrdersByIdentity, [state.runtimeIdentity]: runtimeOrders } };
       });
       if (shouldWrite) writer?.(projectID, projectDirectory, orderedPaths);
+    },
+    promoteWorktree: (projectID, projectDirectory, directory, worktrees) => {
+      const target = normalizePath(directory);
+      const root = normalizePath(projectDirectory);
+      if (!target || target === root) return;
+      let matched: string | null = null;
+      const paths: string[] = [];
+      for (const worktree of worktrees) {
+        const path = normalizePath(worktree.path);
+        if (!path || path === root) continue;
+        paths.push(path);
+        if ((target === path || target.startsWith(`${path}/`)) && (!matched || path.length > matched.length)) matched = path;
+      }
+      if (!matched) return;
+      let preferred = get().orderByProject[projectID];
+      if (!preferred) {
+        try {
+          const legacy = JSON.parse(readInstanceScopedItem('oc.sessions.groupOrder') ?? '{}')?.[projectID];
+          if (Array.isArray(legacy)) preferred = legacy
+            .filter((id): id is string => typeof id === 'string' && id.startsWith('worktree:'))
+            .map((id) => id.slice('worktree:'.length));
+        } catch { /* Malformed legacy preferences fall back to catalog order. */ }
+      }
+      const current = [...new Set([...(preferred ?? []), ...paths].map(normalizePath).filter((path): path is string => Boolean(path) && path !== root))];
+      if (normalizePath(get().orderByProject[projectID]?.[0]) === matched) return;
+      get().setWorktreeOrder(projectID, projectDirectory, [matched, ...current.filter((path) => path !== matched)]);
     },
     markPendingWorktreeOrder: (projectID) => set((state) => {
       if (state.pendingProjectIDs[projectID]) return state;
