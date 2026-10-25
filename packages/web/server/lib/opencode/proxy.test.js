@@ -412,6 +412,19 @@ describe('registerOpenCodeProxy runtime contract gate (ticket 11)', () => {
 });
 
 describe('registerOpenCodeProxy reasoning projection routes', () => {
+  it.each(['message', 'context'])('strips native replay fields from %s without hiding reasoning', async (surface) => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      data: [{ id: 'm', type: 'assistant', native: { replay: 'opaque' }, content: [
+        { type: 'reasoning', text: 'keep', native: { reasoningEncryptedContent: 'encrypted' } },
+        { type: 'tool', native: { itemId: 'upstream' }, input: { native: 'business' } },
+      ] }], cursor: { next: 'older' },
+    }), { headers: { 'content-type': 'application/json' } }));
+    const res = await request(mountProxy()).get(`/api/session/ses_1/${surface}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: [{ id: 'm', type: 'assistant', content: [
+      { type: 'reasoning', text: 'keep' }, { type: 'tool', input: { native: 'business' } },
+    ] }], cursor: { next: 'older' } });
+  });
   it('strips includeReasoning from SSE upstream and drops reasoning events when false', async () => {
     const upstreamUrls = [];
     globalThis.fetch = vi.fn(async (url) => {

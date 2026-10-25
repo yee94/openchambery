@@ -385,6 +385,30 @@ describe('VS Code exact message GET L1 projection', () => {
 });
 
 describe('VS Code session.messages list reasoning projection', () => {
+  test.each(['message', 'context', 'message/msg_1'])('strips provider native fields on %s with reasoning enabled', async (surface) => {
+    const originalFetch = globalThis.fetch;
+    try {
+      const message = { id: 'msg_1', type: 'assistant', native: { replay: 'opaque' }, content: [
+        { type: 'reasoning', text: 'keep', native: { reasoningEncryptedContent: 'encrypted' } },
+        { type: 'tool', native: { itemId: 'upstream' }, input: { native: 'business' } },
+      ] };
+      const payload = surface.includes('/') ? message : { data: [message], cursor: { next: 'older' } };
+      globalThis.fetch = (async () => new Response(JSON.stringify(payload), {
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+      const response = await handleProxyBridgeMessage({ id: `native_${surface}`, type: 'api:proxy',
+        payload: { method: 'GET', path: `/session/ses_1/${surface}?directory=/repo` },
+      }, ctx, deps);
+      assert.equal(response?.success, true);
+      const body = JSON.parse((response?.data as { bodyText: string }).bodyText);
+      const expected = { id: 'msg_1', type: 'assistant', content: [
+        { type: 'reasoning', text: 'keep' }, { type: 'tool', input: { native: 'business' } },
+      ] };
+      assert.deepEqual(body, surface.includes('/') ? expected : { data: [expected], cursor: { next: 'older' } });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
   test('strips reasoning parts on list GET when includeReasoning=false', async () => {
     const originalFetch = globalThis.fetch;
     let fetchUrl = '';

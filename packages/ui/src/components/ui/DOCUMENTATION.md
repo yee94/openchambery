@@ -18,6 +18,12 @@ The page presentation keeps its existing search and focus behavior.
 `CommandPalette.mobile.test.tsx` covers 50 closed-catalog updates with zero commits
 and the existing mobile search/navigation behavior.
 
+Title and content matches merge into one row per session, retaining the newest
+matching content message for its snippet and navigation target. The five-row
+preview and “show more” count operate on these unique sessions. Content search
+limits are applied by the Host after session deduplication; expansion reveals the
+already fetched results rather than requesting another server page.
+
 # Render-count verification
 
 `scripts/perf/component-render-probe.mjs` counts actual component function/class

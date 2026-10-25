@@ -45,7 +45,11 @@ vi.mock('@/queries/sessionTitleSearchQueries', () => ({
 vi.mock('@/queries/sessionContentSearchQueries', () => ({
   sessionContentIndexStatusOptions: () => ({ queryKey: ['content-status'], queryFn: async () => ({ phase: 'ready', total: 1, completed: 1, messages: 1 }) }),
   sessionContentSearchQueryOptions: () => ({ queryKey: ['content-search'], queryFn: async () => [{
+    sessionID: 'session-1', messageID: 'old-message', directory: '/project', role: 'user', createdAt: 0, snippet: 'old matching body',
+  }, {
     sessionID: 'session-1', messageID: 'message-1', directory: '/project', role: 'user', createdAt: 1, snippet: 'matching body result',
+  }, {
+    sessionID: 'session-1', messageID: 'older-message', directory: '/project', role: 'user', createdAt: 0, snippet: 'another old matching body',
   }], enabled: false }),
 }));
 vi.mock('@/lib/runtime-switch', () => ({
@@ -139,6 +143,8 @@ test('combines title and body matches in five unified rows, freezes navigation a
     expect(host.querySelector('[data-value="session:session-1"]')).toBeNull();
     const bodyRow = host.querySelector('[cmdk-item][data-value^="message:"]')!;
     expect(bodyRow.textContent).toContain('matching conversation 1');
+    expect(bodyRow.textContent).toContain('matching body result');
+    expect(host.textContent).not.toContain('old matching body');
     expect(bodyRow.querySelectorAll('mark')).toHaveLength(2);
     expect(host.textContent).not.toContain('commandPalette.group.messages');
     expect(host.querySelector('[data-value="more:sessions"]')).not.toBeNull();
@@ -151,6 +157,8 @@ test('combines title and body matches in five unified rows, freezes navigation a
     expect(host.textContent).not.toContain('new background result');
     await act(async () => (host.querySelector('[data-value="more:sessions"]') as HTMLElement).click());
     expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(29);
+    expect(host.querySelectorAll('[cmdk-item][data-value^="message:"]')).toHaveLength(1);
+    expect(host.querySelector('[data-value="more:sessions"]')).toBeNull();
     await type('conversation');
     expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(5);
     await type('matching');

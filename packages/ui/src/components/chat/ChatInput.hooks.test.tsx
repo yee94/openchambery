@@ -45,6 +45,42 @@ const host = document.createElement('div');
 const root = createRoot(host);
 afterEach(async () => { await act(async () => root.render(null)); vi.restoreAllMocks(); });
 
+it.each([
+    [false, false, false, 1],
+    [true, false, false, 0],
+    [false, true, false, 0],
+    [false, false, true, 0],
+])('session reference selection keeps necessary loading and gates history prefetch (%s/%s/%s)', async (mobile, capacitor, hosted, expected) => {
+    const ensure = vi.fn(async () => undefined);
+    const prefetch = vi.fn(async () => undefined);
+    const inserted = vi.fn(() => ({ document: { text: '@session ' }, caret: 9 }));
+    let select!: (session: { id: string }) => void;
+    const Surface = surface(`
+        ${declarations.get('handleSessionSelect')}
+        capture(handleSessionSelect);
+        return null;
+    `, {
+        isMobile: mobile, isCapacitorApp: () => capacitor, isMobileSurfaceRuntime: () => hosted,
+        pendingSessionReferenceRef: { current: false },
+        useSessionUIStore: { getState: () => ({ getAuthoritativeDirectoryForSession: () => '/repo' }) },
+        ensureSessionRenderable: ensure, resolveMaterializedSessionDirectory: () => '/repo',
+        ensureSessionMentionTranscripts: prefetch, getDocument: () => ({ text: '@' }),
+        readComposerInsertCaret: () => 1, resolveComposerAutocompleteReplaceRange: () => null,
+        autocompleteTriggerRef: { current: null }, getAllSyncSessionMap: () => new Map(),
+        createUuid: () => 'id', composerTriggerIconDisplay: () => '@session', insertReference: inserted,
+        advancePastTrailingBoundarySpace: (_text: string, caret: number) => caret,
+        cursorPosRef: { current: 0 }, requestAnimationFrame: () => 0,
+        setShowFileMention: vi.fn(), setMentionQuery: vi.fn(), restoreWebComposerFocus: vi.fn(),
+        toast: { error: vi.fn() }, t: (key: string) => key,
+        capture: (value: typeof select) => { select = value; },
+    });
+    await act(async () => root.render(<Surface />));
+    await act(async () => select({ id: 'ses_reference' }));
+    expect(ensure).toHaveBeenCalledWith('ses_reference', { directory: '/repo' });
+    expect(inserted).toHaveBeenCalledOnce();
+    expect(prefetch).toHaveBeenCalledTimes(expected);
+});
+
 it('keeps pasted Markdown literal without a highlight overlay across repeated draft edits', async () => {
     const markdown = vi.fn(tokenizeMarkdown);
     const code = vi.fn(highlightFencedCode);

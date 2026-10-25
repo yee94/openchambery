@@ -204,7 +204,7 @@ describe("session.execution.failed error settle", () => {
       type: "error",
       session: SESSION,
       directory: DIRECTORY,
-      time: 1_790_071_827_652,
+      time: Date.now(),
       viewed: false,
       error: summary,
     });

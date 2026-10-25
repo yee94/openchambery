@@ -1061,6 +1061,24 @@ const EXACT_MESSAGE_ROUTE = '/api/session/:sessionID/message/:messageID';
 const CHANGES_ROUTE = '/api/openchamber/sessions/:sessionID/changes';
 
 describe('registerSessionTurnPageRoutes — exact message GET', () => {
+  it('removes message/content native fields at the exact serialization boundary', async () => {
+    const payload = { id: 'msg_1', type: 'assistant', native: { replay: 'opaque' }, content: [
+      { type: 'reasoning', text: 'keep', native: { reasoningEncryptedContent: 'encrypted' } },
+      { type: 'tool', native: { itemId: 'upstream' }, input: { native: 'business' } },
+    ] };
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      sessionTurnPageService: { loadPage: vi.fn() },
+      fetchExactMessage: async () => payload,
+    });
+    const res = response();
+    await route('GET', EXACT_MESSAGE_ROUTE)({ params: { sessionID: 'ses_1', messageID: 'msg_1' }, query: {}, headers: {} }, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ id: 'msg_1', type: 'assistant', content: [
+      { type: 'reasoning', text: 'keep' }, { type: 'tool', input: { native: 'business' } },
+    ] });
+    expect(payload).toHaveProperty('native');
+  });
   it('registers GET /api/session/:sessionID/message/:messageID', () => {
     const { app, route } = registry();
     registerSessionTurnPageRoutes(app, {

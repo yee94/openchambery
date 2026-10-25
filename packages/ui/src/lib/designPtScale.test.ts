@@ -11,27 +11,27 @@ import {
 } from './designPtScale';
 
 describe('computeDesignPtScale', () => {
-  test('returns the Android 0.95 cap when metrics are missing or dirty', () => {
-    expect(computeDesignPtScale(null)).toBe(0.95);
-    expect(computeDesignPtScale({ xdpi: 0, ydpi: 0, density: 2.625 })).toBe(0.95);
-    expect(computeDesignPtScale({ xdpi: 20, ydpi: 20, density: 2 })).toBe(0.95);
-    expect(computeDesignPtScale({ xdpi: 400, ydpi: 400, density: 0 })).toBe(0.95);
+  test('returns the Android 0.98 cap when metrics are missing or dirty', () => {
+    expect(computeDesignPtScale(null)).toBe(0.98);
+    expect(computeDesignPtScale({ xdpi: 0, ydpi: 0, density: 2.625 })).toBe(0.98);
+    expect(computeDesignPtScale({ xdpi: 20, ydpi: 20, density: 2 })).toBe(0.98);
+    expect(computeDesignPtScale({ xdpi: 400, ydpi: 400, density: 0 })).toBe(0.98);
   });
 
-  test('typical ~0.9 physical scale lifts to 0.95 instead of staying put', () => {
-    expect(ANDROID_DESIGN_PT_READABILITY_BUMP).toBeCloseTo(0.95 / 0.9, 8);
+  test('typical ~0.9 physical scale lifts to 0.98 instead of staying put', () => {
+    expect(ANDROID_DESIGN_PT_READABILITY_BUMP).toBeCloseTo(0.98 / 0.9, 8);
     // (294 / 2) / 163 ≈ 0.902 — a cap-only change would still be 0.9.
-    expect(computeDesignPtScale({ xdpi: 294, ydpi: 294, density: 2 })).toBe(0.95);
-    expect(computeDesignPtScale({ xdpi: 448, ydpi: 448, density: 2.625 })).toBe(0.95);
+    expect(computeDesignPtScale({ xdpi: 294, ydpi: 294, density: 2 })).toBe(0.98);
+    expect(computeDesignPtScale({ xdpi: 448, ydpi: 448, density: 2.625 })).toBe(0.98);
   });
 
-  test('still allows values below the Android cap after the 0.9→0.95 lift', () => {
-    // clamp(0.798) = 0.85, then × (0.95/0.9) ≈ 0.897
+  test('still allows values below the Android cap after the 0.9→0.98 lift', () => {
+    // clamp(0.798) = 0.85, then × (0.98/0.9) ≈ 0.926
     expect(computeDesignPtScale({ xdpi: 260, ydpi: 260, density: 2 })).toBeCloseTo(
       0.85 * ANDROID_DESIGN_PT_READABILITY_BUMP,
       5,
     );
-    expect(computeDesignPtScale({ xdpi: 800, ydpi: 800, density: 2 })).toBe(0.95);
+    expect(computeDesignPtScale({ xdpi: 800, ydpi: 800, density: 2 })).toBe(0.98);
     expect(clampDesignPtScale(0.4)).toBe(0.85);
     expect(clampDesignPtScale(Number.NaN)).toBe(1);
   });
@@ -43,8 +43,8 @@ describe('computeDesignPtScale', () => {
     expect(root.style.getPropertyValue('--dpt-n')).toBe('0.95');
   });
 
-  test('iOS stays at 10/9; Android cap is 0.95 not 1', () => {
-    expect(ANDROID_DESIGN_PT_SCALE_MAX).toBe(0.95);
+  test('iOS stays at 10/9; Android cap is 0.98 not 1', () => {
+    expect(ANDROID_DESIGN_PT_SCALE_MAX).toBe(0.98);
     expect(ANDROID_DESIGN_PT_SCALE_MAX).toBeLessThan(1);
     expect(IOS_DESIGN_PT_SCALE).toBeCloseTo(10 / 9, 8);
   });
@@ -54,20 +54,20 @@ describe('computeDesignPtScale', () => {
     (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor = {
       getPlatform: () => 'android',
     };
-    expect(readCachedDesignPtScale()).toBe(0.95);
+    expect(readCachedDesignPtScale()).toBe(0.98);
     window.localStorage.removeItem(DESIGN_PT_STORAGE_KEY);
-    expect(readCachedDesignPtScale()).toBe(0.95);
+    expect(readCachedDesignPtScale()).toBe(0.98);
     (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor = undefined;
   });
 
-  test('Android ignores the previous 0.9 cache key so the lift is not written back', () => {
-    window.localStorage.setItem('openchamber.designPtScale.v6', '0.9');
+  test('Android ignores the previous 0.95 cache key so the lift is not written back', () => {
+    window.localStorage.setItem('openchamber.designPtScale.v7', '0.95');
     (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor = {
       getPlatform: () => 'android',
     };
-    expect(readCachedDesignPtScale()).toBe(0.95);
+    expect(readCachedDesignPtScale()).toBe(0.98);
     (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor = undefined;
-    window.localStorage.removeItem('openchamber.designPtScale.v6');
+    window.localStorage.removeItem('openchamber.designPtScale.v7');
   });
 
   test('iOS cache restore always uses 10/9, not a stale 1.0', () => {

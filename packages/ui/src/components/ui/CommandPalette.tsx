@@ -529,23 +529,22 @@ export const CommandPalette = React.memo(function CommandPalette({ presentation 
   const visibleCommands = previewGroup('commands', scoredCommands.map((x) => x.item));
   const visibleSettings = previewGroup('settings', scoredSettings.map((x) => x.item));
   const conversationResults = React.useMemo(() => {
-    const hitsBySession = new Map<string, SessionContentSearchHit[]>();
+    const hitsBySession = new Map<string, SessionContentSearchHit>();
     for (const hit of contentHits) {
-      const hits = hitsBySession.get(hit.sessionID) ?? [];
-      hits.push(hit);
-      hitsBySession.set(hit.sessionID, hits);
+      const previous = hitsBySession.get(hit.sessionID);
+      if (!previous || hit.createdAt > previous.createdAt
+        || (hit.createdAt === previous.createdAt && hit.messageID > previous.messageID)) {
+        hitsBySession.set(hit.sessionID, hit);
+      }
     }
     const rows: { session: Session; hit?: SessionContentSearchHit }[] = [];
     const known = new Map(activeSessions.map((session) => [session.id, session]));
     for (const session of visibleTitleSessions) {
-      const hits = hitsBySession.get(session.id);
-      if (hits) {
-        for (const hit of hits) rows.push({ session, hit });
-        hitsBySession.delete(session.id);
-      } else rows.push({ session });
+      rows.push({ session, hit: hitsBySession.get(session.id) });
+      hitsBySession.delete(session.id);
     }
-    for (const hits of hitsBySession.values()) {
-      for (const hit of hits) rows.push({ session: known.get(hit.sessionID) ?? {
+    for (const hit of hitsBySession.values()) {
+      rows.push({ session: known.get(hit.sessionID) ?? {
         id: hit.sessionID, title: hit.title ?? '', directory: hit.directory, location: { directory: hit.directory },
       } as Session, hit });
     }

@@ -239,12 +239,12 @@ the preview, and resumes following when the reader scrolls back to the end.
 `packages/ui/src/lib/designPtScale.ts` overwrites it.
 
 - iOS: `10/9`.
-- Android: physical `xdpi/ydpi` so `1dpt ≈ 1/163in`, then × `0.95/0.9`
-  and cap at `0.95`. Typical math already sits at ~0.9, so a cap-only
+- Android: physical `xdpi/ydpi` so `1dpt ≈ 1/163in`, then × `0.98/0.9`
+  and cap at `0.98`. Typical math already sits at ~0.9, so a cap-only
   change stays 0.9; the multiply is what actually moves those phones.
-  A bare `1` or iOS `10/9` is too large because WebView CSS px is 1 dp.
+  This lifts Android sizing by about 3.2% from the previous 0.95 cap.
 
-Cache key `openchamber.designPtScale.v7` drops v6 (`0.9`).
+Cache key `openchamber.designPtScale.v8` drops v7 (`0.95` cap).
 
 `scripts/postcss-dpt-font-size.mjs` rewrites compiled `font-size`,
 `line-height`, and `--text-*` px/rem values to `calc(N * var(--dpt))`.

@@ -1,5 +1,6 @@
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { isSensitiveCredentialResponse } from '../../web/server/lib/opencode/credential-boundary.js';
+import { stripSessionMessageNativePayload } from '../../web/server/lib/session-turn-pages/native-payload.js';
 import {
   isOpenCodeExecutionPermitted,
   resolveConnectedApiUrl,
@@ -145,17 +146,16 @@ const isSessionMessagesListPath = (requestPath: string): boolean => {
 };
 
 /**
- * Project JSON bodyText for reasoning strip when includeReasoning=false.
- * Identity when include is enabled or body is not JSON.
+ * Remove provider replay data and apply the requested reasoning projection.
+ * Non-JSON bodies pass through unchanged.
  */
-const maybeProjectReasoningBodyText = (
+const maybeProjectMessagesBodyText = (
   bodyText: string,
   includeReasoning: boolean,
 ): string => {
-  if (includeReasoning) return bodyText;
   try {
     const parsed = JSON.parse(bodyText) as unknown;
-    const projected = projectMessagesPayloadForReasoning(parsed, false);
+    const projected = projectMessagesPayloadForReasoning(stripSessionMessageNativePayload(parsed), includeReasoning);
     if (projected === parsed) return bodyText;
     return JSON.stringify(projected);
   } catch {
@@ -385,7 +385,7 @@ export async function handleProxyBridgeMessage(
           if (isExactSessionMessagePath(normalizedPath)) {
             try {
               const parsed = JSON.parse(data.bodyText) as unknown;
-              const l1 = projectExactMessagePayload(parsed);
+              const l1 = projectExactMessagePayload(stripSessionMessageNativePayload(parsed));
               const projected = projectMessagesPayloadForReasoning(l1, includeReasoning);
               if (projected !== parsed) {
                 return {
@@ -401,9 +401,8 @@ export async function handleProxyBridgeMessage(
             } catch {
               // Malformed JSON — pass through unchanged.
             }
-          } else if (isSessionMessagesListPath(normalizedPath) && !includeReasoning) {
-            // Official session.messages list: strip reasoning parts only.
-            const bodyText = maybeProjectReasoningBodyText(data.bodyText, false);
+          } else if (isSessionMessagesListPath(normalizedPath)) {
+            const bodyText = maybeProjectMessagesBodyText(data.bodyText, includeReasoning);
             if (bodyText !== data.bodyText) {
               return {
                 id,

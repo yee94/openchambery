@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.10] - 2026-10-25
+
+### 改进
+
+- 会话首屏去掉重复的 context 拉取，Web 与 VS Code 的消息响应剥离未使用的 native 载荷，首屏消息传输更轻。
+- 关闭移动端会话引用的后台历史预取，恢复与手动加载历史的行为保持不变。
+- 中文与繁体文案、设计基准缩放随本轮调整同步更新。
+
 ## [2.1.10-beta.9] - 2026-10-25
 
 ### 改进

@@ -2491,7 +2491,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.sessionBackground.moveRunning': '移至背景',
   'chat.sessionBackground.moving': '轉移中…',
   'chat.sessionBackground.moveFailed': '無法將工作移至背景',
-  'chat.sessionBackground.tasksRunning': '{count} 個背景任務執行中',
+  'chat.sessionBackground.tasksRunning': '背景 {count} 個進行中',
   'chat.sessionBackground.outputTruncated': '僅顯示輸出的前 64 KiB。',
   'chat.messageBody.shellCommand.title': '命令結果',
   'chat.messageBody.shellCommand.hideOutput': '隱藏輸出',

@@ -25,14 +25,14 @@ test('full system-only projection pages retain the upstream history cursor', asy
   expect(page.complete).toBe(false);
 });
 
-test('context refresh excludes instruction updates and preserves neighboring chat rows', async () => {
-  const { normalizeSessionContextPage } = await import('./session-projection-api');
-  const page = normalizeSessionContextPage({ data: [
+test('projection refresh excludes instruction updates and preserves neighboring chat rows', async () => {
+  const { normalizeSessionProjectionPage } = await import('./session-projection-api');
+  const page = normalizeSessionProjectionPage({ data: [
     { id: 'msg_user', type: 'user', time: { created: 1000 }, text: 'hello' },
     { id: 'msg_system', type: 'system', time: { created: 2000 },
       text: 'model-facing catalog', description: 'Instructions updated: core/codemode' },
     { id: 'msg_answer', type: 'assistant', time: { created: 3000 }, content: [{ type: 'text', text: 'answer' }] },
-  ] }, 'session');
+  ] }, 'session', 'asc');
   expect(page.records.map((row) => row.info.id)).toEqual(['msg_user', 'msg_answer']);
   expect(page.turnCount).toBe(1);
 });

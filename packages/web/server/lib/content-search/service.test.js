@@ -8,6 +8,26 @@ import path from 'node:path';
 const services = [];
 afterEach(() => services.splice(0).forEach((service) => service.close()));
 
+test.each(['needle', '短词'])('limits unique sessions and selects their newest exact match: %s', (query) => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  services.push(service);
+  const record = (id, created, text) => ({
+    info: { id, role: 'user', time: { created } }, parts: [{ type: 'text', text }],
+  });
+  service.replaceSession('host', { id: 'busy', directory: '/one' }, [
+    ...Array.from({ length: 200 }, (_, i) => record(`m-${i}`, 100 + i, query)),
+    record('z-tie', 299, `${query} newest matching message`),
+    record('unmatched', 400, 'unrelated'),
+  ]);
+  service.replaceSession('host', { id: 'other', directory: '/two' }, [record('older', 1, query)]);
+  service.replaceSession('foreign', { id: 'busy', directory: '/one' }, [record('foreign', 500, query)]);
+  const hits = service.search('host', query, { limit: 2 });
+  expect(hits.map((hit) => [hit.sessionID, hit.messageID])).toEqual([['busy', 'z-tie'], ['other', 'older']]);
+  expect(hits[0].snippet).toContain('newest matching message');
+  expect(service.search('host', query, { limit: 1 })).toEqual(hits.slice(0, 1));
+  expect(service.search('host', query, { directory: '/two' })).toEqual(hits.slice(1));
+});
+
 test.each([false, true])('upgrades old checkpoints (existing boundary: %s) without inventing coverage and persists initialization across database reopen', (hasBoundary) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'content-index-'));
   const dbPath = path.join(directory, 'index.sqlite');

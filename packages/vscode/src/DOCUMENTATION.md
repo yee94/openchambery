@@ -4,6 +4,11 @@ This document describes backend runtime modules used by the VS Code extension br
 
 ## Purpose
 
+HTTP list/context and exact-message bridge responses share the Web Host
+`session-turn-pages/native-payload.js` projection before serialization: remove
+message/content-item `native`, preserve business input/output and cursors.
+This does not change SSE payloads.
+
 Reasoning projection supports native v2 list/context `{ data }` envelopes, assistant `content[]`, and `session.reasoning.*` events. Context reads share the message-list outbound filtering boundary; cursors, rows, text/tools and token totals are preserved.
 
 Keep `bridge.ts` as a thin orchestration layer that delegates message handling to cohesive domain runtimes while preserving API behavior.
