@@ -154,7 +154,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const setImagePreviewOpen = useUIStore((state) => state.setImagePreviewOpen)
   const handleShowPopup = useEvent((content: ToolPopupContent) => {
     // Only viewer-capable content opens here; the contact surface has no tool popups.
-    if (content.image || content.mermaid) {
+    if (content.image || content.mermaid || content.video) {
       setPopupContent(content)
       setImagePreviewOpen(true)
     }

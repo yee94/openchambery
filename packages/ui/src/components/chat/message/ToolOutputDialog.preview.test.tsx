@@ -18,7 +18,8 @@ vi.mock('./toolRenderers', () => ({}));
 vi.mock('@/lib/toolHelpers', () => ({ getLanguageFromExtension: () => 'text' }));
 vi.mock('./parts/VirtualizedCodeBlock', () => ({ VirtualizedCodeBlock: () => null }));
 vi.mock('@/components/code/WorkerHighlightedCode', () => ({ WorkerHighlightedCode: () => null }));
-vi.mock('../imageSave', () => ({ blobFromImageElement: vi.fn() }));
+vi.mock('../imageSave', () => ({ saveImageToDevice: vi.fn().mockResolvedValue('downloaded') }));
+vi.mock('@/components/ui', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const host = document.createElement('div');
@@ -128,4 +129,26 @@ test('desktop Mermaid uses an explicit dark rendering theme without a dark page 
   await act(async () => root.render(<ToolOutputDialog popup={{ open: true, title: 'Diagram', content: '', mermaid: { url: 'data:text/plain,test', source: 'graph TD; A-->B' } }} onOpenChange={() => {}} isMobile={false} />));
   const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
   expect(dialog.querySelector('[data-preview-theme="dark"]')).not.toBeNull();
+});
+
+test('fullscreen context menu mounts save actions above the preview without a ChatContainer host', async () => {
+  const matchMedia = window.matchMedia.bind(window);
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+    const result = matchMedia(query);
+    Object.defineProperty(result, 'matches', { value: query.includes('prefers-reduced-motion') });
+    return result;
+  });
+  root = createRoot(host);
+  await act(async () => root.render(<ToolOutputDialog popup={{ open: true, title: 'Photo', content: '', image: { url: 'data:image/png;base64,AA==' } }} onOpenChange={() => {}} isMobile />));
+  const image = document.querySelector('img')!;
+  const previewOwner = mobileWindowStack.getSnapshot();
+  await act(async () => image.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })));
+  const sheet = document.querySelector('[data-oc-motion-id="image-save-actions-sheet"]')?.parentElement;
+  expect(document.querySelector('[data-media-preview="image"]')).not.toBeNull();
+  expect(mobileWindowStack.getSnapshot()).toBe('image-save-actions-sheet');
+  expect(sheet?.classList.contains('z-[90]')).toBe(true);
+  expect(sheet?.textContent).toContain('chat.image.actions.saveImage');
+  await act(async () => sheet?.querySelector('button')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  expect(mobileWindowStack.getSnapshot()).toBe(previewOwner);
+  expect(document.querySelector('[data-media-preview="image"]')).not.toBeNull();
 });

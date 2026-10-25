@@ -13,6 +13,7 @@ import {
 } from './imageSource';
 
 export type ImageSaveTarget = {
+  kind?: 'image' | 'video';
   /** Browser-consumable URL currently shown (blob / openchamber-asset / http / data). */
   displayUrl?: string;
   /** Original message source (file://, absolute path, http, data, …). */
@@ -32,6 +33,7 @@ export type ImageSaveResult = 'downloaded' | 'saved';
 const DEFAULT_MIME = 'image/png';
 
 type OpenChamberMediaPlugin = {
+  saveFile: (options: { dataBase64: string; mimeType: string; filename: string }) => Promise<{ cancelled?: boolean }>;
   saveImage: (options: {
     dataBase64: string;
     mimeType?: string;
@@ -48,12 +50,13 @@ const extensionForMime = (mimeType: string): string => {
   if (normalized === 'image/gif') return 'gif';
   if (normalized === 'image/svg+xml') return 'svg';
   if (normalized === 'image/png') return 'png';
+  if (normalized === 'video/quicktime') return 'mov';
   const subtype = normalized.split('/')[1];
   return subtype && /^[a-z0-9.+-]+$/i.test(subtype) ? subtype : 'png';
 };
 
 const sanitizeFilename = (value: string | undefined, mimeType: string): string => {
-  const fallback = `image.${extensionForMime(mimeType)}`;
+  const fallback = `${mimeType.startsWith('video/') ? 'video' : 'image'}.${extensionForMime(mimeType)}`;
   const raw = (value || '').trim() || fallback;
   const base = raw.split(/[\\/]/).pop() || fallback;
   const cleaned = base.replace(/[^\w.\- ()[\]]+/g, '_').replace(/^\.+/, '');
@@ -95,49 +98,13 @@ const downloadBlob = (blob: Blob, filename: string): void => {
 };
 
 const fetchBlobFromUrl = async (url: string, signal?: AbortSignal): Promise<Blob> => {
-  const response = await fetch(url, { signal, cache: 'no-store' });
+  const response = await (/^\/api(?=\/|[?#]|$)/.test(url)
+    ? runtimeFetch(url, { signal, cache: 'no-store' })
+    : fetch(url, { signal, cache: 'no-store' }));
   if (!response.ok) {
     throw new Error(`Image fetch failed (${response.status})`);
   }
   return response.blob();
-};
-
-/**
- * Read pixels already decoded into an HTMLImageElement (fullscreen / thumbnail
- * that is on screen). Avoids re-hitting the runtime file path when the preview
- * is already loaded.
- */
-export const blobFromImageElement = async (
-  image: HTMLImageElement,
-  mimeType = DEFAULT_MIME,
-): Promise<Blob | null> => {
-  if (!image.naturalWidth || !image.naturalHeight) return null;
-
-  const src = image.currentSrc || image.src;
-  if (src && (/^(?:blob:|data:|openchamber-asset:)/i.test(src) || /^https?:/i.test(src) || /^\/api(?=\/|[?#]|$)/.test(src))) {
-    try {
-      const blob = await fetchBlobFromUrl(src);
-      if (blob.size > 0) return blob;
-    } catch {
-      // Fall through to canvas capture for same-origin / decoded bitmaps.
-    }
-  }
-
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const context = canvas.getContext('2d');
-    if (!context) return null;
-    context.drawImage(image, 0, 0);
-    const type = mimeType.startsWith('image/') ? mimeType : DEFAULT_MIME;
-    const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((next) => resolve(next), type === 'image/jpg' ? 'image/jpeg' : type);
-    });
-    return blob && blob.size > 0 ? blob : null;
-  } catch {
-    return null;
-  }
 };
 
 const materializeFromRuntimePath = async (
@@ -189,19 +156,25 @@ export const materializeImageBlob = async (
     } else {
       const resolved = resolveImageSource(source, effectiveDirectory);
       if (needsRuntimeImageStream(resolved)) {
-        try {
-          blob = await materializeFromRuntimePath(resolved.path, signal);
-        } catch {
-          const response = await runtimeFetch('/api/fs/raw', {
-            method: 'GET',
-            cache: 'no-store',
-            query: { path: resolved.path },
-            signal,
-          });
-          if (!response.ok) {
-            throw new Error(`Image source request failed with status ${response.status}`);
-          }
+        if (target.kind === 'video') {
+          const response = await runtimeFetch('/api/fs/raw', { query: { path: resolved.path }, signal });
+          if (!response.ok) throw new Error(`Media request failed (${response.status})`);
           blob = await response.blob();
+        } else {
+          try {
+            blob = await materializeFromRuntimePath(resolved.path, signal);
+          } catch {
+            const response = await runtimeFetch('/api/fs/raw', {
+              method: 'GET',
+              cache: 'no-store',
+              query: { path: resolved.path },
+              signal,
+            });
+            if (!response.ok) {
+              throw new Error(`Image source request failed with status ${response.status}`);
+            }
+            blob = await response.blob();
+          }
         }
       } else {
         blob = await fetchBlobFromUrl(resolved.source, signal);
@@ -215,7 +188,8 @@ export const materializeImageBlob = async (
 
   const mimeType = (
     target.mimeType
-    || (blob.type && blob.type.startsWith('image/') ? blob.type : '')
+    || (blob.type && /^(image|video)\//.test(blob.type) ? blob.type : '')
+    || (target.kind === 'video' ? 'video/mp4' : '')
     || DEFAULT_MIME
   ).split(';')[0].trim() || DEFAULT_MIME;
 
@@ -245,11 +219,25 @@ export const saveImageToDevice = async (
 
   if (isNativeMediaAvailable()) {
     const dataBase64 = await blobToBase64(blob);
+    if (target.kind === 'video') {
+      const result = await OpenChamberMedia.saveFile({ dataBase64, mimeType, filename });
+      if (result?.cancelled) throw new DOMException('Save cancelled', 'AbortError');
+      return 'saved';
+    }
     await OpenChamberMedia.saveImage({ dataBase64, mimeType, filename });
     return 'saved';
   }
 
   if (isVSCodeRuntime()) {
+    if (target.kind === 'video') {
+      const resolved = resolveImageSource(target.sourceUrl, target.effectiveDirectory ?? '');
+      const files = getRegisteredRuntimeAPIs()?.files;
+      if (needsRuntimeImageStream(resolved) && files?.downloadFile) {
+        await files.downloadFile(resolved.path);
+        return 'saved';
+      }
+      throw new Error('Video download is unavailable for this source in VS Code');
+    }
     const vscode = getRegisteredRuntimeAPIs()?.vscode;
     if (vscode?.saveImage) {
       const dataUrl = await blobToDataUrl(blob);

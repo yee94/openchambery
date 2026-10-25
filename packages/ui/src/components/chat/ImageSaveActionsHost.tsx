@@ -16,7 +16,7 @@ import { saveImageToDevice, type ImageSaveTarget } from './imageSave';
  * Single chat-tree host for long-press / context-menu image save actions.
  * Mount once under a chat surface that owns message and composer images.
  */
-export function ImageSaveActionsHost() {
+export function ImageSaveActionsHost({ abovePreview = false }: { abovePreview?: boolean }) {
   const { t } = useI18n();
   const [target, setTarget] = React.useState<ImageSaveTarget | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -51,14 +51,14 @@ export function ImageSaveActionsHost() {
     setSaving(true);
     try {
       await saveImageToDevice(target);
-      toast.success(t('chat.image.actions.saveSuccess'));
+      toast.success(t(target.kind === 'video' ? 'filesView.editor.saved' : 'chat.image.actions.saveSuccess'));
       setTarget(null);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         setSaving(false);
         return;
       }
-      toast.error(t('chat.image.actions.saveFailed'));
+      toast.error(t(target.kind === 'video' ? 'filesView.toast.saveFailed' : 'chat.image.actions.saveFailed'));
       setSaving(false);
       return;
     }
@@ -68,7 +68,7 @@ export function ImageSaveActionsHost() {
   if (!target) return null;
 
   const title = target.filename?.trim() || t('chat.image.actions.sheetTitle');
-  const saveLabel = isCapacitorApp()
+  const saveLabel = target.kind === 'video' ? t('filesView.editor.saveFile') : isCapacitorApp()
     ? t('chat.image.actions.saveToPhotos')
     : t('chat.image.actions.saveImage');
 
@@ -76,6 +76,7 @@ export function ImageSaveActionsHost() {
     <div ref={surfaceRef}>
       <MobileResizableSheet
         id="image-save-actions-sheet"
+        className={abovePreview ? 'z-[90]' : undefined}
         open={open}
         onOpenChange={handleOpenChange}
         title={<h2 className="truncate typography-ui-label font-semibold">{title}</h2>}

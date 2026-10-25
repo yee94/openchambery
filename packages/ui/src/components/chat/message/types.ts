@@ -16,6 +16,7 @@ export interface ToolPopupContent {
     diffHunks?: Array<Record<string, unknown>>;
     metadata?: Record<string, unknown>;
     previewSource?: HTMLElement;
+    video?: { url: string; mimeType?: string; filename?: string };
     image?: {
         url: string;
         mimeType?: string;

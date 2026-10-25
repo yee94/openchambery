@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.4] - 2026-10-25
+
+### 改进
+
+- 对话与工具输出中的视频新增预览弹层，支持播放、关闭与保存；运行时路径下的视频通过流式接口加载后再播放。
+- 附件与 Markdown 中的视频链接识别统一，移动端预览与桌面对齐。
+
 ## [2.1.10-beta.3] - 2026-10-25
 
 ### 改进

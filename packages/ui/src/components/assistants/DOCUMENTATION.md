@@ -1,5 +1,14 @@
 # Assistant UI
 
+## Video and fullscreen save
+
+Contact video attachments open the shared native-video preview. Descriptor-backed
+videos acquire bytes through the existing attachment cache only after Preview is
+pressed; their blob lease lives with the row. Legacy direct URLs and Markdown
+video-file links use the same `ToolPopupContent.video` contract. The global preview
+flag includes video. Every fullscreen preview hosts its own save sheet, including
+image long-press, so contact conversations do not require a `ChatContainer` host.
+
 ## Hold-to-talk input
 
 Mobile contact composers reuse the memoized `HoldToTalkComposer` shared with primary Chat: hold an empty textarea to record, release at center to edit, slide left to cancel or right to send. The dictation setting and capture/runtime support gate activation (VS Code is unsupported). Final recognition is passed explicitly into the existing contact admission path, retaining attachments, failed-send drafts and retry identity. Edit results use the reference-aware document commit. Text typed during finalization is preserved and receives the transcript without automatic submission. Inactive contacts unmount capture; the existing runtime/assistant key fences late results. Stable event callbacks isolate idle audio Hooks from ordinary typing; working contacts remain usable while admission-pending contacts are disabled.

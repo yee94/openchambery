@@ -24,6 +24,7 @@ type MobileResizableSheetProps = {
   initiallyExpanded?: boolean;
   fitContent?: boolean;
   bodyClassName?: string;
+  className?: string;
   children: React.ReactNode;
 };
 
@@ -52,6 +53,7 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
   initiallyExpanded = false,
   fitContent = false,
   bodyClassName,
+  className,
   children,
 }) => {
   const sheetSnap = useMobileSheetSnap({
@@ -68,6 +70,7 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
     <MobileSheetHeaderActionsContext.Provider value={headerActionsSlot}>
       <MobileWindowMotion
         id={id}
+        className={className}
         open={open}
         onOpenChange={onOpenChange}
         presentation="sheet"
