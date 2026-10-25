@@ -135,7 +135,7 @@ export function MobileConnectionWelcome({ connection: conn }: { connection: UseM
     <>
       <main className="yuri-keyboard-fill-screen yuri-mobile-welcome" inert={sheetOpen || historyOpen} aria-hidden={sheetOpen || historyOpen || undefined} data-welcome-paused={sheetOpen || historyOpen || isScanning ? 'true' : undefined}>
         <header className="yuri-welcome-brand">
-          <YuriWordmark className="block" />
+          <YuriWordmark className="block" width={88} />
         </header>
         <div className="yuri-welcome-content">
           <div className="yuri-welcome-intro">

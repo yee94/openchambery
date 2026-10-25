@@ -7,7 +7,7 @@
   overflow-y: auto;
   background: var(--surface-background);
   color: var(--surface-foreground);
-  padding: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 16px) 28px
+  padding: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 24px) 28px
     calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 24px);
 }
 
@@ -49,20 +49,22 @@
   inset: 0 -20px;
   border-radius: 0;
   background-color: transparent;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--surface-foreground) 24%, transparent) 0.9px, transparent 1.5px);
   background-size: 14px 14px;
   transform: rotate(-18deg) scale(0.94);
-  mask-image: radial-gradient(ellipse 47% 46% at 55% 50%, black 12%, transparent 100%);
+  mask-image: radial-gradient(ellipse 47% 46% at 50% 50%, black 28%, transparent 100%);
   contain: paint;
 }
 
 .yuri-welcome-dots::after {
   background-size: 14px 14px;
+  mask-image: radial-gradient(black 16%, transparent 72%), radial-gradient(black 12%, transparent 74%);
   animation-name: yuri-image-loading-drift, yuri-welcome-dots-breathe;
   animation-duration: 4.2s, 2.4s;
 }
 
 @keyframes yuri-welcome-dots-breathe {
-  0%, 100% { opacity: 0.22; }
+  0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
 }
 
