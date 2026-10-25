@@ -36,7 +36,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     `collectConsecutiveSkillTools` + `isSkillGroupTool`. A lone skill still uses the group header so adding the next name can flip-animate.
     Task and question stay individual rows. A lone process tool still uses the Used header so the next call cannot remount the wrapper.
   - Completed ordinary Activity headers show localized elapsed time (`Worked for {duration}` in English) at the start in muted, regular-weight text, without a leading icon or underline. Missing timing falls back to the completed status label. A small disclosure chevron immediately after the elapsed time appears on hover or keyboard focus, with its space reserved to avoid layout shifts. Both disclosure states retain the trailing agent summary, diff totals, full-width hit target, and ARIA toggle. The elapsed label is vertically centered in the original 20px mobile / 24px desktop row height.
-  - Compaction headers retain their `fold-vertical` icon, status, duration, and trailing summary/chevron layout.
+   - Agent summary counts and avatars deduplicate by the task's resolved child-session identity (including resumed task IDs), not by tool-call count. Repeated calls to the same task count once; unassigned calls fall back to their tool part IDs. Active and total identities are collected separately in first-seen order.
+   - Compaction headers retain their `fold-vertical` icon, status, duration, and trailing summary/chevron layout.
   - While `completionDisposition === 'active'`, the Activity disclosure is locked open:
     no collapse chevron/toggle, and the indent rail (`ml-2 pl-3` + connector line) is
     omitted so in-flight rows do not jump horizontally when the turn settles.

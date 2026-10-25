@@ -425,8 +425,8 @@ type AggregatedRow =
 
 /** Collect task identity seeds so header faces match task rows and work status. */
 const getTaskAvatarSeeds = (parts: TurnActivityPart[]): { active: string[]; all: string[] } => {
-    const active: string[] = [];
-    const all: string[] = [];
+    const active = new Set<string>();
+    const all = new Set<string>();
 
     for (const activity of parts) {
         if (activity.kind !== 'tool') continue;
@@ -441,13 +441,13 @@ const getTaskAvatarSeeds = (parts: TurnActivityPart[]): { active: string[]; all:
         const stateRecord = state as Record<string, unknown>;
 
         const seed = readTaskToolSessionId(part) || taskId;
-        all.push(seed);
+        all.add(seed);
         if (stateRecord.status === 'pending' || stateRecord.status === 'running') {
-            active.push(seed);
+            active.add(seed);
         }
     }
 
-    return { active, all };
+    return { active: [...active], all: [...all] };
 };
 
 interface ExpandableToolRowProps {
