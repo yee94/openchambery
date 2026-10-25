@@ -18,6 +18,7 @@ npm scope 使用用户已申请的 `@yuriai`，公开发布包为 `@yuriai/web` 
    ```
 
    这份计划用来判断 iOS 要不要上 TestFlight，**不是**用来丢掉桌面或 APK。
+   新仓库没有历史 `v*` 版本（或只有指向当前提交的首版标签）时，计划返回 `mode: native`、`reason: first_release`、`baseTag: null`，执行完整原生发布；显式指定不存在的 `--base` 仍会报错。
 3. 按结果选 tag：
 
 | 情况 | 产物 | Tag | 触发 |

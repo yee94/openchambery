@@ -103,7 +103,7 @@ function latestBaseTag() {
     .map((t) => t.trim())
     .filter((t) => TAG_PATTERN.test(t) && !headTags.has(t))
   if (tags.length === 0) {
-    throw new Error('No matching base tags found (expected vX.Y.Z or vX.Y.Z-beta.N)')
+    return null
   }
   tags.sort(compareSemverTags)
   return tags[tags.length - 1]
@@ -275,18 +275,23 @@ function printHuman(plan) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const baseTag = args.base ?? latestBaseTag()
-  if (!parseSemverTag(baseTag)) {
+  if (baseTag !== null && !parseSemverTag(baseTag)) {
     throw new Error(`Invalid base tag: ${baseTag}`)
   }
 
-  const allChanged = collectChangedPaths(baseTag)
+  const allChanged = baseTag === null
+    ? git(['ls-files']).split('\n').filter(Boolean)
+    : collectChangedPaths(baseTag)
   const changedNativePaths = allChanged.filter(isFingerprintPath)
   const { contractsValid, changedContracts } = await validateContracts()
   const shellApiVersion = readShellApiVersion()
 
   let mode = 'ota'
   let reason = 'ok'
-  if (!contractsValid) {
+  if (baseTag === null) {
+    mode = 'native'
+    reason = 'first_release'
+  } else if (!contractsValid) {
     mode = 'native'
     reason = 'bridge_contract_changed'
   } else if (changedNativePaths.length > 0) {
