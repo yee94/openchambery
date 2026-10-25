@@ -645,11 +645,14 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                             key={`${renderKey}:text:${index}`}
                             aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
                             data-assistant-contact-text=""
+                            data-assistant-contact-media={imageOnly || undefined}
                             className={cn(
                               'min-w-0 max-w-full [overflow-wrap:anywhere] rounded-[1.35rem] typography-markdown leading-6',
                               imageOnly ? 'p-0' : 'px-4 py-2.5',
                               useMarkdown ? null : 'whitespace-pre-wrap',
-                              isUser
+                              imageOnly
+                                ? 'text-foreground'
+                                : isUser
                                 ? 'rounded-[1.15rem] rounded-br-lg bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]'
                                 : isPeer
                                   ? 'rounded-[1.25rem] border border-dashed border-border/50 bg-[var(--surface-muted)]/70 text-foreground'

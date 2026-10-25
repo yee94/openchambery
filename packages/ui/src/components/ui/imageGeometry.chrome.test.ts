@@ -85,3 +85,57 @@ test.skipIf(!resolveChrome()).each([1500, 500, 3000])('content images stay insid
     rmSync(work, { recursive: true, force: true });
   }
 }, 60_000);
+
+test.skipIf(!resolveChrome())('contact image bubbles have no painted backing and round the actual image without changing row height', async () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const source = readFileSync(join(here, '../assistants/AssistantConversationSurface.tsx'), 'utf8');
+  const baseClass = source.match(/'(min-w-0 max-w-full \[overflow-wrap:anywhere\] rounded[^']+)'/)![1];
+  const mediaClass = source.match(/imageOnly \? '([^']+)' : 'px-4 py-2.5'/)![1];
+  const mediaColor = source.includes("imageOnly\n                                ? 'text-foreground'") ? 'text-foreground' : 'bg-[var(--surface-muted)] text-foreground';
+  const css = await compileProductionCssAsync(join(here, '../..'));
+  const imageCss = readFileSync(join(here, 'image-loading.css'), 'utf8');
+  const theme = readFileSync(join(here, '../chat/markstream/markstreamTheme.css'), 'utf8').replace(/^@import .*;$/gm, '');
+  const work = mkdtempSync(join(evidenceRoot(), 'contact-image-chrome-'));
+  const file = join(work, 'index.html');
+  const src = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><path fill="steelblue" d="M0 0h1600v900H0z"/></svg>')}`;
+  writeFileSync(file, `<html class="mobile-pointer"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>${imageCss}</style><style>${theme}</style>
+    <main style="width:269px;margin:24px;--surface-muted:lightgray">
+    <div id="text" class="${baseClass} px-4 py-2.5 bg-[var(--surface-muted)]">Text bubble</div>
+    ${['markstream', 'legacy'].map(renderer => `<div data-assistant-contact-text data-assistant-contact-media class="${baseClass} ${mediaClass} ${mediaColor}" style="margin-top:8px">
+      <div class="markdown-content oc-markstream-host"><div class="markstream-react"><p class="paragraph-node" style="margin:0">
+      ${renderer === 'markstream' ? `<span class="oc-image-frame" data-image-content="mobile" data-image-state="loading"><img class="rounded-lg" src="${src}"></span>` : `<span data-md-image-presentation="true" data-mobile-image="true" class="relative my-4 block w-fit max-w-full"><img class="rounded-lg" src="${src}" data-md-image-state="loading"></span>`}
+      </p></div></div></div>`).join('')}
+    <div id="next">Next message</div></main>`);
+  const browser = await openChromeSession({ width: 390, height: 844 });
+  try {
+    const page = await openPageSession(browser, { width: 390, height: 844, standalone: false });
+    await page.navigateFile(file);
+    const result = await page.evaluate<{ before: number; after: number; samples: Array<{ background: string; radius: string; textRadius: string; ratio: number; padding: string }> }>(`(async () => {
+      await Promise.all([...document.images].map(image => image.decode()));
+      const before = document.querySelector('#next').getBoundingClientRect().top;
+      document.querySelector('.oc-image-frame').dataset.imageState = 'loaded';
+      document.querySelector('[data-md-image-presentation] img').dataset.mdImageState = 'loaded';
+      return { before, after: document.querySelector('#next').getBoundingClientRect().top,
+        samples: [...document.querySelectorAll('[data-assistant-contact-media]')].map(bubble => {
+          const image = bubble.querySelector('img'), rect = image.getBoundingClientRect();
+          return { background: getComputedStyle(bubble).backgroundColor, padding: getComputedStyle(bubble).padding,
+            radius: getComputedStyle(image).borderRadius, textRadius: getComputedStyle(document.querySelector('#text')).borderRadius,
+            ratio: rect.width / rect.height };
+        }) };
+    })()`);
+    console.info('Contact image chrome geometry', result);
+    const screenshot = join(evidenceRoot(), 'contact-image-chrome.png');
+    await page.screenshotPng(screenshot);
+    console.info('Contact image chrome screenshot', screenshot);
+    expect(result.after).toBe(result.before);
+    for (const sample of result.samples) {
+      expect(sample.background).toBe('rgba(0, 0, 0, 0)');
+      expect(sample.padding).toBe('0px');
+      expect(sample.radius).toBe(sample.textRadius);
+      expect(sample.ratio).toBeCloseTo(16 / 9, 2);
+    }
+  } finally {
+    await browser.close();
+    rmSync(work, { recursive: true, force: true });
+  }
+}, 120_000);

@@ -111,7 +111,9 @@ fallbacks. A new native build is required for PNG-consuming native surfaces.
 ## Image presentation
 
 `ToolOutputDialog` image and video previews share `MediaSaveButton`: one icon-only
-download action fixed at the bottom safe area. Clicking materializes bytes and
+download action inside the shared rounded toolbar at the bottom safe area, on
+the same row as image zoom controls. Video uses the same toolbar shell and control
+sizing. The saving/check states replace the icon in place. Clicking materializes bytes and
 saves directly; pending shows an indeterminate ring, success a checkmark. There
 is no save sheet, long-press save, visible status text or success toast. Accessible
 labels/live status remain localized. A failed save restores the retryable download

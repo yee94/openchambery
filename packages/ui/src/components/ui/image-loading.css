@@ -171,3 +171,24 @@
   width: auto;
   height: var(--oc-content-image-height);
 }
+
+/* Contact media has no text-bubble backing. Round the actual image bounds,
+   not a contain-fit letterbox, while retaining the frame's reserved height. */
+[data-assistant-contact-media] :is(.oc-image-frame[data-image-content], [data-md-image-presentation='true']) {
+  margin: 0;
+  border-radius: 1.35rem;
+}
+
+[data-assistant-contact-media] .oc-image-frame[data-image-content][data-image-state='loaded'],
+[data-assistant-contact-media] [data-md-image-presentation='true']:has(> img[data-md-image-state='loaded']) {
+  display: flex;
+  align-items: center;
+}
+
+[data-assistant-contact-media] .oc-image-frame[data-image-content][data-image-state='loaded'] > img,
+[data-assistant-contact-media] .oc-markstream-host .markstream-react .oc-image-frame[data-image-content][data-image-state='loaded'] > img,
+[data-assistant-contact-media] [data-md-image-presentation='true'] > img[data-md-image-state='loaded'] {
+  height: auto;
+  max-height: var(--oc-content-image-height);
+  border-radius: 1.35rem;
+}

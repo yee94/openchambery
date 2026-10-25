@@ -247,7 +247,7 @@ describe('image source contracts', () => {
     const pointerDownSource = dialogSource.slice(pointerDownStart, pointerDownEnd);
     expect(pointerDownSource).toContain("if (event.pointerType !== 'mouse') event.preventDefault();");
     expect(pointerDownSource.match(/event\.preventDefault\(\);/g)).toHaveLength(1);
-    expect(dialogSource).toContain('onDoubleClick={(event) => event.stopPropagation()}');
+    expect(dialogSource).toContain('<MediaPreviewToolbar>');
 
     const resetStart = dialogSource.indexOf('React.useEffect(() => {\n        if (pendingFrameRef.current !== null)');
     const resetEnd = dialogSource.indexOf('React.useLayoutEffect(() => {', resetStart);

@@ -239,6 +239,8 @@ describe('AssistantConversationSurface scroll ownership', () => {
     expect(bubble).toBeTruthy();
     expect(bubble?.classList.contains('p-0')).toBe(compact);
     expect(bubble?.classList.contains('px-4')).toBe(!compact);
+    expect(bubble?.hasAttribute('data-assistant-contact-media')).toBe(compact);
+    expect(bubble?.classList.contains('bg-[var(--surface-muted)]')).toBe(!compact);
     expect(host.querySelector('[data-message-id="assistant-a:user"] [data-assistant-contact-text]')?.classList.contains('px-4')).toBe(true);
   });
 
