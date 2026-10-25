@@ -162,4 +162,4 @@ You can still help:
 
 ## Questions?
 
-Open an [issue](https://github.com/yee94/yuri/issues) or ask in [Discord](https://discord.gg/ZYRSdnwwKA).
+Open an [issue](https://github.com/yee94/yuri/issues).

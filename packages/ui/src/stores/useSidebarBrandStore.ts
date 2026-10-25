@@ -3,8 +3,8 @@ import { persist } from 'zustand/middleware';
 import { createRuntimeScopedJSONStorage } from '@/lib/runtimeScopedStorage';
 import { isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
-// Default wordmark is uppercase so it reads as a mark, not body UI text.
-export const DEFAULT_SIDEBAR_BRAND_NAME = 'OPEN CHAMBER';
+// The default name selects the approved SVG wordmark in the sidebar.
+export const DEFAULT_SIDEBAR_BRAND_NAME = 'Yuri';
 
 interface SidebarBrandStore {
   sidebarBrandName: string;
@@ -25,18 +25,22 @@ export const useSidebarBrandStore = create<SidebarBrandStore>()(
       // does not leak local brand into a remote-host window (or the reverse).
       name: 'sidebar-brand-store',
       storage: createRuntimeScopedJSONStorage(),
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return persistedState;
         }
 
-        const state = persistedState as Partial<SidebarBrandStore>;
+        const state = { ...persistedState } as Partial<SidebarBrandStore>;
         if (version < 1 && state.sidebarBrandName === 'YEE CODE') {
           state.sidebarBrandName = DEFAULT_SIDEBAR_BRAND_NAME;
         }
         // Title-case default → uppercase mark (empty stays empty: hide logo).
         if (version < 2 && state.sidebarBrandName === 'Open Chamber') {
+          state.sidebarBrandName = DEFAULT_SIDEBAR_BRAND_NAME;
+        }
+        // Migrate only historical defaults; custom names and hidden slots survive.
+        if (version < 3 && (state.sidebarBrandName === 'OPEN CHAMBER' || state.sidebarBrandName === 'Open Chamber')) {
           state.sidebarBrandName = DEFAULT_SIDEBAR_BRAND_NAME;
         }
         return state;

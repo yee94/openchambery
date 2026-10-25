@@ -23,6 +23,76 @@
     },
     {
       "kind": "content",
+      "path": "packages/ui/src/stores/useSidebarBrandStore.ts",
+      "line": "        if (version < 1 && state.sidebarBrandName === 'YEE CODE') {",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Read the historical version-zero sidebar default and migrate it to Yuri",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove when version-zero sidebar settings no longer require migration"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/stores/useSidebarBrandStore.ts",
+      "line": "        if (version < 2 && state.sidebarBrandName === 'Open Chamber') {",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Read the historical title-case sidebar default without changing custom names",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove when pre-version-two sidebar settings no longer require migration"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/stores/useSidebarBrandStore.ts",
+      "line": "        if (version < 3 && (state.sidebarBrandName === 'OPEN CHAMBER' || state.sidebarBrandName === 'Open Chamber')) {",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Convert exact old sidebar defaults to the SVG-selecting Yuri name during version-three hydration",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove when pre-version-three sidebar settings no longer require migration"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/components/layout/SidebarBrandMark.test.tsx",
+      "line": "    [0, 'YEE CODE', 'Yuri'],",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify version-zero persisted defaults select the current SVG wordmark after hydration",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove together with version-zero sidebar migration"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/components/layout/SidebarBrandMark.test.tsx",
+      "line": "    [1, 'Open Chamber', 'Yuri'],",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify historical title-case defaults hydrate to Yuri",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove together with historical sidebar migration"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/components/layout/SidebarBrandMark.test.tsx",
+      "line": "    [2, 'OPEN CHAMBER', 'Yuri'],",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify historical uppercase defaults hydrate to Yuri",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove together with historical sidebar migration"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/components/layout/SidebarBrandMark.test.tsx",
+      "line": "    [3, 'OPEN CHAMBER', 'OPEN CHAMBER'],",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify an explicitly chosen current-version custom name is not rewritten by a historical-default migration",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove together with historical sidebar migration"
+    },
+    {
+      "kind": "content",
       "path": "packages/ui/src/lib/assistant-attachment-cache.ts",
       "line": "    for (const name of ['yuri-assistant-attachments', 'openchamber-assistant-attachments', 'openchambery-assistant-attachments']) {",
       "count": 1,

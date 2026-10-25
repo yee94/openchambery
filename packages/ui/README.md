@@ -3,6 +3,15 @@
 `@yuri/ui` owns the shared React surfaces, runtime contracts, state and persistence.
 OpenCode package identities and protocols remain third-party contracts.
 
+## Sidebar wordmark
+
+The default sidebar brand is `Yuri`. `SidebarBrandMark` renders the approved
+sculpted SVG through `YuriWordmark` when the configured name, after trimming, is
+exactly `Yuri`. The mask inherits the theme foreground. Other nonempty names keep
+the Syne/two-tone text treatment; whitespace-only names hide the slot. Syne is
+loaded only for custom text. Store version 3 migrates exact historical default
+names, preserving other custom values and the existing runtime-scoped storage.
+
 ## Brand migration
 
 `src/lib/brand-storage-bootstrap.ts` is the single synchronous same-origin

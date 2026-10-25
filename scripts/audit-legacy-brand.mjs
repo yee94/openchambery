@@ -5,7 +5,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = 'docs/legacy-brand-exceptions.json';
-const legacyPattern = new RegExp(['open' + 'chamber', 'feday' + 'kindev', 'boh' + 'dan', 'tria' + 'pitsyn'].join('|'), 'i');
+// Cover display-name separators and known misspellings as well as technical slugs.
+const legacyPattern = new RegExp([
+  'open' + '[\\s_.-]*' + 'chamb?er',
+  'yee' + '[\\s_.-]*' + 'code',
+  'feday' + 'kindev', 'boh' + 'dan', 'tria' + 'pitsyn',
+  'ZYRS' + 'dnwwKA',
+].join('|'), 'i');
 
 // Only non-source dependency/build/local-state trees are outside the audit.
 // In particular, migration implementations, tests and hidden source trees are scanned.

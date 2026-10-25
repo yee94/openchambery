@@ -272,7 +272,7 @@ export function formatRegisteredProjectsPrompt(projects) {
         ? `- label=${JSON.stringify(project.label)} path=${JSON.stringify(project.path)} id=${JSON.stringify(project.id)}`
         : `- path=${JSON.stringify(project.path)} id=${JSON.stringify(project.id)}`
     )),
-    'Fuzzy-match user names like "yuri yee" / "openchamer yee" against label and path.',
+    'Fuzzy-match user names like "yuri workspace" / "yurii workspace" against label and path.',
     'To open coding work after a match, call assign_session with that projectPath (or an existing sessionID from list_sessions).',
     'Use list_projects to refresh/filter and list_sessions to search existing conversations in a project.',
   ].join('\n');

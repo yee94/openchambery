@@ -2,6 +2,7 @@ import React from 'react';
 import { loadBrandDisplayFont } from '@/lib/fontLoader';
 import { useSidebarBrandStore } from '@/stores/useSidebarBrandStore';
 import { cn } from '@/lib/utils';
+import { YuriWordmark } from '@/components/ui/YuriWordmark';
 
 /**
  * Left-sidebar wordmark.
@@ -13,7 +14,8 @@ import { cn } from '@/lib/utils';
  * - Electron (empty brand): not rendered; no empty slot is reserved
  * - Mobile: leading sidebar content (scrollable)
  *
- * Dual-tone like Codex branding: leading words use the surface foreground and
+ * Yuri uses the approved SVG wordmark. Custom text is dual-tone like Codex
+ * branding: leading words use the surface foreground and
  * the final word uses the primary accent. Set in Syne (geometric display face)
  * with open tracking so it reads as a mark rather than body UI text.
  *
@@ -30,15 +32,26 @@ interface SidebarBrandMarkProps {
 
 export const SidebarBrandMark: React.FC<SidebarBrandMarkProps> = ({ className }) => {
   const sidebarBrandName = useSidebarBrandStore((state) => state.sidebarBrandName);
+  const brandName = sidebarBrandName.trim();
+  const isYuri = brandName === 'Yuri';
+  const usesDisplayFont = brandName.length > 0 && !isYuri;
 
   React.useEffect(() => {
-    void loadBrandDisplayFont();
-  }, []);
+    if (usesDisplayFont) void loadBrandDisplayFont();
+  }, [usesDisplayFont]);
 
   // Empty config → no custom logo; leave the sidebar brand slot empty.
-  const brandWords = sidebarBrandName.trim().split(/\s+/).filter(Boolean);
+  const brandWords = brandName.split(/\s+/).filter(Boolean);
   if (brandWords.length === 0) {
     return null;
+  }
+
+  if (isYuri) {
+    return (
+      <div className={cn('flex items-center px-2 pb-2 pt-1', className)}>
+        <YuriWordmark width={72} className="text-foreground" />
+      </div>
+    );
   }
 
   const leadingWords = brandWords.slice(0, -1);
