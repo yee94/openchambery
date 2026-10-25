@@ -29,7 +29,7 @@ import { VirtualizedCodeBlock, type CodeLine } from './parts/VirtualizedCodeBloc
 import { JsonTreeView } from '@/components/ui/JsonTreeView';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
-import { runtimeFetch } from '@/lib/runtime-fetch';
+import { readRuntimeFile } from '@/lib/runtime-file-resource';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useResolvedImageResource } from '../imageSource';
@@ -208,7 +208,8 @@ const ImagePreviewDialog: React.FC<{
 }> = ({ popup, onOpenChange, isMobile }) => {
     const { t } = useI18n();
     const themeSystem = useOptionalThemeSystem();
-    const effectiveDirectory = useEffectiveDirectory() ?? '';
+    const activeDirectory = useEffectiveDirectory() ?? '';
+    const effectiveDirectory = popup.image?.directory ?? activeDirectory;
     const gallery = React.useMemo(() => {
         const baseImage = popup.image;
         if (!baseImage) return [] as Array<{ url: string; mimeType?: string; filename?: string; size?: number }>;
@@ -749,12 +750,13 @@ const ImagePreviewDialog: React.FC<{
                     <Button
                         variant={isMobile ? 'ghost' : 'mobileGlass'}
                         size={isMobile ? 'sm' : 'lg'}
-                        className={cn('rounded-full tabular-nums', isMobile ? 'min-w-12 gap-1 px-2 typography-micro' : 'min-w-20', isMobile && controlTone)}
+                        data-media-zoom-reset=""
+                        className={cn('rounded-full tabular-nums', isMobile ? 'min-w-12' : 'min-w-20', isMobile && controlTone)}
                         onClick={() => resetTransform(true)}
                         aria-label={t('chat.toolOutputDialog.image.resetZoomAria')}
                         title={t('chat.toolOutputDialog.image.resetZoomAria')}
                     >
-                        <Icon name="restart" weight="medium" className={isMobile ? 'size-4' : 'size-5'} />
+                        <Icon name="restart" weight="medium" className={isMobile ? 'size-3.5' : 'size-5'} />
                         <span ref={zoomLabelRef}>100%</span>
                     </Button>
                     <Button
@@ -992,7 +994,7 @@ const MermaidPreviewDialog: React.FC<{
             if (!normalizedPath) {
                 sourcePromise = Promise.reject(mermaidLoadFailure('chat.toolOutputDialog.mermaid.invalidLocalPath'));
             } else {
-                sourcePromise = runtimeFetch('/api/fs/raw', { query: { path: normalizedPath } })
+                sourcePromise = readRuntimeFile({ path: normalizedPath })
                     .then((response) => {
                         if (!response.ok) {
                             return Promise.reject(mermaidLoadFailure('chat.toolOutputDialog.mermaid.readFileFailedWithStatus', { status: response.status }));

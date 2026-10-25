@@ -1,4 +1,6 @@
 import * as fs from 'fs';
+import { createImageFingerprintReader } from '../../web/server/lib/fs/image-fingerprint.js';
+const readImageFingerprint = createImageFingerprintReader(fs.promises);
 import { getFsMimeType, normalizeFsPath, resolveFileReadPath, type FsReadPathResolution } from './bridge-fs-helpers-runtime';
 
 type ApiProxyResponsePayload = {
@@ -129,6 +131,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
           isFile: true,
           size: stats.size,
           mtimeMs: stats.mtimeMs,
+          ...(parsed.searchParams.get('fingerprint') === 'true' && stats.size <= 32 * 1024 * 1024 ? { sha256: await readImageFingerprint(resolution.resolvedPath) } : {}),
           isBinary,
         })),
       };

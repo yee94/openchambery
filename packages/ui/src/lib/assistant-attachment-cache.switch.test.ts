@@ -132,10 +132,10 @@ const installFakeIndexedDB = (): void => {
     getAllKeys() {
       return requestOf(() => Array.from(this.rows.keys()) as never);
     }
-    put(value: Row) {
+    put(value: Row, explicitKey?: IDBValidKey) {
       return requestOf(() => {
-        this.rows.set(String(value[this.keyPath]), value);
-        return String(value[this.keyPath]) as never;
+        this.rows.set(String(explicitKey ?? value[this.keyPath]), value);
+        return String(explicitKey ?? value[this.keyPath]) as never;
       });
     }
     delete(key: IDBValidKey) {

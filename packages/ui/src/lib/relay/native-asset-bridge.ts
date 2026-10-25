@@ -252,10 +252,13 @@ export const resetNativeRelayAssetBridgeCacheForTests = (): void => {
 };
 
 type NativeImageCacheBridge = {
+  fileResources?: boolean;
+  lookup?: (input: { key: string; size: number }) => Promise<{ leaseId: string; url: string; hit: boolean } | null>;
   acquire: (input: { key: string; size: number }) => Promise<{ leaseId: string; url: string; hit: boolean }>;
   append: (leaseId: string, chunk: Uint8Array) => Promise<void>;
   commit: (leaseId: string, mime: string) => Promise<void>;
   release: (leaseId: string) => Promise<void>;
+  clear?: () => Promise<void>;
 };
 
 /** Optional installer-owned capability. Old shells and browser-only runtimes return null. */

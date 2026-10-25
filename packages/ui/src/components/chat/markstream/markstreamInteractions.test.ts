@@ -232,6 +232,7 @@ describe('handleMarkstreamPointerEvent', () => {
       previewSource: image,
       image: {
         url: 'https://example.com/a.png',
+        directory: '/repo',
         filename: 'diagram',
         gallery: [{ url: 'https://example.com/a.png', filename: 'diagram' }],
         index: 0,

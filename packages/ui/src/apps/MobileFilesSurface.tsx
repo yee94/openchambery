@@ -28,9 +28,8 @@ import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { getImageMimeType, getLanguageFromExtension, isHtmlFile, isImageFile } from '@/lib/toolHelpers';
 import type { FileSearchResult } from '@/lib/api/types';
-import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { acquireRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken, subscribeRuntimeUrlAuthToken } from '@/lib/runtime-auth';
-import { runtimeFetch } from '@/lib/runtime-fetch';
+import { directFileResource, readRuntimeFile } from '@/lib/runtime-file-resource';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { useFileContentQuery, useFileDirectoryQuery, useFileSearchQuery, useFileStatWatcher } from '@/queries/fileQueries';
@@ -93,7 +92,7 @@ const toFsServeRoutePath = (filePath: string): string => {
 };
 
 const buildFsServeAssetUrl = (filePath: string): string => {
-  return getRuntimeUrlResolver().authenticatedAsset(toFsServeRoutePath(filePath));
+  return directFileResource(toFsServeRoutePath(filePath)).url;
 };
 type MobileFilesSurfaceProps = {
   /** When provided, header gets a close X that calls this; used when the surface is hosted in MobileResizableSheet / iPad right panel. */
@@ -748,7 +747,7 @@ const MobileHtmlPreview: React.FC<{ path: string }> = ({ path }) => {
     // Iframe `src` is browser navigation and cannot cross the relay tunnel.
     // Fetch the document through runtimeFetch and inline it, same as VS Code.
     if (relay) {
-      void runtimeFetch(toFsServeRoutePath(path))
+      void readRuntimeFile({ path })
         .then(async (response) => {
           if (!response.ok) {
             throw new Error(t('filesView.error.readFileFailed'));

@@ -5,6 +5,8 @@ import type {
   FilesAPI,
 } from '@openchamber/ui/lib/api/types';
 import { runtimeFetch } from '@openchamber/ui/lib/runtime-fetch';
+import { downloadRuntimeFile } from '@openchamber/ui/lib/runtime-file-download';
+import { readRuntimeFile } from '@openchamber/ui/lib/runtime-file-resource';
 
 const normalizePath = (path: string): string => path.replace(/\\/g, '/');
 
@@ -130,9 +132,10 @@ export const createWebFilesAPI = ({ getDirectory }: WebFilesAPIOptions): FilesAP
     };
   },
 
-  async statFile(path: string, options): Promise<{ path: string; isFile: boolean; size: number; mtimeMs?: number; isBinary?: boolean }> {
+  async statFile(path: string, options): Promise<{ path: string; isFile: boolean; size: number; mtimeMs?: number; isBinary?: boolean; sha256?: string; mimeType?: string; filename?: string }> {
     const target = normalizePath(path);
     const params = new URLSearchParams({ path: target });
+    if (options?.fingerprint) params.set('fingerprint', 'true');
     if (options?.allowOutsideWorkspace) {
       params.set('allowOutsideWorkspace', 'true');
     }
@@ -155,6 +158,9 @@ export const createWebFilesAPI = ({ getDirectory }: WebFilesAPIOptions): FilesAP
       isFile: Boolean((result as { isFile?: boolean }).isFile),
       size: typeof (result as { size?: number }).size === 'number' ? (result as { size: number }).size : 0,
       mtimeMs: typeof (result as { mtimeMs?: number }).mtimeMs === 'number' ? (result as { mtimeMs: number }).mtimeMs : undefined,
+      sha256: typeof result.sha256 === 'string' ? result.sha256 : undefined,
+      mimeType: typeof result.mimeType === 'string' ? result.mimeType : undefined,
+      filename: typeof result.filename === 'string' ? result.filename : undefined,
       isBinary: typeof (result as { isBinary?: unknown }).isBinary === 'boolean'
         ? (result as { isBinary: boolean }).isBinary
         : undefined,
@@ -163,6 +169,10 @@ export const createWebFilesAPI = ({ getDirectory }: WebFilesAPIOptions): FilesAP
 
   async readFile(path: string, options): Promise<{ content: string; path: string; exists?: boolean }> {
     const target = normalizePath(path);
+    if (!options?.optional) {
+      const response = await readRuntimeFile({ path: target, ...options, directory: options?.directory ?? getDirectory?.() });
+      return { content: await response.text(), path: target, exists: true };
+    }
     const params = new URLSearchParams({ path: target });
     if (options?.allowOutsideWorkspace) {
       params.set('allowOutsideWorkspace', 'true');
@@ -269,22 +279,6 @@ export const createWebFilesAPI = ({ getDirectory }: WebFilesAPIOptions): FilesAP
 
   async downloadFile(path: string): Promise<void> {
     const target = normalizePath(path);
-    const response = await runtimeFetch('/api/fs/raw', {
-      query: { path: target, download: true },
-      headers: directoryHeaders(getDirectory),
-    });
-    if (!response.ok) {
-      throw new Error(`Download failed (${response.status})`);
-    }
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = target.split('/').pop() || 'file';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 100);
+    await downloadRuntimeFile({ path: target, directory: getDirectory?.() });
   },
 });

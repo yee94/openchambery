@@ -70,23 +70,41 @@ export const resolveImageSource = (source: string, effectiveDirectory: string) =
 export const fetchRuntimeImageObjectUrl = async (
   path: string,
   signal: AbortSignal,
-): Promise<string> => {
+): Promise<string> => retryImageLoad(() => streamRelayImageDisplayUrl(path, signal), signal);
+
+/** Legacy Markdown uses the same byte owner as Hook consumers, with reconnect retries. */
+export const acquireMarkdownImage = (path: string, signal: AbortSignal) => (
+  retryImageLoad(() => acquireRuntimeImage(path, signal), signal)
+);
+
+const retryImageLoad = async <T,>(load: () => Promise<T>, signal: AbortSignal): Promise<T> => {
+  const transport = getRuntimeTransportIdentity();
+  const auth = getRuntimeAuthGeneration();
   let lastError: unknown;
   for (const delayMs of IMAGE_RELAY_RETRY_DELAYS_MS) {
+    signal.throwIfAborted();
     if (delayMs > 0) {
       await new Promise<void>((resolve, reject) => {
-        const timer = window.setTimeout(resolve, delayMs);
-        signal.addEventListener('abort', () => {
+        const timer = window.setTimeout(() => {
+          signal.removeEventListener('abort', abort);
+          resolve();
+        }, delayMs);
+        const abort = () => {
           window.clearTimeout(timer);
           reject(signal.reason);
-        }, { once: true });
+        };
+        signal.addEventListener('abort', abort, { once: true });
       });
     }
 
     try {
-      return await streamRelayImageDisplayUrl(path, signal);
+      signal.throwIfAborted();
+      if (transport !== getRuntimeTransportIdentity() || auth !== getRuntimeAuthGeneration()) {
+        throw new DOMException('Image request superseded', 'AbortError');
+      }
+      return await load();
     } catch (error) {
-      if (signal.aborted) {
+      if (signal.aborted || transport !== getRuntimeTransportIdentity() || auth !== getRuntimeAuthGeneration()) {
         throw error;
       }
       lastError = error;

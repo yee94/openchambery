@@ -54,6 +54,20 @@ describe('Magpie discovery and quota adapter', () => {
     expect(Object.values(results[1].usage.windows)[0]).toMatchObject({ valueLabel: '$12.34', usedPercent: null });
   });
 
+  it('keeps the ZCode sign-in hint in account details instead of compact quota metrics', () => {
+    const hint = { name: "ZCode gift plans (-Trial models) need ZCode's sign-in", used: 0,
+      display: 'not read with an API key: add the account with a ZCode sign-in' };
+    const [result] = projectMagpieQuotas({ object: 'list', data: [{
+      provider: 'zcode', name: 'ZCode', kind: 'subscription', windows: [
+        { name: '5 hours', used: 0 },
+        { name: 'MCP · Month', used: 0, display: '0 / 1000', limit: 1000 }, hint,
+      ],
+    }] }, source);
+    expect(Object.values(result.usage.windows).map((window) => window.label)).toEqual(['5 hours', 'MCP · Month']);
+    expect(Object.values(result.usage.accounts[0].windows).at(-1).valueLabel).toBe(hint.display);
+    expect(result.ok).toBe(true);
+  });
+
   it('isolates account errors and distinguishes unlimited, stale and malformed data', () => {
     const data = structuredClone(report);
     data.data[1].error = 'sensitive upstream response';

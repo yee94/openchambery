@@ -81,7 +81,7 @@ test.each(['/workspace/photo.png', 'assets/photo.png'])(
     const image = host.querySelector('img')!;
     expect(image.getAttribute('src')).toBe('blob:runtime-image');
     await act(async () => image.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
-    expect(showPopup).toHaveBeenCalledWith(expect.objectContaining({ image: expect.objectContaining({ url: source }) }));
+    expect(showPopup).toHaveBeenCalledWith(expect.objectContaining({ image: expect.objectContaining({ url: source, directory: '/workspace/project' }) }));
     await act(async () => root.render(null));
     expect(releaseImage).toHaveBeenCalledWith('blob:runtime-image');
   },

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { vi } from 'vitest';
 
 import {
   NATIVE_RELAY_ASSET_BRIDGE_KEY,
@@ -37,6 +38,8 @@ mock.module('@/lib/runtime-fetch', () => ({
 }));
 
 mock.module('@/lib/runtime-switch', () => ({
+  getRuntimeGeneration: () => 0,
+  getRuntimeKey: () => transportIdentity.value,
   getRuntimeTransportIdentity: () => transportIdentity.value,
   subscribeRuntimeEndpointChanged: (callback: () => void) => {
     transportListeners.add(callback);
@@ -47,6 +50,7 @@ mock.module('@/lib/runtime-switch', () => ({
 }));
 
 mock.module('@/lib/runtime-auth', () => ({
+  getRuntimeExtraHeadersSync: () => ({}),
   getRuntimeBearerTokenSync: () => bearer.value,
   getRuntimeAuthGeneration: () => authGeneration.value,
   subscribeRuntimeAuthGeneration: (listener: (detail: AuthDetail) => void) => {
@@ -229,9 +233,9 @@ const installFakeIndexedDB = (): void => {
     getAllKeys() {
       return requestOf(() => Array.from(this.rows.keys()) as never);
     }
-    put(value: Row) {
+    put(value: Row, explicitKey?: IDBValidKey) {
       return requestOf(() => {
-        const key = String(value[this.keyPath]);
+        const key = String(explicitKey ?? value[this.keyPath]);
         this.rows.set(key, value);
         return key as never;
       });
@@ -457,6 +461,7 @@ describe('getAssistantAttachmentBlob', () => {
     };
 
     const pending = getAssistantAttachmentBlob('asst-1', descriptor);
+    void pending.catch(() => {});
     await new Promise<void>((r) => setTimeout(r, 10));
     expect(network).toBe(1);
     const oldBearer = bearer.value;
@@ -815,10 +820,10 @@ describe('getAssistantAttachmentDisplay', () => {
 
     const p1 = getAssistantAttachmentDisplay('asst-1', descriptor);
     const p2 = getAssistantAttachmentDisplay('asst-1', descriptor);
-    await new Promise<void>((r) => setTimeout(r, 10));
-    expect(network).toBe(1);
+    const settled = Promise.allSettled([p1, p2]);
+    await vi.waitFor(() => expect(network).toBe(1));
     releaseGate?.();
-    const results = await Promise.allSettled([p1, p2]);
+    const results = await settled;
     expect(results.every((r) => r.status === 'rejected')).toBe(true);
 
     const handle = await getAssistantAttachmentDisplay('asst-1', descriptor);

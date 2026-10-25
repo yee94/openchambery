@@ -2,7 +2,9 @@ import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import { createImageFingerprintReader } from '../../web/server/lib/fs/image-fingerprint.js';
 import type { BridgeResponse } from './bridge';
+const readImageFingerprint = createImageFingerprintReader(fs.promises);
 
 type BridgeMessageInput = {
   id: string;
@@ -335,6 +337,7 @@ export async function handleFsBridgeMessage(
             isFile: true,
             size: stats.size,
             mtimeMs: stats.mtimeMs,
+            ...((payload as { fingerprint?: boolean }).fingerprint && stats.size <= 32 * 1024 * 1024 ? { sha256: await readImageFingerprint(resolution.resolvedPath) } : {}),
             isBinary: await isBinaryFile(resolution.resolvedPath),
           },
         };

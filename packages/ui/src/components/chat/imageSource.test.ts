@@ -124,7 +124,7 @@ describe('image source contracts', () => {
     expect(helperSource).toContain("from '@/lib/relay/relay-image-stream'");
     expect(helperSource).toContain('streamRelayImageDisplayUrl');
     expect(helperSource).toContain('releaseRelayImageDisplayUrl');
-    expect(helperSource).toContain('return await streamRelayImageDisplayUrl(path, signal)');
+    expect(helperSource).toContain('retryImageLoad(() => streamRelayImageDisplayUrl(path, signal), signal)');
     expect(helperSource).toContain('IMAGE_RELAY_RETRY_DELAYS_MS');
     expect(helperSource).toContain('for (const delayMs of IMAGE_RELAY_RETRY_DELAYS_MS)');
     expect(helperSource).toContain("signal.addEventListener('abort'");
@@ -203,8 +203,10 @@ describe('image source contracts', () => {
     expect(rendererSource).toContain("event.key !== 'Enter' && event.key !== ' '");
     expect(rendererSource).toContain("metadata: { tool: 'image-preview', filename }");
     expect(rendererSource).toContain('image: { url: selectedSource');
-    expect(rendererSource).toContain('releaseRuntimeImageObjectUrl(state.objectUrl)');
-    expect(rendererSource).toContain('releaseRuntimeImageObjectUrl(objectUrl)');
+    expect(rendererSource).toContain('state.release?.()');
+    expect(rendererSource).toContain('lease.release()');
+    expect(rendererSource).toContain('acquireMarkdownImage(resolved.path, controller.signal)');
+    expect(rendererSource).toContain('latest.release = lease.release');
     expect(rendererSource).toContain('state.controller?.abort()');
   });
 

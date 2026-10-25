@@ -108,7 +108,9 @@ export const fileStatQueryOptions = (
   input: FileStatQueryInput,
   transport = getRuntimeTransportIdentity(),
 ) => ({
-  queryKey: queryKeys.files.stat(input.scopeDirectory, input.path, readOptionsKey(input.options), transport),
+  queryKey: input.options?.fingerprint
+    ? [...queryKeys.files.stat(input.scopeDirectory, input.path, readOptionsKey(input.options), transport), 'sha256']
+    : queryKeys.files.stat(input.scopeDirectory, input.path, readOptionsKey(input.options), transport),
   queryFn: async (): Promise<FileStatResult> => {
     if (!input.path) throw new Error('A file path is required to read file status');
     if (!files.statFile) throw new Error('File status reads are unavailable in this runtime');

@@ -43,8 +43,10 @@ test('real Electron protocol: four 5 MiB images, preview and ten session revisit
     });
     const result = JSON.parse(await readFile(join(work, 'result.json'), 'utf8'));
     expect(result.baseline.downloads).toBe(48);
-    expect(result.cached.downloads).toBe(4);
-    expect(result.cached.bytes).toBe(result.imageBytes * 4);
+    // The four fixture paths intentionally contain identical PNG bytes.
+    expect(result.cached.downloads).toBe(1);
+    expect(result.cached.bytes).toBe(result.imageBytes);
+    expect(result.disk.entries).toBe(1);
     expect(result.cached.urls.every((url) => url.startsWith('openchamber-asset://cache/'))).toBe(true);
     expect(result.packaged.downloads).toBe(0);
     expect(result.packaged.urls.every((url) => url.startsWith('openchamber-asset://cache/'))).toBe(true);
