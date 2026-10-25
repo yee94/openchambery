@@ -65,6 +65,13 @@
     background: color-mix(in srgb, var(--oc-media-preview-background) 48%, var(--oc-media-preview-foreground));
 }
 
+[data-media-preview-toolbar] [data-media-gallery-counter] {
+    border-radius: 999px;
+    color: var(--oc-media-preview-foreground);
+    background: color-mix(in srgb, var(--oc-media-preview-background) 60%, var(--oc-media-preview-foreground));
+    opacity: 1;
+}
+
 ::view-transition-group(oc-media-preview) {
     animation-duration: 280ms;
     animation-timing-function: cubic-bezier(0.2, 0, 0, 1);

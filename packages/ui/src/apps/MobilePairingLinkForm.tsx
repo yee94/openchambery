@@ -2,6 +2,8 @@ import React from 'react';
 import { useEvent } from '@reactuses/core';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Icon } from '@/components/icon/Icon';
 import type { PairingConnectionPayload } from '@/lib/connectionPayload';
 import { useI18n } from '@/lib/i18n';
 
@@ -21,6 +23,10 @@ export type MobilePairingLinkFormProps = {
   inputClassName: string;
   buttonVariant?: React.ComponentProps<typeof Button>['variant'];
   buttonClassName?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
+  showPasteButton?: boolean;
+  error?: string | null;
   onRedeem: (pairing: PairingConnectionPayload) => void;
   onInvalid: () => void;
 };
@@ -37,14 +43,43 @@ export const MobilePairingLinkForm: React.FC<MobilePairingLinkFormProps> = ({
   inputClassName,
   buttonVariant = 'outline',
   buttonClassName = 'h-12 w-full',
+  value,
+  onValueChange,
+  showPasteButton = false,
+  error,
   onRedeem,
   onInvalid,
 }) => {
   const { t } = useI18n();
-  const [pairingLink, setPairingLink] = React.useState('');
+  const [draft, setDraft] = React.useState('');
+  const [pasteError, setPasteError] = React.useState<string | null>(null);
+  const [isPasting, setIsPasting] = React.useState(false);
+  const pairingLink = value ?? draft;
+  const errorId = React.useId();
+  const updateLink = (next: string) => {
+    setPasteError(null);
+    setDraft(next);
+    onValueChange?.(next);
+  };
+
+  const paste = useEvent(async () => {
+    if (disabled || isBusy || isPasting) return;
+    setIsPasting(true);
+    try {
+      const pasted = await navigator.clipboard.readText();
+      updateLink(pasted);
+      const payload = parseConnectionPayload(pasted);
+      if (pasted.trim() && (!payload || !('pairing' in payload))) onInvalid();
+    } catch {
+      setPasteError(t('mobile.connect.link.pasteFallback'));
+    } finally {
+      setIsPasting(false);
+    }
+  });
 
   const handleSubmit = useEvent((event: React.FormEvent) => {
     event.preventDefault();
+    if (disabled || isBusy || isPasting) return;
     const payload = parseConnectionPayload(pairingLink);
     if (!payload || !('pairing' in payload)) {
       onInvalid();
@@ -55,24 +90,34 @@ export const MobilePairingLinkForm: React.FC<MobilePairingLinkFormProps> = ({
 
   return (
     <form className="flex w-full flex-col gap-3" onSubmit={handleSubmit}>
-      <input
-        {...mobileInputKeyboardProps}
-        value={pairingLink}
-        onChange={(event) => setPairingLink(event.target.value)}
-        placeholder={t('mobile.connect.link.placeholder')}
-        aria-label={t('mobile.connect.link.label')}
-        inputMode="url"
-        autoCapitalize="none"
-        tabIndex={tabIndex}
-        disabled={disabled}
-        className={inputClassName}
-      />
+      <div className="flex items-center gap-2">
+        <Input
+          {...mobileInputKeyboardProps}
+          value={pairingLink}
+          onChange={(event) => updateLink(event.target.value)}
+          placeholder={t('mobile.connect.link.placeholder')}
+          aria-label={t('mobile.connect.link.label')}
+          inputMode="url"
+          autoCapitalize="none"
+          tabIndex={tabIndex}
+          disabled={disabled || isBusy || isPasting}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error || pasteError ? errorId : undefined}
+          className={inputClassName}
+        />
+        {showPasteButton ? (
+          <Button variant="outline" size="icon" onClick={() => void paste()} disabled={disabled || isBusy || isPasting} aria-label={t('mobile.connect.link.paste')}>
+            <Icon name="clipboard" className="size-5" />
+          </Button>
+        ) : null}
+      </div>
+      {error || pasteError ? <p id={errorId} role="alert" className="typography-small text-[var(--status-error)]">{error || pasteError}</p> : null}
       <Button
         type="submit"
         variant={buttonVariant}
         size="lg"
         className={buttonClassName}
-        disabled={disabled || isBusy || !pairingLink.trim()}
+        disabled={disabled || isBusy || isPasting || !pairingLink.trim()}
       >
         {isBusy ? t('mobile.connect.connecting') : t('mobile.connect.connectButton')}
       </Button>

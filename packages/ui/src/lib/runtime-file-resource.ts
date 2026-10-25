@@ -630,7 +630,9 @@ const acquireNativeImage = async (path: string, signal: AbortSignal, bridge: Non
   const before = await stat();
   signal.throwIfAborted();
   if (generation !== getRuntimeGeneration() || auth !== getRuntimeAuthGeneration() || transport !== getRuntimeTransportIdentity()) throw new DOMException('Image request superseded', 'AbortError');
-  const key = JSON.stringify([transport, generation, auth, fingerprintOf(before.sha256) ?? normalized]);
+  if (!before.isFile || !Number.isSafeInteger(before.size) || before.size <= 0 || before.size > MAX_BYTES
+    || typeof before.mtimeMs !== 'number' || !Number.isFinite(before.mtimeMs)) throw new Error('Image file version is unavailable');
+  const key = JSON.stringify([transport, generation, auth, fingerprintOf(before.sha256) ?? [normalized, before.size, before.mtimeMs]]);
   let flight = flights.get(key);
   if (!flight) {
     const controller = new AbortController();
@@ -641,8 +643,6 @@ const acquireNativeImage = async (path: string, signal: AbortSignal, bridge: Non
     const bearerScope = getRuntimeBearerTokenSync() || anonymousScope;
     const load = async (): Promise<Resource> => {
       assertCurrent();
-      if (!before.isFile || !Number.isSafeInteger(before.size) || before.size <= 0 || before.size > MAX_BYTES
-        || typeof before.mtimeMs !== 'number' || !Number.isFinite(before.mtimeMs)) throw new Error('Image file version is unavailable');
       const fingerprint = fingerprintOf(before.sha256);
       const keyDigest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([
         transport, bearerScope, normalized, before.size, before.mtimeMs,
