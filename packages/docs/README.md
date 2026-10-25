@@ -1,6 +1,6 @@
 # Yuri Docs Source
 
-Repository and package links use candidate Yuri identities pending ownership verification. Do not treat these source changes as a completed public deployment. The VS Code identity change and recovery boundaries are documented in [`../vscode/MIGRATION.md`](../vscode/MIGRATION.md).
+Repository and package links use candidate Yuri identities pending ownership verification. Do not treat these source changes as a completed public deployment.
 
 This package is the source-of-truth for Yuri public docs content.
 

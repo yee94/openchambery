@@ -74,12 +74,12 @@
 
 ## 下载
 
-Yuri 仓库、scope、商店及签名身份尚未验证，下方为候选发布入口，不能视为已经发布。见[迁移状态](docs/YURI_MIGRATION.md)。与安装
+Yuri 仓库、scope、商店及签名身份尚未验证，下方为候选发布入口，不能视为已经发布。见[发布要求](docs/RELEASING.md)。与安装
 
 | 客户端 | 安装方式 |
 |---|---|
 | **桌面端**（macOS / Windows / Linux） | [GitHub Releases](https://github.com/yee94/yuri/releases) 下载对应安装包 |
-| **iOS**（TestFlight） | 新 Yuri 应用记录及邀请入口待验证，见[迁移状态](docs/YURI_MIGRATION.md) |
+| **iOS**（TestFlight） | 新 Yuri 应用记录及邀请入口待验证，见[发布要求](docs/RELEASING.md) |
 | **Android** | [GitHub Releases](https://github.com/yee94/yuri/releases/latest) 下载 `app-release.apk` |
 | **VS Code 扩展** | 在扩展商店搜索 `Yuri` 或通过 [Marketplace](https://marketplace.visualstudio.com/items?itemName=yee94.yuri) 安装 |
 | **Web / CLI** | 使用 `yuri` 一键脚本安装（见下方） |

@@ -44,7 +44,7 @@ Release artifacts and repository links use `yee94/yuri`. Electron is the desktop
 
 ## Always-On Constraints
 
-- Yuri publishing is blocked until the identity, signing, update-origin, and native-install evidence in `docs/YURI_MIGRATION.md` is complete. `yee94/yuri`, `@yuri`, `yee94.yuri`, and `com.yee94.yuri` are candidate identities, not verified external resources. Release jobs require `YURI_RELEASE_IDENTITIES_VERIFIED=true`; the first migration release includes native installers.
+- Yuri publishing is blocked until the identity, signing, update-origin, and native-install evidence in `docs/RELEASING.md` is complete. `yee94/yuri`, `@yuri`, `yee94.yuri`, and `com.yee94.yuri` are candidate identities, not verified external resources. Release jobs require `YURI_RELEASE_IDENTITIES_VERIFIED=true`; the first migration release includes native installers.
 
 - Do not modify `../opencode`; it is a separate repository.
 - Do not run git or GitHub commands unless the user explicitly asks.
@@ -148,7 +148,7 @@ Project names: `@yuri/ui`, `@yuri/web`, `yuri-vscode`, `@yuri/electron`, `@yuri/
 
 ## Validation
 
-- Legacy identity changes must pass `bun run check:legacy-brand`. Follow `docs/LEGACY_BRAND_AUDIT.md` when updating the exact-line exception inventory; normal product defaults and writes are not migration exceptions.
+- Legacy identity changes must pass `bun run check:legacy-brand`. Maintain exact path, full-line and count entries in `docs/legacy-brand-exceptions.json`; normal product defaults and writes are not migration exceptions.
 
 - Use `package.json` scripts as the command source of truth.
 - Prefer focused Vitest files for the touched surface, then the owning package `test` script when the contract is broader.

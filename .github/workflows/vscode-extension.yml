@@ -19,7 +19,7 @@ jobs:
           YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
         run: |
           if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
-            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            echo "Release blocked: complete docs/RELEASING.md ownership checks first." >&2
             exit 1
           fi
       - name: Checkout

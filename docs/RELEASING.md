@@ -1,6 +1,6 @@
 # 发布运行手册
 
-执行任何发布前先完成 [Yuri 迁移与外部所有权验证](YURI_MIGRATION.md)。当前候选仓库、scope、应用签名和线上域名尚未验证，发布工作流以 `YURI_RELEASE_IDENTITIES_VERIFIED` 阻塞。首次 Yuri 发布必须使用完整原生安装器；配置 `YURI_OTA_BASE_URL`、`YURI_OTA_DETECTABILITY_BASES` 及部署侧 `YURI_OTA_UPSTREAM_ORIGIN` 后才可启用 OTA。下文示例域名不是现有线上服务。
+执行任何发布前先验证仓库、scope、应用身份、签名、更新源所有权及真实原生安装产物；验证完成后才可设置 `YURI_RELEASE_IDENTITIES_VERIFIED=true`。当前候选仓库、scope、应用签名和线上域名尚未验证，发布工作流以 `YURI_RELEASE_IDENTITIES_VERIFIED` 阻塞。首次 Yuri 发布必须使用完整原生安装器；配置 `YURI_OTA_BASE_URL`、`YURI_OTA_DETECTABILITY_BASES` 及部署侧 `YURI_OTA_UPSTREAM_ORIGIN` 后才可启用 OTA。下文示例域名不是现有线上服务。
 
 本手册覆盖 Yuri 的正式 GitHub Release。正式 Release 由 `.github/workflows/release.yml` 创建，Android APK/AAB 由它调用的 `.github/workflows/mobile-release.yml` 上传。iOS 外测打板（关联外测组 + Beta App Review）不是默认新版本的一部分。
 

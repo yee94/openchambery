@@ -6,7 +6,7 @@ The self-hosted Relay CLI belongs to `packages/relay-server/`.
 
 ## Entrypoint Boundary
 
-The CLI imports the synchronous Host brand-migration bootstrap before storage owners. Default-root migration, credential binding, SQLite snapshots, retry behavior and exact legacy exceptions are specified in `packages/web/BRAND-MIGRATION.md`. Explicit custom/Preview data roots stay isolated. New installations export only `yuri`.
+The CLI imports the synchronous Host brand-migration bootstrap before storage owners. Explicit custom/Preview data roots stay isolated. New installations export only `yuri`.
 
 - `../cli.js`
   - Owns process bootstrap, package/version lookup, command table wiring, signal handlers, top-level error handling, and legacy exports used by tests or external consumers.

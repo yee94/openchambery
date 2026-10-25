@@ -3,7 +3,7 @@
 Yuri session metadata whose durable copy lives on the OpenCode session
 record. The side JSON file is the cache and the pre-migration source.
 
-During Yuri 2.x, the projection owner reads the prior product namespace only if `yuri` is absent. New state, including explicit unarchive and removed fields, wins. Source metadata and user content are preserved; writes carry the projected Yuri namespace through the existing record writer. See `packages/web/BRAND-MIGRATION.md` for the exact legacy-key exception and exit window.
+During Yuri 2.x, the projection owner reads the prior product namespace only if `yuri` is absent. New state, including explicit unarchive and removed fields, wins. Source metadata and user content are preserved; writes carry the projected Yuri namespace through the existing record writer.
 
 ## Why
 

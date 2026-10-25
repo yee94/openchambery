@@ -74,12 +74,12 @@ Building upon the upstream cross-surface architecture and [OpenCode](https://ope
 
 ## Downloads
 
-Release blocked pending ownership and signing verification. The repository and publisher below are candidate identities, not a claim that installers are available. See [migration status](docs/YURI_MIGRATION.md).
+Release blocked pending ownership and signing verification. The repository and publisher below are candidate identities, not a claim that installers are available. See [release requirements](docs/RELEASING.md).
 
 | Platform | Installation |
 |---|---|
 | **Desktop** (macOS / Windows / Linux) | [GitHub Releases](https://github.com/yee94/yuri/releases) |
-| **iOS** (TestFlight) | New Yuri TestFlight identity pending verification; see [migration status](docs/YURI_MIGRATION.md) |
+| **iOS** (TestFlight) | New Yuri TestFlight identity pending verification; see [release requirements](docs/RELEASING.md) |
 | **Android** | [GitHub Releases](https://github.com/yee94/yuri/releases/latest) (`app-release.apk`) |
 | **VS Code** | Search `Yuri` in Extensions or install from [Marketplace](https://marketplace.visualstudio.com/items?itemName=yee94.yuri) |
 | **Web / CLI** | Install via `yuri` script (see below) |

@@ -123,16 +123,6 @@
     },
     {
       "kind": "content",
-      "path": "packages/web/BRAND-MIGRATION.md",
-      "line": "| `server/lib/brand-migration-desktop.integration.test.js`, old profile fixtures | `OpenChamber`, `openchamber-data` | Exercise the actual desktop coordinator's isolated Host callback and release-profile exclusion |",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document the exact historical profiles covered by the desktop-to-Host integration regression",
-      "owner": "Host and Desktop runtime owners",
-      "exitCondition": "Remove together with desktop legacy Host import support"
-    },
-    {
-      "kind": "content",
       "path": "packages/web/server/lib/brand-migration-desktop.integration.test.js",
       "line": "  const sourceRoot = path.join(appData, `OpenChamber${suffix}`, 'openchamber-data');",
       "count": 1,
@@ -383,26 +373,6 @@
     },
     {
       "kind": "content",
-      "path": "packages/web/BRAND-MIGRATION.md",
-      "line": "| `server/lib/session-metadata/session-projection.js`, owned metadata normalizer | `metadata.openchamber` | Read existing OpenCode session metadata only when the new namespace is absent; preserve the source |",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document the authoritative-new-state precedence for historical session metadata",
-      "owner": "Host runtime owner",
-      "exitCondition": "Remove together with historical session metadata reads"
-    },
-    {
-      "kind": "content",
-      "path": "packages/web/BRAND-MIGRATION.md",
-      "line": "| `server/lib/session-metadata/session-projection.test.js`, legacy namespace fixture | `openchamber` | Verify old archive/goal visibility and authoritative new state without mutating old records |",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document regression coverage for existing archive and goal metadata",
-      "owner": "Host runtime owner",
-      "exitCondition": "Remove together with historical session metadata reads"
-    },
-    {
-      "kind": "content",
       "path": "packages/web/server/lib/session-metadata/session-projection.js",
       "line": "  const legacy = metadata.openchamber;",
       "count": 1,
@@ -460,36 +430,6 @@
       "reason": "Read the old public configuration namespace during explicit import",
       "owner": "VS Code runtime owner",
       "exitCondition": "Remove when the supported explicit legacy configuration import window closes"
-    },
-    {
-      "kind": "content",
-      "path": "packages/vscode/MIGRATION.md",
-      "line": "2. Run **Yuri: Import Legacy Configuration**. This explicit command reads only `openchamber.apiUrl` and `openchamber.opencodeBinary` from VS Code's public configuration API. It copies each key's winning explicit workspace/global value to the corresponding Yuri key at the same scope. Any explicit Yuri value, including empty strings, wins. Source values are never removed; invalid values and failed writes are reported, independent successes remain, and retry is idempotent.",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document exact old configuration, extension identity and Host data import source",
-      "owner": "VS Code runtime owner",
-      "exitCondition": "Remove when the legacy extension migration window closes"
-    },
-    {
-      "kind": "content",
-      "path": "packages/vscode/MIGRATION.md",
-      "line": "The previous extension is `fedaykindev.openchamber`; keep its private storage backup for recovery. Session history belongs to OpenCode and remains available when reconnecting to the same engine and project. This does not imply recovery of unsent drafts, webview attachments, private settings, panel state or archive metadata stored only under the previous extension identity. Save/export those from the old installation before uninstalling. No automatic private-state import is currently provided; keep the old installation available until those items have been recovered manually.",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document exact old configuration, extension identity and Host data import source",
-      "owner": "VS Code runtime owner",
-      "exitCondition": "Remove when the legacy extension migration window closes"
-    },
-    {
-      "kind": "content",
-      "path": "packages/vscode/MIGRATION.md",
-      "line": "Shared Host files under `~/.config/openchamber` are a separate migration owned by the Host. Use that documented migration before relying on the shared settings file in `~/.config/yuri`; do not overwrite a populated Yuri directory or copy a live SQLite database. This extension's configuration command does not migrate those files.",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document exact old configuration, extension identity and Host data import source",
-      "owner": "VS Code runtime owner",
-      "exitCondition": "Remove when the legacy extension migration window closes"
     },
     {
       "kind": "content",
@@ -640,46 +580,6 @@
       "reason": "Assert HTTP 426 for retired API requests",
       "owner": "Host runtime owner",
       "exitCondition": "Remove with the retired API rejection gate"
-    },
-    {
-      "kind": "content",
-      "path": "packages/web/BRAND-MIGRATION.md",
-      "line": "| `server/lib/brand-migration.js`, `LEGACY_ROOT_NAMES` | `openchamber`, `openchambery` | Read-only default-root discovery and resource journals |",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document exact legacy data-root and retired-route exceptions",
-      "owner": "Host runtime owner",
-      "exitCondition": "Remove alongside the documented import and rejection paths"
-    },
-    {
-      "kind": "content",
-      "path": "packages/web/BRAND-MIGRATION.md",
-      "line": "| `server/lib/brand-migration.test.js`, fixture root | `openchamber` | Real disk migration regression coverage |",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document exact legacy data-root and retired-route exceptions",
-      "owner": "Host runtime owner",
-      "exitCondition": "Remove alongside the documented import and rejection paths"
-    },
-    {
-      "kind": "content",
-      "path": "packages/web/BRAND-MIGRATION.md",
-      "line": "| `server/lib/opencode/core-routes.js`, retired-route gate | `/api/openchamber` | Return HTTP 426 with `YURI_CLIENT_UPGRADE_REQUIRED`, never serve SPA/proxy success to old clients |",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document exact legacy data-root and retired-route exceptions",
-      "owner": "Host runtime owner",
-      "exitCondition": "Remove alongside the documented import and rejection paths"
-    },
-    {
-      "kind": "content",
-      "path": "packages/web/BRAND-MIGRATION.md",
-      "line": "| `server/lib/opencode/core-routes.test.js`, retired-route request | `/api/openchamber/relay/status` | Exercise the HTTP 426 mixed-version boundary |",
-      "count": 1,
-      "category": "migration-guide",
-      "reason": "Document exact legacy data-root and retired-route exceptions",
-      "owner": "Host runtime owner",
-      "exitCondition": "Remove alongside the documented import and rejection paths"
     },
     {
       "kind": "content",

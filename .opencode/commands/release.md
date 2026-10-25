@@ -3,7 +3,7 @@ description: Publish an Yuri GitHub Release; usage: /release [version] [dry-run]
 agent: build
 ---
 
-先阅读 `docs/YURI_MIGRATION.md` 并取得外部所有权、签名和真实安装产物的验证证据。候选身份尚未验证时保持发布阻塞；只有满足该文档退出条件才可设置 `YURI_RELEASE_IDENTITIES_VERIFIED=true`。首次品牌迁移走完整原生发布，显式配置更新权威源与镜像，随后执行既有发布步骤。
+先阅读 `docs/RELEASING.md` 并取得外部所有权、签名和真实安装产物的验证证据。候选身份尚未验证时保持发布阻塞；完成验证后才可设置 `YURI_RELEASE_IDENTITIES_VERIFIED=true`。首次品牌迁移走完整原生发布，显式配置更新权威源与镜像，随后执行既有发布步骤。
 
 You are releasing Yuri from this repository. Follow @docs/RELEASING.md. Treat @.github/workflows/release.yml as the native-release contract and @.github/workflows/mobile-beta-ota.yml as the shared desktop/mobile OTA contract. Beta / prerelease rules in @docs/RELEASING.md section `Beta / prerelease` are mandatory.
 

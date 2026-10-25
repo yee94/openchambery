@@ -112,7 +112,6 @@
     "bin",
     "public",
     "package.json",
-    "README.md",
-    "BRAND-MIGRATION.md"
+    "README.md"
   ]
 }

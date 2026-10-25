@@ -16,7 +16,7 @@ Capgo automatic checks infer epoch 2 only for the exact new native `app_id`;
 desktop never inherits mobile identity/epoch, and retains its independent shell
 fingerprint and release-version gate. Preview identities are not release clients.
 The release remains blocked on external identity verification; see
-[`docs/YURI_MIGRATION.md`](../../docs/YURI_MIGRATION.md).
+[`docs/RELEASING.md`](../../docs/RELEASING.md).
 
 The endpoint accepts the existing client payload. It derives its decision from
 `currentVersion` and returns `latestVersion`, `updateAvailable`,
