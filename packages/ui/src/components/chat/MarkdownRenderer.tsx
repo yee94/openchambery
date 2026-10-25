@@ -8,6 +8,7 @@ import { MarkstreamFallbackBoundary } from './MarkstreamFallbackBoundary';
 import { useMarkdownHydrationEnabled } from './markdown/markdownHydrationContext';
 import { MarkdownLoadingPlaceholder } from './markdown/MarkdownLoadingSkeleton';
 import { markdownHeightCacheKey, recallMarkdownHeight } from './markdown/markdownHeightCache';
+import { isVideoSource } from './video';
 
 // Thin lazy wrapper around the MarkdownRenderer implementation.
 // The full implementation (marked + Shiki highlighting + KaTeX + morphdom
@@ -84,17 +85,23 @@ export const MarkdownRenderer: React.FC<React.ComponentPropsWithoutRef<typeof Ma
     </React.Suspense>
   );
 
-  if (!markstreamEnabled) {
-    return currentRenderer;
-  }
-
-  return (
+  const renderer = !markstreamEnabled ? currentRenderer : (
     <MarkstreamFallbackBoundary fallback={currentRenderer}>
       <React.Suspense fallback={<MarkdownSkeletonFallback {...props} reserveMeasuredHeight />}>
         <MarkstreamRendererLazy {...props} />
       </React.Suspense>
     </MarkstreamFallbackBoundary>
   );
+  return <div className="contents" onClickCapture={(event) => {
+    if (!props.onShowPopup || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+    const url = anchor?.getAttribute('href');
+    if (!url || !isVideoSource(url)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const filename = anchor?.textContent?.trim() || url.split(/[/?#]/).filter(Boolean).pop() || url;
+    props.onShowPopup({ open: true, title: filename, content: '', video: { url, filename } });
+  }}>{renderer}</div>;
 };
 
 export const SimpleMarkdownRenderer: React.FC<React.ComponentPropsWithoutRef<typeof SimpleMarkdownRendererLazy>> = (props) => {

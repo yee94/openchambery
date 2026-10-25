@@ -110,6 +110,23 @@ fallbacks. A new native build is required for PNG-consuming native surfaces.
 
 ## Image presentation
 
+`ToolOutputDialog` owns a preview-local save-actions host above the fullscreen
+overlay (90 above 80), including file and Assistant surfaces without a chat host.
+Image long-press/context-menu opens actions immediately; bytes are materialized
+only when saving. The toolbar also exposes save. Closing the actions keeps the
+preview open and restores its modal ownership.
+
+Video attachments and Markdown video-file links open the same overlay with a
+native `video controls playsInline` player; there is no third-party player or
+autoplay. The player offers long-press/context-menu and a visible save button.
+HTTP/data/blob sources play directly. Runtime paths use an abortable, runtime-keyed
+query and a temporary blob URL released on close; these files must finish loading
+before playback (no adaptive/range streaming in this minimal integration).
+Codec support follows the browser/WebView. Save reuses loaded bytes when available.
+Web/Electron download the original file; Capacitor video save uses the existing
+system document picker, while image save still writes Photos. VS Code local video
+save uses `files.downloadFile`; nonlocal video save reports unsupported failure.
+
 `message/mediaPreviewTransition` animates loaded image previews through one temporary,
 fixed, paint-contained crop frame and one image. Thumbnail `object-fit`, percentage
 `object-position`, clipping ancestors and matching-frame corner radius determine the

@@ -30,7 +30,7 @@ export function PreviewCloseButton({ onClose, isMobile, size }: {
 export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpenChange, children }: {
     open: boolean;
     title: string;
-    kind: 'image' | 'mermaid';
+    kind: 'image' | 'mermaid' | 'video';
     source?: HTMLElement;
     isMobile: boolean;
     onOpenChange: (open: boolean) => void;
@@ -81,8 +81,9 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
             backgroundColor: isMobile ? 'var(--oc-media-preview-background)' : `color-mix(in srgb, var(--oc-media-preview-background) ${kind === 'mermaid' ? 90 : 70}%, transparent)`,
             color: 'var(--oc-media-preview-foreground)',
         }}
-        onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+        onClick={(event) => { event.stopPropagation(); }}
         onKeyDown={(event) => {
+            if (!event.currentTarget.contains(event.target as Node)) return;
             if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
             if (event.key !== 'Tab') return;
             const elements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]'));

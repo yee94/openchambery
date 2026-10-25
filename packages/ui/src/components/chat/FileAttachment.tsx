@@ -22,6 +22,7 @@ import { attachmentCitationDisplay } from '@/composer/inline-visual';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
 import { openImageSaveActions } from './imageSaveActionsBus';
+import { isVideoSource } from './video';
 import { useResolvedImageResource, useRuntimeTransportIdentity, imageRequiresManualLoadOverRelay, isRelayTransport } from './imageSource';
 import { LoadingImage } from '@/components/ui/LoadingImage';
 import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
@@ -1125,7 +1126,11 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
               return (
                 <Tooltip key={`file-${filePartDedupeKey(file)}`}>
                   <TooltipTrigger asChild>
-                    {githubLinkKind && file.url ? (
+                    {file.url && isVideoSource(file.url, file.mime) ? (
+                      <Button variant="secondary" size="sm" onClick={() => onShowPopup?.({
+                        open: true, title: fileName, content: '', video: { url: file.url!, mimeType: file.mime, filename: fileName },
+                      })}>{fileName}</Button>
+                    ) : githubLinkKind && file.url ? (
                       <button
                         type="button"
                         onClick={() => {

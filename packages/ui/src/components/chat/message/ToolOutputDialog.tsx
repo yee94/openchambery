@@ -32,7 +32,6 @@ import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { blobFromImageElement } from '../imageSave';
 import { openImageSaveActions } from '../imageSaveActionsBus';
 import { useResolvedImageResource } from '../imageSource';
 import {
@@ -50,6 +49,9 @@ import {
 } from './imageViewerTransform';
 import { closeImageViewerAfterMobileTap } from './imageViewerTapGuard';
 import { MediaPreviewOverlay, PreviewCloseButton } from './MediaPreviewOverlay';
+import { VideoPreviewDialog } from './VideoPreviewDialog';
+import { ImageSaveActionsHost } from '../ImageSaveActionsHost';
+import { isVideoSource } from '../video';
 
 const IMAGE_VIEWER_LONG_PRESS_MS = 500;
 /** Ignore accidental close from the same gesture / history thrash that opened the viewer. */
@@ -320,22 +322,6 @@ const ImagePreviewDialog: React.FC<{
         if (!sourceUrl && !displayImageSource) return;
         const mimeType = currentImage?.mimeType || popup.image?.mimeType;
         const filename = currentImage?.filename || popup.image?.filename || popup.title;
-        // Prefer bytes already decoded into the fullscreen <img> so save never
-        // re-hits the runtime file path when the preview is on screen.
-        const imageEl = imageRef.current;
-        if (imageEl && imageEl.naturalWidth > 0) {
-            void blobFromImageElement(imageEl, mimeType || 'image/png').then((prefetchedBlob) => {
-                openImageSaveActions({
-                    sourceUrl: sourceUrl || displayImageSource,
-                    displayUrl: displayImageSource || imageEl.currentSrc || imageEl.src || undefined,
-                    filename,
-                    mimeType,
-                    effectiveDirectory,
-                    prefetchedBlob: prefetchedBlob ?? undefined,
-                });
-            });
-            return;
-        }
         openImageSaveActions({
             sourceUrl: sourceUrl || displayImageSource,
             displayUrl: displayImageSource || undefined,
@@ -485,6 +471,9 @@ const ImagePreviewDialog: React.FC<{
         setImageLoaded(Boolean(source?.naturalWidth));
         transformRef.current = { scale: 1, x: 0, y: 0 };
         pointersRef.current.clear();
+        if (singleGestureRef.current?.longPressTimer) {
+            clearTimeout(singleGestureRef.current.longPressTimer);
+        }
         singleGestureRef.current = null;
         pinchGestureRef.current = null;
         if (imageRef.current) {
@@ -698,6 +687,12 @@ const ImagePreviewDialog: React.FC<{
     const handleContextMenu = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.stopPropagation();
+        clearLongPressTimer();
+        if (singleGestureRef.current) {
+            if (singleGestureRef.current.longPressTriggered) return;
+            singleGestureRef.current.suppressTap = true;
+            singleGestureRef.current.longPressTriggered = true;
+        }
         openCurrentImageActions();
     });
 
@@ -836,6 +831,10 @@ const ImagePreviewDialog: React.FC<{
                         title={t('chat.toolOutputDialog.image.zoomInAria')}
                     >
                         <Icon name="add" className="size-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className={cn('size-8 rounded-full', controlTone)}
+                        onClick={openCurrentImageActions} aria-label={t('chat.image.actions.saveImage')}>
+                        <Icon name="download" className="size-4" />
                     </Button>
                 </div>
             </div>
@@ -1198,12 +1197,16 @@ const ToolOutputDialog: React.FC<ToolOutputDialogProps> = ({ popup, onOpenChange
         setDiffViewMode('unified');
     }, [popup.open, popup.title]);
 
-    if (popup.image || popup.mermaid) {
-        return <MediaPreviewOverlay open={popup.open} title={popup.title} kind={popup.image ? 'image' : 'mermaid'}
+    const video = popup.video ?? (popup.image && isVideoSource(popup.image.url, popup.image.mimeType) ? popup.image : undefined);
+    if (popup.image || popup.mermaid || video) {
+        return <MediaPreviewOverlay open={popup.open} title={popup.title} kind={video ? 'video' : popup.image ? 'image' : 'mermaid'}
             source={popup.previewSource} isMobile={isMobile} onOpenChange={onOpenChange}>
-            {(close) => popup.image
+            {(close) => <>
+                {video ? <VideoPreviewDialog video={video} onClose={close} isMobile={isMobile} /> : popup.image
                 ? <ImagePreviewDialog popup={popup} onOpenChange={close} isMobile={isMobile} />
                 : <MermaidPreviewDialog popup={popup} onOpenChange={close} isMobile={isMobile} />}
+                <ImageSaveActionsHost abovePreview />
+            </>}
         </MediaPreviewOverlay>;
     }
 

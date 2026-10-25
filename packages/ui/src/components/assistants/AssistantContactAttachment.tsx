@@ -6,6 +6,7 @@ import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder
 import { Icon } from '@/components/icon/Icon'
 import { useResolvedImageSource, useRuntimeTransportIdentity } from '@/components/chat/imageSource'
 import type { ToolPopupContent } from '@/components/chat/message/types'
+import { isVideoSource } from '@/components/chat/video'
 import { getAssistantAttachmentBlob, getAssistantAttachmentDisplay } from '@/lib/assistant-attachment-cache'
 import type { AssistantAttachmentDescriptor } from '@/lib/assistant-attachment-upload'
 import type { AssistantContactFilePart } from '@/queries/assistantDTO'
@@ -23,6 +24,7 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
   const { attachmentID, sha256, size, mime, filename } = descriptor
   const stableDescriptor = React.useMemo(() => ({ type: 'file' as const, attachmentID, sha256, size, mime, filename }), [attachmentID, sha256, size, mime, filename])
   const image = mime.startsWith('image/')
+  const video = isVideoSource(filename ?? '', mime)
   const [attempt, setAttempt] = React.useState(0)
   const [url, setUrl] = React.useState('')
   const [failed, setFailed] = React.useState(false)
@@ -46,7 +48,7 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
     downloadUrls.current.forEach((value) => URL.revokeObjectURL(value))
     downloadUrls.current = []
   }, [assistantID, stableDescriptor, transport])
-  const download = useEvent(async () => {
+  const download = useEvent(async (preview = false) => {
     if (downloadRef.current) return
     const controller = new AbortController()
     downloadRef.current = controller
@@ -58,6 +60,11 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
       downloadUrls.current.forEach((value) => URL.revokeObjectURL(value))
       const objectUrl = URL.createObjectURL(blob)
       downloadUrls.current = [objectUrl]
+      if (preview && onShowPopup) {
+        onShowPopup({ open: true, title: filename || t('assistants.contact.attachment.file'), content: '',
+          video: { url: objectUrl, mimeType: mime, filename } })
+        return
+      }
       const link = document.createElement('a')
       link.href = objectUrl
       link.download = filename || t('assistants.contact.attachment.file')
@@ -109,7 +116,7 @@ function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
     <span className="flex min-w-0 items-center gap-2.5"><Icon name="file-text" className="size-4 shrink-0 text-muted-foreground" /><span className="truncate typography-ui">{name}</span></span>
     {failed ? <p role="alert" className="typography-micro text-[var(--status-error)]">{t('assistants.contact.attachment.loadFailed')}</p> : null}
     {image && !failed || downloading ? <span role="status" className="typography-micro text-muted-foreground">{t('common.loading')}</span> :
-      <Button type="button" size="sm" variant="ghost" onClick={image ? () => setAttempt((value) => value + 1) : () => void download()}>{t(failed ? 'chat.history.retry' : 'assistants.contact.attachment.download')}</Button>}
+      <Button type="button" size="sm" variant="ghost" onClick={image ? () => setAttempt((value) => value + 1) : () => void download(video && Boolean(onShowPopup))}>{t(failed ? 'chat.history.retry' : video && onShowPopup ? 'contextPanel.mode.preview' : 'assistants.contact.attachment.download')}</Button>}
   </div>
 }
 
@@ -131,6 +138,12 @@ function LegacyAttachment({ part, onShowPopup }: { part: AssistantContactFilePar
       image: { url: source, filename: name, gallery: [{ url: source, filename: name }], index: 0 },
     })
   })
+  if (isVideoSource(safeSource, part.mime) && safeSource && onShowPopup) return (
+    <Button variant="secondary" size="sm" onClick={() => onShowPopup({
+      open: true, title: part.filename || t('assistants.contact.attachment.file'), content: '',
+      video: { url: safeSource, filename: part.filename, mimeType: part.mime },
+    })}>{part.filename || t('contextPanel.mode.preview')}</Button>
+  )
   if (part.mime.startsWith('image/') && source && !failed) return (
     <LoadingImage
       src={source}
