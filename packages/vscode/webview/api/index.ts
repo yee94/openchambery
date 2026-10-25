@@ -1,4 +1,4 @@
-import type { RuntimeAPIs, TerminalAPI } from '@yuri/ui/lib/api/types';
+import type { RuntimeAPIs, TerminalAPI } from '@yuriai/ui/lib/api/types';
 import { createVSCodeFilesAPI } from './files';
 import { createVSCodeSettingsAPI } from './settings';
 import { createVSCodePermissionsAPI } from './permissions';

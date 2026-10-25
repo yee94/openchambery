@@ -184,7 +184,7 @@ Chat-hosted pickers additionally exercise the production composer pointer captur
 `MobileWindowMotion.android-focus.test.tsx` mounts the exported production `useNativeMobileChrome` hook with the real model panel and sheet. Capacitor SDK calls and unrelated startup server requests are mocked at their boundaries. Native `yuri:ime-state` payloads exercise both open and already-closed keyboard paths: settings/search fields retain DOM focus, keyboard geometry clears, and composer dismissal still blurs its own text field. The test also covers input touch jitter and native-close ordering. Run from the repository root:
 
 ```sh
-bunx vitest run --project @yuri/ui packages/ui/src/components/ui/MobileWindowMotion.focus.test.tsx packages/ui/src/components/ui/MobileWindowMotion.android-focus.test.tsx
+bunx vitest run --project @yuriai/ui packages/ui/src/components/ui/MobileWindowMotion.focus.test.tsx packages/ui/src/components/ui/MobileWindowMotion.android-focus.test.tsx
 ```
 
 These tests establish DOM focus behavior for supplied event sequences in happy-dom. Physical Android keyboard presentation and native event arrival order require device validation; full Settings data loading and deployed-bundle parity remain separate runtime checks.

@@ -13,8 +13,8 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "paths": {
-      "@yuri/ui/*": ["./packages/ui/src/*"],
-      "@yuri/web/*": ["./packages/web/src/*"]
+      "@yuriai/ui/*": ["./packages/ui/src/*"],
+      "@yuriai/web/*": ["./packages/web/src/*"]
     }
   }
 }

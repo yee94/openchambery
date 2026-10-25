@@ -148,7 +148,7 @@ export default defineConfig(({ command }) => ({
   ],
   resolve: {
     alias: [
-      { find: '@yuri/ui', replacement: path.resolve(__dirname, '../ui/src') },
+      { find: '@yuriai/ui', replacement: path.resolve(__dirname, '../ui/src') },
       { find: '@web', replacement: path.resolve(__dirname, './src') },
       { find: '@', replacement: path.resolve(__dirname, '../ui/src') },
     ],

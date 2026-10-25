@@ -13,7 +13,7 @@ import { DesktopOta } from './desktop-ota.mjs';
 import { DEEP_LINK_PROTOCOLS, isAppDeepLink } from './deep-link-protocol.mjs';
 import { LEGACY_UI_PROTOCOL, prepareDesktopMigration, migrateDesktopOrigin } from './brand-migration.mjs';
 import { loadDesktopBackend } from './desktop-backend.mjs';
-import { importHostBrandData } from '@yuri/web/server/lib/brand-migration.js';
+import { importHostBrandData } from '@yuriai/web/server/lib/brand-migration.js';
 import { DesktopInstaller } from './desktop-installer.mjs';
 import electronUpdater from 'electron-updater';
 import { ElectronSshManager, planOpenCodeConfigSync, parseSshCommand } from './ssh-manager.mjs';
@@ -31,7 +31,7 @@ import {
   extractTarGzBuffer,
   finalizeLocalSyncDestination,
   prepareLocalSyncDestination,
-} from '@yuri/web/server/lib/config-sync/index.js';
+} from '@yuriai/web/server/lib/config-sync/index.js';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
@@ -157,7 +157,7 @@ const shouldStartInBackground = (loginItemSettings = readLoginItemSettings()) =>
 };
 
 // Set the product name early so electron-log derives its log directory as
-// ~/Library/Logs/Yuri/ (not ~/Library/Logs/@yuri/electron/).
+// ~/Library/Logs/Yuri/ (not ~/Library/Logs/@yuriai/electron/).
 // Preview builds keep a distinct name so SingletonLock/userData stay isolated.
 app.setName(isPreviewDesktop ? 'Yuri Preview' : 'Yuri');
 app.setPath('userData', path.join(app.getPath('appData'), 'Yuri'));
@@ -310,13 +310,13 @@ const readAppMetadata = () => {
     try {
       const raw = fs.readFileSync(candidate, 'utf8');
       const parsed = JSON.parse(raw);
-      if (parsed?.name === '@yuri/electron' && typeof parsed.version === 'string') {
+      if (parsed?.name === '@yuriai/electron' && typeof parsed.version === 'string') {
         return { name: parsed.name, version: parsed.version };
       }
     } catch {
     }
   }
-  return { name: '@yuri/electron', version: app.getVersion() };
+  return { name: '@yuriai/electron', version: app.getVersion() };
 };
 
 const APP_METADATA = readAppMetadata();
@@ -1563,7 +1563,7 @@ const loadShellEnv = () => {
 };
 
 // Merge the user's login-shell env (PATH, etc.) into this process before we
-import { pathLooksUserConfigured, mergePathValues } from '@yuri/web/server/lib/opencode/path-utils.js';
+import { pathLooksUserConfigured, mergePathValues } from '@yuriai/web/server/lib/opencode/path-utils.js';
 
 // import/start the server in-process. The server and its children (opencode
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar

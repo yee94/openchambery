@@ -1,5 +1,5 @@
 {
-  "name": "@yuri/update-service",
+  "name": "@yuriai/update-service",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.14",

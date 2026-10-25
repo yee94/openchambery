@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-PACKAGE_NAME="@yuri/web"
+PACKAGE_NAME="@yuriai/web"
 BIN_NAME="yuri"
 MIN_NODE_VERSION=22
 

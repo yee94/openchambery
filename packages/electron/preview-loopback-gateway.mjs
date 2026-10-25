@@ -19,13 +19,13 @@ import { createRequire } from 'node:module';
 
 export const PREVIEW_GATEWAY_PATH_PREFIX = '/api/preview/proxy/';
 
-/** Resolve `ws` through `@yuri/web` (no direct electron dependency). */
+/** Resolve `ws` through `@yuriai/web` (no direct electron dependency). */
 const loadWs = () => {
   const requireHere = createRequire(import.meta.url);
   try {
     return requireHere('ws');
   } catch {
-    const webPkg = requireHere.resolve('@yuri/web/package.json');
+    const webPkg = requireHere.resolve('@yuriai/web/package.json');
     return createRequire(webPkg)('ws');
   }
 };

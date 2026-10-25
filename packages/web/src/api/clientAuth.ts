@@ -6,8 +6,8 @@ import type {
   RemoteClientPurgeRevokedResult,
   RemoteClientRecord,
   RemoteClientRevokeResult,
-} from '@yuri/ui/lib/api/types';
-import { runtimeFetch } from '@yuri/ui/lib/runtime-fetch';
+} from '@yuriai/ui/lib/api/types';
+import { runtimeFetch } from '@yuriai/ui/lib/runtime-fetch';
 
 const jsonOrNull = async <T>(response: Response): Promise<T | null> => {
   return (await response.json().catch(() => null)) as T | null;

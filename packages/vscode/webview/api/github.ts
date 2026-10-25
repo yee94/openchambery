@@ -18,7 +18,7 @@ import type {
   GitHubDeviceFlowStart,
   GitHubRepoUpstreamResult,
   GitHubUserSummary,
-} from '@yuri/ui/lib/api/types';
+} from '@yuriai/ui/lib/api/types';
 
 import { sendBridgeMessage } from './bridge';
 

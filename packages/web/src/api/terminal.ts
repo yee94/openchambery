@@ -6,7 +6,7 @@ import {
   closeTerminal,
   restartTerminalSession,
   forceKillTerminal,
-} from '@yuri/ui/lib/terminalApi';
+} from '@yuriai/ui/lib/terminalApi';
 import type {
   TerminalAPI,
   TerminalHandlers,
@@ -15,7 +15,7 @@ import type {
   ResizeTerminalPayload,
   TerminalSession,
   ForceKillOptions,
-} from '@yuri/ui/lib/api/types';
+} from '@yuriai/ui/lib/api/types';
 
 const getRetryPolicy = (options?: TerminalStreamOptions) => {
   const retry = options?.retry;

@@ -81,7 +81,7 @@ override for Web, VS Code, and server-side package update checks.
 ## Tests
 
 ```sh
-bunx vitest run --project @yuri/update-service
+bunx vitest run --project @yuriai/update-service
 ```
 
 Or `bun run test` from this directory.

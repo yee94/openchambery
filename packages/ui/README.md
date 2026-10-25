@@ -1,6 +1,6 @@
 # Yuri shared UI
 
-`@yuri/ui` owns the shared React surfaces, runtime contracts, state and persistence.
+`@yuriai/ui` owns the shared React surfaces, runtime contracts, state and persistence.
 OpenCode package identities and protocols remain third-party contracts.
 
 ## Sidebar wordmark

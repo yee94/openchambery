@@ -1,5 +1,7 @@
 # 发布运行手册
 
+npm scope 使用用户已申请的 `@yuriai`，公开发布包为 `@yuriai/web` 与 `@yuriai/relay-server`。仓库 `NPM_TOKEN` 需要该 scope 的发布权限；scope 名称确认不代表 token 权限或签名配置已验证。
+
 执行任何发布前先验证仓库、scope、应用身份、签名、更新源所有权及真实原生安装产物；验证完成后才可设置 `YURI_RELEASE_IDENTITIES_VERIFIED=true`。当前候选仓库、scope、应用签名和线上域名尚未验证，发布工作流以 `YURI_RELEASE_IDENTITIES_VERIFIED` 阻塞。首次 Yuri 发布必须使用完整原生安装器；配置 `YURI_OTA_BASE_URL`、`YURI_OTA_DETECTABILITY_BASES` 及部署侧 `YURI_OTA_UPSTREAM_ORIGIN` 后才可启用 OTA。下文示例域名不是现有线上服务。
 
 本手册覆盖 Yuri 的正式 GitHub Release。正式 Release 由 `.github/workflows/release.yml` 创建，Android APK/AAB 由它调用的 `.github/workflows/mobile-release.yml` 上传。iOS 外测打板（关联外测组 + Beta App Review）不是默认新版本的一部分。
@@ -24,7 +26,7 @@
 | 新版本含原生壳变更（`mode: "native"`，即 break change） | 上行全部 + iOS 内测 TestFlight；端内检测抬 `minShellReleaseVersion` 引导重装 | `vX.Y.Z-beta.N` | `release.yml`（`build_ios` 由 plan mode 决定） |
 | 用户明确只要已装手机 App 的 web 热更、不要任何安装包 | 仅 web bundle OTA（无 iOS） | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
 | 稳定版 | 桌面 + Android APK/AAB + npm + 同版本 OTA + iOS TestFlight（关联外测组 + Beta App Review） | `vX.Y.Z` | `release.yml`（`build_ios: true`） |
-| 仅 Relay 服务（npm + Docker） | 只发 `@yuri/relay-server`（含 Layer 1 与 Push CLI）与同一 immutable Relay Docker 镜像。**不**触发桌面、Android、iOS/TestFlight、OTA。 | `relay/vX.Y.Z` 或 `relay/vX.Y.Z-beta.N` | `relay-release.yml`（先跑包测试门禁，再复用 `relay-docker.yml`） |
+| 仅 Relay 服务（npm + Docker） | 只发 `@yuriai/relay-server`（含 Layer 1 与 Push CLI）与同一 immutable Relay Docker 镜像。**不**触发桌面、Android、iOS/TestFlight、OTA。 | `relay/vX.Y.Z` 或 `relay/vX.Y.Z-beta.N` | `relay-release.yml`（先跑包测试门禁，再复用 `relay-docker.yml`） |
 | 稳定通道同等判定 | 上表把 `beta` 换成 `stable`，默认新版本用无后缀 `vX.Y.Z`；仅热更用 `mobile-stable/vX.Y.Z` | 同上 | 同上 |
 
 **TestFlight 跟随「是否需要原生壳」，不跟随 tag**：`mode: native` 的 beta 与所有稳定版上传 iOS（beta 仅内测，稳定版关联外测组）；`mode: ota` 的 beta 不碰 iOS。**端内一键更新 vs 跳转重装由 `activeBundle.minShellReleaseVersion`（版本语义）决定，与 OTA 发布是两条独立链路**：只有 `mode: native` 把下限写成**本轮发布版本号**；`github.run_number` / `nativeBuild` 只用于 TestFlight/商店记账，**不再参与端内更新判定**。稳定版也不因发了安装包而抬门。
@@ -111,9 +113,9 @@ git push origin main
 git push origin "v$VERSION"
 ```
 
-`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@yuri/web` 与 `@yuri/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**iOS/TestFlight 由 `mobile-release-plan` 的 mode 决定**：`mode: native` 的 beta 与所有稳定版构建并上传 iOS（beta 走内测、不关联外测组、不提 Beta App Review；稳定版额外关联外测组）；`mode: ota` 的 beta 与 `mobile-beta/*` OTA-only tag 不构建 iOS。iOS 上传失败会拖住 `mobile-native-targets`（同版本 OTA 发布），用 `gh run rerun <run-id> --failed` 重跑即可。
+`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@yuriai/web` 与 `@yuriai/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**iOS/TestFlight 由 `mobile-release-plan` 的 mode 决定**：`mode: native` 的 beta 与所有稳定版构建并上传 iOS（beta 走内测、不关联外测组、不提 Beta App Review；稳定版额外关联外测组）；`mode: ota` 的 beta 与 `mobile-beta/*` OTA-only tag 不构建 iOS。iOS 上传失败会拖住 `mobile-native-targets`（同版本 OTA 发布），用 `gh run rerun <run-id> --failed` 重跑即可。
 
-npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@yuri` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@yuri/web`。完整 `v*` 仍会同时发布 `@yuri/web` 与 `@yuri/relay-server` 以及 Relay Docker；只发 Relay 时改用 `relay/v*`（见下文）。
+npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@yuriai` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@yuriai/web`。完整 `v*` 仍会同时发布 `@yuriai/web` 与 `@yuriai/relay-server` 以及 Relay Docker；只发 Relay 时改用 `relay/v*`（见下文）。
 
 ### Beta / prerelease
 
@@ -168,7 +170,7 @@ Agent 入口命令：`.opencode/commands/release.md`。
 
 ### Relay-only releases（`relay/v*`）
 
-只发布 `@yuri/relay-server` 与 Relay Docker 时，打独立 tag，不要打普通 `v*`。`relay/v*` **不会**创建 GitHub Release，也**不会**跑桌面、Android、iOS/TestFlight 或 OTA。
+只发布 `@yuriai/relay-server` 与 Relay Docker 时，打独立 tag，不要打普通 `v*`。`relay/v*` **不会**创建 GitHub Release，也**不会**跑桌面、Android、iOS/TestFlight 或 OTA。
 
 | Tag | npm dist-tag | Docker | 其它产物 |
 |---|---|---|---|
@@ -253,7 +255,7 @@ gh release view "v$VERSION" --repo yee94/yuri --json isDraft,isPrerelease,assets
 - `isDraft` 为 `false`。
 - assets 包含 `.apk` 和 `.aab`。
 - 最新稳定 Release 的 APK asset 具有 `.apk` 后缀。
-- npm 上存在 `@yuri/web@$VERSION` 与 `@yuri/relay-server@$VERSION`（稳定版在 `latest`，prerelease 在 `beta`）。
+- npm 上存在 `@yuriai/web@$VERSION` 与 `@yuriai/relay-server@$VERSION`（稳定版在 `latest`，prerelease 在 `beta`）。
 
 Android 客户端通过 `https://api.github.com/repos/yee94/yuri/releases/latest` 获取最新稳定 Release，并使用第一个 `.apk` asset 的 `browser_download_url` 作为下载地址。
 

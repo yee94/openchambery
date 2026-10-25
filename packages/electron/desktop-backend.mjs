@@ -34,7 +34,7 @@ export function registerDesktopBackend({ directory, builtinEntry }) {
 }
 
 export async function loadDesktopBackend(directory) {
-  const builtinEntry = import.meta.resolve('@yuri/web/server/index.js');
+  const builtinEntry = import.meta.resolve('@yuriai/web/server/index.js');
   const entry = directory ? pathToFileURL(path.join(directory, 'server/index.js')).href : builtinEntry;
   if (directory) registerDesktopBackend({ directory, builtinEntry });
   const [server, files] = await Promise.all([

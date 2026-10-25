@@ -2,7 +2,7 @@
 
 `yuri-relay` is the self-hosted Layer 1 relay for Yuri remote access. It gives Yuri Hosts an outbound Relay connection and carries encrypted client traffic through that connection.
 
-The same `@yuri/relay-server` package also ships `yuri-push-relay`, an isolated APNs push process. Layer 1 never receives Apple credentials. Push never terminates E2EE tunnels.
+The same `@yuriai/relay-server` package also ships `yuri-push-relay`, an isolated APNs push process. Layer 1 never receives Apple credentials. Push never terminates E2EE tunnels.
 
 The Relay routes opaque Layer 2/3 frames verbatim. E2EE terminates at the Yuri Host and Client, so the Relay has routing metadata and transport state while the endpoints hold application plaintext, pairing secrets, and client bearer credentials. Host Relay connections authenticate with the Host's long-lived P-256 signing key. Relay reachability grants transport access; endpoint validation continues to enforce pairing and client credentials.
 
@@ -32,16 +32,16 @@ Layer 1 (`yuri-relay`) and Push (`yuri-push-relay`) are separate processes in on
 
 ## Requirements
 
-- `@yuri/relay-server` installation: Node.js 22.13 or later and a supported package manager such as npm, pnpm, yarn, or Bun. Push uses Node's built-in `node:sqlite`.
+- `@yuriai/relay-server` installation: Node.js 22.13 or later and a supported package manager such as npm, pnpm, yarn, or Bun. Push uses Node's built-in `node:sqlite`.
 - Single-file Layer 1 bundle build: Bun. This repository uses Bun 1.3.14. Do not Bun-compile the Push entry; Docker runs it with Node 24.
 - Public deployment: a DNS name, TLS certificate, reverse proxy, and firewall policy appropriate for the deployment.
 
 ## Install and quick start
 
-`yuri-relay` ships as an executable in the public `@yuri/relay-server` package.
+`yuri-relay` ships as an executable in the public `@yuriai/relay-server` package.
 
 ```sh
-npm install -g @yuri/relay-server
+npm install -g @yuriai/relay-server
 yuri-relay --public-url wss://relay.example.com/ws
 ```
 
@@ -121,7 +121,7 @@ kill -TERM "$relay_pid"
 wait "$relay_pid"
 ```
 
-The executable remains independently deployable after compilation. `@yuri/relay-server` owns its distribution and publishes the `yuri-relay` executable.
+The executable remains independently deployable after compilation. `@yuriai/relay-server` owns its distribution and publishes the `yuri-relay` executable.
 
 ## Configure the listener and public URL
 
@@ -454,8 +454,8 @@ These assets define an optional follow-on deployment path. Validate the image, p
 Run Relay package unit tests and Host/Client end-to-end coverage independently from the repository root:
 
 ```sh
-bunx vitest run --project @yuri/relay-server
-bunx vitest run --project @yuri/web packages/web/server/lib/relay/relay-server.e2e.test.ts
+bunx vitest run --project @yuriai/relay-server
+bunx vitest run --project @yuriai/web packages/web/server/lib/relay/relay-server.e2e.test.ts
 ```
 
 `packages/web/server/lib/relay/relay-server.e2e.test.ts` builds a compiled Relay executable and exercises a real Host and TypeScript Client across authenticated HTTP, streaming SSE, URL-token WebSocket traffic, Relay restart recovery, and cleanup. Use this E2E coverage when validating Relay transport changes.

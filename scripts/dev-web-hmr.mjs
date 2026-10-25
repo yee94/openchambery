@@ -111,7 +111,7 @@ function getLanAddresses() {
  * Why this is NOT the default: every cold start with cache wipe + `vite --force`
  * mints a new optimized-deps browserHash. Open browser tabs still request the
  * previous `chunk-*.js?v=<oldHash>` URLs, Vite answers 504 Outdated Optimize Dep,
- * and dynamic imports (`@yuri/ui/main`, `renderMobileApp`) fail → white
+ * and dynamic imports (`@yuriai/ui/main`, `renderMobileApp`) fail → white
  * screen. Keeping the cache across restarts is the stable path; force rebuild
  * is opt-in via YURI_VITE_FORCE=1.
  */

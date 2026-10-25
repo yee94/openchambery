@@ -1,7 +1,7 @@
 name: Relay Release
 
 # Tag namespace:
-#   relay/vX.Y.Z          → @yuri/relay-server (npm latest) + Relay Docker
+#   relay/vX.Y.Z          → @yuriai/relay-server (npm latest) + Relay Docker
 #   relay/vX.Y.Z-beta.N   → npm dist-tag beta + Relay Docker
 # Does not create a GitHub Release or trigger desktop, mobile, TestFlight, or OTA.
 # Ordinary v* tags continue to use release.yml for the full product release.
@@ -76,8 +76,8 @@ jobs:
           const expected = process.env.VERSION;
           const file = 'packages/relay-server/package.json';
           const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
-          if (pkg.name !== '@yuri/relay-server') {
-            throw new Error(`Expected package name @yuri/relay-server, got ${pkg.name}`);
+          if (pkg.name !== '@yuriai/relay-server') {
+            throw new Error(`Expected package name @yuriai/relay-server, got ${pkg.name}`);
           }
           if (pkg.version !== expected) {
             throw new Error(
@@ -91,7 +91,7 @@ jobs:
             dry_run=true
           fi
           if [[ "$dry_run" != "true" && -z "${NPM_TOKEN}" ]]; then
-            echo "NPM_TOKEN is required to publish @yuri/relay-server." >&2
+            echo "NPM_TOKEN is required to publish @yuriai/relay-server." >&2
             exit 1
           fi
 
@@ -132,7 +132,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run Relay package Vitest
-        run: bunx vitest run --project @yuri/relay-server
+        run: bunx vitest run --project @yuriai/relay-server
 
       - name: Type-check Relay package
         run: bun run --cwd packages/relay-server type-check
@@ -175,7 +175,7 @@ jobs:
           NODE
 
   publish-npm:
-    name: Publish @yuri/relay-server
+    name: Publish @yuriai/relay-server
     needs: [validate, test]
     if: ${{ needs.validate.outputs.dry_run != 'true' }}
     runs-on: ubuntu-latest
@@ -197,7 +197,7 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Publish @yuri/relay-server
+      - name: Publish @yuriai/relay-server
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}

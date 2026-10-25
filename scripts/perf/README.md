@@ -5,7 +5,7 @@ Run with Bun against a development build exposing the React render entry points:
 ```sh
 bun scripts/perf/component-render-probe.mjs --url="$SESSION_URL" --out="$COLD_REPORT"
 bun scripts/perf/component-render-probe.mjs --url="$SESSION_URL" --pre=25000 --out="$WARM_REPORT"
-bunx vitest run --project @yuri/ui packages/ui/src/components/ui/componentRenderCounter.test.ts
+bunx vitest run --project @yuriai/ui packages/ui/src/components/ui/componentRenderCounter.test.ts
 ```
 
 Each run uses an isolated Chromium profile. The probe waits until the transcript is

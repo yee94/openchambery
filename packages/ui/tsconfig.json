@@ -16,7 +16,7 @@
     "baseUrl": "./src",
     "paths": {
       "@/*": ["./*"],
-      "@yuri/ui/*": ["./*"]
+      "@yuriai/ui/*": ["./*"]
     }
   },
   "include": ["src"]

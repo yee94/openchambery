@@ -911,7 +911,7 @@ jobs:
       - name: Build web package
         run: bun run build:web
 
-      - name: Publish @yuri/web and @yuri/relay-server
+      - name: Publish @yuriai/web and @yuriai/relay-server
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           IS_PRERELEASE: ${{ needs.create-release.outputs.is_prerelease }}

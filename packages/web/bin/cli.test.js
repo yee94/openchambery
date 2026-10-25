@@ -415,9 +415,9 @@ describe('cli entry detection', () => {
 
 describe('isYuriCmdline', () => {
   it('accepts Yuri CLI and daemon cmdlines', () => {
-    expect(isYuriCmdline('node /x/@yuri/web/bin/cli.js serve')).toBe(true);
-    expect(isYuriCmdline('node /x/@yuri/web/server/index.js --port 9090')).toBe(true);
-    expect(isYuriCmdline('node /x/@yuri/web/bin/cli.js serve')).toBe(true);
+    expect(isYuriCmdline('node /x/@yuriai/web/bin/cli.js serve')).toBe(true);
+    expect(isYuriCmdline('node /x/@yuriai/web/server/index.js --port 9090')).toBe(true);
+    expect(isYuriCmdline('node /x/@yuriai/web/bin/cli.js serve')).toBe(true);
     expect(isYuriCmdline('bun /home/u/projects/yuri/packages/web/server/index.js --port 3001')).toBe(true);
   });
 

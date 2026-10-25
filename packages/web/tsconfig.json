@@ -17,8 +17,8 @@
     "paths": {
       "@/*": ["../ui/src/*", "./src/*"],
       "@web/*": ["./src/*"],
-      "@yuri/ui/*": ["../ui/src/*"],
-      "@yuri/web/*": ["./src/*"]
+      "@yuriai/ui/*": ["../ui/src/*"],
+      "@yuriai/web/*": ["./src/*"]
     }
   },
   "include": ["src", "../ui/src/types/**/*"]

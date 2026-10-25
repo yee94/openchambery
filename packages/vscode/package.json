@@ -2,7 +2,7 @@
   "name": "yuri",
   "displayName": "Yuri",
   "description": "%extension.description%",
-  "version": "2.1.10-beta.14",
+  "version": "0.1.0",
   "publisher": "yee94",
   "private": true,
   "repository": {
@@ -252,7 +252,7 @@
     "vite": "^8.2.0"
   },
   "dependencies": {
-    "@yuri/ui": "workspace:*",
+    "@yuriai/ui": "workspace:*",
     "@opencode/client": "2.0.23",
     "@opencode/schema": "2.0.23",
     "adm-zip": "^0.5.16",

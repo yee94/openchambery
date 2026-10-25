@@ -2,7 +2,7 @@
  * Relay integration evidence for Host reasoning projection (`includeReasoning=false`).
  *
  * Stack (real components, not helper-only stubs):
- * - Layer 1: `@yuri/relay-server` private relay (real auth gates)
+ * - Layer 1: `@yuriai/relay-server` private relay (real auth gates)
  * - Host: `startRelayHost` + tunnel-host loopback dispatcher
  * - Client: TS `createRelayTunnelClient` (E2EE decrypt on receive)
  * - Origin: Express + `createUiAuth` (bearer) + `registerOpenCodeProxy`

@@ -28,7 +28,7 @@ test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-tran
     workDirs.push(work);
     await build({
         configFile: false, logLevel: 'error', mode: 'production', esbuild: { jsxDev: false }, root: join(here, '../../..'), publicDir: false,
-        resolve: { alias: { '@': join(here, '../..'), '@yuri/ui': join(here, '../..') } },
+        resolve: { alias: { '@': join(here, '../..'), '@yuriai/ui': join(here, '../..') } },
         worker: { format: 'es' },
         build: {
             outDir: work, emptyOutDir: false, minify: false,

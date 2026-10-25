@@ -17,7 +17,7 @@ const loadWs = () => {
   try {
     return requireHere('ws');
   } catch {
-    const webPkg = requireHere.resolve('@yuri/web/package.json');
+    const webPkg = requireHere.resolve('@yuriai/web/package.json');
     return createRequire(webPkg)('ws');
   }
 };

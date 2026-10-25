@@ -3,7 +3,7 @@ import { sharedExclude } from '../../vitest.shared.ts';
 
 export default defineConfig({
   test: {
-    name: '@yuri/update-service',
+    name: '@yuriai/update-service',
     environment: 'node',
     isolate: true,
     include: ['test/**/*.test.mjs'],

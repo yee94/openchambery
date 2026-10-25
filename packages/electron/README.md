@@ -8,7 +8,7 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the Yuri web server in the same Electron main process. There is no separate sidecar subprocess for the Yuri server.
 
-`main.mjs` uses `desktop-backend.mjs` to load the selected OTA backend or the installed `@yuri/web/server/index.js`, then calls `startWebUiServer()`. The Electron window loads the UI from the local server in development, or from the selected OTA/builtin assets in packaged builds.
+`main.mjs` uses `desktop-backend.mjs` to load the selected OTA backend or the installed `@yuriai/web/server/index.js`, then calls `startWebUiServer()`. The Electron window loads the UI from the local server in development, or from the selected OTA/builtin assets in packaged builds.
 
 The preload bridge exposes desktop-only APIs to the web UI through `window.__YURI_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler.
 
@@ -54,7 +54,7 @@ New links use `yuri://`. Packaged OS registration and runtime handlers also acce
 | `sync-run-store.mjs` | Append-only OpenCode config sync run records under `<dataDir>/sync-runs/` (not written into `settings.json`) |
 | `direct-config-sync.mjs` | Direct Yuri host sync over HTTP `/api/yuri/config-sync/*` (`host:<id>` targets) |
 | Magpie config sync | Source discovery and native CLI provisioning/backup/restore are host-owned in `packages/web/server/lib/config-sync/magpie.js`; main/SSH/direct/Relay transfer the selected opaque payload. Missing target CLIs install on apply, never during preview. See the config-sync module documentation for discovery, native backup scope and partial-failure behavior. |
-| `ssh-manager.mjs` | SSH host import, connection lifecycle, tunnel/port forwarding helpers; managed OpenCode config sync via shared `@yuri/web/server/lib/config-sync` (plan/executor/generational backup) with per-target mutex and run records |
+| `ssh-manager.mjs` | SSH host import, connection lifecycle, tunnel/port forwarding helpers; managed OpenCode config sync via shared `@yuriai/web/server/lib/config-sync` (plan/executor/generational backup) with per-target mutex and run records |
 
 Relay config sync runs in the renderer (`packages/ui/src/lib/relay/relay-config-sync.ts`) because the E2EE tunnel client is UI-owned. Main process helpers pack/extract local tars (`desktop_relay_sync_pack_local` / `desktop_relay_sync_apply_local`) and append `relay:<serverId>` run records. `credentialPayload` carries versioned V2 credential bytes; `providerCredentials` carries metadata. Only the current credential API protocol is supported. Local credential operations use authenticated local-host HTTP so OTA backends resolve their own OpenCode service client. Identity is pinned to `serverId`; a changed fingerprint fails with `relay_identity_changed`.
 | `scripts/electron-dev.mjs` | Desktop dev launcher with Vite HMR support |
@@ -256,7 +256,7 @@ The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. 
 
 1. Run `bun run version:bump -- <version>` and update the matching `CHANGELOG.md` section.
 2. Set `CSC_LINK`, `CSC_KEY_PASSWORD`, `APP_STORE_CONNECT_PRIVATE_KEY_BASE64`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID` for signed and notarized macOS desktop builds. CI imports the Developer ID p12 into a temp keychain and leaves `CSC_LINK` unset for electron-builder, so macos-26 does not hit `SecKeychainUnlock` with the p12 password.
-3. Configure `NPM_TOKEN` so the release workflow can publish `@yuri/web` and `@yuri/relay-server` to npm. iOS signing secrets are required for the TestFlight upload that runs with the formal release workflow.
+3. Configure `NPM_TOKEN` so the release workflow can publish `@yuriai/web` and `@yuriai/relay-server` to npm. iOS signing secrets are required for the TestFlight upload that runs with the formal release workflow.
 4. For a desktop-only release, manually dispatch the workflow with scope `desktop` (the default). Pushing tag `v<version>` retains the full-release behavior.
 
 The workflow creates the GitHub Release and uploads desktop installers. macOS, Windows and Linux use in-app resource OTA plus restart; incompatible shells follow the native installer target. Formal releases also upload Android artifacts and send iOS builds to TestFlight. A dry run keeps the Release as a draft. The version validation step fails early if the requested version differs from the root or Electron package version.
@@ -437,7 +437,7 @@ Preview builds do not initialize the release updater and require manual Preview
 installer updates; their bridge reports the `.preview` identity. Development reports
 `.dev`. Neither can download a release-identity installer through the update bridge.
 backend OTA no-automatic-rollback behavior is retained. Native IDs
-`dev.yuri.desktop`, `.preview` and `.dev`, the `@yuri` scope and `yee94/yuri` repository
+`dev.yuri.desktop`, `.preview` and `.dev`, the `@yuriai` scope and `yee94/yuri` repository
 are candidates pending external ownership/signing verification.
 
 Legacy scan exceptions are confined to the explicit source identities/protocol/name
@@ -462,7 +462,7 @@ Development builds use a separate user data directory named `Yuri Dev`, so dev s
 
 - Keep desktop-specific code in this package. Do not move OpenCode feature backend logic into Electron.
 - Use hidden Windows process launches for background helpers. Avoid visible console flashes.
-- Keep `@yuri/web`, `bun-pty`, `node-pty`, and native modules external in `bundle-main.mjs`; bundling them can break Electron startup.
+- Keep `@yuriai/web`, `bun-pty`, `node-pty`, and native modules external in `bundle-main.mjs`; bundling them can break Electron startup.
 - Rebuild native modules after dependency or Electron version changes.
 - Test both HMR dev mode and bundled UI mode when changing startup, preload, routing, or packaged asset behavior.
 

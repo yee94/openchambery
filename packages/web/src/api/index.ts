@@ -1,11 +1,11 @@
-import type { RuntimeAPIs } from '@yuri/ui/lib/api/types';
+import type { RuntimeAPIs } from '@yuriai/ui/lib/api/types';
 import {
   createRuntimeUrlResolver,
   getRuntimeUrlResolver,
   setRuntimeUrlResolver,
   type RuntimeUrlResolver,
-} from '@yuri/ui/lib/runtime-url';
-import { useDirectoryStore } from '@yuri/ui/stores/useDirectoryStore';
+} from '@yuriai/ui/lib/runtime-url';
+import { useDirectoryStore } from '@yuriai/ui/stores/useDirectoryStore';
 import { createWebTerminalAPI } from './terminal';
 import { createWebGitAPI } from './git';
 import { createWebFilesAPI } from './files';
@@ -17,7 +17,7 @@ import { createWebPushAPI } from './push';
 import { createWebGitHubAPI } from './github';
 import { createWebClientAuthAPI } from './clientAuth';
 import { createWebConversationsAPI } from './conversations';
-import { createMobileUpdatesAPI } from '@yuri/ui/lib/mobile-updates/api';
+import { createMobileUpdatesAPI } from '@yuriai/ui/lib/mobile-updates/api';
 
 export interface WebAPIsOptions {
   urls?: RuntimeUrlResolver;

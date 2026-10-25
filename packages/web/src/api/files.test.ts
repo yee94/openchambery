@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { RuntimeUrlQuery, RuntimeUrlResolver } from '@yuri/ui/lib/runtime-url';
+import type { RuntimeUrlQuery, RuntimeUrlResolver } from '@yuriai/ui/lib/runtime-url';
 
 const runtimeFetchMock = vi.fn();
 const downloadMock = vi.fn();
 const readMock = vi.fn();
-vi.mock('@yuri/ui/lib/runtime-file-resource', () => ({ readRuntimeFile: readMock }));
-vi.mock('@yuri/ui/lib/runtime-file-download', () => ({ downloadRuntimeFile: downloadMock }));
+vi.mock('@yuriai/ui/lib/runtime-file-resource', () => ({ readRuntimeFile: readMock }));
+vi.mock('@yuriai/ui/lib/runtime-file-download', () => ({ downloadRuntimeFile: downloadMock }));
 
-vi.mock('@yuri/ui/lib/runtime-fetch', () => ({
+vi.mock('@yuriai/ui/lib/runtime-fetch', () => ({
   runtimeFetch: runtimeFetchMock,
 }));
 

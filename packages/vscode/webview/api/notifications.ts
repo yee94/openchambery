@@ -1,4 +1,4 @@
-import type { NotificationPayload, NotificationsAPI } from '@yuri/ui/lib/api/types';
+import type { NotificationPayload, NotificationsAPI } from '@yuriai/ui/lib/api/types';
 
 const showWebviewNotification = async (payload?: NotificationPayload): Promise<boolean> => {
   if (typeof Notification === 'undefined') {

@@ -238,7 +238,7 @@ loading placeholder; no old/blank view represented the new title.
 ## Regression commands
 
 ```sh
-bunx vitest run --project @yuri/ui \
+bunx vitest run --project @yuriai/ui \
   packages/ui/src/lib/afterPaintTaskQueue.test.ts \
   packages/ui/src/lib/dualLimitLru.test.ts \
   packages/ui/src/components/chat/hooks/useTurnRecords.test.ts \

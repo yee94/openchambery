@@ -1,8 +1,8 @@
-import { getRuntimeExtraHeadersSync, refreshLocalRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken, setRuntimeBearerToken, setRuntimeExtraHeaders } from '@yuri/ui/lib/runtime-auth';
-import { installRuntimeFetchBridge } from '@yuri/ui/lib/runtime-fetch';
-import { initializeRuntimeEndpoint } from '@yuri/ui/lib/runtime-switch';
-import { restoreDesktopRelayRuntime } from '@yuri/ui/lib/desktopRelayRestore';
-import { configureRuntimeUrlResolver } from '@yuri/ui/lib/runtime-url';
+import { getRuntimeExtraHeadersSync, refreshLocalRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken, setRuntimeBearerToken, setRuntimeExtraHeaders } from '@yuriai/ui/lib/runtime-auth';
+import { installRuntimeFetchBridge } from '@yuriai/ui/lib/runtime-fetch';
+import { initializeRuntimeEndpoint } from '@yuriai/ui/lib/runtime-switch';
+import { restoreDesktopRelayRuntime } from '@yuriai/ui/lib/desktopRelayRestore';
+import { configureRuntimeUrlResolver } from '@yuriai/ui/lib/runtime-url';
 import { createWebAPIs } from './api';
 
 const sameOrigin = (left: string, right: string): boolean => {

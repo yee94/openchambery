@@ -3,10 +3,10 @@ import type {
   FileSearchQuery,
   FileSearchResult,
   FilesAPI,
-} from '@yuri/ui/lib/api/types';
-import { runtimeFetch } from '@yuri/ui/lib/runtime-fetch';
-import { downloadRuntimeFile } from '@yuri/ui/lib/runtime-file-download';
-import { readRuntimeFile } from '@yuri/ui/lib/runtime-file-resource';
+} from '@yuriai/ui/lib/api/types';
+import { runtimeFetch } from '@yuriai/ui/lib/runtime-fetch';
+import { downloadRuntimeFile } from '@yuriai/ui/lib/runtime-file-download';
+import { readRuntimeFile } from '@yuriai/ui/lib/runtime-file-resource';
 
 const normalizePath = (path: string): string => path.replace(/\\/g, '/');
 

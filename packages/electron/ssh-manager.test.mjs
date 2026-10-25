@@ -929,7 +929,7 @@ describe('classifyManagedSshBootstrapError', () => {
 describe('buildRemoteNativeBindingRepairScript', () => {
   test('probes first, then cleans node-gyp leftovers, retries, and reinstalls', () => {
     const script = buildRemoteNativeBindingRepairScript({
-      packageName: '@yuri/web',
+      packageName: '@yuriai/web',
       version: '1.18.3-beta.14',
     });
     expect(script.indexOf('probe_sqlite')).toBeLessThan(script.indexOf('rebuild_sqlite'));
@@ -937,7 +937,7 @@ describe('buildRemoteNativeBindingRepairScript', () => {
     expect(script).toContain('rm -rf "$sqlite_dir/build"');
     expect(script).toContain('mkdir -p "$sqlite_dir/build/node_gyp_bins"');
     expect(script).toContain('npm rebuild --foreground-scripts');
-    expect(script).toContain("npm install -g '@yuri/web@1.18.3-beta.14' --force");
+    expect(script).toContain("npm install -g '@yuriai/web@1.18.3-beta.14' --force");
     expect(script).toContain('/usr/bin/python3.11');
     expect(script).toContain('/opt/rh/gcc-toolset-12');
     expect(script).toContain('failed to prepare better-sqlite3');

@@ -14,20 +14,20 @@ import {
 } from './sessionTurnChangesRoute';
 import { shouldSkipVSCodeNotificationSession } from './notificationSessionFilter';
 import { completionEvent, createFamilyCompletionGate } from '../../web/server/lib/notifications/family-completion-gate.js';
-import { subscribeRuntimeEndpointChanged } from '@yuri/ui/lib/runtime-switch';
+import { subscribeRuntimeEndpointChanged } from '@yuriai/ui/lib/runtime-switch';
 import { applyQuestionAutoDelegateHostTip } from './questionAutoDelegateTip';
 import { getSettingsBridgeMessageType, isSettingsBootstrapRequest } from '../src/settings-bootstrap-runtime';
-import type { RuntimeAPIs } from '@yuri/ui/lib/api/types';
-import { refreshQuestionAutoDelegate } from '@yuri/ui/lib/questionAutoDelegate';
-import { opencodeClient } from '@yuri/ui/lib/opencode/client';
-import { sanitizeHeadersForBrowser } from '@yuri/ui/lib/runtime-fetch';
+import type { RuntimeAPIs } from '@yuriai/ui/lib/api/types';
+import { refreshQuestionAutoDelegate } from '@yuriai/ui/lib/questionAutoDelegate';
+import { opencodeClient } from '@yuriai/ui/lib/opencode/client';
+import { sanitizeHeadersForBrowser } from '@yuriai/ui/lib/runtime-fetch';
 import {
   buildVSCodeThemeFromPalette,
   readVSCodeThemePalette,
   type VSCodeThemeKind,
   type VSCodeThemePayload,
-} from '@yuri/ui/lib/theme/vscode/adapter';
-import { getBootstrapMessages, readStoredLocaleForBootstrap } from '@yuri/ui/lib/i18n';
+} from '@yuriai/ui/lib/theme/vscode/adapter';
+import { getBootstrapMessages, readStoredLocaleForBootstrap } from '@yuriai/ui/lib/i18n';
 import type { VSCodeActiveEditorFile } from '@/sync/input-store';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'disconnected';
@@ -1516,7 +1516,7 @@ onCommand('showSettings', () => {
 // Explicit configuration reload rebuilds locations in place. Binary updates and
 // startup recovery keep the separate managed-service restart bridge.
 onCommand('reloadOpenCode', () => {
-  void import('@yuri/ui/stores/useAgentsStore').then(({ reloadOpenCodeLocations }) => {
+  void import('@yuriai/ui/stores/useAgentsStore').then(({ reloadOpenCodeLocations }) => {
     void reloadOpenCodeLocations().catch(() => undefined);
   });
 });
@@ -1908,7 +1908,7 @@ window.addEventListener('yuri:vscode-notification-event', (event) => {
 
 // Listen for settings sync command from extension (broadcast to all VS Code webviews)
 onCommand('settingsSynced', () => {
-  import('@yuri/ui/lib/persistence').then(({ syncDesktopSettings }) => {
+  import('@yuriai/ui/lib/persistence').then(({ syncDesktopSettings }) => {
     void syncDesktopSettings();
   });
 });
@@ -1920,7 +1920,7 @@ onCommand('activeEditorFile', (payload) => {
   });
 });
 
-import('@yuri/ui/apps/renderVSCodeApp')
+import('@yuriai/ui/apps/renderVSCodeApp')
   .then(async ({ renderVSCodeApp }) => {
     renderVSCodeApp(window.__YURI_RUNTIME_APIS__ ?? createVSCodeAPIs());
     await waitForUiMount();

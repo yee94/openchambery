@@ -135,7 +135,7 @@ form IO and core, restoring `/api` for origin-only upstream URLs.
 ## Tests
 
 ```sh
-bunx vitest run --project @yuri/web \
+bunx vitest run --project @yuriai/web \
   packages/web/server/lib/question-auto-delegate/core.test.js \
   packages/web/server/lib/question-auto-delegate/runtime.test.js \
   packages/web/server/lib/question-auto-delegate/routes.test.js \

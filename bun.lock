@@ -48,10 +48,10 @@
       },
     },
     "packages/electron": {
-      "name": "@yuri/electron",
+      "name": "@yuriai/electron",
       "version": "2.1.9",
       "dependencies": {
-        "@yuri/web": "workspace:*",
+        "@yuriai/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
         "electron-log": "^5.4.3",
         "electron-updater": "^6.8.3",
@@ -63,7 +63,7 @@
       },
     },
     "packages/mobile": {
-      "name": "@yuri/mobile",
+      "name": "@yuriai/mobile",
       "version": "2.1.9",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
@@ -85,7 +85,7 @@
       },
     },
     "packages/relay-server": {
-      "name": "@yuri/relay-server",
+      "name": "@yuriai/relay-server",
       "version": "2.1.9",
       "bin": {
         "yuri-relay": "./bin/yuri-relay.js",
@@ -95,7 +95,7 @@
       },
     },
     "packages/ui": {
-      "name": "@yuri/ui",
+      "name": "@yuriai/ui",
       "version": "2.1.9",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
@@ -213,7 +213,7 @@
       "name": "yuri",
       "version": "2.1.9",
       "dependencies": {
-        "@yuri/ui": "workspace:*",
+        "@yuriai/ui": "workspace:*",
         "@opencode/client": "2.0.23",
         "@opencode/schema": "2.0.23",
         "adm-zip": "^0.5.16",
@@ -237,7 +237,7 @@
       },
     },
     "packages/web": {
-      "name": "@yuri/web",
+      "name": "@yuriai/web",
       "version": "2.1.9",
       "bin": {
         "yuri": "./bin/cli.js",
@@ -1018,15 +1018,15 @@
 
     "@octokit/types": ["@octokit/types@16.0.0", "", { "dependencies": { "@octokit/openapi-types": "^27.0.0" } }, "sha512-sKq+9r1Mm4efXW1FCk7hFSeJo4QKreL/tTbR0rz/qx/r1Oa2VV83LTA/H/MuCOX7uCIJmQVRKBcbmWoySjAnSg=="],
 
-    "@yuri/electron": ["@yuri/electron@workspace:packages/electron"],
+    "@yuriai/electron": ["@yuriai/electron@workspace:packages/electron"],
 
-    "@yuri/mobile": ["@yuri/mobile@workspace:packages/mobile"],
+    "@yuriai/mobile": ["@yuriai/mobile@workspace:packages/mobile"],
 
-    "@yuri/ui": ["@yuri/ui@workspace:packages/ui"],
+    "@yuriai/ui": ["@yuriai/ui@workspace:packages/ui"],
 
-    "@yuri/relay-server": ["@yuri/relay-server@workspace:packages/relay-server"],
+    "@yuriai/relay-server": ["@yuriai/relay-server@workspace:packages/relay-server"],
 
-    "@yuri/web": ["@yuri/web@workspace:packages/web"],
+    "@yuriai/web": ["@yuriai/web@workspace:packages/web"],
 
     "@opencode/client": ["@opencode/client@2.0.23", "", { "dependencies": { "@opencode/protocol": "2.0.23", "@opencode/schema": "2.0.23" }, "peerDependencies": { "effect": "4.0.0-rc.112", "solid-js": ">=1.9.0" }, "optionalPeers": ["effect", "solid-js"] }, "sha512-tHfYu7sKNxFu2dZ7Pu5vZG4T8GHqU71ZCsXHZ/RoI0LLdG7t2zwePHWR9aNbcSP+jDUGyaQlzr5utC9Uduczvg=="],
 
@@ -3624,11 +3624,11 @@
 
     "@npmcli/move-file/rimraf": ["rimraf@3.0.2", "", { "dependencies": { "glob": "^7.1.3" }, "bin": { "rimraf": "bin.js" } }, "sha512-JZkJMZkAGFFPP2YqXZXPbMlMBgsxzE8ILs4lMIX/2o0L9UBw9O/Y3o6wFw/i9YLapcUJWwqbi3kdxIPdC62TIA=="],
 
-    "@yuri/ui/yaml": ["yaml@2.9.0", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA=="],
+    "@yuriai/ui/yaml": ["yaml@2.9.0", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA=="],
 
-    "@yuri/web/cron-parser": ["cron-parser@4.9.0", "", { "dependencies": { "luxon": "^3.2.1" } }, "sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q=="],
+    "@yuriai/web/cron-parser": ["cron-parser@4.9.0", "", { "dependencies": { "luxon": "^3.2.1" } }, "sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q=="],
 
-    "@yuri/web/yaml": ["yaml@2.9.0", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA=="],
+    "@yuriai/web/yaml": ["yaml@2.9.0", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA=="],
 
     "@radix-ui/react-arrow/@radix-ui/react-primitive": ["@radix-ui/react-primitive@2.1.3", "", { "dependencies": { "@radix-ui/react-slot": "1.2.3" }, "peerDependencies": { "@types/react": "*", "@types/react-dom": "*", "react": "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc", "react-dom": "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc" }, "optionalPeers": ["@types/react", "@types/react-dom"] }, "sha512-m9gTwRkhy2lvCPe6QJp4d3G1TYEUHn/FzJUtq9MjH46an1wJU+GdoGC5VLof8RX8Ft/DlpshApkhswDLZzHIcQ=="],
 

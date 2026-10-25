@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ConversationMessagePart } from '@yuri/ui/lib/api/types';
+import type { ConversationMessagePart } from '@yuriai/ui/lib/api/types';
 
 const mockRuntimeFetch = vi.fn();
 
-vi.mock('@yuri/ui/lib/runtime-fetch', () => ({
+vi.mock('@yuriai/ui/lib/runtime-fetch', () => ({
   runtimeFetch: mockRuntimeFetch,
 }));
 

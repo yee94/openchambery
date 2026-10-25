@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => ({
   ],
   resolve: {
     alias: [
-      { find: '@yuri/ui', replacement: path.resolve(__dirname, '../ui/src') },
+      { find: '@yuriai/ui', replacement: path.resolve(__dirname, '../ui/src') },
       { find: '@vscode', replacement: path.resolve(__dirname, './webview') },
       { find: '@', replacement: path.resolve(__dirname, '../ui/src') },
     ],

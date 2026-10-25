@@ -18,7 +18,7 @@ The loading overlays are positioned/flex clipping surfaces. Code/result cards re
 ### Repository CSS cascade
 
 ```sh
-bunx --no-install vitest run --project @yuri/ui \
+bunx --no-install vitest run --project @yuriai/ui \
   packages/ui/src/components/chat/markdown/markdownCodeMobileStyles.test.ts
 ```
 
@@ -63,7 +63,7 @@ These observations establish static CSS and gesture ownership. The bounded previ
 ## Final checks
 
 ```sh
-bunx --no-install vitest run --project @yuri/ui \
+bunx --no-install vitest run --project @yuriai/ui \
   packages/ui/src/components/chat/markdown \
   packages/ui/src/components/chat/MarkdownRendererImpl.test.ts \
   packages/ui/src/components/chat/MarkdownRenderer.deferred.test.tsx \

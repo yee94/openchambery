@@ -117,7 +117,7 @@ function createCliPairingRuntime() {
   });
 }
 
-// Mirror of encodePairingConnectionPayload in @yuri/ui (the bin cannot
+// Mirror of encodePairingConnectionPayload in @yuriai/ui (the bin cannot
 // import the UI package). Keep in sync: v2 payload → base64url(JSON) in the URL
 // query, so the one-time secret rides the link, never the network.
 function encodePairingConnectUrl(payload) {

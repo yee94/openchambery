@@ -1,5 +1,5 @@
-import type { ToolsAPI } from '@yuri/ui/lib/api/types';
-import { opencodeClient } from '@yuri/ui/lib/opencode/client';
+import type { ToolsAPI } from '@yuriai/ui/lib/api/types';
+import { opencodeClient } from '@yuriai/ui/lib/opencode/client';
 
 export const createVSCodeToolsAPI = (): ToolsAPI => ({
   async getAvailableTools(): Promise<string[]> {

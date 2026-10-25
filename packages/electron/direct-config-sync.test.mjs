@@ -4,7 +4,7 @@ import {
   buildDirectHostAuthHeaders,
   createDirectTargetExecutor,
 } from './direct-config-sync.mjs';
-import { createDirectHostSyncTarget } from '@yuri/web/server/lib/config-sync/index.js';
+import { createDirectHostSyncTarget } from '@yuriai/web/server/lib/config-sync/index.js';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
 
 describe('direct config sync helpers', () => {

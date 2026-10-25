@@ -1,14 +1,14 @@
 /**
  * Bundle main.mjs into a single file. Small electron-* helper deps are
  * inlined; everything else — including the in-process web server
- * (@yuri/web) and native modules — stays external so it resolves
+ * (@yuriai/web) and native modules — stays external so it resolves
  * from node_modules at runtime inside the packaged app.
  *
  * Why external matters: packages/web/server pulls in bun-pty, which has
  * a top-level `import { dlopen } from "bun:ffi"`. If we inline it here,
  * Node's ESM loader sees `bun:ffi` at package load time and crashes with
  * ERR_UNSUPPORTED_ESM_URL_SCHEME before any runtime guard can skip it.
- * Leaving @yuri/web external means the conditional
+ * Leaving @yuriai/web external means the conditional
  * `if (isBunRuntime) await import('bun-pty')` stays dynamic and is never
  * reached under Electron.
  */
@@ -34,8 +34,8 @@ const result = await Bun.build({
   external: [
     'electron',
     'electron-updater',
-    '@yuri/web',
-    '@yuri/web/*',
+    '@yuriai/web',
+    '@yuriai/web/*',
     'bun-pty',
     'node-pty',
     'better-sqlite3',

@@ -1,10 +1,10 @@
 import { createConfiguredWebAPIs, getDesktopRelayRestoreReady } from './runtimeConfig';
 import { registerSW } from 'virtual:pwa-register';
 
-import type { RuntimeAPIs } from '@yuri/ui/lib/api/types';
-import type { HostedSurface } from '@yuri/ui/lib/runtimeSurface';
-import '@yuri/ui/index.css';
-import '@yuri/ui/styles/fonts';
+import type { RuntimeAPIs } from '@yuriai/ui/lib/api/types';
+import type { HostedSurface } from '@yuriai/ui/lib/runtimeSurface';
+import '@yuriai/ui/index.css';
+import '@yuriai/ui/styles/fonts';
 
 declare global {
   interface Window {
@@ -141,7 +141,7 @@ const recoverFromStaleModuleImport = (error: unknown, label: string): void => {
 };
 
 if (hostedSurface === 'mobile') {
-  void import('@yuri/ui/apps/renderMobileApp')
+  void import('@yuriai/ui/apps/renderMobileApp')
     .then(({ renderMobileApp }) => {
       try {
         sessionStorage.removeItem(RELOAD_ONCE_KEY);
@@ -157,7 +157,7 @@ if (hostedSurface === 'mobile') {
   // endpoint and flashes the auth screen before the tunnel connects. Resolves
   // immediately when no relay host is involved.
   void getDesktopRelayRestoreReady()
-    .then(() => import('@yuri/ui/main'))
+    .then(() => import('@yuriai/ui/main'))
     .then(() => {
       try {
         sessionStorage.removeItem(RELOAD_ONCE_KEY);

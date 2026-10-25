@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { extractAssetZip } from '@yuri/web/server/lib/zip-assets.js';
+import { extractAssetZip } from '@yuriai/web/server/lib/zip-assets.js';
 import { compareReleaseVersions, parseReleaseVersion } from '../../deploy/update-service/lib/semver.js';
 
 const UPDATE_ORIGIN = process.env.YURI_UPDATE_ORIGIN || (typeof __YURI_UPDATE_ORIGIN__ === 'string' ? __YURI_UPDATE_ORIGIN__ : '');

@@ -4,11 +4,11 @@ import type {
   FileSearchQuery,
   FileSearchResult,
   FilesAPI,
-} from '@yuri/ui/lib/api/types';
+} from '@yuriai/ui/lib/api/types';
 
 import { sendBridgeMessage, sendBridgeMessageWithOptions } from './bridge';
-import { readRuntimeFile } from '@yuri/ui/lib/runtime-file-resource';
-import { downloadRuntimeFile } from '@yuri/ui/lib/runtime-file-download';
+import { readRuntimeFile } from '@yuriai/ui/lib/runtime-file-resource';
+import { downloadRuntimeFile } from '@yuriai/ui/lib/runtime-file-download';
 
 const normalizePath = (value: string): string => value.replace(/\\/g, '/');
 

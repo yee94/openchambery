@@ -5,7 +5,7 @@ import { bunTestShim, sharedExclude } from '../../vitest.shared.ts';
 
 export default defineConfig({
   test: {
-    name: '@yuri/ui',
+    name: '@yuriai/ui',
     environment: 'happy-dom',
     isolate: true,
     exclude: sharedExclude,

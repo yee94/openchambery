@@ -19,7 +19,7 @@ Layer 1 and Push are separate processes in this package. Layer 1 never holds APN
 Install the package, then start the Relay:
 
 ```sh
-npm install -g @yuri/relay-server
+npm install -g @yuriai/relay-server
 yuri-relay
 ```
 

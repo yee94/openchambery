@@ -1,4 +1,4 @@
-import type { VSCodeAPI } from '@yuri/ui/lib/api/types';
+import type { VSCodeAPI } from '@yuriai/ui/lib/api/types';
 import { executeVSCodeCommand, openVSCodeExternalUrl, sendBridgeMessage } from './bridge';
 
 export const createVSCodeActionsAPI = (): VSCodeAPI => ({

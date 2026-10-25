@@ -62,8 +62,8 @@ Blind short retries on hidden, offline, unauthorized, or stale-path clients wast
 ## Testing guidance (a stub that skips auth/origin hides the exact bugs)
 
 - Exercise the real auth and origin gates. An end-to-end test whose stub server accepts any WS upgrade will pass while the real server rejects it — this is precisely how the origin-check bug shipped. When writing a relay integration test, mirror the real gates (`ensureSessionToken` via `yuri_url_token`, `isRequestOriginAllowed`) or run against the real server pieces.
-- Run relay tests per file (`bunx vitest run --project @yuri/web <file>` or `--project @yuri/relay-server <file>`); the suite has order sensitivity.
-- Package suite: `bun run --cwd packages/relay-server test`. Host/Client e2e: `bunx vitest run --project @yuri/web packages/web/server/lib/relay/relay-server.e2e.test.ts`.
+- Run relay tests per file (`bunx vitest run --project @yuriai/web <file>` or `--project @yuriai/relay-server <file>`); the suite has order sensitivity.
+- Package suite: `bun run --cwd packages/relay-server test`. Host/Client e2e: `bunx vitest run --project @yuriai/web packages/web/server/lib/relay/relay-server.e2e.test.ts`.
 - Validate both sides with `packages/ui` lint and `node --check` on changed JS host files.
 
 ## Quick checklist before finishing relay-adjacent work

@@ -128,7 +128,7 @@ function isYuriCmdline(cmdline) {
     return false;
   }
   // Every install path contains the "yuri" segment — the npm package
-  // (@yuri/web) and the source checkout both do, for the foreground
+  // (@yuriai/web) and the source checkout both do, for the foreground
   // (bin/cli.js) and daemon (server/index.js) entrypoints alike. Matching the
   // path segment (not a generic "cli.js") keeps a recycled stranger such as
   // "npm-cli.js" or "agentmemory" from being mistaken for us.

@@ -18,9 +18,9 @@ import type {
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
   GitHubUserSummary,
-} from '@yuri/ui/lib/api/types';
-import { runtimeFetch } from '@yuri/ui/lib/runtime-fetch';
-import type { RuntimeUrlResolver } from '@yuri/ui/lib/runtime-url';
+} from '@yuriai/ui/lib/api/types';
+import { runtimeFetch } from '@yuriai/ui/lib/runtime-fetch';
+import type { RuntimeUrlResolver } from '@yuriai/ui/lib/runtime-url';
 
 interface WebGitHubAPIOptions {
   urls: RuntimeUrlResolver;

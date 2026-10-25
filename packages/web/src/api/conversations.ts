@@ -1,9 +1,9 @@
-import { runtimeFetch } from '@yuri/ui/lib/runtime-fetch';
+import { runtimeFetch } from '@yuriai/ui/lib/runtime-fetch';
 import type {
   ConversationsAPI,
   ConversationCreateWithPromptInput,
   ConversationCreateWithPromptResult,
-} from '@yuri/ui/lib/api/types';
+} from '@yuriai/ui/lib/api/types';
 
 // --- runtime parser: validate result shape without blind `as` ---
 

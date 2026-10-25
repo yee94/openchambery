@@ -32,7 +32,7 @@ Electron starts the Yuri backend in-process, never as a sidecar. Development may
 
 Shared contracts must define intentional behavior for every applicable runtime: web, desktop, VS Code, hosted mobile, and Capacitor mobile.
 
-Desktop release work belongs in `packages/electron/`. Electron owns windows, menus, dialogs, notifications, updater, deep links, runtime host switching, local IPC gates, and SSH management. The desktop runtime imports `@yuri/web/server/index.js` and starts the web server in-process through `startWebUiServer`; notifications flow through the injected `onDesktopNotification` callback.
+Desktop release work belongs in `packages/electron/`. Electron owns windows, menus, dialogs, notifications, updater, deep links, runtime host switching, local IPC gates, and SSH management. The desktop runtime imports `@yuriai/web/server/index.js` and starts the web server in-process through `startWebUiServer`; notifications flow through the injected `onDesktopNotification` callback.
 
 Release artifacts and repository links use `yee94/yuri`. Electron is the desktop release target; use `bun run electron:build` for the current platform and `bun run release:test` for the release smoke build. Ship or update a version: default `v*` (desktop + APK + same-version OTA) so first-time downloaders have installers. TestFlight follows the mobile plan mode, not the tag: native-mode betas and stable upload iOS (beta internal-only, stable external group); web-only (`mode: ota`) betas skip iOS. The in-app minNativeBuild floor (one-tap OTA vs reinstall) rises only on native mode. `mobile-beta/v*` only for explicit mobile-web-only OTA with no installers and no iOS. See `docs/RELEASING.md` § 先选产物. Agent GitHub releases follow `docs/RELEASING.md` and `.opencode/commands/release.md`. Semver prereleases (`X.Y.Z-beta.N` / any version with `-`) must publish as GitHub prereleases and must never enter the stable auto-update feed (`/releases/latest`, Vercel `/desktop/latest*.yml`, or `deploy/update-service/release-manifest.json`). Every OTA publish must pass `scripts/mobile-ota/verify-detectability.mjs` on both Vercel and EdgeOne, including the iOS Capgo builtin marketing-version profile (`currentBundleId` = stripped `1.18.2`); beta-channel checks use the running web bundle version, never the store/TestFlight marketing version.
 
@@ -44,7 +44,7 @@ Release artifacts and repository links use `yee94/yuri`. Electron is the desktop
 
 ## Always-On Constraints
 
-- Yuri publishing is blocked until the identity, signing, update-origin, and native-install evidence in `docs/RELEASING.md` is complete. `yee94/yuri`, `@yuri`, `yee94.yuri`, and `com.yee94.yuri` are candidate identities, not verified external resources. Release jobs require `YURI_RELEASE_IDENTITIES_VERIFIED=true`; the first migration release includes native installers.
+- Yuri publishing is blocked until the identity, signing, update-origin, and native-install evidence in `docs/RELEASING.md` is complete. `yee94/yuri`, `@yuriai`, `yee94.yuri`, and `com.yee94.yuri` are candidate identities, not verified external resources. Release jobs require `YURI_RELEASE_IDENTITIES_VERIFIED=true`; the first migration release includes native installers.
 
 - Do not modify `../opencode`; it is a separate repository.
 - Do not run git or GitHub commands unless the user explicitly asks.
@@ -135,11 +135,11 @@ Workspace tests run on Vitest 4 (`vitest.config.ts` `projects`). Do not use `bun
 |---|---|
 | `bun run test` | Every workspace package `test` script |
 | `bun run test:vitest` | All Vitest projects (`ensure-node-better-sqlite3` first) |
-| `bun run test:ui` | `@yuri/ui` |
+| `bun run test:ui` | `@yuriai/ui` |
 | `bunx vitest run --project <name> <file>` | One project, optional file |
 | `bun run --cwd packages/<pkg> test` | That package only |
 
-Project names: `@yuri/ui`, `@yuri/web`, `yuri-vscode`, `@yuri/electron`, `@yuri/mobile`, `@yuri/relay-server`, `@yuri/update-service`.
+Project names: `@yuriai/ui`, `@yuriai/web`, `yuri-vscode`, `@yuriai/electron`, `@yuriai/mobile`, `@yuriai/relay-server`, `@yuriai/update-service`.
 
 - New tests import from `vitest`. `bun:test` still works through `scripts/test/bun-test-shim.ts`; module mocks that must beat static imports use `vi.hoisted` + `vi.mock`, not `mock.module`.
 - `packages/ui` uses `happy-dom`. Do not read local files with `new URL(..., import.meta.url)` (not a `file:` URL); use `path.join(path.dirname(fileURLToPath(import.meta.url)), ...)`.

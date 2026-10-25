@@ -320,7 +320,7 @@ Closing, backgrounding and runtime changes cancel recording; unmount fences late
 Test cancel/retry separately. TTS and streaming ASR must be enabled;
 unit tests and builds do not establish live account permissions or audio quality.
 An opt-in TTS → ASR round-trip test is available with
-`bunx vitest run --project @yuri/web packages/web/server/lib/tts/volcengine.live.test.js`.
+`bunx vitest run --project @yuriai/web packages/web/server/lib/tts/volcengine.live.test.js`.
 Set `VOLCENGINE_SPEECH_API_KEY` in the invoking environment; without it the test
 is skipped. It generates a short Chinese sentence, recognizes the resulting MP3,
 and checks key words. It uses the account's enabled services/billing.

@@ -11,7 +11,7 @@ import {
   planOpenCodeConfigSyncFromInventory,
   prepareLocalSyncDestination,
   syncTargetIdForDirectHost,
-} from '@yuri/web/server/lib/config-sync/index.js';
+} from '@yuriai/web/server/lib/config-sync/index.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

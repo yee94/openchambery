@@ -1,13 +1,13 @@
 {
-  "name": "@yuri/electron",
-  "version": "2.1.10-beta.14",
+  "name": "@yuriai/electron",
+  "version": "0.1.0",
   "private": true,
   "description": "Electron desktop runtime for Yuri",
   "author": "Yuri",
   "type": "module",
   "main": "./dist-bundle/main.mjs",
   "dependencies": {
-    "@yuri/web": "workspace:*",
+    "@yuriai/web": "workspace:*",
     "electron-context-menu": "^4.1.2",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3"

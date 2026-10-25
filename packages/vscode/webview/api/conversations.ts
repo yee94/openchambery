@@ -3,7 +3,7 @@ import type {
   ConversationsAPI,
   ConversationCreateWithPromptInput,
   ConversationCreateWithPromptResult,
-} from '@yuri/ui/lib/api/types';
+} from '@yuriai/ui/lib/api/types';
 
 export const createVSCodeConversationsAPI = (): ConversationsAPI => ({
   async createWithPrompt(

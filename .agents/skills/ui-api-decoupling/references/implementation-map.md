@@ -46,4 +46,4 @@ Review every cache keyed only by session ID, directory, URL, or entity ID. Add r
 - VS Code bridge: `packages/vscode/webview/api/bridge.test.ts`
 - VS Code proxy: `packages/vscode/src/bridge-proxy-runtime.test.js`
 
-Run those files with `bunx vitest run --project @yuri/ui <file>` or `--project @yuri/web` / `--project yuri-vscode` as appropriate. Also run focused tests beside new runtime implementations and validation required by each affected workspace.
+Run those files with `bunx vitest run --project @yuriai/ui <file>` or `--project @yuriai/web` / `--project yuri-vscode` as appropriate. Also run focused tests beside new runtime implementations and validation required by each affected workspace.

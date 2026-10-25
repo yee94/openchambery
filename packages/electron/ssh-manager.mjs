@@ -30,7 +30,7 @@ import {
   prepareLocalSyncDestination,
   probePathsForPlan,
   shellQuote,
-} from '@yuri/web/server/lib/config-sync/index.js';
+} from '@yuriai/web/server/lib/config-sync/index.js';
 
 import { createSettingsStore } from './settings-store.mjs';
 import { createDirectTargetExecutor } from './direct-config-sync.mjs';
@@ -59,7 +59,7 @@ export const buildRemoteSyncPrepareScript = (plan, options = {}) => buildRemoteS
   ...(Number.isFinite(options.generations) ? { generations: options.generations } : {}),
 });
 
-const YURI_NPM_PACKAGE = '@yuri/web';
+const YURI_NPM_PACKAGE = '@yuriai/web';
 // v2 CLI package installs the `opencode` binary. Never install 1.x `opencode-ai`.
 const OPENCODE_NPM_PACKAGE = '@opencode/cli';
 export const REMOTE_NODE_MIN_MAJOR = 22;
@@ -2047,7 +2047,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
    * putTar currently buffers the whole archive (SSH stdin); the payload type
    * still accepts AsyncIterable/Readable for a later streaming relay path.
    * @param {{ parsed: object, controlPath: string, instance?: object }} session
-   * @returns {import('@yuri/web/server/lib/config-sync/contract.js').TargetExecutor}
+   * @returns {import('@yuriai/web/server/lib/config-sync/contract.js').TargetExecutor}
    */
   createSshTargetExecutor(session) {
     let magpieWarnings;

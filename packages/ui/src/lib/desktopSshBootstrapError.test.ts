@@ -29,7 +29,7 @@ describe('classifyManagedSshBootstrapError', () => {
       'Yuri installation completed but the executable is unavailable',
     )).toBe('yuriCliMissing');
     expect(classifyManagedSshBootstrapError(
-      'npm ERR! code ETIMEDOUT\nnpm ERR! network request to https://registry.npmjs.org/@yuri%2fweb failed',
+      'npm ERR! code ETIMEDOUT\nnpm ERR! network request to https://registry.npmjs.org/@yuriai%2fweb failed',
     )).toBe('yuriRegistry');
     expect(classifyManagedSshBootstrapError('Failed to install Yuri on remote host')).toBe('yuriInstall');
     expect(classifyManagedSshBootstrapError('Error: Unknown option: --relay-host')).toBe('yuriCliIncompatible');

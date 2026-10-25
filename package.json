@@ -1,6 +1,6 @@
 {
   "name": "yuri-monorepo",
-  "version": "2.1.10-beta.14",
+  "version": "0.1.0",
   "description": "AI workspace for coding, personal assistants, and recurring tasks across desktop, mobile, browser, and VS Code",
   "private": true,
   "type": "module",
@@ -41,7 +41,7 @@
     "lint:electron": "bun run --cwd packages/electron lint",
     "lint:mobile": "bun run --cwd packages/mobile lint",
     "test": "bun run --filter '*' test",
-    "test:ui": "vitest run --project @yuri/ui",
+    "test:ui": "vitest run --project @yuriai/ui",
     "test:vitest": "node ./scripts/ensure-node-better-sqlite3.mjs && vitest run",
     "e2e:router:check": "node packages/web/e2e/router/check-scenarios.mjs",
     "clean": "bun run --filter '*' clean",
