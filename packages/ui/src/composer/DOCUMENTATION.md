@@ -1,5 +1,11 @@
 # Composer module
 
+Session-reference selection keeps its necessary `ensureSessionRenderable` read.
+The subsequent `ensureSessionMentionTranscripts` historical prefetch runs only
+outside mobile layouts, Capacitor and hosted mobile surfaces. Mobile sends use
+the loaded transcript plus the existing read-only session lookup instructions;
+manual history loading and send admission reconciliation remain available.
+
 ## Native composer cleanup
 
 `native-ios-composer-session.shutdown()` always clears DOM presentation state,

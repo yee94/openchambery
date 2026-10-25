@@ -111,7 +111,9 @@ test('expands existing seven-day checkpoints to thirty days even when sessions a
     },
   });
   await runtime.sync();
-  expect(service.search('host', 'history').map((hit) => hit.messageID)).toEqual(['m10', 'm29']);
+  expect(service.search('host', 'history').map((hit) => hit.messageID)).toEqual(['m10']);
+  expect(service.search('host', 'history 29').map((hit) => hit.messageID)).toEqual(['m29']);
+  expect(service.search('host', 'history 31')).toEqual([]);
   expect(runtime.status().since).toBe(now - 30 * day);
   await runtime.sync();
   expect(reads).toBe(1);
@@ -131,7 +133,9 @@ test('pages older messages, excludes expired text, and reuses checkpoints after 
   };
   const runtime = createContentSearchRuntime(dependencies);
   await runtime.sync();
-  expect(service.search('host', 'needle').map((hit) => hit.messageID)).toEqual(['latest', 'older']);
+  expect(service.search('host', 'needle').map((hit) => hit.messageID)).toEqual(['latest']);
+  expect(service.search('host', 'needle older').map((hit) => hit.messageID)).toEqual(['older']);
+  expect(service.search('host', 'needle expired')).toEqual([]);
   expect(reads).toBe(3);
   await runtime.stop();
   const restarted = createContentSearchRuntime(dependencies);

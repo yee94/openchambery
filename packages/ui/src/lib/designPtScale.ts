@@ -10,14 +10,14 @@ export const IOS_DESIGN_PT_SCALE = 10 / 9;
  */
 export const ANDROID_DESIGN_PT_PREVIOUS_CAP = 0.9;
 /**
- * Android --dpt ceiling. Halfway from the old 0.9 (a bit small) toward 1
- * (too large). Applied as a multiply so phones already at ~0.9 actually move.
+ * Android --dpt ceiling. A small readability lift from 0.95 toward 1.
+ * Applied as a multiply so phones already at ~0.9 actually move.
  */
-export const ANDROID_DESIGN_PT_SCALE_MAX = 0.95;
+export const ANDROID_DESIGN_PT_SCALE_MAX = 0.98;
 export const ANDROID_DESIGN_PT_READABILITY_BUMP =
   ANDROID_DESIGN_PT_SCALE_MAX / ANDROID_DESIGN_PT_PREVIOUS_CAP;
-/** v7 invalidates v6 (raw 0.9) so the 0.95 lift is not masked. */
-export const DESIGN_PT_STORAGE_KEY = 'openchamber.designPtScale.v7';
+/** v8 invalidates v7 (0.95 cap) so the 0.98 lift is not masked. */
+export const DESIGN_PT_STORAGE_KEY = 'openchamber.designPtScale.v8';
 
 export interface PhysicalScaleMetrics {
   xdpi: number;
@@ -32,7 +32,7 @@ export function clampDesignPtScale(value: number): number {
 
 /**
  * CSS px per physical inch is ppi/density in Android WebView (1 CSS px = 1 dp).
- * Scale so 1 design pt ≈ 1/163 inch, multiply by the 0.9→0.95 lift, then cap.
+ * Scale so 1 design pt ≈ 1/163 inch, multiply by the 0.9→0.98 lift, then cap.
  */
 export function computeDesignPtScale(metrics: PhysicalScaleMetrics | null | undefined): number {
   if (!metrics) return ANDROID_DESIGN_PT_SCALE_MAX;

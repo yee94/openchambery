@@ -109,7 +109,9 @@ describe('native compaction transcript lifecycle', () => {
       resetSessionCompactionBarrier()
       configureRuntimeUrlResolver({ apiBaseUrl: 'http://127.0.0.1:57123' })
       setSessionCompactionBarrier(sessionID, true)
-      globalThis.fetch = (async () => {
+      const requests: string[] = []
+      globalThis.fetch = (async (input) => {
+        requests.push(new URL(input instanceof Request ? input.url : String(input)).pathname)
         if (scenario === 'failure') return new Response('unavailable', { status: 503 })
         if (scenario === 'new-start') setSessionCompactionBarrier(sessionID, true)
         if (scenario === 'late-running') setSessionCompactionBarrier(sessionID, false)
@@ -127,6 +129,7 @@ describe('native compaction transcript lifecycle', () => {
         })
         if (scenario === 'failure') await expect(request).rejects.toThrow()
         else await request
+        expect(requests).toEqual([`/api/session/${sessionID}/message`])
         expect(isCompactionBarrierActive(sessionID)).toBe(
           scenario !== 'recovery' && scenario !== 'late-running',
         )

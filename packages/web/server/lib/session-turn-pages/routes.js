@@ -1,5 +1,6 @@
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { projectMessageSummaryDiffCounts } from '../event-stream/diff-summary.js';
+import { stripSessionMessageNativePayload } from './native-payload.js';
 import {
   projectMessagesPayloadForReasoning,
   readIncludeReasoningQuery,
@@ -718,7 +719,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
       });
       const includeReasoning = readIncludeReasoningQuery(req.query);
       return res.status(200).json(
-        projectMessagesPayloadForReasoning(projectExactMessagePayload(payload), includeReasoning),
+        projectMessagesPayloadForReasoning(projectExactMessagePayload(stripSessionMessageNativePayload(payload)), includeReasoning),
       );
     } catch (error) {
       if (isAbortError(error) || error?.code === 'aborted') {

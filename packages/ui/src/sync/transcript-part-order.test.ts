@@ -11,14 +11,12 @@ import { mergeOptimisticPage } from "./optimistic"
 import { createMemoryTranscriptDurableStore } from "./transcript-durable-store"
 import type { SessionMessageReducerState } from "./session-message-reducer"
 
-const { fetchPage, fetchContext } = vi.hoisted(() => ({
+const { fetchPage } = vi.hoisted(() => ({
   fetchPage: vi.fn(),
-  fetchContext: vi.fn(),
 }))
 vi.mock("./session-projection-api", async (importOriginal) => ({
   ...await importOriginal<typeof import("./session-projection-api")>(),
   fetchSessionProjectionPage: fetchPage,
-  fetchSessionContext: fetchContext,
 }))
 
 const scope = { directory: "/workspace", sessionID: "ses_order", transport: "test", generation: 1 }
@@ -64,7 +62,6 @@ afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup() })
 describe("transcript content order", () => {
   test.each([undefined, "older-cursor"])("production fetch preserves native content order (cursor %s)", async (before) => {
     fetchPage.mockResolvedValue(page())
-    fetchContext.mockResolvedValue(page())
     const result = await fetchProductionTranscriptTransportPage({ ...scope, before, limit: 20, signal: new AbortController().signal })
     expect(ids(result.records[0].parts ?? [])).toEqual(ids(fixture().parts))
   })

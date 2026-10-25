@@ -93,9 +93,14 @@ export function createContentSearchService({ dbPath }) {
       if (directory) { conditions.push('s.directory=?'); args.push(directory); }
       if (match) { conditions.push('m.id IN (SELECT rowid FROM search_fts WHERE search_fts MATCH ?)'); args.push(match); }
       args.push(Math.min(50, Math.max(1, limit)));
-      return db.prepare(`SELECT m.session AS sessionID,m.message AS messageID,m.role,m.created AS createdAt,m.body,s.title,s.directory
+      return db.prepare(`WITH matches AS (
+        SELECT m.id, ROW_NUMBER() OVER (PARTITION BY m.session ORDER BY m.created DESC,m.message DESC) AS position
         FROM search_message m JOIN search_session s ON s.runtime=m.runtime AND s.id=m.session
-        WHERE ${conditions.join(' AND ')} ORDER BY m.created DESC,m.message DESC LIMIT ?`).all(...args).map(({ body, ...hit }) => {
+        WHERE ${conditions.join(' AND ')}
+      ) SELECT m.session AS sessionID,m.message AS messageID,m.role,m.created AS createdAt,m.body,s.title,s.directory
+        FROM matches JOIN search_message m ON m.id=matches.id
+        JOIN search_session s ON s.runtime=m.runtime AND s.id=m.session
+        WHERE matches.position=1 ORDER BY m.created DESC,m.message DESC,m.session DESC LIMIT ?`).all(...args).map(({ body, ...hit }) => {
         const start = Math.max(0, Math.min(...terms.map((term) => body.toLowerCase().indexOf(term))) - 60);
         const end = Math.min(body.length, start + 300);
         return { ...hit, snippet: (start ? '…' : '') + body.slice(start, end) + (end < body.length ? '…' : '') };

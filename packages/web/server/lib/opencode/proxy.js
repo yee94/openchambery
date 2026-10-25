@@ -1,6 +1,7 @@
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { isSensitiveCredentialResponse } from './credential-boundary.js';
 import { registerSessionDeliveryRoute } from './session-delivery-runtime.js';
+import { stripSessionMessageNativePayload } from '../session-turn-pages/native-payload.js';
 
 import {
   applyForwardProxyResponseHeaders,
@@ -927,7 +928,7 @@ export const registerOpenCodeProxy = (app, deps) => {
       }
 
       res.setHeader('content-type', result.contentType);
-      res.json(projectMessagesPayloadForReasoning(result.payload, includeReasoning));
+      res.json(projectMessagesPayloadForReasoning(stripSessionMessageNativePayload(result.payload), includeReasoning));
     } catch (error) {
       if (isAbortError(error)) {
         return;

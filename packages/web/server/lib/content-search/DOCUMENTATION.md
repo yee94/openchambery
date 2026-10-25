@@ -76,7 +76,11 @@ active pass before closing SQLite.
 
 `GET /api/openchamber/content-search?q=...&limit=30` returns `{hits,index}`.
 Each hit includes authoritative session title and directory plus message identity,
-role, created time and a plain snippet. The optional `directory` narrows searches;
+role, created time and a plain snippet. Each session contributes only its newest
+matching message (created time descending, message ID descending for ties).
+Deduplication happens before `limit`, which counts sessions rather than messages;
+results are ordered by that matching message's recency, then session ID for ties.
+The optional `directory` narrows searches;
 omitting it searches every project. The endpoint uses the existing Host auth and
 rejects preview-proxy credentials. Errors are not converted to empty successes.
 An empty query returns index coverage/progress without hits. Index phase is

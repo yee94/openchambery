@@ -37,7 +37,6 @@ import {
   registerTranscriptReconnectCompensationController,
 } from "./transcript-reconnect-compensation-runtime"
 import {
-  fetchSessionContext,
   fetchSessionProjectionPage,
   isAuthoredUserTurnRecord,
   normalizeSessionProjectionMessage,
@@ -59,82 +58,6 @@ import { raceWithSessionTurnPageTimeout, SESSION_TURN_PAGE_TIMEOUT_MS } from "./
 
 function normalizeParts(parts: Part[]): Part[] {
   return parts.filter((part) => !!part?.id)
-}
-
-type OrderedRecord = TranscriptTransportPage["records"][number]
-
-function recordCreated(record: OrderedRecord): number {
-  return typeof record.info?.time?.created === "number" ? record.info.time.created : 0
-}
-
-/**
- * Overlay context freshness onto the projection first-page window.
- *
- * Context traversal order is the order source; ids never rank records.
- *
- * - Same id: prefer context body (post-checkpoint freshness).
- * - Context-only rows at or before the last context row the projection also
- *   listed (overlap anchor) are the **older prefix** or mid-window gaps: omit —
- *   the projection continuation cursor still owns that history.
- * - Context-only rows after the overlap anchor are the **newer tail**: append in
- *   context traversal order so first paint is not missing live turns the
- *   projection page has not listed.
- * - Without any overlap, only rows not created before the projection window end
- *   are the newer tail (equal `created` stays in context order).
- * - When projection is empty after system filtering, keep context rows with the
- *   projection cursor so older history remains reachable.
- */
-export function mergeInitialProjectionAndContext(
-  projection: TranscriptTransportPage,
-  context: TranscriptTransportPage | null | undefined,
-): TranscriptTransportPage {
-  if (!context || context.records.length === 0) return projection
-
-  const contextById = new Map(
-    context.records.map((record) => [record.info.id, record] as const),
-  )
-
-  if (projection.records.length === 0) {
-    return {
-      records: context.records,
-      coverageMessageIDs: projection.coverageMessageIDs ?? [],
-      cursor: projection.cursor,
-      complete: projection.complete,
-      turnCount: context.turnCount,
-      requestedTurnLimit: projection.requestedTurnLimit ?? context.requestedTurnLimit,
-    }
-  }
-
-  const projectionIds = new Set(
-    projection.records.map((record) => record.info.id).filter((id): id is string => typeof id === "string"),
-  )
-  const records: OrderedRecord[] = projection.records.map(
-    (record) => contextById.get(record.info.id) ?? record,
-  )
-
-  let anchorIndex = -1
-  context.records.forEach((record, index) => {
-    if (projectionIds.has(record.info?.id)) anchorIndex = index
-  })
-  const windowEndCreated = recordCreated(projection.records[projection.records.length - 1]!)
-
-  for (let index = anchorIndex + 1; index < context.records.length; index += 1) {
-    const record = context.records[index]!
-    const id = record.info?.id
-    if (typeof id !== "string" || projectionIds.has(id)) continue
-    if (anchorIndex < 0 && recordCreated(record) < windowEndCreated) continue
-    records.push(record)
-  }
-
-  const turnCount = records.filter((entry) => isAuthoredUserTurnRecord(entry.info, entry.parts)).length
-  return {
-    records,
-    coverageMessageIDs: projection.coverageMessageIDs ?? projection.records.map((record) => record.info.id),
-    cursor: projection.cursor,
-    complete: projection.complete,
-    turnCount,
-    requestedTurnLimit: projection.requestedTurnLimit ?? context.requestedTurnLimit,
-  }
 }
 
 /**
@@ -230,8 +153,6 @@ async function fetchProductionTranscriptPageInternal(
 
   // Ticket 09 batch 2: no nested retry() — Query classifier owns retries;
   // pass abort signal through to Host for cancellation fidelity.
-  // Ticket 08: first paint prefers GET /context (post-checkpoint). Prepend
-  // still uses the projection cursor so older history remains reachable.
   const projection = await fetchSessionProjectionPage({
     sessionID: input.sessionID,
     directory: input.directory,
@@ -240,22 +161,9 @@ async function fetchProductionTranscriptPageInternal(
     signal: input.signal,
   })
   input.signal.throwIfAborted()
-  const context = input.before
-    ? null
-    : await fetchSessionContext({
-      sessionID: input.sessionID,
-      directory: input.directory,
-      signal: input.signal,
-    })
-  // First paint may overlay GET /context freshness onto the projection window,
-  // but pagination authority stays on projection: its cursor covers every
-  // first-page id. Replacing records with a strict context subset while keeping
-  // the projection cursor would skip intermediate ids on the next older page.
-  input.signal.throwIfAborted()
-  const merged = mergeInitialProjectionAndContext(projection, context)
   const page = input.before
-    ? merged
-    : await extendInitialPageToAuthoredUserTurn(merged, input)
+    ? projection
+    : await extendInitialPageToAuthoredUserTurn(projection, input)
 
   let records = page.records.map((record) => ({
     info: stripMessageDiffSnapshots(record.info),

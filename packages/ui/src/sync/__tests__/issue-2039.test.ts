@@ -76,19 +76,21 @@ vi.mock("zustand", () => ({
       state = next && typeof next === "object" ? { ...state, ...(next as Record<string, unknown>) } : state
     }
 
-    state = initializer(set, get)
-
     const store = ((selector?: (current: Record<string, unknown>) => unknown) => (
       typeof selector === "function" ? selector(state) : state
     )) as unknown as {
       getState: () => Record<string, unknown>
+      getInitialState: () => Record<string, unknown>
       setState: (patch: unknown | ((current: Record<string, unknown>) => unknown)) => void
       subscribe: () => () => void
     }
 
     store.getState = () => state
+    store.getInitialState = () => state
     store.setState = (patch) => set(patch)
     store.subscribe = () => () => undefined
+
+    state = (initializer as (...args: unknown[]) => Record<string, unknown>)(set, get, store)
 
     return store
   },

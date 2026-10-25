@@ -1,5 +1,16 @@
 # Sync architecture, event handling & store update rules
 
+Mobile transcript demand keeps correctness reads enabled: opening/observing a
+session, authored-user anchor recovery (up to four extra projection pages),
+reconnect/terminal authority refresh, durable-seed exact revalidation, send
+confirmation, and explicit older-history requests. Desktop history warmup stays
+behind its existing mobile/dedicated-app gate. Session-reference selection in
+`ChatInput` skips only the subsequent historical prefetch on mobile layouts,
+Capacitor and hosted mobile; its necessary initial renderable read remains.
+`ContextPanelSessionTranscript` loads on active display or empty-visible focus
+recovery; its older-page action requires explicit user interaction. Do not disable
+authority recovery merely because it adds a message-list request after opening.
+
 `SyncAppEffects` and `SyncRuntimeEffects` isolate their subscriptions from unrelated
 parent renders. Runtime effects do not mount `useSessionAutoCleanup(autoRun:false)`:
 that unused retention controller subscribed to the full catalog without performing
@@ -190,7 +201,7 @@ Native `message.list` cursors describe positions, not existence of another page:
 
 Durable-seeded boundaries hold an exclusive message-ID anchor, not an upstream cursor. Overlapping authority tails preserve that older anchor so cached history stays contiguous. `fetchSessionProjectionPage` converts `msg_*` anchors to OpenCode's base64url JSON `{ id, order: "desc", direction: "next" }` at the request boundary (ascending requests use `previous`); native tokens remain unchanged and cursor requests omit `order`. This also handles existing in-memory seeded boundaries without cache deletion or authority replay. The Host turn-page service applies the same conversion. Regression coverage in `session-projection-api.test.ts` exercises seed → overlapping authority → consecutive older pages → exhaustion without duplicate or skipped fixture rows.
 
-`TranscriptTransportPage.coverageMessageIDs` carries projection coverage separately from context or exact-parent enrichment. Production merge/anchor extension preserves this coverage, and `refreshFromAuthority` passes it to `reconcileFetched`: only projection IDs can establish the start of the range in which missing rows imply deletion. An empty coverage array on a system-only page is not an empty authoritative transcript. Context can refresh displayed rows but cannot erase the already-loaded middle of a conversation it omitted. Complete projection snapshots still own genuine removals, and in-flight touched/optimistic rows retain their existing protection. `transcript-history-retention.test.ts` covers 65 rows across four pages, context-enriched system tails, concurrent prepend/refresh/live send in both completion orders, failures, stationary cursors, and successful retry.
+`TranscriptTransportPage.coverageMessageIDs` carries projection coverage separately from exact-parent enrichment. Production anchor extension preserves this coverage, and `refreshFromAuthority` passes it to `reconcileFetched`: only projection IDs can establish the start of the range in which missing rows imply deletion. An empty coverage array on a system-only page is not an empty authoritative transcript. Complete projection snapshots still own genuine removals, and in-flight touched/optimistic rows retain their existing protection. `transcript-history-retention.test.ts` covers 65 rows across four pages, system-only tails, concurrent prepend/refresh/live send in both completion orders, failures, stationary cursors, and successful retry.
 
 ### Synthetic message identity (Ticket 03)
 
@@ -350,7 +361,7 @@ Owning modules: `session-prompt-api.ts`, `session-inbox-overlay.ts`,
 
 After a successful transcript tail pull, `reconcileActiveSessionStatusAfterMessagePull` also probes `session.active` when the session's local status is missing. Cold-start bootstrap / stream-ready snapshots can run before the restored route or catalog discovers the session; a quiet long-running tool supplies no new live frames to repair that omission. The tail pull supplies the directory-local session ID, while the active snapshot alone supplies busy/idle authority. Explicit idle, history-only, empty, stale, and live-superseded pulls retain their existing skip behavior; failed probes preserve unknown state and newer live events win. This shared recovery applies to every UI runtime without periodic status polling or historical-tool activity inference.
 
-Production v2 transcript page flights retain the 30-second independent timer race from Host turn pages, including context/anchor enrichment. Abort is best-effort; a native bridge ignoring it cannot leave the caller pending forever. Failed flights do not publish partial pages.
+Production v2 transcript page flights retain the 30-second independent timer race from Host turn pages, including anchor enrichment. Abort is best-effort; a native bridge ignoring it cannot leave the caller pending forever. Failed flights do not publish partial pages.
 
 This document covers the current client-side session/data architecture in `packages/ui/src/sync` and the rules for updating stores safely.
 
@@ -1335,18 +1346,12 @@ both readers agree on when a frame may shrink.
    projection via `fetchProductionTranscriptTransportPage` (limit=20 order=desc,
    continuation token = Host `cursor.next` under desc / `cursor.previous` under
    asc, parent recovery, abort signal), then repository `http-page` /
-   InfiniteQuery `fetchPreviousPage` / `ensureInitial`. First paint may overlay
-   GET `/context` freshness onto the **projection window**
-    (`mergeInitialProjectionAndContext`): same-id context bodies win. Context
-    traversal order is the order source and ids never rank records: the last
-    context row also present in the projection window is the overlap anchor;
-    context-only rows after it are the **newer tail**, appended in context
-    order; context-only rows at or before it (**older prefix** or mid-window
-    gaps) stay off the first page (projection continuation cursor still owns
-    them — including checkpoint / compaction history the context view
-    intentionally hides). Without any overlap, context-only rows created at or
-    after the projection window end form the tail (equal `created` keeps
-    context order). Prepend keeps
+    InfiniteQuery `fetchPreviousPage` / `ensureInitial`. First paint and authority
+    refresh use projection only, with no `/context` fetch or overlay. Projection
+    normalization owns compaction checkpoints; barrier updates retain their
+    lifecycle fences. A missing authored-user anchor may require up to four extra
+    projection pages, followed by exact parent recovery when needed. These reads
+    restore the visible turn and remain enabled on mobile. Prepend keeps
    already-visible overlapping ids in place and only inserts truly new earlier
    rows in Host page order while the continuation cursor advances independently.
    Empty system-only older pages may advance the Host cursor while keeping prior
@@ -1357,8 +1362,8 @@ both readers agree on when a frame may shrink.
    classified 502/503/504 retry (max 2); InfiniteQuery and `ensureInitial` must
    not stack a second budget. One older-history interaction loads exactly one
    page, and that page makes at most 3 fetch attempts (1 + 2 classified
-   retries); a first-paint attempt issues projection + `/context` GETs, a
-   prepend attempt issues the projection GET only. Stale pages gate with `shouldDropStalePage(purpose)`.
+    retries); a first-paint attempt with a complete turn anchor issues one
+    projection GET; a prepend attempt issues one projection GET. Stale pages gate with `shouldDropStalePage(purpose)`.
    Loading / ready / error status lives on repository `getRequestState`. Pure
    `reduceSessionMessagePage` remains the model for merge math (Query adapter
    and test store adapter).

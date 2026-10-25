@@ -2,6 +2,14 @@
 
 ## Purpose
 
+HTTP message list/context and exact-message responses strip provider replay
+payloads through the shared `native-payload.js` projection. Only message-level
+`native` (including the `info` carrier of exact records) and `content[]` item-level
+`native` are removed. Tool input/output, metadata, pagination envelopes and cursors
+are opaque and preserved; upstream objects are never mutated. Web proxy and VS
+Code bridge share this helper. Reasoning text and token totals remain governed
+by the existing reasoning projection. SSE events retain their existing payloads.
+
 OpenChamber-owned turn-window pagination and anchor reconcile for session messages.
 
 1. **Turn pages** — clients request the last N **authored user turns** (default 3) rather than a raw message count. The host loops OpenCode v2 `message.list` pages (first page `limit` + `order=desc`; continuation `limit` + `cursor` from the previous body `cursor.next` — upstream rejects `order` together with `cursor` with 400) until the turn budget is met or history is exhausted.

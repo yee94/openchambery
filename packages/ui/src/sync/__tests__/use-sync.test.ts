@@ -55,7 +55,7 @@ describe("v2 projection transport source contract (production transcript reposit
       || productionSource.includes("from './session-projection-api'"),
     ).toBe(true)
     expect(productionSource.includes("fetchSessionProjectionPage(")).toBe(true)
-    expect(productionSource.includes("fetchSessionContext(")).toBe(true)
+    expect(productionSource.includes("fetchSessionContext(")).toBe(false)
     expect(productionSource.includes("fetchHostSessionTurnPageForPurpose(")).toBe(false)
     expect(productionSource.includes("fetchSessionTurnPage(")).toBe(false)
   })

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
+import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT, usesAndroidAttachPickSheet } from '@/lib/native-media-pick';
 import { MobileAttachPickSheet } from './MobileAttachPickSheet';
@@ -5618,7 +5619,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 // Background prefetch: page the referenced transcript fully into the cache so
                 // send-time inlining usually carries content. Failure is non-fatal — the send
                 // boundary's session-mention instruction embeds a read-only retrieval recipe.
-                void ensureSessionMentionTranscripts([{ type: 'session', sessionId: session.id }], sessionDirectory).catch(() => undefined);
+                if (!isMobile && !isCapacitorApp() && !isMobileSurfaceRuntime()) {
+                    void ensureSessionMentionTranscripts([{ type: 'session', sessionId: session.id }], sessionDirectory).catch(() => undefined);
+                }
 
                 const document = getDocument();
                 const cursorPosition = readComposerInsertCaret(document.text.length);

@@ -209,7 +209,6 @@ vi.mock("./session-projection-api", () => ({
     const records = Array.isArray(result?.data) ? result.data : []
     return { records, complete: true }
   },
-  fetchSessionContext: async () => ({ records: [], complete: true, cursor: undefined }),
 }))
 
 function makeActionSdk() {
