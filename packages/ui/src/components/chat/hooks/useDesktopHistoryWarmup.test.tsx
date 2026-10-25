@@ -3,6 +3,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useDesktopHistoryWarmup } from './useDesktopHistoryWarmup';
 
+const transport = vi.hoisted(() => ({ relay: false }));
+vi.mock('@/lib/relay/runtime-tunnel', () => ({ isRelayModeActive: () => transport.relay }));
+
 describe('desktop history warmup', () => {
     let root: Root;
     let host: HTMLDivElement;
@@ -14,6 +17,7 @@ describe('desktop history warmup', () => {
     const advance = async (ms = 1200) => { await act(async () => vi.advanceTimersByTimeAsync(ms)); };
 
     beforeEach(async () => {
+        transport.relay = false;
         vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
         vi.useFakeTimers();
         load.mockReset().mockResolvedValue(undefined);
@@ -65,6 +69,27 @@ describe('desktop history warmup', () => {
         expect(load).not.toHaveBeenCalled();
         options = { ...options, enabled: true, cursor: null };
         await render();
+        await advance(5000);
+        expect(load).not.toHaveBeenCalled();
+    });
+
+    it('never warms history over Relay, including after switching sessions', async () => {
+        transport.relay = true;
+        await render();
+        await advance(5000);
+        options = { ...options, scope: 'other-relay-session' };
+        await render();
+        await advance(5000);
+        expect(load).not.toHaveBeenCalled();
+        transport.relay = false;
+        await render();
+        await advance();
+        expect(load).toHaveBeenCalledExactlyOnceWith(50);
+    });
+
+    it('rechecks transport before a queued quiet-window request without a render', async () => {
+        await advance(600);
+        transport.relay = true;
         await advance(5000);
         expect(load).not.toHaveBeenCalled();
     });
