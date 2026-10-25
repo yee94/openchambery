@@ -194,7 +194,7 @@ const hasHorizontallyScrollableAncestor = (element: Element | null): boolean => 
 
 const isExcludedTarget = (touch: Touch): boolean => {
   const element = document.elementFromPoint(touch.clientX, touch.clientY);
-  return Boolean(element?.closest('.oc-mobile-composer'))
+  return Boolean(element?.closest('.yuri-mobile-composer'))
     || hasHorizontallyScrollableAncestor(element);
 };
 

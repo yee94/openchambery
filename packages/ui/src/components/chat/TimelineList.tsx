@@ -129,7 +129,7 @@ export type TimelineRowEntry = {
     kind: string;
 };
 
-const TIMELINE_REPLY_RESERVE_KIND = 'oc-reply-reserve';
+const TIMELINE_REPLY_RESERVE_KIND = 'yuri-reply-reserve';
 
 type ReplyReserveListEntry = {
     readonly key: string;
@@ -368,7 +368,7 @@ const TimelineRow = <TEntry extends TimelineRowEntry>({
         <div
             ref={rootRef}
             data-turn-entry={entry.key}
-            className="oc-chat-message-layout-boundary"
+            className="yuri-chat-message-layout-boundary"
         >
             {renderEntryRef.current?.(entry, index, hydratedKeys.has(entry.key))}
         </div>
@@ -437,12 +437,12 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         setElement: setFooterMeasureElement,
     } = useMeasuredTimelineSlot();
     const measuredHeader = header != null ? (
-        <div ref={setHeaderMeasureElement} data-oc-timeline-header="">
+        <div ref={setHeaderMeasureElement} data-yuri-timeline-header="">
             {header}
         </div>
     ) : null;
     const measuredFooter = footer != null ? (
-        <div ref={setFooterMeasureElement} data-oc-timeline-footer="">
+        <div ref={setFooterMeasureElement} data-yuri-timeline-footer="">
             {footer}
         </div>
     ) : null;
@@ -1071,7 +1071,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         if (isReplyReserveListEntry(item)) {
             return (
                 <div
-                    data-oc-reply-reserve="true"
+                    data-yuri-reply-reserve="true"
                     aria-hidden="true"
                     style={{ height: item.spacerHeight, flexShrink: 0 }}
                 />

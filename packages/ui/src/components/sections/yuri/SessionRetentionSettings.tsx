@@ -1,0 +1,170 @@
+import React from 'react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from '@/components/ui';
+import { NumberInput } from '@/components/ui/number-input';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Icon } from "@/components/icon/Icon";
+import { useUIStore } from '@/stores/useUIStore';
+import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
+import { useI18n } from '@/lib/i18n';
+import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
+
+const MIN_DAYS = 1;
+const MAX_DAYS = 365;
+const DEFAULT_RETENTION_DAYS = 30;
+const RETENTION_ACTION_OPTIONS = [
+  { value: 'archive', labelKey: 'settings.yuri.sessionRetention.action.archive' },
+  { value: 'delete', labelKey: 'settings.yuri.sessionRetention.action.delete' },
+] as const;
+
+export const SessionRetentionSettings: React.FC = () => {
+  const { t } = useI18n();
+  const autoDeleteEnabled = useUIStore((state) => state.autoDeleteEnabled);
+  const autoDeleteAfterDays = useUIStore((state) => state.autoDeleteAfterDays);
+  const sessionRetentionAction = useUIStore((state) => state.sessionRetentionAction);
+  const setAutoDeleteEnabled = useUIStore((state) => state.setAutoDeleteEnabled);
+  const setAutoDeleteAfterDays = useUIStore((state) => state.setAutoDeleteAfterDays);
+  const setSessionRetentionAction = useUIStore((state) => state.setSessionRetentionAction);
+
+  const { candidates, isRunning, runCleanup, action } = useSessionAutoCleanup({ autoRun: false });
+  const pendingCount = candidates.length;
+
+  const handleRunCleanup = React.useCallback(async () => {
+    const result = await runCleanup({ force: true });
+
+    if (result.completedIds.length === 0 && result.failedIds.length === 0) {
+      toast.message(
+        result.action === 'archive'
+          ? t('settings.yuri.sessionRetention.toast.noneEligibleArchive')
+          : t('settings.yuri.sessionRetention.toast.noneEligibleDelete')
+      );
+      return;
+    }
+    if (result.completedIds.length > 0) {
+      toast.success(
+        result.action === 'archive'
+          ? t('settings.yuri.sessionRetention.toast.archivedCount', { count: result.completedIds.length })
+          : t('settings.yuri.sessionRetention.toast.deletedCount', { count: result.completedIds.length })
+      );
+    }
+    if (result.failedIds.length > 0) {
+      toast.error(
+        result.action === 'archive'
+          ? t('settings.yuri.sessionRetention.toast.failedArchiveCount', { count: result.failedIds.length })
+          : t('settings.yuri.sessionRetention.toast.failedDeleteCount', { count: result.failedIds.length })
+      );
+    }
+  }, [runCleanup, t]);
+
+  return (
+    <div className="yuri-settings-section-stack">
+      <SettingsGroup
+        label={(
+          <div className="flex items-center gap-2">
+            <span>
+            {t('settings.yuri.sessionRetention.title')}
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Icon name="information" className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
+              </TooltipTrigger>
+              <TooltipContent sideOffset={8} className="max-w-xs">
+                {t('settings.yuri.sessionRetention.tooltip')}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+      >
+        <div
+          data-settings-item="sessions.auto-cleanup"
+          className="yuri-settings-group-row yuri-settings-split-row group cursor-pointer"
+          role="button"
+          tabIndex={0}
+          aria-pressed={autoDeleteEnabled}
+          onClick={() => setAutoDeleteEnabled(!autoDeleteEnabled)}
+          onKeyDown={(event) => {
+            if (event.key === ' ' || event.key === 'Enter') {
+              event.preventDefault();
+              setAutoDeleteEnabled(!autoDeleteEnabled);
+            }
+          }}
+        >
+          <div className="yuri-settings-split-row-copy">
+            <div className="typography-ui-label text-foreground">
+              {t('settings.yuri.sessionRetention.field.enableAutoCleanup')}
+            </div>
+          </div>
+          <div className="yuri-settings-split-row-control">
+            <Checkbox
+              checked={autoDeleteEnabled}
+              onChange={setAutoDeleteEnabled}
+              ariaLabel={t('settings.yuri.sessionRetention.field.enableAutoCleanupAria')}
+            />
+          </div>
+        </div>
+
+        <SettingsRow itemId="sessions.retention-period" label={t('settings.yuri.sessionRetention.field.retentionPeriod')}>
+          <NumberInput
+            value={autoDeleteAfterDays}
+            onValueChange={setAutoDeleteAfterDays}
+            min={MIN_DAYS}
+            max={MAX_DAYS}
+            step={1}
+            aria-label={t('settings.yuri.sessionRetention.field.retentionPeriodAria')}
+            className="w-20 tabular-nums"
+          />
+          <span className="typography-ui-label text-muted-foreground">{t('settings.yuri.sessionRetention.field.days')}</span>
+          <Button size="sm"
+            type="button"
+            variant="ghost"
+            onClick={() => setAutoDeleteAfterDays(DEFAULT_RETENTION_DAYS)}
+            disabled={autoDeleteAfterDays === DEFAULT_RETENTION_DAYS}
+            className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
+            aria-label={t('settings.yuri.sessionRetention.actions.resetRetentionAria')}
+            title={t('settings.common.actions.reset')}
+          >
+            <Icon name="restart" className="h-3.5 w-3.5" />
+          </Button>
+        </SettingsRow>
+
+        <SettingsRow itemId="sessions.retention-action" label={t('settings.yuri.sessionRetention.field.whenSessionsExpire')}>
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            {RETENTION_ACTION_OPTIONS.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                variant="chip"
+                size="xs"
+                aria-pressed={sessionRetentionAction === option.value}
+                className="!font-normal"
+                onClick={() => setSessionRetentionAction(option.value)}
+              >
+                {t(option.labelKey)}
+              </Button>
+            ))}
+          </div>
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsField
+        label={t('settings.yuri.sessionRetention.manualCleanup.title')}
+        description={action === 'archive'
+          ? t('settings.yuri.sessionRetention.manualCleanup.eligibleArchiveNow', { count: pendingCount })
+          : t('settings.yuri.sessionRetention.manualCleanup.eligibleDeleteNow', { count: pendingCount })}
+        descriptionPlacement="outside"
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          onClick={handleRunCleanup}
+          disabled={isRunning}
+          className="!font-normal"
+        >
+          {isRunning ? t('settings.yuri.sessionRetention.actions.cleaningUp') : t('settings.yuri.sessionRetention.actions.runCleanupNow')}
+        </Button>
+      </SettingsField>
+    </div>
+  );
+};

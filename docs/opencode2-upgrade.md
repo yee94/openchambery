@@ -2,11 +2,11 @@
 
 > 正文只存在 OpenCode。Host 做浅代理。客户端只留一层投影 SWR。
 
-对照源：本地 `~/code/github/opencode` HEAD `1288161528`、官方 [V2 docs](https://opencode.ai/v2/docs)、[migrate-v1](https://opencode.ai/v2/docs/migrate-v1)、[API](https://opencode.ai/v2/docs/api)。上游 `openchamber/openchamber` 目前没有实施分支，只有 [#2810](https://github.com/openchamber/openchamber/issues/2810)。
+对照源：本地 `~/code/github/opencode` HEAD `1288161528`、官方 [V2 docs](https://opencode.ai/v2/docs)、[migrate-v1](https://opencode.ai/v2/docs/migrate-v1)、[API](https://opencode.ai/v2/docs/api)。上游 `yuri/yuri` 目前没有实施分支，只有 [#2810](https://github.com/yuri/yuri/issues/2810)。
 
 ## 一、结论
 
-这次不是在 1.18.x 上再修一层合并。托管进程换成真正的 `opencode2`，消息存储和投影交给它，OpenChamberY 拆掉自己叠上去的正文中间层。
+这次不是在 1.18.x 上再修一层合并。托管进程换成真正的 `opencode2`，消息存储和投影交给它，Yuri 拆掉自己叠上去的正文中间层。
 
 推荐方案：
 
@@ -15,9 +15,9 @@
 3. **Host**：鉴权、directory/location 路由、Basic auth 注入、HTTP/SSE/WS 桥。不再拼回合、不再镜像 parts、不再自研 reconcile。
 4. **不长期双栈**。切过去只认 v2。`@opencode-ai/sdk/v2`（1.18.4 生成客户端）不能当 v2 权威源，要换成 `@opencode/client`。
 5. **不要赌 `session.log` 补历史**。默认 `opencode serve` 的 `events.persist=false`，EventTable 是空的，log 只有 `log.synced` 再切 live。断线对齐靠 GET 投影，不靠事件回放。
-6. **不要 in-process `ServerFetch.make`**。官方 desktop 也是 sidecar + localhost HTTP。OpenChamberY 继续这条路。
+6. **不要 in-process `ServerFetch.make`**。官方 desktop 也是 sidecar + localhost HTTP。Yuri 继续这条路。
 
-上游 [#884 backend-agnostic-harness](https://github.com/openchamber/openchamber/pull/884) 是 Codex 适配，不是 v2 浅代理。不要把它当本方案的实现底稿。
+上游 [#884 backend-agnostic-harness](https://github.com/yuri/yuri/pull/884) 是 Codex 适配，不是 v2 浅代理。不要把它当本方案的实现底稿。
 
 ## 二、范围与非目标
 
@@ -36,13 +36,13 @@
 - 不把 `@opencode-ai/server` import 进 Host 当库。
 - 不复用用户已经在跑的 `opencode2 service`。
 - 不把设置、配对、Relay、项目注册、session folders、goals、输入草稿迁进 OpenCode。
-- 不等待上游 OpenChamberY 先做 v2。
+- 不等待上游 Yuri 先做 v2。
 - 不把 v2 尚未交付的 session sharing 当成可依赖能力。
 - 不默认打开 session warming（会打真实模型请求、烧钱）。
 
 ### 2.3 硬约束
 
-- 钉死托管 CLI 为官方 `@opencode/cli@2.0.12`。HTTP 客户端与 schema 钉在 `@opencode/client@2.0.15` / `@opencode/schema@2.0.15`（prompt / message 路由相对 2.0.12 未改）。正式 CLI 名是 `opencode`（`opencode2` 只是别名）。本机管理进程不使用 Electron extraResource：优先复用全局已装的 v2，没有才把官方平台包装到 `~/.config/openchamber/opencode-cli/<pin>/opencode`。启动时复用已在 4096 上的健康 `opencode serve`，否则自己 `serve`。
+- 钉死托管 CLI 为官方 `@opencode/cli@2.0.12`。HTTP 客户端与 schema 钉在 `@opencode/client@2.0.15` / `@opencode/schema@2.0.15`（prompt / message 路由相对 2.0.12 未改）。正式 CLI 名是 `opencode`（`opencode2` 只是别名）。本机管理进程不使用 Electron extraResource：优先复用全局已装的 v2，没有才把官方平台包装到 `~/.config/yuri/opencode-cli/<pin>/opencode`。启动时复用已在 4096 上的健康 `opencode serve`，否则自己 `serve`。
 - 官方故意打破的只有三块：plugin API、server API、TUI `tui.json` → `cli.json`。配置和 `.opencode/` 尽量兼容，但 **V1 subtask 不会投影进 v2**，要进行中的 tool 会变成 `tool.interrupted`。
 - Web / Electron / VS Code / mobile / Relay 一次换契约。
 - 不新增依赖，除非本方案进入实施并明确批准 `@opencode/client`。
@@ -84,7 +84,7 @@ sequenceDiagram
     participant Host as Host turn-page
     participant OC as OpenCode 1.18.x
 
-    UI->>Host: GET /api/openchamber/sessions/:id/messages?turns=6
+    UI->>Host: GET /api/yuri/sessions/:id/messages?turns=6
     loop 直到回合预算或历史耗尽
         Host->>OC: GET session.messages?limit&before
         OC-->>Host: Message+Part 页
@@ -353,7 +353,7 @@ AGENTS.md 里的不变量继续有效：侧栏 index-driven、bounded snapshot�
 
 ### 8.2 Inbox 替换「本 session 队列」
 
-OpenChamberY 现在的 message-queue 是跨 session、可改序、带附件、有 shadow/cutover。v2 inbox 更窄：本 session、steer/queue、compaction barrier。
+Yuri 现在的 message-queue 是跨 session、可改序、带附件、有 shadow/cutover。v2 inbox 更窄：本 session、steer/queue、compaction barrier。
 
 映射：
 
@@ -363,7 +363,7 @@ OpenChamberY 现在的 message-queue 是跨 session、可改序、带附件、�
 | 发送时会话忙碌 | `delivery=queue` |
 | 插队 | `POST .../inbox/:id/steer` |
 | 取消未执行 | `DELETE .../inbox/:id` |
-| 跨 session / 定时 / Assistant 投递 | 仍用 OpenChamberY 意图队列，**只存指针**，投递后不再 `findMessage` 扫正文 |
+| 跨 session / 定时 / Assistant 投递 | 仍用 Yuri 意图队列，**只存指针**，投递后不再 `findMessage` 扫正文 |
 
 未 promote 的 inbox 项画在输入区上方，不进 transcript。这和官方 GUI 一致。
 
@@ -504,7 +504,7 @@ Assistants 读模型改成「按 binding 去问 OpenCode」。session-index 可�
 
 ### 10.3 要不要等上游
 
-**不等。** [#2810](https://github.com/openchamber/openchamber/issues/2810) 还在提问；[#884](https://github.com/openchamber/openchamber/pull/884) 是 Codex harness，会把正文适配层做得更厚，和本方案相反。
+**不等。** [#2810](https://github.com/yuri/yuri/issues/2810) 还在提问；[#884](https://github.com/yuri/yuri/pull/884) 是 Codex harness，会把正文适配层做得更厚，和本方案相反。
 
 ### 10.4 双栈
 
@@ -573,10 +573,10 @@ Lane 0 就能单独验收。后面每条车道必须带着 6.4 的根测试一�
 
 ### B. 上游
 
-- 仓库：[`openchamber/openchamber`](https://github.com/openchamber/openchamber)
-- 讨论：[#2810 Support for OpenCode v2](https://github.com/openchamber/openchamber/issues/2810)
-- 不要当底稿：[#884 backend-agnostic-harness](https://github.com/openchamber/openchamber/pull/884)
-- 1.x lifecycle 仍在动：[#2917](https://github.com/openchamber/openchamber/pull/2917)（`/global/health`、1.18.18）
+- 仓库：[`yuri/yuri`](https://github.com/yuri/yuri)
+- 讨论：[#2810 Support for OpenCode v2](https://github.com/yuri/yuri/issues/2810)
+- 不要当底稿：[#884 backend-agnostic-harness](https://github.com/yuri/yuri/pull/884)
+- 1.x lifecycle 仍在动：[#2917](https://github.com/yuri/yuri/pull/2917)（`/global/health`、1.18.18）
 
 ### C. 参考
 

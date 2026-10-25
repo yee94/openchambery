@@ -57,7 +57,7 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
   const currentColorVar = color ? (COLOR_MAP[color] ?? null) : null;
 
   return (
-    <div className="oc-settings-section-stack">
+    <div className="yuri-settings-section-stack">
       <SettingsField
         label={t('settings.projects.page.field.projectName')}
         itemId="projects.name"
@@ -79,7 +79,7 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
           providerId={parsedDefaultModel.providerId}
           modelId={parsedDefaultModel.modelId}
           onChange={handleDefaultModelChange}
-          className="oc-settings-inline-value"
+          className="yuri-settings-inline-value"
         />
       </SettingsField>
 

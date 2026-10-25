@@ -63,8 +63,8 @@ describe('desktopRelayApiBaseUrl', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
-        location: { origin: 'null', href: 'openchamber-ui://app/index.html' },
-        __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:57123',
+        location: { origin: 'null', href: 'yuri-ui://app/index.html' },
+        __YURI_LOCAL_ORIGIN__: 'http://127.0.0.1:57123',
       },
     });
     try {

@@ -25,7 +25,7 @@ Do not couple unrelated toggles beneath a synthetic heading.
 ```tsx
 <SettingsGroup label={t(groupLabelKey)}>
   <div role="radiogroup" aria-label={t(groupLabelKey)}>
-    <div className="oc-settings-group-row flex items-center gap-2">
+    <div className="yuri-settings-group-row flex items-center gap-2">
       <Radio checked={selected} onChange={onSelect} ariaLabel={t(labelKey)} />
       <span className={cn('typography-ui-label', selected ? 'text-foreground' : 'text-foreground/50')}>
         {t(labelKey)}

@@ -5,23 +5,23 @@ description: Protect the UI with a password and passkeys before exposing it.
 
 # Security
 
-OpenChamber gives access to your machine and your code, so lock it down before anyone but you can reach it. This page covers the UI password, passkeys, and what to know before exposing OpenChamber to a network.
+Yuri gives access to your machine and your code, so lock it down before anyone but you can reach it. This page covers the UI password, passkeys, and what to know before exposing Yuri to a network.
 
 ## Set a UI password
 
-Start OpenChamber with a password and the browser UI asks for it:
+Start Yuri with a password and the browser UI asks for it:
 
 ```bash
-openchamber --ui-password be-creative-here
+yuri --ui-password be-creative-here
 ```
 
-You can also set it with the `OPENCHAMBER_UI_PASSWORD` environment variable instead of putting it on the command line. After signing in, OpenChamber remembers the device for a while so you're not asked every time.
+You can also set it with the `YURI_UI_PASSWORD` environment variable instead of putting it on the command line. After signing in, Yuri remembers the device for a while so you're not asked every time.
 
 Always set a password if the instance is reachable by anyone else — especially over the public internet or a reverse proxy.
 
 ## Passkeys
 
-Once a password is set, you can add passkeys (Face ID, Touch ID, a security key) for quicker sign-in. Add them at **Settings → OpenChamber → Passkeys**.
+Once a password is set, you can add passkeys (Face ID, Touch ID, a security key) for quicker sign-in. Add them at **Settings → Yuri → Passkeys**.
 
 Passkeys are tied to the current password. If you change or remove the password, saved passkeys are cleared and you'll add them again.
 
@@ -31,13 +31,13 @@ Devices paired through [Connect a Device](/connect-devices/) authenticate with t
 
 ## Before you expose it
 
-- By default OpenChamber only listens on your own machine (`127.0.0.1`). It takes a deliberate change to listen more widely, and you should set a password first.
+- By default Yuri only listens on your own machine (`127.0.0.1`). It takes a deliberate change to listen more widely, and you should set a password first.
 - For your own devices, prefer [pairing](/connect-devices/) with the [Private Relay](/private-relay/) — nothing is exposed publicly at all.
 - If you need a public URL, prefer a private network (like a VPN) or your own [reverse proxy](/reverse-proxy/) over opening a port to the internet.
-- If you put OpenChamber behind your own HTTPS server, see [Reverse Proxy](/reverse-proxy/).
+- If you put Yuri behind your own HTTPS server, see [Reverse Proxy](/reverse-proxy/).
 
 ## Related
 
 - [Connect a Device](/connect-devices/) — one-time pairing and per-device tokens
 - [Private Relay](/private-relay/) — end-to-end encrypted access from anywhere
-- [Reverse Proxy](/reverse-proxy/) — run OpenChamber behind your own server
+- [Reverse Proxy](/reverse-proxy/) — run Yuri behind your own server

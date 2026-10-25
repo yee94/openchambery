@@ -165,7 +165,7 @@ export const applyDeepLinkIntent = (intent: DeepLinkIntent): void => {
   flush();
 };
 
-/** Convenience: parse a raw `openchamber://…` URL and apply it. No-op for unrecognised URLs. */
+/** Convenience: parse a raw `yuri://…` URL and apply it. No-op for unrecognised URLs. */
 export const applyDeepLinkUrl = (raw: string | null | undefined): void => {
   const intent = parseDeepLink(raw);
   if (intent) {

@@ -28,7 +28,7 @@ test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-tran
     workDirs.push(work);
     await build({
         configFile: false, logLevel: 'error', mode: 'production', esbuild: { jsxDev: false }, root: join(here, '../../..'), publicDir: false,
-        resolve: { alias: { '@': join(here, '../..'), '@openchamber/ui': join(here, '../..') } },
+        resolve: { alias: { '@': join(here, '../..'), '@yuri/ui': join(here, '../..') } },
         worker: { format: 'es' },
         build: {
             outDir: work, emptyOutDir: false, minify: false,
@@ -38,7 +38,7 @@ test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-tran
     const html = join(work, 'index.html');
     const css = await compileProductionCssAsync(join(here, '../..'));
     writeFileSync(html, `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\nhtml,body,#root{margin:0;height:100%;overflow:hidden}</style></head><body><div id="root"></div><script>
-window.process={env:{NODE_ENV:'production'}};window.global=window;window.__OPENCHAMBER_SURFACE__='${desktop ? 'web' : 'mobile'}';window.errors=[];window.resizeWarnings=0;
+window.process={env:{NODE_ENV:'production'}};window.global=window;window.__YURI_SURFACE__='${desktop ? 'web' : 'mobile'}';window.errors=[];window.resizeWarnings=0;
 window.addEventListener('error',e=>{
   if(e.message==='ResizeObserver loop completed with undelivered notifications.')window.resizeWarnings++;
   else window.errors.push(e.message);
@@ -232,7 +232,7 @@ window.addEventListener('error',e=>{
                 '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-ios18.0-simulator`,
                 '-o', join(app, 'HistoryScroll')]);
             writeFileSync(join(app, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>org.openchamber.history-regression</string>
+<key>CFBundleIdentifier</key><string>org.yuri.history-regression</string>
 <key>CFBundleExecutable</key><string>HistoryScroll</string><key>CFBundleName</key><string>HistoryScroll</string>
 <key>CFBundlePackageType</key><string>APPL</string><key>CFBundleVersion</key><string>1</string>
 <key>CFBundleShortVersionString</key><string>1.0</string><key>UILaunchScreen</key><dict/>
@@ -242,7 +242,7 @@ window.addEventListener('error',e=>{
             await exec('xcrun', ['simctl', 'install', 'booted', app]);
             const run = String(Date.now());
             await exec('xcrun', ['simctl', 'launch', '--terminate-running-process', 'booted',
-                'org.openchamber.history-regression', `http://127.0.0.1:${address.port}/?native=1&run=${run}&scenario=${scenario}`]);
+                'org.yuri.history-regression', `http://127.0.0.1:${address.port}/?native=1&run=${run}&scenario=${scenario}`]);
             const deadline = Date.now() + 15000;
             while (!samples.some((item) => item.run === run && item.prepared && item.loads === 0 && item.top > 0 && (fastEntry || item.top < 1200))) {
                 if (Date.now() > deadline) throw new Error('iOS fixture did not reach the history read position');
@@ -302,8 +302,8 @@ window.addEventListener('error',e=>{
     } finally {
         await browser.close();
         if (process.env.IOS_HISTORY_SIM === '1') {
-            await exec('xcrun', ['simctl', 'terminate', 'booted', 'org.openchamber.history-regression']).catch(() => undefined);
-            await exec('xcrun', ['simctl', 'uninstall', 'booted', 'org.openchamber.history-regression']);
+            await exec('xcrun', ['simctl', 'terminate', 'booted', 'org.yuri.history-regression']).catch(() => undefined);
+            await exec('xcrun', ['simctl', 'uninstall', 'booted', 'org.yuri.history-regression']);
         }
         await new Promise<void>((resolve) => server.close(() => resolve()));
     }

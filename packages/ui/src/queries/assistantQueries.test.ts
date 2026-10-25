@@ -30,10 +30,10 @@ mock.module('@/lib/runtime-fetch', () => ({
       return new Response(JSON.stringify({
         messages: contactSendBehavior === 'timeout'
           ? [{
-            messageID: 'oc_contact_1',
+            messageID: 'yuri_contact_1',
             assistantID: 'asst_1',
             role: 'user',
-            turnID: 'oc_contact_1',
+            turnID: 'yuri_contact_1',
             bubbleIndex: 0,
             createdAt: 1,
             ordinal: 1,
@@ -64,7 +64,7 @@ mock.module('@/lib/runtime-fetch', () => ({
         }
         return new Response(JSON.stringify({
           admitted: true,
-          messageID: 'oc_contact_1',
+          messageID: 'yuri_contact_1',
           binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
           revision: 7,
         }), { status: 202 });
@@ -84,8 +84,8 @@ mock.module('@/lib/queryRuntime', () => ({
   },
 }));
 
-mock.module('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: () => () => undefined,
+mock.module('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: () => () => undefined,
 }));
 
 const {
@@ -145,7 +145,7 @@ describe('Assistant history and ensure startup gate', () => {
     await flight;
     expect(page).toEqual({ entries: [], complete: true, nextCursor: null, partial: false });
     expect(fetchCalls).toHaveLength(1);
-    expect(fetchCalls[0]).toContain('/api/openchamber/assistants/assistant_1/messages?');
+    expect(fetchCalls[0]).toContain('/api/yuri/assistants/assistant_1/messages?');
   });
 
   test('ensureAssistantSession waits for the barrier and rejects when runtime goes stale', async () => {
@@ -180,7 +180,7 @@ describe('Assistant history and ensure startup gate', () => {
     releaseBarrier();
     await flight;
     expect(binding).toEqual({ sessionID: 'ses_1', directory: '/workspace', sessionGeneration: 1 });
-    expect(fetchCalls).toEqual(['/api/openchamber/assistants/assistant_1/session/ensure']);
+    expect(fetchCalls).toEqual(['/api/yuri/assistants/assistant_1/session/ensure']);
   });
 
   test('history queryFn rejects runtime_stale after barrier when generation changes', async () => {
@@ -332,7 +332,7 @@ describe('Assistant query contract', () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
     const directFetch = source.slice(source.indexOf('export const fetchAssistantSnapshot'), source.indexOf('export const assistantCapabilityQueryOptions'));
     expect(directFetch).toContain('signal: AbortSignal');
-    expect(directFetch).toContain("requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal })");
+    expect(directFetch).toContain("requestJSON<unknown>('/api/yuri/assistants/snapshot', { signal })");
     expect(directFetch).toContain('parseAssistantSnapshotDTO');
     expect(directFetch).not.toContain('queryClient');
     expect(directFetch).not.toContain('retry');
@@ -389,10 +389,10 @@ describe('contact send abort', () => {
 
   test('contact POST accepts 202 and carries the admission AbortSignal', async () => {
     const { AssistantAPIError } = await import('./assistantDTO');
-    const admitted = await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
+    const admitted = await sendAssistantContactMessage('asst_1', 'yuri_contact_1', { text: 'hi' });
     expect(admitted).toEqual({
       admitted: true,
-      messageID: 'oc_contact_1',
+      messageID: 'yuri_contact_1',
       binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
       revision: 7,
     });
@@ -401,7 +401,7 @@ describe('contact send abort', () => {
 
     contactSendBehavior = 'timeout';
     try {
-      await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
+      await sendAssistantContactMessage('asst_1', 'yuri_contact_1', { text: 'hi' });
       throw new Error('expected admission_timeout');
     } catch (error) {
       expect(error instanceof AssistantAPIError).toBe(true);
@@ -409,13 +409,13 @@ describe('contact send abort', () => {
       expect(error instanceof AssistantAPIError ? error.status : 0).toBe(408);
     }
     // Uncertain admission re-checks the original messageID instead of minting a new send.
-    const confirmed = await confirmContactAdmissionByMessageID('asst_1', 'oc_contact_1');
-    expect(confirmed).toEqual({ admitted: true, messageID: 'oc_contact_1', revision: 1 });
-    expect(fetchCalls.some((path) => path.includes('messageID=oc_contact_1'))).toBe(true);
+    const confirmed = await confirmContactAdmissionByMessageID('asst_1', 'yuri_contact_1');
+    expect(confirmed).toEqual({ admitted: true, messageID: 'yuri_contact_1', revision: 1 });
+    expect(fetchCalls.some((path) => path.includes('messageID=yuri_contact_1'))).toBe(true);
 
     contactSendBehavior = 'upstream';
     try {
-      await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
+      await sendAssistantContactMessage('asst_1', 'yuri_contact_1', { text: 'hi' });
       throw new Error('expected upstream_error');
     } catch (error) {
       expect(error instanceof AssistantAPIError).toBe(true);
@@ -435,7 +435,7 @@ describe('contact send abort', () => {
       size: 42,
       filename: 'shot.png',
     };
-    await sendAssistantContactMessage('asst_1', 'oc_contact_desc', {
+    await sendAssistantContactMessage('asst_1', 'yuri_contact_desc', {
       parts: [
         { type: 'text', text: 'see this' },
         descriptor,
@@ -448,7 +448,7 @@ describe('contact send abort', () => {
       messageID: string;
       parts: Array<Record<string, unknown>>;
     } : null;
-    expect(body?.messageID).toBe('oc_contact_desc');
+    expect(body?.messageID).toBe('yuri_contact_desc');
     expect(body?.parts?.[0]).toEqual({ type: 'text', text: 'see this' });
     expect(body?.parts?.[1]).toEqual({
       type: 'file',

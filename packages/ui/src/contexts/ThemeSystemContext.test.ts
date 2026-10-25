@@ -28,7 +28,7 @@ afterAll(() => {
 
 describe('ThemeSystemProvider embedded bootstrap', () => {
   test('uses parent effective variant for embedded system theme before iframe matchMedia', () => {
-    installWindow('?ocPanel=session-chat&themeMode=system&themeVariant=dark', false);
+    installWindow('?yuriPanel=session-chat&themeMode=system&themeVariant=dark', false);
 
     expect(getInitialSystemPreference()).toBe(true);
   });

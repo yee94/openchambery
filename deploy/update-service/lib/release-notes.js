@@ -15,7 +15,7 @@ function parseVersionForComparison(value) {
 }
 
 /**
- * Prefer OpenChamber release ordering (`X.Y.Z` / `X.Y.Z-beta.N`) so beta→beta
+ * Prefer Yuri release ordering (`X.Y.Z` / `X.Y.Z-beta.N`) so beta→beta
  * OTA ranges work; fall back to core+prerelease-flag comparison for other tags.
  */
 function compareVersions(left, right) {

@@ -52,7 +52,7 @@ const DESKTOP_MENU_FALLBACK_WIDTH_PX = 280;
 const visibleComposerRect = (): { left: number; top: number; width: number; height: number } | null => {
   if (typeof document === 'undefined') return null;
   let best: { left: number; top: number; width: number; height: number } | null = null;
-  for (const element of document.querySelectorAll<HTMLElement>('.oc-mobile-composer')) {
+  for (const element of document.querySelectorAll<HTMLElement>('.yuri-mobile-composer')) {
     const style = window.getComputedStyle(element);
     if (style.display === 'none' || style.visibility === 'hidden') continue;
     const rect = element.getBoundingClientRect();
@@ -73,7 +73,7 @@ const readTextSelectionBarFrame = (lastHeightPx: number): TextSelectionBarFrame 
     viewportWidth: window.innerWidth,
     viewportHeight: window.innerHeight,
     keyboardOverlapPx: keyboardOverlapPx({
-      cssInsetPx: parseCssPx(root.style.getPropertyValue('--oc-keyboard-inset')),
+      cssInsetPx: parseCssPx(root.style.getPropertyValue('--yuri-keyboard-inset')),
       innerHeight: window.innerHeight,
       visualHeight: visualViewport?.height,
       visualOffsetTop: visualViewport?.offsetTop,
@@ -615,15 +615,15 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     visualViewport?.addEventListener('resize', startFollow);
     visualViewport?.addEventListener('scroll', startFollow);
     window.addEventListener('resize', startFollow);
-    window.addEventListener('oc:keyboard-anim', startFollow);
-    window.addEventListener('oc:keyboard-settled', startFollow);
+    window.addEventListener('yuri:keyboard-anim', startFollow);
+    window.addEventListener('yuri:keyboard-settled', startFollow);
     return () => {
       window.cancelAnimationFrame(followFrame);
       visualViewport?.removeEventListener('resize', startFollow);
       visualViewport?.removeEventListener('scroll', startFollow);
       window.removeEventListener('resize', startFollow);
-      window.removeEventListener('oc:keyboard-anim', startFollow);
-      window.removeEventListener('oc:keyboard-settled', startFollow);
+      window.removeEventListener('yuri:keyboard-anim', startFollow);
+      window.removeEventListener('yuri:keyboard-settled', startFollow);
       releaseCover();
     };
   }, [isMobile, position.show]);
@@ -725,7 +725,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
           top: frame.top,
           width: frame.width,
           height: frame.height,
-          paddingBottom: 'max(0.75rem, var(--oc-safe-area-bottom-visual, env(safe-area-inset-bottom, 0px)))',
+          paddingBottom: 'max(0.75rem, var(--yuri-safe-area-bottom-visual, env(safe-area-inset-bottom, 0px)))',
         }}
         onPointerDown={(event) => {
           event.preventDefault();

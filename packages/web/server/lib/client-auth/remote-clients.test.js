@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { createRemoteClientAuthRuntime } from './remote-clients.js';
 
 const createRuntime = async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-remote-clients-test-'));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-remote-clients-test-'));
   const runtime = createRemoteClientAuthRuntime({
     fsPromises: fs,
     path,
@@ -17,6 +17,24 @@ const createRuntime = async () => {
 };
 
 describe('remote client auth runtime', () => {
+  it('authenticates migrated legacy token hashes and still enforces revocation', async () => {
+    const { dir, runtime } = await createRuntime();
+    try {
+      const created = await runtime.createClient({ label: 'Migrated device' });
+      const token = `oc_client_${crypto.randomBytes(32).toString('base64url')}`;
+      const storePath = path.join(dir, 'remote-clients.json');
+      const store = JSON.parse(await fs.readFile(storePath, 'utf8'));
+      store.clients[0].tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      await fs.writeFile(storePath, JSON.stringify(store));
+      expect((await runtime.authenticateBearerToken(token))?.clientId).toBe(created.client.id);
+      expect(await runtime.authenticateBearerToken(`${token}tampered`)).toBe(null);
+      await runtime.revokeClient(created.client.id);
+      expect(await runtime.authenticateBearerToken(token)).toBe(null);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists renamed labels without changing credentials, metadata or revocation', async () => {
     const { dir, runtime } = await createRuntime();
     try {
@@ -62,7 +80,7 @@ describe('remote client auth runtime', () => {
     const { dir, runtime } = await createRuntime();
     try {
       const created = await runtime.createClient({ label: 'Laptop' });
-      expect(created.token.startsWith('oc_client_')).toBe(true);
+      expect(created.token.startsWith('yuri_client_')).toBe(true);
       expect(created.client.label).toBe('Laptop');
 
       const listed = await runtime.listClients();

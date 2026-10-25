@@ -92,13 +92,13 @@ export const MobileOverlayPanel: React.FC<MobileOverlayPanelProps> = ({
   React.useLayoutEffect(() => {
     if (!open) return;
     if (overlaySignalDepth === 0) {
-      window.dispatchEvent(new Event('oc:mobile-overlay-opened'));
+      window.dispatchEvent(new Event('yuri:mobile-overlay-opened'));
     }
     overlaySignalDepth += 1;
     return () => {
       overlaySignalDepth = Math.max(0, overlaySignalDepth - 1);
       if (overlaySignalDepth === 0) {
-        window.dispatchEvent(new Event('oc:mobile-overlay-closed'));
+        window.dispatchEvent(new Event('yuri:mobile-overlay-closed'));
       }
     };
   }, [open]);
@@ -142,8 +142,8 @@ export const MobileOverlayPanel: React.FC<MobileOverlayPanelProps> = ({
   const content = (
     <div
       className={cn(
-        'oc-keyboard-inset-surface fixed inset-0 z-[60] flex flex-col bg-[rgb(0_0_0_/_0.45)] transition-opacity duration-200 ease-out',
-        !enterSettled && 'oc-keyboard-inset-snap',
+        'yuri-keyboard-inset-surface fixed inset-0 z-[60] flex flex-col bg-[rgb(0_0_0_/_0.45)] transition-opacity duration-200 ease-out',
+        !enterSettled && 'yuri-keyboard-inset-snap',
         entered ? 'opacity-100' : 'opacity-0',
       )}
       role="dialog"
@@ -157,7 +157,7 @@ export const MobileOverlayPanel: React.FC<MobileOverlayPanelProps> = ({
     >
         <div
           className={cn(
-            'mt-auto flex max-h-[calc(100dvh-0.75rem)] min-h-0 w-full flex-col rounded-t-xl border-x border-t border-border/50 bg-background pb-[max(0.5rem,var(--oc-app-bottom-safe,0px),var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))] shadow-none pwa-overlay-panel',
+            'mt-auto flex max-h-[calc(100dvh-0.75rem)] min-h-0 w-full flex-col rounded-t-xl border-x border-t border-border/50 bg-background pb-[max(0.5rem,var(--yuri-app-bottom-safe,0px),var(--yuri-safe-area-bottom,env(safe-area-inset-bottom,0px)))] shadow-none pwa-overlay-panel',
             'mx-auto max-w-lg',
             className
           )}

@@ -21,7 +21,7 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, 'ScheduledTasksDialog.tsx'), 'utf8'),
       readFile(join(directory, '../../lib/scheduledTasksApi.ts'), 'utf8'),
     ]);
-    expect(apiContent).toContain("runtimeFetch('/api/openchamber/scheduled-tasks', { signal })");
+    expect(apiContent).toContain("runtimeFetch('/api/yuri/scheduled-tasks', { signal })");
     expect(apiContent).toContain('export type GlobalScheduledTasksResponse');
     expect(content).toContain('const replaceProjectTasks =');
     expect(content).toContain('current?.tasks.filter((entry) => entry.projectId !== projectId)');
@@ -126,7 +126,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).toContain('hover:bg-interactive-hover');
     expect(content).toContain('data-mobile-press-surface="soft"');
     expect(content).toContain('data-mobile-press-surface-trigger');
-    expect(content).toContain('oc-mobile-scheduled-task-row');
+    expect(content).toContain('yuri-mobile-scheduled-task-row');
     expect(content).toContain('onClick={() => handleOpenRunSession(run)}');
   });
 
@@ -192,14 +192,14 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).toContain('layoutId="scheduled-task-filter-pill"');
     // View switcher + filters share the mobile segmented track/item + selected pill.
     expect(workspaceContent).toContain('layoutId="scheduled-workspace-view-pill"');
-    expect(workspaceContent).toContain("? 'oc-mobile-floating-surface oc-mobile-segmented-track'");
-    expect(workspaceContent).toContain("? 'oc-mobile-segmented-item'");
-    expect(workspaceContent).toContain("? 'oc-mobile-segmented-group'");
-    expect(workspaceContent).toContain('oc-mobile-segmented-action');
-    expect(workspaceContent).toContain("'oc-segmented-selected-pill absolute inset-0'");
-    expect(workspaceContent).toContain("? 'oc-mobile-floating-surface oc-mobile-segmented-track oc-mobile-scheduled-controls'");
+    expect(workspaceContent).toContain("? 'yuri-mobile-floating-surface yuri-mobile-segmented-track'");
+    expect(workspaceContent).toContain("? 'yuri-mobile-segmented-item'");
+    expect(workspaceContent).toContain("? 'yuri-mobile-segmented-group'");
+    expect(workspaceContent).toContain('yuri-mobile-segmented-action');
+    expect(workspaceContent).toContain("'yuri-segmented-selected-pill absolute inset-0'");
+    expect(workspaceContent).toContain("? 'yuri-mobile-floating-surface yuri-mobile-segmented-track yuri-mobile-scheduled-controls'");
     expect(workspaceContent).toContain("!isMobileTab ? (");
-    expect(workspaceContent).toContain('oc-mobile-project-trigger oc-mobile-scheduled-task-row');
+    expect(workspaceContent).toContain('yuri-mobile-project-trigger yuri-mobile-scheduled-task-row');
     expect(workspaceContent).toContain("formatSchedule(task, t, !isMobileTab)");
     expect(workspaceContent).toContain('<AnimatePresence initial={false} mode="popLayout">');
     expect(workspaceContent).toContain('key="empty"');
@@ -216,11 +216,11 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).toContain('MOBILE_PANEL_CONTROL_CLASS');
     expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-0'");
     // mobile-tab list is in-flow under the root tabpanel scroller (no nested safe-area pad).
-    expect(workspaceContent).toContain("? 'flex-none overflow-visible pt-[var(--oc-mobile-page-gap)]'");
+    expect(workspaceContent).toContain("? 'flex-none overflow-visible pt-[var(--yuri-mobile-page-gap)]'");
     expect(workspaceContent).not.toContain("overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5");
     // History mobile-tab: tablist has no mb-3 so only page-gap separates tab→list.
     expect(workspaceContent).toContain("(workspaceView === 'tasks' || historyTaskFilter || !isMobileTab) && 'mb-3'");
-    expect(editorContent).toContain('oc-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pt-4');
+    expect(editorContent).toContain('yuri-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[var(--yuri-mobile-page-inline-inset)] pt-4');
     expect(editorContent).not.toContain('<div className="px-3 pb-5 pt-4">');
   });
 
@@ -234,7 +234,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(overflowMenu).not.toContain("key: 'schedule'");
     expect(content).toContain('|| scheduledTasksDialogOpen');
     expect(content).toContain('if (scheduledTasksDialogOpen) {');
-    expect(content).toContain("window.dispatchEvent(new Event('oc:scheduled-tasks-close-request'));");
+    expect(content).toContain("window.dispatchEvent(new Event('yuri:scheduled-tasks-close-request'));");
     expect(content).toContain('<ScheduledTasksDialog />');
     // The phone tab hosts the workspace as a root page.
     expect(phoneShellContent).toContain('scheduled: <MobileScheduledTab');
@@ -256,26 +256,26 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).toContain('handleCancelEditor(false)');
     // Global close event is exclusive to mobile-panel (dialog); tab uses registerEditorBackHandler.
     expect(workspaceContent).toContain("if (presentation !== 'mobile-panel' || !open) return");
-    expect(workspaceContent).toContain("window.addEventListener('oc:scheduled-tasks-close-request', handleCloseRequest)");
+    expect(workspaceContent).toContain("window.addEventListener('yuri:scheduled-tasks-close-request', handleCloseRequest)");
     expect(workspaceContent).toContain('registerEditorBackHandler?: (handler: (() => boolean) | null) => void');
     expect(workspaceContent).toContain("onEditorActiveChange?.(editorMode !== 'closed')");
     expect(workspaceContent).toContain('underlayRef: mobileNavigationUnderlayRef');
     // Editor push stays in-tab (below the web dock); list underlay is in-flow so tabpanel owns scroll.
-    expect(workspaceContent).toContain("'oc-mobile-scheduled-editor-overlay flex w-full min-w-0 max-w-full flex-col overflow-hidden bg-background [contain:layout_paint]'");
-    expect(workspaceContent).toContain("? 'flex w-full min-w-0 flex-col gap-[var(--oc-mobile-page-gap)]'");
+    expect(workspaceContent).toContain("'yuri-mobile-scheduled-editor-overlay flex w-full min-w-0 max-w-full flex-col overflow-hidden bg-background [contain:layout_paint]'");
+    expect(workspaceContent).toContain("? 'flex w-full min-w-0 flex-col gap-[var(--yuri-mobile-page-gap)]'");
     expect(workspaceContent).not.toContain('fixed inset-0 z-20 flex h-[100dvh]');
     expect(workspaceContent).not.toContain("isMobileTab\n            ? 'fixed inset-0 z-20");
     expect(workspaceContent).toContain("isMobileTab ? 'flex-none overflow-visible' : 'flex-1 overflow-hidden'");
     expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-0'");
     expect(workspaceContent).toContain("isMobilePanel && !isMobileTab && editorMode !== 'closed' ? 'hidden' : 'flex'");
-    expect(workspaceContent).toContain("? 'oc-mobile-floating-surface oc-mobile-project-shell rounded-[var(--oc-mobile-surface-radius)]'");
+    expect(workspaceContent).toContain("? 'yuri-mobile-floating-surface yuri-mobile-project-shell rounded-[var(--yuri-mobile-surface-radius)]'");
     expect(workspaceContent).not.toContain('mobileTaskGroupStarts');
     expect(mobileAppContent).toContain('onEditorActiveChange={onEditorActiveChange}');
     expect(phoneShellContent).toContain('<MobileScheduledTab showHeader={false}>');
     expect(overlayContent).toContain('containedBody?: boolean');
     expect(overlayContent).toContain("'flex min-h-0 flex-1 flex-col overflow-hidden'");
     expect(overlayContent).toContain('openOverlayStack[openOverlayStack.length - 1] === overlayID');
-    expect(mobileAppContent).toContain("window.dispatchEvent(new Event('oc:scheduled-tasks-close-request'));");
+    expect(mobileAppContent).toContain("window.dispatchEvent(new Event('yuri:scheduled-tasks-close-request'));");
   });
 
   test('keeps the scheduled root tab and web dock interactive under the in-tab editor', async () => {
@@ -294,8 +294,8 @@ describe('ScheduledTasksDialog queries', () => {
     expect(tabRootContent).toContain('data-mobile-navigation-dock-underlay="true"');
     expect(tabRootContent).toContain('inert={topSecondaryPage || nativeTabBarAdopted ? true : undefined}');
     expect(tabRootContent).not.toContain('inert={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}');
-    expect(mobileStyles).toContain('.oc-mobile-scheduled-editor-overlay');
-    expect(mobileStyles).toContain(':root:not(.oc-native-ios-tab-bar) .oc-mobile-scheduled-editor-body');
+    expect(mobileStyles).toContain('.yuri-mobile-scheduled-editor-overlay');
+    expect(mobileStyles).toContain(':root:not(.yuri-native-ios-tab-bar) .yuri-mobile-scheduled-editor-body');
     expect(tabRootContent).toContain('<MobileTabBar activeTab={selectedTab}');
     expect(tabRootContent).not.toContain(') : showTabBar ? (');
     expect(tabRootContent).toContain('data-mobile-navigation-underlay="true"');
@@ -304,20 +304,20 @@ describe('ScheduledTasksDialog queries', () => {
     expect(scheduledTabContent).not.toContain('scrollsWithPage={showHeader}');
     // Root tabpanel is the sole scroller for scheduled content (matches Projects).
     expect(tabRootContent).toContain('scrollbar-none h-full min-h-0 flex-1 overflow-y-auto');
-    expect(scheduledTabContent).toContain("surfaceClassName={cn('oc-mobile-scheduled-content'");
+    expect(scheduledTabContent).toContain("surfaceClassName={cn('yuri-mobile-scheduled-content'");
     const mobileTabEditorContent = editorContent
       .split("if (presentation === 'mobile-tab')")[1]
       ?.split('if (isMobile)')[0] ?? '';
     expect(mobileTabEditorContent).toContain('<MobileDetailNavigation\n          sticky');
     expect(mobileTabEditorContent).toContain('<section className="flex h-full min-h-0 flex-col bg-background"');
-    expect(mobileTabEditorContent).toContain('oc-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden');
+    expect(mobileTabEditorContent).toContain('yuri-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden');
     expect(mobileTabEditorContent).not.toContain('<MobileFloatingBottomBar');
     expect(mobileTabEditorContent).toContain('<Switch');
     expect(mobileTabEditorContent).toContain('checked={draft.enabled}');
     expect(mobileTabEditorContent.indexOf('key="save"')).toBeLessThan(mobileTabEditorContent.indexOf('key="more"'));
     expect(mobileTabEditorContent).not.toContain('<ScrollShadow');
     expect(mobileSurfaceContent).toContain("variant?: 'navigation' | 'actions'");
-    expect(mobileSurfaceContent).toContain("'oc-mobile-floating-bottom-bar'");
+    expect(mobileSurfaceContent).toContain("'yuri-mobile-floating-bottom-bar'");
     expect(mobileTabBarContent).toContain('<MobileFloatingBottomBar');
     expect(mobileTabBarContent).toContain('variant="navigation"');
   });
@@ -355,7 +355,7 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, '../../styles/mobile.css'), 'utf8'),
       readFile(join(directory, '../layout/GlobalSearchButton.tsx'), 'utf8'),
     ]);
-    expect(navigationContent).toContain('oc-mobile-detail-navigation-content');
+    expect(navigationContent).toContain('yuri-mobile-detail-navigation-content');
     expect(navigationContent).toContain('items-center gap-1 px-4');
     expect(navigationContent).toContain('actions?: readonly MobileDetailNavigationAction[]');
     expect(navigationContent).toContain('trailing?: ReactNode');
@@ -373,72 +373,72 @@ describe('ScheduledTasksDialog queries', () => {
     expect(projectsHomeContent).not.toContain('onClick={() => {}}');
     expect(buttonContent).toContain('mobileGlass:');
     expect(buttonContent).toContain('mobileIcon: "size-10 min-h-10 min-w-10 rounded-full"');
-    expect(mobileStyles).toContain('.oc-mobile-floating-action');
-    expect(mobileStyles).toContain('--oc-mobile-glass-fill: rgb(255 255 255 / 0.68)');
-    expect(mobileStyles).toContain('--oc-mobile-glass-blur: 20px');
-    expect(mobileStyles).toContain('--oc-mobile-glass-saturate: 1.25');
+    expect(mobileStyles).toContain('.yuri-mobile-floating-action');
+    expect(mobileStyles).toContain('--yuri-mobile-glass-fill: rgb(255 255 255 / 0.68)');
+    expect(mobileStyles).toContain('--yuri-mobile-glass-blur: 20px');
+    expect(mobileStyles).toContain('--yuri-mobile-glass-saturate: 1.25');
     expect(mobileStyles).toContain('0 0 12px rgb(0 0 0 / 0.06)');
     expect(mobileStyles).toContain('0 8px 20px -6px rgb(0 0 0 / 0.12)');
-    expect(mobileStyles).toContain('inset 0 1px 0 var(--oc-mobile-glass-highlight)');
-    expect(mobileStyles).not.toContain('--oc-mobile-glass-caustic');
-    expect(mobileStyles).not.toContain('--oc-mobile-glass-edge');
-    expect(mobileStyles).not.toContain('--oc-mobile-glass-border');
-    expect(mobileStyles).toContain('background: var(--oc-mobile-glass-fill)');
-    expect(mobileStyles).toContain('box-shadow: var(--oc-mobile-glass-shadow)');
-    expect(mobileStyles).toContain('blur(var(--oc-mobile-glass-blur))');
-    expect(mobileStyles).toContain('saturate(var(--oc-mobile-glass-saturate))');
-    expect(mobileStyles).not.toContain('.oc-mobile-floating-action::before');
-    expect(mobileStyles).toContain('.dark .oc-mobile-floating-action');
-    expect(mobileStyles).toContain('--oc-mobile-border: color-mix(');
+    expect(mobileStyles).toContain('inset 0 1px 0 var(--yuri-mobile-glass-highlight)');
+    expect(mobileStyles).not.toContain('--yuri-mobile-glass-caustic');
+    expect(mobileStyles).not.toContain('--yuri-mobile-glass-edge');
+    expect(mobileStyles).not.toContain('--yuri-mobile-glass-border');
+    expect(mobileStyles).toContain('background: var(--yuri-mobile-glass-fill)');
+    expect(mobileStyles).toContain('box-shadow: var(--yuri-mobile-glass-shadow)');
+    expect(mobileStyles).toContain('blur(var(--yuri-mobile-glass-blur))');
+    expect(mobileStyles).toContain('saturate(var(--yuri-mobile-glass-saturate))');
+    expect(mobileStyles).not.toContain('.yuri-mobile-floating-action::before');
+    expect(mobileStyles).toContain('.dark .yuri-mobile-floating-action');
+    expect(mobileStyles).toContain('--yuri-mobile-border: color-mix(');
     expect(navigationContent).toContain('max-w-72');
-    expect(mobileStyles).toContain('--oc-mobile-detail-action-edge-inset: 1rem');
+    expect(mobileStyles).toContain('--yuri-mobile-detail-action-edge-inset: 1rem');
     expect(navigationContent).not.toContain('gap-1 px-2');
-    expect(mobileStyles).toContain('var(--oc-mobile-detail-action-edge-inset, 1rem)');
-    expect(mobileStyles).toContain('var(--oc-safe-area-left, 0px)');
-    expect(mobileStyles).toContain('var(--oc-safe-area-right, 0px)');
-    expect(mobileStyles).not.toContain('.oc-mobile-tab-page-flow .oc-mobile-detail-navigation');
+    expect(mobileStyles).toContain('var(--yuri-mobile-detail-action-edge-inset, 1rem)');
+    expect(mobileStyles).toContain('var(--yuri-safe-area-left, 0px)');
+    expect(mobileStyles).toContain('var(--yuri-safe-area-right, 0px)');
+    expect(mobileStyles).not.toContain('.yuri-mobile-tab-page-flow .yuri-mobile-detail-navigation');
     expect(navigationContent).not.toContain('margin-inline');
-    expect(mobileStyles).not.toContain('--oc-mobile-detail-navigation-inline-inset');
-    expect(rootHeaderContent).toContain('oc-mobile-collapsing-header');
-    expect(rootHeaderContent).toContain('oc-mobile-collapsing-header-inner');
-    expect(rootHeaderContent).toContain('oc-mobile-collapsing-header-spacer');
-    expect(rootHeaderContent).toContain('oc-mobile-collapsing-header-title-block');
-    expect(rootHeaderContent).toContain("header.style.setProperty('--oc-mobile-title-collapse'");
+    expect(mobileStyles).not.toContain('--yuri-mobile-detail-navigation-inline-inset');
+    expect(rootHeaderContent).toContain('yuri-mobile-collapsing-header');
+    expect(rootHeaderContent).toContain('yuri-mobile-collapsing-header-inner');
+    expect(rootHeaderContent).toContain('yuri-mobile-collapsing-header-spacer');
+    expect(rootHeaderContent).toContain('yuri-mobile-collapsing-header-title-block');
+    expect(rootHeaderContent).toContain("header.style.setProperty('--yuri-mobile-title-collapse'");
     expect(rootHeaderContent).toContain("addEventListener('scroll', scheduleCollapseProgress, { passive: true })");
     expect(rootHeaderContent).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
-    expect(mobileStyles).toContain('.oc-mobile-collapsing-header::after');
-    expect(mobileStyles).toContain('--oc-mobile-header-fade');
+    expect(mobileStyles).toContain('.yuri-mobile-collapsing-header::after');
+    expect(mobileStyles).toContain('--yuri-mobile-header-fade');
     expect(mobileStyles).toContain('var(--surface-background) 85%');
-    expect(mobileStyles).toContain('opacity: var(--oc-mobile-title-collapse)');
+    expect(mobileStyles).toContain('opacity: var(--yuri-mobile-title-collapse)');
     // Bounce-free: layout box is constant; collapse only drives transform/opacity.
     // Compact end is 1.25rem (scale 0.625), not detail-nav 0.9375rem — balances 40px actions.
     expect(mobileStyles).toContain('transform-origin: left center');
-    expect(mobileStyles).toContain('0.375 * var(--oc-mobile-title-collapse, 0)');
-    expect(mobileStyles).toContain('--oc-mobile-collapsing-title-compact-size: 1.25rem');
-    expect(mobileStyles).toContain('--oc-mobile-collapsing-expand-shift: 0.625rem');
-    expect(mobileStyles).toContain('.oc-mobile-collapsing-header-spacer');
-    expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) + 0.75rem');
-    expect(mobileStyles).toContain('--oc-mobile-collapsing-action-size: 2.5rem');
-    expect(mobileStyles).toContain('[role="tabpanel"]:has(.oc-mobile-collapsing-header)');
-    expect(mobileStyles).toContain('.oc-mobile-settings-root-surface:has(.oc-mobile-collapsing-header)');
-    expect(settingsContent).not.toContain('oc-mobile-settings-detail-navigation');
-    expect(settingsContent).not.toContain('oc-mobile-settings-detail-header');
-    expect(chatScreenContent).toContain('var(--oc-mobile-detail-navigation-height)');
+    expect(mobileStyles).toContain('0.375 * var(--yuri-mobile-title-collapse, 0)');
+    expect(mobileStyles).toContain('--yuri-mobile-collapsing-title-compact-size: 1.25rem');
+    expect(mobileStyles).toContain('--yuri-mobile-collapsing-expand-shift: 0.625rem');
+    expect(mobileStyles).toContain('.yuri-mobile-collapsing-header-spacer');
+    expect(mobileStyles).toContain('var(--yuri-safe-area-top, 0px) + 0.75rem');
+    expect(mobileStyles).toContain('--yuri-mobile-collapsing-action-size: 2.5rem');
+    expect(mobileStyles).toContain('[role="tabpanel"]:has(.yuri-mobile-collapsing-header)');
+    expect(mobileStyles).toContain('.yuri-mobile-settings-root-surface:has(.yuri-mobile-collapsing-header)');
+    expect(settingsContent).not.toContain('yuri-mobile-settings-detail-navigation');
+    expect(settingsContent).not.toContain('yuri-mobile-settings-detail-header');
+    expect(chatScreenContent).toContain('var(--yuri-mobile-detail-navigation-height)');
     expect(editorContent).toContain('<MobileDetailNavigation');
     expect(settingsContent).toContain('<MobileDetailNavigation');
     expect(settingsContent).toContain('inert={detailActive ? true : undefined}');
     expect(settingsContent).toContain('<MobileTabPageHeader');
     expect(settingsContent).toContain('underlayRef: mobileBackUnderlayRef');
     expect(settingsContent).toContain('fixed inset-0 z-20 flex h-[100dvh]');
-    expect(settingsContent).toContain('flex-col gap-[var(--oc-mobile-page-gap)]');
+    expect(settingsContent).toContain('flex-col gap-[var(--yuri-mobile-page-gap)]');
     expect(settingsContent).toContain('"flex-1 min-h-0 overflow-hidden bg-transparent"');
-    expect(settingsContent).toContain(': "px-[var(--oc-mobile-page-inline-inset)]"');
-    expect(settingsContent).toContain('"oc-settings-workspace-mobile bg-transparent"');
-    expect(settingsContent).toContain('"oc-settings-workspace-desktop bg-background"');
+    expect(settingsContent).toContain(': "px-[var(--yuri-mobile-page-inline-inset)]"');
+    expect(settingsContent).toContain('"yuri-settings-workspace-mobile bg-transparent"');
+    expect(settingsContent).toContain('"yuri-settings-workspace-desktop bg-background"');
     expect(settingsContent.match(/className=\{mobileDetailStageClassName\}/g)).toHaveLength(4);
     const mobileDetailCardStyles = mobileStyles.slice(
-      mobileStyles.indexOf('.oc-mobile-settings-detail-card {'),
-      mobileStyles.indexOf('.oc-mobile-settings-detail-card > *'),
+      mobileStyles.indexOf('.yuri-mobile-settings-detail-card {'),
+      mobileStyles.indexOf('.yuri-mobile-settings-detail-card > *'),
     );
     expect(mobileDetailCardStyles).toContain('background: transparent');
     expect(mobileDetailCardStyles).toContain('backdrop-filter: none');
@@ -490,8 +490,8 @@ describe('ScheduledTasksDialog queries', () => {
 
     expect(content).toContain('const sidebarLayerMounted =\n      detailActive && activePageMeta?.kind === "split";');
     expect(content).toContain('const rootIsUnderlay = detailActive && !sidebarIsUnderlay;');
-    expect(content).toContain('pt-[calc(var(--oc-safe-area-top,env(safe-area-inset-top,0px))+1rem)]');
-    expect(content).toContain('var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px))');
+    expect(content).toContain('pt-[calc(var(--yuri-safe-area-top,env(safe-area-inset-top,0px))+1rem)]');
+    expect(content).toContain('var(--yuri-safe-area-bottom,env(safe-area-inset-bottom,0px))');
 
     const rootStage = mobileFlowContent.indexOf('data-mobile-settings-stage="nav"');
     const sidebarStage = mobileFlowContent.indexOf('data-mobile-settings-stage="page-sidebar"');

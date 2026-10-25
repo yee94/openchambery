@@ -19,7 +19,7 @@ test('copy retry constants stay long enough for a sibling Vite emptyOutDir race'
 });
 
 test('copyWebDistUntilMobileHtmlExists retries ENOENT until mobile.html is readable', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'oc-mobile-assets-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'yuri-mobile-assets-'));
   const webDist = path.join(root, 'web');
   const mobileDist = path.join(root, 'mobile');
   await mkdir(webDist, { recursive: true });

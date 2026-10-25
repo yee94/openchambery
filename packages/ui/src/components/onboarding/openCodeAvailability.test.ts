@@ -27,7 +27,7 @@ describe('OpenCode onboarding availability', () => {
     responses = [];
   });
 
-  test('reads readiness from the OpenChamber health snapshot', async () => {
+  test('reads readiness from the Yuri health snapshot', async () => {
     responses = [jsonResponse({ isOpenCodeReady: true })];
 
     expect(await checkOpenCodeAvailability()).toBe(true);

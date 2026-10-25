@@ -1,19 +1,19 @@
 import { createConfiguredWebAPIs, getDesktopRelayRestoreReady } from './runtimeConfig';
 import { registerSW } from 'virtual:pwa-register';
 
-import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
-import type { HostedSurface } from '@openchamber/ui/lib/runtimeSurface';
-import '@openchamber/ui/index.css';
-import '@openchamber/ui/styles/fonts';
+import type { RuntimeAPIs } from '@yuri/ui/lib/api/types';
+import type { HostedSurface } from '@yuri/ui/lib/runtimeSurface';
+import '@yuri/ui/index.css';
+import '@yuri/ui/styles/fonts';
 
 declare global {
   interface Window {
-    __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
-    __OPENCHAMBER_SURFACE__?: HostedSurface;
+    __YURI_RUNTIME_APIS__?: RuntimeAPIs;
+    __YURI_SURFACE__?: HostedSurface;
   }
 }
 
-window.__OPENCHAMBER_RUNTIME_APIS__ = createConfiguredWebAPIs();
+window.__YURI_RUNTIME_APIS__ = createConfiguredWebAPIs();
 
 const isCoarsePointer = (): boolean => {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -36,7 +36,7 @@ const detectHostedSurface = (): HostedSurface => {
 };
 
 const hostedSurface = detectHostedSurface();
-window.__OPENCHAMBER_SURFACE__ = hostedSurface;
+window.__YURI_SURFACE__ = hostedSurface;
 
 type PrerenderingDocument = Document & {
   prerendering?: boolean;
@@ -103,7 +103,7 @@ const unregisterDevelopmentServiceWorkers = (): void => {
   });
 };
 
-const RELOAD_ONCE_KEY = 'openchamber.dev.module-reload';
+const RELOAD_ONCE_KEY = 'yuri.dev.module-reload';
 
 const isStaleViteOptimizeDepError = (error: unknown): boolean => {
   if (!error) return false;
@@ -123,7 +123,7 @@ const isStaleViteOptimizeDepError = (error: unknown): boolean => {
  * only runs for the known stale-dep failure shape, and only once per session.
  */
 const recoverFromStaleModuleImport = (error: unknown, label: string): void => {
-  console.error(`[openchamber] failed to load ${label}:`, error);
+  console.error(`[yuri] failed to load ${label}:`, error);
   if (typeof window === 'undefined' || !import.meta.env.DEV) return;
   if (!isStaleViteOptimizeDepError(error)) return;
   try {
@@ -133,7 +133,7 @@ const recoverFromStaleModuleImport = (error: unknown, label: string): void => {
     }
     sessionStorage.setItem(RELOAD_ONCE_KEY, '1');
     const url = new URL(window.location.href);
-    url.searchParams.set('_oc_vite', String(Date.now()));
+    url.searchParams.set('_yuri_vite', String(Date.now()));
     window.location.replace(url.toString());
   } catch {
     // sessionStorage/URL may be unavailable; leave the console error as the signal.
@@ -141,14 +141,14 @@ const recoverFromStaleModuleImport = (error: unknown, label: string): void => {
 };
 
 if (hostedSurface === 'mobile') {
-  void import('@openchamber/ui/apps/renderMobileApp')
+  void import('@yuri/ui/apps/renderMobileApp')
     .then(({ renderMobileApp }) => {
       try {
         sessionStorage.removeItem(RELOAD_ONCE_KEY);
       } catch {
         // ignore
       }
-      renderMobileApp(window.__OPENCHAMBER_RUNTIME_APIS__ ?? createConfiguredWebAPIs());
+      renderMobileApp(window.__YURI_RUNTIME_APIS__ ?? createConfiguredWebAPIs());
     })
     .catch((error) => recoverFromStaleModuleImport(error, 'renderMobileApp'));
 } else {
@@ -157,7 +157,7 @@ if (hostedSurface === 'mobile') {
   // endpoint and flashes the auth screen before the tunnel connects. Resolves
   // immediately when no relay host is involved.
   void getDesktopRelayRestoreReady()
-    .then(() => import('@openchamber/ui/main'))
+    .then(() => import('@yuri/ui/main'))
     .then(() => {
       try {
         sessionStorage.removeItem(RELOAD_ONCE_KEY);

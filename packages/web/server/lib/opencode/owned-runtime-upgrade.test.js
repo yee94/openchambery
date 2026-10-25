@@ -10,7 +10,7 @@ import {
 import { evaluateRuntimeContract } from './runtime-contract.js';
 
 describe('owned runtime upgrade (ticket 12)', () => {
-  const dataDir = path.join('/tmp', 'openchamber-owned-upgrade-test');
+  const dataDir = path.join('/tmp', 'yuri-owned-upgrade-test');
   const ownedBinary = path.join(dataDir, 'opencode-cli', '2.0.12', 'opencode');
 
   it('models binary vs process ownership separately', () => {

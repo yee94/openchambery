@@ -1,5 +1,5 @@
 import { registerPlugin } from '@capacitor/core';
 
-export const OpenChamberExternalBrowser = registerPlugin<{
+export const YuriExternalBrowser = registerPlugin<{
   open(options: { url: string }): Promise<void>;
-}>('OpenChamberExternalBrowser');
+}>('YuriExternalBrowser');

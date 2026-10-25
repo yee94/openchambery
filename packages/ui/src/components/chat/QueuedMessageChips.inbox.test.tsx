@@ -103,7 +103,7 @@ it('shows promotion pending immediately and keeps it until authoritative consump
   expect(host.textContent).toContain(dict['chat.queuedMessage.sending']);
   expect(host.textContent).not.toContain('Queue');
   await render([], promote);
-  expect(host.querySelector('[data-oc-queue-card]')).toBeNull();
+  expect(host.querySelector('[data-yuri-queue-card]')).toBeNull();
 });
 it('restores waiting for compaction before steering and retains the message until consumption', async () => {
   await render([{ ...inbox, delivery: 'steer' }], undefined, undefined, true);
@@ -134,5 +134,5 @@ it('keeps steer and captured Host/Assistant queue copy separate and empty shell 
   fixture.mode = 'server';
   fixture.items = [{ queueItemID: 'captured', operationID: 'op', messageID: 'msg', content: 'Captured task', status: 'queued', attemptCount: 0, position: 0, rowVersion: 1, createdAt: 1 }];
   await render(); expect(host.textContent).toContain('Captured task'); expect(host.textContent).not.toContain('Inherits');
-  fixture.items = []; await render(); expect(host.querySelector('[data-oc-queue-card]')).toBeNull();
+  fixture.items = []; await render(); expect(host.querySelector('[data-yuri-queue-card]')).toBeNull();
 });

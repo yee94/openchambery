@@ -14,13 +14,13 @@ export const runCliEntryIfMain = (dependencies) => {
   }
 
   // Direct `node server/index.js` is the standalone web/dev server. Never inherit
-  // OPENCHAMBER_RUNTIME=desktop from the parent shell — that would open a relay
+  // YURI_RUNTIME=desktop from the parent shell — that would open a relay
   // host-control socket from `bun run dev` / `dev:server`. Electron sets desktop
   // before importing this module and never takes this CLI path.
-  // SSH-manager remotes set OPENCHAMBER_RUNTIME=ssh-remote (and may pass
+  // SSH-manager remotes set YURI_RUNTIME=ssh-remote (and may pass
   // --relay-host); preserve that so the remote can host a private relay.
-  if (process.env.OPENCHAMBER_RUNTIME !== 'ssh-remote') {
-    process.env.OPENCHAMBER_RUNTIME = 'web';
+  if (process.env.YURI_RUNTIME !== 'ssh-remote') {
+    process.env.YURI_RUNTIME = 'web';
   }
 
   const cliOptions = parseServeCliOptions({

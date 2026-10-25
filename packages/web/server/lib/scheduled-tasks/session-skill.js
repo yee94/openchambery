@@ -16,7 +16,7 @@ const sourceSkill = new URL('./SESSION_SKILL.md', import.meta.url);
 const hostOriginFor = (req) => `http://${req.socket.localAddress === '::1' ? '[::1]' : '127.0.0.1'}:${req.socket.localPort}`;
 
 export const registerScheduledTaskSessionSkill = (app, {
-  express, openchamberDataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders,
+  express, yuriDataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders,
   getIsSharedOpenCodeService, waitForOpenCodeReady, getRuntimeContract,
   readSettingsFromDiskMigrated, sanitizeProjects, validateDirectoryPath,
   scheduledTaskRouter,
@@ -31,7 +31,7 @@ export const registerScheduledTaskSessionSkill = (app, {
     resources ??= (async () => {
       const [client, skill] = await Promise.all([readFile(sourceClient, 'utf8'), readFile(sourceSkill, 'utf8')]);
       const hash = createHash('sha256').update(client).update(skill).digest('hex').slice(0, 16);
-      const directory = path.join(openchamberDataDir, 'session-skills', hash);
+      const directory = path.join(yuriDataDir, 'session-skills', hash);
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const script = path.join(directory, 'scheduled-task.mjs');
       const temporary = `${script}.${randomUUID()}.tmp`;
@@ -67,7 +67,7 @@ export const registerScheduledTaskSessionSkill = (app, {
       if (!body || typeof body !== 'object' || Array.isArray(body)) return res.status(400).json({ error: 'Session input must be an object' });
       created = await client.session.create({
         ...body,
-        metadata: { ...body.metadata, openchamber: { ...body.metadata?.openchamber, scheduledTaskSkill: { hostOrigin } } },
+        metadata: { ...body.metadata, yuri: { ...body.metadata?.yuri, scheduledTaskSkill: { hostOrigin } } },
       });
       if (!created?.id) throw new Error('Session creation was not confirmed');
       const encoded = Buffer.from(JSON.stringify({ hostOrigin, upstreamOrigin, registrationFile, sessionID: created.id })).toString('base64url');
@@ -82,7 +82,7 @@ export const registerScheduledTaskSessionSkill = (app, {
       await client.session.instructions.entry.put({
         sessionID: created.id,
         key: SCHEDULED_TASK_SKILL_KEY,
-        value: `OpenChamber built-in skill: scheduled tasks. When the user asks to turn this conversation into a scheduled/recurring task, load the skill by running:\n${scheduledTaskSkillCommand(executable, script, encoded, 'describe')}\nThe result supplies the workflow and authenticated create/list commands bound to this session. Do not ask for credentials or project IDs.`,
+        value: `Yuri built-in skill: scheduled tasks. When the user asks to turn this conversation into a scheduled/recurring task, load the skill by running:\n${scheduledTaskSkillCommand(executable, script, encoded, 'describe')}\nThe result supplies the workflow and authenticated create/list commands bound to this session. Do not ask for credentials or project IDs.`,
       });
       return res.json({ data: created });
     } catch {
@@ -112,7 +112,7 @@ export const registerScheduledTaskSessionSkill = (app, {
       }
       const client = createClient();
       const session = await client.session.get({ sessionID });
-      if (session.metadata?.openchamber?.scheduledTaskSkill?.hostOrigin !== hostOriginFor(req)) {
+      if (session.metadata?.yuri?.scheduledTaskSkill?.hostOrigin !== hostOriginFor(req)) {
         return res.status(403).json({ error: 'Session is not bound to this Host' });
       }
       if (operation === 'check') return res.json({ ready: true });

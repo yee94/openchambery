@@ -1,5 +1,5 @@
 {
-  "buildCommand": "OPENCHAMBER_UPDATE_OUTPUT_DIR=dist OPENCHAMBER_UPDATE_SKIP_OTA_COPY=1 OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY=1 node scripts/build.mjs",
+  "buildCommand": "YURI_UPDATE_OUTPUT_DIR=dist YURI_UPDATE_SKIP_OTA_COPY=1 YURI_UPDATE_SKIP_CHANGELOG_COPY=1 node scripts/build.mjs",
   "installCommand": "echo 'no package dependencies'",
   "outputDirectory": "dist",
   "headers": [

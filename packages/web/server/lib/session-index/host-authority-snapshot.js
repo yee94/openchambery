@@ -26,7 +26,7 @@ export const projectIndexSessionWithHost = (session, storedById) => {
 // Host metadata keys that no session-list consumer reads. Writers and the title
 // runtime read them from the session record itself, never from the index list.
 // Unknown keys pass through, so new metadata stays visible by default.
-const LIST_OMITTED_OPENCHAMBER_KEYS = ['titleAuthority', 'scheduledTaskSkill'];
+const LIST_OMITTED_YURI_KEYS = ['titleAuthority', 'scheduledTaskSkill'];
 const LIST_OMITTED_TITLE_REFRESH_KEYS = ['forMessageID', 'generatedAt', 'forkFirstSendSessionID'];
 
 const omitKeys = (record, keys) => {
@@ -42,14 +42,14 @@ const omitKeys = (record, keys) => {
  */
 const toIndexListSession = (session) => {
   const metadata = session?.metadata;
-  if (!isPlainObject(metadata) || !isPlainObject(metadata.openchamber)) return session;
-  let openchamber = omitKeys(metadata.openchamber, LIST_OMITTED_OPENCHAMBER_KEYS);
-  if (isPlainObject(openchamber.titleRefresh)) {
-    const titleRefresh = omitKeys(openchamber.titleRefresh, LIST_OMITTED_TITLE_REFRESH_KEYS);
-    if (titleRefresh !== openchamber.titleRefresh) openchamber = { ...openchamber, titleRefresh };
+  if (!isPlainObject(metadata) || !isPlainObject(metadata.yuri)) return session;
+  let yuri = omitKeys(metadata.yuri, LIST_OMITTED_YURI_KEYS);
+  if (isPlainObject(yuri.titleRefresh)) {
+    const titleRefresh = omitKeys(yuri.titleRefresh, LIST_OMITTED_TITLE_REFRESH_KEYS);
+    if (titleRefresh !== yuri.titleRefresh) yuri = { ...yuri, titleRefresh };
   }
-  if (openchamber === metadata.openchamber) return session;
-  return { ...session, metadata: { ...metadata, openchamber } };
+  if (yuri === metadata.yuri) return session;
+  return { ...session, metadata: { ...metadata, yuri } };
 };
 
 /**

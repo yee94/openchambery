@@ -14,7 +14,7 @@ describe('system session metadata builders', () => {
       runID: 'run-1',
       name: 'Morning Sync',
     })).toEqual({
-      openchamber: {
+      yuri: {
         scheduledTask: {
           taskID: 'task-1',
           projectID: 'project-1',
@@ -31,10 +31,10 @@ describe('system session metadata builders', () => {
 
   it('builds llm isolation with the chat-completions purpose', () => {
     expect(buildLlmSessionMetadata()).toEqual({
-      openchamber: { llm: { purpose: LLM_SESSION_PURPOSE } },
+      yuri: { llm: { purpose: LLM_SESSION_PURPOSE } },
     });
     expect(buildLlmSessionMetadata('  ')).toEqual({
-      openchamber: { llm: { purpose: LLM_SESSION_PURPOSE } },
+      yuri: { llm: { purpose: LLM_SESSION_PURPOSE } },
     });
   });
 
@@ -43,7 +43,7 @@ describe('system session metadata builders', () => {
       assistantID: 'assistant_1',
       name: 'Ops',
     })).toEqual({
-      openchamber: {
+      yuri: {
         assistant: { assistantID: 'assistant_1', name: 'Ops' },
       },
     });

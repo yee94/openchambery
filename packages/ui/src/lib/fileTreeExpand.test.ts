@@ -15,8 +15,8 @@ describe('fileTreeExpand', () => {
     expect(getFileTreeDirectoryDepth('/repo', '/repo/src')).toBe(1);
     expect(getFileTreeDirectoryDepth('/repo', '/repo/src/lib/fileTreeExpand.ts')).toBe(3);
     expect(getFileTreeDirectoryDepth(
-      'C:/Users/openchamber',
-      'C:/Users/openchamber/packages/ui/src',
+      'C:/Users/yuri',
+      'C:/Users/yuri/packages/ui/src',
     )).toBe(3);
   });
 

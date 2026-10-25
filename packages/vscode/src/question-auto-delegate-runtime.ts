@@ -22,13 +22,13 @@ import type { OpenCodeManager } from './opencode';
 const REQUEST_TIMEOUT_MS = 15_000;
 /** Poll interval while offline auto-submit waits for an upstream base URL. */
 const UPSTREAM_URL_POLL_MS = 200;
-const OPENCHAMBER_SHARED_SETTINGS_PATH = path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
+const YURI_SHARED_SETTINGS_PATH = path.join(os.homedir(), '.config', 'yuri', 'settings.json');
 
 /** Test seam: redirect settings path to a temp fixture (never touch the user file). */
 let settingsPathOverrideForTests: string | null = null;
 
 const getSharedSettingsPath = (): string =>
-  settingsPathOverrideForTests ?? OPENCHAMBER_SHARED_SETTINGS_PATH;
+  settingsPathOverrideForTests ?? YURI_SHARED_SETTINGS_PATH;
 
 const asTrimmedString = (value: unknown): string =>
   (typeof value === 'string' && value.trim() ? value.trim() : '');
@@ -166,7 +166,7 @@ const collectDirectoryScopes = (): string[] => {
 
 const broadcastTip = (tip: { epoch: string; revision: number }): void => {
   const event = {
-    type: 'openchamber:question-auto-delegate-changed',
+    type: 'yuri:question-auto-delegate-changed',
     properties: {
       epoch: tip.epoch,
       revision: tip.revision,
@@ -484,7 +484,7 @@ const readDirectoryFromProxy = (
   body: Record<string, unknown> | null,
 ): string => {
   try {
-    const parsed = new URL(requestPath, 'https://openchamber.invalid');
+    const parsed = new URL(requestPath, 'https://yuri.invalid');
     const fromQuery = asTrimmedString(parsed.searchParams.get('directory'));
     if (fromQuery) return fromQuery;
   } catch {
@@ -530,7 +530,7 @@ const parseRequestBody = (bodyBase64: string | undefined): Record<string, unknow
 
 const normalizeProxyPathname = (requestPath: string): string => {
   try {
-    const parsed = new URL(requestPath, 'https://openchamber.invalid');
+    const parsed = new URL(requestPath, 'https://yuri.invalid');
     let pathname = parsed.pathname || '/';
     // Webview strips `/api` before proxy; accept both shapes.
     if (pathname.startsWith('/api/')) {
@@ -545,7 +545,7 @@ const normalizeProxyPathname = (requestPath: string): string => {
 };
 
 /**
- * Handle OpenChamber-owned question-auto-delegate routes and precise
+ * Handle Yuri-owned question-auto-delegate routes and precise
  * `/question/:id/reply|reject` intercepts inside the existing api:proxy path.
  * Returns null when the path is not owned by this module.
  */

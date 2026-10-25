@@ -104,7 +104,7 @@ const buildApp = (directory, serviceOverrides = {}) => {
     });
 
   // Same PUT/GET contract as packages/web/server/lib/assistants/routes.js
-  app.put('/api/openchamber/assistants/:assistantID/contact/attachments/:uploadID', (req, res) => {
+  app.put('/api/yuri/assistants/:assistantID/contact/attachments/:uploadID', (req, res) => {
     const controller = new AbortController();
     req.once?.('aborted', () => controller.abort());
     respond(res, () => service.putAssistantContactAttachment(req.params.assistantID, req.params.uploadID, {
@@ -113,7 +113,7 @@ const buildApp = (directory, serviceOverrides = {}) => {
       signal: controller.signal,
     }), 201);
   });
-  app.get('/api/openchamber/assistants/:assistantID/contact/attachments/:attachmentID', (req, res) => {
+  app.get('/api/yuri/assistants/:assistantID/contact/attachments/:attachmentID', (req, res) => {
     Promise.resolve()
       .then(() => service.getAssistantContactAttachment(req.params.assistantID, req.params.attachmentID))
       .then((file) => {
@@ -156,7 +156,7 @@ describe('contact attachments real HTTP (core-routes + assistants routes)', () =
 
     const digest = createHash('sha256').update(realPng).digest('hex');
     const putRes = await fetch(
-      `${base}/api/openchamber/assistants/${encodeURIComponent(assistant.id)}/contact/attachments/up_png1`,
+      `${base}/api/yuri/assistants/${encodeURIComponent(assistant.id)}/contact/attachments/up_png1`,
       {
         method: 'PUT',
         headers: {
@@ -185,7 +185,7 @@ describe('contact attachments real HTTP (core-routes + assistants routes)', () =
     const jsonBytes = Buffer.from(JSON.stringify({ nested: true, blob: 'x'.repeat(64) }));
     const jsonDigest = createHash('sha256').update(jsonBytes).digest('hex');
     const putJson = await fetch(
-      `${base}/api/openchamber/assistants/${encodeURIComponent(assistant.id)}/contact/attachments/up_json_raw`,
+      `${base}/api/yuri/assistants/${encodeURIComponent(assistant.id)}/contact/attachments/up_json_raw`,
       {
         method: 'PUT',
         headers: {
@@ -230,7 +230,7 @@ describe('contact attachments real HTTP (core-routes + assistants routes)', () =
     expect(user.parts.find((p) => p.attachmentID)?.url).toBeUndefined();
 
     const getPng = await fetch(
-      `${base}/api/openchamber/assistants/${encodeURIComponent(assistant.id)}/contact/attachments/${encodeURIComponent(descriptor.attachmentID)}`,
+      `${base}/api/yuri/assistants/${encodeURIComponent(assistant.id)}/contact/attachments/${encodeURIComponent(descriptor.attachmentID)}`,
     );
     expect(getPng.status).toBe(200);
     const gotPng = Buffer.from(await getPng.arrayBuffer());
@@ -243,7 +243,7 @@ describe('contact attachments real HTTP (core-routes + assistants routes)', () =
     expect(getPng.headers.get('content-disposition')).toMatch(/^inline/i);
 
     const getJson = await fetch(
-      `${base}/api/openchamber/assistants/${encodeURIComponent(assistant.id)}/contact/attachments/${encodeURIComponent(jsonDesc.attachmentID)}`,
+      `${base}/api/yuri/assistants/${encodeURIComponent(assistant.id)}/contact/attachments/${encodeURIComponent(jsonDesc.attachmentID)}`,
     );
     expect(getJson.status).toBe(200);
     const gotJson = Buffer.from(await getJson.arrayBuffer());

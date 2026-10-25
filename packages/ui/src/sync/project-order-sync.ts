@@ -1,5 +1,5 @@
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeYuriEvents } from '@/lib/yuriEvents';
 import { invalidateSettingsCache, waitForPendingSettingsUpdates } from '@/lib/persistence';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { refreshProjectOrderSnapshot } from '@/queries/projectOrderQueries';
@@ -55,7 +55,7 @@ export function mountProjectOrderSync(): () => void {
       if (run === runId) running = false;
     }
   };
-  const unsubscribeEvents = subscribeOpenchamberEvents((event) => {
+  const unsubscribeEvents = subscribeYuriEvents((event) => {
     if (event.type === 'project-order-changed' || event.type === 'event-stream-ready') void refresh();
   });
   const unsubscribeRuntime = subscribeRuntimeEndpointChanged(() => {

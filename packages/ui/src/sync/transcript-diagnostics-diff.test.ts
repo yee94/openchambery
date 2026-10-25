@@ -15,7 +15,7 @@ function textPart(id: string, options: { slim?: boolean; optimistic?: boolean; t
     type: "text",
     text: options.text ?? "SECRET BODY",
     ...(options.slim ? { slim: true } : {}),
-    ...(options.optimistic ? { __openchamberOptimistic: true } : {}),
+    ...(options.optimistic ? { __yuriOptimistic: true } : {}),
   } as unknown as Part
 }
 

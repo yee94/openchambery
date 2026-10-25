@@ -1,21 +1,20 @@
 {
-  "name": "@openchambery/web",
+  "name": "@yuri/web",
   "version": "2.1.10-beta.11",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
   "types": "./server/index.d.ts",
   "bin": {
-    "openchamber": "./bin/cli.js",
-    "openchambery": "./bin/cli.js"
+    "yuri": "./bin/cli.js"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "dev": "bun run build:watch",
-    "dev:server": "node ../../scripts/ensure-node-better-sqlite3.mjs && node server/index.js --port ${OPENCHAMBER_PORT:-3001}",
-    "dev:server:watch": "nodemon --exitcrash --watch server --ext js --exec \"node ../../scripts/ensure-node-better-sqlite3.mjs && node server/index.js --port ${OPENCHAMBER_PORT:-3001}\"",
+    "dev:server": "node ../../scripts/ensure-node-better-sqlite3.mjs && node server/index.js --port ${YURI_PORT:-3001}",
+    "dev:server:watch": "nodemon --exitcrash --watch server --ext js --exec \"node ../../scripts/ensure-node-better-sqlite3.mjs && node server/index.js --port ${YURI_PORT:-3001}\"",
     "build": "vite build",
     "build:watch": "vite build --watch",
     "type-check": "tsc --noEmit",
@@ -113,6 +112,7 @@
     "bin",
     "public",
     "package.json",
-    "README.md"
+    "README.md",
+    "BRAND-MIGRATION.md"
   ]
 }

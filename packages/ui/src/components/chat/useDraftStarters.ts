@@ -6,7 +6,7 @@ import { useCommandsQuery } from '@/queries/commandQueries';
 import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { updateDesktopSettings } from '@/lib/persistence';
-import { getProjectDraftStarters, saveProjectDraftStarters } from '@/lib/openchamberConfig';
+import { getProjectDraftStarters, saveProjectDraftStarters } from '@/lib/yuriConfig';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import type { IconName } from '@/components/icon/icons';
 import {

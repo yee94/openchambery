@@ -41,20 +41,20 @@ describe('shared OpenCode service registration', () => {
 
   it('is enabled by default and can be opted out', () => {
     expect(isSharedServiceEnabled({})).toBe(true);
-    expect(isSharedServiceEnabled({ OPENCHAMBER_OPENCODE_SHARED_SERVICE: '0' })).toBe(false);
-    expect(isSharedServiceEnabled({ OPENCHAMBER_OPENCODE_SHARED_SERVICE: 'false' })).toBe(false);
+    expect(isSharedServiceEnabled({ YURI_OPENCODE_SHARED_SERVICE: '0' })).toBe(false);
+    expect(isSharedServiceEnabled({ YURI_OPENCODE_SHARED_SERVICE: 'false' })).toBe(false);
   });
 });
 
 describe('shared OpenCode service start', () => {
-  it('never hands OpenChamber credentials to the long-lived service', () => {
+  it('never hands Yuri credentials to the long-lived service', () => {
     expect(buildSharedServiceStartEnv({
       PATH: '/bin',
       HOME: '/home/u',
       OPENCODE_SERVER_PASSWORD: 'managed',
       OPENCODE_PASSWORD: 'managed',
-      OPENCHAMBER_UI_PASSWORD: 'ui',
-      OPENCHAMBER_DATA_DIR: '/data',
+      YURI_UI_PASSWORD: 'ui',
+      YURI_DATA_DIR: '/data',
     })).toEqual({ PATH: '/bin', HOME: '/home/u' });
   });
 

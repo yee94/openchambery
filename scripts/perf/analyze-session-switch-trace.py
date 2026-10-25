@@ -27,8 +27,8 @@ TARGET_EVENT_NAMES = {
     "V8.GC_MAJOR",
 }
 USER_TIMING_NAMES = {
-    "openchamber.session-switch.highlight-latency",
-    "openchamber.session-switch.content-latency",
+    "yuri.session-switch.highlight-latency",
+    "yuri.session-switch.content-latency",
 }
 
 

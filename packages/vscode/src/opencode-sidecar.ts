@@ -155,8 +155,8 @@ export function resolveDetectedOpencodeCliPath(options: {
   const explicit = [
     process.env.OPENCODE_BINARY,
     process.env.OPENCODE_PATH,
-    process.env.OPENCHAMBER_OPENCODE_PATH,
-    process.env.OPENCHAMBER_OPENCODE_BIN,
+    process.env.YURI_OPENCODE_PATH,
+    process.env.YURI_OPENCODE_BIN,
   ]
     .map((v) => (typeof v === 'string' ? stripWrappingQuotes(v) : ''))
     .filter(Boolean);

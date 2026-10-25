@@ -26,8 +26,8 @@ describe('prompt attachment upload', () => {
     // Installed desktop backends survive UI OTA updates; new upload options
     // must not require adding headers to their fixed CORS allowlist.
     const allowed = new Set([
-      'content-type', 'content-length', 'x-openchamber-content-length',
-      'x-openchamber-sha256', 'x-openchamber-mime', 'x-openchamber-filename',
+      'content-type', 'content-length', 'x-yuri-content-length',
+      'x-yuri-sha256', 'x-yuri-mime', 'x-yuri-filename',
     ]);
     const headers = new Headers(fetchCalls[0]?.init?.headers);
     expect([...headers.keys()].map((name) => name.toLowerCase()).filter((name) => !allowed.has(name))).toEqual([]);
@@ -52,7 +52,7 @@ describe('prompt attachment upload', () => {
     const body = new Blob(['abcd'], { type: 'image/png' });
     fetchResults.push(new Response(JSON.stringify({
       success: true,
-      path: '/data/openchamber/prompt-attachments/ab/abcd.png',
+      path: '/data/yuri/prompt-attachments/ab/abcd.png',
       size: 4,
       mime: 'image/png',
       sha256: 'deadbeef',
@@ -60,17 +60,17 @@ describe('prompt attachment upload', () => {
 
     const result = await uploadPromptAttachmentBytes({ body, mime: 'image/png', filename: 'photo.png' });
 
-    expect(result.url).toBe('file:///data/openchamber/prompt-attachments/ab/abcd.png');
-    expect(result.path).toBe('/data/openchamber/prompt-attachments/ab/abcd.png');
+    expect(result.url).toBe('file:///data/yuri/prompt-attachments/ab/abcd.png');
+    expect(result.path).toBe('/data/yuri/prompt-attachments/ab/abcd.png');
     expect(fetchCalls).toHaveLength(1);
     expect(fetchCalls[0]?.path).toMatch(/^\/api\/fs\/prompt-attachments\//);
     expect(fetchCalls[0]?.init?.method).toBe('PUT');
     expect(fetchCalls[0]?.init?.body).toBeInstanceOf(Blob);
     const headers = new Headers(fetchCalls[0]?.init?.headers);
     expect(headers.get('Content-Length')).toBe('4');
-    expect(headers.get('X-OpenChamber-Content-Length')).toBe('4');
-    expect(headers.get('X-OpenChamber-Mime')).toBe('image/png');
-    expect(headers.get('X-OpenChamber-Sha256')).toHaveLength(64);
+    expect(headers.get('X-Yuri-Content-Length')).toBe('4');
+    expect(headers.get('X-Yuri-Mime')).toBe('image/png');
+    expect(headers.get('X-Yuri-Sha256')).toHaveLength(64);
   });
 
   test('throws an explicit error instead of falling back to a data URL', async () => {
@@ -83,9 +83,9 @@ describe('prompt attachment upload', () => {
 
   it('uploads files above the context limit to temporary host storage', async () => {
     const body = new Blob([new Uint8Array(26 * 1024 * 1024)], { type: 'application/gzip' });
-    fetchResults.push(new Response(JSON.stringify({ path: '/tmp/openchamber-prompt-test/trace.json.gz', size: body.size })));
+    fetchResults.push(new Response(JSON.stringify({ path: '/tmp/yuri-prompt-test/trace.json.gz', size: body.size })));
     const result = await uploadPromptAttachmentBytes({ body, mime: body.type, filename: 'trace.json.gz' });
-    expect(result.path).toBe('/tmp/openchamber-prompt-test/trace.json.gz');
+    expect(result.path).toBe('/tmp/yuri-prompt-test/trace.json.gz');
     expect(new URL(fetchCalls[0]!.path, 'http://localhost').searchParams.get('storage')).toBe('temporary');
     expect(fetchCalls[0]?.init?.body).toBe(body);
   });
@@ -95,8 +95,8 @@ describe('prompt attachment upload', () => {
   });
 
   test('decodes file:// URLs back to host paths', () => {
-    expect(pathFromPromptAttachmentFileUrl('file:///data/openchamber/prompt-attachments/ab/abcd.png'))
-      .toBe('/data/openchamber/prompt-attachments/ab/abcd.png');
+    expect(pathFromPromptAttachmentFileUrl('file:///data/yuri/prompt-attachments/ab/abcd.png'))
+      .toBe('/data/yuri/prompt-attachments/ab/abcd.png');
     expect(pathFromPromptAttachmentFileUrl('file:///C:/Users/demo/photo.png')).toBe('C:/Users/demo/photo.png');
   });
 });

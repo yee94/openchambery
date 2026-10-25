@@ -41,7 +41,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   document.getElementById('mobile-overlay-root')?.remove();
-  document.documentElement.classList.remove('oc-native-app-active');
+  document.documentElement.classList.remove('yuri-native-app-active');
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -52,7 +52,7 @@ function Host({ initialFocus }: { initialFocus?: 'settings' | 'composer' }) {
   const [open, setOpen] = React.useState(false);
   return <I18nProvider>
     <input data-testid="settings-field" autoFocus={initialFocus === 'settings'} />
-    <div className="oc-mobile-composer">
+    <div className="yuri-mobile-composer">
       <textarea data-testid="composer-field" autoFocus={initialFocus === 'composer'} />
     </div>
     <button data-testid="model-trigger" onClick={() => setOpen(true)}>Choose model</button>
@@ -68,8 +68,8 @@ async function ime(open: boolean, payload: 'native' | 'detail') {
     const data = { open, height: open ? 300 : 0 };
     // Native Bridge.triggerJSEvent copies payload fields directly onto Event.
     window.dispatchEvent(payload === 'native'
-      ? Object.assign(new Event('oc:ime-state'), data)
-      : new CustomEvent('oc:ime-state', { detail: data }));
+      ? Object.assign(new Event('yuri:ime-state'), data)
+      : new CustomEvent('yuri:ime-state', { detail: data }));
   });
 }
 
@@ -78,7 +78,7 @@ describe('Android native IME close during Settings picker focus transfer', () =>
     await act(async () => root.render(<Host />));
     const previous = document.querySelector<HTMLInputElement>('[data-testid="settings-field"]')!;
     await act(async () => previous.focus());
-    expect(document.documentElement.style.getPropertyValue('--oc-keyboard-inset')).not.toBe('');
+    expect(document.documentElement.style.getPropertyValue('--yuri-keyboard-inset')).not.toBe('');
     await ime(true, 'native');
     await act(async () => {
       const trigger = document.querySelector<HTMLElement>('[data-testid="model-trigger"]')!;
@@ -93,11 +93,11 @@ describe('Android native IME close during Settings picker focus transfer', () =>
     await act(async () => input.focus());
     expect(document.activeElement).toBe(input);
     const blur = vi.spyOn(input, 'blur');
-    const surface = input.closest('[data-oc-motion-id]');
+    const surface = input.closest('[data-yuri-motion-id]');
     const top = mobileWindowStack.getSnapshot();
     await ime(false, payload);
     expect(input.isConnected).toBe(true);
-    expect(input.closest('[data-oc-motion-id]')).toBe(surface);
+    expect(input.closest('[data-yuri-motion-id]')).toBe(surface);
     expect(surface?.parentElement?.getAttribute('data-mobile-overlay-active')).toBe('true');
     expect(mobileWindowStack.getSnapshot()).toBe(top);
     expect(document.activeElement === input,
@@ -115,10 +115,10 @@ describe('Android native IME close during Settings picker focus transfer', () =>
 
   function expectClosedGeometry() {
     const html = document.documentElement;
-    for (const name of ['--oc-keyboard-inset', '--oc-kb-layout', '--oc-kb-scroll-inset']) {
+    for (const name of ['--yuri-keyboard-inset', '--yuri-kb-layout', '--yuri-kb-scroll-inset']) {
       expect(html.style.getPropertyValue(name)).toBe('0px');
     }
-    expect(html.classList.contains('oc-keyboard-open')).toBe(false);
+    expect(html.classList.contains('yuri-keyboard-open')).toBe(false);
   }
 
   test.each(['settings', 'composer'] as const)('scopes a hide before the hook observed focus to its composer (%s)', async (initialFocus) => {
@@ -126,7 +126,7 @@ describe('Android native IME close during Settings picker focus transfer', () =>
     await act(async () => root.render(<Host initialFocus={initialFocus} />));
     const field = document.querySelector<HTMLElement>(`[data-testid="${initialFocus}-field"]`)!;
     expect(document.activeElement === field).toBe(true);
-    expect(document.documentElement.style.getPropertyValue('--oc-keyboard-inset')).toBe('');
+    expect(document.documentElement.style.getPropertyValue('--yuri-keyboard-inset')).toBe('');
     const blur = vi.spyOn(field, 'blur');
     await ime(false, 'native');
     expect(document.activeElement === field).toBe(initialFocus === 'settings');
@@ -138,7 +138,7 @@ describe('Android native IME close during Settings picker focus transfer', () =>
     const input = document.querySelector<HTMLElement>('[data-testid="settings-field"]')!;
     await act(async () => input.focus());
     await ime(true, 'native');
-    expect(document.documentElement.style.getPropertyValue('--oc-keyboard-inset')).toBe('300px');
+    expect(document.documentElement.style.getPropertyValue('--yuri-keyboard-inset')).toBe('300px');
     await ime(false, 'native');
     expect(document.activeElement === input).toBe(true);
     expectClosedGeometry();
@@ -149,7 +149,7 @@ describe('Android native IME close during Settings picker focus transfer', () =>
     const composer = document.querySelector<HTMLElement>('[data-testid="composer-field"]')!;
     await act(async () => composer.focus());
     await ime(true, 'native');
-    expect(document.documentElement.classList.contains('oc-keyboard-open')).toBe(true);
+    expect(document.documentElement.classList.contains('yuri-keyboard-open')).toBe(true);
     const blur = vi.spyOn(composer, 'blur');
     await ime(false, 'native');
     expect(document.activeElement === document.body).toBe(true);
@@ -158,10 +158,10 @@ describe('Android native IME close during Settings picker focus transfer', () =>
     await ime(false, 'native');
     await act(async () => vi.advanceTimersByTimeAsync(120));
     expect(blur).toHaveBeenCalledTimes(1);
-    expect(document.documentElement.classList.contains('oc-kb-animating')).toBe(false);
+    expect(document.documentElement.classList.contains('yuri-kb-animating')).toBe(false);
     await act(async () => composer.focus());
     expect(document.activeElement === composer).toBe(true);
-    expect(document.documentElement.classList.contains('oc-keyboard-open')).toBe(true);
+    expect(document.documentElement.classList.contains('yuri-keyboard-open')).toBe(true);
   });
 
   test('retains search focus when native hide arrives before the new field focuses', async () => {

@@ -10,7 +10,20 @@ import {
 } from './session-projection.js';
 
 describe('session projection event shapes', () => {
-  const titleMetadata = { openchamber: { titleAuthority: {
+  it('reads old owned metadata without rewriting history and honors a new namespace including unarchive', () => {
+    const legacy = { archive: { archivedAt: 20 }, goal: { status: 'active' } };
+    const session = { id: 'ses_migrated', metadata: { openchamber: legacy }, time: {} };
+    const projected = projectSessionWithHostMetadata(session, null);
+    expect(projected.metadata.yuri).toEqual(legacy);
+    expect(projected.time.archived).toBe(20);
+    expect(session.metadata.yuri).toBeUndefined();
+    expect(projected.metadata.openchamber).toBe(legacy);
+    const updated = projectSessionWithHostMetadata({ ...session, metadata: { ...session.metadata, yuri: { archive: { archivedAt: 0 } } } }, null);
+    expect(updated.time.archived).toBeUndefined();
+    expect(updated.metadata.yuri.goal).toBeUndefined();
+  });
+
+  const titleMetadata = { yuri: { titleAuthority: {
     sessionID: 'ses_owned', title: 'Chosen title', revision: 'r1', source: 'summary',
   } } };
 
@@ -34,7 +47,7 @@ describe('session projection event shapes', () => {
   });
 
   it('ignores malformed or absent authority and rename identities', () => {
-    for (const metadata of [undefined, {}, { openchamber: { titleAuthority: {} } }]) {
+    for (const metadata of [undefined, {}, { yuri: { titleAuthority: {} } }]) {
       expect(readSessionTitleAuthority(undefined, metadata)).toBeNull();
       expect(readSessionTitleAuthority('ses_owned', metadata)).toBeNull();
     }
@@ -76,7 +89,7 @@ describe('session projection event shapes', () => {
           },
         },
       },
-    }, () => ({ openchamber: { archive: { archivedAt: 99 } } }));
+    }, () => ({ yuri: { archive: { archivedAt: 99 } } }));
 
     expect(projected.directory).toBe('/repo');
     expect(projected.payload.type).toBe('session.updated.v2');

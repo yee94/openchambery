@@ -44,7 +44,7 @@ const CommandInput = React.forwardRef<
         className={cn(
           "flex h-8 items-center gap-2 rounded-lg px-3",
           variant === 'mobileGlass'
-            ? "oc-mobile-glass-control rounded-full"
+            ? "yuri-mobile-glass-control rounded-full"
             : "bg-[var(--surface-elevated)] ring-1 ring-inset ring-border/60 transition duration-200 ease-out hover:[&:not(:focus-within)]:bg-[var(--surface-subtle)] hover:[&:not(:focus-within)]:ring-transparent focus-within:ring-2 focus-within:ring-[var(--interactive-focus-ring)]",
         )}
       >

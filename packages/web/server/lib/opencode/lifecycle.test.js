@@ -393,14 +393,14 @@ describe('OpenCode lifecycle', () => {
       return child;
     });
     const managedCapabilitiesRuntime = {
-      prepareManagedChildEnv: vi.fn(async (env) => ({ ...env, OPENCHAMBER_SCHEDULED_TASK_BRIDGE_TOKEN: 'rotated' })),
+      prepareManagedChildEnv: vi.fn(async (env) => ({ ...env, YURI_SCHEDULED_TASK_BRIDGE_TOKEN: 'rotated' })),
       recordManagedChildPid: vi.fn(),
       getCapabilityIdentity: vi.fn(() => ({ version: '1', origin: 'http://127.0.0.1:3000', token: 'a'.repeat(64), childPid: 12345 })),
     };
     const server = await createRuntime({ managedCapabilitiesRuntime }).startOpenCode();
     expect(managedCapabilitiesRuntime.prepareManagedChildEnv).toHaveBeenCalledTimes(1);
     expect(managedCapabilitiesRuntime.recordManagedChildPid).toHaveBeenCalledWith(12345);
-    expect(spawnMock.mock.calls[0][2].env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_TOKEN).toBe('rotated');
+    expect(spawnMock.mock.calls[0][2].env.YURI_SCHEDULED_TASK_BRIDGE_TOKEN).toBe('rotated');
     await server.close();
   });
 

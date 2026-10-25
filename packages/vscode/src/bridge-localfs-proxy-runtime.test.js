@@ -58,7 +58,7 @@ describe('bridge local fs proxy', () => {
     const response = await tryHandleLocalFsProxy('GET', '/api/fs/read?path=%2Fmissing.ts&optional=true');
 
     expect(response?.status).toBe(200);
-    expect(response?.headers['x-openchamber-file-exists']).toBe('false');
+    expect(response?.headers['x-yuri-file-exists']).toBe('false');
     expect(Buffer.from(response?.bodyBase64 ?? '', 'base64').toString('utf8')).toBe('');
   });
 
@@ -70,7 +70,7 @@ describe('bridge local fs proxy', () => {
     const response = await tryHandleLocalFsProxy('GET', '/api/fs/read?path=%2Fworkspace%2Fempty.ts&optional=true');
 
     expect(response?.status).toBe(200);
-    expect(response?.headers['x-openchamber-file-exists']).toBe('true');
+    expect(response?.headers['x-yuri-file-exists']).toBe('true');
     expect(Buffer.from(response?.bodyBase64 ?? '', 'base64').toString('utf8')).toBe('');
   });
 });

@@ -11,7 +11,7 @@ let agents;
 let providers;
 let plugins;
 beforeEach(async () => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-entity-layers-'));
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-entity-layers-'));
   directory = path.join(root, 'xdg', 'opencode');
   fs.mkdirSync(directory, { recursive: true });
   vi.stubEnv('XDG_CONFIG_HOME', path.dirname(directory));

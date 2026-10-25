@@ -5,7 +5,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'fs/promises';
 import { SCHEDULE_CONFLICT_CODE, createProjectConfigRuntime, scheduledTaskWriteGuard } from './project-config.js';
 
 const createRuntime = async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'oc-scheduled-project-config-'));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'yuri-scheduled-project-config-'));
   const runtime = createProjectConfigRuntime({
     fsPromises: await import('fs/promises'),
     path,

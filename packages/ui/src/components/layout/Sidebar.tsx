@@ -41,7 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, isMobile, children, cl
         sidebar.style.width = `${nextWidth}px`;
         sidebar.style.minWidth = `${nextWidth}px`;
         sidebar.style.maxWidth = `${nextWidth}px`;
-        sidebar.style.setProperty('--oc-left-sidebar-width', `${nextWidth}px`);
+        sidebar.style.setProperty('--yuri-left-sidebar-width', `${nextWidth}px`);
     }, []);
 
     React.useEffect(() => {
@@ -126,8 +126,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, isMobile, children, cl
         <aside
             ref={sidebarRef}
             className={cn(
-                'relative flex h-full overflow-hidden oc-layout-divider-r will-change-[width] motion-reduce:transition-none',
-                'bg-sidebar oc-vibrancy-surface',
+                'relative flex h-full overflow-hidden yuri-layout-divider-r will-change-[width] motion-reduce:transition-none',
+                'bg-sidebar yuri-vibrancy-surface',
                 !isOpen && 'border-r-0',
                 className,
             )}
@@ -135,7 +135,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, isMobile, children, cl
                 width: `${currentWidth}px`,
                 minWidth: `${currentWidth}px`,
                 maxWidth: `${currentWidth}px`,
-                ['--oc-left-sidebar-width' as string]: `${isResizing ? currentWidth : openWidth}px`,
+                ['--yuri-left-sidebar-width' as string]: `${isResizing ? currentWidth : openWidth}px`,
                 overflowX: 'clip',
                 transitionProperty: isResizing ? 'none' : 'width, min-width, max-width',
                 transitionDuration: '200ms',
@@ -164,7 +164,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, isMobile, children, cl
                     isResizing && 'pointer-events-none',
                     !isOpen && 'pointer-events-none select-none opacity-0'
                 )}
-                style={{ width: 'var(--oc-left-sidebar-width)', overflowX: 'hidden' }}
+                style={{ width: 'var(--yuri-left-sidebar-width)', overflowX: 'hidden' }}
                 aria-hidden={!isOpen}
             >
                 {topBar}

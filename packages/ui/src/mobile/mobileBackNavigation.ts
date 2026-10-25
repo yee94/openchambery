@@ -28,7 +28,7 @@ export type MobileBackHistory = {
   subscribe: (listener: (state: HistoryState) => void) => () => void;
 };
 
-const MOBILE_BACK_HISTORY_KEY = '__openchamberMobileBackRoute';
+const MOBILE_BACK_HISTORY_KEY = '__yuriMobileBackRoute';
 
 const browserHistory = (): MobileBackHistory | null => {
   if (typeof window === 'undefined' || isCapacitorApp()) return null;
@@ -272,7 +272,7 @@ export const useMobileBackRoute = ({
 
 type NativeBackEvent = { progress?: number; velocityX?: number };
 
-type OpenChamberNavigationPlugin = {
+type YuriNavigationPlugin = {
   setEnabled(options: { enabled: boolean }): Promise<void>;
   addListener(
     eventName: 'backStarted' | 'backProgressed' | 'backCancelled' | 'backInvoked',
@@ -280,7 +280,7 @@ type OpenChamberNavigationPlugin = {
   ): Promise<PluginListenerHandle>;
 };
 
-const OpenChamberNavigation = registerPlugin<OpenChamberNavigationPlugin>('OpenChamberNavigation');
+const YuriNavigation = registerPlugin<YuriNavigationPlugin>('YuriNavigation');
 
 type InteractivePresentation = {
   route: RegisteredMobileBackRoute;
@@ -468,7 +468,7 @@ export const useMobileNavigationDriver = ({
 
     const syncEnabled = () => {
       const nativeEnabled = routeIsEligible(mobileBackNavigationCoordinator.getTopRoute());
-      void OpenChamberNavigation.setEnabled({ enabled: nativeEnabled }).catch(() => undefined);
+      void YuriNavigation.setEnabled({ enabled: nativeEnabled }).catch(() => undefined);
     };
 
     const begin = () => {
@@ -613,10 +613,10 @@ export const useMobileNavigationDriver = ({
 
     const unsubscribe = mobileBackNavigationCoordinator.subscribe(syncEnabled);
     const addListeners = async () => {
-      const started = await OpenChamberNavigation.addListener('backStarted', begin);
-      const progressed = await OpenChamberNavigation.addListener('backProgressed', (event) => update(event.progress ?? 0));
-      const cancelled = await OpenChamberNavigation.addListener('backCancelled', (event) => finish(false, event.progress, event.velocityX));
-      const invoked = await OpenChamberNavigation.addListener('backInvoked', (event) => finish(true, event.progress, event.velocityX));
+      const started = await YuriNavigation.addListener('backStarted', begin);
+      const progressed = await YuriNavigation.addListener('backProgressed', (event) => update(event.progress ?? 0));
+      const cancelled = await YuriNavigation.addListener('backCancelled', (event) => finish(false, event.progress, event.velocityX));
+      const invoked = await YuriNavigation.addListener('backInvoked', (event) => finish(true, event.progress, event.velocityX));
       if (disposed) {
         await Promise.all([started.remove(), progressed.remove(), cancelled.remove(), invoked.remove()]);
         return;
@@ -642,7 +642,7 @@ export const useMobileNavigationDriver = ({
       }
       presentation = null;
       settlingPresentation = null;
-      void OpenChamberNavigation.setEnabled({ enabled: false }).catch(() => undefined);
+      void YuriNavigation.setEnabled({ enabled: false }).catch(() => undefined);
       handles.forEach((handle) => void handle.remove());
     };
   }, [enabled, rootRoutesBlocked]);

@@ -6,7 +6,7 @@ OpenCode remains the source of truth, and a missing or rebuilt database only
 means the next hydrate refetches.
 
 The cache is **opt-in**. `resolveTranscriptCacheDbPath` returns `null` unless
-`transcriptCacheDbPath` or `OPENCHAMBER_TRANSCRIPT_CACHE_DB_PATH` is set.
+`transcriptCacheDbPath` or `YURI_TRANSCRIPT_CACHE_DB_PATH` is set.
 Ordinary remote Web servers therefore do not persist conversation bodies.
 Explicit and env values are normalized to an absolute path. Only `.sqlite`
 files are accepted; the managed `session-index.sqlite` and
@@ -70,10 +70,10 @@ and the cap is 50.
 
 ## HTTP routes
 
-Registered by `registerOpenChamberRoutes` **before** the generic OpenCode
+Registered by `registerYuriRoutes` **before** the generic OpenCode
 proxy, on the existing UI-password / CORS path. Prefix:
 
-`/api/openchamber/transcript-cache`
+`/api/yuri/transcript-cache`
 
 | Method | Path | Action |
 |---|---|---|
@@ -88,7 +88,7 @@ proxy, on the existing UI-password / CORS path. Prefix:
 | `POST` | `/evict` | Byte-budget LRU (`{ maxBytes, protect? }`) |
 
 A missing service returns **501**. Invalid scope, message ID, or body returns
-**400**. Preview-proxy capability credentials (`oc_preview_token` query or
+**400**. Preview-proxy capability credentials (`yuri_preview_token` query or
 cookie, via `hasPreviewProxyCredential`) return **403**. Ordinary
 UI-password / authenticated requests continue to work. Logs never include
 message bodies, parts, or tokens.

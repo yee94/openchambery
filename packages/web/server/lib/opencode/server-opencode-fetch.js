@@ -1,7 +1,7 @@
 /**
  * Host-side OpenCode transport boundary (ticket 11).
  *
- * Proxy gates browser → OpenChamber → OpenCode. Background Host work
+ * Proxy gates browser → Yuri → OpenCode. Background Host work
  * (queue / goal / scheduled / assistants / session-title) often calls OpenCode
  * directly and must share the same execution admission: verified contract only
  * for writes; diagnostics, reads, and stop-task stay available.

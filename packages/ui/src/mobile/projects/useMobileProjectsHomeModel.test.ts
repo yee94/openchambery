@@ -77,8 +77,8 @@ describe('useMobileProjectsHomeModel shared pin contract', () => {
 
 describe('formatHomeSessionSubtitle', () => {
   test('joins project and branch, and falls back to the project label', () => {
-    expect(formatHomeSessionSubtitle('openchamber', 'feat/home')).toBe('openchamber · feat/home');
-    expect(formatHomeSessionSubtitle('openchamber', '  ')).toBe('openchamber');
-    expect(formatHomeSessionSubtitle('openchamber', null)).toBe('openchamber');
+    expect(formatHomeSessionSubtitle('yuri', 'feat/home')).toBe('yuri · feat/home');
+    expect(formatHomeSessionSubtitle('yuri', '  ')).toBe('yuri');
+    expect(formatHomeSessionSubtitle('yuri', null)).toBe('yuri');
   });
 });

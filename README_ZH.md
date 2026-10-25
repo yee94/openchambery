@@ -1,7 +1,7 @@
-# <picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/openchamber-logo-dark.svg"><img src="docs/references/badges/openchamber-logo-light.svg" width="32" height="32" align="absmiddle" /></picture> OpenChamberY
+# <picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/yuri-logo-dark.svg"><img src="docs/references/badges/yuri-logo-light.svg" width="32" height="32" align="absmiddle" /></picture> Yuri
 
-[![GitHub stars](https://img.shields.io/github/stars/yee94/openchamber?style=flat&labelColor=100F0F&color=66800B)](https://github.com/yee94/openchamber/stargazers)
-[![GitHub release](https://img.shields.io/github/v/release/yee94/openchamber?style=flat&labelColor=100F0F&color=205EA6)](https://github.com/yee94/openchamber/releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/yee94/yuri?style=flat&labelColor=100F0F&color=66800B)](https://github.com/yee94/yuri/stargazers)
+[![GitHub release](https://img.shields.io/github/v/release/yee94/yuri?style=flat&labelColor=100F0F&color=205EA6)](https://github.com/yee94/yuri/releases/latest)
 [![Created with OpenCode](docs/references/badges/created-with-opencode.svg)](https://opencode.ai)
 
 **[OpenCode](https://opencode.ai) 的全端图形化 AI 编程工作台。**
@@ -11,30 +11,16 @@
 [English](./README.md)
 
 <p align="center">
-  <img src="docs/references/chat_example.png" alt="OpenChamberY 桌面端界面" width="100%" />
+  <img src="docs/references/badges/yuri-logo-light.svg" alt="Yuri" width="160" />
 </p>
-
-<table align="center" border="0" cellspacing="0" cellpadding="4">
-  <tr>
-    <td width="33.3%" valign="top">
-      <img src="docs/references/mobile_projects.png" alt="移动端项目与分支会话" width="100%" />
-    </td>
-    <td width="33.3%" valign="top">
-      <img src="docs/references/mobile_chat.png" alt="移动端实时 Diff 与执行状态" width="100%" />
-    </td>
-    <td width="33.3%" valign="top">
-      <img src="docs/references/mobile_schedules.png" alt="计划任务与自动化" width="100%" />
-    </td>
-  </tr>
-</table>
 
 ---
 
-## 关于 OpenChamberY
+## 关于 Yuri
 
-本项目 **OpenChamberY** 由 [@yee94](https://github.com/yee94) 维护，fork 自开源项目 [fedaykindev/openchamber](https://github.com/fedaykindev/openchamber)（作者 Bohdan Triapitsyn）。
+本项目 **Yuri** 由 [@yee94](https://github.com/yee94) 维护。版权与许可声明保留于 [LICENSE](LICENSE)。
 
-在继承上游全端架构与 [OpenCode](https://opencode.ai) 强大引擎的基础上，OpenChamberY 持续演进以下重点能力：
+在继承上游全端架构与 [OpenCode](https://opencode.ai) 强大引擎的基础上，Yuri 持续演进以下重点能力：
 - **Codex 级桌面交互**：`Ctrl+X` leader 快捷键、双 `Esc` 打断、`/fork` 分支管理等高密度键盘流。
 - **深度原生移动端**：iOS 灵动岛与锁屏实时活动（Live Activity）、微压触感反馈、原生输入与系统分享。
 - **计划任务与自动化**：内置 Cron 与周期调度器，支持 Goal 模式自主执行长任务与自动巡检。
@@ -86,15 +72,17 @@
 
 ---
 
-## 下载与安装
+## 下载
+
+Yuri 仓库、scope、商店及签名身份尚未验证，下方为候选发布入口，不能视为已经发布。见[迁移状态](docs/YURI_MIGRATION.md)。与安装
 
 | 客户端 | 安装方式 |
 |---|---|
-| **桌面端**（macOS / Windows / Linux） | [GitHub Releases](https://github.com/yee94/openchamber/releases) 下载对应安装包 |
-| **iOS**（TestFlight） | [加入 TestFlight 公测](https://testflight.apple.com/join/ZCENBHtm)（需先在 iPhone 上安装 TestFlight） |
-| **Android** | [GitHub Releases](https://github.com/yee94/openchamber/releases/latest) 下载 `app-release.apk` |
-| **VS Code 扩展** | 在扩展商店搜索 `OpenChamber` 或通过 [Marketplace](https://marketplace.visualstudio.com/items?itemName=fedaykindev.openchamber) 安装 |
-| **Web / CLI** | 使用 `openchambery` 一键脚本安装（见下方） |
+| **桌面端**（macOS / Windows / Linux） | [GitHub Releases](https://github.com/yee94/yuri/releases) 下载对应安装包 |
+| **iOS**（TestFlight） | 新 Yuri 应用记录及邀请入口待验证，见[迁移状态](docs/YURI_MIGRATION.md) |
+| **Android** | [GitHub Releases](https://github.com/yee94/yuri/releases/latest) 下载 `app-release.apk` |
+| **VS Code 扩展** | 在扩展商店搜索 `Yuri` 或通过 [Marketplace](https://marketplace.visualstudio.com/items?itemName=yee94.yuri) 安装 |
+| **Web / CLI** | 使用 `yuri` 一键脚本安装（见下方） |
 
 ---
 
@@ -107,23 +95,23 @@
 需要 Node.js 22+：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yee94/openchamber/main/scripts/install.sh | bash
-openchambery --ui-password 自定义安全密码
+curl -fsSL https://raw.githubusercontent.com/yee94/yuri/main/scripts/install.sh | bash
+yuri --ui-password 自定义安全密码
 ```
 
 启动后在浏览器打开终端打印的地址（默认 `http://localhost:3000`）。在设置中打开「连接设备」，用手机 App 扫码即可连接。
 
 <details>
-<summary>常用 openchambery CLI 命令</summary>
+<summary>常用 yuri CLI 命令</summary>
 
 ```bash
-openchambery --port 8080              # 指定端口
-openchambery --lan --port 3000        # 监听局域网 (0.0.0.0)
-openchambery --ui-password secret     # 开启密码认证
-openchambery startup enable           # 注册为系统开机自启服务
-openchambery connect-url --port 3000 --qr # 生成终端配对二维码
-openchambery stop                     # 停止后台服务
-openchambery update                   # 升级到最新版本
+yuri --port 8080              # 指定端口
+yuri --lan --port 3000        # 监听局域网 (0.0.0.0)
+yuri --ui-password secret     # 开启密码认证
+yuri startup enable           # 注册为系统开机自启服务
+yuri connect-url --port 3000 --qr # 生成终端配对二维码
+yuri stop                     # 停止后台服务
+yuri update                   # 升级到最新版本
 ```
 
 </details>
@@ -146,7 +134,6 @@ docker compose up -d
 | 角色 | 说明 |
 |---|---|
 | **本仓库维护** | [yee94](https://github.com/yee94)（Yee）— Codex 交互手感、移动端深度体验、会话可靠性与多端打磨 |
-| **上游 OpenChamber** | [Bohdan Triapitsyn / fedaykindev](https://github.com/fedaykindev/openchamber) — 原始产品设计与架构 |
 | **底座运行时** | [OpenCode](https://opencode.ai) — 开源 Agent 引擎与 API |
 
 本项目为开源社区独立项目，与 OpenCode 官方无商业隶属关系。

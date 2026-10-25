@@ -4,8 +4,8 @@ import { isIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { resolveCssVarToHex } from '@/lib/native-ios-composer';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
-export const NATIVE_IOS_TAB_BAR_CLASS = 'oc-native-ios-tab-bar';
-const NATIVE_IOS_TAB_BAR_PLUGIN = 'OpenChamberTabBar';
+export const NATIVE_IOS_TAB_BAR_CLASS = 'yuri-native-ios-tab-bar';
+const NATIVE_IOS_TAB_BAR_PLUGIN = 'YuriTabBar';
 
 export type NativeIosTabId = 'projects' | 'assistant' | 'scheduled' | 'settings';
 
@@ -57,7 +57,7 @@ export type NativeIosTabBarPlugin = {
   ) => Promise<PluginListenerHandle>;
 };
 
-const OpenChamberTabBar = registerPlugin<NativeIosTabBarPlugin>(NATIVE_IOS_TAB_BAR_PLUGIN);
+const YuriTabBar = registerPlugin<NativeIosTabBarPlugin>(NATIVE_IOS_TAB_BAR_PLUGIN);
 
 export type NativeIosTabBarAvailabilityInput = {
   isCapacitor: boolean;
@@ -154,4 +154,4 @@ export const resolveNativeIosTabBarSync = (input: {
   return { action: 'present' };
 };
 
-export const getNativeIosTabBarPlugin = (): NativeIosTabBarPlugin => OpenChamberTabBar;
+export const getNativeIosTabBarPlugin = (): NativeIosTabBarPlugin => YuriTabBar;

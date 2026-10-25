@@ -295,16 +295,16 @@ export const createPushRuntime = (deps) => {
   };
 
   const resolveVapidSubject = async () => {
-    const configured = process.env.OPENCHAMBER_VAPID_SUBJECT;
+    const configured = process.env.YURI_VAPID_SUBJECT;
     if (typeof configured === 'string' && configured.trim().length > 0) {
       return configured.trim();
     }
 
-    const originEnv = process.env.OPENCHAMBER_PUBLIC_ORIGIN;
+    const originEnv = process.env.YURI_PUBLIC_ORIGIN;
     if (typeof originEnv === 'string' && originEnv.trim().length > 0) {
       const trimmed = originEnv.trim();
       if (isLoopbackHttpOrigin(trimmed)) {
-        return 'mailto:openchamber@localhost';
+        return 'mailto:yuri@localhost';
       }
       return trimmed;
     }
@@ -315,14 +315,14 @@ export const createPushRuntime = (deps) => {
       if (typeof stored === 'string' && stored.trim().length > 0) {
         const trimmed = stored.trim();
         if (isLoopbackHttpOrigin(trimmed)) {
-          return 'mailto:openchamber@localhost';
+          return 'mailto:yuri@localhost';
         }
         return trimmed;
       }
     } catch {
     }
 
-    return 'mailto:openchamber@localhost';
+    return 'mailto:yuri@localhost';
   };
 
   const ensurePushInitialized = async () => {
@@ -330,8 +330,8 @@ export const createPushRuntime = (deps) => {
     const keys = await getOrCreateVapidKeys();
     const subject = await resolveVapidSubject();
 
-    if (subject === 'mailto:openchamber@localhost') {
-      console.warn('[Push] No public origin configured for VAPID; set OPENCHAMBER_VAPID_SUBJECT or enable push once from a real origin.');
+    if (subject === 'mailto:yuri@localhost') {
+      console.warn('[Push] No public origin configured for VAPID; set YURI_VAPID_SUBJECT or enable push once from a real origin.');
     }
 
     webPush.setVapidDetails(subject, keys.publicKey, keys.privateKey);

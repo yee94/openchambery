@@ -75,7 +75,7 @@ export const SkillToolGroup: React.FC<{
                     )}
                     style={{
                         color: 'var(--tools-title)',
-                        ...(isActive ? { ['--oc-text-shimmer-base' as string]: 'var(--tools-title)' } : {}),
+                        ...(isActive ? { ['--yuri-text-shimmer-base' as string]: 'var(--tools-title)' } : {}),
                     }}
                 >
                     {title}

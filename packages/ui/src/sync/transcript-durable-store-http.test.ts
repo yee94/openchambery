@@ -51,7 +51,7 @@ const captureFetch = (handler: (captured: Captured) => Response | Promise<Respon
 }
 
 describe("HTTP transcript durable store", () => {
-  test("reads a session through the OpenChamber prefix and query scope", async () => {
+  test("reads a session through the Yuri prefix and query scope", async () => {
     const { calls, store } = captureFetch(() =>
       jsonResponse(200, { available: true, scope: SCOPE, records: [record], byteSize: 12 }),
     )

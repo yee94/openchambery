@@ -105,7 +105,7 @@ that does not exist.
 `selectedId` is `null` unless it names a provider in `providers`. A saved id
 for an extension that is not installed right now is kept on disk but not
 reported as connected. The selection file is
-`browser-provider-selection.json` under the OpenChamber data dir and stores
+`browser-provider-selection.json` under the Yuri data dir and stores
 only `{ selectedId }`. A missing file is no selection. A read or write failure
 is not an empty catalog and does not change the previous choice.
 

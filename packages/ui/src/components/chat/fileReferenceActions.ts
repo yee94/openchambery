@@ -325,8 +325,8 @@ export const openFileReferenceFromElement = async (
   sourceElement: HTMLElement,
   options: OpenFileReferenceOptions,
 ): Promise<void> => {
-  const raw = sourceElement.getAttribute('data-openchamber-file-ref') || extractPathCandidateFromElement(sourceElement);
-  const isBinary = sourceElement.getAttribute('data-openchamber-file-binary') === 'true';
+  const raw = sourceElement.getAttribute('data-yuri-file-ref') || extractPathCandidateFromElement(sourceElement);
+  const isBinary = sourceElement.getAttribute('data-yuri-file-binary') === 'true';
   await openFileReference(raw, isBinary, options);
 };
 

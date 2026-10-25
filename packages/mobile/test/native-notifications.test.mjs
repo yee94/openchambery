@@ -8,22 +8,22 @@ import readline from 'node:readline';
 import { createHostHandshake, exportPublicKeyJwk, generateEcdhKeyPair } from '../../web/server/lib/relay/e2ee.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const source = path.resolve(here, '../android/app/src/main/java/com/openchamber/app');
+const source = path.resolve(here, '../android/app/src/main/java/com/yuri/app');
 let classes;
 beforeAll(() => {
-  classes = mkdtempSync(path.join(tmpdir(), 'oc-native-notifications-'));
+  classes = mkdtempSync(path.join(tmpdir(), 'yuri-native-notifications-'));
   execFileSync('javac', ['-d', classes, ...['NotificationRelayCrypto', 'NotificationSseParser', 'NotificationReconnect', 'NotificationFailure'].map((name) => path.join(source, `${name}.java`)), path.join(here, 'fixtures/NotificationHarness.java')]);
 });
 afterAll(() => { if (classes) rmSync(classes, { recursive: true, force: true }); });
 
 it('executes the actual Java UTF-8/fragment parser and bounded reconnect policy', () => {
-  expect(execFileSync('java', ['-cp', classes, 'com.openchamber.app.NotificationHarness'], { encoding: 'utf8' }).trim()).toBe('PASS parser/backoff');
+  expect(execFileSync('java', ['-cp', classes, 'com.yuri.app.NotificationHarness'], { encoding: 'utf8' }).trim()).toBe('PASS parser/backoff');
 });
 
 it('interoperates with the production relay host and rejects replay, tampering and oversized frames', async () => {
   const keys = await generateEcdhKeyPair();
   const jwk = await exportPublicKeyJwk(keys.publicKey);
-  const child = spawn('java', ['-cp', classes, 'com.openchamber.app.NotificationHarness', jwk.x, jwk.y], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn('java', ['-cp', classes, 'com.yuri.app.NotificationHarness', jwk.x, jwk.y], { stdio: ['pipe', 'pipe', 'pipe'] });
   const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   const read = async () => {
     const result = await lines.next();

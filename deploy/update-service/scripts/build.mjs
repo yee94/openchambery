@@ -6,15 +6,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const repositoryRoot = path.resolve(projectRoot, '../..');
-const configuredOutputDirectory = process.env.OPENCHAMBER_UPDATE_OUTPUT_DIR || 'public';
+const configuredOutputDirectory = process.env.YURI_UPDATE_OUTPUT_DIR || 'public';
 const outputDirectory = path.resolve(projectRoot, configuredOutputDirectory);
 const projectRootPrefix = `${projectRoot}${path.sep}`;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const GITHUB_CHANGELOG_URL = 'https://raw.githubusercontent.com/yee94/openchamber/main/CHANGELOG.md';
+const GITHUB_CHANGELOG_URL = 'https://raw.githubusercontent.com/yee94/yuri/main/CHANGELOG.md';
 const OTA_CHANNELS = ['beta', 'stable'];
 
 if (!outputDirectory.startsWith(projectRootPrefix)) {
-  throw new Error('OPENCHAMBER_UPDATE_OUTPUT_DIR must stay inside deploy/update-service.');
+  throw new Error('YURI_UPDATE_OUTPUT_DIR must stay inside deploy/update-service.');
 }
 
 const { parseOtaManifest } = await import(pathToFileURL(path.join(projectRoot, 'lib', 'ota-manifest.js')).href);
@@ -74,7 +74,7 @@ mkdirSync(outputDirectory, { recursive: true });
 // EdgeOne serves /CHANGELOG.md through edge-functions/CHANGELOG.md.js and
 // static assets shadow edge functions — so the EdgeOne build must not emit
 // CHANGELOG.md. Vercel still needs the static file for origin + edge functions.
-const skipChangelogCopy = process.env.OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY === '1';
+const skipChangelogCopy = process.env.YURI_UPDATE_SKIP_CHANGELOG_COPY === '1';
 if (!skipChangelogCopy) {
   const changelogSource = await resolveChangelogSource();
   if (changelogSource.kind === 'file') {
@@ -85,14 +85,14 @@ if (!skipChangelogCopy) {
 }
 writeFileSync(path.join(outputDirectory, 'update-manifest.json'), `${JSON.stringify(outputManifest, null, 2)}\n`);
 writeFileSync(path.join(outputDirectory, 'health.json'), `${JSON.stringify({
-  service: 'openchamber-update',
+  service: 'yuri-update',
   latestVersion,
 }, null, 2)}\n`);
 
 // EdgeOne serves /ota/* through the edge reverse proxy (edge-functions/ota)
 // and static assets shadow edge functions there — so the EdgeOne build must
 // not emit the seed tree. Vercel serves /ota/* as real static files.
-const skipOtaCopy = process.env.OPENCHAMBER_UPDATE_SKIP_OTA_COPY === '1';
+const skipOtaCopy = process.env.YURI_UPDATE_SKIP_OTA_COPY === '1';
 if (!skipOtaCopy) {
   const otaSource = path.join(projectRoot, 'ota');
   cpSync(otaSource, path.join(outputDirectory, 'ota'), { recursive: true });

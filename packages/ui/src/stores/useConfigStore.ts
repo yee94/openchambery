@@ -41,7 +41,7 @@ const ADD_PROVIDER_SENTINEL = "__add_provider__";
 const GIT_UTILITY_PROVIDER_ID = "zen";
 const GIT_UTILITY_PREFERRED_MODEL_ID = "big-pickle";
 
-interface OpenChamberDefaults {
+interface YuriDefaults {
     defaultModel?: string;
     defaultVariant?: string;
     defaultAgent?: string;
@@ -57,13 +57,13 @@ interface OpenChamberDefaults {
     sttLanguage?: string;
 }
 
-const fetchOpenChamberDefaults = async (
+const fetchYuriDefaults = async (
     transport: string,
-    fallback: OpenChamberDefaults,
-): Promise<OpenChamberDefaults> => {
+    fallback: YuriDefaults,
+): Promise<YuriDefaults> => {
     markStartupTrace('config.defaults:start');
     const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const finish = (source: string, result: OpenChamberDefaults) => {
+    const finish = (source: string, result: YuriDefaults) => {
         const ended = typeof performance !== 'undefined' ? performance.now() : Date.now();
         markStartupTrace('config.defaults:end', {
             source,
@@ -814,7 +814,7 @@ interface ConfigStore {
     connectionPhase: "connecting" | "connected" | "reconnecting";
     lastDisconnectReason: string | null;
     isInitialized: boolean;
-    // OpenChamber settings-based defaults (take precedence over agent preferences)
+    // Yuri settings-based defaults (take precedence over agent preferences)
     settingsDefaultModel: string | undefined; // format: "provider/model"
     settingsDefaultVariant: string | undefined;
     settingsDefaultAgent: string | undefined;
@@ -1697,7 +1697,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousAgents = existingSnapshot?.agents ?? [];
                     try {
-                            // Fetch agents and OpenChamber settings in parallel. OpenCode config
+                            // Fetch agents and Yuri settings in parallel. OpenCode config
                             // comes from sync state if it is already available; it must not block
                             // the agent refresh path.
                             const configDirectoryPath = fromDirectoryKey(directoryKey);
@@ -1706,7 +1706,7 @@ export const useConfigStore = create<ConfigStore>()(
                             if (initialSyncedOpencodeConfig) {
                                 markStartupTrace('loadAgents:syncConfigHit', { directoryKey, source });
                             }
-                            const [agents, openChamberDefaults] = await Promise.all([
+                            const [agents, yuriDefaults] = await Promise.all([
                                 measureStartupTrace(
                                     'loadAgents:api',
                                     () => options?.forceRefresh
@@ -1714,7 +1714,7 @@ export const useConfigStore = create<ConfigStore>()(
                                         : ensureRawAgentsQuery(configDirectoryPath, transport),
                                     { directoryKey, source, requestedDirectory, effectiveDirectory },
                                 ),
-                                fetchOpenChamberDefaults(transport, {
+                                fetchYuriDefaults(transport, {
                                     defaultModel: get().settingsDefaultModel,
                                     defaultVariant: get().settingsDefaultVariant,
                                     defaultAgent: get().settingsDefaultAgent,
@@ -1753,7 +1753,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                             const existingZenModel = normalizeOptionalString(get().settingsZenModel);
 
-                            const defaultZenModel = normalizeOptionalString(openChamberDefaults.zenModel);
+                            const defaultZenModel = normalizeOptionalString(yuriDefaults.zenModel);
 
                             const resolvedExistingGitSelection = resolveGitGenerationModelSelection({
                                 providers,
@@ -1797,14 +1797,14 @@ export const useConfigStore = create<ConfigStore>()(
                                 };
 
                                 const nextState: Partial<ConfigStore> = {
-                                    settingsDefaultModel: openChamberDefaults.defaultModel,
-                                    settingsDefaultVariant: openChamberDefaults.defaultVariant,
-                                    settingsDefaultAgent: openChamberDefaults.defaultAgent,
-                                    settingsAutoCreateWorktree: openChamberDefaults.autoCreateWorktree ?? false,
-                                    settingsGitmojiEnabled: openChamberDefaults.gitmojiEnabled ?? false,
-                                    settingsDefaultFileViewerPreview: openChamberDefaults.defaultFileViewerPreview ?? false,
+                                    settingsDefaultModel: yuriDefaults.defaultModel,
+                                    settingsDefaultVariant: yuriDefaults.defaultVariant,
+                                    settingsDefaultAgent: yuriDefaults.defaultAgent,
+                                    settingsAutoCreateWorktree: yuriDefaults.autoCreateWorktree ?? false,
+                                    settingsGitmojiEnabled: yuriDefaults.gitmojiEnabled ?? false,
+                                    settingsDefaultFileViewerPreview: yuriDefaults.defaultFileViewerPreview ?? false,
                                     settingsZenModel: resolvedZenModel,
-                                    settingsMessageStreamTransport: openChamberDefaults.messageStreamTransport ?? state.settingsMessageStreamTransport ?? 'auto',
+                                    settingsMessageStreamTransport: yuriDefaults.messageStreamTransport ?? state.settingsMessageStreamTransport ?? 'auto',
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -1853,9 +1853,9 @@ export const useConfigStore = create<ConfigStore>()(
                             const resolvedDefault = resolveDefaultAgentModelSelection({
                                 agents: safeAgents,
                                 providers,
-                                settingsDefaultAgent: openChamberDefaults.defaultAgent,
-                                settingsDefaultModel: openChamberDefaults.defaultModel,
-                                settingsDefaultVariant: openChamberDefaults.defaultVariant,
+                                settingsDefaultAgent: yuriDefaults.defaultAgent,
+                                settingsDefaultModel: yuriDefaults.defaultModel,
+                                settingsDefaultVariant: yuriDefaults.defaultVariant,
                                 opencodeDefaultAgent,
                                 opencodeDefaultModel,
                                 projectLastUserSelection: directoryLastUserSelection,
@@ -2059,10 +2059,10 @@ export const useConfigStore = create<ConfigStore>()(
                             selState.saveSessionAgentSelection(currentSessionId, resolvedAgentName);
                         }
 
-                        if (currentSessionId && useSessionUIStore.getState().isOpenChamberCreatedSession(currentSessionId)) {
+                        if (currentSessionId && useSessionUIStore.getState().isYuriCreatedSession(currentSessionId)) {
                             const existingAgentModel = selState.getAgentModelForSession(currentSessionId, resolvedAgentName);
                             if (!existingAgentModel) {
-                                useSessionUIStore.getState().initializeNewOpenChamberSession(currentSessionId, agents);
+                                useSessionUIStore.getState().initializeNewYuriSession(currentSessionId, agents);
                             }
                         }
                     }

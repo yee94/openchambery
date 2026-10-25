@@ -9,7 +9,7 @@ struct VideoServerProbe {
             let bytes = try! JSONSerialization.data(withJSONObject: value)
             FileHandle.standardOutput.write(bytes + Data([10]))
         }
-        let server = OpenChamberVideoServer(assetId: "test-video-opaque", emit: emit)
+        let server = YuriVideoServer(assetId: "test-video-opaque", emit: emit)
         server.start { result in
             switch result {
             case .success(let url): emit(["url": url])

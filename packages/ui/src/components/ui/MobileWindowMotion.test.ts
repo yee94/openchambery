@@ -163,20 +163,20 @@ describe('MobileWindowMotion recipe', () => {
     expect(modelControlsSource).toContain('id={`mobile-agent-picker-sheet-${mobileAgentSheetId}`}');
     expect(modelControlsSource).toContain('<MobileResizableSheet');
     expect(modelControlsSource).toContain('<ScrollableOverlay');
-    expect(mobileWindowMotionSource).toContain("className={cn('oc-mobile-floating-shell'");
+    expect(mobileWindowMotionSource).toContain("className={cn('yuri-mobile-floating-shell'");
     expect(mobileWindowMotionSource).toContain("surface?.focus({ preventScroll: true })");
     expect(mobileWindowMotionSource).not.toContain("(surface?.querySelector<HTMLElement>(FOCUSABLE) ?? surface)?.focus()");
   });
 
   test('uses compact resizable sheets for mobile draft project and branch selection', () => {
-    expect(chatInputSource).toContain('oc-mobile-draft-target-selectors');
+    expect(chatInputSource).toContain('yuri-mobile-draft-target-selectors');
     expect(chatInputSource).toContain('mobile-draft-project-picker-sheet-');
     expect(chatInputSource).toContain('<ScrollableOverlay outerClassName="min-h-0 flex-1" disableHorizontal>');
     expect(chatInputSource).toContain('data-mobile-sheet-no-dismiss=""');
     expect(branchSelectorSource).toContain("presentation?: 'dropdown' | 'mobile-sheet'");
     expect(branchSelectorSource).toContain('mobile-draft-branch-picker-sheet-');
     expect(branchSelectorSource).toContain("data-mobile-sheet-no-dismiss={presentation === 'mobile-sheet' ? '' : undefined}");
-    expect(mobileStylesSource).toContain('.oc-mobile-draft-target-selectors');
+    expect(mobileStylesSource).toContain('.yuri-mobile-draft-target-selectors');
     expect(mobileStylesSource).toContain('height: 26px !important;');
   });
 
@@ -191,8 +191,8 @@ describe('MobileWindowMotion recipe', () => {
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('mt-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('mx-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('pwa-overlay-panel');
-    expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('pb-[max(0.5rem,var(--oc-app-bottom-safe,0px),var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
-    expect(mobileOverlayPanelSource).toContain('pb-[max(0.5rem,var(--oc-app-bottom-safe,0px),var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
+    expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('pb-[max(0.5rem,var(--yuri-app-bottom-safe,0px),var(--yuri-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
+    expect(mobileOverlayPanelSource).toContain('pb-[max(0.5rem,var(--yuri-app-bottom-safe,0px),var(--yuri-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'top')).toContain('mb-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'top')).toContain('mx-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'left')).toContain('rounded-r-xl');

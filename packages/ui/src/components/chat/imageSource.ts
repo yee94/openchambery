@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import React from 'react';
 import { acquireRuntimeImage, type RuntimeImageIntent } from '@/lib/runtime-image-cache';
 import { getRuntimeAuthGeneration, subscribeRuntimeAuthGeneration } from '@/lib/runtime-auth';
@@ -104,7 +105,7 @@ export const releaseRuntimeImageObjectUrl = (url: string): void => {
 const simulateRelayImageGate = (): boolean => {
   if (!import.meta.env.DEV) return false;
   try {
-    if (window.localStorage.getItem('openchamber.debug.simulateRelayImageGate') === '1') return true;
+    if (window.localStorage.getItem('yuri.debug.simulateRelayImageGate') === '1') return true;
     return new URLSearchParams(window.location.search).get('simulateRelayImageGate') === '1';
   } catch {
     return false;
@@ -146,7 +147,7 @@ export const useRuntimeTransportIdentity = (): string => React.useSyncExternalSt
 
 /**
  * Local file paths and file:// URLs cannot be assigned to img.src under web /
- * packaged desktop (openchamber-ui://) or Capacitor origins. Hook consumers use
+ * packaged desktop (yuri-ui://) or Capacitor origins. Hook consumers use
  * leased native disk assets or one-use native streams for inline loads and
  * previews. Browser-only runtimes use object URLs for inline loads and previews.
  */

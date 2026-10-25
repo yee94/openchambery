@@ -26,10 +26,10 @@ export function MobileSettingsGroup({
     <SettingsGroup
       label={label}
       ariaLabel={ariaLabel}
-      className={cn('oc-mobile-settings-group', className)}
+      className={cn('yuri-mobile-settings-group', className)}
       cardClassName={cn(
-        'oc-mobile-settings-card',
-        borderless && 'oc-mobile-settings-card-borderless',
+        'yuri-mobile-settings-card',
+        borderless && 'yuri-mobile-settings-card-borderless',
       )}
     >
       {children}
@@ -58,7 +58,7 @@ export function MobileSettingsRow({
       itemId={itemId}
       label={label}
       description={description}
-      className={cn('oc-mobile-settings-row oc-mobile-settings-detail-row', className)}
+      className={cn('yuri-mobile-settings-row yuri-mobile-settings-detail-row', className)}
     >
       {children}
     </SettingsRow>

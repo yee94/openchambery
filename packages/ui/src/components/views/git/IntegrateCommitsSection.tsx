@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import * as React from 'react';
 import {
   DropdownMenu,
@@ -89,7 +90,7 @@ export const IntegrateCommitsSection: React.FC<{
 
   const conflictStorageKey = React.useMemo(() => {
     if (!currentSessionId) return null;
-    return `openchamber.integrate.conflict:${currentSessionId}`;
+    return `yuri.integrate.conflict:${currentSessionId}`;
   }, [currentSessionId]);
 
   React.useEffect(() => {

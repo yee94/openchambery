@@ -15,7 +15,7 @@ async function fixture(version = '2.1.1-beta.2', nativeVersion = '2.1.0') {
   const assets = path.join(root, 'assets');
   await mkdir(assets);
   await writeFile(path.join(assets, 'index.html'), '<html>new UI</html>');
-  await writeFile(path.join(assets, 'desktop-ota.json'), JSON.stringify({ releaseVersion: version, shellFingerprint: 'a'.repeat(64) }));
+  await writeFile(path.join(assets, 'desktop-ota.json'), JSON.stringify({ applicationId: 'dev.yuri.desktop', shellApiVersion: 2, releaseVersion: version, shellFingerprint: 'a'.repeat(64) }));
   const zip = path.join(root, 'bundle.zip');
   createAssetZip(assets, zip);
   const bytes = await readFile(zip);
@@ -24,7 +24,7 @@ async function fixture(version = '2.1.1-beta.2', nativeVersion = '2.1.0') {
   const decision = { status: 'ok', primaryAction: 'apply_ota', nextCheckInSec: 3600,
     native: { state: 'current' }, ota: { state: 'available', bundle: {
       bundleId, releaseVersion: version, url: `https://updates.example.com/ota/bundles/${bundleId}.zip`,
-      checksum, size: bytes.length, minShellApiVersion: 1, minShellReleaseVersion: '2.1.0',
+      checksum, size: bytes.length, minShellApiVersion: 2, minShellReleaseVersion: '2.1.0',
     } } };
   const fetchImpl = vi.fn(async (url) => String(url).includes('/check') ? Response.json(decision) : new Response(bytes));
   const options = { directory: path.join(root, 'ota'), builtinDirectory: path.join(root, 'builtin'), nativeVersion,
@@ -35,6 +35,15 @@ async function fixture(version = '2.1.1-beta.2', nativeVersion = '2.1.0') {
 }
 
 describe('desktop OTA lifecycle', () => {
+  test('reports the native desktop identity and rejects foreign or old-bridge resources', async () => {
+    const f = await fixture();
+    await f.ota.check('beta');
+    expect(JSON.parse(f.fetchImpl.mock.calls[0][1].body)).toMatchObject({ applicationId: 'dev.yuri.desktop', shellApiVersion: 2 });
+    for (const metadata of [{ applicationId: 'com.yee94.yuri', shellApiVersion: 2 }, { applicationId: 'dev.yuri.desktop', shellApiVersion: 1 }]) {
+      await writeFile(path.join(f.root, 'assets/desktop-ota.json'), JSON.stringify({ releaseVersion: '2.1.1-beta.2', ...metadata }));
+      await expect(f.ota.validateResources(path.join(f.root, 'assets'), '2.1.1-beta.2')).rejects.toThrow('identity mismatch');
+    }
+  });
   test('downloads once, keeps the current UI until restart, confirms the new version and retains it', async () => {
     const f = await fixture();
     await f.ota.check('beta');

@@ -1,4 +1,4 @@
-import type { NotificationPayload, NotificationsAPI } from '@openchamber/ui/lib/api/types';
+import type { NotificationPayload, NotificationsAPI } from '@yuri/ui/lib/api/types';
 
 const showWebviewNotification = async (payload?: NotificationPayload): Promise<boolean> => {
   if (typeof Notification === 'undefined') {
@@ -18,7 +18,7 @@ const showWebviewNotification = async (payload?: NotificationPayload): Promise<b
 
   const title = typeof payload?.title === 'string' && payload.title.trim().length > 0
     ? payload.title.trim()
-    : 'OpenChamber';
+    : 'Yuri';
   const body = typeof payload?.body === 'string' ? payload.body : '';
 
   new Notification(title, { body });

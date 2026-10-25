@@ -51,7 +51,7 @@ export const MagicPromptsSidebar: React.FC<MagicPromptsSidebarProps> = ({ onItem
   }, []);
 
   return (
-    <div className="oc-settings-page-content h-full overflow-y-auto bg-background p-3">
+    <div className="yuri-settings-page-content h-full overflow-y-auto bg-background p-3">
       <div className="flex flex-col justify-center gap-1 px-2">
         <span className="typography-ui-label text-foreground">
           {t('settings.magicPrompts.sidebar.title')}
@@ -74,7 +74,7 @@ export const MagicPromptsSidebar: React.FC<MagicPromptsSidebarProps> = ({ onItem
                     onItemSelect?.();
                   }}
                   className={cn(
-                    'oc-settings-group-row flex w-full items-center text-left transition-colors',
+                    'yuri-settings-group-row flex w-full items-center text-left transition-colors',
                     selected ? 'bg-interactive-selection text-foreground' : 'text-foreground hover:bg-interactive-hover'
                   )}
                 >

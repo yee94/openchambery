@@ -8,7 +8,7 @@ import { createSessionMetadataStore, mergeMetadataPatch } from './session-metada
 const tempDirs = [];
 
 const makeDataDir = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-metadata-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-metadata-'));
   tempDirs.push(dir);
   return dir;
 };
@@ -24,20 +24,20 @@ afterEach(() => {
 
 describe('mergeMetadataPatch', () => {
   it('merges nested objects key by key instead of replacing them', () => {
-    const current = { openchamber: { goal: { id: 'g1', status: 'active' }, assist: { recap: 'r' } } };
-    const merged = mergeMetadataPatch(current, { openchamber: { goal: { status: 'complete' } } });
+    const current = { yuri: { goal: { id: 'g1', status: 'active' }, assist: { recap: 'r' } } };
+    const merged = mergeMetadataPatch(current, { yuri: { goal: { status: 'complete' } } });
 
     expect(merged).toEqual({
-      openchamber: { goal: { id: 'g1', status: 'complete' }, assist: { recap: 'r' } },
+      yuri: { goal: { id: 'g1', status: 'complete' }, assist: { recap: 'r' } },
     });
     // The input is untouched: callers keep whatever they already held.
-    expect(current.openchamber.goal.status).toBe('active');
+    expect(current.yuri.goal.status).toBe('active');
   });
 
   it('deletes a key when its patch value is null', () => {
     expect(mergeMetadataPatch({ a: 1, b: 2 }, { b: null })).toEqual({ a: 1 });
-    expect(mergeMetadataPatch({ openchamber: { goal: {}, assist: {} } }, { openchamber: { assist: null } }))
-      .toEqual({ openchamber: { goal: {} } });
+    expect(mergeMetadataPatch({ yuri: { goal: {}, assist: {} } }, { yuri: { assist: null } }))
+      .toEqual({ yuri: { goal: {} } });
   });
 
   it('replaces arrays and scalars rather than merging into them', () => {
@@ -64,17 +64,17 @@ describe('createSessionMetadataStore', () => {
     };
     const store = createSessionMetadataStore(deps);
     await store.mutateSessionMetadata('ses_1', () => ({ ok: true, patch: {
-      openchamber: { titleAuthority: authority },
+      yuri: { titleAuthority: authority },
     } }));
-    expect(record.metadata).toEqual({ plugin: { retained: true }, openchamber: { titleAuthority: authority } });
+    expect(record.metadata).toEqual({ plugin: { retained: true }, yuri: { titleAuthority: authority } });
     const reopened = createSessionMetadataStore(deps);
-    expect((await reopened.get('ses_1')).openchamber.titleAuthority).toEqual(authority);
-    expect((await reopened.getAll()).ses_1.openchamber.titleAuthority).toEqual(authority);
+    expect((await reopened.get('ses_1')).yuri.titleAuthority).toEqual(authority);
+    expect((await reopened.getAll()).ses_1.yuri.titleAuthority).toEqual(authority);
     const stale = await reopened.mutateSessionMetadata('ses_1', (metadata) => ({
-      ok: metadata.openchamber.titleAuthority.revision === 'old', patch: { openchamber: { titleAuthority: null } },
+      ok: metadata.yuri.titleAuthority.revision === 'old', patch: { yuri: { titleAuthority: null } },
     }));
     expect(stale.committed).toBe(false);
-    expect(record.metadata.openchamber.titleAuthority).toEqual(authority);
+    expect(record.metadata.yuri.titleAuthority).toEqual(authority);
   });
   it('starts empty when the file does not exist', async () => {
     const store = createSessionMetadataStore({ dataDir: makeDataDir() });
@@ -86,28 +86,28 @@ describe('createSessionMetadataStore', () => {
     const dataDir = makeDataDir();
     const store = createSessionMetadataStore({ dataDir });
 
-    const merged = await store.setSessionMetadata('ses_1', { openchamber: { goal: { id: 'g1' } } });
-    expect(merged).toEqual({ openchamber: { goal: { id: 'g1' } } });
-    expect(JSON.parse(readFile(dataDir))).toEqual({ ses_1: { openchamber: { goal: { id: 'g1' } } } });
+    const merged = await store.setSessionMetadata('ses_1', { yuri: { goal: { id: 'g1' } } });
+    expect(merged).toEqual({ yuri: { goal: { id: 'g1' } } });
+    expect(JSON.parse(readFile(dataDir))).toEqual({ ses_1: { yuri: { goal: { id: 'g1' } } } });
 
     const reopened = createSessionMetadataStore({ dataDir });
-    await expect(reopened.get('ses_1')).resolves.toEqual({ openchamber: { goal: { id: 'g1' } } });
+    await expect(reopened.get('ses_1')).resolves.toEqual({ yuri: { goal: { id: 'g1' } } });
   });
 
   it('keeps a neighbouring namespace when another feature writes', async () => {
     const store = createSessionMetadataStore({ dataDir: makeDataDir() });
-    await store.setSessionMetadata('ses_1', { openchamber: { assist: { recap: 'done' } } });
-    const merged = await store.setSessionMetadata('ses_1', { openchamber: { goal: { status: 'active' } } });
+    await store.setSessionMetadata('ses_1', { yuri: { assist: { recap: 'done' } } });
+    const merged = await store.setSessionMetadata('ses_1', { yuri: { goal: { status: 'active' } } });
 
-    expect(merged).toEqual({ openchamber: { assist: { recap: 'done' }, goal: { status: 'active' } } });
+    expect(merged).toEqual({ yuri: { assist: { recap: 'done' }, goal: { status: 'active' } } });
   });
 
   it('deletes a key with a null patch value and drops a session that empties out', async () => {
     const dataDir = makeDataDir();
     const store = createSessionMetadataStore({ dataDir });
-    await store.setSessionMetadata('ses_1', { openchamber: { goal: { id: 'g1' } } });
+    await store.setSessionMetadata('ses_1', { yuri: { goal: { id: 'g1' } } });
 
-    await expect(store.setSessionMetadata('ses_1', { openchamber: null })).resolves.toEqual({});
+    await expect(store.setSessionMetadata('ses_1', { yuri: null })).resolves.toEqual({});
     await expect(store.getAll()).resolves.toEqual({});
     expect(JSON.parse(readFile(dataDir))).toEqual({});
   });
@@ -263,28 +263,28 @@ describe('createSessionMetadataStore', () => {
   it('serializes concurrent writes so neighboring keys are not lost', async () => {
     const store = createSessionMetadataStore({ dataDir: makeDataDir() });
     await Promise.all([
-      store.setSessionMetadata('ses_1', { openchamber: { goal: { id: 'g1' } } }),
-      store.setSessionMetadata('ses_1', { openchamber: { assist: { recap: 'a' } } }),
+      store.setSessionMetadata('ses_1', { yuri: { goal: { id: 'g1' } } }),
+      store.setSessionMetadata('ses_1', { yuri: { assist: { recap: 'a' } } }),
     ]);
     await expect(store.get('ses_1')).resolves.toEqual({
-      openchamber: { goal: { id: 'g1' }, assist: { recap: 'a' } },
+      yuri: { goal: { id: 'g1' }, assist: { recap: 'a' } },
     });
   });
 
   it('protects Host archive from generic metadata null ancestor deletes', async () => {
     const store = createSessionMetadataStore({ dataDir: makeDataDir() });
-    await store.setSessionMetadata('ses_1', { openchamber: { archive: { archivedAt: 9 } } }, { allowArchive: true });
-    await store.setSessionMetadata('ses_1', { openchamber: { goal: { id: 'g1' } } });
+    await store.setSessionMetadata('ses_1', { yuri: { archive: { archivedAt: 9 } } }, { allowArchive: true });
+    await store.setSessionMetadata('ses_1', { yuri: { goal: { id: 'g1' } } });
     await expect(store.get('ses_1')).resolves.toEqual({
-      openchamber: { archive: { archivedAt: 9 }, goal: { id: 'g1' } },
+      yuri: { archive: { archivedAt: 9 }, goal: { id: 'g1' } },
     });
-    await store.setSessionMetadata('ses_1', { openchamber: null });
+    await store.setSessionMetadata('ses_1', { yuri: null });
     await expect(store.get('ses_1')).resolves.toEqual({
-      openchamber: { archive: { archivedAt: 9 } },
+      yuri: { archive: { archivedAt: 9 } },
     });
-    await store.setSessionMetadata('ses_1', { openchamber: { archive: { archivedAt: 1 } } });
+    await store.setSessionMetadata('ses_1', { yuri: { archive: { archivedAt: 1 } } });
     await expect(store.get('ses_1')).resolves.toEqual({
-      openchamber: { archive: { archivedAt: 9 } },
+      yuri: { archive: { archivedAt: 9 } },
     });
   });
 
@@ -306,11 +306,11 @@ describe('createSessionMetadataStore', () => {
   it('mutateSessionMetadata commits only when decide returns ok with a patch', async () => {
     const store = createSessionMetadataStore({ dataDir: makeDataDir() });
     await store.setSessionMetadata('ses_1', {
-      openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 2 }, assist: { recap: 'keep' } },
+      yuri: { goal: { id: 'g1', status: 'active', executionGeneration: 2 }, assist: { recap: 'keep' } },
     });
 
     const rejected = await store.mutateSessionMetadata('ses_1', (current) => {
-      const gen = current?.openchamber?.goal?.executionGeneration;
+      const gen = current?.yuri?.goal?.executionGeneration;
       if (gen !== 2) return { ok: false, reason: 'generation_mismatch' };
       return {
         ok: false,
@@ -321,35 +321,35 @@ describe('createSessionMetadataStore', () => {
       committed: false,
       reason: 'status_not_active',
       metadata: {
-        openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 2 }, assist: { recap: 'keep' } },
+        yuri: { goal: { id: 'g1', status: 'active', executionGeneration: 2 }, assist: { recap: 'keep' } },
       },
     });
     await expect(store.get('ses_1')).resolves.toEqual({
-      openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 2 }, assist: { recap: 'keep' } },
+      yuri: { goal: { id: 'g1', status: 'active', executionGeneration: 2 }, assist: { recap: 'keep' } },
     });
 
     const accepted = await store.mutateSessionMetadata('ses_1', (current) => {
-      if (current?.openchamber?.goal?.executionGeneration !== 2) {
+      if (current?.yuri?.goal?.executionGeneration !== 2) {
         return { ok: false, reason: 'generation_mismatch' };
       }
       return {
         ok: true,
-        patch: { openchamber: { goal: { status: 'paused', executionGeneration: 3 } } },
+        patch: { yuri: { goal: { status: 'paused', executionGeneration: 3 } } },
       };
     });
     expect(accepted.committed).toBe(true);
-    expect(accepted.metadata.openchamber.goal).toEqual({
+    expect(accepted.metadata.yuri.goal).toEqual({
       id: 'g1',
       status: 'paused',
       executionGeneration: 3,
     });
-    expect(accepted.metadata.openchamber.assist).toEqual({ recap: 'keep' });
+    expect(accepted.metadata.yuri.assist).toEqual({ recap: 'keep' });
   });
 
   it('mutateSessionMetadata does not publish drafts while persist is blocked', async () => {
     const dataDir = makeDataDir();
     await createSessionMetadataStore({ dataDir }).setSessionMetadata('ses_1', {
-      openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 1 } },
+      yuri: { goal: { id: 'g1', status: 'active', executionGeneration: 1 } },
     });
 
     let unlock;
@@ -366,33 +366,33 @@ describe('createSessionMetadataStore', () => {
 
     const pending = store.mutateSessionMetadata('ses_1', () => ({
       ok: true,
-      patch: { openchamber: { goal: { status: 'paused', executionGeneration: 2 } } },
+      patch: { yuri: { goal: { status: 'paused', executionGeneration: 2 } } },
     }));
     await expect(store.get('ses_1')).resolves.toEqual({
-      openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 1 } },
+      yuri: { goal: { id: 'g1', status: 'active', executionGeneration: 1 } },
     });
-    expect(store.getSnapshotSync()?.ses_1?.openchamber?.goal?.status).toBe('active');
+    expect(store.getSnapshotSync()?.ses_1?.yuri?.goal?.status).toBe('active');
     unlock();
     await expect(pending).resolves.toMatchObject({
       committed: true,
-      metadata: { openchamber: { goal: { status: 'paused', executionGeneration: 2 } } },
+      metadata: { yuri: { goal: { status: 'paused', executionGeneration: 2 } } },
     });
   });
 
   it('mutateSessionMetadata preserves Host archive and serializes with setSessionMetadata', async () => {
     const store = createSessionMetadataStore({ dataDir: makeDataDir() });
-    await store.setSessionMetadata('ses_1', { openchamber: { archive: { archivedAt: 42 } } }, { allowArchive: true });
+    await store.setSessionMetadata('ses_1', { yuri: { archive: { archivedAt: 42 } } }, { allowArchive: true });
 
     const [mutated] = await Promise.all([
       store.mutateSessionMetadata('ses_1', () => ({
         ok: true,
-        patch: { openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 0 } } },
+        patch: { yuri: { goal: { id: 'g1', status: 'active', executionGeneration: 0 } } },
       })),
-      store.setSessionMetadata('ses_1', { openchamber: { assist: { recap: 'a' } } }),
+      store.setSessionMetadata('ses_1', { yuri: { assist: { recap: 'a' } } }),
     ]);
     expect(mutated.committed).toBe(true);
     await expect(store.get('ses_1')).resolves.toEqual({
-      openchamber: {
+      yuri: {
         archive: { archivedAt: 42 },
         goal: { id: 'g1', status: 'active', executionGeneration: 0 },
         assist: { recap: 'a' },

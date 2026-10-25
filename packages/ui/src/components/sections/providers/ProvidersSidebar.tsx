@@ -62,7 +62,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
       const tasks = providers.map(async (provider) => {
         try {
           const query = directory ? `?directory=${encodeURIComponent(directory)}` : '';
-          // OpenChamber-only metadata endpoint: the SDK exposes provider data but
+          // Yuri-only metadata endpoint: the SDK exposes provider data but
           // not local auth/source-file provenance used by this settings sidebar.
           const response = await runtimeFetch(`/api/provider/${encodeURIComponent(provider.id)}/source${query}`, {
             method: 'GET',
@@ -125,13 +125,13 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
   );
 
   return (
-    <div className="oc-settings-page-content h-full overflow-y-auto bg-background p-3">
+    <div className="yuri-settings-page-content h-full overflow-y-auto bg-background p-3">
       <SettingsProjectSelector />
 
       <>
         {providers.length === 0 ? (
           <SettingsGroup label={userProvidersLabel}>
-            <div className="oc-settings-group-row py-12 text-center text-muted-foreground">
+            <div className="yuri-settings-group-row py-12 text-center text-muted-foreground">
               <Icon name="stack" className="mx-auto mb-3 h-10 w-10 opacity-50" />
               <p className="typography-ui-label font-medium">{t('settings.providers.sidebar.empty.title')}</p>
               <p className="typography-meta mt-1 opacity-75">{t('settings.providers.sidebar.empty.description')}</p>
@@ -194,7 +194,7 @@ const ProviderListItem: React.FC<{
       key={provider.id}
       className={cn(
         // Compact single-line entity row: tighter than the default form-row geometry.
-        'oc-settings-group-row group relative flex items-center transition-colors duration-150 !min-h-0 py-2',
+        'yuri-settings-group-row group relative flex items-center transition-colors duration-150 !min-h-0 py-2',
         isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
       )}
     >

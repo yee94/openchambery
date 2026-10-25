@@ -21,7 +21,7 @@ export const useSidebarBrandStore = create<SidebarBrandStore>()(
       },
     }),
     {
-      // Transport-scoped so packaged multi-window (shared openchamber-ui:// origin)
+      // Transport-scoped so packaged multi-window (shared yuri-ui:// origin)
       // does not leak local brand into a remote-host window (or the reverse).
       name: 'sidebar-brand-store',
       storage: createRuntimeScopedJSONStorage(),

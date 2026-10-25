@@ -99,7 +99,7 @@ export const useAssistantUIStore = create<AssistantUIState>()(persist((set) => (
     openSettingsRequestRevision: state.openSettingsRequestRevision + 1,
   })),
 }), {
-  name: 'openchamber-assistant-ui',
+  name: 'yuri-assistant-ui',
   storage: createDeferredSafeJSONStorage(),
   partialize: (state) => ({ assistantByTransport: state.assistantByTransport, defaultShareAssistant: state.defaultShareAssistant, assistantCatalogByConnection: state.assistantCatalogByConnection }),
   migrate: (persisted) => {

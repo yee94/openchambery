@@ -22,7 +22,7 @@ changelog-*.png
 *.vsix
 /npm
 /tsc
-/openchamber@*
+/yuri@*
 local-dev*
 .tmp/
 # Editor directories and files

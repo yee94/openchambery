@@ -171,7 +171,7 @@ class BlockWidget extends WidgetType {
     let div = this.containerMap.get(this.id);
     if (!div) {
       div = document.createElement('div');
-      div.className = 'oc-block-widget';
+      div.className = 'yuri-block-widget';
       div.dataset.widgetId = this.id;
       this.containerMap.set(this.id, div);
     }
@@ -247,7 +247,7 @@ const createHighlightLinesExtension = (range?: { start: number; end: number }): 
       const builder = new RangeSetBuilder<Decoration>();
       for (let lineNo = start; lineNo <= end && lineNo <= view.state.doc.lines; lineNo += 1) {
         const line = view.state.doc.line(lineNo);
-        builder.add(line.from, line.from, Decoration.line({ class: 'oc-cm-selected-line' }));
+        builder.add(line.from, line.from, Decoration.line({ class: 'yuri-cm-selected-line' }));
       }
       return builder.finish();
     }
@@ -326,7 +326,7 @@ export function CodeMirrorEditor({
 
     const gutters = resolvedView.dom.querySelector('.cm-gutters');
     const gutterWidth = gutters instanceof HTMLElement ? gutters.getBoundingClientRect().width : 0;
-    host.style.setProperty('--oc-editor-gutter-width', `${gutterWidth}px`);
+    host.style.setProperty('--yuri-editor-gutter-width', `${gutterWidth}px`);
   }, []);
 
   React.useEffect(() => {
@@ -360,7 +360,7 @@ export function CodeMirrorEditor({
       if (typeof document === 'undefined') return null;
       const metaNonce = document.querySelector('meta[name="csp-nonce"]')?.getAttribute('content');
       if (metaNonce) return metaNonce;
-      const windowNonce = (window as Window & { __OPENCHAMBER_CSP_NONCE__?: string }).__OPENCHAMBER_CSP_NONCE__;
+      const windowNonce = (window as Window & { __YURI_CSP_NONCE__?: string }).__YURI_CSP_NONCE__;
       return typeof windowNonce === 'string' && windowNonce.length > 0 ? windowNonce : null;
     })();
 

@@ -105,7 +105,7 @@ describe('detectMessageReferences', () => {
     });
 
     test('displays path-only image citations as short image labels without changing source text', () => {
-        for (const path of ['/tmp/openchamber-prompt-test/image-1.png', 'C:\\Temp\\openchamber-prompt-test\\image-1.png', '/tmp/My Images/image-1.png']) {
+        for (const path of ['/tmp/yuri-prompt-test/image-1.png', 'C:\\Temp\\yuri-prompt-test\\image-1.png', '/tmp/My Images/image-1.png']) {
             const text = `[${path}] please review`;
             const parts = buildMessageReferenceParts(text);
             expect(parts?.[0]).toMatchObject({
@@ -170,16 +170,16 @@ describe('detectMessageReferences', () => {
     });
 
     test('detects exact visible session labels from semantic message context', () => {
-        const spans = detectMessageReferences('@OpenChamber status please review', {
-            sessionMentions: [{ sessionId: 'ses_1', sessionLabel: 'OpenChamber status' }],
+        const spans = detectMessageReferences('@Yuri status please review', {
+            sessionMentions: [{ sessionId: 'ses_1', sessionLabel: 'Yuri status' }],
         });
         expect(spans).toEqual([{
             start: 0,
-            end: 19,
+            end: 12,
             kind: 'session',
-            raw: '@OpenChamber status',
-            label: 'OpenChamber status',
-            payload: { kind: 'session', sessionId: 'ses_1', sessionLabel: 'OpenChamber status' },
+            raw: '@Yuri status',
+            label: 'Yuri status',
+            payload: { kind: 'session', sessionId: 'ses_1', sessionLabel: 'Yuri status' },
         }]);
     });
 
@@ -235,7 +235,7 @@ describe('tokenizeMessageReferences', () => {
     });
 
     test('buildMessageReferenceParts shows the short image name for expanded host paths', () => {
-        const path = '/data/openchamber/prompt-attachments/aa/one.png';
+        const path = '/data/yuri/prompt-attachments/aa/one.png';
         const parts = buildMessageReferenceParts(`[${path}] please review`, {
             citationIcons: new Map([[path.toLowerCase(), 'image']]),
             citationDisplayNames: new Map([[path.toLowerCase(), 'image-1.png']]),
@@ -284,15 +284,15 @@ describe('messageReferenceTriggerIconSpec', () => {
         expect(messageReferenceTriggerIconSpec({ kind: 'image', label: 'image-1.png', icon: 'file-image', className: 'reference' })).toEqual({
             trigger: '[', icon: 'file-image', label: 'image-1.png', suffix: ']',
         });
-        expect(messageReferenceTriggerIconSpec({ kind: 'session', label: 'OpenChamber', icon: 'chat-thread', className: 'reference' })).toEqual({
-            trigger: '@', icon: 'chat-thread', label: 'OpenChamber',
+        expect(messageReferenceTriggerIconSpec({ kind: 'session', label: 'Yuri', icon: 'chat-thread', className: 'reference' })).toEqual({
+            trigger: '@', icon: 'chat-thread', label: 'Yuri',
         });
     });
 });
 
 describe('buildCitationHintsFromParts', () => {
     test('maps expanded host paths back to the short file-part filename', () => {
-        const path = '/data/openchamber/prompt-attachments/aa/one.png';
+        const path = '/data/yuri/prompt-attachments/aa/one.png';
         const hints = buildCitationHintsFromParts(
             [{ type: 'file', mime: 'image/png', filename: 'image-1.png' } as Part],
             `[${path}] 这里写的什么`,
@@ -303,9 +303,9 @@ describe('buildCitationHintsFromParts', () => {
 
     test('maps ordinary file parts to attachment chips', () => {
         const hints = buildCitationHintsFromParts(
-            [{ type: 'file', mime: 'application/json', filename: 'openchamber-diagnostics.json' } as Part],
-            '[\u2003openchamber-diagnostics.json] 你看一下日志',
+            [{ type: 'file', mime: 'application/json', filename: 'yuri-diagnostics.json' } as Part],
+            '[\u2003yuri-diagnostics.json] 你看一下日志',
         );
-        expect(hints.icons.get('openchamber-diagnostics.json')).toBe('attachment');
+        expect(hints.icons.get('yuri-diagnostics.json')).toBe('attachment');
     });
 });

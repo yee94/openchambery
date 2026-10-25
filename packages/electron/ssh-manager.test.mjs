@@ -37,7 +37,7 @@ const servers = [];
 const tempDirs = [];
 
 const makeTempDir = async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'openchamber-ssh-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'yuri-ssh-'));
   tempDirs.push(dir);
   return dir;
 };
@@ -137,7 +137,7 @@ describe('master stderr diagnostics', () => {
 });
 
 describe('ElectronSshManager', () => {
-  test('stores a client token for forwarded OpenChamber hosts when UI password is configured', async () => {
+  test('stores a client token for forwarded Yuri hosts when UI password is configured', async () => {
     let loginPayload = null;
     const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && req.url === '/auth/session') {
@@ -149,7 +149,7 @@ describe('ElectronSshManager', () => {
       res.writeHead(404).end();
     });
     const localUrl = await listen(server);
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const settingsFilePath = path.join(tempDir, 'settings.json');
     const manager = new ElectronSshManager({
@@ -178,7 +178,7 @@ describe('ElectronSshManager', () => {
       if (req.method === 'POST' && req.url === '/auth/session') {
         res.writeHead(200, {
           'Content-Type': 'application/json',
-          'Set-Cookie': 'oc_session=ssh-session; Path=/; HttpOnly',
+          'Set-Cookie': 'yuri_session=ssh-session; Path=/; HttpOnly',
         });
         res.end(JSON.stringify({ authenticated: true }));
         return;
@@ -192,7 +192,7 @@ describe('ElectronSshManager', () => {
       res.writeHead(404).end();
     });
     const localUrl = await listen(server);
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const manager = new ElectronSshManager({
       settingsFilePath: path.join(tempDir, 'settings.json'),
@@ -203,14 +203,14 @@ describe('ElectronSshManager', () => {
     const token = await manager.issueClientToken(localUrl, 'ui-secret');
     expect(token).toBe('ssh-fallback-token');
     expect(createPayload).toMatchObject({
-      label: 'OpenChamber Desktop SSH',
+      label: 'Yuri Desktop SSH',
       clientKind: 'desktop-local',
       dedupeKey: 'desktop-local',
     });
   });
 
   test('refuses to mint an SSH host token without a UI password', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const manager = new ElectronSshManager({
       settingsFilePath: path.join(tempDir, 'settings.json'),
@@ -224,7 +224,7 @@ describe('ElectronSshManager', () => {
     const password = createEphemeralUiPassword();
     expect(password).toMatch(/^[A-Za-z0-9_-]{20,}$/);
     expect(buildManagedServeEnvPrefix(password)).toBe(
-      `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD='${password}'`,
+      `YURI_RUNTIME=ssh-remote YURI_UI_PASSWORD='${password}'`,
     );
     expect(() => buildManagedServeEnvPrefix('')).toThrow(/requires a UI password/i);
   });
@@ -254,7 +254,7 @@ describe('ElectronSshManager', () => {
     });
     const localUrl = await listen(server);
     const localPort = Number(new URL(localUrl).port);
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const settingsFilePath = path.join(tempDir, 'settings.json');
     const manager = new ElectronSshManager({
@@ -288,7 +288,7 @@ describe('ElectronSshManager', () => {
   });
 
   test('getRoutingTable includes only ready sessions with a finite localPort', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const settingsFilePath = path.join(tempDir, 'settings.json');
     const manager = new ElectronSshManager({
@@ -313,7 +313,7 @@ describe('ElectronSshManager', () => {
   });
 
   test('sanitizeInstance preserves lanForward enabled + sticky localPort', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const manager = new ElectronSshManager({
       settingsFilePath: path.join(tempDir, 'settings.json'),
@@ -343,7 +343,7 @@ describe('ElectronSshManager', () => {
   });
 
   test('rebuildLanForwardIfConfigured spawns 0.0.0.0 forward when enabled with a saved port', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const manager = new ElectronSshManager({
       settingsFilePath: path.join(tempDir, 'settings.json'),
@@ -390,7 +390,7 @@ describe('ElectronSshManager', () => {
   });
 
   test('ensureLanForward is idempotent with a sticky port and throws when not ready', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const settingsFilePath = path.join(tempDir, 'settings.json');
     fs.writeFileSync(settingsFilePath, JSON.stringify({
@@ -439,7 +439,7 @@ describe('ElectronSshManager', () => {
   });
 
   test('ensureLanForward allocates and persists a sticky LAN port when missing', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const settingsFilePath = path.join(tempDir, 'settings.json');
     fs.writeFileSync(settingsFilePath, JSON.stringify({
@@ -601,15 +601,31 @@ describe('buildRemoteManagedNodeSelectionFunctions', () => {
 });
 
 describe('managed SSH relay host defaults', () => {
+  test('legacy stored SSH settings migrate at read/write boundary and Yuri fields win', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-migration-'));
+    tempDirs.push(tempDir);
+    const settingsFilePath = path.join(tempDir, 'settings.json');
+    const old = { id: 'ssh-legacy', sshCommand: 'ssh host.example', remoteOpenchamber: { mode: 'external', preferredPort: 4312, relayHost: false }, auth: { openchamberPassword: { enabled: true, store: 'never' } } };
+    fs.writeFileSync(settingsFilePath, JSON.stringify({ desktopSshInstances: [old] }));
+    const manager = new ElectronSshManager({ settingsFilePath, appVersion: '0.0.0-test', emit() {} });
+    const config = manager.readInstances();
+    expect(config.instances[0].remoteYuri).toMatchObject({ mode: 'external', preferredPort: 4312, relayHost: false });
+    expect(config.instances[0].auth.yuriPassword.enabled).toBe(true);
+    await manager.setInstances(config);
+    const persisted = JSON.parse(fs.readFileSync(settingsFilePath, 'utf8')).desktopSshInstances[0];
+    expect(persisted).not.toHaveProperty('remoteOpenchamber');
+    expect(persisted.auth).not.toHaveProperty('openchamberPassword');
+    expect(manager.sanitizeInstance({ ...old, remoteYuri: { preferredPort: 7654 } }).remoteYuri.preferredPort).toBe(7654);
+  });
   test('relay host is on by default and can be opted out', () => {
     expect(instanceWantsRelayHost({})).toBe(true);
-    expect(instanceWantsRelayHost({ remoteOpenchamber: {} })).toBe(true);
-    expect(instanceWantsRelayHost({ remoteOpenchamber: { relayHost: true } })).toBe(true);
-    expect(instanceWantsRelayHost({ remoteOpenchamber: { relayHost: false } })).toBe(false);
+    expect(instanceWantsRelayHost({ remoteYuri: {} })).toBe(true);
+    expect(instanceWantsRelayHost({ remoteYuri: { relayHost: true } })).toBe(true);
+    expect(instanceWantsRelayHost({ remoteYuri: { relayHost: false } })).toBe(false);
   });
 
   test('sanitizeInstance persists relayHost=true by default', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const manager = new ElectronSshManager({
       settingsFilePath: path.join(tempDir, 'settings.json'),
@@ -619,12 +635,12 @@ describe('managed SSH relay host defaults', () => {
     expect(manager.sanitizeInstance({
       id: 'ssh-1',
       sshCommand: 'ssh user@host.example',
-    }).remoteOpenchamber.relayHost).toBe(true);
+    }).remoteYuri.relayHost).toBe(true);
     expect(manager.sanitizeInstance({
       id: 'ssh-2',
       sshCommand: 'ssh user@host.example',
-      remoteOpenchamber: { relayHost: false },
-    }).remoteOpenchamber.relayHost).toBe(false);
+      remoteYuri: { relayHost: false },
+    }).remoteYuri.relayHost).toBe(false);
   });
 
   test('remoteRuntimeCanHostRelay accepts ssh-remote and desktop only', () => {
@@ -660,13 +676,13 @@ describe('managed SSH relay host defaults', () => {
       "--relay-host 'wss://relay.example/ws'",
     );
     expect(buildRelayHostFlag({
-      remoteOpenchamber: { relayUrl: 'ws://127.0.0.1:8787/ws' },
+      remoteYuri: { relayUrl: 'ws://127.0.0.1:8787/ws' },
     })).toBe("--relay-host 'ws://127.0.0.1:8787/ws'");
     expect(buildRelayHostFlag({ relayUrl: 'https://not-a-relay.example' })).toBe('--relay-host');
   });
 
   test('create → sanitize → serve command is ssh-remote + --relay-host by default', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const manager = new ElectronSshManager({
       settingsFilePath: path.join(tempDir, 'settings.json'),
@@ -676,33 +692,33 @@ describe('managed SSH relay host defaults', () => {
     const created = {
       id: 'ssh-devcloud',
       sshCommand: 'ssh root@host.example -p 36000',
-      remoteOpenchamber: { mode: 'managed', keepRunning: true },
+      remoteYuri: { mode: 'managed', keepRunning: true },
     };
     const instance = manager.sanitizeInstance(created);
-    expect(instance.remoteOpenchamber.relayHost).toBe(true);
+    expect(instance.remoteYuri.relayHost).toBe(true);
     const command = buildManagedServeCommand(instance, 18765, 'ui-secret');
-    expect(command).toContain("OPENCHAMBER_RUNTIME=ssh-remote");
-    expect(command).toContain("OPENCHAMBER_UI_PASSWORD='ui-secret'");
-    expect(command).toContain('openchamber serve --hostname 127.0.0.1 --port 18765 --relay-host');
+    expect(command).toContain("YURI_RUNTIME=ssh-remote");
+    expect(command).toContain("YURI_UI_PASSWORD='ui-secret'");
+    expect(command).toContain('yuri serve --hostname 127.0.0.1 --port 18765 --relay-host');
     expect(command).not.toMatch(/--relay-host '/);
 
     const optedOut = manager.sanitizeInstance({
       ...created,
       id: 'ssh-devcloud-off',
-      remoteOpenchamber: { relayHost: false },
+      remoteYuri: { relayHost: false },
     });
     expect(buildManagedServeCommand(optedOut, 18765, 'ui-secret')).toBe(
-      "OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD='ui-secret' openchamber serve --hostname 127.0.0.1 --port 18765",
+      "YURI_RUNTIME=ssh-remote YURI_UI_PASSWORD='ui-secret' yuri serve --hostname 127.0.0.1 --port 18765",
     );
     expect(buildManagedServeCommand(instance, 18765, 'ui-secret', { relayHostSupported: false })).toBe(
-      "OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD='ui-secret' openchamber serve --hostname 127.0.0.1 --port 18765",
+      "YURI_RUNTIME=ssh-remote YURI_UI_PASSWORD='ui-secret' yuri serve --hostname 127.0.0.1 --port 18765",
     );
     expect(remoteHelpMentionsRelayHost('  --relay-host [url]      serve: enable the private relay host')).toBe(true);
     expect(remoteHelpMentionsRelayHost('  --relay                 connect-url: also include the relay')).toBe(false);
   });
 
   test('updateHostRuntime attaches a relay descriptor and preserves it when omitted', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const settingsFilePath = path.join(tempDir, 'settings.json');
     const manager = new ElectronSshManager({
@@ -731,7 +747,7 @@ describe('parseVersionToken', () => {
     expect(parseVersionToken('1.18.4-beta.4')).toBe('1.18.4-beta.4');
     expect(parseVersionToken('v1.18.4-beta.4')).toBe('1.18.4-beta.4');
     expect(parseVersionToken('1.18.4-beta.4+build.7')).toBe('1.18.4-beta.4+build.7');
-    expect(parseVersionToken('openchamber 1.18.4-beta.4')).toBe('1.18.4-beta.4');
+    expect(parseVersionToken('yuri 1.18.4-beta.4')).toBe('1.18.4-beta.4');
   });
 
   test('keeps two-part numeric versions and ignores non-versions', () => {
@@ -748,7 +764,7 @@ describe('parseVersionToken', () => {
 describe('ensureRemoteOpenCodeCli latest 2.x', () => {
   const createManager = (opencodeCliVersion) => {
     const manager = new ElectronSshManager({
-      settingsFilePath: path.join(os.tmpdir(), `openchamber-ssh-opencode2-${Date.now()}.json`),
+      settingsFilePath: path.join(os.tmpdir(), `yuri-ssh-opencode2-${Date.now()}.json`),
       appVersion: '0.0.0-test',
       opencodeCliVersion,
       emit: () => undefined,
@@ -883,13 +899,13 @@ describe('classifyManagedSshBootstrapError', () => {
     )).toBe('nodeRuntimeMissing');
     expect(classifyManagedSshBootstrapError('gyp ERR! ENOENT node_gyp_bins')).toBe('nativeBinding');
     expect(classifyManagedSshBootstrapError(
-      'OpenChamber installation completed but the executable is unavailable',
-    )).toBe('openchamberCliMissing');
+      'Yuri installation completed but the executable is unavailable',
+    )).toBe('yuriCliMissing');
     expect(classifyManagedSshBootstrapError(
-      'Failed to install OpenChamber because the remote could not reach the npm registry',
-    )).toBe('openchamberRegistry');
-    expect(classifyManagedSshBootstrapError('Failed to install OpenChamber on remote host')).toBe('openchamberInstall');
-    expect(classifyManagedSshBootstrapError('Error: Unknown option: --relay-host')).toBe('openchamberCliIncompatible');
+      'Failed to install Yuri because the remote could not reach the npm registry',
+    )).toBe('yuriRegistry');
+    expect(classifyManagedSshBootstrapError('Failed to install Yuri on remote host')).toBe('yuriInstall');
+    expect(classifyManagedSshBootstrapError('Error: Unknown option: --relay-host')).toBe('yuriCliIncompatible');
     expect(classifyManagedSshBootstrapError('Permission denied (publickey)')).toBe('sshAuth');
   });
 
@@ -902,10 +918,10 @@ describe('classifyManagedSshBootstrapError', () => {
       'failed to prepare better-sqlite3 for the selected remote Node runtime',
     );
     expect(summarizeManagedSshBootstrapError(
-      'OpenChamber installation completed but the executable is unavailable',
-    )).toBe('OpenChamberY installation completed but the executable is unavailable');
+      'Yuri installation completed but the executable is unavailable',
+    )).toBe('Yuri installation completed but the executable is unavailable');
     expect(summarizeManagedSshBootstrapError('npm ERR! code ENOTFOUND registry.npmjs.org')).toBe(
-      'Failed to install OpenChamberY because the remote could not reach the npm registry',
+      'Failed to install Yuri because the remote could not reach the npm registry',
     );
   });
 });
@@ -913,7 +929,7 @@ describe('classifyManagedSshBootstrapError', () => {
 describe('buildRemoteNativeBindingRepairScript', () => {
   test('probes first, then cleans node-gyp leftovers, retries, and reinstalls', () => {
     const script = buildRemoteNativeBindingRepairScript({
-      packageName: '@openchambery/web',
+      packageName: '@yuri/web',
       version: '1.18.3-beta.14',
     });
     expect(script.indexOf('probe_sqlite')).toBeLessThan(script.indexOf('rebuild_sqlite'));
@@ -921,7 +937,7 @@ describe('buildRemoteNativeBindingRepairScript', () => {
     expect(script).toContain('rm -rf "$sqlite_dir/build"');
     expect(script).toContain('mkdir -p "$sqlite_dir/build/node_gyp_bins"');
     expect(script).toContain('npm rebuild --foreground-scripts');
-    expect(script).toContain("npm install -g '@openchambery/web@1.18.3-beta.14' --force");
+    expect(script).toContain("npm install -g '@yuri/web@1.18.3-beta.14' --force");
     expect(script).toContain('/usr/bin/python3.11');
     expect(script).toContain('/opt/rh/gcc-toolset-12');
     expect(script).toContain('failed to prepare better-sqlite3');
@@ -1131,9 +1147,9 @@ describe('buildRemoteSyncPrepareScript', () => {
     expect(script).not.toMatch(/\$CFG\/my file/);
     // Generational: never wipe the entire backup root at prepare start.
     expect(script).not.toContain('rm -rf -- "$BK"\n');
-    expect(script).not.toContain('.openchamber.sync-backup-agents');
+    expect(script).not.toContain('.yuri.sync-backup-agents');
     expect(script).not.toContain('rm -rf -- "$HOME/.agents"');
-    expect(script).not.toContain('.openchamber.sync-backup-auth');
+    expect(script).not.toContain('.yuri.sync-backup-auth');
     expect(script).not.toContain('auth.json');
   });
 
@@ -1147,7 +1163,7 @@ describe('buildRemoteSyncPrepareScript', () => {
       totalBytes: 4,
     }, { syncRunId: 'run-agents' });
     expect(script).toContain('SYNC_READY');
-    expect(script).toContain('AGENTS_BK="$HOME/.openchamber.sync-backup-agents"');
+    expect(script).toContain('AGENTS_BK="$HOME/.yuri.sync-backup-agents"');
     expect(script).toContain("AGENTS_RUN_BK=\"$AGENTS_BK\"/'run-agents'");
     expect(script).toContain('cp -a "$HOME/.agents" "$AGENTS_RUN_BK/agents"');
     expect(script).toContain('rm -rf -- "$HOME/.agents"');
@@ -1179,7 +1195,7 @@ describe('buildRemoteSyncProbeScript', () => {
     const os = await import('node:os');
     const fsMod = await import('node:fs');
     const { execFileSync } = await import('node:child_process');
-    const tempHome = fsMod.mkdtempSync(path.join(os.tmpdir(), 'openchamber-probe-home-'));
+    const tempHome = fsMod.mkdtempSync(path.join(os.tmpdir(), 'yuri-probe-home-'));
     try {
       // execFileSync throws on non-zero exit — that throw is the regression guard.
       const stdout = execFileSync('sh', ['-c', script], { env: { ...process.env, HOME: tempHome } });
@@ -1193,7 +1209,7 @@ describe('buildRemoteSyncProbeScript', () => {
     const os = await import('node:os');
     const fsMod = await import('node:fs');
     const { execFileSync } = await import('node:child_process');
-    const tempHome = fsMod.mkdtempSync(path.join(os.tmpdir(), 'openchamber-probe-home-'));
+    const tempHome = fsMod.mkdtempSync(path.join(os.tmpdir(), 'yuri-probe-home-'));
     try {
       fsMod.mkdirSync(path.join(tempHome, '.config', 'opencode'), { recursive: true });
       fsMod.writeFileSync(path.join(tempHome, '.config', 'opencode', 'opencode.jsonc'), '{}');
@@ -1211,7 +1227,7 @@ describe('buildRemoteSyncProbeScript', () => {
     const os = await import('node:os');
     const fsMod = await import('node:fs');
     const { execFileSync } = await import('node:child_process');
-    const tempHome = fsMod.mkdtempSync(path.join(os.tmpdir(), 'openchamber-probe-home-'));
+    const tempHome = fsMod.mkdtempSync(path.join(os.tmpdir(), 'yuri-probe-home-'));
     try {
       fsMod.mkdirSync(path.join(tempHome, '.local', 'share', 'opencode'), { recursive: true });
       fsMod.writeFileSync(path.join(tempHome, '.local', 'share', 'opencode', 'auth.json'), '{}');
@@ -1227,7 +1243,7 @@ describe('buildRemoteSyncProbeScript', () => {
 
 describe('runExclusiveForTarget sync response shape', () => {
   test('keeps the plan field in preview/apply responses (regression: stripping it broke the UI preview parser)', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ssh-manager-test-'));
     tempDirs.push(tempDir);
     const manager = new ElectronSshManager({
       settingsFilePath: path.join(tempDir, 'settings.json'),

@@ -29,7 +29,7 @@ function readJson(filePath) {
 
 describe('opencode plugins data layer', () => {
   beforeAll(async () => {
-    rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-plugins-'));
+    rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-plugins-'));
     userConfigPath = path.join(rootDir, 'user-opencode.json');
     vi.stubEnv('OPENCODE_CONFIG', userConfigPath);
     vi.stubEnv('OPENCODE_CONFIG_DIR', path.join(rootDir, 'global-config'));

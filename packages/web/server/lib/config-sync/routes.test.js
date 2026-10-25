@@ -16,7 +16,7 @@ import { buildRemoteAgentsTarScript, buildRemoteConfigTarScript } from './script
 const tempDirs = [];
 
 const makeTempDir = async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'oc-config-sync-http-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'yuri-config-sync-http-'));
   tempDirs.push(dir);
   return dir;
 };
@@ -54,20 +54,20 @@ describe('config-sync HTTP routes', () => {
       download: async () => payload,
       import: async (buffer) => { received.push(buffer); return { ok: true, magpieWarnings: ['sign_in_required'] }; },
     });
-    const probe = await request(app).post('/api/openchamber/config-sync/probe').send({ plan: {} });
+    const probe = await request(app).post('/api/yuri/config-sync/probe').send({ plan: {} });
     expect(probe.body.inventory.magpie).toEqual({ available: true, installed: false });
     expect(received).toEqual([]);
-    const download = await request(app).get('/api/openchamber/config-sync/download/magpie').expect(200);
+    const download = await request(app).get('/api/yuri/config-sync/download/magpie').expect(200);
     expect(download.headers['cache-control']).toBe('no-store');
     expect(download.body).toEqual(payload);
-    await request(app).put('/api/openchamber/config-sync/magpie')
+    await request(app).put('/api/yuri/config-sync/magpie')
       .set('Content-Type', 'application/octet-stream').send(payload).expect(200);
     const plan = { files: [], directories: [], deletes: [], magpie: { bytes: 0 } };
-    await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'magpie-run' }).expect(200);
-    await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'magpie-run' }).expect(500);
-    await request(app).put('/api/openchamber/config-sync/put/magpie?syncRunId=magpie-run')
+    await request(app).post('/api/yuri/config-sync/prepare').send({ plan, syncRunId: 'magpie-run' }).expect(200);
+    await request(app).post('/api/yuri/config-sync/finalize').send({ syncRunId: 'magpie-run' }).expect(500);
+    await request(app).put('/api/yuri/config-sync/put/magpie?syncRunId=magpie-run')
       .set('Content-Type', 'application/octet-stream').send(payload).expect(200);
-    const receipt = await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'magpie-run' }).expect(200);
+    const receipt = await request(app).post('/api/yuri/config-sync/finalize').send({ syncRunId: 'magpie-run' }).expect(200);
     expect(receipt.body.magpieWarnings).toEqual(['sign_in_required']);
     expect(received).toEqual([payload, payload]);
   });
@@ -81,24 +81,24 @@ describe('config-sync HTTP routes', () => {
       import: async (buffer) => { received.push(buffer); return { ok: true }; },
     });
     const plan = { direction: 'push', files: [], directories: [], deletes: [], providerCredentials: { bytes: payload.length } };
-    const inventory = await request(app).get('/api/openchamber/config-sync/credentials/inventory');
+    const inventory = await request(app).get('/api/yuri/config-sync/credentials/inventory');
     expect(inventory.body).toEqual({ providerCredentials: { bytes: payload.length } });
-    const download = await request(app).get('/api/openchamber/config-sync/download/credentials');
+    const download = await request(app).get('/api/yuri/config-sync/download/credentials');
     expect(download.headers['cache-control']).toBe('no-store');
     expect(download.body).toEqual(payload);
-    await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'credential-run' }).expect(200);
-    await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'credential-run' }).expect(500);
-    await request(app).put('/api/openchamber/config-sync/put/credentials?syncRunId=credential-run')
+    await request(app).post('/api/yuri/config-sync/prepare').send({ plan, syncRunId: 'credential-run' }).expect(200);
+    await request(app).post('/api/yuri/config-sync/finalize').send({ syncRunId: 'credential-run' }).expect(500);
+    await request(app).put('/api/yuri/config-sync/put/credentials?syncRunId=credential-run')
       .set('Content-Type', 'application/octet-stream').send(download.body).expect(200);
-    await request(app).post('/api/openchamber/config-sync/finalize').send({ syncRunId: 'credential-run' }).expect(200);
-    await request(app).put('/api/openchamber/config-sync/credentials')
+    await request(app).post('/api/yuri/config-sync/finalize').send({ syncRunId: 'credential-run' }).expect(200);
+    await request(app).put('/api/yuri/config-sync/credentials')
       .set('Content-Type', 'application/octet-stream').send(payload).expect(200);
     expect(received).toEqual([payload, payload]);
-    await expect(fsp.stat(path.join(home, '.openchamber.sync-backup-auth'))).rejects.toThrow();
+    await expect(fsp.stat(path.join(home, '.yuri.sync-backup-auth'))).rejects.toThrow();
     await expect(fsp.stat(path.join(home, '.local', 'share', 'opencode', 'auth.json'))).rejects.toThrow();
-    await request(app).post('/api/openchamber/config-sync/prepare')
+    await request(app).post('/api/yuri/config-sync/prepare')
       .send({ plan: { ...plan, providerCredentials: null }, syncRunId: 'unselected' }).expect(200);
-    await request(app).put('/api/openchamber/config-sync/put/credentials?syncRunId=unselected')
+    await request(app).put('/api/yuri/config-sync/put/credentials?syncRunId=unselected')
       .set('Content-Type', 'application/octet-stream').send(payload).expect(500);
     expect(received).toHaveLength(2);
   });
@@ -154,24 +154,24 @@ describe('config-sync HTTP routes', () => {
       totalBytes: 3,
     };
 
-    const probe = await request(app).post('/api/openchamber/config-sync/probe').send({ plan });
+    const probe = await request(app).post('/api/yuri/config-sync/probe').send({ plan });
     expect(probe.status).toBe(200);
     expect(probe.body.inventory.files.some((entry) => entry.path === 'opencode.jsonc')).toBe(true);
 
     const prepare = await request(app)
-      .post('/api/openchamber/config-sync/prepare')
+      .post('/api/yuri/config-sync/prepare')
       .send({ plan, syncRunId: 'run-http-1' });
     expect(prepare.status).toBe(200);
     expect(prepare.body.ready).toBe(true);
 
     const finalize = await request(app)
-      .post('/api/openchamber/config-sync/finalize')
+      .post('/api/yuri/config-sync/finalize')
       .send({ syncRunId: 'run-http-1' });
     expect(finalize.status).toBe(200);
     expect(finalize.body.ok).toBe(true);
     expect(finalize.body.syncRunId).toBe('run-http-1');
 
-    const backup = path.join(home, '.config', 'opencode', '.openchamber.sync-backup', 'run-http-1');
+    const backup = path.join(home, '.config', 'opencode', '.yuri.sync-backup', 'run-http-1');
     await expect(fsp.stat(backup)).resolves.toMatchObject({ });
   });
 
@@ -186,12 +186,12 @@ describe('config-sync HTTP routes', () => {
       providerCredentials: null,
       totalBytes: 2,
     };
-    const first = await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'run-a' });
+    const first = await request(app).post('/api/yuri/config-sync/prepare').send({ plan, syncRunId: 'run-a' });
     expect(first.status).toBe(200);
-    const second = await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'run-b' });
+    const second = await request(app).post('/api/yuri/config-sync/prepare').send({ plan, syncRunId: 'run-b' });
     expect(second.status).toBe(409);
     expect(second.body.code).toBe('sync_in_progress');
-    await request(app).post('/api/openchamber/config-sync/abort').send({ syncRunId: 'run-a' });
+    await request(app).post('/api/yuri/config-sync/abort').send({ syncRunId: 'run-a' });
   });
 
   it('aggregates chunked put streams and rejects oversized payloads', async () => {
@@ -205,7 +205,7 @@ describe('config-sync HTTP routes', () => {
       providerCredentials: null,
       totalBytes: 0,
     };
-    await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'run-stream' });
+    await request(app).post('/api/yuri/config-sync/prepare').send({ plan, syncRunId: 'run-stream' });
 
     // Tiny invalid tar still proves chunk aggregation reached extract.
     await expect(receiver.put({
@@ -214,6 +214,6 @@ describe('config-sync HTTP routes', () => {
       stream: Readable.from([Buffer.from('aa'), Buffer.from('bb')]),
     })).rejects.toThrow(/tar|failed|Local tar extract/i);
 
-    await request(app).post('/api/openchamber/config-sync/abort').send({ syncRunId: 'run-stream' });
+    await request(app).post('/api/yuri/config-sync/abort').send({ syncRunId: 'run-stream' });
   });
 });

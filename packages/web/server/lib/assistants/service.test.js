@@ -531,7 +531,7 @@ describe('assistants service', () => {
     const service = setup(); const assistant = service.createAssistant(assistantInput); const current = await service.ensure(assistant.id); const next = await service.createNew(assistant.id); expect(next.sessionGeneration).toBe(current.sessionGeneration + 1); await expect(service.compact(assistant.id, current)).rejects.toMatchObject({ code: 'revision_conflict' }); expect(await service.compact(assistant.id, next)).toMatchObject({ binding: next, summarized: true }); service.close();
   });
 
-  it('stores composer turns in the OpenChamber contact transcript, not OpenCode session history', async () => {
+  it('stores composer turns in the Yuri contact transcript, not OpenCode session history', async () => {
     const directory = root();
     const service = setup(directory, {}, {
       runContactTurn: async ({ userText }) => ({ text: `ok ${userText}`, bubbles: [`ok ${userText}`] }),
@@ -1414,7 +1414,7 @@ describe('assistants service', () => {
     expect(binding).toEqual({ sessionID: 'ses_assistant_new', directory: expect.any(String), sessionGeneration: 1 });
     expect(created).toMatchObject({
       title: '[Assistant] Ops Bot',
-      metadata: { openchamber: { assistant: { assistantID: assistant.id, name: 'Ops Bot' } } },
+      metadata: { yuri: { assistant: { assistantID: assistant.id, name: 'Ops Bot' } } },
     });
     expect(archived).toMatchObject({ sessionID: 'ses_assistant_new', time: { archived: expect.any(Number) } });
     expect(order).toEqual(['create', 'update']);
@@ -3223,7 +3223,7 @@ describe('assistants service', () => {
         return realRunContactTurn({
           ...input,
           createChatCompletion: async () => ({ text: silent
-            ? '```openchamber-final\n{"status":"silent","text":""}\n```'
+            ? '```yuri-final\n{"status":"silent","text":""}\n```'
             : '资料已整理：本周有两项相关更新。' }),
         });
       }
@@ -3279,12 +3279,12 @@ describe('assistants service', () => {
       },
       promptAsync: async () => ({ response: { status: 204 } }),
     }, {
-      listProjects: async () => [{ id: 'proj_yee', path: project, label: 'OpenChamber Yee' }],
+      listProjects: async () => [{ id: 'proj_yee', path: project, label: 'Yuri Yee' }],
       getAllowedRoots: () => [project, directory],
       runContactTurn: async (input) => {
         harness.push(input);
         expect(input.projects).toEqual([
-          { id: 'proj_yee', path: project, label: 'OpenChamber Yee' },
+          { id: 'proj_yee', path: project, label: 'Yuri Yee' },
         ]);
         expect(input.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
           'list_projects',
@@ -3292,10 +3292,10 @@ describe('assistants service', () => {
           'assign_session',
         ]));
         const listed = await input.tools.find((tool) => tool.name === 'list_projects').execute('call_p', {
-          query: 'openchamer yee',
+          query: 'yurii yee',
         });
         expect(listed.details.projects).toEqual([
-          { id: 'proj_yee', path: project, label: 'OpenChamber Yee' },
+          { id: 'proj_yee', path: project, label: 'Yuri Yee' },
         ]);
         const assign = input.tools.find((tool) => tool.name === 'assign_session');
         const result = await assign.execute('call_a', {
@@ -3304,8 +3304,8 @@ describe('assistants service', () => {
           title: 'Yee work',
         });
         return {
-          text: 'Opened on OpenChamber Yee.',
-          bubbles: ['Opened on OpenChamber Yee.'],
+          text: 'Opened on Yuri Yee.',
+          bubbles: ['Opened on Yuri Yee.'],
           cards: result.details.card ? [result.details.card] : [],
         };
       },
@@ -3313,7 +3313,7 @@ describe('assistants service', () => {
     const assistant = service.createAssistant(assistantInput);
     await settleSend(service, assistant.id, {
       messageID: 'client_named_project',
-      parts: [{ type: 'text', text: '你看看 openchamer yee 项目，在那里开个新会话' }],
+      parts: [{ type: 'text', text: '你看看 yurii yee 项目，在那里开个新会话' }],
     });
     expect(harness).toHaveLength(1);
     expect(creates[0]).toMatchObject({
@@ -4115,7 +4115,7 @@ describe('assistants service', () => {
       activeContactTurn: null,
     });
     const types = events.map((event) => event.type);
-    expect(types[0]).toBe('openchamber:contact-turn-start');
+    expect(types[0]).toBe('yuri:contact-turn-start');
     expect(events[0].properties).toMatchObject({
       assistantID: assistant.id,
       turnID: 'turn_stream_1',
@@ -4123,12 +4123,12 @@ describe('assistants service', () => {
       occurredAt: expect.any(Number),
     });
     expect(events.some((event) => (
-      event.type === 'openchamber:contact-bubble-delta'
+      event.type === 'yuri:contact-bubble-delta'
       && event.properties?.bubbleIndex === 0
       && event.properties?.delta === 'stream:hi'
       && event.properties?.done === false
     ))).toBe(true);
-    expect(types.at(-1)).toBe('openchamber:contact-turn-end');
+    expect(types.at(-1)).toBe('yuri:contact-turn-end');
     expect(events.at(-1).properties).toMatchObject({
       assistantID: assistant.id,
       turnID: 'turn_stream_1',
@@ -4253,7 +4253,7 @@ describe('assistants service', () => {
     ]);
     expect(service.snapshot().assistants[0]).toMatchObject({ working: false, activeContactTurn: null });
     expect(events).toContainEqual(expect.objectContaining({
-      type: 'openchamber:contact-turn-end',
+      type: 'yuri:contact-turn-end',
       properties: expect.objectContaining({ status: 'error', error: 'No connected model' }),
     }));
     service.close();
@@ -4405,9 +4405,9 @@ describe('assistants service', () => {
       working: false,
       activeContactTurn: null,
     });
-    expect(events.some((event) => event.type === 'openchamber:contact-turn-start')).toBe(true);
+    expect(events.some((event) => event.type === 'yuri:contact-turn-start')).toBe(true);
     expect(events.some((event) => (
-      event.type === 'openchamber:contact-turn-end'
+      event.type === 'yuri:contact-turn-end'
       && event.properties?.status === 'error'
       && event.properties?.turnID === 'client_no_provider'
     ))).toBe(true);
@@ -4716,11 +4716,11 @@ describe('read_session referenced conversation', () => {
   it('real harness two read_session preambles: SSE done bubbles match SQLite 1:1 including duplicates', async () => {
     const directory = root();
     const events = [];
-    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
+    const fence = (name, args) => '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
     const replies = [
       `我去读一下\n\n${fence('read_session', { sessionID: 'ses_a' })}`,
       `我再读一下\n\n${fence('read_session', { sessionID: 'ses_b' })}`,
-      '```openchamber-final\n{"status":"complete","text":"办好了"}\n```',
+      '```yuri-final\n{"status":"complete","text":"办好了"}\n```',
     ];
     const createChatCompletion = vi.fn(async () => ({
       completion: { choices: [{ message: { content: replies.shift() || '' } }] },
@@ -4747,7 +4747,7 @@ describe('read_session referenced conversation', () => {
       parts: [{ type: 'text', text: '读两个会话' }],
     });
     const doneDeltas = events
-      .filter((event) => event.type === 'openchamber:contact-bubble-delta' && event.properties?.done)
+      .filter((event) => event.type === 'yuri:contact-bubble-delta' && event.properties?.done)
       .map((event) => ({
         index: event.properties.bubbleIndex,
         text: event.properties.delta,
@@ -4778,8 +4778,8 @@ describe('read_session referenced conversation', () => {
     let releaseTool;
     const generationGate = new Promise((resolve) => { releaseGeneration = resolve; });
     const toolGate = new Promise((resolve) => { releaseTool = resolve; });
-    const prefix = '```openchamber-message\n{"text":"我先读一下会话，确认目前的进展。"}\n```\n';
-    const tool = '```openchamber-tool\n{"name":"read_session","arguments":{"sessionID":"ses_progress"}}\n```';
+    const prefix = '```yuri-message\n{"text":"我先读一下会话，确认目前的进展。"}\n```\n';
+    const tool = '```yuri-tool\n{"name":"read_session","arguments":{"sessionID":"ses_progress"}}\n```';
     let calls = 0;
     const read = vi.fn(async () => {
       await toolGate;
@@ -4797,7 +4797,7 @@ describe('read_session referenced conversation', () => {
           onTextDelta(tool);
           return { text: prefix + tool };
         }
-        return { text: '```openchamber-final\n{"status":"complete","text":"这个会话目前为空。"}\n```' };
+        return { text: '```yuri-final\n{"status":"complete","text":"这个会话目前为空。"}\n```' };
       },
     });
     const assistant = service.createAssistant(assistantInput);
@@ -4806,7 +4806,7 @@ describe('read_session referenced conversation', () => {
       await vi.waitFor(() => expect(service.contactMessages(assistant.id).messages.some((m) => m.text === '我先读一下会话，确认目前的进展。')).toBe(true));
       expect(read).not.toHaveBeenCalled();
       expect(service.snapshot().assistants.find((a) => a.id === assistant.id).working).toBe(true);
-      expect(events.some((e) => e.type === 'openchamber:contact-turn-end')).toBe(false);
+      expect(events.some((e) => e.type === 'yuri:contact-turn-end')).toBe(false);
       releaseGeneration();
       await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
       // A fresh snapshot/history read while the actual tool is pending restores the same message.
@@ -4814,7 +4814,7 @@ describe('read_session referenced conversation', () => {
       releaseTool();
       await service.whenContactTurnSettled('live_public');
       expect(service.contactMessages(assistant.id).messages.filter((m) => m.role === 'assistant').map((m) => m.text)).toEqual(['我先读一下会话，确认目前的进展。', '这个会话目前为空。']);
-      const deltas = events.filter((e) => e.type === 'openchamber:contact-bubble-delta' && e.properties.done);
+      const deltas = events.filter((e) => e.type === 'yuri:contact-bubble-delta' && e.properties.done);
       expect(deltas.map((e) => e.properties.bubbleIndex)).toEqual([0, 1]);
     } finally {
       releaseGeneration(); releaseTool(); service.close();
@@ -4824,11 +4824,11 @@ describe('read_session referenced conversation', () => {
   it('real harness duplicate preambles keep both lines in SSE and SQLite', async () => {
     const directory = root();
     const events = [];
-    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
+    const fence = (name, args) => '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
     const replies = [
       `我去读一下\n\n${fence('read_session', { sessionID: 'ses_dup_a' })}`,
       `我去读一下\n\n${fence('read_session', { sessionID: 'ses_dup_b' })}`,
-      '```openchamber-final\n{"status":"complete","text":"办好了"}\n```',
+      '```yuri-final\n{"status":"complete","text":"办好了"}\n```',
     ];
     const service = setup(directory, {
       get: async ({ sessionID }) => ({ data: { id: sessionID, directory, title: sessionID } }),
@@ -4848,7 +4848,7 @@ describe('read_session referenced conversation', () => {
       parts: [{ type: 'text', text: '再读一遍' }],
     });
     const texts = events
-      .filter((event) => event.type === 'openchamber:contact-bubble-delta' && event.properties?.done)
+      .filter((event) => event.type === 'yuri:contact-bubble-delta' && event.properties?.done)
       .map((event) => event.properties.delta);
     expect(texts).toEqual(['我去读一下', '我去读一下', '办好了']);
     const sqlite = service.contactMessages(assistant.id).messages
@@ -4861,9 +4861,9 @@ describe('read_session referenced conversation', () => {
   it('real harness missed-tool retry keeps pre-retry spoken in SSE and SQLite', async () => {
     const directory = root();
     const events = [];
-    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
+    const fence = (name, args) => '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
     const replies = [
-      '```openchamber-final\n{"status":"complete","text":"好的，我来创建。"}\n```',
+      '```yuri-final\n{"status":"complete","text":"好的，我来创建。"}\n```',
       `这就建好\n\n${fence('create_assistant', { name: 'MissSvc', model: 'p/m' })}`,
     ];
     const service = setup(directory, {}, {
@@ -4879,7 +4879,7 @@ describe('read_session referenced conversation', () => {
       parts: [{ type: 'text', text: '帮我新建一个助理，名叫 MissSvc，不要开编码 session' }],
     });
     const texts = events
-      .filter((event) => event.type === 'openchamber:contact-bubble-delta' && event.properties?.done)
+      .filter((event) => event.type === 'yuri:contact-bubble-delta' && event.properties?.done)
       .map((event) => event.properties.delta);
     expect(texts).toContain('好的，我来创建。');
     const sqlite = service.contactMessages(assistant.id).messages

@@ -128,7 +128,7 @@ describe("transcript content order", () => {
     test("server replacement keeps an optimistic part in its original slot", () => {
       const repo = repository(kind)
       const record = fixture()
-      const optimistic = { ...record.parts[1], id: "zzz-placeholder", __openchamberOptimistic: true }
+      const optimistic = { ...record.parts[1], id: "zzz-placeholder", __yuriOptimistic: true }
       repo.apply(scope, { type: "optimistic-add", message: record.info, parts: [optimistic, record.parts[2]] })
       repo.apply(scope, { type: "sse-event", event: event("message.part.updated", { part: record.parts[1] }) })
       expect(ids(repo.getParts(scope, messageID))).toEqual([record.parts[1].id, record.parts[2].id])

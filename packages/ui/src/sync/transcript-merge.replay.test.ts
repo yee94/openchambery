@@ -146,14 +146,14 @@ describe("transcript merge command-sequence replay", () => {
       type: "optimistic-add",
       message: u2,
       parts: [
-        textPart("p_u2", "msg_u2", "我刚发的消息", { __openchamberOptimistic: true }),
+        textPart("p_u2", "msg_u2", "我刚发的消息", { __yuriOptimistic: true }),
       ],
     })
     return u2
   }
 
   // 根因: session-merge-strategy.ts:99-105 reconcile upsert + parts replace
-  // 不感知 part 级 `__openchamberOptimistic`（诊断 A1 / A3）。
+  // 不感知 part 级 `__yuriOptimistic`（诊断 A1 / A3）。
   // capturedLiveRevision 必须等于 liveRevision：0 vs 1 会走 stale backfill
   //（insert-only + skip-existing），乐观行反而被保住，复现不了 A 类。
   test(

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 /**
  * Contract for `sessionTurnPageRoute.ts`.
  *
- * Webview local route for GET `/api/openchamber/sessions/:id/messages`:
+ * Webview local route for GET `/api/yuri/sessions/:id/messages`:
  * - identify path ahead of generic OpenCode proxy
  * - parse query (directory, before, turns, scanLimit)
  * - dispatch `api:session-turn-page` bridge
@@ -25,18 +25,18 @@ const createBridgeRecorder = (impl?: (type: string, payload?: unknown) => Promis
 };
 
 describe('isSessionTurnPageRoute', () => {
-  test('identifies only openchamber session messages turn-page routes', async () => {
+  test('identifies only yuri session messages turn-page routes', async () => {
     const { isSessionTurnPageRoute } = await loadRoute();
-    expect(isSessionTurnPageRoute('/api/openchamber/sessions/ses_1/messages')).toBe(true);
-    expect(isSessionTurnPageRoute('/api/openchamber/sessions/ses%2Fwith%2Fslash/messages')).toBe(true);
-    expect(isSessionTurnPageRoute('/api/openchamber/sessions/ses_1/messages/')).toBe(true);
+    expect(isSessionTurnPageRoute('/api/yuri/sessions/ses_1/messages')).toBe(true);
+    expect(isSessionTurnPageRoute('/api/yuri/sessions/ses%2Fwith%2Fslash/messages')).toBe(true);
+    expect(isSessionTurnPageRoute('/api/yuri/sessions/ses_1/messages/')).toBe(true);
 
-    expect(isSessionTurnPageRoute('/api/openchamber/message-queue')).toBe(false);
-    expect(isSessionTurnPageRoute('/api/openchamber/tunnel/status')).toBe(false);
+    expect(isSessionTurnPageRoute('/api/yuri/message-queue')).toBe(false);
+    expect(isSessionTurnPageRoute('/api/yuri/tunnel/status')).toBe(false);
     expect(isSessionTurnPageRoute('/api/session/ses_1/message')).toBe(false);
     expect(isSessionTurnPageRoute('/api/sessions/ses_1/status')).toBe(false);
-    expect(isSessionTurnPageRoute('/api/openchamber/sessions/ses_1')).toBe(false);
-    expect(isSessionTurnPageRoute('/api/openchamber/sessions//messages')).toBe(false);
+    expect(isSessionTurnPageRoute('/api/yuri/sessions/ses_1')).toBe(false);
+    expect(isSessionTurnPageRoute('/api/yuri/sessions//messages')).toBe(false);
   });
 });
 
@@ -44,7 +44,7 @@ describe('parseSessionTurnPageQuery', () => {
   test('extracts sessionID, directory, before, turns, scanLimit from path + search', async () => {
     const { parseSessionTurnPageQuery } = await loadRoute();
     const parsed = parseSessionTurnPageQuery(
-      '/api/openchamber/sessions/ses_abc/messages',
+      '/api/yuri/sessions/ses_abc/messages',
       new URLSearchParams({
         directory: '/repo a',
         before: 'msg_cursor',
@@ -66,7 +66,7 @@ describe('parseSessionTurnPageQuery', () => {
   test('decodes encoded sessionID segments', async () => {
     const { parseSessionTurnPageQuery } = await loadRoute();
     const parsed = parseSessionTurnPageQuery(
-      `/api/openchamber/sessions/${encodeURIComponent('ses/a b')}/messages`,
+      `/api/yuri/sessions/${encodeURIComponent('ses/a b')}/messages`,
       new URLSearchParams({ directory: '/repo' }),
     );
     expect(parsed.ok).toBe(true);
@@ -78,7 +78,7 @@ describe('parseSessionTurnPageQuery', () => {
   test('defaults turns when omitted and leaves scanLimit unset for host _inner_scanLimit', async () => {
     const { parseSessionTurnPageQuery } = await loadRoute();
     const parsed = parseSessionTurnPageQuery(
-      '/api/openchamber/sessions/ses_1/messages',
+      '/api/yuri/sessions/ses_1/messages',
       new URLSearchParams({ directory: '/repo' }),
     );
     expect(parsed.ok).toBe(true);
@@ -94,7 +94,7 @@ describe('parseSessionTurnPageQuery', () => {
     const { parseSessionTurnPageQuery } = await loadRoute();
     for (const turns of ['0', '11', '-1', 'abc']) {
       const parsed = parseSessionTurnPageQuery(
-        '/api/openchamber/sessions/ses_1/messages',
+        '/api/yuri/sessions/ses_1/messages',
         new URLSearchParams({ directory: '/repo', turns }),
       );
       expect(parsed.ok).toBe(false);
@@ -105,7 +105,7 @@ describe('parseSessionTurnPageQuery', () => {
     const { parseSessionTurnPageQuery } = await loadRoute();
     for (const scanLimit of ['9', '201', '0', 'nope']) {
       const parsed = parseSessionTurnPageQuery(
-        '/api/openchamber/sessions/ses_1/messages',
+        '/api/yuri/sessions/ses_1/messages',
         new URLSearchParams({ directory: '/repo', turns: '3', scanLimit }),
       );
       expect(parsed.ok).toBe(false);
@@ -128,7 +128,7 @@ describe('handleSessionTurnPageRoute', () => {
 
     const response = await handleSessionTurnPageRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/messages',
+      pathname: '/api/yuri/sessions/ses_1/messages',
       searchParams: new URLSearchParams({
         directory: '/repo',
         turns: '3',
@@ -171,7 +171,7 @@ describe('handleSessionTurnPageRoute', () => {
 
     const response = await handleSessionTurnPageRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/messages',
+      pathname: '/api/yuri/sessions/ses_1/messages',
       searchParams: new URLSearchParams({
         directory: '/repo',
         turns: '3',
@@ -196,7 +196,7 @@ describe('handleSessionTurnPageRoute', () => {
     for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
       const response = await handleSessionTurnPageRoute({
         method,
-        pathname: '/api/openchamber/sessions/ses_1/messages',
+        pathname: '/api/yuri/sessions/ses_1/messages',
         searchParams: new URLSearchParams({ directory: '/repo', turns: '3' }),
         sendBridgeMessage,
       });
@@ -211,7 +211,7 @@ describe('handleSessionTurnPageRoute', () => {
 
     const response = await handleSessionTurnPageRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/messages',
+      pathname: '/api/yuri/sessions/ses_1/messages',
       searchParams: new URLSearchParams({ directory: '/repo', turns: '99' }),
       sendBridgeMessage,
     });
@@ -222,10 +222,10 @@ describe('handleSessionTurnPageRoute', () => {
 
   test('route match is intended to run before generic OpenCode proxy paths', async () => {
     const { isSessionTurnPageRoute } = await loadRoute();
-    // Contract: session turn-page is an OpenChamber-owned route, not
+    // Contract: session turn-page is an Yuri-owned route, not
     // `/api/session/:id/message` proxy. Callers must check isSessionTurnPageRoute
     // before falling through to api:proxy.
-    expect(isSessionTurnPageRoute('/api/openchamber/sessions/ses_x/messages')).toBe(true);
+    expect(isSessionTurnPageRoute('/api/yuri/sessions/ses_x/messages')).toBe(true);
     expect(isSessionTurnPageRoute('/api/session/ses_x/message')).toBe(false);
   });
 });

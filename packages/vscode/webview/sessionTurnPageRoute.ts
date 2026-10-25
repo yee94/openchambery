@@ -1,7 +1,7 @@
 /**
- * Webview local route for GET `/api/openchamber/sessions/:id/messages`.
+ * Webview local route for GET `/api/yuri/sessions/:id/messages`.
  *
- * Identify this OpenChamber-owned path ahead of the generic OpenCode proxy,
+ * Identify this Yuri-owned path ahead of the generic OpenCode proxy,
  * parse query (directory, before, turns, optional scanLimit, optional
  * includeReasoning), dispatch `api:session-turn-page` bridge, and return
  * unified turn-page JSON.
@@ -26,13 +26,13 @@ const SAFE_ERRORS = {
 } as const;
 
 const SESSION_TURN_PAGE_PATH =
-  /^\/api\/openchamber\/sessions\/([^/]+)\/messages\/?$/;
+  /^\/api\/yuri\/sessions\/([^/]+)\/messages\/?$/;
 
 export const isSessionTurnPageRoute = (pathname: string): boolean => {
   if (typeof pathname !== 'string' || pathname.length === 0) return false;
   const normalized = pathname.replace(/\/+$/, '') || '/';
   // Reject empty session segments like /sessions//messages
-  const match = normalized.match(/^\/api\/openchamber\/sessions\/([^/]+)\/messages$/);
+  const match = normalized.match(/^\/api\/yuri\/sessions\/([^/]+)\/messages$/);
   return match != null && match[1].length > 0;
 };
 
@@ -131,7 +131,7 @@ export const parseSessionTurnPageQuery = (
   const directory =
     typeof directoryRaw === 'string' && directoryRaw.length > 0 ? directoryRaw : undefined;
 
-  // OpenChamber projection control — pass raw string so Host applies strict 'false' only.
+  // Yuri projection control — pass raw string so Host applies strict 'false' only.
   // Omit when absent so default include behavior is preserved.
   const includeReasoningRaw = searchParams.get('includeReasoning');
   const includeReasoning =
@@ -162,7 +162,7 @@ const jsonResponse = (body: unknown, status: number): Response =>
   });
 
 /**
- * Handle GET `/api/openchamber/sessions/:id/messages` in the webview fetch layer.
+ * Handle GET `/api/yuri/sessions/:id/messages` in the webview fetch layer.
  * Callers must check `isSessionTurnPageRoute` before falling through to api:proxy.
  */
 export const handleSessionTurnPageRoute = async (

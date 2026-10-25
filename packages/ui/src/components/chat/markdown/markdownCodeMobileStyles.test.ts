@@ -124,13 +124,13 @@ describe('mobile Markdown code block layout', () => {
       /\[data-component=["']markdown-code["']\][^{]*\{[^}]*line-height:\s*var\(--markdown-code-block-line-height\)/s,
     );
     expect(mobileCss).toMatch(
-      /@supports\s*\(-webkit-touch-callout:\s*none\)\s*\{[\s\S]*:root\.mobile-pointer:not\(\.desktop-runtime\)[^{]*\[data-component=["']markdown-code["']\][^{]*:root\.oc-capacitor-app[^{]*\[data-component=["']markdown-code["']\][^{]*\{[^}]*line-height:\s*var\(--markdown-code-block-line-height\)/s,
+      /@supports\s*\(-webkit-touch-callout:\s*none\)\s*\{[\s\S]*:root\.mobile-pointer:not\(\.desktop-runtime\)[^{]*\[data-component=["']markdown-code["']\][^{]*:root\.yuri-capacitor-app[^{]*\[data-component=["']markdown-code["']\][^{]*\{[^}]*line-height:\s*var\(--markdown-code-block-line-height\)/s,
     );
   });
 
   test('hides the line-number gutter only for iOS WebKit mobile-pointer and iOS Capacitor surfaces', () => {
     const iosGutterRule = mobileCss.match(
-      /@supports\s*\(-webkit-touch-callout:\s*none\)\s*\{\s*:root\.mobile-pointer:not\(\.desktop-runtime\)[^{]*\[data-md-code-line-numbers\],\s*:root\.oc-capacitor-app:not\(\.oc-platform-android\)[^{]*\[data-md-code-line-numbers\]\s*\{[^}]*display:\s*none;?\s*\}\s*\}/s,
+      /@supports\s*\(-webkit-touch-callout:\s*none\)\s*\{\s*:root\.mobile-pointer:not\(\.desktop-runtime\)[^{]*\[data-md-code-line-numbers\],\s*:root\.yuri-capacitor-app:not\(\.yuri-platform-android\)[^{]*\[data-md-code-line-numbers\]\s*\{[^}]*display:\s*none;?\s*\}\s*\}/s,
     );
 
     expect(iosGutterRule).not.toBeNull();
@@ -141,7 +141,7 @@ describe('mobile Markdown code block layout', () => {
       /\[data-md-code-line-numbers\](?:\[aria-hidden=["']true["']\])?\s*\{[^}]*display:\s*none/s,
     );
     expect(mobileCss).not.toMatch(
-      /:root\.oc-capacitor-app\.oc-platform-android[^{]*\[data-md-code-line-numbers\][^{]*\{[^}]*display:\s*none/s,
+      /:root\.yuri-capacitor-app\.yuri-platform-android[^{]*\[data-md-code-line-numbers\][^{]*\{[^}]*display:\s*none/s,
     );
   });
 });

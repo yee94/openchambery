@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
+import { YuriLogo } from '@/components/ui/YuriLogo';
 import { useI18n } from '@/lib/i18n';
 import { useDesktopHostSwitchPending } from '@/queries/desktopHostSwitchMutation';
 import { getDesktopRuntimeSwitchRemainingMs } from './desktopRuntimeSwitchOverlayTiming';
@@ -47,7 +47,7 @@ export function DesktopRuntimeSwitchOverlay({ transition, ready }: DesktopRuntim
       </div>
       <div className="relative flex max-w-md animate-in flex-col items-center text-center fade-in zoom-in-95 duration-300 motion-reduce:animate-none">
         <div className="mb-7 flex size-28 items-center justify-center rounded-[2rem] border border-[var(--interactive-border)]/60 bg-[var(--surface-elevated)]/75 shadow-2xl shadow-background/40">
-          <OpenChamberLogo width={76} height={76} isAnimated />
+          <YuriLogo width={76} height={76} isAnimated />
         </div>
         <h1 className="typography-title text-foreground">{t('desktopHostSwitcher.transition.title')}</h1>
         <p className="mt-2 typography-body text-muted-foreground">{t('desktopHostSwitcher.transition.description')}</p>

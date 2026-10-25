@@ -6,7 +6,7 @@
 //     (`/v1/push/*` on the effective Relay host). The isolated Push process holds the
 //     project APNs key and signs+sends — so users configure nothing.
 //   - Direct (fallback): sign an ES256 JWT with Node crypto and send over HTTP/2 ourselves,
-//     for self-hosters who set OPENCHAMBER_APNS_* and OPENCHAMBER_PUSH_RELAY_DISABLED=true.
+//     for self-hosters who set YURI_APNS_* and YURI_PUSH_RELAY_DISABLED=true.
 // Wired into the same trigger fanout as web push (see runtime.js); the relay carries only
 // generic, model-based text (no session content) — see APNS.md.
 
@@ -27,7 +27,7 @@ const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
 const APNS_HOST_SANDBOX = 'https://api.sandbox.push.apple.com';
 // APNs rejects auth tokens older than 1h; refresh well inside that window.
 const JWT_TTL_MS = 50 * 60 * 1000;
-const DEFAULT_BUNDLE_ID = 'com.yee94.openchamber';
+const DEFAULT_BUNDLE_ID = 'com.yee94.yuri';
 const MAX_TOKENS_PER_SESSION = 10;
 const MAX_LIVE_ACTIVITY_TOKENS_PER_SESSION = 8;
 const MAX_LIVE_ACTIVITY_TOKEN_CHARS = 512;
@@ -621,18 +621,18 @@ export const createApnsRuntime = (deps) => {
   // ---------------------------------------------------------------------------
 
   const resolveApnsConfig = async () => {
-    let keyId = trimmedEnv('OPENCHAMBER_APNS_KEY_ID');
-    let teamId = trimmedEnv('OPENCHAMBER_APNS_TEAM_ID');
-    let bundleId = trimmedEnv('OPENCHAMBER_APNS_BUNDLE_ID');
-    let environment = (trimmedEnv('OPENCHAMBER_APNS_ENVIRONMENT') || '').toLowerCase();
-    let p8 = normalizePem(process.env.OPENCHAMBER_APNS_P8 || '');
+    let keyId = trimmedEnv('YURI_APNS_KEY_ID');
+    let teamId = trimmedEnv('YURI_APNS_TEAM_ID');
+    let bundleId = trimmedEnv('YURI_APNS_BUNDLE_ID');
+    let environment = (trimmedEnv('YURI_APNS_ENVIRONMENT') || '').toLowerCase();
+    let p8 = normalizePem(process.env.YURI_APNS_P8 || '');
 
-    const p8Path = trimmedEnv('OPENCHAMBER_APNS_P8_PATH');
+    const p8Path = trimmedEnv('YURI_APNS_P8_PATH');
     if (!p8 && p8Path) {
       try {
         p8 = (await fsPromises.readFile(p8Path, 'utf8')).trim();
       } catch (error) {
-        console.warn('[APNs] Failed to read OPENCHAMBER_APNS_P8_PATH:', error?.message ?? error);
+        console.warn('[APNs] Failed to read YURI_APNS_P8_PATH:', error?.message ?? error);
       }
     }
 
@@ -770,7 +770,7 @@ export const createApnsRuntime = (deps) => {
   // Relay mode (default): the single APNs key lives in the isolated Push process on the same
   // Relay origin (`/v1/push/*`), not on each user's server — so users configure nothing. The
   // server just POSTs device tokens + generic text; Push signs + sends and reports which tokens
-  // to drop. Direct mode (below) is the fallback for self-hosters who set OPENCHAMBER_APNS_*
+  // to drop. Direct mode (below) is the fallback for self-hosters who set YURI_APNS_*
   // and disable the relay.
   const buildRelayConfig = (url) => ({
     url,
@@ -779,14 +779,14 @@ export const createApnsRuntime = (deps) => {
     liveActivityUnregisterUrl: url.replace(/\/send$/, '/unregister-live-activity-token'),
     liveActivitySendUrl: url.replace(/\/send$/, '/live-activity'),
     environment:
-      (trimmedEnv('OPENCHAMBER_APNS_ENVIRONMENT') || 'production').toLowerCase() === 'production'
+      (trimmedEnv('YURI_APNS_ENVIRONMENT') || 'production').toLowerCase() === 'production'
         ? 'production'
         : 'sandbox',
   });
 
   const resolveRelayConfig = async () => {
-    if (trimmedEnv('OPENCHAMBER_PUSH_RELAY_DISABLED') === 'true') return null;
-    const explicit = trimmedEnv('OPENCHAMBER_PUSH_RELAY_URL');
+    if (trimmedEnv('YURI_PUSH_RELAY_DISABLED') === 'true') return null;
+    const explicit = trimmedEnv('YURI_PUSH_RELAY_URL');
     if (explicit) return buildRelayConfig(explicit);
 
     let relayWsUrl = DEFAULT_RELAY_URL;
@@ -795,10 +795,10 @@ export const createApnsRuntime = (deps) => {
         const resolved = await resolveEffectiveRelayUrl();
         if (typeof resolved === 'string' && resolved.trim()) {
           if (derivePushSendUrlFromRelayUrl(resolved)) relayWsUrl = resolved.trim();
-          else console.warn('[Push relay] resolver returned a non-WebSocket URL; falling back to default');
+          else console.warn('[Push relay] resolver returned a non-WebSocket URL; Push Relay unavailable');
         }
       } catch {
-        console.warn('[Push relay] resolver failed; falling back to default');
+        console.warn('[Push relay] resolver failed; Push Relay unavailable');
       }
     }
     const url = derivePushSendUrlFromRelayUrl(relayWsUrl) || derivePushSendUrlFromRelayUrl(DEFAULT_RELAY_URL);
@@ -808,7 +808,7 @@ export const createApnsRuntime = (deps) => {
 
   const sendViaRelay = async (deviceTokens, payload, relay) => {
     if (!Array.isArray(deviceTokens) || deviceTokens.length === 0) return;
-    const title = typeof payload?.title === 'string' && payload.title.length > 0 ? payload.title : 'OpenChamber';
+    const title = typeof payload?.title === 'string' && payload.title.length > 0 ? payload.title : 'Yuri';
     const { privateKey, publicJwk } = await getOrCreateRelayKeypair();
     for (let start = 0; start < deviceTokens.length; start += MAX_RELAY_SEND_TOKENS) {
       const tokens = deviceTokens.slice(start, start + MAX_RELAY_SEND_TOKENS);
@@ -856,7 +856,7 @@ export const createApnsRuntime = (deps) => {
       if (!warnedUnconfigured) {
         warnedUnconfigured = true;
         console.warn(
-          '[APNs] Relay disabled and no direct config; set OPENCHAMBER_APNS_KEY_ID / OPENCHAMBER_APNS_TEAM_ID / OPENCHAMBER_APNS_P8 for direct send.',
+          '[APNs] Relay disabled and no direct config; set YURI_APNS_KEY_ID / YURI_APNS_TEAM_ID / YURI_APNS_P8 for direct send.',
         );
       }
       return;
@@ -1065,7 +1065,7 @@ export const createApnsRuntime = (deps) => {
       if (!warnedUnconfigured) {
         warnedUnconfigured = true;
         console.warn(
-          '[APNs] Relay disabled and no direct config; set OPENCHAMBER_APNS_KEY_ID / OPENCHAMBER_APNS_TEAM_ID / OPENCHAMBER_APNS_P8 for direct send.',
+          '[APNs] Relay disabled and no direct config; set YURI_APNS_KEY_ID / YURI_APNS_TEAM_ID / YURI_APNS_P8 for direct send.',
         );
       }
       return [];

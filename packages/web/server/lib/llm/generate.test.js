@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { generateOpenCodeText, _test } from './generate.js'
 
 const denyAllAgent = {
-  location: { directory: '/tmp/openchamber-llm' },
+  location: { directory: '/tmp/yuri-llm' },
   data: {
-    id: 'openchamber-llm',
-    name: 'openchamber-llm',
+    id: 'yuri-llm',
+    name: 'yuri-llm',
     mode: 'primary',
     hidden: true,
     permissions: [
@@ -18,7 +18,7 @@ const completedAssistant = (text, extras = {}) => ({
   id: 'msg_asst',
   type: 'assistant',
   time: { created: 1, completed: Date.now() },
-  agent: 'openchamber-llm',
+  agent: 'yuri-llm',
   model: { id: 'gpt-5-nano', providerID: 'opencode' },
   content: [{ type: 'text', text }],
   finish: 'stop',
@@ -86,7 +86,7 @@ describe('generate cancellation', () => {
       modelID: 'gpt-5-nano',
       messages: [{ role: 'user', content: 'work' }],
       clientFactory: () => client,
-      ensureTempDirectory: async () => '/tmp/openchamber-text',
+      ensureTempDirectory: async () => '/tmp/yuri-text',
       signal: controller.signal,
     })).rejects.toMatchObject({ name: 'AbortError' })
     expect(generate).toHaveBeenCalledTimes(1)
@@ -96,10 +96,10 @@ describe('generate cancellation', () => {
 })
 
 const denyAllTextAgent = {
-  location: { directory: '/tmp/openchamber-text' },
+  location: { directory: '/tmp/yuri-text' },
   data: {
-    id: 'openchamber-text',
-    name: 'openchamber-text',
+    id: 'yuri-text',
+    name: 'yuri-text',
     mode: 'primary',
     hidden: true,
     permissions: [{ action: '*', resource: '*', effect: 'deny' }],
@@ -140,7 +140,7 @@ describe('generateOpenCodeText — text path', () => {
     const ensureTempDirectory = vi.fn(async ({ agentName, agentMarkdown }) => {
       expect(agentName).toBe(_test.TEXT_AGENT_NAME)
       expect(agentMarkdown).toBe(_test.TEXT_AGENT_MARKDOWN)
-      return '/tmp/openchamber-text'
+      return '/tmp/yuri-text'
     })
 
     const result = await generateOpenCodeText({
@@ -158,13 +158,13 @@ describe('generateOpenCodeText — text path', () => {
 
     expect(result).toEqual({ text: 'reply', source: 'session.generate' })
     expect(agentGet).toHaveBeenCalledWith(expect.objectContaining({
-      agentID: 'openchamber-text',
-      location: { directory: '/tmp/openchamber-text' },
+      agentID: 'yuri-text',
+      location: { directory: '/tmp/yuri-text' },
     }), expect.anything())
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      agent: 'openchamber-text',
+      agent: 'yuri-text',
       model: { id: 'deepseek-v4-flash', providerID: 'opencode-go' },
-      location: { directory: '/tmp/openchamber-text' },
+      location: { directory: '/tmp/yuri-text' },
     }), expect.anything())
     expect(agentGet.mock.invocationCallOrder[0]).toBeLessThan(create.mock.invocationCallOrder[0])
     const generateArgs = generate.mock.calls[0][0]
@@ -185,7 +185,7 @@ describe('generateOpenCodeText — text path', () => {
       messages: [{ role: 'user', content: 'hi' }],
       variant,
       clientFactory: () => client,
-      ensureTempDirectory: async () => '/tmp/openchamber-text',
+      ensureTempDirectory: async () => '/tmp/yuri-text',
     })
     expect(result.text).toBe('reply')
     const model = create.mock.calls[0][0].model
@@ -212,7 +212,7 @@ describe('generateOpenCodeText — text path', () => {
   ])('blocks before creating a session: $name', async ({ permissions }) => {
     const { client, create, generate } = textSessionClient({
       agentGet: vi.fn(async () => ({
-        data: { id: 'openchamber-text', permissions },
+        data: { id: 'yuri-text', permissions },
       })),
     })
     await expect(generateOpenCodeText({
@@ -222,7 +222,7 @@ describe('generateOpenCodeText — text path', () => {
       modelID: 'gpt-5-nano',
       messages: [{ role: 'user', content: 'hi' }],
       clientFactory: () => client,
-      ensureTempDirectory: async () => '/tmp/openchamber-text',
+      ensureTempDirectory: async () => '/tmp/yuri-text',
     })).rejects.toMatchObject({ code: 'llm_attachment_generation_unavailable' })
     expect(create).not.toHaveBeenCalled()
     expect(generate).not.toHaveBeenCalled()
@@ -232,18 +232,18 @@ describe('generateOpenCodeText — text path', () => {
     let reads = 0
     const agentGet = vi.fn(async () => {
       reads += 1
-      if (reads < 3) throw new Error('Agent not found: openchamber-text')
+      if (reads < 3) throw new Error('Agent not found: yuri-text')
       return denyAllTextAgent
     })
     const client = { agent: { get: agentGet } }
     const agent = await _test.assertLlmAgentDenyAll({
       client,
-      location: { directory: '/tmp/openchamber-text' },
-      agentID: 'openchamber-text',
+      location: { directory: '/tmp/yuri-text' },
+      agentID: 'yuri-text',
       waitMs: 1_000,
       pollMs: 1,
     })
-    expect(agent.id).toBe('openchamber-text')
+    expect(agent.id).toBe('yuri-text')
     expect(agentGet).toHaveBeenCalledTimes(3)
   })
 
@@ -251,7 +251,7 @@ describe('generateOpenCodeText — text path', () => {
     const agentGet = vi.fn(async () => { throw new Error('Agent not found') })
     await expect(_test.assertLlmAgentDenyAll({
       client: { agent: { get: agentGet } },
-      agentID: 'openchamber-text',
+      agentID: 'yuri-text',
       waitMs: 0,
       pollMs: 1,
     })).rejects.toMatchObject({ code: 'llm_attachment_generation_unavailable' })
@@ -269,7 +269,7 @@ describe('generateOpenCodeText — text path', () => {
       modelID: 'deepseek-v4-flash',
       messages: [{ role: 'user', content: 'hi' }],
       clientFactory: () => client,
-      ensureTempDirectory: async () => '/tmp/openchamber-text',
+      ensureTempDirectory: async () => '/tmp/yuri-text',
     })).rejects.toMatchObject({ code: 'upstream_error', message: 'Request is missing x-opencode-session' })
     expect(remove).toHaveBeenCalledWith({ sessionID: 'ses_text' })
   })
@@ -283,7 +283,7 @@ describe('generateOpenCodeText — text path', () => {
       modelID: 'gpt-5-nano',
       messages: [{ role: 'user', content: 'hi' }],
       clientFactory: () => client,
-      ensureTempDirectory: async () => '/tmp/openchamber-text',
+      ensureTempDirectory: async () => '/tmp/yuri-text',
     })).rejects.toMatchObject({ message: 'OpenCode session.generate returned no text' })
   })
 
@@ -304,7 +304,7 @@ describe('generateOpenCodeText — text path', () => {
       modelID: 'gpt-5-nano',
       messages: [{ role: 'user', content: 'hi' }],
       clientFactory: () => client,
-      ensureTempDirectory: async () => '/tmp/openchamber-text',
+      ensureTempDirectory: async () => '/tmp/yuri-text',
       onTextDelta,
       globalEventHub,
     })
@@ -327,7 +327,7 @@ describe('generateOpenCodeText — text path', () => {
       modelID: 'deepseek-v4-flash',
       messages: [{ role: 'user', content: 'look', parts: [image, file] }],
       clientFactory: () => client,
-      ensureTempDirectory: async () => '/tmp/openchamber-text',
+      ensureTempDirectory: async () => '/tmp/yuri-text',
       forwardImageParts: false,
     })
     expect(prompt).not.toHaveBeenCalled()
@@ -383,24 +383,24 @@ describe('generateOpenCodeText — attachment session path', () => {
         message: { list },
       }),
       ensureTempDirectory: async ({ agentMarkdown }) => {
-        expect(agentMarkdown).toContain('openchamber-tool JSON fences')
+        expect(agentMarkdown).toContain('yuri-tool JSON fences')
         expect(agentMarkdown).toMatch(/action:\s*"\*"/)
         expect(agentMarkdown).toMatch(/effect:\s*deny/)
-        return '/tmp/openchamber-llm'
+        return '/tmp/yuri-llm'
       },
       forwardImageParts: true,
     })
 
     expect(result).toEqual({ text: 'saw it', source: 'attachment-session' })
     expect(agentGet).toHaveBeenCalledWith(expect.objectContaining({
-      agentID: 'openchamber-llm',
-      location: { directory: '/tmp/openchamber-llm' },
+      agentID: 'yuri-llm',
+      location: { directory: '/tmp/yuri-llm' },
     }), expect.anything())
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      agent: 'openchamber-llm',
+      agent: 'yuri-llm',
       model: { id: 'gpt-4o', providerID: 'opencode', variant: 'high' },
-      location: { directory: '/tmp/openchamber-llm' },
-      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+      location: { directory: '/tmp/yuri-llm' },
+      metadata: { yuri: { llm: { purpose: 'chat-completions' } } },
     }), expect.anything())
     expect(put).toHaveBeenCalledWith(expect.objectContaining({
       sessionID: 'ses_tmp',
@@ -422,12 +422,12 @@ describe('generateOpenCodeText — attachment session path', () => {
     }), expect.anything())
     expect(remove).toHaveBeenCalledWith({ sessionID: 'ses_tmp' })
     expect(persistSessionMetadata).toHaveBeenCalledWith('ses_tmp', {
-      openchamber: { llm: { purpose: 'chat-completions' } },
+      yuri: { llm: { purpose: 'chat-completions' } },
     })
     expect(onSystemSessionPersisted).toHaveBeenCalledWith({
       sessionID: 'ses_tmp',
-      directory: '/tmp/openchamber-llm',
-      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+      directory: '/tmp/yuri-llm',
+      metadata: { yuri: { llm: { purpose: 'chat-completions' } } },
     })
     expect(text).not.toHaveBeenCalled()
   })
@@ -447,7 +447,7 @@ describe('generateOpenCodeText — attachment session path', () => {
         agent: {
           get: async () => ({
             data: {
-              id: 'openchamber-llm',
+              id: 'yuri-llm',
               permissions: [
                 { action: 'read', resource: 'file', effect: 'allow' },
               ],
@@ -460,7 +460,7 @@ describe('generateOpenCodeText — attachment session path', () => {
           remove,
         },
       }),
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      ensureTempDirectory: async () => '/tmp/yuri-llm',
       forwardImageParts: true,
     })).rejects.toMatchObject({
       code: 'llm_attachment_generation_unavailable',
@@ -499,7 +499,7 @@ describe('generateOpenCodeText — attachment session path', () => {
         },
         message: { list: vi.fn() },
       }),
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      ensureTempDirectory: async () => '/tmp/yuri-llm',
       forwardImageParts: true,
       onTextDelta: vi.fn(),
       globalEventHub,
@@ -542,7 +542,7 @@ describe('generateOpenCodeText — attachment session path', () => {
           }),
         },
       }),
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      ensureTempDirectory: async () => '/tmp/yuri-llm',
       forwardImageParts: true,
     })).rejects.toMatchObject({
       code: 'upstream_error',
@@ -648,7 +648,7 @@ describe('generateOpenCodeText — attachment session path', () => {
           list: async () => ({ data: [completedAssistant('Hello')], cursor: {} }),
         },
       }),
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      ensureTempDirectory: async () => '/tmp/yuri-llm',
       forwardImageParts: true,
       onTextDelta,
       globalEventHub,
@@ -697,7 +697,7 @@ describe('generateOpenCodeText — attachment session path', () => {
             list: async () => ({ data: [completedAssistant('ok')], cursor: {} }),
           },
         }),
-        ensureTempDirectory: async () => '/tmp/openchamber-llm',
+        ensureTempDirectory: async () => '/tmp/yuri-llm',
         forwardImageParts: true,
       })
       expect(result).toEqual({ text: 'ok', source: 'attachment-session' })
@@ -748,9 +748,9 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
       const path = String(url)
       const method = init?.method || 'GET'
       calls.push(`${method} ${path.replace(/^https?:\/\/[^/]+/, '').split('?')[0]}`)
-      if (path.includes('/api/agent/openchamber-text')) {
+      if (path.includes('/api/agent/yuri-text')) {
         return jsonResponse(200, {
-          location: { directory: '/tmp/openchamber-text', project: { id: 'p', directory: '/tmp', canonical: '/tmp' } },
+          location: { directory: '/tmp/yuri-text', project: { id: 'p', directory: '/tmp', canonical: '/tmp' } },
           data: { ...denyAllTextAgent.data, request: {} },
         })
       }
@@ -762,7 +762,7 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
             cost: 0,
             tokens: {},
             time: { created: 1, updated: 1 },
-            location: { directory: '/tmp/openchamber-text' },
+            location: { directory: '/tmp/yuri-text' },
           },
         })
       }
@@ -786,7 +786,7 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
         headers: { Authorization: 'Basic test' },
         fetch: fetchImpl,
       }),
-      ensureTempDirectory: async () => '/tmp/openchamber-text',
+      ensureTempDirectory: async () => '/tmp/yuri-text',
     })
 
     expect(result).toEqual({ text: 'hello from generate', source: 'session.generate' })
@@ -798,12 +798,12 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
     let prompted = false
     const fetchImpl = vi.fn(async (url, init) => {
       const path = String(url)
-      if (path.includes('/api/agent/openchamber-llm')) {
+      if (path.includes('/api/agent/yuri-llm')) {
         return jsonResponse(200, {
-          location: { directory: '/tmp/openchamber-llm', project: { id: 'p', directory: '/tmp', canonical: '/tmp' } },
+          location: { directory: '/tmp/yuri-llm', project: { id: 'p', directory: '/tmp', canonical: '/tmp' } },
           data: {
-            id: 'openchamber-llm',
-            name: 'openchamber-llm',
+            id: 'yuri-llm',
+            name: 'yuri-llm',
             mode: 'primary',
             hidden: true,
             permissions: [{ action: 'bash', resource: '*', effect: 'allow' }],
@@ -823,7 +823,7 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
             cost: 0,
             tokens: {},
             time: { created: 1, updated: 1 },
-            location: { directory: '/tmp/openchamber-llm' },
+            location: { directory: '/tmp/yuri-llm' },
           },
         })
       }
@@ -841,7 +841,7 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
         baseUrl: 'http://127.0.0.1:4096',
         fetch: fetchImpl,
       }),
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      ensureTempDirectory: async () => '/tmp/yuri-llm',
       forwardImageParts: true,
     })).rejects.toMatchObject({ code: 'llm_attachment_generation_unavailable' })
     expect(prompted).toBe(false)
@@ -854,12 +854,12 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
       const path = String(url)
       const method = init?.method || 'GET'
       calls.push(`${method} ${path.replace(/^https?:\/\/[^/]+/, '')}`)
-      if (path.includes('/api/agent/openchamber-llm')) {
+      if (path.includes('/api/agent/yuri-llm')) {
         return jsonResponse(200, {
-          location: { directory: '/tmp/openchamber-llm', project: { id: 'p', directory: '/tmp', canonical: '/tmp' } },
+          location: { directory: '/tmp/yuri-llm', project: { id: 'p', directory: '/tmp', canonical: '/tmp' } },
           data: {
-            id: 'openchamber-llm',
-            name: 'openchamber-llm',
+            id: 'yuri-llm',
+            name: 'yuri-llm',
             mode: 'primary',
             hidden: true,
             permissions: [{ action: '*', resource: '*', effect: 'deny' }],
@@ -875,7 +875,7 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
             cost: 0,
             tokens: {},
             time: { created: 1, updated: 1 },
-            location: { directory: '/tmp/openchamber-llm' },
+            location: { directory: '/tmp/yuri-llm' },
           },
         })
       }
@@ -911,13 +911,13 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
         baseUrl: 'http://127.0.0.1:4096',
         fetch: fetchImpl,
       }),
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      ensureTempDirectory: async () => '/tmp/yuri-llm',
       forwardImageParts: true,
     })
 
     expect(result).toEqual({ text: 'vision ok', source: 'attachment-session' })
     expect(calls.some((c) => c.startsWith('DELETE ') && c.includes('/api/session/ses_tmp'))).toBe(true)
-    const agentIdx = calls.findIndex((c) => c.includes('/api/agent/openchamber-llm'))
+    const agentIdx = calls.findIndex((c) => c.includes('/api/agent/yuri-llm'))
     const promptIdx = calls.findIndex((c) => c.includes('/prompt'))
     expect(agentIdx).toBeGreaterThanOrEqual(0)
     expect(promptIdx).toBeGreaterThan(agentIdx)

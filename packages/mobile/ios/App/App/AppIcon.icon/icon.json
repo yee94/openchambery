@@ -60,10 +60,10 @@
             {
               "idiom": "square",
               "value": {
-                "scale": 1.15,
+                "scale": 1,
                 "translation-in-points": [
-                  -0.6499999999998636,
-                  -3.25
+                  0,
+                  0
                 ]
               }
             }

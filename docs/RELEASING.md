@@ -1,6 +1,8 @@
 # 发布运行手册
 
-本手册覆盖 OpenChamberY 的正式 GitHub Release。正式 Release 由 `.github/workflows/release.yml` 创建，Android APK/AAB 由它调用的 `.github/workflows/mobile-release.yml` 上传。iOS 外测打板（关联外测组 + Beta App Review）不是默认新版本的一部分。
+执行任何发布前先完成 [Yuri 迁移与外部所有权验证](YURI_MIGRATION.md)。当前候选仓库、scope、应用签名和线上域名尚未验证，发布工作流以 `YURI_RELEASE_IDENTITIES_VERIFIED` 阻塞。首次 Yuri 发布必须使用完整原生安装器；配置 `YURI_OTA_BASE_URL`、`YURI_OTA_DETECTABILITY_BASES` 及部署侧 `YURI_OTA_UPSTREAM_ORIGIN` 后才可启用 OTA。下文示例域名不是现有线上服务。
+
+本手册覆盖 Yuri 的正式 GitHub Release。正式 Release 由 `.github/workflows/release.yml` 创建，Android APK/AAB 由它调用的 `.github/workflows/mobile-release.yml` 上传。iOS 外测打板（关联外测组 + Beta App Review）不是默认新版本的一部分。
 
 用户说「发 beta / 更新 beta / 推新版本」时，**默认打 `v*`**，保证 macOS / Windows / Linux / APK 等安装包都在。不要因为 `mobile-release-plan` 是 `ota` 就改打 `mobile-beta/v*`——那条流水线只有 web bundle，没有桌面和 APK。
 
@@ -22,7 +24,7 @@
 | 新版本含原生壳变更（`mode: "native"`，即 break change） | 上行全部 + iOS 内测 TestFlight；端内检测抬 `minShellReleaseVersion` 引导重装 | `vX.Y.Z-beta.N` | `release.yml`（`build_ios` 由 plan mode 决定） |
 | 用户明确只要已装手机 App 的 web 热更、不要任何安装包 | 仅 web bundle OTA（无 iOS） | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
 | 稳定版 | 桌面 + Android APK/AAB + npm + 同版本 OTA + iOS TestFlight（关联外测组 + Beta App Review） | `vX.Y.Z` | `release.yml`（`build_ios: true`） |
-| 仅 Relay 服务（npm + Docker） | 只发 `@openchambery/relay-server`（含 Layer 1 与 Push CLI）与同一 immutable Relay Docker 镜像。**不**触发桌面、Android、iOS/TestFlight、OTA。 | `relay/vX.Y.Z` 或 `relay/vX.Y.Z-beta.N` | `relay-release.yml`（先跑包测试门禁，再复用 `relay-docker.yml`） |
+| 仅 Relay 服务（npm + Docker） | 只发 `@yuri/relay-server`（含 Layer 1 与 Push CLI）与同一 immutable Relay Docker 镜像。**不**触发桌面、Android、iOS/TestFlight、OTA。 | `relay/vX.Y.Z` 或 `relay/vX.Y.Z-beta.N` | `relay-release.yml`（先跑包测试门禁，再复用 `relay-docker.yml`） |
 | 稳定通道同等判定 | 上表把 `beta` 换成 `stable`，默认新版本用无后缀 `vX.Y.Z`；仅热更用 `mobile-stable/vX.Y.Z` | 同上 | 同上 |
 
 **TestFlight 跟随「是否需要原生壳」，不跟随 tag**：`mode: native` 的 beta 与所有稳定版上传 iOS（beta 仅内测，稳定版关联外测组）；`mode: ota` 的 beta 不碰 iOS。**端内一键更新 vs 跳转重装由 `activeBundle.minShellReleaseVersion`（版本语义）决定，与 OTA 发布是两条独立链路**：只有 `mode: native` 把下限写成**本轮发布版本号**；`github.run_number` / `nativeBuild` 只用于 TestFlight/商店记账，**不再参与端内更新判定**。稳定版也不因发了安装包而抬门。
@@ -94,7 +96,7 @@ VERSION=1.15.8
 用户明确要求安装包发布但不更新 OTA 时，提交版本与 changelog 后推送当前发布分支，通过 `workflow_dispatch` 传入 `skip_ota=true`：
 
 ```bash
-gh workflow run release.yml --repo yee94/openchamber --ref <release-branch> \
+gh workflow run release.yml --repo yee94/yuri --ref <release-branch> \
   -f version="$VERSION" -f dry_run=false -f skip_ota=true
 ```
 
@@ -109,9 +111,9 @@ git push origin main
 git push origin "v$VERSION"
 ```
 
-`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@openchambery/web` 与 `@openchambery/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**iOS/TestFlight 由 `mobile-release-plan` 的 mode 决定**：`mode: native` 的 beta 与所有稳定版构建并上传 iOS（beta 走内测、不关联外测组、不提 Beta App Review；稳定版额外关联外测组）；`mode: ota` 的 beta 与 `mobile-beta/*` OTA-only tag 不构建 iOS。iOS 上传失败会拖住 `mobile-native-targets`（同版本 OTA 发布），用 `gh run rerun <run-id> --failed` 重跑即可。
+`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@yuri/web` 与 `@yuri/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**iOS/TestFlight 由 `mobile-release-plan` 的 mode 决定**：`mode: native` 的 beta 与所有稳定版构建并上传 iOS（beta 走内测、不关联外测组、不提 Beta App Review；稳定版额外关联外测组）；`mode: ota` 的 beta 与 `mobile-beta/*` OTA-only tag 不构建 iOS。iOS 上传失败会拖住 `mobile-native-targets`（同版本 OTA 发布），用 `gh run rerun <run-id> --failed` 重跑即可。
 
-npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@openchambery/web`。完整 `v*` 仍会同时发布 `@openchambery/web` 与 `@openchambery/relay-server` 以及 Relay Docker；只发 Relay 时改用 `relay/v*`（见下文）。
+npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@yuri` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@yuri/web`。完整 `v*` 仍会同时发布 `@yuri/web` 与 `@yuri/relay-server` 以及 Relay Docker；只发 Relay 时改用 `relay/v*`（见下文）。
 
 ### Beta / prerelease
 
@@ -150,23 +152,23 @@ npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publis
 若 beta 已变成 Latest 或已污染 update feed：
 
 ```bash
-gh release edit "v$BETA_VERSION" --prerelease --repo yee94/openchamber
-gh release edit "v$STABLE_VERSION" --latest --repo yee94/openchamber
+gh release edit "v$BETA_VERSION" --prerelease --repo yee94/yuri
+gh release edit "v$STABLE_VERSION" --latest --repo yee94/yuri
 # 如 release-manifest.json 已被写成 beta，改回最新稳定版并推送 main
 ```
 
 然后确认：
 
 ```bash
-gh api repos/yee94/openchamber/releases/latest --jq .tag_name   # 应为稳定版
-curl -sS https://openchamber-update.vercel.app/ota/channels/stable.json
+gh api repos/yee94/yuri/releases/latest --jq .tag_name   # 应为稳定版
+curl -sS https://updates.example.com/ota/channels/stable.json
 ```
 
 Agent 入口命令：`.opencode/commands/release.md`。
 
 ### Relay-only releases（`relay/v*`）
 
-只发布 `@openchambery/relay-server` 与 Relay Docker 时，打独立 tag，不要打普通 `v*`。`relay/v*` **不会**创建 GitHub Release，也**不会**跑桌面、Android、iOS/TestFlight 或 OTA。
+只发布 `@yuri/relay-server` 与 Relay Docker 时，打独立 tag，不要打普通 `v*`。`relay/v*` **不会**创建 GitHub Release，也**不会**跑桌面、Android、iOS/TestFlight 或 OTA。
 
 | Tag | npm dist-tag | Docker | 其它产物 |
 |---|---|---|---|
@@ -182,13 +184,13 @@ git tag "relay/v$VERSION"
 git push origin "relay/v$VERSION"
 ```
 
-`relay-release.yml` 会校验 tag / 包版本、要求 `NPM_TOKEN`，并用 pinned Bun 1.3.14 / Node 24 做 frozen install 后跑 Relay 全量 Vitest、type-check、lint、Node smoke 与 `npm pack --dry-run` 包契约检查。npm 与 Docker 发布都依赖该测试 job 成功；`release-gate` 纳入测试结果。Docker 复用 `.github/workflows/relay-docker.yml`（`linux/amd64` + `linux/arm64`），并关闭根版本匹配。镜像默认入口仍是 Layer 1，同时携带 Node 24 与 `openchamber-push-relay`。Secrets / variables 与完整 release 相同：`NPM_TOKEN`、`DOCKERHUB_TOKEN`、`DOCKERHUB_USERNAME`。普通 `v*` 行为不变。
+`relay-release.yml` 会校验 tag / 包版本、要求 `NPM_TOKEN`，并用 pinned Bun 1.3.14 / Node 24 做 frozen install 后跑 Relay 全量 Vitest、type-check、lint、Node smoke 与 `npm pack --dry-run` 包契约检查。npm 与 Docker 发布都依赖该测试 job 成功；`release-gate` 纳入测试结果。Docker 复用 `.github/workflows/relay-docker.yml`（`linux/amd64` + `linux/arm64`），并关闭根版本匹配。镜像默认入口仍是 Layer 1，同时携带 Node 24 与 `yuri-push-relay`。Secrets / variables 与完整 release 相同：`NPM_TOKEN`、`DOCKERHUB_TOKEN`、`DOCKERHUB_USERNAME`。普通 `v*` 行为不变。
 
 手动验证（不发 npm、Docker 只构建不推送）：
 
 ```bash
 gh workflow run relay-release.yml \
-  --repo yee94/openchamber \
+  --repo yee94/yuri \
   --ref main \
   -f version="$VERSION" \
   -f dry_run=true
@@ -197,8 +199,8 @@ gh workflow run relay-release.yml \
 查看运行：
 
 ```bash
-gh run list --repo yee94/openchamber --workflow relay-release.yml --limit 3
-gh run watch <run-id> --repo yee94/openchamber
+gh run list --repo yee94/yuri --workflow relay-release.yml --limit 3
+gh run watch <run-id> --repo yee94/yuri
 ```
 
 仅镜像重发、不发 npm 时，仍可直接跑 `Relay Docker` workflow，或 `release.yml` 的 `relay_only`（那两条会校验根版本与 Relay 包版本都匹配）。
@@ -217,7 +219,7 @@ CI 每次关联新构建后保留外测组最近三个构建，并通过 App Sto
 
 ```bash
 gh workflow run release.yml \
-  --repo yee94/openchamber \
+  --repo yee94/yuri \
   --ref main \
   -f version="$VERSION" \
   -f dry_run=true
@@ -235,15 +237,15 @@ Android 构建依赖以下 GitHub Secrets：
 查看 Release workflow：
 
 ```bash
-gh run list --repo yee94/openchamber --workflow release.yml --limit 3
-gh run watch <run-id> --repo yee94/openchamber
+gh run list --repo yee94/yuri --workflow release.yml --limit 3
+gh run watch <run-id> --repo yee94/yuri
 ```
 
 发布完成后确认 Release 状态和 Android 资源：
 
 ```bash
-gh release view "v$VERSION" --repo yee94/openchamber
-gh release view "v$VERSION" --repo yee94/openchamber --json isDraft,isPrerelease,assets
+gh release view "v$VERSION" --repo yee94/yuri
+gh release view "v$VERSION" --repo yee94/yuri --json isDraft,isPrerelease,assets
 ```
 
 正式 Release 应满足以下结果：
@@ -251,9 +253,9 @@ gh release view "v$VERSION" --repo yee94/openchamber --json isDraft,isPrerelease
 - `isDraft` 为 `false`。
 - assets 包含 `.apk` 和 `.aab`。
 - 最新稳定 Release 的 APK asset 具有 `.apk` 后缀。
-- npm 上存在 `@openchambery/web@$VERSION` 与 `@openchambery/relay-server@$VERSION`（稳定版在 `latest`，prerelease 在 `beta`）。
+- npm 上存在 `@yuri/web@$VERSION` 与 `@yuri/relay-server@$VERSION`（稳定版在 `latest`，prerelease 在 `beta`）。
 
-Android 客户端通过 `https://api.github.com/repos/yee94/openchamber/releases/latest` 获取最新稳定 Release，并使用第一个 `.apk` asset 的 `browser_download_url` 作为下载地址。
+Android 客户端通过 `https://api.github.com/repos/yee94/yuri/releases/latest` 获取最新稳定 Release，并使用第一个 `.apk` asset 的 `browser_download_url` 作为下载地址。
 
 iOS 客户端通过更新 API 或 GitHub 回退获取版本信息后，使用固定外测 Public Link 安装：`https://testflight.apple.com/join/ZCENBHtm`。CI 每次上传会把新构建关联到 App Store Connect 外测群组；Apple 批准 Beta App Review 后，该链接自动提供最新获准构建。
 
@@ -267,7 +269,7 @@ iOS 客户端通过更新 API 或 GitHub 回退获取版本信息后，使用固
 
 ```bash
 gh workflow run release.yml \
-  --repo yee94/openchamber \
+  --repo yee94/yuri \
   --ref main \
   -f version="$VERSION"
 ```
@@ -275,10 +277,10 @@ gh workflow run release.yml \
 **日志查看**（避免上下文污染，不在此对话里拉取和解析 log 原文）：
 
 ```bash
-gh run list --repo yee94/openchamber --workflow release.yml --limit 3
-gh run view <run-id> --repo yee94/openchamber
+gh run list --repo yee94/yuri --workflow release.yml --limit 3
+gh run view <run-id> --repo yee94/yuri
 # 只看失败步骤的日志摘要，不拉全量 log
-gh run view <run-id> --repo yee94/openchamber --log-failed | tail -50
+gh run view <run-id> --repo yee94/yuri --log-failed | tail -50
 ```
 
 ### Android job 未执行
@@ -293,15 +295,15 @@ tag push 会包含 mobile-release。手动触发时使用 `release_scope=all`。
 
 `finalize-release` 要求 Draft Release **恰好 13 个**资产（mac DMG/ZIP、Windows EXE、两种架构 Linux AppImage、四份 `full*.yml` 全量更新清单，加上 `app-release.aab` / `app-release.apk` 与当前 `run_number` 的版本化 Android 两个文件），且 Android 版本化文件名必须匹配**当前这次** workflow 的 `github.run_number`：
 
-- `OpenChamber-$VERSION-$RUN_NUMBER-android.aab`
-- `OpenChamber-$VERSION-$RUN_NUMBER-android.apk`
+- `Yuri-$VERSION-$RUN_NUMBER-android.aab`
+- `Yuri-$VERSION-$RUN_NUMBER-android.apk`
 
 同名资产（如 `app-release.apk`、桌面安装包）上传时会被覆盖；但 Android 版本化文件名包含 `run_number`，**不会**被后续运行覆盖。
 
 因此，只要同一版本经历过多次 Release 运行（先 `workflow_dispatch` 再 tag push、或多次手动重跑），旧的 `-NN-android.*` 会留在 Draft 上。典型报错：
 
 ```text
-Expected exactly 16 release assets, found 18: ... OpenChamberY-1.16.32-72-android.aab, ... OpenChamberY-1.16.32-73-android.aab ...
+Expected exactly 16 release assets, found 18: ... Yuri-1.16.32-72-android.aab, ... Yuri-1.16.32-73-android.aab ...
 ```
 
 **v1.16.32 实况：** 第一次 `workflow_dispatch` 已上传 build `72` Android 资产；后续 tag push 运行号变成 `73` 又上传一套；`finalize` 因多出旧资产失败，Draft 无法转正式。
@@ -311,24 +313,24 @@ Expected exactly 16 release assets, found 18: ... OpenChamberY-1.16.32-72-androi
 1. 确认 Draft 仍在，并找出应保留的最新 Android build number（通常等于失败那次 run 的 `run_number` / 日志里的 `BUILD_NUMBER`）：
 
    ```bash
-   gh release view "v$VERSION" --repo yee94/openchamber
-   gh run view <run-id> --repo yee94/openchamber --log-failed | tail -80
+   gh release view "v$VERSION" --repo yee94/yuri
+   gh run view <run-id> --repo yee94/yuri --log-failed | tail -80
    ```
 
 2. 删除同版本下**过期**的 Android 版本化资产（保留最新 `run_number` 那一套，以及 `app-release.aab` / `app-release.apk`）：
 
    ```bash
    # 列出资产与 id
-   gh api "repos/yee94/openchamber/releases/tags/v$VERSION" --jq '.assets[] | {id,name}'
+   gh api "repos/yee94/yuri/releases/tags/v$VERSION" --jq '.assets[] | {id,name}'
 
    # 删除过期的版本化 Android 资产（示例：去掉 72，保留 73）
-   gh api -X DELETE "repos/yee94/openchamber/releases/assets/<asset-id>"
+   gh api -X DELETE "repos/yee94/yuri/releases/assets/<asset-id>"
    ```
 
 3. 清理后资产数应为 13，再只重跑失败的 `finalize-release`（不必整条 Release 全量重跑）：
 
    ```bash
-   gh run rerun <run-id> --repo yee94/openchamber --failed
+   gh run rerun <run-id> --repo yee94/yuri --failed
    ```
 
 4. 若再次全量重跑同版本 Release，会再次产生新的 `run_number` 并追加新的 `-NN-android.*`。**重跑前先删掉旧的版本化 Android 资产**，或接受还要再做一次步骤 2–3。
@@ -350,7 +352,7 @@ error finalizing release: ... "already_exists","field":"tag_name"
 
 根因：`softprops/action-gh-release` 在 `draft: false` + 仅 `tag_name` 时可能**新建**一个空的 published Release，再试图 undraft 已有资产的 draft，于是同 tag 撞车。仓库里会出现：
 
-- 一个 **draft**（含完整桌面/Android 资产，名称通常为 `OpenChamber vX.Y.Z`）
+- 一个 **draft**（含完整桌面/Android 资产，名称通常为 `Yuri vX.Y.Z`）
 - 一个 **published 空 Release**（0 assets，名称常为 `vX.Y.Z`）
 
 当前 workflow 已改为对 `create-release` 输出的 `release_id` 做 `PATCH draft=false`，避免再创建。
@@ -359,13 +361,13 @@ error finalizing release: ... "already_exists","field":"tag_name"
 
 ```bash
 # 列出同 tag 的 draft / published
-gh api repos/yee94/openchamber/releases --jq '.[] | select(.tag_name=="v'"$VERSION"'") | {id,tag:.tag_name,name,draft,assets:(.assets|length)}'
+gh api repos/yee94/yuri/releases --jq '.[] | select(.tag_name=="v'"$VERSION"'") | {id,tag:.tag_name,name,draft,assets:(.assets|length)}'
 
 # 删除空的 published 重复项
-gh api -X DELETE "repos/yee94/openchamber/releases/<empty-published-id>"
+gh api -X DELETE "repos/yee94/yuri/releases/<empty-published-id>"
 
 # 将含资产的 draft 正式发布（beta 保持 prerelease=true）
-gh api --method PATCH "repos/yee94/openchamber/releases/<draft-id>" -F draft=false -F prerelease=true
+gh api --method PATCH "repos/yee94/yuri/releases/<draft-id>" -F draft=false -F prerelease=true
 ```
 
 不要对已成功上传资产的同版本再开一次全量 Release；修好重复项后，后续新版本走正常 tag push 即可。
@@ -377,7 +379,7 @@ gh api --method PATCH "repos/yee94/openchamber/releases/<draft-id>" -F draft=fal
 
 ## Mobile OTA releases (beta + stable)
 
-Capacitor 移动端支持 **web bundle OTA**（Capgo-style，自托管在 update-service / EdgeOne）。原生壳变更仍走完整 `v*` 发布。**beta 与 stable 两个通道均已 OTA 可用**：各自独立 manifest，壳在 `mobile:sync` 时通过 `OPENCHAMBER_OTA_CHANNEL` 烘焙通道。
+Capacitor 移动端支持 **web bundle OTA**（Capgo-style，自托管在 update-service / EdgeOne）。原生壳变更仍走完整 `v*` 发布。**beta 与 stable 两个通道均已 OTA 可用**：各自独立 manifest，壳在 `mobile:sync` 时通过 `YURI_OTA_CHANNEL` 烘焙通道。
 
 ### Tag 命名空间
 
@@ -409,7 +411,7 @@ OTA tag 会创建 **GitHub prerelease**（`mobile-beta/v…` 或 `mobile-stable/
 
 ### 通道烘焙（shell channel）
 
-- `packages/mobile/capacitor.config.ts` 在构建时读 `OPENCHAMBER_OTA_CHANNEL`：`stable` → stable，其它/缺省 → beta。写入 `OpenChamberOTA.channel` 与 `CapacitorUpdater.defaultChannel`。
+- `packages/mobile/capacitor.config.ts` 在构建时读 `YURI_OTA_CHANNEL`：`stable` → stable，其它/缺省 → beta。写入 `YuriOTA.channel` 与 `CapacitorUpdater.defaultChannel`。
 - `release.yml` 调用 `mobile-release` 时：含 `-` 的 prerelease → `ota_channel: beta`；纯 semver → `ota_channel: stable`。
 - 默认构建（TestFlight / 侧载）保持 beta；商店稳定壳走 stable。
 - 运行时覆盖（用户开关）：设置 → 关于里的「加入 Beta 更新渠道」开关把 `otaChannelOverride`（`useUIStore`，localStorage 持久化）写入 `beta`/`stable`，检查请求按 `override ?? 烘焙值` 生效。设备从 beta bundle 切回 stable 时，更新服务允许跨渠道回退（决策带 `isChannelRollback: true`，见 `deploy/update-service/README.md`），客户端确认后走正常 OTA 下载/重启流程。
@@ -499,9 +501,9 @@ node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to st
 - 无密钥时走明文 zip，`checksum` 为 **纯 64 位 hex（无 `sha256:` 前缀）**——原生插件按字面值比较自身摘要，带前缀会导致下载校验失败。脚本会自动剥掉输入的前缀。
 - 检查端点对加密 bundle 同时返回 `session_key` 与 `sessionKey` 两个键：Android 解析 `sessionKey`，iOS 解析 `session_key`。
 - 回滚加密 bundle 属于已知限制：回滚 zip 只能携带明文摘要，配置了公钥的壳无法校验，会自动回退到上一个成功 bundle。
-- zip **必须 < 24 MiB**；超限失败并提示迁移 COS。CI 只部署 Vercel（权威源）；EdgeOne（`openchamber.xiaobe.top`，国内入口）由 git 自动部署 + 边缘反向代理跟随 Vercel，无需 CI 双发。服务端 bundle 分发支持 HTTP Range 断点续传（EdgeOne 代理已透传 `Range` / `Content-Range`，部分响应不落边缘缓存）。
+- zip **必须 < 24 MiB**；超限失败并提示迁移 COS。CI 只部署 Vercel（权威源）；EdgeOne（`updates-mirror.example.com`，国内入口）由 git 自动部署 + 边缘反向代理跟随 Vercel，无需 CI 双发。服务端 bundle 分发支持 HTTP Range 断点续传（EdgeOne 代理已透传 `Range` / `Content-Range`，部分响应不落边缘缓存）。
 - 反向代理路径为**白名单**：`/ota/channels/*.json`、`/ota/bundles/*.zip`、`/CHANGELOG.md`。前两者是 OTA 快照，第三者供直接 GET。EdgeOne 的 `POST /v1/mobile/update/check` 必须从 Vercel 源拉 CHANGELOG（与 channel manifest 同一 `manifestBaseUrl`），不能读本机 `/CHANGELOG.md`：本机文件若仍是 git 部署静态资源，过滤区间对不上当前 OTA，更新对话框的「更新内容」会整段消失。代理路径必须精确匹配，不能放宽成通配符。
-- EdgeOne 构建**不得**输出静态 `CHANGELOG.md`（`OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY=1`，已写进 `deploy/update-service/edgeone.json`）：EdgeOne 上静态资源会遮蔽同名 edge function，输出了静态文件代理就永远不生效。Vercel 仍需静态文件，它是权威源。
+- EdgeOne 构建**不得**输出静态 `CHANGELOG.md`（`YURI_UPDATE_SKIP_CHANGELOG_COPY=1`，已写进 `deploy/update-service/edgeone.json`）：EdgeOne 上静态资源会遮蔽同名 edge function，输出了静态文件代理就永远不生效。Vercel 仍需静态文件，它是权威源。
 
 ### 通道隔离保证
 

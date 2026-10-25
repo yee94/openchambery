@@ -189,7 +189,7 @@ const setSessionActivityPhase = (sessionId: string, phase: ActivityPhase): void 
   sessionActivityPhases.set(sessionId, { phase, updatedAt: Date.now() });
 
   broadcastToSinks({
-    type: 'openchamber:session-activity',
+    type: 'yuri:session-activity',
     properties: {
       sessionId,
       phase,
@@ -202,7 +202,7 @@ const setSessionActivityPhase = (sessionId: string, phase: ActivityPhase): void 
       if (now?.phase === 'cooldown') {
         sessionActivityPhases.set(sessionId, { phase: 'idle', updatedAt: Date.now() });
         broadcastToSinks({
-          type: 'openchamber:session-activity',
+          type: 'yuri:session-activity',
           properties: {
             sessionId,
             phase: 'idle',

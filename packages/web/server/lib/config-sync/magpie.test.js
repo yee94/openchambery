@@ -9,7 +9,7 @@ import { applyConfigSyncPlan } from './engine.js';
 
 const dirs = [];
 const machine = async () => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'oc-magpie-test-'));
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-magpie-test-'));
   dirs.push(home);
   return { home, options: {
     homedir: () => home, tempdir: () => home, platform: 'linux', arch: 'x64',
@@ -81,17 +81,17 @@ describe('Magpie discovery and native transfer', () => {
     const destination = createMagpieSync({ ...target.options, fetchImpl, run: runTarget });
     await expect(destination.import(payload)).resolves.toEqual({ ok: true });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(await fs.realpath(path.join(target.home, '.local/bin/magpie'))).toBe(await fs.realpath(path.join(target.home, '.config/openchamber/tools/magpie/magpie')));
+    expect(await fs.realpath(path.join(target.home, '.local/bin/magpie'))).toBe(await fs.realpath(path.join(target.home, '.config/yuri/tools/magpie/magpie')));
     await expect(destination.import(payload)).resolves.toEqual({ ok: true });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     for (const item of [source, target]) {
-      expect((await fs.readdir(item.home)).filter((name) => name.startsWith('openchamber-magpie-'))).toEqual([]);
+      expect((await fs.readdir(item.home)).filter((name) => name.startsWith('yuri-magpie-'))).toEqual([]);
     }
   });
 
   it('repairs a previously managed installation without downloading or overwriting a user command', async () => {
     const { home, options } = await machine();
-    const managed = path.join(home, '.config/openchamber/tools/magpie/magpie');
+    const managed = path.join(home, '.config/yuri/tools/magpie/magpie');
     const entry = path.join(home, '.local/bin/magpie');
     const fetchImpl = vi.fn();
     const run = vi.fn(async () => 'magpie 0.1.1319');
@@ -150,7 +150,7 @@ describe('Magpie discovery and native transfer', () => {
     expect(Object.keys(stored)).toEqual(['destination-only', 'astra#one']);
     recognized = false;
     await expect(sync.import(payload)).rejects.toThrow('authorization sync or verification failed');
-    expect((await fs.readdir(target.home)).filter((name) => name.startsWith('openchamber-magpie-'))).toEqual([]);
+    expect((await fs.readdir(target.home)).filter((name) => name.startsWith('yuri-magpie-'))).toEqual([]);
   });
 
   it('rejects malformed v2 authorization before installing or restoring', async () => {
@@ -193,7 +193,7 @@ describe('Magpie discovery and native transfer', () => {
     const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v1', passphrase: 'a'.repeat(64),
       backup: Buffer.from('{"format":"magpie-backup"}').toString('base64') }));
     await expect(sync.import(payload)).rejects.toThrow('Magpie restore partially completed');
-    expect((await fs.readdir(home)).filter((name) => name.startsWith('openchamber-magpie-'))).toEqual([]);
+    expect((await fs.readdir(home)).filter((name) => name.startsWith('yuri-magpie-'))).toEqual([]);
   });
 
   it('reports excluded sign-ins as a warning after a successful native restore', async () => {
@@ -241,14 +241,14 @@ describe('Magpie discovery and native transfer', () => {
       backup: Buffer.from('{"format":"magpie-backup"}').toString('base64') }));
     await expect(sync.import(payload)).rejects.toThrow('checksum mismatch');
     expect(run).not.toHaveBeenCalled();
-    await expect(fs.stat(path.join(home, '.config', 'openchamber', 'tools', 'magpie', 'magpie'))).rejects.toThrow();
+    await expect(fs.stat(path.join(home, '.config', 'yuri', 'tools', 'magpie', 'magpie'))).rejects.toThrow();
   });
 
-  it.skipIf(!process.env.OPENCHAMBER_MAGPIE_TEST_BINARY)('round-trips isolated configuration with the installed real CLI', async () => {
+  it.skipIf(!process.env.YURI_MAGPIE_TEST_BINARY)('round-trips isolated configuration with the installed real CLI', async () => {
     const source = await machine();
     const target = await machine();
     for (const item of [source, target]) {
-      item.options.env = { ...item.options.env, MAGPIE_BINARY: process.env.OPENCHAMBER_MAGPIE_TEST_BINARY,
+      item.options.env = { ...item.options.env, MAGPIE_BINARY: process.env.YURI_MAGPIE_TEST_BINARY,
         MAGPIE_NO_ACCOUNTS: '1', PATH: '/usr/bin:/bin', XDG_CACHE_HOME: path.join(item.home, '.cache') };
       await write(path.join(item.home, '.config', 'magpie', 'settings.json'), JSON.stringify({ noAccountDiscovery: true, noStats: true, noUsageStats: true, noAutoUpdate: true }));
     }

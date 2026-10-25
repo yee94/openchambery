@@ -137,7 +137,7 @@ describe("transcript diagnostics", () => {
     const events = await sink.read()
     expect(events.map((event) => event.at)).toEqual([3, 4])
     const report = JSON.parse(await recorder.exportReport()) as { schema: string; eventCount: number; feats: string[] }
-    expect(report.schema).toBe("openchamber.client-diagnostics.v1")
+    expect(report.schema).toBe("yuri.client-diagnostics.v1")
     expect(report.eventCount).toBe(2)
     expect(report.feats).toEqual(["transcript"])
   })
@@ -212,7 +212,7 @@ describe("transcript diagnostics", () => {
 
   test("export helpers name the file and read eventCount without throwing on junk", () => {
     expect(diagnosticsExportFileName(Date.UTC(2026, 7, 16, 12, 0, 0))).toBe(
-      "openchamber-diagnostics-2026-08-16T12-00-00-000Z.json",
+      "yuri-diagnostics-2026-08-16T12-00-00-000Z.json",
     )
     expect(diagnosticsExportEventCount('{"eventCount":3}')).toBe(3)
     expect(diagnosticsExportEventCount("not-json")).toBe(0)

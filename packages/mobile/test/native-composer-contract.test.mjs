@@ -9,8 +9,8 @@ async function source(path) {
 }
 
 test('native composer pins to the keyboard end-frame and rest safe area, not a sticky layout guide', async () => {
-  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
-  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const plugin = await source('ios/App/App/YuriComposerPlugin.swift');
+  const view = await source('ios/App/App/YuriComposerView.swift');
   const contract = await source('contracts/native-composer-keyboard.mjs');
   assert.match(contract, /nextNativeComposerKeyboardSession/);
   assert.match(plugin, /keyboardSessionOpen/);
@@ -38,7 +38,7 @@ test('native composer pins to the keyboard end-frame and rest safe area, not a s
 });
 
 test('native composer glass chrome lives in the effect contentView with interactive hover lift', async () => {
-  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const view = await source('ios/App/App/YuriComposerView.swift');
   assert.match(view, /var contentView: UIView \{ blurView\.contentView \}/);
   assert.match(view, /UIGlassEffect\(style: \.regular\)/);
   assert.match(view, /glass\.isInteractive = true/);
@@ -47,9 +47,9 @@ test('native composer glass chrome lives in the effect contentView with interact
 });
 
 test('native composer rest height stays collapsed and scroll lives above send', async () => {
-  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
-  const view = await source('ios/App/App/OpenChamberComposerView.swift');
-  const contract = await source('contracts/openchamber-composer.mjs');
+  const plugin = await source('ios/App/App/YuriComposerPlugin.swift');
+  const view = await source('ios/App/App/YuriComposerView.swift');
+  const contract = await source('contracts/yuri-composer.mjs');
   assert.match(contract, /scrollToBottom/);
   assert.match(plugin, /lastRestHeight/);
   assert.match(plugin, /isExpandedState/);
@@ -144,9 +144,9 @@ test('native composer rest height stays collapsed and scroll lives above send', 
 });
 
 test('native composer attach presents a document picker and expanded chrome matches web order', async () => {
-  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
-  const view = await source('ios/App/App/OpenChamberComposerView.swift');
-  const contract = await source('contracts/openchamber-composer.mjs');
+  const plugin = await source('ios/App/App/YuriComposerPlugin.swift');
+  const view = await source('ios/App/App/YuriComposerView.swift');
+  const contract = await source('contracts/yuri-composer.mjs');
   assert.match(contract, /filesPicked/);
   assert.match(plugin, /UIDocumentPickerViewController/);
   assert.match(plugin, /filesPicked/);
@@ -161,12 +161,12 @@ test('native composer attach presents a document picker and expanded chrome matc
 });
 
 test('native composer autocomplete sits above the card and accepts Return or tap', async () => {
-  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
-  const view = await source('ios/App/App/OpenChamberComposerView.swift');
-  const popup = await source('ios/App/App/OpenChamberComposerAutocomplete.swift');
-  const contract = await source('contracts/openchamber-composer.mjs');
+  const plugin = await source('ios/App/App/YuriComposerPlugin.swift');
+  const view = await source('ios/App/App/YuriComposerView.swift');
+  const popup = await source('ios/App/App/YuriComposerAutocomplete.swift');
+  const contract = await source('contracts/yuri-composer.mjs');
   assert.match(contract, /autocompleteAccept/);
-  assert.match(contract, /OpenChamberComposerAutocomplete.swift/);
+  assert.match(contract, /YuriComposerAutocomplete.swift/);
   assert.match(plugin, /parseAutocomplete/);
   assert.match(plugin, /applyAutocomplete/);
   assert.match(plugin, /selectionStart/);
@@ -200,7 +200,7 @@ test('native composer autocomplete sits above the card and accepts Return or tap
 });
 
 test('native composer typing path dedupes identical textChanged payloads and skips unchanged height reports', async () => {
-  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const view = await source('ios/App/App/YuriComposerView.swift');
   assert.match(view, /private var lastEmittedTextChange: \(text: String, start: Int, end: Int\)\?/);
   const emitTextChange = view.match(/private func emitTextChange\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
   assert.match(emitTextChange, /if let last = lastEmittedTextChange, last == next \{ return \}/);
@@ -213,8 +213,8 @@ test('native composer typing path dedupes identical textChanged payloads and ski
 });
 
 test('native composer coalesces layout height reports and only refreshes geometry at visibility boundaries', async () => {
-  const view = await source('ios/App/App/OpenChamberComposerView.swift');
-  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const view = await source('ios/App/App/YuriComposerView.swift');
+  const plugin = await source('ios/App/App/YuriComposerPlugin.swift');
   const layoutSubviews = view.match(/override func layoutSubviews\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
   assert.match(layoutSubviews, /emitHeightChange\(force: false\)/);
 

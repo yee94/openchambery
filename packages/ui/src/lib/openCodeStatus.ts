@@ -14,7 +14,7 @@ type ProbeResult = {
   summary: string;
 };
 
-type OpenChamberHealthSnapshot = {
+type YuriHealthSnapshot = {
   openCodePort?: unknown;
   openCodeRunning?: unknown;
   openCodeSecureConnection?: unknown;
@@ -34,7 +34,7 @@ type OpenChamberHealthSnapshot = {
   bunBinaryResolved?: unknown;
 };
 
-type OpenChamberOpencodeResolution = {
+type YuriOpencodeResolution = {
   configured?: unknown;
   resolved?: unknown;
   resolvedDir?: unknown;
@@ -162,7 +162,7 @@ const buildOpenCodeStatusReport = async (): Promise<string> => {
   const healthUrl = urls.health();
   const apiBase = urls.api('/api/');
 
-  const openChamberHealth: OpenChamberHealthSnapshot | null = await (async () => {
+  const yuriHealth: YuriHealthSnapshot | null = await (async () => {
     if (!healthUrl) return null;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -175,7 +175,7 @@ const buildOpenCodeStatusReport = async (): Promise<string> => {
       if (!resp.ok) return null;
       const json = (await resp.json().catch(() => null)) as unknown;
       if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
-      return json as OpenChamberHealthSnapshot;
+      return json as YuriHealthSnapshot;
     } catch {
       return null;
     } finally {
@@ -183,8 +183,8 @@ const buildOpenCodeStatusReport = async (): Promise<string> => {
     }
   })();
 
-  const openChamberOpencodeResolutionResult: {
-    data: OpenChamberOpencodeResolution | null;
+  const yuriOpencodeResolutionResult: {
+    data: YuriOpencodeResolution | null;
     status: number | null;
     error: string | null;
   } = await (async () => {
@@ -216,7 +216,7 @@ const buildOpenCodeStatusReport = async (): Promise<string> => {
       if (!json || typeof json !== 'object' || Array.isArray(json)) {
         return { data: null, status: resp.status, error: `invalid json-shape content-type=${contentType}` };
       }
-      return { data: json as OpenChamberOpencodeResolution, status: resp.status, error: null };
+      return { data: json as YuriOpencodeResolution, status: resp.status, error: null };
     } catch (error) {
       return {
         data: null,
@@ -262,32 +262,32 @@ const buildOpenCodeStatusReport = async (): Promise<string> => {
 
   const lines: string[] = [];
   lines.push(`Time: ${now.toISOString()}`);
-  lines.push(`OpenChamberY version: ${appVersion}`);
+  lines.push(`Yuri version: ${appVersion}`);
   lines.push(`Runtime: ${origin || '(unknown)'} (api=${apiBase || '(unknown)'})`);
   lines.push(`OpenCode SDK base: ${opencodeClient.getBaseUrl()}`);
   lines.push(`Event stream: ${eventStreamStatus}`);
   lines.push(`Directory: ${directory || '(none)'}`);
   lines.push(`Platform: ${platform}`);
 
-  const runtimeOpenCodePort = normalizePort(openChamberHealth?.openCodePort);
+  const runtimeOpenCodePort = normalizePort(yuriHealth?.openCodePort);
   lines.push(`OpenCode runtime port: ${runtimeOpenCodePort ?? '(unknown)'}`);
-  if (typeof openChamberHealth?.openCodeRunning === 'boolean') {
-    lines.push(`OpenCode runtime running: ${openChamberHealth.openCodeRunning ? 'yes' : 'no'}`);
+  if (typeof yuriHealth?.openCodeRunning === 'boolean') {
+    lines.push(`OpenCode runtime running: ${yuriHealth.openCodeRunning ? 'yes' : 'no'}`);
   }
-  if (typeof openChamberHealth?.openCodeSecureConnection === 'boolean') {
-    lines.push(`Secure OpenCode connection: ${openChamberHealth.openCodeSecureConnection ? 'true' : 'false'}`);
+  if (typeof yuriHealth?.openCodeSecureConnection === 'boolean') {
+    lines.push(`Secure OpenCode connection: ${yuriHealth.openCodeSecureConnection ? 'true' : 'false'}`);
   }
-  if (typeof openChamberHealth?.openCodeAuthSource === 'string' && openChamberHealth.openCodeAuthSource.trim()) {
-    lines.push(`OpenCode auth source: ${openChamberHealth.openCodeAuthSource}`);
+  if (typeof yuriHealth?.openCodeAuthSource === 'string' && yuriHealth.openCodeAuthSource.trim()) {
+    lines.push(`OpenCode auth source: ${yuriHealth.openCodeAuthSource}`);
   }
-  if (typeof openChamberHealth?.openCodeServeVersion === 'string' && openChamberHealth.openCodeServeVersion.trim()) {
-    lines.push(`OpenCode serve version: ${openChamberHealth.openCodeServeVersion}`);
+  if (typeof yuriHealth?.openCodeServeVersion === 'string' && yuriHealth.openCodeServeVersion.trim()) {
+    lines.push(`OpenCode serve version: ${yuriHealth.openCodeServeVersion}`);
   }
-  if (typeof openChamberHealth?.openCodeCliVersion === 'string' && openChamberHealth.openCodeCliVersion.trim()) {
-    lines.push(`OpenCode CLI version: ${openChamberHealth.openCodeCliVersion}`);
+  if (typeof yuriHealth?.openCodeCliVersion === 'string' && yuriHealth.openCodeCliVersion.trim()) {
+    lines.push(`OpenCode CLI version: ${yuriHealth.openCodeCliVersion}`);
   }
-  if (isRecord(openChamberHealth?.runtimeContract)) {
-    const contract = openChamberHealth.runtimeContract;
+  if (isRecord(yuriHealth?.runtimeContract)) {
+    const contract = yuriHealth.runtimeContract;
     const phase = typeof contract.phase === 'string' ? contract.phase : '(unknown)';
     const execution = contract.executionAllowed === true ? 'allowed' : 'limited';
     const protocol = contract.protocolCompatible === true ? 'compatible' : 'incompatible';
@@ -298,7 +298,7 @@ const buildOpenCodeStatusReport = async (): Promise<string> => {
   }
 
   if (typeof window !== 'undefined') {
-    const injected = (window as unknown as { __OPENCHAMBER_MACOS_MAJOR__?: unknown }).__OPENCHAMBER_MACOS_MAJOR__;
+    const injected = (window as unknown as { __YURI_MACOS_MAJOR__?: unknown }).__YURI_MACOS_MAJOR__;
     if (typeof injected === 'number' && Number.isFinite(injected) && injected > 0) {
       lines.push(`macOS major: ${injected}`);
     }
@@ -309,58 +309,58 @@ const buildOpenCodeStatusReport = async (): Promise<string> => {
     lines.push('');
     lines.push('OpenCode CLI resolution:');
 
-    const launchDiagnostics = isRecord(openChamberHealth?.lastOpenCodeLaunchDiagnostics)
-      ? openChamberHealth.lastOpenCodeLaunchDiagnostics
+    const launchDiagnostics = isRecord(yuriHealth?.lastOpenCodeLaunchDiagnostics)
+      ? yuriHealth.lastOpenCodeLaunchDiagnostics
       : null;
     const actualLaunchArgs = launchDiagnostics && Array.isArray(launchDiagnostics.args)
       ? launchDiagnostics.args.filter((value): value is string => typeof value === 'string')
       : [];
-    const openChamberOpencodeResolution = openChamberOpencodeResolutionResult.data;
+    const yuriOpencodeResolution = yuriOpencodeResolutionResult.data;
     const configured =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.configured === 'string'
-        ? openChamberOpencodeResolution.configured
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.configured === 'string'
+        ? yuriOpencodeResolution.configured
         : null;
     const resolved =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.resolved === 'string'
-        ? openChamberOpencodeResolution.resolved
-        : (openChamberHealth && typeof openChamberHealth.opencodeBinaryResolved === 'string' ? openChamberHealth.opencodeBinaryResolved : '');
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.resolved === 'string'
+        ? yuriOpencodeResolution.resolved
+        : (yuriHealth && typeof yuriHealth.opencodeBinaryResolved === 'string' ? yuriHealth.opencodeBinaryResolved : '');
     const resolvedDir =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.resolvedDir === 'string'
-        ? openChamberOpencodeResolution.resolvedDir
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.resolvedDir === 'string'
+        ? yuriOpencodeResolution.resolvedDir
         : '';
     const source =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.source === 'string'
-        ? openChamberOpencodeResolution.source
-        : (openChamberHealth && typeof openChamberHealth.opencodeBinarySource === 'string' ? openChamberHealth.opencodeBinarySource : '');
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.source === 'string'
+        ? yuriOpencodeResolution.source
+        : (yuriHealth && typeof yuriHealth.opencodeBinarySource === 'string' ? yuriHealth.opencodeBinarySource : '');
     const configuredLaunchBinary =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.launchBinary === 'string'
-        ? openChamberOpencodeResolution.launchBinary
-        : (openChamberHealth && typeof openChamberHealth.opencodeLaunchBinary === 'string' ? openChamberHealth.opencodeLaunchBinary : '');
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.launchBinary === 'string'
+        ? yuriOpencodeResolution.launchBinary
+        : (yuriHealth && typeof yuriHealth.opencodeLaunchBinary === 'string' ? yuriHealth.opencodeLaunchBinary : '');
     const configuredLaunchWrapperType =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.launchWrapperType === 'string'
-        ? openChamberOpencodeResolution.launchWrapperType
-        : (openChamberHealth && typeof openChamberHealth.opencodeLaunchWrapperType === 'string' ? openChamberHealth.opencodeLaunchWrapperType : '');
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.launchWrapperType === 'string'
+        ? yuriOpencodeResolution.launchWrapperType
+        : (yuriHealth && typeof yuriHealth.opencodeLaunchWrapperType === 'string' ? yuriHealth.opencodeLaunchWrapperType : '');
     const configuredLaunchArgs =
-      openChamberOpencodeResolution && Array.isArray(openChamberOpencodeResolution.launchArgs)
-        ? openChamberOpencodeResolution.launchArgs.filter((value): value is string => typeof value === 'string')
-        : (openChamberHealth && Array.isArray(openChamberHealth.opencodeLaunchArgs)
-          ? openChamberHealth.opencodeLaunchArgs.filter((value): value is string => typeof value === 'string')
+      yuriOpencodeResolution && Array.isArray(yuriOpencodeResolution.launchArgs)
+        ? yuriOpencodeResolution.launchArgs.filter((value): value is string => typeof value === 'string')
+        : (yuriHealth && Array.isArray(yuriHealth.opencodeLaunchArgs)
+          ? yuriHealth.opencodeLaunchArgs.filter((value): value is string => typeof value === 'string')
           : []);
     const node =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.node === 'string'
-        ? openChamberOpencodeResolution.node
-        : (openChamberHealth && typeof openChamberHealth.nodeBinaryResolved === 'string' ? openChamberHealth.nodeBinaryResolved : '');
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.node === 'string'
+        ? yuriOpencodeResolution.node
+        : (yuriHealth && typeof yuriHealth.nodeBinaryResolved === 'string' ? yuriHealth.nodeBinaryResolved : '');
     const bun =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.bun === 'string'
-        ? openChamberOpencodeResolution.bun
-        : (openChamberHealth && typeof openChamberHealth.bunBinaryResolved === 'string' ? openChamberHealth.bunBinaryResolved : '');
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.bun === 'string'
+        ? yuriOpencodeResolution.bun
+        : (yuriHealth && typeof yuriHealth.bunBinaryResolved === 'string' ? yuriHealth.bunBinaryResolved : '');
     const detectedNow =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.detectedNow === 'string'
-        ? openChamberOpencodeResolution.detectedNow
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.detectedNow === 'string'
+        ? yuriOpencodeResolution.detectedNow
         : '';
     const detectedSourceNow =
-      openChamberOpencodeResolution && typeof openChamberOpencodeResolution.detectedSourceNow === 'string'
-        ? openChamberOpencodeResolution.detectedSourceNow
+      yuriOpencodeResolution && typeof yuriOpencodeResolution.detectedSourceNow === 'string'
+        ? yuriOpencodeResolution.detectedSourceNow
         : '';
 
     if (configured !== null) {
@@ -393,8 +393,8 @@ const buildOpenCodeStatusReport = async (): Promise<string> => {
       lines.push(`- launch-args: ${configuredLaunchArgs.length ? configuredLaunchArgs.join(' ') : '(none)'}`);
       lines.push(`- runtime: ${formatLaunchRuntime(configuredLaunchWrapperType || '', node, bun)}`);
     }
-    if (!openChamberOpencodeResolution && openChamberOpencodeResolutionResult.error) {
-      lines.push(`- resolution-endpoint: ${openChamberOpencodeResolutionResult.error}`);
+    if (!yuriOpencodeResolution && yuriOpencodeResolutionResult.error) {
+      lines.push(`- resolution-endpoint: ${yuriOpencodeResolutionResult.error}`);
     }
   }
 

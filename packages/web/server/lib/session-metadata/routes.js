@@ -1,12 +1,12 @@
 /**
- * HTTP surface for OpenChamber-owned session metadata and Host archive.
+ * HTTP surface for Yuri-owned session metadata and Host archive.
  *
  * OpenCode 2.x has no session-metadata update route. Clients (and Host
  * features such as session goal) merge-patch state here; the proxy folds the
  * store back onto session list/detail responses.
  *
  * Archive is a separate Host operation:
- * `PUT /api/openchamber/sessions/:sessionId/archive` body `{ archivedAt: number }`.
+ * `PUT /api/yuri/sessions/:sessionId/archive` body `{ archivedAt: number }`.
  *
  * This module exports the store factory, archive service helpers, and the route
  * registrar. Wire them from `server/index.js` / `feature-routes-runtime.js`.
@@ -65,21 +65,21 @@ export const registerSessionMetadataRoutes = (app, deps = {}) => {
       let metadata;
       if (
         typeof sessionMetadataStore.mutateSessionMetadata === 'function'
-        && isPlainObject(patch.openchamber)
-        && Object.prototype.hasOwnProperty.call(patch.openchamber, 'goal')
-        && isPlainObject(patch.openchamber.goal)
+        && isPlainObject(patch.yuri)
+        && Object.prototype.hasOwnProperty.call(patch.yuri, 'goal')
+        && isPlainObject(patch.yuri.goal)
       ) {
         const result = await sessionMetadataStore.mutateSessionMetadata(sessionId, (current) => {
-          const previousGoal = isPlainObject(current?.openchamber?.goal)
-            ? current.openchamber.goal
+          const previousGoal = isPlainObject(current?.yuri?.goal)
+            ? current.yuri.goal
             : null;
           return {
             ok: true,
             patch: {
               ...patch,
-              openchamber: {
-                ...patch.openchamber,
-                goal: withGoalExecutionGeneration(previousGoal, patch.openchamber.goal),
+              yuri: {
+                ...patch.yuri,
+                goal: withGoalExecutionGeneration(previousGoal, patch.yuri.goal),
               },
             },
           };
@@ -106,7 +106,7 @@ export const registerSessionMetadataRoutes = (app, deps = {}) => {
       if (typeof broadcastGlobalUiEvent === 'function') {
         try {
           broadcastGlobalUiEvent({
-            type: 'openchamber:session-metadata',
+            type: 'yuri:session-metadata',
             properties: { sessionID: sessionId, metadata },
           });
         } catch (error) {
@@ -165,13 +165,13 @@ export const registerSessionMetadataRoutes = (app, deps = {}) => {
   };
 
   app.put(
-    '/api/openchamber/sessions/:sessionId/metadata',
+    '/api/yuri/sessions/:sessionId/metadata',
     express.json({ limit: '1mb' }),
     putMetadata,
   );
 
   app.put(
-    '/api/openchamber/sessions/:sessionId/archive',
+    '/api/yuri/sessions/:sessionId/archive',
     express.json({ limit: '32kb' }),
     putArchive,
   );

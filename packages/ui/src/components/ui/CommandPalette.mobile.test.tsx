@@ -104,7 +104,7 @@ test('page presentation has a focused search header and results without dialog c
     expect(searchSessions).toHaveBeenCalledWith('');
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(host.textContent).toContain('Recent conversation');
-    expect(input.closest('[data-slot="command-input-field"]')?.className).toContain('oc-mobile-glass-control');
+    expect(input.closest('[data-slot="command-input-field"]')?.className).toContain('yuri-mobile-glass-control');
     expect(input.closest('[data-slot="command-input-field"]')?.className).not.toContain('ring-');
     expect(document.querySelector('[data-slot="dialog-overlay"]')).toBeNull();
     expect(host.querySelector('[data-slot="dialog-close"]')).toBeNull();

@@ -127,7 +127,7 @@ export const createChatInputControllerWiring = (surface: ChatInputSurface): Chat
     queueScope: chatInputQueueScope(surface),
     canAbort,
     canQueue: activity === 'busy' || activity === 'retry',
-    allowsCommand: (name) => isChatInputCommandAllowed(surface, { name, source: 'openchamber' }),
+    allowsCommand: (name) => isChatInputCommandAllowed(surface, { name, source: 'yuri' }),
     shortcut: async (command, direction = 1) => {
       if (surface.kind === 'secondary') {
         if (command === 'cycle') await surface.shortcuts!.cycle(direction);

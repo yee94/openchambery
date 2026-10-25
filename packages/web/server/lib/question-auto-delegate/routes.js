@@ -67,7 +67,7 @@ const sendMutation = (res, result) => {
 };
 
 /**
- * OpenChamber-owned question auto-delegate routes + precise intercepts for
+ * Yuri-owned question auto-delegate routes + precise intercepts for
  * `/api/question/:id/reply|reject` (must register before the generic OpenCode proxy).
  * Manual reply/reject keep the upstream SDK response shape/body on success.
  */

@@ -19,8 +19,8 @@ vi.hoisted(() => {
 });
 
 const context = (globalThis as unknown as {
-  __openchamber_sync_context__: React.Context<{ childStores: ChildStoreManager } | null>;
-}).__openchamber_sync_context__;
+  __yuri_sync_context__: React.Context<{ childStores: ChildStoreManager } | null>;
+}).__yuri_sync_context__;
 let root: Root | undefined;
 const host = document.createElement('div');
 beforeEach(() => {

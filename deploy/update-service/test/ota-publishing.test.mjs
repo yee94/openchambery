@@ -44,20 +44,24 @@ test('publishing and rollout retain both majors, channels and referenced bundles
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const env = { ...process.env, OTA_BASE_URL: `http://127.0.0.1:${server.address().port}`, MIN_SHELL_RELEASE_VERSION: '' };
   let sequence = 0;
-  const publish = async (version, channel = 'beta') => {
+  const publish = async (version, channel = 'beta', { metadata = {}, otaOnly = false } = {}) => {
     const zip = path.join(dir, `input-${++sequence}.zip`);
     const bytes = Buffer.from(`bundle ${version}`);
     const checksum = createHash('sha256').update(bytes).digest('hex');
     await writeFile(zip, bytes);
     const desktopDir = path.join(dir, `desktop-${sequence}`);
     await mkdir(desktopDir);
-    await writeFile(path.join(desktopDir, 'desktop-ota.json'), JSON.stringify({ releaseVersion: version, shellFingerprint: 'a'.repeat(64) }));
+    await writeFile(path.join(desktopDir, 'desktop-ota.json'), JSON.stringify({
+      applicationId: 'dev.yuri.desktop', shellApiVersion: 2,
+      releaseVersion: version, shellFingerprint: 'a'.repeat(64), ...metadata,
+    }));
     await writeFile(path.join(desktopDir, 'index.html'), '<html>Desktop</html>');
     const desktopZip = `${desktopDir}.zip`;
     createAssetZip(desktopDir, desktopZip);
     const out = path.join(dir, `snapshot-${sequence}`);
     await exec(process.execPath, ['scripts/mobile-ota/assemble-snapshot.mjs', '--zip', zip,
-      '--desktop-zip', desktopZip, '--version', version, '--channel', channel, '--checksum', checksum, '--out', out], { cwd: root, env });
+      '--desktop-zip', desktopZip, '--version', version, '--channel', channel, '--checksum', checksum, '--out', out,
+      ...(otaOnly ? ['--desktop-ota-only'] : [])], { cwd: root, env });
     for (const name of ['beta', 'stable']) {
       channels.set(name, await readFile(path.join(out, 'ota/channels', `${name}.json`)));
     }
@@ -72,7 +76,27 @@ test('publishing and rollout retain both majors, channels and referenced bundles
   try {
     await publish('1.19.0', 'stable');
     assert.equal(JSON.parse(channels.get('beta')).activeBundle.releaseVersion, '1.19.0');
+    const originalChannels = new Map(channels);
+    for (const [name, contents] of channels) {
+      const legacy = JSON.parse(contents);
+      delete legacy.activeBundle.desktop.applicationId;
+      delete legacy.activeBundle.desktop.minShellApiVersion;
+      channels.set(name, JSON.stringify(legacy));
+    }
+    await assert.rejects(() => publish('1.20.0-beta.1', 'beta', { otaOnly: true }), /shell\/backend changed/);
+    for (const [name, contents] of originalChannels) channels.set(name, contents);
+    for (const metadata of [{ applicationId: undefined }, { applicationId: 'com.yee94.yuri' },
+      { applicationId: 'dev.yuri.desktop.preview' }, { shellApiVersion: undefined }, { shellApiVersion: 1 }]) {
+      await assert.rejects(() => publish('1.20.0-beta.1', 'beta', { metadata }), /dev.yuri.desktop native identity and shellApiVersion 2/);
+    }
+    await assert.rejects(() => publish('1.20.0-beta.1', 'beta', {
+      metadata: { shellFingerprint: 'b'.repeat(64) }, otaOnly: true,
+    }), /shell\/backend changed/);
     const one = await publish('1.20.0-beta.1');
+    assert.equal(one.activeBundle.applicationId, 'com.yee94.yuri');
+    assert.equal(one.activeBundle.minShellApiVersion, 2);
+    assert.equal(one.activeBundle.desktop.applicationId, 'dev.yuri.desktop');
+    assert.equal(one.activeBundle.desktop.minShellApiVersion, 2);
     const two = await publish('2.0.0-beta.24');
     assert.deepEqual(selectOtaMajor(two, 1), one);
     const oneAgain = await publish('1.20.0-beta.2');

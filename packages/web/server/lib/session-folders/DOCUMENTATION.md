@@ -8,7 +8,7 @@ GET returns `{ revision, sessionOrderByScope, sessionOrderActivityByScope }`.
 POST replaces one scope using `{ scopeKey, order, activity, onlyIfAbsent? }`.
 Directory paths identify ordinary lists; `__pinned__` identifies global pins.
 Writes serialize per Host, merge other scopes, atomically rename the new file,
-then broadcast `openchamber:session-order-changed` through the product SSE stream.
+then broadcast `yuri:session-order-changed` through the product SSE stream.
 Last committed drag wins within a scope; independent scopes never replace each
 other. A failed write leaves the previous file and emits no success event.
 Missing files mean an empty initial catalog; malformed/unreadable files fail.

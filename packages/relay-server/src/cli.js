@@ -3,7 +3,7 @@ import { isIP } from 'node:net';
 
 const LIMIT_KEYS = ['maxUrlBytes', 'maxFieldBytes', 'maxHosts', 'maxSockets', 'maxConnections', 'maxClientsPerHost', 'maxClientsPerIp', 'maxPendingClients', 'pendingMs', 'maxRawSockets', 'maxRawSocketsPerIp', 'graceMs', 'timestampSkewMs', 'replayMs', 'maxReplayEntries', 'maxFrameBytes', 'maxQueuedBytesPerConnection', 'maxGlobalQueuedBytes', 'maxBufferedAmount', 'maxControlQueueEntries', 'maxControlQueuedBytes', 'pumpRetryMs', 'heartbeatMs', 'handshakeMs', 'closeDeadlineMs', 'admissionWindowMs', 'maxAdmissionsPerIp', 'maxHostControlAdmissionsPerIp', 'maxHostControlAdmissionsPerServer', 'maxAdmissionEntries', 'idAttempts'];
 const upperSnake = (key) => key.replace(/[A-Z]/g, (letter) => `_${letter}`).toUpperCase();
-const envName = (key) => `OPENCHAMBER_RELAY_SERVER_${upperSnake(key)}`;
+const envName = (key) => `YURI_RELAY_SERVER_${upperSnake(key)}`;
 const fail = (name) => { throw new Error(`Invalid ${name}`); };
 
 export const parseRelayServerArgs = (argv = []) => {
@@ -69,11 +69,11 @@ export const buildRelayConfig = (parsed = {}, env = process.env) => {
   return { host, port, path, publicUrl: outputPublicUrl, trustProxy: parsed.trustProxy ?? bool(envName('trustProxy'), envValue('trustProxy')), limits };
 };
 
-const helpText = 'Usage: openchamber-relay [--host HOST] [--port PORT] [--path PATH] [--public-url WS_URL] [--trust-proxy] [--json] [--quiet]\nEnable --trust-proxy only when public ingress reaches this relay through a trusted reverse proxy.\n';
+const helpText = 'Usage: yuri-relay [--host HOST] [--port PORT] [--path PATH] [--public-url WS_URL] [--trust-proxy] [--json] [--quiet]\nEnable --trust-proxy only when public ingress reaches this relay through a trusted reverse proxy.\n';
 const writeJson = (stdout, payload) => stdout.write(`${JSON.stringify(payload)}\n`);
 const hasPushApnsEnv = (env) => {
   for (const [key, value] of Object.entries(env ?? {})) {
-    if (key.startsWith('OPENCHAMBER_PUSH_RELAY_APNS_') && typeof value === 'string' && value.trim().length > 0) return true;
+    if (key.startsWith('YURI_PUSH_RELAY_APNS_') && typeof value === 'string' && value.trim().length > 0) return true;
   }
   return false;
 };

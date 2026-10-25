@@ -1,6 +1,8 @@
-# OpenChamber Docs Source
+# Yuri Docs Source
 
-This package is the source-of-truth for OpenChamber public docs content.
+Repository and package links use candidate Yuri identities pending ownership verification. Do not treat these source changes as a completed public deployment. The VS Code identity change and recovery boundaries are documented in [`../vscode/MIGRATION.md`](../vscode/MIGRATION.md).
+
+This package is the source-of-truth for Yuri public docs content.
 
 ## Layout
 
@@ -28,6 +30,6 @@ This validates:
 
 This repo owns docs content.
 
-Website rendering/deployment happens in `openchamber-website` (`apps/docs`).
+Website rendering/deployment requires a separately configured website repository (`apps/docs`); the candidate name `yuri-website` is not an ownership or deployment claim.
 
 Use `.github/workflows/docs-source.yml` to package docs source on release or manual trigger.

@@ -13,29 +13,29 @@ import { inspectTunnelAttachability } from './lib/cli-lifecycle.js';
 import {
   assertAuthenticatedNetworkExposure,
   commands,
-  discoverOpenChamberInstanceOnPort,
+  discoverYuriInstanceOnPort,
   discoverLifecycleInstances,
   discoverRunningInstances,
   discoverUnconfirmedRegistryInstanceOnPort,
   getInstanceFilePath,
   getPidFilePath,
-  isOpenchamberCmdline,
-  isOpenchamberProcessRunning,
+  isYuriCmdline,
+  isYuriProcessRunning,
   parseArgs,
   resolveServeHost,
 } from './cli.js';
 
-async function withTempOpenChamberDataDir(fn) {
-  const previous = process.env.OPENCHAMBER_DATA_DIR;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-cli-test-'));
-  process.env.OPENCHAMBER_DATA_DIR = dir;
+async function withTempYuriDataDir(fn) {
+  const previous = process.env.YURI_DATA_DIR;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-cli-test-'));
+  process.env.YURI_DATA_DIR = dir;
   try {
     return await fn(dir);
   } finally {
     if (typeof previous === 'string') {
-      process.env.OPENCHAMBER_DATA_DIR = previous;
+      process.env.YURI_DATA_DIR = previous;
     } else {
-      delete process.env.OPENCHAMBER_DATA_DIR;
+      delete process.env.YURI_DATA_DIR;
     }
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -65,7 +65,7 @@ async function captureStdout(fn) {
   }
 }
 
-async function startMockOpenChamberServer(options = {}) {
+async function startMockYuriServer(options = {}) {
   const runtime = options.runtime || 'web';
   const pid = Number.isFinite(options.pid) ? options.pid : null;
   let shutdownRequested = false;
@@ -153,11 +153,11 @@ async function waitForTcpPort(port, timeoutMs = 3000) {
   return false;
 }
 
-function spawnOpenChamberLikeIdleProcess() {
-  return spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'openchamber-idle'], { stdio: 'ignore' });
+function spawnYuriLikeIdleProcess() {
+  return spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'yuri-idle'], { stdio: 'ignore' });
 }
 
-function spawnOpenChamberLikeHungServer(port) {
+function spawnYuriLikeHungServer(port) {
   const script = `
     const net = require('net');
     const sockets = new Set();
@@ -168,7 +168,7 @@ function spawnOpenChamberLikeHungServer(port) {
     server.listen(${port}, '127.0.0.1');
     setInterval(() => {}, 1000);
   `;
-  return spawn(process.execPath, ['-e', script, 'openchamber-hung-server'], { stdio: 'ignore' });
+  return spawn(process.execPath, ['-e', script, 'yuri-hung-server'], { stdio: 'ignore' });
 }
 
 describe('cli args', () => {
@@ -178,10 +178,10 @@ describe('cli args', () => {
   });
 
   it('parses explicit connect-url server overrides', () => {
-    const parsed = parseArgs(['connect-url', '--server', 'https://openchamber.example.com', '--port', '3002']);
+    const parsed = parseArgs(['connect-url', '--server', 'https://yuri.example.com', '--port', '3002']);
 
     expect(parsed.command).toBe('connect-url');
-    expect(parsed.options.server).toBe('https://openchamber.example.com');
+    expect(parsed.options.server).toBe('https://yuri.example.com');
     expect(parsed.options.port).toBe(3002);
   });
 
@@ -209,15 +209,15 @@ describe('cli args', () => {
 
   it('preserves ssh-remote serve runtime and writes --relay-host opt-in', async () => {
     const { applyRelayHostOptIn, resolveServeRuntime } = await import('./lib/commands-serve.js');
-    expect(resolveServeRuntime({ OPENCHAMBER_RUNTIME: 'ssh-remote' })).toBe('ssh-remote');
-    expect(resolveServeRuntime({ OPENCHAMBER_RUNTIME: 'desktop' })).toBe('web');
+    expect(resolveServeRuntime({ YURI_RUNTIME: 'ssh-remote' })).toBe('ssh-remote');
+    expect(resolveServeRuntime({ YURI_RUNTIME: 'desktop' })).toBe('web');
     expect(resolveServeRuntime({})).toBe('web');
 
     const { assertServeRelayHostAllowed } = await import('./lib/commands-serve.js');
     expect(() => assertServeRelayHostAllowed('web', { relayHost: true })).toThrow(/ssh-remote/);
     expect(() => assertServeRelayHostAllowed('ssh-remote', { relayHost: true })).not.toThrow();
 
-    await withTempOpenChamberDataDir(async (dir) => {
+    await withTempYuriDataDir(async (dir) => {
       applyRelayHostOptIn({ relayHost: true });
       const settings = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'));
       expect(settings.privateRelay).toMatchObject({ enabled: true });
@@ -272,45 +272,45 @@ describe('network-exposed auth validation', () => {
   });
 
   it('allows explicit unsafe LAN override from process env only', () => {
-    const previous = process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
-    process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = 'true';
+    const previous = process.env.YURI_ALLOW_UNAUTHENTICATED_LAN;
+    process.env.YURI_ALLOW_UNAUTHENTICATED_LAN = 'true';
     try {
       expect(() => assertAuthenticatedNetworkExposure({ host: '0.0.0.0' })).not.toThrow();
     } finally {
       if (typeof previous === 'string') {
-        process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = previous;
+        process.env.YURI_ALLOW_UNAUTHENTICATED_LAN = previous;
       } else {
-        delete process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
+        delete process.env.YURI_ALLOW_UNAUTHENTICATED_LAN;
       }
     }
   });
 });
 
 describe('serve host resolution', () => {
-  it('uses OPENCHAMBER_HOST when --host is not provided', () => {
-    const previous = process.env.OPENCHAMBER_HOST;
-    process.env.OPENCHAMBER_HOST = '192.0.2.20';
+  it('uses YURI_HOST when --host is not provided', () => {
+    const previous = process.env.YURI_HOST;
+    process.env.YURI_HOST = '192.0.2.20';
     try {
       expect(resolveServeHost(undefined)).toBe('192.0.2.20');
     } finally {
       if (typeof previous === 'string') {
-        process.env.OPENCHAMBER_HOST = previous;
+        process.env.YURI_HOST = previous;
       } else {
-        delete process.env.OPENCHAMBER_HOST;
+        delete process.env.YURI_HOST;
       }
     }
   });
 
-  it('prefers explicit --host over OPENCHAMBER_HOST', () => {
-    const previous = process.env.OPENCHAMBER_HOST;
-    process.env.OPENCHAMBER_HOST = '192.0.2.20';
+  it('prefers explicit --host over YURI_HOST', () => {
+    const previous = process.env.YURI_HOST;
+    process.env.YURI_HOST = '192.0.2.20';
     try {
       expect(resolveServeHost('192.0.2.21')).toBe('192.0.2.21');
     } finally {
       if (typeof previous === 'string') {
-        process.env.OPENCHAMBER_HOST = previous;
+        process.env.YURI_HOST = previous;
       } else {
-        delete process.env.OPENCHAMBER_HOST;
+        delete process.env.YURI_HOST;
       }
     }
   });
@@ -318,7 +318,7 @@ describe('serve host resolution', () => {
 
 describe('CLI HTTP helpers', () => {
   it('retries UI-authenticated API requests with the stored instance password', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45678;
       fs.writeFileSync(await getInstanceFilePath(port), JSON.stringify({ port, uiPassword: 'secret' }, null, 2));
       const originalFetch = globalThis.fetch;
@@ -329,11 +329,11 @@ describe('CLI HTTP helpers', () => {
           expect(JSON.parse(options.body)).toEqual({ password: 'secret' });
           return {
             ok: true,
-            headers: { get: (name) => name.toLowerCase() === 'set-cookie' ? 'oc_ui_session=session-token; Path=/; HttpOnly' : null },
+            headers: { get: (name) => name.toLowerCase() === 'set-cookie' ? 'yuri_ui_session=session-token; Path=/; HttpOnly' : null },
             json: async () => ({ authenticated: true }),
           };
         }
-        if (options.headers?.Cookie === 'oc_ui_session=session-token') {
+        if (options.headers?.Cookie === 'yuri_ui_session=session-token') {
           return createMockJsonResponse({ ok: true });
         }
         return {
@@ -344,16 +344,16 @@ describe('CLI HTTP helpers', () => {
       };
 
       try {
-        const { response, body } = await requestJson(port, '/api/openchamber/relay/status', {
+        const { response, body } = await requestJson(port, '/api/yuri/relay/status', {
           method: 'GET',
         });
 
         expect(response.ok).toBe(true);
         expect(body).toEqual({ ok: true });
         expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
-          '/api/openchamber/relay/status',
+          '/api/yuri/relay/status',
           '/auth/session',
-          '/api/openchamber/relay/status',
+          '/api/yuri/relay/status',
         ]);
       } finally {
         globalThis.fetch = originalFetch;
@@ -363,11 +363,11 @@ describe('CLI HTTP helpers', () => {
 });
 
 describe('cli entry detection', () => {
-  const modulePath = '/tmp/openchamber/bin/cli.js';
+  const modulePath = '/tmp/yuri/bin/cli.js';
   const moduleUrl = pathToFileURL(modulePath).href;
 
   it('resolves symlinked entry paths before comparing', () => {
-    const symlinkPath = '/usr/local/bin/openchamber';
+    const symlinkPath = '/usr/local/bin/yuri';
     const realpath = (filePath) => {
       if (filePath === path.resolve(symlinkPath)) {
         return modulePath;
@@ -399,8 +399,8 @@ describe('cli entry detection', () => {
   });
 
   it('accepts wrapper binary name fallback when requested', () => {
-    const wrapperPath = '/home/user/.local/bin/openchamber';
-    expect(isModuleCliExecution(wrapperPath, moduleUrl, undefined, 'openchamber')).toBe(true);
+    const wrapperPath = '/home/user/.local/bin/yuri';
+    expect(isModuleCliExecution(wrapperPath, moduleUrl, undefined, 'yuri')).toBe(true);
   });
 
   it('normalizes direct paths when realpath fails', () => {
@@ -413,37 +413,37 @@ describe('cli entry detection', () => {
   });
 });
 
-describe('isOpenchamberCmdline', () => {
-  it('accepts OpenChamber CLI and daemon cmdlines', () => {
-    expect(isOpenchamberCmdline('node /x/@openchambery/web/bin/cli.js serve')).toBe(true);
-    expect(isOpenchamberCmdline('node /x/@openchambery/web/server/index.js --port 9090')).toBe(true);
-    expect(isOpenchamberCmdline('node /x/@openchamber/web/bin/cli.js serve')).toBe(true);
-    expect(isOpenchamberCmdline('bun /home/u/projects/openchamber/packages/web/server/index.js --port 3001')).toBe(true);
+describe('isYuriCmdline', () => {
+  it('accepts Yuri CLI and daemon cmdlines', () => {
+    expect(isYuriCmdline('node /x/@yuri/web/bin/cli.js serve')).toBe(true);
+    expect(isYuriCmdline('node /x/@yuri/web/server/index.js --port 9090')).toBe(true);
+    expect(isYuriCmdline('node /x/@yuri/web/bin/cli.js serve')).toBe(true);
+    expect(isYuriCmdline('bun /home/u/projects/yuri/packages/web/server/index.js --port 3001')).toBe(true);
   });
 
   it('rejects recycled and unrelated processes (issue #1721)', () => {
-    expect(isOpenchamberCmdline('node /home/herjarsa/npm-global/bin/agentmemory')).toBe(false);
-    expect(isOpenchamberCmdline('node /usr/lib/node_modules/npm/bin/npm-cli.js install')).toBe(false);
-    expect(isOpenchamberCmdline('')).toBe(false);
-    expect(isOpenchamberCmdline(null)).toBe(false);
+    expect(isYuriCmdline('node /home/herjarsa/npm-global/bin/agentmemory')).toBe(false);
+    expect(isYuriCmdline('node /usr/lib/node_modules/npm/bin/npm-cli.js install')).toBe(false);
+    expect(isYuriCmdline('')).toBe(false);
+    expect(isYuriCmdline(null)).toBe(false);
   });
 });
 
-describe('isOpenchamberProcessRunning', () => {
+describe('isYuriProcessRunning', () => {
   it('returns false for a dead PID', () => {
-    expect(isOpenchamberProcessRunning(2147483646)).toBe(false);
+    expect(isYuriProcessRunning(2147483646)).toBe(false);
   });
 
   // Identity verification is available on Linux (/proc) and macOS (ps); on those
   // platforms a live but unrelated process (a recycled stale PID) must read as
   // not-running so it can't trip the "already running" guard (issue #1721).
   it.skipIf(process.platform !== 'linux' && process.platform !== 'darwin')(
-    'returns false for a live non-OpenChamber PID',
+    'returns false for a live non-Yuri PID',
     async () => {
       const child = spawn('sleep', ['30'], { stdio: 'ignore' });
       try {
         await new Promise((resolve) => setTimeout(resolve, 150));
-        expect(isOpenchamberProcessRunning(child.pid)).toBe(false);
+        expect(isYuriProcessRunning(child.pid)).toBe(false);
       } finally {
         child.kill('SIGKILL');
       }
@@ -453,10 +453,10 @@ describe('isOpenchamberProcessRunning', () => {
 
 describe('lifecycle instance discovery', () => {
   it('does not attribute a desktop runtime response to a different explicit port', async () => {
-    await withTempOpenChamberDataDir(async (dir) => {
+    await withTempYuriDataDir(async (dir) => {
       fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: 57123 }, null, 2));
 
-      const instance = await discoverOpenChamberInstanceOnPort(3003, {
+      const instance = await discoverYuriInstanceOnPort(3003, {
         fetchImpl: async () => createMockJsonResponse({ runtime: 'desktop', pid: 934 }),
       });
 
@@ -465,10 +465,10 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('attributes a desktop runtime response to its configured desktop port', async () => {
-    await withTempOpenChamberDataDir(async (dir) => {
+    await withTempYuriDataDir(async (dir) => {
       fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: 57123 }, null, 2));
 
-      const instance = await discoverOpenChamberInstanceOnPort(57123, {
+      const instance = await discoverYuriInstanceOnPort(57123, {
         fetchImpl: async () => createMockJsonResponse({ runtime: 'desktop', pid: 934 }),
       });
 
@@ -481,7 +481,7 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('does not mark tunnel attachability as desktop for a different explicit port', async () => {
-    await withTempOpenChamberDataDir(async (dir) => {
+    await withTempYuriDataDir(async (dir) => {
       fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: 57123 }, null, 2));
       const originalFetch = globalThis.fetch;
       globalThis.fetch = async () => createMockJsonResponse({ runtime: 'desktop', pid: 934 });
@@ -496,7 +496,7 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('keeps pid and instance files when live port probe confirms a cmdline mismatch', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45123;
       const pid = 12345;
       const pidFile = await getPidFilePath(port);
@@ -506,7 +506,7 @@ describe('lifecycle instance discovery', () => {
 
       const instances = await discoverRunningInstances({
         fetchImpl: async () => createMockJsonResponse({ runtime: 'web', pid }),
-        getOpenchamberProcessState: () => 'mismatched',
+        getYuriProcessState: () => 'mismatched',
       });
 
       expect(instances).toEqual([
@@ -518,7 +518,7 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('removes stale pid and instance files when a cmdline mismatch is not confirmed by live probe', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45124;
       const pid = 12346;
       const pidFile = await getPidFilePath(port);
@@ -528,7 +528,7 @@ describe('lifecycle instance discovery', () => {
 
       const instances = await discoverRunningInstances({
         fetchImpl: async () => createMockJsonResponse(null, false),
-        getOpenchamberProcessState: () => 'mismatched',
+        getYuriProcessState: () => 'mismatched',
       });
 
       expect(instances).toEqual([]);
@@ -538,7 +538,7 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('preserves matched pid and instance files when the recorded port probe is inconclusive', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45126;
       const pid = 12347;
       const pidFile = await getPidFilePath(port);
@@ -548,7 +548,7 @@ describe('lifecycle instance discovery', () => {
 
       const instances = await discoverRunningInstances({
         fetchImpl: async () => createMockJsonResponse(null, false),
-        getOpenchamberProcessState: () => 'matched',
+        getYuriProcessState: () => 'matched',
       });
 
       expect(instances).toEqual([]);
@@ -558,7 +558,7 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('preserves unknown-identity pid and instance files when the recorded port probe is inconclusive', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45129;
       const pid = 12350;
       const pidFile = await getPidFilePath(port);
@@ -568,7 +568,7 @@ describe('lifecycle instance discovery', () => {
 
       const instances = await discoverRunningInstances({
         fetchImpl: async () => createMockJsonResponse(null, false),
-        getOpenchamberProcessState: () => 'unknown',
+        getYuriProcessState: () => 'unknown',
       });
 
       expect(instances).toEqual([]);
@@ -577,8 +577,8 @@ describe('lifecycle instance discovery', () => {
     });
   });
 
-  it('uses the live system-info pid instead of a stale OpenChamber-looking pid-file pid', async () => {
-    await withTempOpenChamberDataDir(async () => {
+  it('uses the live system-info pid instead of a stale Yuri-looking pid-file pid', async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45127;
       const stalePid = 12348;
       const livePid = 54321;
@@ -589,7 +589,7 @@ describe('lifecycle instance discovery', () => {
 
       const instances = await discoverRunningInstances({
         fetchImpl: async () => createMockJsonResponse({ runtime: 'web', pid: livePid }),
-        getOpenchamberProcessState: () => 'matched',
+        getYuriProcessState: () => 'matched',
       });
 
       expect(instances).toEqual([
@@ -599,7 +599,7 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('uses the explicit host when probing a pid-file entry without a stored host', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45128;
       const pid = 12349;
       const host = '192.0.2.10';
@@ -614,7 +614,7 @@ describe('lifecycle instance discovery', () => {
             urls.push(String(url));
             return createMockJsonResponse({ runtime: 'web', pid });
           },
-          getOpenchamberProcessState: () => 'matched',
+          getYuriProcessState: () => 'matched',
         },
       );
 
@@ -626,7 +626,7 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('tries loopback before treating an explicit-host pid-file probe as inconclusive', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45130;
       const pid = 12351;
       const host = '192.0.2.11';
@@ -643,7 +643,7 @@ describe('lifecycle instance discovery', () => {
               ? createMockJsonResponse({ runtime: 'web', pid })
               : createMockJsonResponse(null, false);
           },
-          getOpenchamberProcessState: () => 'matched',
+          getYuriProcessState: () => 'matched',
         },
       );
 
@@ -656,7 +656,7 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('does not accept a fallback loopback probe with a different pid for a concrete host registry', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45131;
       const pid = 12352;
       const otherPid = 54322;
@@ -674,7 +674,7 @@ describe('lifecycle instance discovery', () => {
               ? createMockJsonResponse({ runtime: 'web', pid: otherPid })
               : createMockJsonResponse(null, false);
           },
-          getOpenchamberProcessState: () => 'matched',
+          getYuriProcessState: () => 'matched',
         },
       );
 
@@ -684,8 +684,8 @@ describe('lifecycle instance discovery', () => {
     });
   });
 
-  it('discovers an explicit live OpenChamber port without a pid-file registry entry', async () => {
-    await withTempOpenChamberDataDir(async () => {
+  it('discovers an explicit live Yuri port without a pid-file registry entry', async () => {
+    await withTempYuriDataDir(async () => {
       const port = 45125;
       const instances = await discoverLifecycleInstances(
         { explicitPort: true, port },
@@ -699,9 +699,9 @@ describe('lifecycle instance discovery', () => {
   });
 
   it('cleans a matched pid-file entry without stopping it when the recorded port is free', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = await allocateLoopbackPort();
-      const child = spawnOpenChamberLikeIdleProcess();
+      const child = spawnYuriLikeIdleProcess();
       const pidFile = await getPidFilePath(port);
       const instanceFile = await getInstanceFilePath(port);
       try {
@@ -723,9 +723,9 @@ describe('lifecycle instance discovery', () => {
 });
 
 describe('lifecycle commands with unmanaged explicit ports', () => {
-  it('serve refuses to start on a live OpenChamber port without requiring pid files', async () => {
-    await withTempOpenChamberDataDir(async () => {
-      const server = await startMockOpenChamberServer();
+  it('serve refuses to start on a live Yuri port without requiring pid files', async () => {
+    await withTempYuriDataDir(async () => {
+      const server = await startMockYuriServer();
       try {
         await expect(commands.serve({ explicitPort: true, port: server.port, quiet: true })).rejects.toThrow(
           /already running on port/
@@ -737,8 +737,8 @@ describe('lifecycle commands with unmanaged explicit ports', () => {
   });
 
   it('status --port reports a live unmanaged server when the registry is empty', async () => {
-    await withTempOpenChamberDataDir(async () => {
-      const server = await startMockOpenChamberServer();
+    await withTempYuriDataDir(async () => {
+      const server = await startMockYuriServer();
       try {
         const output = await captureStdout(() => commands.status({ explicitPort: true, port: server.port, json: true }));
         const payload = JSON.parse(output);
@@ -754,8 +754,8 @@ describe('lifecycle commands with unmanaged explicit ports', () => {
   });
 
   it('stop --port reaches unmanaged shutdown when the registry is empty', async () => {
-    await withTempOpenChamberDataDir(async () => {
-      const server = await startMockOpenChamberServer();
+    await withTempYuriDataDir(async () => {
+      const server = await startMockYuriServer();
       try {
         await commands.stop({ explicitPort: true, port: server.port, quiet: true, suppressQuietOutput: true });
         expect(server.shutdownRequested).toBe(true);
@@ -766,9 +766,9 @@ describe('lifecycle commands with unmanaged explicit ports', () => {
   });
 
   it('stop --port can recover a matched pid-file instance whose HTTP endpoint is unresponsive', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempYuriDataDir(async () => {
       const port = await allocateLoopbackPort();
-      const child = spawnOpenChamberLikeHungServer(port);
+      const child = spawnYuriLikeHungServer(port);
       const pidFile = await getPidFilePath(port);
       const instanceFile = await getInstanceFilePath(port);
       try {
@@ -788,8 +788,8 @@ describe('lifecycle commands with unmanaged explicit ports', () => {
   });
 
   it('plain stop ignores a stale CLI registry entry that resolves to desktop runtime', async () => {
-    await withTempOpenChamberDataDir(async () => {
-      const server = await startMockOpenChamberServer({ runtime: 'desktop' });
+    await withTempYuriDataDir(async () => {
+      const server = await startMockYuriServer({ runtime: 'desktop' });
       const child = spawn('sleep', ['30'], { stdio: 'ignore' });
       const pidFile = await getPidFilePath(server.port);
       const instanceFile = await getInstanceFilePath(server.port);
@@ -811,8 +811,8 @@ describe('lifecycle commands with unmanaged explicit ports', () => {
   });
 
   it('restart --port restarts a live unmanaged server through the shared explicit-port discovery path', async () => {
-    await withTempOpenChamberDataDir(async () => {
-      const server = await startMockOpenChamberServer();
+    await withTempYuriDataDir(async () => {
+      const server = await startMockYuriServer();
       const calls = [];
       const host = '127.0.0.1';
       try {

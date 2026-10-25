@@ -18,7 +18,7 @@ describe('built-in session skill with authenticated Host', () => {
   const upstreamOrigin = 'http://127.0.0.1:4096';
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'session-skill-'));
-    vi.stubEnv('OPENCHAMBER_DATA_DIR', root);
+    vi.stubEnv('YURI_DATA_DIR', root);
     await fs.mkdir(path.join(root, 'project-a'));
     await fs.mkdir(path.join(root, 'project-b'));
     const projects = ['a', 'b'].map((id) => ({ id, path: path.join(root, `project-${id}`) }));
@@ -70,7 +70,7 @@ describe('built-in session skill with authenticated Host', () => {
       loadCatalog: async () => ({ models: [{ providerID: 'test', modelID: 'model' }] }),
     });
     registerScheduledTaskSessionSkill(app, {
-      ...common, express, openchamberDataDir: root, registrationFile,
+      ...common, express, yuriDataDir: root, registrationFile,
       getIsSharedOpenCodeService: () => true, waitForOpenCodeReady: async () => {},
       createClient: () => sdk, scheduledTaskRouter: router,
       validateDirectoryPath: async (directory) => {

@@ -188,7 +188,7 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
         if (heldPointer.current !== null) finishHeldPointer();
         else if (ready.current) finish();
     }, document);
-    useEventListener(mobile ? 'openchamber:mobile-dictation-toggle' : 'openchamber:dictation-toggle', () => { void toggle(); }, window);
+    useEventListener(mobile ? 'yuri:mobile-dictation-toggle' : 'yuri:dictation-toggle', () => { void toggle(); }, window);
     useEventListener('keydown', (event: KeyboardEvent) => {
         if (mobile) return;
         cancelPendingHold();
@@ -218,10 +218,10 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
             <span ref={listeningCursor} data-listening-cursor aria-hidden="true"
                 className="pointer-events-none fixed left-0 top-0 z-[100]"
                 style={{ transform: `translate(${pointerPosition.current.x}px, ${pointerPosition.current.y}px)` }}>
-                <style>{'html, html * { cursor: none !important; user-select: none !important; -webkit-user-select: none !important; } @keyframes oc-listening-cursor { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }'}</style>
+                <style>{'html, html * { cursor: none !important; user-select: none !important; -webkit-user-select: none !important; } @keyframes yuri-listening-cursor { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }'}</style>
                 <span className="absolute -left-5 -top-5 flex size-10 items-center justify-center gap-1">
                     {starting ? <DictationLoading decorative /> : [0, 1, 2].map((bar) => <span key={bar}
-                        className="h-6 w-[3px] rounded-full bg-[var(--voice-active-fill)] motion-safe:animate-[oc-listening-cursor_450ms_ease-in-out_infinite_alternate]"
+                        className="h-6 w-[3px] rounded-full bg-[var(--voice-active-fill)] motion-safe:animate-[yuri-listening-cursor_450ms_ease-in-out_infinite_alternate]"
                         style={{ animationDelay: `${bar * -150}ms` }} />)}
                 </span>
             </span>, document.body)}
@@ -236,7 +236,7 @@ export function DesktopDictationButton({ onInsert, onPartial, onStart, onCancel,
                     className={cn(iconClassName ?? 'size-5', dictation.error && 'text-[var(--status-error)]')} />}
         </Button>
         </TooltipTrigger>
-        <TooltipContent side="top" sideOffset={8} className="oc-composer-tooltip max-w-64 break-words">
+        <TooltipContent side="top" sideOffset={8} className="yuri-composer-tooltip max-w-64 break-words">
             {dictation.error || <span className="inline-flex items-center gap-2">
                 <span>{label}</span>
                 {!mobile && shortcut && <kbd className="font-sans text-[10px] opacity-70">{shortcut}</kbd>}

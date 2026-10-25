@@ -29,7 +29,7 @@ export function useMobileComposerSnap({ enabled, hasContent, draftID, inputRef }
       let top = viewport?.offsetTop ?? 0;
       // Find the navigation belonging to this conversation, not an underlying tab.
       for (let ancestor = surface.parentElement; ancestor; ancestor = ancestor.parentElement) {
-        const header = ancestor.querySelector<HTMLElement>('.oc-mobile-detail-navigation, [data-mobile-chat-header]');
+        const header = ancestor.querySelector<HTMLElement>('.yuri-mobile-detail-navigation, [data-mobile-chat-header]');
         if (header) { top = Math.max(top, header.getBoundingClientRect().bottom); break; }
       }
       const bottom = Math.min(surfaceRect.bottom, (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight));
@@ -55,7 +55,7 @@ export function useMobileComposerSnap({ enabled, hasContent, draftID, inputRef }
     if (active && controller.snapPoint === 'full') controller.settleAt('full', undefined, false);
   });
   useEventListener('resize', refresh, () => active ? window : null);
-  useEventListener('oc:keyboard-settled', refresh, () => active ? window : null);
+  useEventListener('yuri:keyboard-settled', refresh, () => active ? window : null);
   useEventListener('resize', refresh, () => active ? window.visualViewport : null);
   useEventListener('scroll', refresh, () => active ? window.visualViewport : null);
   return {

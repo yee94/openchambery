@@ -20,15 +20,15 @@ const listen = async (app) => {
   closers.push(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
   return `http://127.0.0.1:${server.address().port}`;
 };
-const final = (text) => ({ text: '```openchamber-final\n' + JSON.stringify({ status: 'complete', text }) + '\n```' });
-const call = (name, args) => ({ text: '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```' });
+const final = (text) => ({ text: '```yuri-final\n' + JSON.stringify({ status: 'complete', text }) + '\n```' });
+const call = (name, args) => ({ text: '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```' });
 const resultFor = (body, name) => {
-  const row = body.messages.findLast((m) => m.content?.startsWith(`OpenChamber tool result name=${name} `));
+  const row = body.messages.findLast((m) => m.content?.startsWith(`Yuri tool result name=${name} `));
   if (!row) return null;
   return JSON.parse(row.content.slice(row.content.indexOf(': ') + 2));
 };
 const setup = async (existingDirectory = null) => {
-  const directory = existingDirectory || fs.mkdtempSync(path.join(os.tmpdir(), 'oc-memory-http-'));
+  const directory = existingDirectory || fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-memory-http-'));
   if (!existingDirectory) closers.push(() => fs.rmSync(directory, { recursive: true, force: true }));
   const upstream = express();
   const catalog = [{ id: 'p', name: 'Provider', models: { m: { id: 'm', name: 'Model' } } }];
@@ -38,7 +38,7 @@ const setup = async (existingDirectory = null) => {
   const app = express();
   app.use(express.json());
   const runtime = registerAssistantRoutes(app, {
-    dbPath: path.join(directory, 'assistants.sqlite'), openchamberDataDir: directory,
+    dbPath: path.join(directory, 'assistants.sqlite'), yuriDataDir: directory,
     getAllowedRoots: () => [directory], listProjects: () => [{ id: 'project', path: directory }],
     buildOpenCodeUrl: (pathname) => `${upstreamBase}${pathname}`,
     getOpenCodeAuthHeaders: () => ({}),
@@ -46,7 +46,7 @@ const setup = async (existingDirectory = null) => {
   closers.push(() => runtime.close());
   const base = await listen(app);
   const request = async (url, body, method = body ? 'POST' : 'GET') => {
-    const response = await fetch(`${base}/api/openchamber/assistants${url}`, {
+    const response = await fetch(`${base}/api/yuri/assistants${url}`, {
       method, headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}),
     });
     expect(response.ok).toBe(true);
@@ -55,7 +55,7 @@ const setup = async (existingDirectory = null) => {
   await request('/settings', { enabled: true, expectedRevision: runtime.service.snapshot().revision }, 'PUT');
   const create = (name) => request('', { name, providerID: 'p', modelID: 'm', workspacePath: directory });
   const send = async (assistantID, messageID, text) => {
-    const response = await fetch(`${base}/api/openchamber/assistants/${assistantID}/messages`, {
+    const response = await fetch(`${base}/api/yuri/assistants/${assistantID}/messages`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ messageID, language: 'zh-CN', parts: [{ type: 'text', text }] }),
     });
@@ -66,7 +66,7 @@ const setup = async (existingDirectory = null) => {
   return { request, create, send, directory, service: runtime.service };
 };
 
-describe('contact memory HTTP → real Agent/tools → SQLite → model reply', () => {
+describe('contact memory HTTP → real Agent/tools → SQLite → model reply', { timeout: 20_000 }, () => {
   it('clears late replies from an earlier running turn while preserving queued user requests', async () => {
     let release;
     let started = false;

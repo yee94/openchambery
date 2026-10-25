@@ -879,11 +879,11 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
 
     return (
         <div className={cn(
-            'oc-composer-queue relative z-0 -mb-5 w-full',
+            'yuri-composer-queue relative z-0 -mb-5 w-full',
             isMobile ? 'px-2' : 'px-4',
         )}>
             <div
-                data-oc-queue-card=""
+                data-yuri-queue-card=""
                 className={cn(
                     // Match composer surface (subtle + border, no elevation shadow). PC radius = chat input 1.5rem.
                     'overflow-hidden border border-border/60 bg-[var(--surface-subtle)] text-foreground',
@@ -891,7 +891,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
                 )}
             >
                 <div
-                    data-oc-queue-card-body=""
+                    data-yuri-queue-card-body=""
                     className={cn(
                         'flex flex-col',
                         isMobile
@@ -949,7 +949,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
                     ) : null}
                 </div>
                 <div
-                    data-oc-queue-composer-overlap=""
+                    data-yuri-queue-composer-overlap=""
                     aria-hidden="true"
                     className={isMobile ? 'h-4' : 'h-5'}
                 />

@@ -287,7 +287,7 @@ export const MagicPromptsPage: React.FC = () => {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="oc-settings-page-content mx-auto w-full max-w-4xl px-6 py-6">
+      <div className="yuri-settings-page-content mx-auto w-full max-w-4xl px-6 py-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">

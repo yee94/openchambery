@@ -14,12 +14,12 @@
 
 - `packages/web/src/runtimeConfig.ts`: initializes runtime URL/auth and web APIs.
 - `packages/web/src/api/index.ts`: composes web `RuntimeAPIs`.
-- `packages/web/server/lib/opencode/core-routes.js`: installs OpenChamber route families.
+- `packages/web/server/lib/opencode/core-routes.js`: installs Yuri route families.
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: explicit feature route registration.
 - `packages/web/server/lib/opencode/proxy.js`: generic OpenCode proxy fallback.
 - `packages/web/server/lib/ui-auth/ui-auth.js`: session and URL-token route gates.
 
-Explicit OpenChamber routes must register before the generic `/api/*` OpenCode proxy.
+Explicit Yuri routes must register before the generic `/api/*` OpenCode proxy.
 
 ## VS Code
 
@@ -46,4 +46,4 @@ Review every cache keyed only by session ID, directory, URL, or entity ID. Add r
 - VS Code bridge: `packages/vscode/webview/api/bridge.test.ts`
 - VS Code proxy: `packages/vscode/src/bridge-proxy-runtime.test.js`
 
-Run those files with `bunx vitest run --project @openchamber/ui <file>` or `--project @openchamber/web` / `--project openchamber-vscode` as appropriate. Also run focused tests beside new runtime implementations and validation required by each affected workspace.
+Run those files with `bunx vitest run --project @yuri/ui <file>` or `--project @yuri/web` / `--project yuri-vscode` as appropriate. Also run focused tests beside new runtime implementations and validation required by each affected workspace.

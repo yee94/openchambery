@@ -26,15 +26,15 @@ describe('classifyManagedSshBootstrapError', () => {
 
   test('classifies install and SSH transport failures', () => {
     expect(classifyManagedSshBootstrapError(
-      'OpenChamber installation completed but the executable is unavailable',
-    )).toBe('openchamberCliMissing');
+      'Yuri installation completed but the executable is unavailable',
+    )).toBe('yuriCliMissing');
     expect(classifyManagedSshBootstrapError(
-      'npm ERR! code ETIMEDOUT\nnpm ERR! network request to https://registry.npmjs.org/@openchambery%2fweb failed',
-    )).toBe('openchamberRegistry');
-    expect(classifyManagedSshBootstrapError('Failed to install OpenChamber on remote host')).toBe('openchamberInstall');
-    expect(classifyManagedSshBootstrapError('Error: Unknown option: --relay-host')).toBe('openchamberCliIncompatible');
+      'npm ERR! code ETIMEDOUT\nnpm ERR! network request to https://registry.npmjs.org/@yuri%2fweb failed',
+    )).toBe('yuriRegistry');
+    expect(classifyManagedSshBootstrapError('Failed to install Yuri on remote host')).toBe('yuriInstall');
+    expect(classifyManagedSshBootstrapError('Error: Unknown option: --relay-host')).toBe('yuriCliIncompatible');
     expect(classifyManagedSshBootstrapError('Failed to install OpenCode CLI on remote host')).toBe('opencodeInstall');
-    expect(classifyManagedSshBootstrapError('Managed OpenChamber server failed to become reachable')).toBe('serverStart');
+    expect(classifyManagedSshBootstrapError('Managed Yuri server failed to become reachable')).toBe('serverStart');
     expect(classifyManagedSshBootstrapError('Permission denied (publickey)')).toBe('sshAuth');
     expect(classifyManagedSshBootstrapError('ssh: Could not resolve hostname host:36000')).toBe('sshUnreachable');
     expect(classifyManagedSshBootstrapError('Timed out waiting for SSH connection')).toBe('timeout');
@@ -51,13 +51,13 @@ describe('classifyManagedSshBootstrapError', () => {
   test('maps every code to title and guidance keys', () => {
     expect(sshBootstrapErrorTitleKey('nativeBinding')).toBe('desktopHostSwitcher.sshError.nativeBinding.title');
     expect(sshBootstrapErrorGuidanceKey('nativeBinding')).toBe('desktopHostSwitcher.sshError.nativeBinding.guidance');
-    expect(sshBootstrapErrorTitleKey('openchamberCliMissing')).toBe('desktopHostSwitcher.sshError.openchamberCliMissing.title');
-    expect(sshBootstrapErrorGuidanceKey('openchamberCliMissing')).toBe('desktopHostSwitcher.sshError.openchamberCliMissing.guidance');
-    expect(sshBootstrapErrorTitleKey('openchamberRegistry')).toBe('desktopHostSwitcher.sshError.openchamberRegistry.title');
-    expect(sshBootstrapErrorGuidanceKey('openchamberRegistry')).toBe('desktopHostSwitcher.sshError.openchamberRegistry.guidance');
+    expect(sshBootstrapErrorTitleKey('yuriCliMissing')).toBe('desktopHostSwitcher.sshError.yuriCliMissing.title');
+    expect(sshBootstrapErrorGuidanceKey('yuriCliMissing')).toBe('desktopHostSwitcher.sshError.yuriCliMissing.guidance');
+    expect(sshBootstrapErrorTitleKey('yuriRegistry')).toBe('desktopHostSwitcher.sshError.yuriRegistry.title');
+    expect(sshBootstrapErrorGuidanceKey('yuriRegistry')).toBe('desktopHostSwitcher.sshError.yuriRegistry.guidance');
     expect(sshBootstrapErrorTitleKey('unknown')).toBe('desktopHostSwitcher.sshError.unknown.title');
-    expect(sshBootstrapErrorTitleKey('openchamberCliIncompatible')).toBe(
-      'desktopHostSwitcher.sshError.openchamberCliIncompatible.title',
+    expect(sshBootstrapErrorTitleKey('yuriCliIncompatible')).toBe(
+      'desktopHostSwitcher.sshError.yuriCliIncompatible.title',
     );
   });
 

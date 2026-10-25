@@ -27,9 +27,9 @@ function writeVersionBinary(filePath, version) {
 async function withIsolatedOpenCodeEnv(fn) {
   const previousBinary = process.env.OPENCODE_BINARY;
   const previousPath = process.env.PATH;
-  const previousDataDir = process.env.OPENCHAMBER_DATA_DIR;
-  const dataDir = createTempDir('openchamber-startup-data-');
-  process.env.OPENCHAMBER_DATA_DIR = dataDir;
+  const previousDataDir = process.env.YURI_DATA_DIR;
+  const dataDir = createTempDir('yuri-startup-data-');
+  process.env.YURI_DATA_DIR = dataDir;
   try {
     return await fn({ dataDir });
   } finally {
@@ -44,9 +44,9 @@ async function withIsolatedOpenCodeEnv(fn) {
       delete process.env.PATH;
     }
     if (typeof previousDataDir === 'string') {
-      process.env.OPENCHAMBER_DATA_DIR = previousDataDir;
+      process.env.YURI_DATA_DIR = previousDataDir;
     } else {
-      delete process.env.OPENCHAMBER_DATA_DIR;
+      delete process.env.YURI_DATA_DIR;
     }
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
@@ -54,7 +54,7 @@ async function withIsolatedOpenCodeEnv(fn) {
 
 describe('assertOpenCode2Binary', () => {
   it('accepts an official v2 binary named opencode', () => {
-    const dir = createTempDir('openchamber-startup-v2-name-');
+    const dir = createTempDir('yuri-startup-v2-name-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeVersionBinary(binary, '2.0.12');
     try {
@@ -65,7 +65,7 @@ describe('assertOpenCode2Binary', () => {
   });
 
   it('rejects an opencode path that reports a 1.x version', () => {
-    const dir = createTempDir('openchamber-startup-1x-version-');
+    const dir = createTempDir('yuri-startup-1x-version-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeVersionBinary(binary, '1.18.4');
     try {
@@ -81,7 +81,7 @@ describe('assertOpenCode2Binary', () => {
   });
 
   it('accepts an executable opencode2 that reports a v2 version', () => {
-    const dir = createTempDir('openchamber-startup-v2-');
+    const dir = createTempDir('yuri-startup-v2-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
     writeVersionBinary(binary, '2.0.12');
     try {
@@ -95,7 +95,7 @@ describe('assertOpenCode2Binary', () => {
 describe('collectStartupEnv OpenCode binary', () => {
   it('does not auto-discover opencode2 when the official command is missing', async () => {
     await withIsolatedOpenCodeEnv(async () => {
-      const pathDir = createTempDir('openchamber-startup-alias-only-');
+      const pathDir = createTempDir('yuri-startup-alias-only-');
       writeVersionBinary(path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2'), '2.0.15');
       process.env.PATH = pathDir;
       delete process.env.OPENCODE_BINARY;
@@ -109,7 +109,7 @@ describe('collectStartupEnv OpenCode binary', () => {
 
   it('persists official PATH opencode and ignores the opencode2 alias', async () => {
     await withIsolatedOpenCodeEnv(async () => {
-      const pathDir = createTempDir('openchamber-startup-path-');
+      const pathDir = createTempDir('yuri-startup-path-');
       const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
       const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode.cmd' : 'opencode');
       writeVersionBinary(legacy, '2.0.15');
@@ -128,11 +128,11 @@ describe('collectStartupEnv OpenCode binary', () => {
 
   it('fails closed when OPENCODE_BINARY is a 1.x basename', async () => {
     await withIsolatedOpenCodeEnv(async () => {
-      const dir = createTempDir('openchamber-startup-env-1x-');
+      const dir = createTempDir('yuri-startup-env-1x-');
       const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
       writeVersionBinary(binary, '1.18.4');
       process.env.OPENCODE_BINARY = binary;
-      process.env.PATH = createTempDir('openchamber-startup-empty-path-');
+      process.env.PATH = createTempDir('yuri-startup-empty-path-');
       try {
         expect(() => collectStartupEnv()).toThrow(
           expect.objectContaining({
@@ -148,12 +148,12 @@ describe('collectStartupEnv OpenCode binary', () => {
 
   it('fails closed when settings.opencodeBinary is a 1.x basename', async () => {
     await withIsolatedOpenCodeEnv(async ({ dataDir }) => {
-      const dir = createTempDir('openchamber-startup-settings-1x-');
+      const dir = createTempDir('yuri-startup-settings-1x-');
       const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
       writeVersionBinary(binary, '1.18.4');
       fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ opencodeBinary: binary }));
       delete process.env.OPENCODE_BINARY;
-      process.env.PATH = createTempDir('openchamber-startup-empty-path-settings-');
+      process.env.PATH = createTempDir('yuri-startup-empty-path-settings-');
       try {
         expect(readConfiguredOpenCodeBinary()).toBe(binary);
         expect(() => resolveOpenCode2BinaryForStartup()).toThrow(
@@ -171,7 +171,7 @@ describe('collectStartupEnv OpenCode binary', () => {
   it('does not persist OPENCODE_BINARY when opencode2 is missing', async () => {
     await withIsolatedOpenCodeEnv(async () => {
       delete process.env.OPENCODE_BINARY;
-      process.env.PATH = createTempDir('openchamber-startup-missing-');
+      process.env.PATH = createTempDir('yuri-startup-missing-');
       const env = collectStartupEnv();
       expect(env.OPENCODE_BINARY).toBeUndefined();
     });

@@ -5,7 +5,7 @@ import { clearRuntimeUrlAuthToken, setRuntimeExtraHeaders } from './runtime-auth
 describe('runtime endpoint switching', () => {
   test('reads same-origin identity without repeatedly constructing invalid URLs and observes later injection', () => {
     const originalURL = globalThis.URL;
-    const injected = Object.getOwnPropertyDescriptor(window, '__OPENCHAMBER_API_BASE_URL__');
+    const injected = Object.getOwnPropertyDescriptor(window, '__YURI_API_BASE_URL__');
     let emptyUrlConstructions = 0;
     globalThis.URL = new Proxy(originalURL, {
       construct(target, args: ConstructorParameters<typeof URL>) {
@@ -14,22 +14,22 @@ describe('runtime endpoint switching', () => {
       },
     });
     try {
-      Object.defineProperty(window, '__OPENCHAMBER_API_BASE_URL__', { configurable: true, writable: true, value: '' });
+      Object.defineProperty(window, '__YURI_API_BASE_URL__', { configurable: true, writable: true, value: '' });
       for (let index = 0; index < 1000; index += 1) {
         expect(getRuntimeKey()).toBe('url:default');
         expect(getRuntimeTransportIdentity()).toBe('direct:url:default');
       }
       expect(emptyUrlConstructions).toBe(0);
-      Reflect.set(window, '__OPENCHAMBER_API_BASE_URL__', 'https://injected.example/api/?query=ignored#hash');
+      Reflect.set(window, '__YURI_API_BASE_URL__', 'https://injected.example/api/?query=ignored#hash');
       expect(getRuntimeKey()).toBe('url:https://injected.example/api');
       expect(getRuntimeTransportIdentity()).toBe('direct:url:https://injected.example/api');
-      Reflect.set(window, '__OPENCHAMBER_API_BASE_URL__', '');
+      Reflect.set(window, '__YURI_API_BASE_URL__', '');
       expect(getRuntimeKey()).toBe('url:default');
       expect(getRuntimeTransportIdentity()).toBe('direct:url:default');
     } finally {
       globalThis.URL = originalURL;
-      if (injected) Object.defineProperty(window, '__OPENCHAMBER_API_BASE_URL__', injected);
-      else Reflect.deleteProperty(window, '__OPENCHAMBER_API_BASE_URL__');
+      if (injected) Object.defineProperty(window, '__YURI_API_BASE_URL__', injected);
+      else Reflect.deleteProperty(window, '__YURI_API_BASE_URL__');
     }
   });
 
@@ -59,8 +59,8 @@ describe('runtime endpoint switching', () => {
 
   test('still classifies relay transport changes that reuse the UI endpoint', () => {
     expect(isRuntimeEndpointIdentityChange({
-      apiBaseUrl: 'openchamber-ui://app',
-      previousApiBaseUrl: 'openchamber-ui://app',
+      apiBaseUrl: 'yuri-ui://app',
+      previousApiBaseUrl: 'yuri-ui://app',
       runtimeKey: 'relay-b',
       previousRuntimeKey: 'relay-a',
       transportIdentityChanged: true,
@@ -155,17 +155,17 @@ describe('runtime endpoint switching', () => {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })) as typeof fetch;
-      Object.defineProperty(runtimeWindow, '__OPENCHAMBER_API_BASE_URL__', {
+      Object.defineProperty(runtimeWindow, '__YURI_API_BASE_URL__', {
         configurable: true,
         value: 'http://127.0.0.1:3000',
         writable: false,
       });
-      Object.defineProperty(runtimeWindow, '__OPENCHAMBER_CLIENT_TOKEN__', {
+      Object.defineProperty(runtimeWindow, '__YURI_CLIENT_TOKEN__', {
         configurable: true,
         value: '',
         writable: false,
       });
-      Object.defineProperty(runtimeWindow, '__OPENCHAMBER_RUNTIME_HEADERS__', {
+      Object.defineProperty(runtimeWindow, '__YURI_RUNTIME_HEADERS__', {
         configurable: true,
         value: {},
         writable: false,
@@ -222,12 +222,12 @@ describe('runtime endpoint switching', () => {
     expect(getRuntimeGeneration()).toBe(directGeneration + 1);
 
     switchRuntimeEndpoint({
-      apiBaseUrl: 'openchamber-ui://app',
+      apiBaseUrl: 'yuri-ui://app',
       relay: { relayUrl: 'wss://relay.example', serverId: 'server-a', hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'axfR8uEsQv8FJfV6gYwVgyNMLawKaV7Rbm6V7RkF7yA', y: 'T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU' } },
     });
     const relayGeneration = getRuntimeGeneration();
     switchRuntimeEndpoint({
-      apiBaseUrl: 'openchamber-ui://app',
+      apiBaseUrl: 'yuri-ui://app',
       relay: { relayUrl: 'wss://relay.example', serverId: 'server-b', hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'axfR8uEsQv8FJfV6gYwVgyNMLawKaV7Rbm6V7ZAaDe_UfU' } },
     });
     expect(getRuntimeGeneration()).toBe(relayGeneration + 1);

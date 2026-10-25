@@ -13,10 +13,10 @@ test('exposes durable initialization times through the existing status route', a
   });
   registerContentSearchRoutes(app, { contentSearch: { service, runtime, getRuntimeKey: () => 'host' } });
   try {
-    const pending = await request(app).get('/api/openchamber/content-search');
+    const pending = await request(app).get('/api/yuri/content-search');
     expect(pending.body.index).toMatchObject({ initializationRequired: true, indexStartedAt: null, indexCompletedAt: null });
     await runtime.sync();
-    const ready = await request(app).get('/api/openchamber/content-search');
+    const ready = await request(app).get('/api/yuri/content-search');
     expect(ready.body.index).toMatchObject({ initializationRequired: false, indexStartedAt: 100, indexCompletedAt: 100, verifiedAt: 100 });
     expect(ready.body.hits).toEqual([]);
   } finally {
@@ -32,11 +32,11 @@ test('global route returns coverage and preserves hit directories without a sele
   registerContentSearchRoutes(app, { contentSearch: {
     service: { search }, getRuntimeKey: () => 'host', runtime: { status: () => ({ phase: 'ready', messages: 1 }) },
   } });
-  const response = await request(app).get('/api/openchamber/content-search').query({ q: 'needle' });
+  const response = await request(app).get('/api/yuri/content-search').query({ q: 'needle' });
   expect(response.status).toBe(200);
   expect(response.body).toEqual({ hits: [hit], index: { phase: 'ready', messages: 1 } });
   expect(search).toHaveBeenCalledWith('host', 'needle', { limit: 30, directory: undefined });
-  expect((await request(app).get('/api/openchamber/content-search').query({ limit: -1 })).status).toBe(400);
+  expect((await request(app).get('/api/yuri/content-search').query({ limit: -1 })).status).toBe(400);
   search.mockImplementation(() => { throw new Error('database unavailable'); });
-  expect((await request(app).get('/api/openchamber/content-search').query({ q: 'needle' })).status).toBe(500);
+  expect((await request(app).get('/api/yuri/content-search').query({ q: 'needle' })).status).toBe(500);
 });

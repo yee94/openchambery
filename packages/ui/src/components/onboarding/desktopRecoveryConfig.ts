@@ -99,7 +99,7 @@ export function getDesktopRecoveryConfig(
       const host = formatHostDisplay(hostLabel, hostUrl);
       return {
         title: 'Incompatible Server',
-        description: `The server at "${host || 'unknown'}" is not running OpenChamberY. Verify the address points to an OpenChamberY server.`,
+        description: `The server at "${host || 'unknown'}" is not running Yuri. Verify the address points to an Yuri server.`,
         titleKey: 'onboarding.desktopRecovery.incompatibleServer.title',
         descriptionKey: 'onboarding.desktopRecovery.incompatibleServer.description',
         descriptionParams: host ? { host } : undefined,
@@ -118,7 +118,7 @@ export function getDesktopRecoveryConfig(
       const host = formatHostDisplay(hostLabel, hostUrl);
       return {
         title: 'Server Update Required',
-        description: `The OpenChamberY server at "${host || 'unknown'}" is not compatible with this app version. Update OpenChamberY on the server, then try again.`,
+        description: `The Yuri server at "${host || 'unknown'}" is not compatible with this app version. Update Yuri on the server, then try again.`,
         titleKey: 'onboarding.desktopRecovery.remoteIncompatible.title',
         descriptionKey: 'onboarding.desktopRecovery.remoteIncompatible.description',
         descriptionParams: host ? { host } : undefined,

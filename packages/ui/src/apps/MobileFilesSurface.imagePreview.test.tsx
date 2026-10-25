@@ -61,7 +61,7 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   state.fetch.mockImplementation(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }));
   let id = 0;
-  state.open.mockImplementation(async () => ({ assetId: `native-${++id}`, url: `openchamber-asset://v/native-${id}` }));
+  state.open.mockImplementation(async () => ({ assetId: `native-${++id}`, url: `yuri-asset://v/native-${id}` }));
   state.write.mockResolvedValue(undefined); state.end.mockResolvedValue(undefined);
   state.release.mockResolvedValue(undefined); state.abort.mockResolvedValue(undefined);
   vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:wrong-path');
@@ -90,7 +90,7 @@ test('an explicit browser-only preview can fall back to an object URL', async ()
 });
 test('session inline Markdown images use mobile native streams and release on unmount', async () => {
   await act(async () => root.render(<MarkstreamImageNode node={{ type: 'image', src: '/workspace/theme.png', alt: 'theme', title: null, raw: '![theme](/workspace/theme.png)' }} />));
-  expect(host.querySelector('img')?.getAttribute('src')).toMatch(/^openchamber-asset:\/\//);
+  expect(host.querySelector('img')?.getAttribute('src')).toMatch(/^yuri-asset:\/\//);
   expect(state.fetch).toHaveBeenCalledTimes(1);
   expect(URL.createObjectURL).not.toHaveBeenCalled();
   await act(async () => root.render(null));
@@ -140,11 +140,11 @@ afterEach(async () => {
 test('mobile relay file detail and clicked fullscreen use native streams, never browser asset URLs or Blob', async () => {
   await act(async () => root.render(<MobileFilesSurface initialFilePath="/workspace/icons-zoom.png" directFilePreview hideFileHeader />));
   const image = host.querySelector('img')!;
-  expect(image?.getAttribute('src')).toMatch(/^openchamber-asset:\/\//);
+  expect(image?.getAttribute('src')).toMatch(/^yuri-asset:\/\//);
   expect(state.fetch).toHaveBeenCalledWith('/api/fs/raw', expect.objectContaining({ query: { path: '/workspace/icons-zoom.png' }, signal: expect.any(AbortSignal) }));
   expect(URL.createObjectURL).not.toHaveBeenCalled();
   await act(async () => image.closest('button')!.click());
-  await vi.waitFor(() => expect(host.querySelector('[data-test-fullscreen]')?.getAttribute('src')).toMatch(/^openchamber-asset:\/\//));
+  await vi.waitFor(() => expect(host.querySelector('[data-test-fullscreen]')?.getAttribute('src')).toMatch(/^yuri-asset:\/\//));
   expect(state.open).toHaveBeenCalledTimes(2);
   expect(state.showPopup).toHaveBeenCalledWith(expect.objectContaining({ image: expect.objectContaining({ url: '/workspace/icons-zoom.png' }) }));
   await act(async () => root.render(null));

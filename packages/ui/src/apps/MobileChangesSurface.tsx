@@ -557,7 +557,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
   const renderListState = (state: React.ReactNode) => (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
       {hideDiffHeader ? null : (
-        <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-2 px-3 text-foreground">
+        <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-2 px-3 text-foreground">
           {onClose ? (
             <button
               type="button"
@@ -613,7 +613,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-2 px-3 text-foreground">
+      <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-2 px-3 text-foreground">
         {onClose ? (
           <button
             type="button"
@@ -723,7 +723,7 @@ const MobileDiffDetail: React.FC<{
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
       {hideHeader ? null : (
-        <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
+        <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
           <button
             type="button"
             className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

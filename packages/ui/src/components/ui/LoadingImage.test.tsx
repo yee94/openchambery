@@ -35,7 +35,7 @@ test('changing the source hides the old image and ignores late events from it', 
   expect(second.style.opacity).toBe('0');
   await act(async () => second.dispatchEvent(new Event('error')));
   expect(host.querySelector('[data-image-state="error"]')).not.toBeNull();
-  expect(host.querySelector('.oc-image-loading')).toBeNull();
+  expect(host.querySelector('.yuri-image-loading')).toBeNull();
   await act(async () => second.dispatchEvent(new Event('load')));
   expect(host.querySelector('[data-image-state="loaded"]')).not.toBeNull();
 });
@@ -52,15 +52,15 @@ test('desktop shows a constrained content placeholder and preserves image events
   const onLoad = vi.fn();
   await act(async () => root.render(<LoadingImage src="/image.png" contentFrame onLoad={onLoad} />));
   expect(host.querySelector('[data-image-content="desktop"][data-image-state="loading"]')).not.toBeNull();
-  expect(host.querySelector('.oc-image-loading')).not.toBeNull();
+  expect(host.querySelector('.yuri-image-loading')).not.toBeNull();
   expect(host.querySelector('[data-image-content="mobile"]')).toBeNull();
   await act(async () => host.querySelector('img')!.dispatchEvent(new Event('load')));
   expect(onLoad).toHaveBeenCalledTimes(1);
-  expect(host.querySelector('.oc-image-loading')).toBeNull();
+  expect(host.querySelector('.yuri-image-loading')).toBeNull();
 });
 
 test('content frame keeps one CSS-owned height through every phase', async () => {
-  // Height lives in image-loading.css (`--oc-content-image-height`). No phase
+  // Height lives in image-loading.css (`--yuri-content-image-height`). No phase
   // may set inline geometry: a per-phase height lets late bytes move the reader.
   await act(async () => root.render(<LoadingImage src="/wide.png" contentFrame />));
   const frame = host.querySelector<HTMLElement>('[data-image-content]')!;
@@ -75,12 +75,12 @@ test('content frame keeps one CSS-owned height through every phase', async () =>
 
 test('content images size inside the fixed frame instead of by intrinsic height', () => {
   const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'image-loading.css'), 'utf8');
-  const frameRule = css.match(/\.oc-image-frame\[data-image-content\] \{([^}]*)\}/)?.[1] ?? '';
-  const imageRule = css.match(/\.oc-image-frame\[data-image-content\] > img \{([^}]*)\}/)?.[1] ?? '';
+  const frameRule = css.match(/\.yuri-image-frame\[data-image-content\] \{([^}]*)\}/)?.[1] ?? '';
+  const imageRule = css.match(/\.yuri-image-frame\[data-image-content\] > img \{([^}]*)\}/)?.[1] ?? '';
   const legacyRule = css.match(/\[data-md-image-presentation='true'\] \{([^}]*)\}/)?.[1] ?? '';
   const legacyImageRule = css.match(/\[data-md-image-presentation='true'\] > img \{([^}]*)\}/)?.[1] ?? '';
   for (const rule of [frameRule, legacyRule]) {
-    expect(rule).toContain('height: var(--oc-content-image-height)');
+    expect(rule).toContain('height: var(--yuri-content-image-height)');
     // A percentage width in a shrink-to-fit bubble collapses image-only bubbles.
     expect(rule).not.toMatch(/(?<!max-)width:\s*[^;]*%/);
   }

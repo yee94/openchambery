@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-// Route handler tests — registerConversationRoutes registers POST /api/openchamber/conversations
+// Route handler tests — registerConversationRoutes registers POST /api/yuri/conversations
 
 const makeRouteRegistry = () => {
   const routes = new Map();
@@ -92,7 +92,7 @@ describe('conversations routes integration', () => {
     const res = makeRes();
     const req = makeReq({});
 
-    await route('POST', '/api/openchamber/conversations')(req, res);
+    await route('POST', '/api/yuri/conversations')(req, res);
     expect(res.statusCode).toBe(400);
     expect(res.body.ok).toBe(false);
     expect(res.body.phase).toBe('validate');
@@ -105,7 +105,7 @@ describe('conversations routes integration', () => {
     const res = makeRes();
     const req = makeReq({ ...validBody(), delivery: 'steer' });
 
-    await route('POST', '/api/openchamber/conversations')(req, res);
+    await route('POST', '/api/yuri/conversations')(req, res);
     expect(res.statusCode).toBe(400);
     expect(res.body.errors.some((e) => e.includes('"delivery"'))).toBe(true);
   });
@@ -118,7 +118,7 @@ describe('conversations routes integration', () => {
       parts: [{ type: 'text', text: '   ' }],
     });
 
-    await route('POST', '/api/openchamber/conversations')(req, res);
+    await route('POST', '/api/yuri/conversations')(req, res);
     expect(res.statusCode).toBe(400);
   });
 
@@ -138,8 +138,8 @@ describe('conversations routes integration', () => {
 
     // Both run concurrently — registry dedup should reuse in-flight promise
     await Promise.all([
-      route('POST', '/api/openchamber/conversations')(req1, res1),
-      route('POST', '/api/openchamber/conversations')(req2, res2),
+      route('POST', '/api/yuri/conversations')(req1, res1),
+      route('POST', '/api/yuri/conversations')(req2, res2),
     ]);
 
     // Both should have received structured JSON results
@@ -164,12 +164,12 @@ describe('conversations routes integration', () => {
     const req1 = makeReq(body1);
     const req2 = makeReq(body2);
 
-    const p1 = route('POST', '/api/openchamber/conversations')(req1, res1);
+    const p1 = route('POST', '/api/yuri/conversations')(req1, res1);
 
     // Small tick so first is registered as inflight
     await new Promise((r) => setTimeout(r, 20));
 
-    const p2 = route('POST', '/api/openchamber/conversations')(req2, res2);
+    const p2 = route('POST', '/api/yuri/conversations')(req2, res2);
 
     // Wait a bit so conflict check happens
     await new Promise((r) => setTimeout(r, 20));
@@ -193,7 +193,7 @@ describe('conversations routes integration', () => {
     const res = makeRes();
     const req = makeReq(validBody());
 
-    await route('POST', '/api/openchamber/conversations')(req, res);
+    await route('POST', '/api/yuri/conversations')(req, res);
 
     expect(res.statusCode).toBe(500);
     expect(res.body.ok).toBe(false);
@@ -212,13 +212,13 @@ describe('conversations routes integration', () => {
 
     const res1 = makeRes();
     const req1 = makeReq(validBody());
-    await route('POST', '/api/openchamber/conversations')(req1, res1);
+    await route('POST', '/api/yuri/conversations')(req1, res1);
     expect(res1.body).toBeDefined();
 
     // Second call with same body
     const res2 = makeRes();
     const req2 = makeReq(validBody());
-    await route('POST', '/api/openchamber/conversations')(req2, res2);
+    await route('POST', '/api/yuri/conversations')(req2, res2);
 
     // The second result should be structured (either cached dedup or new result)
     expect(res2.body).toBeDefined();
@@ -236,7 +236,7 @@ describe('conversations routes integration', () => {
     res.destroyed = true; // simulate disconnect before response
     const req = makeReq(validBody());
 
-    await route('POST', '/api/openchamber/conversations')(req, res);
+    await route('POST', '/api/yuri/conversations')(req, res);
 
     // Should not have written anything (destroyed early)
     // The operation still completed server-side via registry
@@ -256,7 +256,7 @@ describe('conversations routes integration', () => {
     // Start first inflight
     const res1 = makeRes();
     const req1 = makeReq(validBody());
-    const p1 = route('POST', '/api/openchamber/conversations')(req1, res1);
+    const p1 = route('POST', '/api/yuri/conversations')(req1, res1);
 
     // Second with different title (different fingerprint)
     const res2 = makeRes();
@@ -264,7 +264,7 @@ describe('conversations routes integration', () => {
 
     // Small delay to ensure first registered as inflight
     await new Promise((r) => setTimeout(r, 10));
-    await route('POST', '/api/openchamber/conversations')(req2, res2);
+    await route('POST', '/api/yuri/conversations')(req2, res2);
     await p1;
 
     // One of them should be conflict

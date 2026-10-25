@@ -20,12 +20,12 @@ vi.mock("@/sync/session-actions", () => ({
     updater: (metadata: Record<string, unknown>) => Record<string, unknown>,
   ) => {
     if (mocks.writeError) throw mocks.writeError
-    const current = { openchamber: { goal: mocks.currentGoal, assistant: mocks.neighbor } }
+    const current = { yuri: { goal: mocks.currentGoal, assistant: mocks.neighbor } }
     const next = mergeMetadataPatch(current, updater(current))
-    const namespace = next.openchamber as { goal?: Record<string, unknown> } | undefined
+    const namespace = next.yuri as { goal?: Record<string, unknown> } | undefined
     mocks.currentGoal = namespace?.goal ?? null
     mocks.writes.push(mocks.currentGoal)
-    expect(next).toMatchObject({ openchamber: { assistant: mocks.neighbor } })
+    expect(next).toMatchObject({ yuri: { assistant: mocks.neighbor } })
     return {}
   },
 }))

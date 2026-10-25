@@ -301,7 +301,7 @@ it('mobile streams inline across touch, scroll, blur and keyboard events until t
         document.dispatchEvent(new Event('visibilitychange'));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-        window.dispatchEvent(new Event('openchamber:dictation-toggle'));
+        window.dispatchEvent(new Event('yuri:dictation-toggle'));
     });
     mock.onPartial('持续识别');
     expect(partial).toHaveBeenLastCalledWith('持续识别');
@@ -317,11 +317,11 @@ it('mobile streams inline across touch, scroll, blur and keyboard events until t
 
 it('mobile compact trigger controls the same recording owner', async () => {
     await render('mobile');
-    await act(async () => window.dispatchEvent(new Event('openchamber:mobile-dictation-toggle')));
+    await act(async () => window.dispatchEvent(new Event('yuri:mobile-dictation-toggle')));
     expect(mock.dictation.startDictation).toHaveBeenCalledTimes(1);
     mock.dictation.status = 'recording'; await render('mobile');
     expect(button().getAttribute('aria-pressed')).toBe('true');
-    await act(async () => window.dispatchEvent(new Event('openchamber:mobile-dictation-toggle')));
+    await act(async () => window.dispatchEvent(new Event('yuri:mobile-dictation-toggle')));
     expect(mock.dictation.confirmDictation).toHaveBeenCalledTimes(1);
 });
 

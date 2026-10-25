@@ -16,7 +16,7 @@ import {
 const tempDirs = [];
 
 const makeDataDir = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-archive-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-archive-'));
   tempDirs.push(dir);
   return dir;
 };
@@ -68,7 +68,7 @@ describe('session archive host loop', () => {
     expect(archived.session.time.archived).toBe(1_700_000_000_123);
     expect(archived.session.time.created).toBe(100);
     expect(archived.session.time.updated).toBe(200);
-    expect(archived.session.metadata.openchamber.archive.archivedAt).toBe(1_700_000_000_123);
+    expect(archived.session.metadata.yuri.archive.archivedAt).toBe(1_700_000_000_123);
     expect(indexUpserts.at(-1)?.time?.archived).toBe(1_700_000_000_123);
     expect(broadcasts.at(-1)).toMatchObject({
       type: 'session.updated',
@@ -87,7 +87,7 @@ describe('session archive host loop', () => {
     // Fresh process: rebuild store from disk and still project Host archive.
     const reopened = createSessionMetadataStore({ dataDir });
     await expect(reopened.get('ses_1')).resolves.toEqual({
-      openchamber: { archive: { archivedAt: 1_700_000_000_123 } },
+      yuri: { archive: { archivedAt: 1_700_000_000_123 } },
     });
     expect(
       projectSessionWithHostMetadata(upstream.ses_1, await reopened.get('ses_1')).time.archived,
@@ -126,7 +126,7 @@ describe('session archive host loop', () => {
       session: { id: 'ses_1', time: { archived: 99 } },
     });
     await expect(store.get('ses_1')).resolves.toEqual({
-      openchamber: { archive: { archivedAt: 99 } },
+      yuri: { archive: { archivedAt: 99 } },
     });
   });
 
@@ -198,7 +198,7 @@ describe('session archive host loop', () => {
     expect(result.session.time.archived).toBe(7);
     expect(result.index).toMatchObject({ ok: false, retryable: true });
     await expect(store.get('ses_1')).resolves.toMatchObject({
-      openchamber: { archive: { archivedAt: 7 } },
+      yuri: { archive: { archivedAt: 7 } },
     });
     expect(archive.getIndexRepairStatus('ses_1')).toMatchObject({ pending: true, retryable: true });
     expect(timers.length).toBeGreaterThan(0);

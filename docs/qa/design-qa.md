@@ -18,7 +18,7 @@
 - Mobile keeps staged navigation, but its root groups and second-level detail sections consume the same tokens. Direct setting items receive consistent insets so checkboxes, descriptions, and controls cannot touch a card edge.
 - Row labels and controls inherit the Settings base font-size and line-height instead of maintaining component-local type scales. Select, Input, and NumberInput use one control geometry token family; NumberInput exposes semantic slots so its stepper can participate in the same responsive width contract.
 - Detail cards use the same semantic hairline border as the Settings root. Every non-final direct row owns one bottom divider. Conditional rendering uses fragments rather than layout wrappers, so dividers cannot disappear between independently gated rows.
-- `SettingsPageLayout` now participates in the shared detail contract, covering plugin and remote-instance pages in addition to OpenChamber pages.
+- `SettingsPageLayout` now participates in the shared detail contract, covering plugin and remote-instance pages in addition to Yuri pages.
 - Dark mode overrides card highlight with black only. Wide mobile viewports cannot inherit desktop rules because layout styling is scoped by the explicit desktop workspace class rather than a width media query.
 
 ### Validation
@@ -34,8 +34,8 @@ follow-up result: implementation and static/build validation passed; authenticat
 
 - Root issue reference: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-99dedb9a-3221-4be4-9653-c0b9c8ea23e9.png`
 - Detail design reference: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-7cdc7b22-d0e6-49e4-b4c4-e48574b870ab.png`
-- Verified root implementation: `/private/tmp/openchamber-settings-root.png`
-- Verified detail implementation: `/private/tmp/openchamber-settings-detail.png`
+- Verified root implementation: `/private/tmp/yuri-settings-root.png`
+- Verified detail implementation: `/private/tmp/yuri-settings-detail.png`
 
 ## Result
 
@@ -62,9 +62,9 @@ PASS at a 426 × 923 mobile viewport.
 ## Comparison inputs
 
 - Requested title location: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-fcbf10ab-f64a-4146-b298-5f38c0b0b00f.png`
-- Previous implementation: `/private/tmp/openchamber-scheduled-editor-nav-426x923.png`
-- Verified implementation: `/private/tmp/openchamber-scheduled-editor-nav-refined-426x923.png`
-- Side-by-side comparison: `/private/tmp/openchamber-scheduled-editor-nav-refined-comparison.png`
+- Previous implementation: `/private/tmp/yuri-scheduled-editor-nav-426x923.png`
+- Verified implementation: `/private/tmp/yuri-scheduled-editor-nav-refined-426x923.png`
+- Side-by-side comparison: `/private/tmp/yuri-scheduled-editor-nav-refined-comparison.png`
 - Viewport: `426 × 923`, light Flexoki theme, edit-task state.
 
 ## Result
@@ -111,16 +111,16 @@ final result: passed
 ## Comparison inputs
 
 - Scheduled-list source: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-9a097c20-4cfb-41ae-b64b-6d77c5b21ea7.png`
-- Scheduled-list implementation: `/private/tmp/openchamber-scheduled-list-unified-426x923.png`
-- Scheduled-list comparison: `/private/tmp/openchamber-scheduled-list-unified-comparison.png`
+- Scheduled-list implementation: `/private/tmp/yuri-scheduled-list-unified-426x923.png`
+- Scheduled-list comparison: `/private/tmp/yuri-scheduled-list-unified-comparison.png`
 - Chat-header source: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-56d4ce63-41b7-4f62-aa5d-17a6c288f3da.png`
-- Chat-header implementation: `/private/tmp/openchamber-chat-detail-unified-426x923.png`
-- Chat-header comparison: `/private/tmp/openchamber-chat-header-unified-comparison.png`
+- Chat-header implementation: `/private/tmp/yuri-chat-detail-unified-426x923.png`
+- Chat-header comparison: `/private/tmp/yuri-chat-header-unified-comparison.png`
 - Apple navigation reference: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-f0836b01-34f7-49c5-a8eb-adbcf62ded05.png`
-- Apple-inset implementation: `/private/tmp/openchamber-chat-header-apple-inset-426x923.png`
-- Apple-inset side-by-side comparison: `/private/tmp/openchamber-apple-inset-comparison-426x923.png`
+- Apple-inset implementation: `/private/tmp/yuri-chat-header-apple-inset-426x923.png`
+- Apple-inset side-by-side comparison: `/private/tmp/yuri-apple-inset-comparison-426x923.png`
 - Task-editor shadow report: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-f595014c-766e-4ce7-9865-8f2d8b7dbe92.png`
-- Task-editor implementation: `/private/tmp/openchamber-scheduled-editor-unified-426x923.png`
+- Task-editor implementation: `/private/tmp/yuri-scheduled-editor-unified-426x923.png`
 
 ## Shared design contract
 
@@ -163,7 +163,7 @@ final result: passed
 
 - Initial P1: all Assistants were rendered as rows inside one floating container, so individual Assistants did not read as independent destinations. Fixed by giving each Assistant its own shared `MobileFloatingSurface`; the browser now measures two separate `72px` cards with a `12px` gap and the shared `24px` surface radius.
 - Initial P2: Assistant title and prompt treatment did not share the compact Project card hierarchy. Fixed by extracting shared mobile entity typography tokens and applying them to both Project and Assistant cards. Browser-computed values are `16/20px`, weight `600` for titles and `13/16px` for one-line metadata/subtitles.
-- Initial P2: after opening a conversation and returning, programmatic focus triggered the global focus reset and removed the card's box shadow. Fixed by moving elevation ownership to the non-focusable shared surface wrapper. The focused button may retain `box-shadow: none`, while its card wrapper retains the complete three-layer `--oc-mobile-float-shadow`; computed border width remains `0px`.
+- Initial P2: after opening a conversation and returning, programmatic focus triggered the global focus reset and removed the card's box shadow. Fixed by moving elevation ownership to the non-focusable shared surface wrapper. The focused button may retain `box-shadow: none`, while its card wrapper retains the complete three-layer `--yuri-mobile-float-shadow`; computed border width remains `0px`.
 - Post-fix visual evidence shows both Assistant cards retaining equal elevation, including the first focused card. No P0/P1/P2 issue remains.
 
 ## Required fidelity surfaces
@@ -215,7 +215,7 @@ final result: passed
 
 - Fonts and typography: the root keeps the shared 2rem mobile page title; Assistant rows use the existing UI label/micro scales, two-line truncation, and conversation header hierarchy. Long names and hints truncate without pushing actions off-screen.
 - Spacing and layout rhythm: catalog starts `20px` below the 35.2px title, uses one 179px content-height floating card for two rows, shared 24px outer radius, 14px row padding, and the existing bottom dock geometry.
-- Colors and visual tokens: catalog material, row active state, muted metadata, focus ring, avatar backing, and shadows use semantic OpenChamber tokens. No palette color or hardcoded product color was introduced.
+- Colors and visual tokens: catalog material, row active state, muted metadata, focus ring, avatar backing, and shadows use semantic Yuri tokens. No palette color or hardcoded product color was introduced.
 - Image quality and asset fidelity: existing `AgentAvatar` and sprite `Icon` assets are reused; no CSS art, inline SVG, emoji substitution, or raster placeholder was added.
 - Copy and content: visible names and prompts come from the Assistant DTO; mode and accessibility labels use existing localized messages.
 
@@ -243,9 +243,9 @@ final result: passed
 ## Shared contract
 
 - Root tabs retain their large title. Entering a settings detail suppresses that root title and reveals the compact, centered secondary navigation title instead.
-- `oc-mobile-detail-navigation` is the shared secondary-page bar for settings, session conversations, and scheduled-task editing. It owns the semantic separator, theme-color fade, title scale, and action geometry.
-- `oc-mobile-detail-navigation-sticky` keeps settings navigation pinned while the tab panel scrolls. Scheduled-task editing separates navigation from its scroll container, so the title and back action remain fixed by layout.
-- `oc-mobile-detail-action` is the common 40–44 px circular return/overflow control. It uses the shared float material and respects the dark-mode black-shadow override.
+- `yuri-mobile-detail-navigation` is the shared secondary-page bar for settings, session conversations, and scheduled-task editing. It owns the semantic separator, theme-color fade, title scale, and action geometry.
+- `yuri-mobile-detail-navigation-sticky` keeps settings navigation pinned while the tab panel scrolls. Scheduled-task editing separates navigation from its scroll container, so the title and back action remain fixed by layout.
+- `yuri-mobile-detail-action` is the common 40–44 px circular return/overflow control. It uses the shared float material and respects the dark-mode black-shadow override.
 - Settings home and detail pages consume one mobile Settings token family from `settings.css`: 12/16 section labels, 14/18 row labels, 12/16 helper text, 52px standard rows, 8px label-to-card spacing, 20px section rhythm, 16px card radius, and one semantic card background.
 - Detail cards deliberately use the borderless variant of that shared material: no outer border and no highlight shadow. Only inset row separators remain. Their titles sit outside the card using the same section-label recipe as Settings home.
 

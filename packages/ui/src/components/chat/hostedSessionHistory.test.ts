@@ -134,7 +134,7 @@ describe('hostedSessionHistory', () => {
     const mirrored: AssistantHistoryEntry = {
       sessionID: 'ses_live',
       directory: '/workspace',
-      info: { ...bare('msg_mirror'), sessionID: 'ses_live', openchamberAssistantAdmission: true } as Message,
+      info: { ...bare('msg_mirror'), sessionID: 'ses_live', yuriAssistantAdmission: true } as Message,
       parts: [{ type: 'text', text: 'stale-mirror' } as never],
     };
     const live = entry('msg_live');

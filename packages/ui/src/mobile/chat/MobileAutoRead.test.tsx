@@ -37,7 +37,7 @@ async function render(id = 'old', created = 10, completed = true, sessionId = 's
 }
 beforeEach(async () => {
     vi.useFakeTimers(); vi.clearAllMocks();
-    localStorage.removeItem('openchamber.auto-read');
+    localStorage.removeItem('yuri.auto-read');
     mocks.messages = [{ id: 'old', role: 'assistant', time: { created: 10, completed: 20 } }];
     mocks.resolved = true;
     mocks.play.mockResolvedValue(undefined); mocks.unlock.mockResolvedValue(undefined);
@@ -95,7 +95,7 @@ it.each(['session', 'leave', 'runtime'])('stops on %s scope changes', async (cha
     if (change === 'runtime') await act(async () => mocks.runtimeChanged());
     else await render('one', 30, true, change === 'session' ? 's2' : 's1', change !== 'leave');
     expect(context!.enabled).toBe(true);
-    expect(localStorage.getItem('openchamber.auto-read')).toBe('true');
+    expect(localStorage.getItem('yuri.auto-read')).toBe('true');
     expect(mocks.release).toHaveBeenCalledTimes(1);
 });
 
@@ -126,7 +126,7 @@ it('restores localStorage on remount, waits for hydration, and persists an expli
     await render('after-reload', 30);
     expect(mocks.play).toHaveBeenCalledTimes(1);
     await act(async () => context!.toggle());
-    expect(localStorage.getItem('openchamber.auto-read')).toBe('false');
+    expect(localStorage.getItem('yuri.auto-read')).toBe('false');
     await act(async () => root.unmount());
     root = createRoot(host);
     await render('another', 40);

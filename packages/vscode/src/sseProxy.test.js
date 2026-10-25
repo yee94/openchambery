@@ -363,7 +363,7 @@ describe('VS Code SSE proxy', () => {
     });
 
     it('delivers first lifecycle event after readiness succeeds (not dropped)', async () => {
-      const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-sse-meta-'));
+      const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-sse-meta-'));
       try {
         __setSessionMetadataDataRootForTests(dataRoot);
         startSessionMetadataRuntime(createManager());

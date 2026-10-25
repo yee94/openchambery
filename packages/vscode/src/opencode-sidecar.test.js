@@ -18,8 +18,8 @@ import {
 const originalFetch = globalThis.fetch;
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalOpencodePath = process.env.OPENCODE_PATH;
-const originalOpenchamberOpencodePath = process.env.OPENCHAMBER_OPENCODE_PATH;
-const originalOpenchamberOpencodeBin = process.env.OPENCHAMBER_OPENCODE_BIN;
+const originalYuriOpencodePath = process.env.YURI_OPENCODE_PATH;
+const originalYuriOpencodeBin = process.env.YURI_OPENCODE_BIN;
 const originalPath = process.env.PATH;
 const tempDirs = [];
 
@@ -61,15 +61,15 @@ afterEach(() => {
   } else {
     delete process.env.OPENCODE_PATH;
   }
-  if (typeof originalOpenchamberOpencodePath === 'string') {
-    process.env.OPENCHAMBER_OPENCODE_PATH = originalOpenchamberOpencodePath;
+  if (typeof originalYuriOpencodePath === 'string') {
+    process.env.YURI_OPENCODE_PATH = originalYuriOpencodePath;
   } else {
-    delete process.env.OPENCHAMBER_OPENCODE_PATH;
+    delete process.env.YURI_OPENCODE_PATH;
   }
-  if (typeof originalOpenchamberOpencodeBin === 'string') {
-    process.env.OPENCHAMBER_OPENCODE_BIN = originalOpenchamberOpencodeBin;
+  if (typeof originalYuriOpencodeBin === 'string') {
+    process.env.YURI_OPENCODE_BIN = originalYuriOpencodeBin;
   } else {
-    delete process.env.OPENCHAMBER_OPENCODE_BIN;
+    delete process.env.YURI_OPENCODE_BIN;
   }
   if (typeof originalPath === 'string') {
     process.env.PATH = originalPath;
@@ -262,15 +262,15 @@ describe('legacy OpenCode CLI basename', () => {
 
 describe('resolveDetectedOpencodeCliPath', () => {
   test('does not treat a PATH 1.x opencode binary as a resolved CLI', () => {
-    const pathDir = createTempDir('openchamber-vscode-path-opencode-1x-');
+    const pathDir = createTempDir('yuri-vscode-path-opencode-1x-');
     const pathBinary = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeExecutable(pathBinary);
     process.env.PATH = pathDir;
     delete process.env.OPENCODE_BINARY;
     delete process.env.OPENCODE_PATH;
-    delete process.env.OPENCHAMBER_OPENCODE_PATH;
-    delete process.env.OPENCHAMBER_OPENCODE_BIN;
-    const emptyHome = createTempDir('openchamber-vscode-empty-home-1x-');
+    delete process.env.YURI_OPENCODE_PATH;
+    delete process.env.YURI_OPENCODE_BIN;
+    const emptyHome = createTempDir('yuri-vscode-empty-home-1x-');
 
     expect(resolveDetectedOpencodeCliPath({
       homedir: () => emptyHome,
@@ -279,7 +279,7 @@ describe('resolveDetectedOpencodeCliPath', () => {
   });
 
   test('discovers official opencode from PATH and ignores the opencode2 alias', () => {
-    const pathDir = createTempDir('openchamber-vscode-path-opencode2-');
+    const pathDir = createTempDir('yuri-vscode-path-opencode2-');
     const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
     const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeVersionBinary(legacy, '2.0.15');
@@ -287,9 +287,9 @@ describe('resolveDetectedOpencodeCliPath', () => {
     process.env.PATH = pathDir;
     delete process.env.OPENCODE_BINARY;
     delete process.env.OPENCODE_PATH;
-    delete process.env.OPENCHAMBER_OPENCODE_PATH;
-    delete process.env.OPENCHAMBER_OPENCODE_BIN;
-    const emptyHome = createTempDir('openchamber-vscode-empty-home-path2-');
+    delete process.env.YURI_OPENCODE_PATH;
+    delete process.env.YURI_OPENCODE_BIN;
+    const emptyHome = createTempDir('yuri-vscode-empty-home-path2-');
 
     expect(resolveDetectedOpencodeCliPath({
       homedir: () => emptyHome,
@@ -298,14 +298,14 @@ describe('resolveDetectedOpencodeCliPath', () => {
   });
 
   test('discovers opencode from a home-directory install location', () => {
-    const home = createTempDir('openchamber-vscode-home-opencode2-');
+    const home = createTempDir('yuri-vscode-home-opencode2-');
     const binary = path.join(home, '.bun', 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeVersionBinary(binary, '2.0.12');
-    process.env.PATH = createTempDir('openchamber-vscode-empty-path-home-');
+    process.env.PATH = createTempDir('yuri-vscode-empty-path-home-');
     delete process.env.OPENCODE_BINARY;
     delete process.env.OPENCODE_PATH;
-    delete process.env.OPENCHAMBER_OPENCODE_PATH;
-    delete process.env.OPENCHAMBER_OPENCODE_BIN;
+    delete process.env.YURI_OPENCODE_PATH;
+    delete process.env.YURI_OPENCODE_BIN;
 
     expect(resolveDetectedOpencodeCliPath({
       homedir: () => home,
@@ -314,7 +314,7 @@ describe('resolveDetectedOpencodeCliPath', () => {
   });
 
   test('rejects an explicit OPENCODE_BINARY whose basename is 1.x opencode', () => {
-    const dir = createTempDir('openchamber-vscode-env-opencode-1x-');
+    const dir = createTempDir('yuri-vscode-env-opencode-1x-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeVersionBinary(binary, '1.18.4');
     process.env.OPENCODE_BINARY = binary;

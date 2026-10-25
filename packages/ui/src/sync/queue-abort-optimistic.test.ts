@@ -5,7 +5,7 @@ let ownership = 'server-active';
 let serverItems: Array<{ queueItemID: string; status: string; content: string; messageID?: string; sendConfig?: { providerID: string; modelID: string }; deliveryTarget?: { kind: string } }> = [];
 let legacyItems: Array<{ queueItemID: string; operationID: string; status: string; content: string; messageID?: string; sendConfig?: { providerID: string; modelID: string }; owner: { state: string } }> = [];
 let syncMessages: Array<{ id: string; role?: string }> = [];
-const partsByMessageID: Record<string, Array<{ id?: string; __openchamberOptimistic?: boolean }>> = {};
+const partsByMessageID: Record<string, Array<{ id?: string; __yuriOptimistic?: boolean }>> = {};
 
 mock.module('@/sync/session-ui-store', () => ({
   useSessionUIStore: {
@@ -182,7 +182,7 @@ describe('queue abort optimistic presentation', () => {
     }];
     const presentation = promoteQueueHeadOnAbort('session-a')!;
     syncMessages = [{ id: presentation.messageID, role: 'user' }];
-    partsByMessageID[presentation.messageID] = [{ id: 'prt', __openchamberOptimistic: true }];
+    partsByMessageID[presentation.messageID] = [{ id: 'prt', __yuriOptimistic: true }];
     reconcileQueueAbortOptimistic('session-a');
     expect(getQueueAbortOptimisticPresentation('session-a')?.messageID).toBe(presentation.messageID);
     expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'queue-a')).toBe(true);
@@ -217,7 +217,7 @@ describe('queue abort optimistic presentation', () => {
     expect(presentation.messageID).toBe('msg_admission');
     serverItems = [{ ...serverItems[0]!, status: 'sending', messageID: 'msg_dispatch' }];
     syncMessages = [{ id: presentation.messageID, role: 'user' }];
-    partsByMessageID[presentation.messageID] = [{ id: 'prt', __openchamberOptimistic: true }];
+    partsByMessageID[presentation.messageID] = [{ id: 'prt', __yuriOptimistic: true }];
     reconcileQueueAbortOptimistic('session-a');
     expect(getQueueAbortOptimisticPresentation('session-a')).toBeUndefined();
     expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'queue-a')).toBe(false);

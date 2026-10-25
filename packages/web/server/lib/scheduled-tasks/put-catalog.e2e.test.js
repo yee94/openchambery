@@ -53,8 +53,8 @@ describe('scheduled task PUT catalog host e2e', () => {
       expect(summary.report.ok).toBe(true);
       expect(summary.report.disabledFromEnabled).toBe(true);
       expect(summary.report.directory).toBeTruthy();
-      expect(summary.report.underDataDir).toBe(false);
-      expect(summary.report.configPath).toContain(`${path.sep}.config${path.sep}openchamber${path.sep}projects${path.sep}`);
+      expect(summary.report.underDataDir).toBe(true);
+      expect(summary.report.configPath).toContain(`${path.sep}data-dir${path.sep}projects${path.sep}`);
     } finally {
       await stopOwnedChild(child);
     }

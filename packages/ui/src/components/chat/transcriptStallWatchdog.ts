@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 /**
  * Self-heal for a transcript body that stops advancing while its session is
  * still reported as working.

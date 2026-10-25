@@ -1,5 +1,5 @@
 import React from 'react';
-import { WorktreeSectionContent } from '@/components/sections/openchamber/WorktreeSectionContent';
+import { WorktreeSectionContent } from '@/components/sections/yuri/WorktreeSectionContent';
 import { ProjectActionsSection } from '@/components/sections/projects/ProjectActionsSection';
 import { ProjectIdentityFields } from '@/components/sections/projects/ProjectIdentityFields';
 import {
@@ -42,7 +42,7 @@ export const ProjectSettingsPanel: React.FC<ProjectSettingsPanelProps> = ({
   const headerLabel = project.path.split(/[\\/]/).filter(Boolean).at(-1) ?? t('settings.projects.page.title.default');
 
   return (
-    <div className="oc-settings-section-stack">
+    <div className="yuri-settings-section-stack">
       <div className="px-1">
         <h2 className="typography-ui-header font-semibold text-foreground truncate">
           {headerLabel}

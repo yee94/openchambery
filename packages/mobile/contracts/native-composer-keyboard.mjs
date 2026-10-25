@@ -1,4 +1,4 @@
-/** Keep in sync with OpenChamberComposerPlugin.applyKeyboard. */
+/** Keep in sync with YuriComposerPlugin.applyKeyboard. */
 
 export const NATIVE_COMPOSER_KEYBOARD_GAP = 12;
 

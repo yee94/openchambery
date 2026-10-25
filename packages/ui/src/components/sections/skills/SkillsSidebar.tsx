@@ -265,12 +265,12 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
   );
 
   return (
-    <div className={cn('oc-settings-page-content h-full overflow-y-auto p-3', bgClass)}>
+    <div className={cn('yuri-settings-page-content h-full overflow-y-auto p-3', bgClass)}>
       <SettingsProjectSelector />
 
       {skills.length === 0 ? (
         <SettingsGroup>
-          <div className="oc-settings-group-row py-12 text-center text-muted-foreground">
+          <div className="yuri-settings-group-row py-12 text-center text-muted-foreground">
             <Icon name="book-open" className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.empty.title')}</p>
             <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.empty.description')}</p>
@@ -438,7 +438,7 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
   );
   return (
     <ContextMenu open={!isBuiltIn && isContextMenuOpen} onOpenChange={setIsContextMenuOpen}>
-      <ContextMenuTrigger render={<div className={cn('oc-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile && !isBuiltIn ? (e) => { e.preventDefault(); setIsContextMenuOpen(true); } : undefined} />}>
+      <ContextMenuTrigger render={<div className={cn('yuri-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile && !isBuiltIn ? (e) => { e.preventDefault(); setIsContextMenuOpen(true); } : undefined} />}>
       <div className="flex min-w-0 flex-1 items-center">
         <button
           onClick={onSelect}

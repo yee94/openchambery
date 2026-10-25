@@ -7,15 +7,15 @@ import { nativeIosComposerSession, type NativeIosComposerSession } from './nativ
 
 type NativeBackEvent = { progress?: number; velocityX?: number };
 
-type OpenChamberNavigationPlugin = {
+type YuriNavigationPlugin = {
   addListener(
     eventName: 'backStarted' | 'backCancelled',
     listener: (event: NativeBackEvent) => void,
   ): Promise<PluginListenerHandle>;
 };
 
-const getOpenChamberNavigation = (): OpenChamberNavigationPlugin => (
-  registerPlugin<OpenChamberNavigationPlugin>('OpenChamberNavigation')
+const getYuriNavigation = (): YuriNavigationPlugin => (
+  registerPlugin<YuriNavigationPlugin>('YuriNavigation')
 );
 
 const isComposerSecondary = (secondary: MobileSecondaryState | null): boolean => (
@@ -62,7 +62,7 @@ export const attachNativeIosComposerLeaveConceal = (
   let cancelled = false;
   if (Capacitor.getPlatform() === 'ios') {
     void (async () => {
-      const navigation = getOpenChamberNavigation();
+      const navigation = getYuriNavigation();
       const started = await navigation.addListener('backStarted', () => {
         if (shouldConcealNativeComposerOnBackStart(useMobileNavigationStore.getState().secondary)) {
           session.conceal();

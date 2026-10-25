@@ -142,7 +142,7 @@ describe("createEventPipeline", () => {
     })).toEqual(["updated:a", "delta:b", "updated:ab", "delta:c"])
   })
 
-  test("normalizes openchamber session status events", async () => {
+  test("normalizes yuri session status events", async () => {
     let resolveStreamFinished!: () => void
     const streamFinished = new Promise<void>((resolve) => {
       resolveStreamFinished = resolve
@@ -154,7 +154,7 @@ describe("createEventPipeline", () => {
     const pipeline = createEventPipeline({
       sdk: createSdk([
         {
-          type: "openchamber:session-status",
+          type: "yuri:session-status",
           properties: {
             sessionID: "ses_1",
             status: "idle",
@@ -181,7 +181,7 @@ describe("createEventPipeline", () => {
     }
   })
 
-  test("passes openchamber session-metadata events through for store merge", async () => {
+  test("passes yuri session-metadata events through for store merge", async () => {
     let resolveStreamFinished!: () => void
     const streamFinished = new Promise<void>((resolve) => {
       resolveStreamFinished = resolve
@@ -193,10 +193,10 @@ describe("createEventPipeline", () => {
     const pipeline = createEventPipeline({
       sdk: createSdk([
         {
-          type: "openchamber:session-metadata",
+          type: "yuri:session-metadata",
           properties: {
             sessionID: "ses_1",
-            metadata: { openchamber: { goal: { status: "active" } } },
+            metadata: { yuri: { goal: { status: "active" } } },
           },
         } as unknown as Event,
       ], resolveStreamFinished),
@@ -210,10 +210,10 @@ describe("createEventPipeline", () => {
     try {
       await streamFinished
       const delivered = await Promise.race([deliveredEvent, failAfter(500)])
-      expect(delivered.type).toBe("openchamber:session-metadata")
+      expect(delivered.type).toBe("yuri:session-metadata")
       expect(delivered.properties).toEqual({
         sessionID: "ses_1",
-        metadata: { openchamber: { goal: { status: "active" } } },
+        metadata: { yuri: { goal: { status: "active" } } },
       })
     } finally {
       pipeline.cleanup()

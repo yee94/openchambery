@@ -70,11 +70,11 @@ export const RELAY_HOST_SYNC_CAPABILITIES = Object.freeze({
  * (semantic equivalent of the former mode==='managed' hard gate).
  *
  * @param {string} instanceId
- * @param {{ remoteOpenchamber?: { mode?: string } } | null | undefined} [instance]
+ * @param {{ remoteYuri?: { mode?: string } } | null | undefined} [instance]
  * @returns {SyncTarget}
  */
 export const createSshSyncTarget = (instanceId, instance) => {
-  const managed = instance?.remoteOpenchamber?.mode === 'managed';
+  const managed = instance?.remoteYuri?.mode === 'managed';
   return {
     id: syncTargetIdForSshInstance(instanceId),
     kind: 'ssh',
@@ -83,7 +83,7 @@ export const createSshSyncTarget = (instanceId, instance) => {
 };
 
 /**
- * Direct OpenChamber host reached over HTTP (apiUrl + clientToken).
+ * Direct Yuri host reached over HTTP (apiUrl + clientToken).
  * @param {string} hostId
  * @returns {SyncTarget}
  */
@@ -94,7 +94,7 @@ export const createDirectHostSyncTarget = (hostId) => ({
 });
 
 /**
- * Relay OpenChamber host pinned by serverId (signing-key fingerprint).
+ * Relay Yuri host pinned by serverId (signing-key fingerprint).
  * @param {string} serverId
  * @returns {SyncTarget}
  */

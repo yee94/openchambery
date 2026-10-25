@@ -37,6 +37,10 @@ function parseActiveBundle(value, errors) {
   }
 
   const bundle = {};
+  if (value.applicationId !== undefined) {
+    if (value.applicationId !== 'com.yee94.yuri') errors.push('Unsupported activeBundle.applicationId');
+    else bundle.applicationId = value.applicationId;
+  }
 
   if (typeof value.bundleId !== 'string' || !BUNDLE_ID_PATTERN.test(value.bundleId)) {
     errors.push('activeBundle.bundleId must be a 16-char hex string');
@@ -133,12 +137,16 @@ function parseActiveBundle(value, errors) {
       || !PLAIN_CHECKSUM_PATTERN.test(d.checksum ?? '')
       || !Number.isSafeInteger(d.size) || d.size < 1
       || !PLAIN_CHECKSUM_PATTERN.test(d.shellFingerprint ?? '')
+      || (d.applicationId !== undefined && !isNonEmptyString(d.applicationId))
+      || (d.minShellApiVersion !== undefined && (!Number.isInteger(d.minShellApiVersion) || d.minShellApiVersion < 1))
       || !parseReleaseVersion(d.minShellReleaseVersion)
       || parseReleaseVersion(d.minShellReleaseVersion)?.major !== parseReleaseVersion(value.releaseVersion)?.major) {
       errors.push('activeBundle.desktop must contain a valid desktop artifact and shell floor');
     } else {
       bundle.desktop = { bundleId: d.bundleId, url: d.url, checksum: d.checksum, size: d.size,
         shellFingerprint: d.shellFingerprint, minShellReleaseVersion: d.minShellReleaseVersion };
+      if (d.applicationId !== undefined) bundle.desktop.applicationId = d.applicationId;
+      if (d.minShellApiVersion !== undefined) bundle.desktop.minShellApiVersion = d.minShellApiVersion;
     }
   }
 

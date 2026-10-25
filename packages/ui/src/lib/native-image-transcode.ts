@@ -5,7 +5,7 @@ type NativeTranscodePlugin = {
 type CapacitorBridge = {
   isNativePlatform?: () => boolean;
   Plugins?: {
-    OpenChamberMedia?: NativeTranscodePlugin;
+    YuriMedia?: NativeTranscodePlugin;
   };
 };
 
@@ -51,7 +51,7 @@ export const convertHeicToJpegViaNative = async (input: Blob): Promise<Blob | nu
   if (!capacitor || typeof capacitor.isNativePlatform !== 'function' || !capacitor.isNativePlatform()) {
     return null;
   }
-  const transcode = capacitor.Plugins?.OpenChamberMedia?.transcode;
+  const transcode = capacitor.Plugins?.YuriMedia?.transcode;
   if (typeof transcode !== 'function') return null;
   try {
     const result = await transcode({

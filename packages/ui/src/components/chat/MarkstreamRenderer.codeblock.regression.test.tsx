@@ -48,10 +48,10 @@ vi.mock('@/lib/runtimeSurface', () => ({
 
 import { MarkstreamRenderer } from './MarkstreamRendererImpl';
 
-const FENCE = ['```typescript', 'const openChamber = 1', 'console.log(openChamber)', '```'].join('\n');
-const FENCE_STREAM_TAIL = ['```typescript', 'const openChamber = 1', 'console.log(openChamber)', 'const next = 2', '```'].join('\n');
+const FENCE = ['```typescript', 'const yuri = 1', 'console.log(yuri)', '```'].join('\n');
+const FENCE_STREAM_TAIL = ['```typescript', 'const yuri = 1', 'console.log(yuri)', 'const next = 2', '```'].join('\n');
 const FENCE_B = ['```typescript', 'const otherMessage = 9', '```'].join('\n');
-const FENCE_UNCLOSED = ['```typescript', 'const openChamber = 1  '].join('\n');
+const FENCE_UNCLOSED = ['```typescript', 'const yuri = 1  '].join('\n');
 const FENCE_TILDE_WITH_BACKTICKS = ['~~~~markdown', 'docs use ```code``` fences', '~~~~'].join('\n');
 const TWO_SAME_LANG = [
   '```typescript',
@@ -116,7 +116,7 @@ const TEXT_ASCII_TREE_UNCLOSED = [
   '|   +-- LLM #1',
 ].join('\n');
 
-describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
+describe('MarkstreamRenderer fenced code blocks (Yuri chrome)', () => {
   let container: HTMLElement;
   let root: Root;
 
@@ -166,8 +166,8 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
       .map((node) => node.textContent ?? '')
       .join('\n');
   const codeHostIds = () =>
-    Array.from(container.querySelectorAll('[data-oc-markstream-code-id]'))
-      .map((node) => node.getAttribute('data-oc-markstream-code-id') ?? '');
+    Array.from(container.querySelectorAll('[data-yuri-markstream-code-id]'))
+      .map((node) => node.getAttribute('data-yuri-markstream-code-id') ?? '');
 
   /** Nested MarkdownRendererImpl morph + worker highlight can lag large fences. */
   const waitForCodeText = async (
@@ -240,7 +240,7 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     expect(container.querySelector('.katex')).not.toBeNull();
   });
 
-  test.each(['d2', 'infographic'])('%s fences stay OpenChamber code cards, not library diagram shells', async (language) => {
+  test.each(['d2', 'infographic'])('%s fences stay Yuri code cards, not library diagram shells', async (language) => {
     const fence = ['```' + language, 'x -> y', '```'].join('\n');
     await render({ content: fence });
     await flush(200);
@@ -250,7 +250,7 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     expect(codeText()).toContain('x -> y');
   });
 
-  test('renders mermaid fences through OpenChamber diagram decorate, not the library source card', async () => {
+  test('renders mermaid fences through Yuri diagram decorate, not the library source card', async () => {
     const diagram = ['```mermaid', 'flowchart LR', 'A["用户输入"] --> B{"held?"}', '```'].join('\n');
     await render({ content: diagram });
     await flush(200);
@@ -269,18 +269,18 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     expect(container.querySelector('[data-markdown="mermaid-block"] svg.pele-pie')).not.toBeNull();
   });
 
-  test('uses OpenChamber markdown-code chrome, not markstream default toolbar, and keeps source text', async () => {
+  test('uses Yuri markdown-code chrome, not markstream default toolbar, and keeps source text', async () => {
     await render({ content: `Before\n\n${FENCE}\n\nAfter` });
     await flush(120);
 
-    const host = container.querySelector('[data-oc-markdown-engine="markstream"]');
+    const host = container.querySelector('[data-yuri-markdown-engine="markstream"]');
     expect(host).toBeTruthy();
-    expect(container.querySelector('[data-oc-markstream-code="markdown-impl"]')).toBeTruthy();
+    expect(container.querySelector('[data-yuri-markstream-code="markdown-impl"]')).toBeTruthy();
 
-    const ocCode = container.querySelector('[data-component="markdown-code"]');
-    expect(ocCode).toBeTruthy();
-    expect(codeText()).toContain('const openChamber = 1');
-    expect(codeText()).toContain('console.log(openChamber)');
+    const yuriCode = container.querySelector('[data-component="markdown-code"]');
+    expect(yuriCode).toBeTruthy();
+    expect(codeText()).toContain('const yuri = 1');
+    expect(codeText()).toContain('console.log(yuri)');
 
     // Library default CodeBlockNode chrome (large multi-control toolbar).
     expect(container.querySelector('.code-block-header')).toBeNull();
@@ -291,7 +291,7 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
   test('survives unmount and remount without blanking the fence body', async () => {
     await render({ content: FENCE });
     await flush(120);
-    expect(codeText()).toContain('openChamber');
+    expect(codeText()).toContain('yuri');
 
     await act(async () => {
       root.render(null);
@@ -304,8 +304,8 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
 
     const remounted = container.querySelector('[data-component="markdown-code"]');
     expect(remounted).toBeTruthy();
-    expect(codeText()).toContain('const openChamber = 1');
-    expect(codeText()).toContain('console.log(openChamber)');
+    expect(codeText()).toContain('const yuri = 1');
+    expect(codeText()).toContain('console.log(yuri)');
     expect(codeText()).not.toMatch(/^\s*$/);
   });
 
@@ -317,7 +317,7 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
       part: partA as never,
     });
     await flush(120);
-    expect(codeText()).toContain('const openChamber = 1');
+    expect(codeText()).toContain('const yuri = 1');
     const hostIdA = codeHostIds()[0];
     expect(hostIdA).toContain('msg-code-stable');
     expect(hostIdA).toContain('part-part-stable-a');
@@ -329,7 +329,7 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     });
     await flush(120);
     expect(codeText()).toContain('const otherMessage = 9');
-    expect(codeText()).not.toContain('const openChamber = 1');
+    expect(codeText()).not.toContain('const yuri = 1');
 
     await render({
       content: FENCE,
@@ -337,16 +337,16 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
       part: partA as never,
     });
     await flush(120);
-    expect(codeText()).toContain('const openChamber = 1');
-    expect(codeText()).toContain('console.log(openChamber)');
+    expect(codeText()).toContain('const yuri = 1');
+    expect(codeText()).toContain('console.log(yuri)');
     expect(codeText()).not.toMatch(/^\s*$/);
     expect(codeHostIds()[0]).toBe(hostIdA);
   });
 
-  test('stream updates grow the fence body through the OpenChamber renderer', async () => {
+  test('stream updates grow the fence body through the Yuri renderer', async () => {
     await render({ content: FENCE, isStreaming: true });
     await flush(120);
-    expect(codeText()).toContain('openChamber');
+    expect(codeText()).toContain('yuri');
 
     await render({ content: FENCE_STREAM_TAIL, isStreaming: true });
     await flush(120);
@@ -355,18 +355,18 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     await render({ content: FENCE_STREAM_TAIL, isStreaming: false });
     await flush(120);
     expect(codeText()).toContain('const next = 2');
-    expect(codeText()).toContain('console.log(openChamber)');
+    expect(codeText()).toContain('console.log(yuri)');
   });
 
   test('unclosed streaming fence keeps body text through close', async () => {
     await render({ content: FENCE_UNCLOSED, isStreaming: true });
     await flush(120);
-    expect(codeText()).toContain('const openChamber = 1');
+    expect(codeText()).toContain('const yuri = 1');
 
     await render({ content: FENCE, isStreaming: false });
     await flush(120);
-    expect(codeText()).toContain('const openChamber = 1');
-    expect(codeText()).toContain('console.log(openChamber)');
+    expect(codeText()).toContain('const yuri = 1');
+    expect(codeText()).toContain('console.log(yuri)');
   });
 
   test('tilde fence with embedded triple backticks keeps the body', async () => {
@@ -389,11 +389,11 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     expect(text).toContain('const second = 2');
   });
 
-  test('```text ASCII tree keeps spaces, pipes, Chinese, and OpenChamber chrome', async () => {
+  test('```text ASCII tree keeps spaces, pipes, Chinese, and Yuri chrome', async () => {
     await render({ content: TEXT_ASCII_TREE_A, messageId: 'msg-text-ascii' });
     await flush(200);
 
-    expect(container.querySelector('[data-oc-markstream-code="markdown-impl"]')).toBeTruthy();
+    expect(container.querySelector('[data-yuri-markstream-code="markdown-impl"]')).toBeTruthy();
     expect(container.querySelector('[data-component="markdown-code"]')).toBeTruthy();
     expect(container.querySelector('.code-block-header')).toBeNull();
 

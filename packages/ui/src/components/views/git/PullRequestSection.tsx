@@ -647,7 +647,7 @@ export const PullRequestSection: React.FC<{
   }, [githubAuthStatus]);
 
   const selfMentionHighlightClass = React.useMemo(() => {
-    return "[&_a[href*='oc-self-mention=1']]:!text-[var(--primary-base)] [&_a[href*='oc-self-mention=1']]:font-semibold [&_a[href*='oc-self-mention=1']]:!no-underline [&_a[href*='oc-self-mention=1']:hover]:!text-[var(--primary-hover)]";
+    return "[&_a[href*='yuri-self-mention=1']]:!text-[var(--primary-base)] [&_a[href*='yuri-self-mention=1']]:font-semibold [&_a[href*='yuri-self-mention=1']]:!no-underline [&_a[href*='yuri-self-mention=1']:hover]:!text-[var(--primary-hover)]";
   }, []);
 
   const linkifyMentionsMarkdown = React.useCallback((content: string) => {
@@ -656,7 +656,7 @@ export const PullRequestSection: React.FC<{
     return content.replace(mentionRegex, (_match, prefix: string, username: string) => {
       const mention = `@${username}`;
       const usernameLower = username.toLowerCase();
-      const selfTag = selfLoginLower && usernameLower === selfLoginLower ? '?oc-self-mention=1' : '';
+      const selfTag = selfLoginLower && usernameLower === selfLoginLower ? '?yuri-self-mention=1' : '';
       return `${prefix}[${mention}](https://github.com/${usernameLower}${selfTag})`;
     });
   }, [connectedGitHubLogin]);

@@ -39,8 +39,9 @@ permissions:
   contents: write
 
 env:
-  OTA_BASE_URL: https://openchamber-update.vercel.app
-  MOBILE_APP_ID: com.yee94.openchamber
+  OTA_BASE_URL: ${{ vars.YURI_OTA_BASE_URL }}
+  OTA_DETECTABILITY_BASES: ${{ vars.YURI_OTA_DETECTABILITY_BASES }}
+  MOBILE_APP_ID: com.yee94.yuri
   MAX_BUNDLE_BYTES: 25165824 # 24 MiB
 
 jobs:
@@ -53,6 +54,15 @@ jobs:
       channel: ${{ steps.plan.outputs.channel }}
       shell_api_version: ${{ steps.plan.outputs.shell_api_version }}
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -142,6 +152,15 @@ jobs:
       generation: ${{ steps.assemble.outputs.generation }}
       encrypted: ${{ steps.zip.outputs.encrypted }}
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -172,7 +191,7 @@ jobs:
         run: |
           set -euo pipefail
           DIST="dist"
-          ZIP_NAME="openchamber-${VERSION}.zip"
+          ZIP_NAME="yuri-${VERSION}.zip"
           ZIP_PATH="$RUNNER_TEMP/$ZIP_NAME"
 
           # Capgo CLI: bundle zip <appId> --path <dir> --name <file> --json
@@ -339,6 +358,15 @@ jobs:
     needs: [release-plan, build-ota]
     runs-on: ubuntu-latest
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
@@ -478,6 +506,15 @@ jobs:
     needs: [release-plan, build-ota, deploy]
     runs-on: ubuntu-latest
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
 
       - name: Download artifacts

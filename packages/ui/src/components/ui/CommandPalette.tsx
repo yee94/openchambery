@@ -864,7 +864,7 @@ export const CommandPalette = React.memo(function CommandPalette({ presentation 
 
   if (presentation === 'page') {
     return (
-      <section ref={popupRef} data-global-search="true" data-page-scroll-lock="true" aria-label={t('commandPalette.title')} className="oc-global-search-page flex min-h-0 w-full flex-col bg-background text-foreground">
+      <section ref={popupRef} data-global-search="true" data-page-scroll-lock="true" aria-label={t('commandPalette.title')} className="yuri-global-search-page flex min-h-0 w-full flex-col bg-background text-foreground">
         {content}
       </section>
     );
@@ -879,8 +879,8 @@ export const CommandPalette = React.memo(function CommandPalette({ presentation 
         data-mobile={isMobile}
         data-page-scroll-lock="true"
         className={isMobile
-          ? 'oc-global-search-page oc-global-search-mobile fixed inset-0 z-50 m-0 flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-background p-0'
-          : 'oc-global-search oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface fixed left-1/2 top-[10vh] z-50 w-[min(56rem,calc(100vw-3rem))] max-w-none -translate-x-1/2 translate-y-0 gap-0 overflow-hidden rounded-3xl border-0 p-0'}
+          ? 'yuri-global-search-page yuri-global-search-mobile fixed inset-0 z-50 m-0 flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-background p-0'
+          : 'yuri-global-search yuri-mobile-overlay-surface yuri-mobile-overlay-surface--translucent yuri-composer-autocomplete-surface fixed left-1/2 top-[10vh] z-50 w-[min(56rem,calc(100vw-3rem))] max-w-none -translate-x-1/2 translate-y-0 gap-0 overflow-hidden rounded-3xl border-0 p-0'}
         containerClassName="block p-0"
         overlayClassName="bg-transparent dark:bg-transparent"
         showCloseButton={false}

@@ -1,5 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
-contextBridge.exposeInMainWorld('__OPENCHAMBER_DESKTOP__', {
+contextBridge.exposeInMainWorld('__YURI_DESKTOP__', {
   imageCache: {
     acquire: (input) => ipcRenderer.invoke('cache:acquire', input),
     append: (leaseId, bytes) => ipcRenderer.invoke('cache:append', leaseId, bytes),

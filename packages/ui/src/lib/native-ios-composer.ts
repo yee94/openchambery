@@ -6,11 +6,11 @@ import { rasterizePngBase64 } from '@/lib/rasterizePng';
 import { isIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
-export const NATIVE_IOS_COMPOSER_CLASS = 'oc-native-ios-composer';
-export const NATIVE_IOS_COMPOSER_HEIGHT_VAR = '--oc-native-composer-height';
-export const NATIVE_IOS_COMPOSER_ACCESSORY_VAR = '--oc-native-composer-accessory';
+export const NATIVE_IOS_COMPOSER_CLASS = 'yuri-native-ios-composer';
+export const NATIVE_IOS_COMPOSER_HEIGHT_VAR = '--yuri-native-composer-height';
+export const NATIVE_IOS_COMPOSER_ACCESSORY_VAR = '--yuri-native-composer-accessory';
 export const NATIVE_COMPOSER_FILE_MAX_BYTES = 32 * 1024 * 1024;
-const NATIVE_IOS_COMPOSER_PLUGIN = 'OpenChamberComposer';
+const NATIVE_IOS_COMPOSER_PLUGIN = 'YuriComposer';
 const NATIVE_IOS_COMPOSER_COLOR_FALLBACK = '#22c55e';
 const NATIVE_MODEL_ICON_PX = 32;
 
@@ -191,7 +191,7 @@ export type NativeIosComposerEventPayload = {
   index?: number;
 };
 
-const OpenChamberComposer = registerPlugin<NativeIosComposerPlugin>(NATIVE_IOS_COMPOSER_PLUGIN);
+const YuriComposer = registerPlugin<NativeIosComposerPlugin>(NATIVE_IOS_COMPOSER_PLUGIN);
 
 export type NativeIosComposerAvailabilityInput = {
   isCapacitor: boolean;
@@ -702,4 +702,4 @@ export const rasterizeAttachmentThumbnailBase64 = (src: string): Promise<string 
 
 export const rasterizeLogoPngBase64 = (src: string): Promise<string | null> => rasterizePngBase64(src, NATIVE_MODEL_ICON_PX);
 
-export const getNativeIosComposerPlugin = (): NativeIosComposerPlugin => OpenChamberComposer;
+export const getNativeIosComposerPlugin = (): NativeIosComposerPlugin => YuriComposer;

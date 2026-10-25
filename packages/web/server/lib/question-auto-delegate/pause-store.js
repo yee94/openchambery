@@ -5,8 +5,8 @@ import { join } from 'node:path';
 
 // All local hosts share this boundary, including desktop and VS Code. Form and
 // session IDs are globally unique upstream identities; no URL or credential is stored.
-export function createQuestionPauseStore(directory = process.env.OPENCHAMBER_QUESTION_PAUSE_DIR
-  || join(homedir(), '.config', 'openchamber', 'question-pauses')) {
+export function createQuestionPauseStore(directory = process.env.YURI_QUESTION_PAUSE_DIR
+  || join(homedir(), '.config', 'yuri', 'question-pauses')) {
   const pathFor = (requestID, sessionID) => join(directory,
     createHash('sha256').update(JSON.stringify([sessionID, requestID])).digest('hex'));
   return {

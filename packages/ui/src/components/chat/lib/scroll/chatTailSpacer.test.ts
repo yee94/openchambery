@@ -10,7 +10,7 @@ import {
 
 /**
  * The tail is the breathing room under the newest message, on top of the
- * `--oc-chat-foot-inset` chrome reservation. A mobile tail sized like a
+ * `--yuri-chat-foot-inset` chrome reservation. A mobile tail sized like a
  * scroll threshold rather than like empty space left a streaming reply
  * pressed against the queued-message strip with nothing to scroll up into.
  * It also has to clear the 2.75rem composer fade, or the newest lines rest
@@ -24,10 +24,10 @@ describe('chat tail spacer', () => {
 
     test('a list that measures its own footer carries the chrome reservation too', () => {
         expect(CHAT_TAIL_SPACER_MOBILE_WITH_FOOT_INSET_HEIGHT)
-            .toBe(`calc(${CHAT_TAIL_SPACER_MOBILE_HEIGHT} + var(--oc-chat-foot-inset))`);
+            .toBe(`calc(${CHAT_TAIL_SPACER_MOBILE_HEIGHT} + var(--yuri-chat-foot-inset))`);
         // The auto-follow engine gets that reservation from CSS padding
         // instead, so its tail must stay the breathing room alone.
-        expect(CHAT_TAIL_SPACER_MOBILE_HEIGHT).not.toContain('--oc-chat-foot-inset');
+        expect(CHAT_TAIL_SPACER_MOBILE_HEIGHT).not.toContain('--yuri-chat-foot-inset');
         expect(CHAT_TAIL_SPACER_DESKTOP_HEIGHT).toBe('10vh');
     });
 

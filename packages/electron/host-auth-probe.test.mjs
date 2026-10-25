@@ -8,7 +8,7 @@ describe('desktop host authentication probe', () => {
   });
 
   it('requires an authoritative authenticated response, including with HTTP 200', async () => {
-    for (const payload of [{ authenticated: false }, { service: 'openchamber' }]) {
+    for (const payload of [{ authenticated: false }, { service: 'yuri' }]) {
       const fetchImpl = vi.fn(async () => Response.json(payload));
       expect(await probeHostAuthentication('https://remote.example', { headers: {}, timeoutMs: 1000, fetchImpl })).toBe('auth');
     }

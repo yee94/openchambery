@@ -192,9 +192,9 @@ export function normalizeOpenCodeEvent(raw: unknown): NormalizeOpenCodeEventResu
   const propertiesBody = asRecord(record.properties)
   const body = dataBody ?? propertiesBody
   if (!body) {
-    // Some openchamber synthetic events only have type+properties as empty-ish;
-    // still emit with empty properties for openchamber:* pass-through.
-    if (type.startsWith("openchamber:")) {
+    // Some yuri synthetic events only have type+properties as empty-ish;
+    // still emit with empty properties for yuri:* pass-through.
+    if (type.startsWith("yuri:")) {
       return {
         action: "emit",
         event: {

@@ -102,6 +102,7 @@ function parseMobileUpdateRequest(payload) {
   }
 
   const request = {
+    applicationId: payload.applicationId,
     channel,
     platform,
     deviceId: deviceId.trim(),
@@ -151,7 +152,10 @@ function parseCapgoRequest(payload) {
   if (typeof nativeBuild === 'string' && /^\d+$/.test(nativeBuild.trim())) {
     nativeBuild = Number.parseInt(nativeBuild.trim(), 10);
   }
-  let shellApiVersion = payload.shellApiVersion ?? payload.shell_api_version ?? 1;
+  // The new native application identity starts at bridge epoch 2. Capgo's
+  // automatic check supplies app_id but does not emit our custom epoch field.
+  let shellApiVersion = payload.shellApiVersion ?? payload.shell_api_version
+    ?? (payload.app_id === 'com.yee94.yuri' ? 2 : 1);
   if (typeof shellApiVersion === 'string' && /^\d+$/.test(shellApiVersion.trim())) {
     shellApiVersion = Number.parseInt(shellApiVersion.trim(), 10);
   }
@@ -161,6 +165,7 @@ function parseCapgoRequest(payload) {
     ?? 'builtin';
 
   return parseMobileUpdateRequest({
+    applicationId: payload.app_id ?? payload.applicationId,
     channel: channel === 'production' ? 'stable' : channel,
     platform,
     deviceId,

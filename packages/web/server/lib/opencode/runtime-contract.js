@@ -20,7 +20,7 @@ import {
   isOpenCode1xVersion,
 } from './opencode2-pin.js';
 
-/** Lowest version with documented OpenChamber + OpenCode 2 contract tests. */
+/** Lowest version with documented Yuri + OpenCode 2 contract tests. */
 export const RUNTIME_CONTRACT_MIN_VERIFIED = MINIMUM_OPENCODE2_VERSION;
 
 /**
@@ -31,7 +31,7 @@ export const RUNTIME_CONTRACT_CAPABILITIES = Object.freeze({
   'core.protocol': {
     minVersion: RUNTIME_CONTRACT_MIN_VERIFIED,
     requiredForExecution: true,
-    description: 'Core HTTP/SSE session protocol used by OpenChamber',
+    description: 'Core HTTP/SSE session protocol used by Yuri',
   },
   'session.prompt': {
     minVersion: RUNTIME_CONTRACT_MIN_VERIFIED,
@@ -363,7 +363,7 @@ export function formatRuntimeContractBlockedError(contract) {
 
   if (reasons.includes('below-min-verified')) {
     const current = serve ? `OpenCode ${serve}` : 'This OpenCode version';
-    return `${current} is below the minimum supported version (${min}). Upgrade to ${min} or newer (recommended: ${pinned}). Open Settings → About to update in OpenChamber, or upgrade your global \`opencode\` CLI if you manage it manually.`;
+    return `${current} is below the minimum supported version (${min}). Upgrade to ${min} or newer (recommended: ${pinned}). Open Settings → About to update in Yuri, or upgrade your global \`opencode\` CLI if you manage it manually.`;
   }
   if (reasons.includes('1x-version')) {
     return `OpenCode 1.x is not supported. Install OpenCode 2 (${min} or newer; recommended: ${pinned}).`;

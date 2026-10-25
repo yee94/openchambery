@@ -23,37 +23,37 @@ const mobileStyles = readFileSync(
 
 describe('Mobile project group chrome', () => {
   test('uses shared mobile border tokens with a quieter dark treatment', () => {
-    expect(mobileStyles).toContain('--oc-mobile-border: color-mix(');
-    expect(mobileStyles).toContain('--oc-mobile-divider: var(--oc-mobile-border)');
+    expect(mobileStyles).toContain('--yuri-mobile-border: color-mix(');
+    expect(mobileStyles).toContain('--yuri-mobile-divider: var(--yuri-mobile-border)');
     expect(mobileStyles).toContain('var(--surface-foreground) 3%');
     expect(mobileStyles).toContain('var(--surface-foreground) 2%');
-    expect(mobileStyles).toContain('border: 1px solid var(--oc-mobile-border)');
-    expect(mobileStyles).toContain('box-shadow: inset 0 -1px 0 var(--oc-mobile-divider)');
+    expect(mobileStyles).toContain('border: 1px solid var(--yuri-mobile-border)');
+    expect(mobileStyles).toContain('box-shadow: inset 0 -1px 0 var(--yuri-mobile-divider)');
   });
 
   test('does not stack the label divider on a collapsed group border', () => {
-    expect(mobileStyles).toContain('.oc-mobile-labeled-surface-group-label:last-child');
-    expect(mobileStyles).toContain('.oc-mobile-labeled-surface-group-label:last-child {\n  box-shadow: none;');
+    expect(mobileStyles).toContain('.yuri-mobile-labeled-surface-group-label:last-child');
+    expect(mobileStyles).toContain('.yuri-mobile-labeled-surface-group-label:last-child {\n  box-shadow: none;');
   });
 
   test('uses momentary :active press fill instead of a persisted selected background', () => {
-    const transparentIndex = mobileStyles.indexOf('.oc-mobile-session-row-content,\n.oc-mobile-session-pagination-row {');
-    const pressIndex = mobileStyles.indexOf('.oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"])');
-    const paginationPressIndex = mobileStyles.indexOf('.oc-mobile-session-pagination-row:active');
+    const transparentIndex = mobileStyles.indexOf('.yuri-mobile-session-row-content,\n.yuri-mobile-session-pagination-row {');
+    const pressIndex = mobileStyles.indexOf('.yuri-mobile-session-row-content:has(.yuri-mobile-session-row-main:active):not([data-dragging="true"])');
+    const paginationPressIndex = mobileStyles.indexOf('.yuri-mobile-session-pagination-row:active');
 
     expect(transparentIndex).toBeGreaterThan(-1);
     expect(pressIndex).toBeGreaterThan(transparentIndex);
     expect(paginationPressIndex).toBeGreaterThan(pressIndex);
-    expect(mobileStyles).not.toContain('.oc-mobile-session-row-content[data-active="true"]');
-    expect(mobileStyles).not.toContain('.oc-mobile-session-row-content[data-pressed="true"]');
-    expect(mobileStyles.slice(pressIndex)).toContain('background: var(--oc-mobile-press-fill)');
-    expect(mobileStyles).toContain('--oc-mobile-press-fill: color-mix(');
+    expect(mobileStyles).not.toContain('.yuri-mobile-session-row-content[data-active="true"]');
+    expect(mobileStyles).not.toContain('.yuri-mobile-session-row-content[data-pressed="true"]');
+    expect(mobileStyles.slice(pressIndex)).toContain('background: var(--yuri-mobile-press-fill)');
+    expect(mobileStyles).toContain('--yuri-mobile-press-fill: color-mix(');
     expect(mobileStyles).toContain('var(--surface-foreground) 7%');
     expect(mobileStyles).toContain('var(--surface-foreground) 10%');
-    expect(mobileStyles).toContain('.oc-mobile-project-card:has([data-mobile-press-surface-trigger]:active)');
-    expect(mobileStyles).toContain('.oc-mobile-project-card[data-pressed="true"]');
+    expect(mobileStyles).toContain('.yuri-mobile-project-card:has([data-mobile-press-surface-trigger]:active)');
+    expect(mobileStyles).toContain('.yuri-mobile-project-card[data-pressed="true"]');
     expect(mobileStyles).not.toContain(
-      '.oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"]),\n.oc-mobile-session-pagination-row:active {\n  background: var(--interactive-hover);',
+      '.yuri-mobile-session-row-content:has(.yuri-mobile-session-row-main:active):not([data-dragging="true"]),\n.yuri-mobile-session-pagination-row:active {\n  background: var(--interactive-hover);',
     );
   });
 
@@ -67,44 +67,44 @@ describe('Mobile project group chrome', () => {
   });
 
   test('clips first, last, and single session rows to the group corners', () => {
-    const rowBlock = mobileStyles.match(/\.oc-mobile-session-row\s*\{[^}]*\}/s)?.[0] ?? '';
+    const rowBlock = mobileStyles.match(/\.yuri-mobile-session-row\s*\{[^}]*\}/s)?.[0] ?? '';
     const source = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionRow.tsx'),
       'utf8',
     );
 
-    expect(rowBlock).toContain('--oc-mobile-session-radius-start-start: 0');
-    expect(rowBlock).toContain('--oc-mobile-session-radius-start-end: 0');
-    expect(rowBlock).toContain('--oc-mobile-session-radius-end-end: 0');
-    expect(rowBlock).toContain('--oc-mobile-session-radius-end-start: 0');
+    expect(rowBlock).toContain('--yuri-mobile-session-radius-start-start: 0');
+    expect(rowBlock).toContain('--yuri-mobile-session-radius-start-end: 0');
+    expect(rowBlock).toContain('--yuri-mobile-session-radius-end-end: 0');
+    expect(rowBlock).toContain('--yuri-mobile-session-radius-end-start: 0');
     expect(mobileStyles).toMatch(
-      /\.oc-mobile-session-row\s*\{[^}]*overflow:\s*hidden;[^}]*border-start-start-radius:\s*var\(--oc-mobile-session-radius-start-start\);[^}]*border-end-start-radius:\s*var\(--oc-mobile-session-radius-end-start\);/s,
+      /\.yuri-mobile-session-row\s*\{[^}]*overflow:\s*hidden;[^}]*border-start-start-radius:\s*var\(--yuri-mobile-session-radius-start-start\);[^}]*border-end-start-radius:\s*var\(--yuri-mobile-session-radius-end-start\);/s,
     );
     expect(mobileStyles).toMatch(
-      /\.oc-mobile-labeled-surface-group\s*>\s*\.oc-mobile-session-row:first-child\s*\{[^}]*--oc-mobile-session-radius-start-start:\s*calc\([^)]*var\(--oc-mobile-inset-radius\)\s*-\s*1px[^)]*\);[^}]*--oc-mobile-session-radius-start-end:/s,
+      /\.yuri-mobile-labeled-surface-group\s*>\s*\.yuri-mobile-session-row:first-child\s*\{[^}]*--yuri-mobile-session-radius-start-start:\s*calc\([^)]*var\(--yuri-mobile-inset-radius\)\s*-\s*1px[^)]*\);[^}]*--yuri-mobile-session-radius-start-end:/s,
     );
     expect(mobileStyles).toMatch(
-      /\.oc-mobile-labeled-surface-group\s*>\s*\.oc-mobile-session-row:last-child,\s*\.oc-mobile-labeled-surface-group-content\s*>\s*\.oc-mobile-session-row:last-child\s*\{[^}]*--oc-mobile-session-radius-end-end:[^}]*--oc-mobile-session-radius-end-start:/s,
+      /\.yuri-mobile-labeled-surface-group\s*>\s*\.yuri-mobile-session-row:last-child,\s*\.yuri-mobile-labeled-surface-group-content\s*>\s*\.yuri-mobile-session-row:last-child\s*\{[^}]*--yuri-mobile-session-radius-end-end:[^}]*--yuri-mobile-session-radius-end-start:/s,
     );
-    expect(source).toContain("cn('oc-mobile-session-row relative isolate', className)");
-    expect(source).not.toContain("cn('oc-mobile-session-row relative isolate overflow-hidden', className)");
+    expect(source).toContain("cn('yuri-mobile-session-row relative isolate', className)");
+    expect(source).not.toContain("cn('yuri-mobile-session-row relative isolate overflow-hidden', className)");
   });
 
   test('clips labeled group headers when they are the first or only item', () => {
     expect(mobileStyles).toMatch(
-      /\.oc-mobile-labeled-surface-group-label:first-child\s*\{[^}]*overflow:\s*hidden;[^}]*border-start-start-radius:\s*calc\(var\(--oc-mobile-inset-radius\)\s*-\s*1px\);[^}]*border-start-end-radius:/s,
+      /\.yuri-mobile-labeled-surface-group-label:first-child\s*\{[^}]*overflow:\s*hidden;[^}]*border-start-start-radius:\s*calc\(var\(--yuri-mobile-inset-radius\)\s*-\s*1px\);[^}]*border-start-end-radius:/s,
     );
     expect(mobileStyles).toMatch(
-      /\.oc-mobile-labeled-surface-group-label:last-child\s*\{[^}]*border-end-end-radius:\s*calc\(var\(--oc-mobile-inset-radius\)\s*-\s*1px\);[^}]*border-end-start-radius:/s,
+      /\.yuri-mobile-labeled-surface-group-label:last-child\s*\{[^}]*border-end-end-radius:\s*calc\(var\(--yuri-mobile-inset-radius\)\s*-\s*1px\);[^}]*border-end-start-radius:/s,
     );
   });
 
   test('uses the same edge radii for press fills and the revealed action rail', () => {
     expect(mobileStyles).toMatch(
-      /\.oc-mobile-session-row-content,\s*\.oc-mobile-session-pagination-row\s*\{[^}]*border-start-start-radius:\s*var\(--oc-mobile-session-radius-start-start\);[^}]*border-end-start-radius:\s*var\(--oc-mobile-session-radius-end-start\);/s,
+      /\.yuri-mobile-session-row-content,\s*\.yuri-mobile-session-pagination-row\s*\{[^}]*border-start-start-radius:\s*var\(--yuri-mobile-session-radius-start-start\);[^}]*border-end-start-radius:\s*var\(--yuri-mobile-session-radius-end-start\);/s,
     );
     expect(mobileStyles).toMatch(
-      /\.oc-mobile-session-actions\s*\{[^}]*overflow:\s*hidden;[^}]*border-start-end-radius:\s*var\(--oc-mobile-session-radius-start-end\);[^}]*border-end-end-radius:\s*var\(--oc-mobile-session-radius-end-end\);/s,
+      /\.yuri-mobile-session-actions\s*\{[^}]*overflow:\s*hidden;[^}]*border-start-end-radius:\s*var\(--yuri-mobile-session-radius-start-end\);[^}]*border-end-end-radius:\s*var\(--yuri-mobile-session-radius-end-end\);/s,
     );
   });
 });
@@ -164,7 +164,7 @@ describe('MobileSessionRow status placement', () => {
     expect(source).not.toContain('data-active=');
     expect(source).not.toContain('data-pressed=');
     expect(source).toContain('data-dragging={dragging ? \'true\' : undefined}');
-    expect(source).toContain('oc-mobile-session-pagination-row');
+    expect(source).toContain('yuri-mobile-session-pagination-row');
   });
 
   test('renders the running indicator in the leading status slot', () => {
@@ -203,7 +203,7 @@ describe('MobileSessionRow status placement', () => {
     );
     expect(html).not.toContain('Expand subsessions');
     expect(html).not.toContain('Collapse subsessions');
-    expect(html).not.toContain('#oc-arrow-down-s');
+    expect(html).not.toContain('#yuri-arrow-down-s');
   });
 
   test('shows session change counts next to the title when provided', () => {
@@ -218,7 +218,7 @@ describe('MobileSessionRow status placement', () => {
         />
       </I18nProvider>,
     );
-    expect(html).toContain('oc-mobile-session-changes');
+    expect(html).toContain('yuri-mobile-session-changes');
     expect(html).toContain('+12 −3');
     expect(html.indexOf('Login')).toBeLessThan(html.indexOf('+12 −3'));
   });

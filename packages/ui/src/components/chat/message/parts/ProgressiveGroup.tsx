@@ -1375,7 +1375,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             isMobile ? 'gap-x-1' : 'gap-x-2',
                             // Locked-open live headers are not a disclosure control — drop chip hover/cursor.
                             !disclosureLockedOpen && TOOL_ROW_INTERACTIVE_CHROME_CLASS,
-                            disclosureLockedOpen && `oc-tool-row -mx-2 ${TOOL_ROW_CHIP_GEOMETRY_CLASS} cursor-default`,
+                            disclosureLockedOpen && `yuri-tool-row -mx-2 ${TOOL_ROW_CHIP_GEOMETRY_CLASS} cursor-default`,
                             // Mobile only: drop chip pr so the chevron has no dead trailing slot.
                             // Desktop keeps px-2 so hover wash padding matches left (symmetric rounded chip).
                             isMobile && 'pr-0',
@@ -1432,7 +1432,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             // Mobile matches tool-row body (meta); desktop keeps label emphasis.
                             isMobile ? 'typography-meta h-5' : 'typography-ui-label h-5 font-semibold',
                             isActive
-                                ? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'
+                                ? 'animate-text-shimmer text-[var(--status-info)] [--yuri-text-shimmer-base:var(--status-info)]'
                                 : 'text-foreground/85',
                         )}>
                             {activityStatusLabel}

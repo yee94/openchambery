@@ -14,7 +14,7 @@ const hasPushApnsEnv = (env) => {
 export const createCombinedPushMount = (env = process.env, deps = {}) => {
   if (!hasPushApnsEnv(env)) return null;
   const config = buildPushRelayConfig({}, env);
-  // Combined mode ignores OPENCHAMBER_PUSH_RELAY_HOST / OPENCHAMBER_PUSH_RELAY_PORT;
+  // Combined mode ignores YURI_PUSH_RELAY_HOST / YURI_PUSH_RELAY_PORT;
   // Push HTTP is mounted on the Layer 1 listener at /v1/push/* instead of opening its own port.
   const handler = createPushRelayHandler({
     databasePath: config.databasePath,

@@ -4,7 +4,7 @@
 
 调研日期：2026-10-17。状态：**P1（GUI Job）已落地，Job 为 core 的 run 级能力**；其余阶段仍为方案，未实施。
 
-面向客服 Agent 与 OpenChamberY 的架构、后端开发者，回答三个问题：过程回复应由谁生成；业务能力是否适合包装成 tool；怎样支持长任务执行期间继续接收用户指令。
+面向客服 Agent 与 Yuri 的架构、后端开发者，回答三个问题：过程回复应由谁生成；业务能力是否适合包装成 tool；怎样支持长任务执行期间继续接收用户指令。
 
 本文将“过程预计”理解为接话、处理预期与进度说明。当前代码没有完成时间预测器；若需求包含数值 ETA，需要单独建设耗时估计，见 §9。
 
@@ -20,7 +20,7 @@
 6. 后台能力抽象为 core 的 **Job**，归属父 Run；Subagent background 与 GUI 都是 Job。分布式部署下进程内不持有跨请求的 Job，跨轮次靠持久化的 jobId 接续，见 §8.3.1。
 7. 优先验证已有 GUI 作业的后台跟踪。它已有远端 `runId`，但当前中断只停轮询、不取消远端。是否能补充条件、真正取消，仍取决于远端 API；本次代码不能证明这些能力存在。
 
-OpenChamberY 提供最接近的本地参考：Contact 接单、`assign_session` 派发、worker 独立运行、完成后重新唤醒 Contact。Muse/Grok Bot 的公开行为也支持持续任务与多轮对话，但没有公开证据证明它们使用了与我们相同的进度 Subagent。
+Yuri 提供最接近的本地参考：Contact 接单、`assign_session` 派发、worker 独立运行、完成后重新唤醒 Contact。Muse/Grok Bot 的公开行为也支持持续任务与多轮对话，但没有公开证据证明它们使用了与我们相同的进度 Subagent。
 
 ### 推荐架构
 
@@ -61,7 +61,7 @@ flowchart LR
 | 对象 | 证据 | 能得出的结论 |
 | --- | --- | --- |
 | yi-agent 客服 | 当前本地工作树源码、测试与规范 | 已实现的进度生成、抢占、GUI 跟踪及 core background 语义 |
-| OpenChamberY | 当前本地工作树 Contact 模块源码及文档 | 助理/worker 分工、上下文窗口、排队和通知策略 |
+| Yuri | 当前本地工作树 Contact 模块源码及文档 | 助理/worker 分工、上下文窗口、排队和通知策略 |
 | Meta Muse | 官方设计文章与 Meta 产品入口 | 多任务、可插话、后台完成后选择性通知等产品契约；内部调度结构未知 |
 | Grok Bot | 官方文档，经 Context7 与原页面交叉核验 | 用户消息优先、异步 Bot handoff、长期记忆和云端执行；内部源码未知 |
 | Guaca | 社区源码，固定 commit `15b143c5097b3a3d0f11eb6e163f5396addaccd6` | 可核验独立 coding job、inbox、steer 与恢复实现 |
@@ -70,7 +70,7 @@ flowchart LR
 
 本地代码引用以本次读取版本的行号为准，没有获取本地 Git 提交号；社区源码使用 commit 固定链接。未登录体验 Muse/Grok Bot，也未测量线上延迟、成本或回复质量。搜索到的同名 `wlsdks/muse-agent` 不是 Meta Muse，未混入产品对比。
 
-下文 `Y:` 表示 yi-agent 仓库相对路径，`O:` 表示 OpenChamberY 仓库相对路径。主要证据集中在 §13。
+下文 `Y:` 表示 yi-agent 仓库相对路径，`O:` 表示 Yuri 仓库相对路径。主要证据集中在 §13。
 
 ## 3. 我们当前的方案：任务级文案侧车
 
@@ -139,7 +139,7 @@ sequenceDiagram
 
 GUI 路径的差别更具体：`gui/tool.ts:110-135` 已保存远端 `runId`；`:165-213` 在中断时停止轮询，明确返回“远端任务不会被取消，也不会自动重跑”。因此可能出现**远端仍工作、当前会话已停止跟踪**的状态。不能把本地 `stopped` 展示成“业务已取消”。
 
-## 4. OpenChamberY 助理：可对话的协调者
+## 4. Yuri 助理：可对话的协调者
 
 **Contact 与我们的进度侧车不在同一职责层。Contact 更接近目标架构中的客服对话 Agent。**
 
@@ -151,10 +151,10 @@ GUI 路径的差别更具体：`gui/tool.ts:110-135` 已保存远端 `runId`；`
 
 来源：`O:packages/web/server/lib/assistants/DOCUMENTATION.md:58,100-119`，`service.js:3007-3137`。
 
-| 维度 | OpenChamberY | 我们当前 |
+| 维度 | Yuri | 我们当前 |
 | --- | --- | --- |
 | 对用户说话的主体 | Contact 本人，既会接单也会汇总 | 主 Agent 正式回复 + 专用进度生成器 |
-| 进度产生 | Contact 模型显式输出 `openchamber-message`，解析完成立即发布 | 事件触发 → Jev → 子 Agent |
+| 进度产生 | Contact 模型显式输出 `yuri-message`，解析完成立即发布 | 事件触发 → Jev → 子 Agent |
 | 长任务 | `assign_session` 交给独立 worker，派工轮次可以结束 | 业务通常仍受当前 delivery/runtime 约束 |
 | 新消息 | Contact turn 串行排队；可以再调用 worker steer/stop | 最新 intent 抢占旧 delivery |
 | 上下文 | Contact 最近 32 turns / 48000 字符窗口；越窗 memory/read_session 工具 | 小范围对话投影 + 进度专属历史 |
@@ -174,7 +174,7 @@ Contact 的 lane 是串行的；它若自己调用长时间 `bash`，下一条�
 
 `service.js:3045-3048` 在新用户消息入场时取消自动 continuation，并对该 Contact 的 watches 设置 `resume_allowed=0`，只有显式 assign/watch 才重启对应 watch 的通知资格。该策略可以避免旧总结插话，但用于客服时可能造成：“用户问了另一个问题，之前查订单的结果不再自动告知”。推荐保留结果待通知记录，按 task 重新判断相关性，不全局永久关闭。
 
-OpenChamberY 的完成 continuation 是只读，这适合“告知结果”。若希望完成后继续自动推进下一个业务步骤，应由任务执行器负责，而不是把通知轮次偷偷升级成可写业务轮次。
+Yuri 的完成 continuation 是只读，这适合“告知结果”。若希望完成后继续自动推进下一个业务步骤，应由任务执行器负责，而不是把通知轮次偷偷升级成可写业务轮次。
 
 Contact 活动、lane、AbortController 为进程内状态；已有 worker watch 有重启 reconcile。不能据此宣称所有 Contact 在途操作都有完整持久化恢复。SQLite 与进程内 lane 也不能直接替代客服多实例 TTLData/CAS。
 
@@ -501,7 +501,7 @@ pipeline/wire 的必要改动限定为：接纳/恢复 task 事件，建立新�
 | `test/yi/` | 公开行为、跨实例、恢复与竞态验证 |
 | BFF 渠道文档、全局架构图/索引 | 同步 owner、生命周期和消息规则 |
 
-OpenChamberY 目前仅作为参考，不需要为落地客服方案同时改其生产代码。若后续改善 Contact 的全局 `resume_allowed=0` 策略，应另立需求，不能顺带改掉已有约束。
+Yuri 目前仅作为参考，不需要为落地客服方案同时改其生产代码。若后续改善 Contact 的全局 `resume_allowed=0` 策略，应另立需求，不能顺带改掉已有约束。
 
 ### 11.4 验证场景与指标
 
@@ -579,7 +579,7 @@ OpenChamberY 目前仅作为参考，不需要为落地客服方案同时改其�
 | Y9 | `app/wxaaiagentnodelogicsvr/src/service/yi/wire/wechat/index.ts:122-143` | 主 session 过滤、hint 与 final 槽 |
 | Y10 | `docs/layering-and-boundaries.md:50-94,130-154` | 冻结区、插件优先、状态归属与多实例约束 |
 
-### 本地 OpenChamberY
+### 本地 Yuri
 
 | 编号 | 路径与行号 | 支撑结论 |
 | --- | --- | --- |

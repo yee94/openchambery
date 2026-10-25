@@ -185,12 +185,12 @@ describe('createTunnelHost WS path allowlist', () => {
       11,
       encodeJsonPayload({
         path: '/api/preview/proxy/abc123/',
-        query: 'oc_preview_token=t&oc_url_token=u',
+        query: 'yuri_preview_token=t&yuri_url_token=u',
       }),
     ));
     expect(FakeWebSocket.instances.length).toBe(1);
     expect(FakeWebSocket.instances[0].url).toBe(
-      'ws://127.0.0.1:9/api/preview/proxy/abc123/?oc_preview_token=t&oc_url_token=u',
+      'ws://127.0.0.1:9/api/preview/proxy/abc123/?yuri_preview_token=t&yuri_url_token=u',
     );
 
     host.close();

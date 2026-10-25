@@ -17,7 +17,7 @@ const loadWs = () => {
   try {
     return requireHere('ws');
   } catch {
-    const webPkg = requireHere.resolve('@openchambery/web/package.json');
+    const webPkg = requireHere.resolve('@yuri/web/package.json');
     return createRequire(webPkg)('ws');
   }
 };
@@ -35,7 +35,7 @@ test('method allowlist is GET/HEAD only', () => {
 
 test('path allowlist is /api/preview/proxy/ prefix only', () => {
   assert.equal(isPreviewGatewayPathAllowed('/api/preview/proxy/abc123/'), true);
-  assert.equal(isPreviewGatewayPathAllowed('/api/preview/proxy/abc123/index.html?oc_preview_token=x'), true);
+  assert.equal(isPreviewGatewayPathAllowed('/api/preview/proxy/abc123/index.html?yuri_preview_token=x'), true);
   assert.equal(isPreviewGatewayPathAllowed('/api/session'), false);
   assert.equal(isPreviewGatewayPathAllowed('/api/preview/targets'), false);
   assert.equal(isPreviewGatewayPathAllowed('/api/preview/proxy'), false);
@@ -180,7 +180,7 @@ test('start binds 127.0.0.1 ephemeral port and streams body with backpressure', 
   assert.equal(new URL(origin).hostname, '127.0.0.1');
   assert.notEqual(port, 0);
 
-  const responsePromise = fetch(`${origin}/api/preview/proxy/abc123/index.html?oc_preview_token=t`);
+  const responsePromise = fetch(`${origin}/api/preview/proxy/abc123/index.html?yuri_preview_token=t`);
   // Wait until owner was notified.
   for (let i = 0; i < 50 && requests.length === 0; i += 1) {
     await new Promise((r) => setTimeout(r, 5));
@@ -188,7 +188,7 @@ test('start binds 127.0.0.1 ephemeral port and streams body with backpressure', 
   assert.equal(requests.length, 1);
   assert.equal(requests[0]?.requestId, 'req-stream-1');
   assert.equal(requests[0]?.method, 'GET');
-  assert.equal(requests[0]?.path, '/api/preview/proxy/abc123/index.html?oc_preview_token=t');
+  assert.equal(requests[0]?.path, '/api/preview/proxy/abc123/index.html?yuri_preview_token=t');
 
   gateway.begin('req-stream-1', {
     status: 200,
@@ -307,7 +307,7 @@ test('preview proxy WS upgrade notifies owner and pipes frames', async () => {
   const { WebSocket } = loadWs();
 
   const client = new WebSocket(
-    `${origin.replace('http', 'ws')}/api/preview/proxy/abc123/?oc_preview_token=t`,
+    `${origin.replace('http', 'ws')}/api/preview/proxy/abc123/?yuri_preview_token=t`,
     ['vite-hmr'],
   );
 
@@ -328,7 +328,7 @@ test('preview proxy WS upgrade notifies owner and pipes frames', async () => {
   }
   assert.equal(wsOpens.length, 1);
   assert.equal(wsOpens[0]?.requestId, 'ws-req-1');
-  assert.equal(wsOpens[0]?.path, '/api/preview/proxy/abc123/?oc_preview_token=t');
+  assert.equal(wsOpens[0]?.path, '/api/preview/proxy/abc123/?yuri_preview_token=t');
   assert.deepEqual(wsOpens[0]?.protocols, ['vite-hmr']);
 
   gateway.wsOpened('ws-req-1');

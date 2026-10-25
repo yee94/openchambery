@@ -26,7 +26,7 @@ const getSessionUpdatedAt = (session: Session): number => {
 export const getLiveSessionStructuralSignature = (session: Session): string => {
   const directory = (session as Session & { directory?: string | null }).directory ?? ''
   const parentID = (session as Session & { parentID?: string | null }).parentID ?? ''
-  const titleRefresh = (session.metadata?.openchamber as {
+  const titleRefresh = (session.metadata?.yuri as {
     titleRefresh?: { isGenerating?: unknown; lastError?: unknown; failedAt?: unknown }
   } | undefined)?.titleRefresh
   return [

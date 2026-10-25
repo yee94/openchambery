@@ -35,13 +35,13 @@ describe('markstream-react trial path', () => {
     const knobs = readFileSync(join(here, 'markstream/markstreamPerformance.ts'), 'utf8');
     expect(source).toContain('MARKSTREAM_CHAT_STREAM_PERFORMANCE');
     expect(source).toContain('data-markdown-ready="true"');
-    expect(source).toContain('data-oc-markstream-virtual="off"');
+    expect(source).toContain('data-yuri-markstream-virtual="off"');
     expect(knobs).toContain('maxLiveNodes: 0');
     expect(knobs).toContain('batchRendering: false');
     expect(knobs).toContain('smoothStreaming: false');
   });
 
-  test('Markstream host CSS contains images to the OpenChamber max-width contract', () => {
+  test('Markstream host CSS contains images to the Yuri max-width contract', () => {
     const theme = readFileSync(join(here, 'markstream/markstreamTheme.css'), 'utf8');
     const decorate = readFileSync(join(here, 'markdown/decorate.ts'), 'utf8');
     expect(decorate).toContain("'max-w-full'");
@@ -101,7 +101,7 @@ describe('markstream-react trial path', () => {
     expect(codeBlock).toContain("from '../MarkdownRendererImpl'");
     expect(codeBlock).toContain('MarkdownRenderer');
     expect(codeBlock).toContain('fenceMarkdownFromCodeBlockNode');
-    expect(codeBlock).toContain('data-oc-markstream-code="markdown-impl"');
+    expect(codeBlock).toContain('data-yuri-markstream-code="markdown-impl"');
     expect(codeBlock).not.toContain("from '../MarkdownRenderer'");
     expect(fence).toContain('export const fenceMarkdownFromCodeBlockNode');
     expect(fence).toContain('isUsableCodeBlockFenceRaw');
@@ -111,7 +111,7 @@ describe('markstream-react trial path', () => {
     expect(fence).not.toMatch(/\braw\.trim\s*\(/);
   });
 
-  test('Markstream lists and code match the previous OpenChamber markdown rhythm', () => {
+  test('Markstream lists and code match the previous Yuri markdown rhythm', () => {
     const theme = readFileSync(join(here, 'markstream/markstreamTheme.css'), 'utf8');
     expect(theme).toContain('padding-left: 18px');
     expect(theme).toContain('padding-left: 19px');
@@ -119,7 +119,7 @@ describe('markstream-react trial path', () => {
     expect(theme).toContain('.list-item > .paragraph-node');
     expect(theme).toContain('font-size: var(--text-code)');
     expect(theme).toContain('.code-block-content');
-    expect(theme).toContain('.oc-markstream-host.markdown-tool');
+    expect(theme).toContain('.yuri-markstream-host.markdown-tool');
   });
 
   test('Markstream last node-slot drops trailing paragraph margin so the process fold stays tight', () => {
@@ -128,7 +128,7 @@ describe('markstream-react trial path', () => {
     const fold = readFileSync(join(here, 'message/parts/ContextToolGroup.tsx'), 'utf8');
     expect(theme).toContain('.node-slot:last-of-type .paragraph-node');
     expect(theme).toContain('margin-bottom: 0');
-    expect(indexCss).toContain('.oc-markstream-host .markstream-react > .node-slot:last-of-type p');
+    expect(indexCss).toContain('.yuri-markstream-host .markstream-react > .node-slot:last-of-type p');
     expect(fold).toContain('getToolRowBlockClass(isMobile)');
     expect(fold).not.toMatch(/className=\{getToolRowBlockClass[\s\S]*\bmt-/);
   });

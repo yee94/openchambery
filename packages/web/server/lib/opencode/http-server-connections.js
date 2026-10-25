@@ -4,7 +4,7 @@
  * (those keep `server.close()` from firing until SHUTDOWN_TIMEOUT).
  */
 
-export const HTTP_SERVER_CONNECTIONS = Symbol.for('openchamber.httpServerConnections');
+export const HTTP_SERVER_CONNECTIONS = Symbol.for('yuri.httpServerConnections');
 
 /**
  * @param {import('node:http').Server} server

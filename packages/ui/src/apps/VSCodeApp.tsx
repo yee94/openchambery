@@ -25,7 +25,7 @@ type VSCodePanelType = 'chat' | 'agentManager';
 
 declare global {
   interface Window {
-    __OPENCHAMBER_PANEL_TYPE__?: VSCodePanelType;
+    __YURI_PANEL_TYPE__?: VSCodePanelType;
   }
 }
 
@@ -42,7 +42,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
   const wideChatLayoutEnabled = useUIStore((state) => state.wideChatLayoutEnabled);
   const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
   const panelType = typeof window !== 'undefined'
-    ? window.__OPENCHAMBER_PANEL_TYPE__
+    ? window.__YURI_PANEL_TYPE__
     : 'chat';
 
   React.useEffect(() => {

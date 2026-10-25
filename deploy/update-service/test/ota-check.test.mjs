@@ -13,12 +13,72 @@ afterEach(() => {
 
 const CHECKSUM = 'b'.repeat(64);
 
+test('HTTP checks isolate desktop identity and epoch from mobile manifests and clients', async () => {
+  const desktop = {
+    applicationId: 'dev.yuri.desktop', minShellApiVersion: 2,
+    bundleId: '1234567890abcdef', url: '/ota/bundles/1234567890abcdef.zip',
+    size: 100, checksum: 'c'.repeat(64), shellFingerprint: 'd'.repeat(64),
+    minShellReleaseVersion: '1.18.2-beta.20',
+  };
+  const manifest = channelManifest();
+  manifest.activeBundle.desktop = desktop;
+  stubChannel({ manifest });
+  const request = { ...validBody, platform: 'desktop', applicationId: 'dev.yuri.desktop',
+    nativeVersion: '1.18.2-beta.20', currentBundleId: '1.18.2-beta.21' };
+  const check = async (body) => {
+    const response = await handleMobileUpdateCheck(mobileRequest(body));
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const approved = await check(request);
+  assert.equal(approved.primaryAction, 'apply_ota');
+  assert.equal(approved.ota.bundle.applicationId, 'dev.yuri.desktop');
+  assert.equal(approved.ota.bundle.minShellApiVersion, 2);
+  assert.equal(approved.ota.bundle.bundleId, desktop.bundleId);
+  assert.equal(approved.ota.bundle.shellFingerprint, desktop.shellFingerprint);
+  for (const change of [{ applicationId: undefined }, { applicationId: 'com.yee94.yuri' },
+    { applicationId: 'dev.yuri.desktop.preview' }, { shellApiVersion: 1 }, { platform: 'ios' }, { platform: 'android' }]) {
+    const rejected = await check({ ...request, ...change });
+    assert.equal(rejected.primaryAction, 'install_native_required');
+    assert.equal(rejected.ota.bundle, undefined);
+  }
+  // Historical desktop metadata remains readable, but never inherits mobile identity/epoch.
+  for (const change of [{ applicationId: undefined }, { minShellApiVersion: undefined },
+    { applicationId: 'com.yee94.yuri' }, { minShellApiVersion: 1 }]) {
+    manifest.activeBundle.desktop = { ...desktop, ...change };
+    const rejected = await check(request);
+    assert.equal(rejected.primaryAction, 'install_native_required');
+    assert.equal(rejected.ota.bundle, undefined);
+    const mobile = await check(validBody);
+    assert.equal(mobile.primaryAction, 'apply_ota');
+    assert.equal(mobile.ota.bundle.applicationId, 'com.yee94.yuri');
+    assert.equal(mobile.ota.bundle.bundleId, manifest.activeBundle.bundleId);
+  }
+  manifest.activeBundle.desktop = { ...desktop, minShellApiVersion: 3 };
+  assert.equal((await check(request)).primaryAction, 'install_native_required');
+  assert.equal((await check({ ...request, shellApiVersion: 3 })).primaryAction, 'apply_ota');
+});
+
+test('legacy native checks never receive Yuri OTA URLs', async () => {
+  stubChannel({ manifest: channelManifest() });
+  const response = await handleMobileUpdateCheck(mobileRequest({ ...validBody, applicationId: undefined }));
+  const body = await response.json();
+  assert.equal(body.primaryAction, 'install_native_required');
+  assert.equal(body.ota.bundle, undefined);
+  const capgo = await handleCapgoOtaCheck(mobileRequest({
+    defaultChannel: 'beta', platform: 'ios', device_id: 'legacy',
+    version_build: '1.18.2-beta.22', version_code: 350, version_name: 'builtin',
+  }, '/v1/ota/check'));
+  assert.deepEqual(await capgo.json(), { major: true, breaking: true, message: 'native update required' });
+});
+
 function channelManifest(overrides = {}) {
   return {
     schemaVersion: 1,
     channel: 'beta',
     generation: 1,
     activeBundle: {
+      applicationId: 'com.yee94.yuri',
       bundleId: '34ab092a8e7f6d21',
       releaseVersion: '1.18.2-beta.23',
       url: '/ota/bundles/34ab092a8e7f6d21.zip',
@@ -26,7 +86,7 @@ function channelManifest(overrides = {}) {
       checksum: CHECKSUM,
       rolloutPercent: 100,
       rolloutSalt: 'beta-1',
-      minShellApiVersion: 1,
+      minShellApiVersion: 2,
       platforms: {
         ios: { minNativeBuild: 350 },
         android: { minNativeBuild: 350 },
@@ -90,12 +150,13 @@ function mobileRequest(payload, path = '/v1/mobile/update/check') {
 }
 
 const validBody = {
+  applicationId: 'com.yee94.yuri',
   channel: 'beta',
   platform: 'ios',
   deviceId: 'device-1',
   nativeVersion: '1.18.2-beta.22',
   nativeBuild: 350,
-  shellApiVersion: 1,
+  shellApiVersion: 2,
   currentBundleId: 'builtin',
 };
 
@@ -117,7 +178,7 @@ for (const channel of ['stable', 'beta']) {
           assert.equal(decision.primaryAction, 'apply_ota');
           assert.equal(decision.ota.bundle.releaseVersion, major === 1 ? one.activeBundle.releaseVersion : two.activeBundle.releaseVersion);
           const capgo = await handleCapgoOtaCheck(mobileRequest({
-            platform: 'ios', defaultChannel: channel, device_id: 'legacy',
+            platform: 'ios', defaultChannel: channel, app_id: 'com.yee94.yuri', device_id: 'legacy',
             version_build: body.nativeVersion, version_code: '350', version_name: currentBundleId,
           }));
           assert.equal((await capgo.json()).version, decision.ota.bundle.releaseVersion);
@@ -324,13 +385,13 @@ test('capgo endpoint returns apply_ota shape', async () => {
   stubChannel({ manifest: channelManifest() });
   const response = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
+    app_id: 'com.yee94.yuri',
     device_id: 'device-1',
-    app_id: 'app.openchamber',
     version_build: '1.18.2-beta.22',
     version_code: 350,
     version_name: 'builtin',
     defaultChannel: 'beta',
-    shellApiVersion: 1,
+    shellApiVersion: 2,
   }, '/v1/ota/check'));
   const body = await response.json();
 
@@ -352,12 +413,13 @@ test('capgo endpoint: prefixed checksum normalizes to plain hex, version_name id
   // version_name equals the active releaseVersion → device is already current.
   const current = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
+    app_id: 'com.yee94.yuri',
     device_id: 'device-1',
     version_build: '1.18.2-beta.22',
     version_code: 350,
     version_name: '1.18.2-beta.23',
     defaultChannel: 'beta',
-    shellApiVersion: 1,
+    shellApiVersion: 2,
   }, '/v1/ota/check'));
   const currentBody = await current.json();
   assert.equal(current.status, 200);
@@ -366,12 +428,13 @@ test('capgo endpoint: prefixed checksum normalizes to plain hex, version_name id
   // builtin → update offered with the checksum normalized to plain hex.
   const update = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
+    app_id: 'com.yee94.yuri',
     device_id: 'device-1',
     version_build: '1.18.2-beta.22',
     version_code: 350,
     version_name: 'builtin',
     defaultChannel: 'beta',
-    shellApiVersion: 1,
+    shellApiVersion: 2,
   }, '/v1/ota/check'));
   const updateBody = await update.json();
   assert.equal(updateBody.checksum, 'c'.repeat(64));
@@ -390,12 +453,13 @@ test('capgo endpoint: encrypted bundle emits both session_key and sessionKey wit
   });
   const response = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
+    app_id: 'com.yee94.yuri',
     device_id: 'device-1',
     version_build: '1.18.2-beta.22',
     version_code: 350,
     version_name: 'builtin',
     defaultChannel: 'beta',
-    shellApiVersion: 1,
+    shellApiVersion: 2,
   }, '/v1/ota/check'));
   const body = await response.json();
 
@@ -418,12 +482,13 @@ test('capgo endpoint returns major:true when native update is required', async (
   });
   const response = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
+    app_id: 'com.yee94.yuri',
     device_id: 'device-1',
     version_build: '1.0.0',
     version_code: 100,
     version_name: 'builtin',
     defaultChannel: 'beta',
-    shellApiVersion: 1,
+    shellApiVersion: 2,
   }, '/v1/ota/check'));
   const body = await response.json();
 
@@ -446,12 +511,13 @@ test('capgo endpoint returns no-update shape for none / outside_rollout', async 
   });
   const response = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
+    app_id: 'com.yee94.yuri',
     device_id: 'device-1',
     version_build: '1.18.2-beta.22',
     version_code: 350,
     version_name: 'builtin',
     defaultChannel: 'beta',
-    shellApiVersion: 1,
+    shellApiVersion: 2,
   }, '/v1/ota/check'));
   const body = await response.json();
 
@@ -467,6 +533,7 @@ test('capgo endpoint returns 503 on manifest fetch failure and does not masquera
   stubChannel({ manifest: channelManifest(), status: 500 });
   const response = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
+    app_id: 'com.yee94.yuri',
     device_id: 'device-1',
     version_build: '1.18.2-beta.22',
     version_code: 350,
@@ -499,14 +566,14 @@ test('activeBundle null seed yields none/current without 503', async () => {
 test('manifestBaseUrl override loads manifests from the Vercel origin while bundle URLs stay request-relative', async () => {
   const requests = stubChannel({ manifest: channelManifest() });
   const response = await handleMobileUpdateCheck(mobileRequest(validBody), {
-    manifestBaseUrl: 'https://openchamber-update.vercel.app',
+    manifestBaseUrl: 'https://origin.example.com',
   });
   const body = await response.json();
 
   assert.equal(response.status, 200);
   assert.equal(body.primaryAction, 'apply_ota');
   // Manifest fetched from the override origin...
-  assert.ok(requests[0].includes('openchamber-update.vercel.app'));
+  assert.ok(requests[0].includes('origin.example.com'));
   // ...but bundle URLs resolve against the client-facing request origin.
   assert.equal(body.ota.bundle.url, 'https://updates.example.com/ota/bundles/34ab092a8e7f6d21.zip');
 });
@@ -523,7 +590,7 @@ test('manifestBaseUrl override loads CHANGELOG from the same origin as manifests
     ].join('\n'),
   });
   const response = await handleMobileUpdateCheck(mobileRequest(validBody), {
-    manifestBaseUrl: 'https://openchamber-update.vercel.app',
+    manifestBaseUrl: 'https://origin.example.com',
   });
   const body = await response.json();
 
@@ -533,7 +600,7 @@ test('manifestBaseUrl override loads CHANGELOG from the same origin as manifests
     body.releaseNotes,
     '## [1.18.2-beta.23] - 2026-08-20\n\n- OTA bundle fix',
   );
-  assert.ok(requests.includes('https://openchamber-update.vercel.app/CHANGELOG.md'));
+  assert.ok(requests.includes('https://origin.example.com/CHANGELOG.md'));
   assert.equal(
     requests.some((href) => href.includes('updates.example.com/CHANGELOG.md')),
     false,
@@ -561,12 +628,13 @@ test('mobile update check: beta→stable channel rollback sets isChannelRollback
     }),
   });
   const response = await handleMobileUpdateCheck(mobileRequest({
+    applicationId: 'com.yee94.yuri',
     channel: 'stable',
     platform: 'ios',
     deviceId: 'device-1',
     nativeVersion: '1.18.4-beta.7',
     nativeBuild: 400,
-    shellApiVersion: 1,
+    shellApiVersion: 2,
     currentBundleId: '1.18.4-beta.7',
   }));
   const body = await response.json();
@@ -590,12 +658,13 @@ test('mobile update check: stable upgrade omits isChannelRollback', async () => 
     }),
   });
   const response = await handleMobileUpdateCheck(mobileRequest({
+    applicationId: 'com.yee94.yuri',
     channel: 'stable',
     platform: 'ios',
     deviceId: 'device-1',
     nativeVersion: '1.18.3',
     nativeBuild: 350,
-    shellApiVersion: 1,
+    shellApiVersion: 2,
     currentBundleId: '1.18.3',
   }));
   const body = await response.json();
@@ -619,12 +688,13 @@ test('capgo endpoint maps is_channel_rollback for stable channel rollback', asyn
   });
   const response = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
+    app_id: 'com.yee94.yuri',
     device_id: 'device-1',
     version_build: '1.18.4-beta.7',
     version_code: 400,
     version_name: '1.18.4-beta.7',
     defaultChannel: 'stable',
-    shellApiVersion: 1,
+    shellApiVersion: 2,
   }, '/v1/ota/check'));
   const body = await response.json();
 
@@ -639,12 +709,13 @@ test('capgo endpoint omits is_channel_rollback on normal apply_ota', async () =>
   stubChannel({ manifest: channelManifest() });
   const response = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
+    app_id: 'com.yee94.yuri',
     device_id: 'device-1',
     version_build: '1.18.2-beta.22',
     version_code: 350,
     version_name: 'builtin',
     defaultChannel: 'beta',
-    shellApiVersion: 1,
+    shellApiVersion: 2,
   }, '/v1/ota/check'));
   const body = await response.json();
 

@@ -14,7 +14,7 @@ import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
 import { useUIStore, type MainTab } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeYuriEvents } from '@/lib/yuriEvents';
 import { cn, formatDirectoryName } from '@/lib/utils';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import type { ProjectEntry } from '@/lib/api/types';
@@ -479,7 +479,7 @@ export function ScheduledTasksWorkspace({
 
   React.useEffect(() => {
     let timeoutID: ReturnType<typeof setTimeout> | null = null;
-    const unsubscribe = subscribeOpenchamberEvents((event) => {
+    const unsubscribe = subscribeYuriEvents((event) => {
       if (event.type !== 'scheduled-task-ran' && event.type !== 'event-stream-ready') {
         return;
       }
@@ -692,10 +692,10 @@ export function ScheduledTasksWorkspace({
     if (presentation !== 'mobile-panel' || !open) return;
     mobileCloseRequest = requestClose;
     const handleCloseRequest = () => requestClose();
-    window.addEventListener('oc:scheduled-tasks-close-request', handleCloseRequest);
+    window.addEventListener('yuri:scheduled-tasks-close-request', handleCloseRequest);
     return () => {
       if (mobileCloseRequest === requestClose) mobileCloseRequest = null;
-      window.removeEventListener('oc:scheduled-tasks-close-request', handleCloseRequest);
+      window.removeEventListener('yuri:scheduled-tasks-close-request', handleCloseRequest);
     };
     // useEvent keeps requestClose stable while open controls subscription lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -834,7 +834,7 @@ export function ScheduledTasksWorkspace({
       // mobile-tab participates in MobileTabsRoot tabpanel scroll (like Projects).
       // Keep shell background transparent so the floating shell tone shows through.
       isMobileTab
-        ? 'oc-mobile-scheduled-workspace w-full flex-col overflow-visible bg-transparent'
+        ? 'yuri-mobile-scheduled-workspace w-full flex-col overflow-visible bg-transparent'
         : 'h-full overflow-hidden bg-background',
       isMobilePanel && 'flex-col',
     )} data-presentation={presentation}>
@@ -847,7 +847,7 @@ export function ScheduledTasksWorkspace({
           isMobileTab
             // In-flow underlay: tabpanel owns safe-area/dock padding and scrollbar-none.
             // Editor back animation still targets this node via underlayRef.
-            ? 'flex w-full min-w-0 flex-col gap-[var(--oc-mobile-page-gap)]'
+            ? 'flex w-full min-w-0 flex-col gap-[var(--yuri-mobile-page-gap)]'
             : 'contents',
         )}
       >
@@ -923,10 +923,10 @@ export function ScheduledTasksWorkspace({
               // Desktop: quiet muted track. Mobile: shared segmented track metrics
               // (pad/gap/item height) with the filter row below.
               // Tasks: denser tab→filter. History mobile-tab: no mb here so
-              // content owns a single --oc-mobile-page-gap (same as Tasks filter→list).
+              // content owns a single --yuri-mobile-page-gap (same as Tasks filter→list).
               (workspaceView === 'tasks' || historyTaskFilter || !isMobileTab) && 'mb-3',
               isMobileTab
-                ? 'oc-mobile-floating-surface oc-mobile-segmented-track'
+                ? 'yuri-mobile-floating-surface yuri-mobile-segmented-track'
                 : 'grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-muted)] p-1',
             )}
             role="tablist"
@@ -942,7 +942,7 @@ export function ScheduledTasksWorkspace({
                 aria-selected={workspaceView === view}
                 className={cn(
                   isMobileTab
-                    ? 'oc-mobile-segmented-item'
+                    ? 'yuri-mobile-segmented-item'
                     : 'relative min-h-9 rounded-lg text-muted-foreground transition-[background-color,color,box-shadow] motion-reduce:transition-none',
                   !isMobileTab && isMobilePanel && 'min-h-11',
                   !isMobileTab && (workspaceView === view
@@ -955,8 +955,8 @@ export function ScheduledTasksWorkspace({
                   <motion.span
                     layoutId="scheduled-workspace-view-pill"
                     className={cn(
-                      // Mobile radius comes from .oc-mobile-segmented-item CSS vars.
-                      'oc-segmented-selected-pill absolute inset-0',
+                      // Mobile radius comes from .yuri-mobile-segmented-item CSS vars.
+                      'yuri-segmented-selected-pill absolute inset-0',
                       !isMobileTab && 'rounded-lg',
                     )}
                     transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
@@ -974,7 +974,7 @@ export function ScheduledTasksWorkspace({
             <div
               className={cn(
                 'flex min-w-0 items-center',
-                isMobileTab ? 'mt-[var(--oc-mobile-page-gap)]' : 'mt-3',
+                isMobileTab ? 'mt-[var(--yuri-mobile-page-gap)]' : 'mt-3',
               )}
               role="status"
               aria-label={t('sessions.scheduledTasks.history.filter.aria', { name: historyFilterLabel })}
@@ -999,13 +999,13 @@ export function ScheduledTasksWorkspace({
           <div className={cn(
             isMobileTab
               // Same track class as the view switcher — pad/gap owned by CSS.
-              ? 'oc-mobile-floating-surface oc-mobile-segmented-track oc-mobile-scheduled-controls'
+              ? 'yuri-mobile-floating-surface yuri-mobile-segmented-track yuri-mobile-scheduled-controls'
               : cn('flex items-center justify-between', isMobilePanel ? 'gap-2' : 'gap-3'),
           )}>
             <div
               className={cn(
                 isMobileTab
-                  ? 'oc-mobile-segmented-group'
+                  ? 'yuri-mobile-segmented-group'
                   : cn('flex items-center gap-1', isMobilePanel && 'min-w-0 flex-1'),
               )}
               role="group"
@@ -1019,7 +1019,7 @@ export function ScheduledTasksWorkspace({
                   size="sm"
                   className={cn(
                     isMobileTab
-                      ? 'oc-mobile-segmented-item'
+                      ? 'yuri-mobile-segmented-item'
                       // Avoid overflow-hidden (mobile.css → overflow-y:auto). Soft
                       // selected-pill shadow must not be clipped on desktop either.
                       : 'relative border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color] duration-150 ease-out motion-reduce:transition-none',
@@ -1035,8 +1035,8 @@ export function ScheduledTasksWorkspace({
                     <motion.span
                       layoutId="scheduled-task-filter-pill"
                       className={cn(
-                        // Mobile radius comes from .oc-mobile-segmented-item CSS vars.
-                        'oc-segmented-selected-pill absolute inset-0',
+                        // Mobile radius comes from .yuri-mobile-segmented-item CSS vars.
+                        'yuri-segmented-selected-pill absolute inset-0',
                         !isMobileTab && 'rounded-xl',
                       )}
                       transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
@@ -1051,7 +1051,7 @@ export function ScheduledTasksWorkspace({
               <Button
                 variant="ghost"
                 data-mobile-press-feedback="compact"
-                className="oc-mobile-segmented-action shrink-0 bg-foreground text-background transition-[background-color,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:bg-interactive-active motion-reduce:transition-none"
+                className="yuri-mobile-segmented-action shrink-0 bg-foreground text-background transition-[background-color,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:bg-interactive-active motion-reduce:transition-none"
                 onClick={handleCreate}
                 disabled={!createProjectID}
                 aria-label={t('sessions.scheduledTasks.dialog.actions.create')}
@@ -1099,7 +1099,7 @@ export function ScheduledTasksWorkspace({
           isMobileTab
             // No nested scroll region: tabpanel is the only vertical scroller.
             // One page-gap after tab (History) or after filter row (Tasks).
-            ? 'flex-none overflow-visible pt-[var(--oc-mobile-page-gap)]'
+            ? 'flex-none overflow-visible pt-[var(--yuri-mobile-page-gap)]'
             : 'min-h-0 flex-1 overflow-y-auto',
           !isMobileTab && (isMobilePanel
             ? 'overscroll-none px-3 pb-[max(1rem,env(safe-area-inset-bottom))]'
@@ -1314,9 +1314,9 @@ export function ScheduledTasksWorkspace({
                       const openLabel = t('sessions.scheduledTasks.history.openSession');
                       const shellClass = cn(
                         // scheduled-task-card: container-type for soft press scale (mobile.css).
-                        'oc-mobile-scheduled-task-card w-full',
+                        'yuri-mobile-scheduled-task-card w-full',
                         isMobileTab
-                          ? 'oc-mobile-floating-surface oc-mobile-project-shell rounded-[var(--oc-mobile-surface-radius)]'
+                          ? 'yuri-mobile-floating-surface yuri-mobile-project-shell rounded-[var(--yuri-mobile-surface-radius)]'
                           : 'rounded-xl border border-border/60 bg-[var(--surface-elevated)] shadow-sm dark:shadow-none',
                       );
                       if (canOpenSession) {
@@ -1330,7 +1330,7 @@ export function ScheduledTasksWorkspace({
                               type="button"
                               data-mobile-press-surface-trigger
                               className={cn(
-                                'oc-mobile-scheduled-task-row w-full p-3 text-left outline-none',
+                                'yuri-mobile-scheduled-task-row w-full p-3 text-left outline-none',
                                 'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]',
                               )}
                               aria-label={openLabel}
@@ -1504,7 +1504,7 @@ export function ScheduledTasksWorkspace({
                     exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
                     transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
                     data-mobile-press-surface={isMobileTab ? 'soft' : undefined}
-                    className={cn(isMobileTab && 'oc-mobile-floating-surface oc-mobile-project-shell oc-mobile-scheduled-task-card')}
+                    className={cn(isMobileTab && 'yuri-mobile-floating-surface yuri-mobile-project-shell yuri-mobile-scheduled-task-card')}
                   >
                   <ContextMenu
                     open={contextMenuTaskIdentity === identityKey}
@@ -1517,7 +1517,7 @@ export function ScheduledTasksWorkspace({
                   >
                     <div className={cn(
                       'group flex w-full items-center gap-1',
-                      isMobileTab && 'oc-mobile-project-card',
+                      isMobileTab && 'yuri-mobile-project-card',
                     )}>
                     <ContextMenuTrigger
                       render={(
@@ -1533,7 +1533,7 @@ export function ScheduledTasksWorkspace({
                           className={cn(
                             'flex min-h-11 min-w-0 flex-1 items-center rounded-xl border py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
                             isMobileTab
-                              ? 'oc-mobile-project-trigger oc-mobile-scheduled-task-row border-0 bg-transparent transition-opacity duration-150'
+                              ? 'yuri-mobile-project-trigger yuri-mobile-scheduled-task-row border-0 bg-transparent transition-opacity duration-150'
                               : 'transition-[background-color,border-color,box-shadow,opacity] duration-150 ease-out active:bg-interactive-active',
                             isMobilePanel && !isMobileTab ? 'gap-2.5 px-3' : !isMobileTab ? 'gap-3 px-4' : undefined,
                             !isMobileTab && (selected
@@ -1549,7 +1549,7 @@ export function ScheduledTasksWorkspace({
                       className={cn(
                         'flex shrink-0 items-center justify-center rounded-full text-muted-foreground transition-[border-color,color,background-color] duration-150 motion-reduce:transition-none',
                         isMobileTab
-                          ? 'oc-mobile-project-icon oc-mobile-glass-control'
+                          ? 'yuri-mobile-project-icon yuri-mobile-glass-control'
                           : 'size-5 border border-border',
                       )}
                       style={task.enabled && meta.tone !== 'muted' ? { color: `var(--status-${meta.tone})` } : undefined}
@@ -1566,7 +1566,7 @@ export function ScheduledTasksWorkspace({
                           <Icon
                             name={task.enabled ? meta.Icon : 'pause'}
                             className={cn(
-                              isMobileTab ? 'oc-mobile-project-icon-glyph' : 'size-3.5',
+                              isMobileTab ? 'yuri-mobile-project-icon-glyph' : 'size-3.5',
                               meta.spin && task.enabled && 'animate-spin',
                             )}
                           />
@@ -1576,11 +1576,11 @@ export function ScheduledTasksWorkspace({
                     <span className="min-w-0 flex-1">
                       <span className={cn(
                         'block truncate font-medium',
-                        isMobileTab ? 'oc-mobile-project-title oc-mobile-entity-title font-semibold' : 'typography-ui-label',
+                        isMobileTab ? 'yuri-mobile-project-title yuri-mobile-entity-title font-semibold' : 'typography-ui-label',
                       )}>{task.name}</span>
                       <span className={cn(
                         'mt-1 flex min-w-0 items-center text-muted-foreground',
-                        isMobileTab ? 'oc-mobile-project-meta oc-mobile-entity-meta' : 'gap-1 typography-micro',
+                        isMobileTab ? 'yuri-mobile-project-meta yuri-mobile-entity-meta' : 'gap-1 typography-micro',
                       )}>
                         <span className="truncate">{formatSchedule(task, t, !isMobileTab)}</span>
                         <span className="shrink-0 text-muted-foreground/50">·</span>
@@ -1623,7 +1623,7 @@ export function ScheduledTasksWorkspace({
                           className={cn(
                             'shrink-0 self-center text-muted-foreground transition-[opacity,transform,background-color] duration-150 ease-out data-[popup-open]:bg-interactive-hover motion-reduce:transition-none',
                             isMobileTab
-                              ? 'oc-mobile-project-action oc-mobile-scheduled-task-action rounded-full'
+                              ? 'yuri-mobile-project-action yuri-mobile-scheduled-task-action rounded-full'
                               : 'rounded-lg',
                             isMobileTab
                               ? undefined
@@ -1707,7 +1707,7 @@ export function ScheduledTasksWorkspace({
           ref={isMobileTab ? mobileNavigationSurfaceRef : undefined}
           className={cn(
             isMobileTab
-              ? 'oc-mobile-scheduled-editor-overlay flex w-full min-w-0 max-w-full flex-col overflow-hidden bg-background [contain:layout_paint]'
+              ? 'yuri-mobile-scheduled-editor-overlay flex w-full min-w-0 max-w-full flex-col overflow-hidden bg-background [contain:layout_paint]'
               : 'contents',
           )}
         >

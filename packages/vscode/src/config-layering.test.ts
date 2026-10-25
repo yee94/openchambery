@@ -9,7 +9,7 @@ let root: string;
 let directory: string;
 let api: typeof import('./opencodeConfig');
 beforeEach(async () => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-config-parity-'));
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-config-parity-'));
   directory = path.join(root, 'xdg', 'opencode');
   fs.mkdirSync(directory, { recursive: true });
   vi.stubEnv('XDG_CONFIG_HOME', path.dirname(directory));
@@ -86,6 +86,6 @@ describe('VS Code physical config parity', () => {
     await handleConfigBridgeMessage({ id: 'save', type: 'api:config/global:save', payload: { target: 'opencode', content: '{ // saved\n"model":"new"}' } }, undefined, deps);
     expect(readConfigFile(custom)).toEqual({ model: 'new' });
     expect(readConfigFile(jsonc)).toEqual({ model: 'winning' });
-    expect(fs.readFileSync(`${custom}.openchamber.backup`, 'utf8')).toBe('{"model":"explicit"}');
+    expect(fs.readFileSync(`${custom}.yuri.backup`, 'utf8')).toBe('{"model":"explicit"}');
   });
 });

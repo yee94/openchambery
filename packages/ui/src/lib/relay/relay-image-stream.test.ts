@@ -109,7 +109,7 @@ const installBridge = (options: {
       const finalId = options.rewriteAssetId ? options.rewriteAssetId(assetId) : assetId;
       return {
         assetId: finalId,
-        url: (options.openUrl ?? ((id) => `openchamber-asset://stream/${id}`))(finalId),
+        url: (options.openUrl ?? ((id) => `yuri-asset://stream/${id}`))(finalId),
       };
     },
     writeChunk: async (assetId, chunk) => {
@@ -239,7 +239,7 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
 
     const url = await streamRelayImageDisplayUrl('/early.png', new AbortController().signal);
 
-    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(url.startsWith('yuri-asset://stream/')).toBe(true);
     expect(record.open).toHaveLength(1);
     // Reader is still in progress (write gated / second pull blocked); end has not fired.
     expect(record.ends).toHaveLength(0);
@@ -258,7 +258,7 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
 
     const url = await streamRelayImageDisplayUrl('/secret/host/path.png', new AbortController().signal);
 
-    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(url.startsWith('yuri-asset://stream/')).toBe(true);
     expect(record.open).toHaveLength(1);
     expect(record.open[0]?.mimeType).toBe('image/webp');
     expect(record.open[0]?.assetId.startsWith('ria_')).toBe(true);
@@ -321,7 +321,7 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
     const controller = new AbortController();
     // URL resolves as soon as openAsset succeeds; body pump continues in the background.
     const url = await streamRelayImageDisplayUrl('/slow.png', controller.signal);
-    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(url.startsWith('yuri-asset://stream/')).toBe(true);
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
     controller.abort(new Error('user-cancel'));
 
@@ -354,7 +354,7 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
 
     // Returns before the gated aggregated write completes.
     const url = await streamRelayImageDisplayUrl('/bp.png', new AbortController().signal);
-    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(url.startsWith('yuri-asset://stream/')).toBe(true);
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
     expect(record.writes).toHaveLength(0);
     releaseWrite?.();
@@ -373,7 +373,7 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
 
     // URL still returns after open; size failure is handled by the background pump.
     const url = await streamRelayImageDisplayUrl('/huge.png', new AbortController().signal);
-    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(url.startsWith('yuri-asset://stream/')).toBe(true);
     await waitFor(() => record.aborts.length >= 1 && record.releases.length >= 1);
     expect(record.writes).toHaveLength(0);
     expect(record.ends).toHaveLength(0);
@@ -387,7 +387,7 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
     ]);
 
     const url = await streamRelayImageDisplayUrl('/live.png', new AbortController().signal);
-    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(url.startsWith('yuri-asset://stream/')).toBe(true);
     await new Promise<void>((resolve) => setTimeout(resolve, 15));
     transportIdentity.value = 'relay:{"serverId":"srv_other"}';
     fireTransportChange();
@@ -467,7 +467,7 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
 
     const controller = new AbortController();
     const url = await streamRelayImageDisplayUrl('/discard.png', controller.signal);
-    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(url.startsWith('yuri-asset://stream/')).toBe(true);
     await waitFor(() => record.open.length === 1);
     await new Promise<void>((resolve) => setTimeout(resolve, 15));
     expect(record.writes).toHaveLength(0);
@@ -527,7 +527,7 @@ describe('streamVerifiedBlobDisplayUrl', () => {
     const { record } = installBridge();
     const blob = new Blob([textEncoder.encode('verified-png')], { type: 'image/png' });
     const url = await streamVerifiedBlobDisplayUrl(blob, new AbortController().signal);
-    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(url.startsWith('yuri-asset://stream/')).toBe(true);
     expect(record.open).toHaveLength(1);
     expect(record.open[0]?.mimeType).toBe('image/png');
     expect(record.ends).toHaveLength(1);

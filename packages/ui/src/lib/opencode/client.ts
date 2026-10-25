@@ -277,7 +277,7 @@ const mergeAbortSignals = (signals: AbortSignal[]): { signal: AbortSignal; clean
 
 /**
  * Official 2.x nests exact message lookup under `session.message.get`.
- * OpenChamber callers still use `session.message(input)`.
+ * Yuri callers still use `session.message(input)`.
  */
 const withSessionMessageCompat = (client: RawOpenCodeClient): OpenCodeClient => {
   const messageApi = client.session?.message;
@@ -1053,7 +1053,7 @@ class OpencodeService {
         const body: Record<string, unknown> = { patch: patch.metadata };
         if (requestDirectory) body.directory = requestDirectory;
         const response = await runtimeFetch(
-          `/api/openchamber/sessions/${encodeURIComponent(id)}/metadata`,
+          `/api/yuri/sessions/${encodeURIComponent(id)}/metadata`,
           {
             method: 'PUT',
             headers: {
@@ -1097,7 +1097,7 @@ class OpencodeService {
         const body: Record<string, unknown> = { archivedAt };
         if (requestDirectory) body.directory = requestDirectory;
         const response = await runtimeFetch(
-          `/api/openchamber/sessions/${encodeURIComponent(id)}/archive`,
+          `/api/yuri/sessions/${encodeURIComponent(id)}/archive`,
           {
             method: 'PUT',
             headers: {

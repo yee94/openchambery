@@ -181,7 +181,7 @@ describe('preview body URL rewriting', () => {
 
   it('adds preview and URL auth tokens to rewritten proxy resources when provided', () => {
     const output = rewritePreviewBody({
-      bodyText: '<script src="/entry.js"></script><script type="module">import RefreshRuntime from "/@react-refresh";</script><a href="http://localhost:3000/docs?x=1&oc_client_token=legacy">Docs</a>',
+      bodyText: '<script src="/entry.js"></script><script type="module">import RefreshRuntime from "/@react-refresh";</script><a href="http://localhost:3000/docs?x=1&yuri_client_token=legacy">Docs</a>',
       kind: 'html',
       proxyBasePath: '/api/preview/proxy/abc123',
       targetOrigin: 'http://127.0.0.1:3000',
@@ -189,10 +189,10 @@ describe('preview body URL rewriting', () => {
       urlAuthToken: 'url-secret',
     });
 
-    expect(output).toContain('src="/api/preview/proxy/abc123/entry.js?oc_preview_token=preview-secret&oc_url_token=url-secret"');
-    expect(output).toContain('from "/api/preview/proxy/abc123/@react-refresh?oc_preview_token=preview-secret&oc_url_token=url-secret"');
-    expect(output).toContain('href="/api/preview/proxy/abc123/docs?x=1&oc_preview_token=preview-secret&oc_url_token=url-secret"');
-    expect(output).not.toContain('oc_client_token');
+    expect(output).toContain('src="/api/preview/proxy/abc123/entry.js?yuri_preview_token=preview-secret&yuri_url_token=url-secret"');
+    expect(output).toContain('from "/api/preview/proxy/abc123/@react-refresh?yuri_preview_token=preview-secret&yuri_url_token=url-secret"');
+    expect(output).toContain('href="/api/preview/proxy/abc123/docs?x=1&yuri_preview_token=preview-secret&yuri_url_token=url-secret"');
+    expect(output).not.toContain('yuri_client_token');
   });
 
   it('rewrites only CSS imports and url references in CSS responses', () => {
@@ -232,10 +232,10 @@ describe('preview body URL rewriting', () => {
       urlAuthToken: 'url-secret',
     });
 
-    expect(cssOutput).toContain('@import "/api/preview/proxy/abc123/theme.css?oc_preview_token=preview-secret&oc_url_token=url-secret"');
-    expect(cssOutput).toContain('url(/api/preview/proxy/abc123/hero.png?oc_preview_token=preview-secret&oc_url_token=url-secret)');
-    expect(jsOutput).toContain('import("/api/preview/proxy/abc123/entry.js?oc_preview_token=preview-secret&oc_url_token=url-secret")');
-    expect(jsOutput).toContain('from "/api/preview/proxy/abc123/module.js?oc_preview_token=preview-secret&oc_url_token=url-secret"');
+    expect(cssOutput).toContain('@import "/api/preview/proxy/abc123/theme.css?yuri_preview_token=preview-secret&yuri_url_token=url-secret"');
+    expect(cssOutput).toContain('url(/api/preview/proxy/abc123/hero.png?yuri_preview_token=preview-secret&yuri_url_token=url-secret)');
+    expect(jsOutput).toContain('import("/api/preview/proxy/abc123/entry.js?yuri_preview_token=preview-secret&yuri_url_token=url-secret")');
+    expect(jsOutput).toContain('from "/api/preview/proxy/abc123/module.js?yuri_preview_token=preview-secret&yuri_url_token=url-secret"');
   });
 });
 
@@ -263,7 +263,7 @@ describe('preview redirect URL rewriting', () => {
       targetOrigin: 'http://127.0.0.1:3000',
       previewToken: 'preview-secret',
       urlAuthToken: 'url-secret',
-    })).toBe('/api/preview/proxy/abc123/login?next=%2F&oc_preview_token=preview-secret&oc_url_token=url-secret#top');
+    })).toBe('/api/preview/proxy/abc123/login?next=%2F&yuri_preview_token=preview-secret&yuri_url_token=url-secret#top');
   });
 
   it('leaves redirects unchanged when no target origin is provided', () => {
@@ -297,10 +297,10 @@ describe('preview navigation policy', () => {
     expect(classifyPreviewNavigation({
       url: 'http://127.0.0.1:57123/support',
       currentUrl,
-      targetOrigin: 'https://openchamber.dev',
+      targetOrigin: 'https://app.example.com',
     })).toEqual({
       action: 'proxy',
-      url: 'https://openchamber.dev/support',
+      url: 'https://app.example.com/support',
     });
   });
 
@@ -321,8 +321,8 @@ describe('preview navigation policy', () => {
 
 describe('proxy target normalization (SSRF guard)', () => {
   it('allows ordinary external hosts when allowExternal is set', () => {
-    expect(normalizeProxyTargetUrl('https://docs.openchamber.dev/security/', { allowExternal: true }))
-      .toEqual({ ok: true, origin: 'https://docs.openchamber.dev' });
+    expect(normalizeProxyTargetUrl('https://docs.example.com/security/', { allowExternal: true }))
+      .toEqual({ ok: true, origin: 'https://docs.example.com' });
   });
 
   it('rejects non-loopback hosts without allowExternal', () => {

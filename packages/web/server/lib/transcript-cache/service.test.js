@@ -54,7 +54,7 @@ const tempDirectories = [];
 const services = [];
 
 const createService = () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-transcript-cache-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-transcript-cache-'));
   tempDirectories.push(directory);
   const dbPath = path.join(directory, 'transcript-cache.sqlite');
   const service = createTranscriptCacheService({ dbPath });

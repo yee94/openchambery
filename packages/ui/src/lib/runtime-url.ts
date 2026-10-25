@@ -36,13 +36,13 @@ const normalizeBaseUrl = (value: string | null | undefined): string => {
 
 const readInjectedApiBaseUrl = (): string => {
   if (typeof window === 'undefined') return '';
-  const injected = (window as typeof window & { __OPENCHAMBER_API_BASE_URL__?: string }).__OPENCHAMBER_API_BASE_URL__;
+  const injected = (window as typeof window & { __YURI_API_BASE_URL__?: string }).__YURI_API_BASE_URL__;
   return normalizeBaseUrl(injected);
 };
 
 const readInjectedLocalOrigin = (): string => {
   if (typeof window === 'undefined') return '';
-  const injected = (window as typeof window & { __OPENCHAMBER_LOCAL_ORIGIN__?: string }).__OPENCHAMBER_LOCAL_ORIGIN__;
+  const injected = (window as typeof window & { __YURI_LOCAL_ORIGIN__?: string }).__YURI_LOCAL_ORIGIN__;
   return normalizeBaseUrl(injected);
 };
 
@@ -102,8 +102,8 @@ const withUrlAuth = (urlValue: string): string => {
 
   const url = ABSOLUTE_URL_PATTERN.test(urlValue)
     ? new URL(urlValue)
-    : new URL(urlValue, 'http://openchamber.local');
-  url.searchParams.set('oc_url_token', token);
+    : new URL(urlValue, 'http://yuri.local');
+  url.searchParams.set('yuri_url_token', token);
   if (ABSOLUTE_URL_PATTERN.test(urlValue)) return url.toString();
   return `${url.pathname}${url.search}${url.hash}`;
 };
@@ -124,10 +124,10 @@ const toRealtimeProxyUrl = (kind: 'sse' | 'ws', targetUrl: string, config: Runti
   const localOrigin = readInjectedLocalOrigin();
   if (!localOrigin) return null;
   try {
-    const proxy = new URL(`/api/openchamber/realtime-proxy/${kind === 'sse' ? 'sse' : 'ws'}`, `${localOrigin}/`);
+    const proxy = new URL(`/api/yuri/realtime-proxy/${kind === 'sse' ? 'sse' : 'ws'}`, `${localOrigin}/`);
     proxy.searchParams.set('url', targetUrl);
     const localToken = getLocalRuntimeUrlAuthTokenSync(localOrigin);
-    if (localToken) proxy.searchParams.set('oc_url_token', localToken);
+    if (localToken) proxy.searchParams.set('yuri_url_token', localToken);
     if (kind === 'ws') {
       proxy.protocol = proxy.protocol === 'https:' ? 'wss:' : 'ws:';
       return toWebSocketUrl(proxy.toString(), config);
@@ -162,7 +162,7 @@ export const createRuntimeUrlResolver = (config: RuntimeUrlConfig = {}): Runtime
     sse: (path, query) => {
       const target = withUrlAuth(realtime(path, query));
       // Relay already carries SSE. Wrapping through the local realtime proxy
-      // would tunnel `/api/openchamber/realtime-proxy/sse` instead of the event path.
+      // would tunnel `/api/yuri/realtime-proxy/sse` instead of the event path.
       if (isRelayModeActive()) return target;
       return toRealtimeProxyUrl('sse', target, config) || target;
     },

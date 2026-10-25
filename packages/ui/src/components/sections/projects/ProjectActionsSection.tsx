@@ -28,9 +28,9 @@ import { isDesktopShell } from '@/lib/desktop';
 import {
   getProjectActionsState,
   saveProjectActionsState,
-  type OpenChamberProjectAction,
+  type YuriProjectAction,
   type ProjectRef,
-} from '@/lib/openchamberConfig';
+} from '@/lib/yuriConfig';
 import {
   buildProjectActionDesktopForwardOptions,
   PROJECT_ACTION_ICON_MAP,
@@ -45,7 +45,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { createUuid } from '@/lib/uuid';
 
-type EditableProjectAction = OpenChamberProjectAction;
+type EditableProjectAction = YuriProjectAction;
 
 const AUTO_SAVE_DELAY_MS = 450;
 

@@ -1,7 +1,7 @@
 # Event Stream Module Documentation
 
 ## Purpose
-This module contains the OpenChamber message-stream WebSocket protocol and runtime bridge. It keeps the browser-facing WebSocket transport separate from the upstream OpenCode SSE transport.
+This module contains the Yuri message-stream WebSocket protocol and runtime bridge. It keeps the browser-facing WebSocket transport separate from the upstream OpenCode SSE transport.
 
 ## Entrypoints and structure
 - `packages/web/server/lib/event-stream/index.js`: public entrypoint re-exporting protocol and runtime helpers.
@@ -10,7 +10,7 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - `packages/web/server/lib/event-stream/directory-ws-bridge.js`: browser-facing per-directory WS bridge that owns one scoped upstream reader per connection.
 - `packages/web/server/lib/event-stream/protocol.js`: path constants, SSE envelope parsing, and WebSocket frame serialization helpers.
 - `packages/web/server/lib/event-stream/diff-summary.js`: pure outbound FileDiff helpers. L1 message/session `summary.diffs` keep a slim file list `{ file, status?, additions, deletions }` plus additive `diffCount`/`hasDiffs` (never patch/before/after/from/to). `session.diff` event frames still keep file/status/additions/deletions and drop patch bodies. `summarizeFileDiff(s)` remains for explicit L2-style file lists.
-- `packages/web/server/lib/event-stream/reasoning-projection.js`: OpenChamber outbound reasoning projection (`includeReasoning=false`). Shared pure snapshot helpers + per-connection stateful stream filter for HTTP parts, WS send/replay, and SSE proxy parse-filter paths. Never mutates hub/replay objects; never forwards the query param to OpenCode.
+- `packages/web/server/lib/event-stream/reasoning-projection.js`: Yuri outbound reasoning projection (`includeReasoning=false`). Shared pure snapshot helpers + per-connection stateful stream filter for HTTP parts, WS send/replay, and SSE proxy parse-filter paths. Never mutates hub/replay objects; never forwards the query param to OpenCode.
 - `packages/web/server/lib/event-stream/upstream-reader.js`: reusable upstream SSE reader with event-id tracking, stall recovery, and reconnect handling.
 - `packages/web/server/lib/event-stream/runtime.js`: thin WebSocket server runtime for upgrade handling and path dispatch to the global/directory bridges.
 - `packages/web/server/lib/event-stream/protocol.test.js`: unit tests for protocol helpers.
@@ -59,18 +59,18 @@ membership. Reasoning-only filters need no envelope hook.
 
 Native v2 `session.reasoning.*` events are filtered at the same outbound boundary as legacy `session.next.reasoning.*`. Both `/api/session/:id/message` and `/api/session/:id/context` use the snapshot projection before relay encryption.
 - Browser clients connect to the WS endpoints above.
-- OpenChamber still fetches OpenCode upstream event streams over SSE.
+- Yuri still fetches OpenCode upstream event streams over SSE.
 - The web server creates one shared global message-stream hub. OpenCode watcher side effects and global WS clients subscribe to that hub, so there is one upstream `/global/event` SSE reader for both server-side processing and browser fan-out.
 - The global hub keeps a bounded replay buffer keyed by SSE `eventId` so reconnecting browser clients can receive buffered events after their requested `Last-Event-ID`.
 - Outbound FileDiff payloads are summarized before hub fan-out/replay and again at WS send, so Relay never carries full patch frames larger than 64KB.
-- **Reasoning projection (`includeReasoning=false`)**: per HTTP request or WS/SSE connection. The shared hub and internal subscribers always see full upstream events. Filtering runs only at the browser send boundary (live fan-out **and** replay) and on the direct SSE proxy parse path. HTTP turn-page / reconcile / exact message / official `session.messages` list / transcript-cache reads apply the same part strip. `tokens.reasoning` totals stay. The query param is OpenChamber-only and is stripped before OpenCode upstream calls.
+- **Reasoning projection (`includeReasoning=false`)**: per HTTP request or WS/SSE connection. The shared hub and internal subscribers always see full upstream events. Filtering runs only at the browser send boundary (live fan-out **and** replay) and on the direct SSE proxy parse path. HTTP turn-page / reconcile / exact message / official `session.messages` list / transcript-cache reads apply the same part strip. `tokens.reasoning` totals stay. The query param is Yuri-only and is stripped before OpenCode upstream calls.
 - Global WS reconnect protocol is **replay events → ready barrier**. On initial connect and on each first-ready for a client, the bridge synchronously sends any `replayAfter(lastEventId)` frames first, then emits `{ type: 'ready', scope: 'global' }`. Clients must not start HTTP compensation until they observe ready, so buffered history can merge first.
 - Directory WS clients still attach one upstream `/event?directory=...` SSE reader per connection because directory streams are scoped.
 - If an upstream SSE connection delays response headers or an attached stream stalls, the reader aborts that upstream fetch and reconnects upstream with `Last-Event-ID`, keeping the browser WS alive when recovery is fast.
 - Direct SSE proxy timing uses a 10-second downstream heartbeat, a 20-second upstream idle timeout, a 30-second client reconnect window, and a 40-second transport stale threshold. This order lets upstream recovery end the downstream response before client and transport liveness recovery activate.
 - When the shared global upstream reconnects after it was previously ready, the global WS bridge sends a fresh `ready` frame to already-ready browser clients (no additional replay; live fan-out already covers the gap when possible). The browser treats this as a reconnect edge and can run scoped state repair without requiring the browser WS to close.
 - Health checks are reserved for initial upstream connect failures and explicit upstream-unavailable responses, not for ordinary stall recovery on an already-established stream.
-- Global synthetic events such as `openchamber:session-status`, `openchamber:session-activity`, `openchamber:notification`, and `openchamber:heartbeat` are preserved on the WS path, but heartbeat frames are emitted only while an upstream SSE stream is actively attached.
+- Global synthetic events such as `yuri:session-status`, `yuri:session-activity`, `yuri:notification`, and `yuri:heartbeat` are preserved on the WS path, but heartbeat frames are emitted only while an upstream SSE stream is actively attached.
 - Global UI broadcasts are fan-out capable across both SSE and WS clients.
 - The broadcaster's `subscribe` seam also feeds `/api/event` and `/api/global/event` through the authenticated proxy. Host title/metadata/notification events retain their directory envelope, use the same outbound filter and serialized writer, and can only be interleaved between complete upstream SSE blocks. Pending writes are capped at 2 MiB; overflow disconnects the slow stream. Close/error removes the subscription. Relay uses this same path.
 - Queue event confirmation accepts native `session.inbox.enqueued` user items and `session.inbox.delivered` with exact inbox/session/runtime identity; periodic query reconciliation remains the fallback.

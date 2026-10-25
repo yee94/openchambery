@@ -13,13 +13,13 @@ const parsePositiveInt = (value, fallback) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const HEALTH_CHECK_TIMEOUT_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_TIMEOUT_MS, 5000);
+const HEALTH_CHECK_TIMEOUT_MS = parsePositiveInt(process.env.YURI_OPENCODE_HEALTH_TIMEOUT_MS, 5000);
 const HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES = parsePositiveInt(
-  process.env.OPENCHAMBER_OPENCODE_HEALTH_CONSECUTIVE_FAILURES,
+  process.env.YURI_OPENCODE_HEALTH_CONSECUTIVE_FAILURES,
   20
 );
-const HEALTH_CHECK_INTERVAL_OVERRIDE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_INTERVAL_MS, 0);
-const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_CACHE_MS, 750);
+const HEALTH_CHECK_INTERVAL_OVERRIDE_MS = parsePositiveInt(process.env.YURI_OPENCODE_HEALTH_INTERVAL_MS, 0);
+const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.YURI_OPENCODE_HEALTH_CACHE_MS, 750);
 // Official OpenCode 2.x exposes ServerInfo at GET /api/info (client.server.info).
 const OPENCODE_HEALTH_PATH = '/api/info';
 const OPENCODE_HEALTH_FALLBACK_PATH = '/global/health';
@@ -396,7 +396,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         const onExit = (code, signal) => {
           const reason = signal ? `signal ${signal}` : `code ${code}`;
           const appBundleHint = process.platform === 'darwin' && /\/OpenCode\.app\/Contents\/MacOS\/(?:OpenCode|opencode-cli)$/i.test(binary)
-            ? ' The configured binary appears to point at the macOS desktop app bundle; OpenChamber needs the standalone opencode CLI.'
+            ? ' The configured binary appears to point at the macOS desktop app bundle; Yuri needs the standalone opencode CLI.'
             : '';
           finish(reject, new Error(`OpenCode process exited before serving with ${reason}. Binary used: ${binary}.${appBundleHint} ${formatCapturedOutput({ stdout, stderr })}`));
         };
@@ -421,7 +421,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     // Record this child so a future run can reap it if we crash before teardown.
     // The web-server lifecycle runs in-process inside multiple hosts, so tag the
-    // actual host (Electron sets OPENCHAMBER_RUNTIME='desktop'; the standalone
+    // actual host (Electron sets YURI_RUNTIME='desktop'; the standalone
     // web CLI leaves it unset → 'web'; SSH remote → 'ssh-remote') rather than a
     // hardcoded label, matching the server's existing runtimeName convention.
     registerManagedProcess({
@@ -429,7 +429,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       ownerPid: process.pid,
       port,
       binary,
-      runtime: process.env.OPENCHAMBER_RUNTIME || 'web',
+      runtime: process.env.YURI_RUNTIME || 'web',
     });
 
     return {
@@ -1392,7 +1392,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     // A managed OpenCode process is restarted (and thus re-reads config from
     // disk) by restartOpenCode(). An external OpenCode server is NOT owned by
-    // OpenChamber: restartOpenCode() only re-probes its health, so the freshly
+    // Yuri: restartOpenCode() only re-probes its health, so the freshly
     // written config is on disk but the running server keeps serving its old,
     // startup-cached config until the user restarts it themselves. Report this
     // honestly so callers don't claim the change is live.
@@ -1496,7 +1496,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         syncToHmrState();
       } else {
         // No healthy v2 serve on the requested/default port. Start a generic
-        // `opencode serve` so OpenChamber and other OpenCode clients can share it.
+        // `opencode serve` so Yuri and other OpenCode clients can share it.
         state.isExternalOpenCode = false;
         state.openCodeBaseUrl = null;
         if (env.ENV_EFFECTIVE_PORT) {

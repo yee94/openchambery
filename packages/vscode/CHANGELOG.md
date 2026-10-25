@@ -10,7 +10,7 @@
 
 ## [1.16.0] - 2026-07-13
 
-- Chat: sessions with an active [goal](https://docs.openchamber.dev/session-goals/) (started from the web or desktop app) show the goal strip with its live status above the composer.
+- Chat: sessions with an active [goal](https://github.com/yee94/yuri/blob/HEAD/packages/docs/content/docs/session-goals.mdx) (started from the web or desktop app) show the goal strip with its live status above the composer.
 - Chat: code blocks highlight correctly again — the webview's security policy was blocking the syntax highlighter (thanks to @bashrusakh).
 - Chat: queued messages now send when the session is already idle instead of waiting forever (thanks to @bashrusakh).
 - Chat: pending agent questions stay answerable after a restart, and session renames no longer flicker back to the old title (thanks to @bashrusakh).

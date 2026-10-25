@@ -1,5 +1,5 @@
 /**
- * VS Code Extension Host adapter for OpenChamber session metadata + Host archive.
+ * VS Code Extension Host adapter for Yuri session metadata + Host archive.
  *
  * Reuses shared store / archive / projection from
  * `packages/web/server/lib/session-metadata/*`. Authority lives on the Extension
@@ -57,7 +57,7 @@ export type SessionProxyOverlayResult =
   | { kind: 'unavailable'; error: string };
 
 const REQUEST_TIMEOUT_MS = 15_000;
-const DEFAULT_DATA_ROOT = path.join(os.homedir(), '.config', 'openchamber');
+const DEFAULT_DATA_ROOT = path.join(os.homedir(), '.config', 'yuri');
 const METADATA_UNAVAILABLE_CODE = 'session_metadata_unavailable';
 
 let managerRef: OpenCodeManager | null = null;
@@ -114,7 +114,7 @@ const parseRequestBody = (bodyBase64: string | undefined): Record<string, unknow
 
 const normalizeProxyPathname = (requestPath: string): string => {
   try {
-    const parsed = new URL(requestPath, 'https://openchamber.invalid');
+    const parsed = new URL(requestPath, 'https://yuri.invalid');
     let pathname = parsed.pathname || '/';
     if (pathname.startsWith('/api/')) pathname = pathname.slice(4);
     return pathname.replace(/\/+$/, '') || '/';
@@ -152,8 +152,8 @@ const sanitizeScopeForPath = (scope: string): string =>
 const resolveDataRoot = (): string =>
   dataRootForTests
   ?? dataRootOverride
-  ?? (typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim()
-    ? path.resolve(process.env.OPENCHAMBER_DATA_DIR.trim())
+  ?? (typeof process.env.YURI_DATA_DIR === 'string' && process.env.YURI_DATA_DIR.trim()
+    ? path.resolve(process.env.YURI_DATA_DIR.trim())
     : DEFAULT_DATA_ROOT);
 
 const resolveScopedDataDir = (scope: string): string =>
@@ -879,7 +879,7 @@ export const overlaySessionProxyBodyText = (
 };
 
 /**
- * Handle OpenChamber-owned session metadata + archive routes inside api:proxy.
+ * Handle Yuri-owned session metadata + archive routes inside api:proxy.
  * Returns null when the path is not owned by this module.
  */
 export const tryHandleSessionMetadataProxy = async (
@@ -891,8 +891,8 @@ export const tryHandleSessionMetadataProxy = async (
   const pathname = normalizeProxyPathname(requestPath);
   const verb = method.toUpperCase();
 
-  const metadataMatch = pathname.match(/^\/openchamber\/sessions\/([^/]+)\/metadata$/);
-  const archiveMatch = pathname.match(/^\/openchamber\/sessions\/([^/]+)\/archive$/);
+  const metadataMatch = pathname.match(/^\/yuri\/sessions\/([^/]+)\/metadata$/);
+  const archiveMatch = pathname.match(/^\/yuri\/sessions\/([^/]+)\/archive$/);
   if (!metadataMatch && !archiveMatch) return null;
 
   const runtime = ensureRuntimeOrNull();

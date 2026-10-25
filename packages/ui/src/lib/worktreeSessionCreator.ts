@@ -13,7 +13,7 @@ import { useSelectionStore } from '@/sync/selection-store';
 import { checkIsGitRepository, previewGitWorktree } from '@/lib/gitApi';
 import { generateBranchName } from '@/lib/git/branchNameGenerator';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
-import { getWorktreeSetupCommands, getWorktreeSetupWaitEnabled } from '@/lib/openchamberConfig';
+import { getWorktreeSetupCommands, getWorktreeSetupWaitEnabled } from '@/lib/yuriConfig';
 import {
   removeProjectWorktree,
   type ProjectRef,
@@ -163,7 +163,7 @@ const initializeSessionForWorktree = async (
 ) => {
   const sessionStore = useSessionUIStore.getState();
   const configState = useConfigStore.getState();
-  sessionStore.initializeNewOpenChamberSession(sessionId, configState.agents);
+  sessionStore.initializeNewYuriSession(sessionId, configState.agents);
   sessionStore.setSessionDirectory(sessionId, metadata.path);
   sessionStore.setWorktreeMetadata(sessionId, metadata);
   await applyProjectDefaultSelectionForWorktreeSession(sessionId, projectRef);
@@ -400,7 +400,7 @@ export async function createWorktreeSessionForNewBranch(
 
     const projectRef = resolveProjectRef(projectDirectory);
     if (!projectRef) {
-      throw new Error('Project is not registered in OpenChamberY');
+      throw new Error('Project is not registered in Yuri');
     }
 
     let isGitRepo = false;

@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { create } from 'zustand';
 
 const readUnlessZeroFlag = (
@@ -25,8 +26,8 @@ const persistExactOneFlag = (key: string, enabled: boolean): void => {
 
 // Assistant Markdown engine on this experiment branch. Markstream React is
 // the default for streaming and settled assistant text. Set
-// `oc:markstream-react` to `0` to fall back to marked + Shiki + morphdom.
-export const MARKSTREAM_REACT_STORAGE_KEY = 'oc:markstream-react';
+// `yuri:markstream-react` to `0` to fall back to marked + Shiki + morphdom.
+export const MARKSTREAM_REACT_STORAGE_KEY = 'yuri:markstream-react';
 
 export const readMarkstreamReactEnabled = (
   storage?: Pick<Storage, 'getItem'> | null,

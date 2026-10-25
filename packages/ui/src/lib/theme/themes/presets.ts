@@ -33,10 +33,10 @@ import nord_dark_Raw from './nord-dark.json';
 import nord_light_Raw from './nord-light.json';
 import osaka_jade_refined_dark_Raw from './osaka-jade-refined-dark.json';
 import osaka_jade_refined_light_Raw from './osaka-jade-refined-light.json';
-// import oc_2_dark_Raw from './oc-2-dark.json';
-// import oc_2_light_Raw from './oc-2-light.json';
-import openchamber_dark_Raw from './fields-of-the-shire-dark.json';
-import openchamber_light_Raw from './fields-of-the-shire-light.json';
+// import yuri_2_dark_Raw from './yuri-2-dark.json';
+// import yuri_2_light_Raw from './yuri-2-light.json';
+import yuri_dark_Raw from './fields-of-the-shire-dark.json';
+import yuri_light_Raw from './fields-of-the-shire-light.json';
 import onedarkpro_dark_Raw from './onedarkpro-dark.json';
 import onedarkpro_light_Raw from './onedarkpro-light.json';
 // import orng_dark_Raw from './orng-dark.json';
@@ -63,8 +63,8 @@ import vitesse_dark_dark_Raw from './vitesse-dark-dark.json';
 import vitesse_light_light_Raw from './vitesse-light-light.json';
 
 export const presetThemes: Theme[] = [
-  openchamber_dark_Raw as Theme,
-  openchamber_light_Raw as Theme,
+  yuri_dark_Raw as Theme,
+  yuri_light_Raw as Theme,
   // amoled_dark_Raw as Theme,
   // amoled_light_Raw as Theme,
   aura_dark_Raw as Theme,
@@ -97,8 +97,8 @@ export const presetThemes: Theme[] = [
   nord_light_Raw as Theme,
   osaka_jade_refined_dark_Raw as Theme,
   osaka_jade_refined_light_Raw as Theme,
-  // oc_2_dark_Raw as Theme,
-  // oc_2_light_Raw as Theme,
+  // yuri_2_dark_Raw as Theme,
+  // yuri_2_light_Raw as Theme,
   onedarkpro_dark_Raw as Theme,
   onedarkpro_light_Raw as Theme,
   // orng_dark_Raw as Theme,

@@ -114,8 +114,8 @@ state disables duplicate actions without a saved badge. Failures use a toast.
 Speech credential/resource edits remain local drafts until the
 Host confirms the write; failure preserves the draft for retry. The Host stores
 the shared key, TTS speaker/resource and ASR resource in
-`$OPENCHAMBER_DATA_DIR/speech/settings.json` (default data root:
-`~/.config/openchamber`), using an owner-only directory/file and atomic replacement.
+`$YURI_DATA_DIR/speech/settings.json` (default data root:
+`~/.config/yuri`), using an owner-only directory/file and atomic replacement.
 GET returns all speech preferences and credential-existence flags with `no-store`.
 PUT merges only supplied fields: an omitted key is retained, an empty key clears
 it. Invalid/unreadable files and failed writes remain errors, never empty success.
@@ -126,7 +126,7 @@ old runtime save completions cannot update the new runtime cache or start a test
 There is no client-local speech persistence or localStorage migration. Existing
 Host `speech/volcengine.json` and general Host ASR settings are adopted when the
 unified file is first saved. Each section saves its own memory-only draft. A
-successful write emits `openchamber:speech-settings-changed`; startup and reconnect
+successful write emits `yuri:speech-settings-changed`; startup and reconnect
 also fetch the authoritative snapshot without requiring Settings to be opened.
 Select Volcengine separately for read-aloud and dictation.
 The Volcengine recognition context (`asrContext`) is a Host-owned editable English
@@ -320,7 +320,7 @@ Closing, backgrounding and runtime changes cancel recording; unmount fences late
 Test cancel/retry separately. TTS and streaming ASR must be enabled;
 unit tests and builds do not establish live account permissions or audio quality.
 An opt-in TTS → ASR round-trip test is available with
-`bunx vitest run --project @openchamber/web packages/web/server/lib/tts/volcengine.live.test.js`.
+`bunx vitest run --project @yuri/web packages/web/server/lib/tts/volcengine.live.test.js`.
 Set `VOLCENGINE_SPEECH_API_KEY` in the invoking environment; without it the test
 is skipped. It generates a short Chinese sentence, recognizes the resulting MP3,
 and checks key words. It uses the account's enabled services/billing.

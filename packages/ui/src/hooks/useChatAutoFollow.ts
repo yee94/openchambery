@@ -243,7 +243,7 @@ export const useChatAutoFollow = ({
     // stable main view); only the composer/shell follow the keyboard.
     // Content-growth follow (streaming, notifyContentChange) stays independent.
     const keyboardGeometryFreezeRef = React.useRef(false);
-    // Settled keyboard open (from oc:keyboard-settled). Distinct from freeze:
+    // Settled keyboard open (from yuri:keyboard-settled). Distinct from freeze:
     // expand freezes provisionally before willShow; only settled open keeps the
     // freeze for the whole IME session.
     const keyboardOpenRef = React.useRef(false);
@@ -1076,9 +1076,9 @@ export const useChatAutoFollow = ({
     });
 
     const keyboardListenerTarget = enabled && typeof window !== 'undefined' ? window : noEventTarget;
-    useEventListener('oc:keyboard-intent', handleKeyboardIntent, keyboardListenerTarget);
-    useEventListener('oc:keyboard-anim', handleKeyboardAnim, keyboardListenerTarget);
-    useEventListener('oc:keyboard-settled', handleKeyboardSettled, keyboardListenerTarget);
+    useEventListener('yuri:keyboard-intent', handleKeyboardIntent, keyboardListenerTarget);
+    useEventListener('yuri:keyboard-anim', handleKeyboardAnim, keyboardListenerTarget);
+    useEventListener('yuri:keyboard-settled', handleKeyboardSettled, keyboardListenerTarget);
 
     React.useEffect(() => {
         if (!enabled || typeof window === 'undefined') return;

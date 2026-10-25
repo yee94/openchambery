@@ -59,7 +59,7 @@ const run = async () => {
   stage = "loading renderer fixture"
   await waitFor(window.loadURL(pathToFileURL(resolvedFixturePath).href), "Renderer fixture load")
   stage = "running IndexedDB evidence"
-  const result = await window.webContents.executeJavaScript("window.__OPENCHAMBER_INPUT_DRAFT_INDEXEDDB_EVIDENCE__")
+  const result = await waitFor(window.webContents.executeJavaScript("window.__YURI_INPUT_DRAFT_INDEXEDDB_EVIDENCE__"), "IndexedDB evidence")
   if (!result?.ok) throw new Error(result?.error ?? "Renderer did not return IndexedDB evidence")
   console.log(`Chromium IndexedDB evidence passed: ${result.evidence.map(({ name }) => name).join(", ")}`)
 }

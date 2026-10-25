@@ -18,9 +18,9 @@ interface AndroidNotificationsPlugin {
   stop(): Promise<void>;
 }
 
-export const androidNotifications = registerPlugin<AndroidNotificationsPlugin>('OpenChamberNotifications');
+export const androidNotifications = registerPlugin<AndroidNotificationsPlugin>('YuriNotifications');
 export const canUseAndroidNotifications = (): boolean => Capacitor.getPlatform() === 'android'
-  && Capacitor.isPluginAvailable('OpenChamberNotifications');
+  && Capacitor.isPluginAvailable('YuriNotifications');
 
 /** Snapshot current runtime credentials in memory only; the controller fences async endpoint changes. */
 export async function resolveAndroidNotificationConfig(labels: Record<string, string>, locale: string): Promise<AndroidNotificationConfig | null> {

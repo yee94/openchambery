@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, vi, test } from 'vit
 // Clear sticky mocks from other suites before installing this file's doubles.
 vi.restoreAllMocks();
 
-type OpenChamberEvent = {
+type YuriEvent = {
   type: string;
   revision?: number;
   occurredAt?: number;
@@ -11,19 +11,19 @@ type OpenChamberEvent = {
   cause?: 'change';
 };
 
-const { tipListeners } = vi.hoisted(() => ({ tipListeners: new Set<(event: OpenChamberEvent) => void>() }));
-/** Deliver a tip (or ready) event to every active OpenChamber tip subscriber. */
-const emitTip = (event: OpenChamberEvent) => {
+const { tipListeners } = vi.hoisted(() => ({ tipListeners: new Set<(event: YuriEvent) => void>() }));
+/** Deliver a tip (or ready) event to every active Yuri tip subscriber. */
+const emitTip = (event: YuriEvent) => {
   for (const listener of [...tipListeners]) listener(event);
 };
 
-vi.mock('@/lib/openchamberEvents', async (importOriginal) => ({
-  subscribeOpenchamberEvents: (listener: (event: OpenChamberEvent) => void) => {
+vi.mock('@/lib/yuriEvents', async (importOriginal) => ({
+  subscribeYuriEvents: (listener: (event: YuriEvent) => void) => {
     tipListeners.add(listener);
     return () => { tipListeners.delete(listener); };
   },
   // Keep the real parser so sibling suites can still assert envelope contracts.
-  parseOpenchamberEventEnvelope: (await importOriginal<typeof import('@/lib/openchamberEvents')>()).parseOpenchamberEventEnvelope,
+  parseYuriEventEnvelope: (await importOriginal<typeof import('@/lib/yuriEvents')>()).parseYuriEventEnvelope,
 }));
 
 import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from './runtime-url';
@@ -62,7 +62,7 @@ describe('session index background transport', () => {
     configureRuntimeUrlResolver({ apiBaseUrl: 'http://127.0.0.1:57123' });
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
-      value: { location: { origin: 'openchamber-ui://app', href: 'openchamber-ui://app/' } },
+      value: { location: { origin: 'yuri-ui://app', href: 'yuri-ui://app/' } },
     });
     requests = [];
     globalThis.fetch = async (input, init) => {
@@ -90,7 +90,7 @@ describe('session index background transport', () => {
     expect(await pending).toBe('tip');
 
     expect(requests).toHaveLength(1);
-    expect(new URL(requests[0]?.url ?? '').pathname).toBe('/api/openchamber/session-index/sync');
+    expect(new URL(requests[0]?.url ?? '').pathname).toBe('/api/yuri/session-index/sync');
     expect(requests[0]?.init?.method).toBe('POST');
     expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({ directories: ['/repo/a', '/repo/b'] });
   });

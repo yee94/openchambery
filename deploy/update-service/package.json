@@ -1,5 +1,5 @@
 {
-  "name": "@openchamber/update-service",
+  "name": "@yuri/update-service",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.14",

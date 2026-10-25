@@ -13,7 +13,7 @@ export type SlashCommandRowSource = {
   name: string;
   description?: string;
   isBuiltIn?: boolean;
-  isOpenChamber?: boolean;
+  isYuri?: boolean;
   isSkill?: boolean;
   scope?: string;
   agent?: string;
@@ -31,8 +31,8 @@ export const buildSlashCommandRows = (
 ): ComposerAutocompleteListRow[] => commands.map((command) => {
   const badge = command.isSkill
     ? labels.skill
-    : command.isOpenChamber
-      ? 'OpenChamberY'
+    : command.isYuri
+      ? 'Yuri'
       : command.isBuiltIn
         ? labels.system
         : command.scope || command.agent || labels.command;

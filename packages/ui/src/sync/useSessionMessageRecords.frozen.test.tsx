@@ -27,7 +27,7 @@ import type { TranscriptChangeListener, TranscriptRepository } from './transcrip
 import type { SessionHistoryBoundary } from './types';
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from './types';
 
-const SYNC_CONTEXT_GLOBAL_KEY = '__openchamber_sync_context__';
+const SYNC_CONTEXT_GLOBAL_KEY = '__yuri_sync_context__';
 
 type SyncSystem = {
   childStores: ChildStoreManager;

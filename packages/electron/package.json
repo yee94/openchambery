@@ -1,13 +1,13 @@
 {
-  "name": "@openchamber/electron",
+  "name": "@yuri/electron",
   "version": "2.1.10-beta.11",
   "private": true,
-  "description": "Electron desktop runtime for OpenChamber",
-  "author": "OpenChamber",
+  "description": "Electron desktop runtime for Yuri",
+  "author": "Yuri",
   "type": "module",
   "main": "./dist-bundle/main.mjs",
   "dependencies": {
-    "@openchambery/web": "workspace:*",
+    "@yuri/web": "workspace:*",
     "electron-context-menu": "^4.1.2",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3"
@@ -34,23 +34,25 @@
     "verify:linux-appimage": "node ./scripts/verify-linux-appimage.mjs",
     "bundle:main": "bun ./scripts/bundle-main.mjs",
     "generate:macos-icon": "node ./scripts/generate-macos-icon-assets.cjs",
+    "generate:brand-icons": "node ./scripts/generate-brand-icons.mjs",
     "generate:preview-icons": "node ./scripts/generate-preview-icons.mjs",
     "rebuild:native": "node ./scripts/rebuild-native.mjs",
     "test": "vitest run",
     "test:architecture": "vitest run ./scripts/target-architecture.test.mjs ./scripts/desktop-profile.test.mjs ./scripts/verify-linux-appimage.test.mjs ./scripts/opencode2-bundle-contract.test.mjs",
     "test:input-draft-indexeddb": "vitest run ./scripts/indexeddb-evidence.test.mjs -t \"input draft\"",
     "test:transcript-durable-indexeddb": "vitest run ./scripts/indexeddb-evidence.test.mjs -t \"transcript durable\"",
+    "test:brand-migration": "vitest run ./scripts/brand-migration-evidence.test.mjs ./brand-migration.test.mjs",
     "test:updater": "vitest run ./ipc-command-gate.test.mjs ./desktop-ota.test.mjs ./desktop-backend.test.mjs ./desktop-installer.test.mjs ./scripts/desktop-ota-evidence.test.mjs",
     "test:virtual-asset": "vitest run ./virtual-asset-protocol.test.mjs",
     "test:preview-gateway": "vitest run ./preview-loopback-gateway.test.mjs",
     "package": "bun run build:web-assets && bun run prepare:opencode-cli && bun run bundle:main && bun run rebuild:native && node ./scripts/package.mjs",
-    "package:preview": "OPENCHAMBER_DESKTOP_PROFILE=preview bun run package",
+    "package:preview": "YURI_DESKTOP_PROFILE=preview bun run package",
     "type-check": "node --check ./main.mjs && node --check ./preload.mjs && node --check ./virtual-asset-protocol.mjs && node --check ./preview-loopback-gateway.mjs",
     "lint": "node -e \"process.exit(0)\""
   },
   "build": {
-    "appId": "dev.openchamber.desktop",
-    "productName": "OpenChamber",
+    "appId": "dev.yuri.desktop",
+    "productName": "Yuri",
     "files": [
       "dist-bundle/main.mjs",
       "preload.mjs"
@@ -85,9 +87,11 @@
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "npmRebuild": false,
     "protocols": {
-      "name": "OpenChamber",
+      "name": "Yuri",
       "schemes": [
-        "openchamber"
+        "yuri",
+        "openchamber",
+        "openchambery"
       ]
     },
     "mac": {
@@ -122,14 +126,14 @@
       ],
       "category": "Development",
       "icon": "resources/icons/icon.png",
-      "executableName": "openchamber",
+      "executableName": "yuri",
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
       "desktop": {
         "entry": {
-          "Name": "OpenChamber",
-          "Comment": "Desktop runtime for OpenChamber",
-          "Icon": "openchamber",
-          "StartupWMClass": "openchamber"
+          "Name": "Yuri",
+          "Comment": "Desktop runtime for Yuri",
+          "Icon": "yuri",
+          "StartupWMClass": "yuri"
         }
       }
     },
@@ -166,7 +170,7 @@
     },
     "publish": {
       "provider": "generic",
-      "url": "https://github.com/yee94/openchamber/releases/download/",
+      "url": "https://github.com/yee94/yuri/releases/download/",
       "channel": "full"
     }
   }

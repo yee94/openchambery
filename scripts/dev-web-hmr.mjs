@@ -82,13 +82,13 @@ async function stopChildTree(child) {
   }
 }
 
-const uiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5180';
-const backendPort = process.env.OPENCHAMBER_HMR_API_PORT || '3902';
-const hmrHost = process.env.OPENCHAMBER_HMR_HOST || '127.0.0.1';
+const uiPort = process.env.YURI_HMR_UI_PORT || '5180';
+const backendPort = process.env.YURI_HMR_API_PORT || '3902';
+const hmrHost = process.env.YURI_HMR_HOST || '127.0.0.1';
 // Keep the HMR session index separate from desktop and normal CLI runtimes.
 // Settings and authentication continue using the normal development data dir.
 const hmrSessionIndexDir = path.resolve(
-  process.env.OPENCHAMBER_HMR_DATA_DIR || path.join(repoRoot, 'data', 'hmr'),
+  process.env.YURI_HMR_DATA_DIR || path.join(repoRoot, 'data', 'hmr'),
 );
 const hmrSessionIndexDbPath = path.join(hmrSessionIndexDir, 'session-index.sqlite');
 
@@ -111,9 +111,9 @@ function getLanAddresses() {
  * Why this is NOT the default: every cold start with cache wipe + `vite --force`
  * mints a new optimized-deps browserHash. Open browser tabs still request the
  * previous `chunk-*.js?v=<oldHash>` URLs, Vite answers 504 Outdated Optimize Dep,
- * and dynamic imports (`@openchamber/ui/main`, `renderMobileApp`) fail → white
+ * and dynamic imports (`@yuri/ui/main`, `renderMobileApp`) fail → white
  * screen. Keeping the cache across restarts is the stable path; force rebuild
- * is opt-in via OPENCHAMBER_VITE_FORCE=1.
+ * is opt-in via YURI_VITE_FORCE=1.
  */
 function clearViteCache() {
   const cacheDirs = [
@@ -128,24 +128,24 @@ function clearViteCache() {
 }
 
 const forceViteOptimize =
-  process.env.OPENCHAMBER_VITE_FORCE === '1'
-  || process.env.OPENCHAMBER_VITE_FORCE === 'true';
+  process.env.YURI_VITE_FORCE === '1'
+  || process.env.YURI_VITE_FORCE === 'true';
 
 if (forceViteOptimize) {
-  console.log('[dev:web:hmr] OPENCHAMBER_VITE_FORCE=1 — clearing Vite dep cache and re-optimizing');
+  console.log('[dev:web:hmr] YURI_VITE_FORCE=1 — clearing Vite dep cache and re-optimizing');
   clearViteCache();
 }
 
 mkdirSync(hmrSessionIndexDir, { recursive: true });
 
 // Do not pin the staged Electron bundled binary. Managed startup detects the
-// local opencode2 version and installs the pinned V2 into the OpenChamber
+// local opencode2 version and installs the pinned V2 into the Yuri
 // data dir when PATH is missing or too old.
 const apiEnv = {
-  OPENCHAMBER_PORT: backendPort,
-  OPENCHAMBER_SESSION_INDEX_DB_PATH: hmrSessionIndexDbPath,
+  YURI_PORT: backendPort,
+  YURI_SESSION_INDEX_DB_PATH: hmrSessionIndexDbPath,
   // Never inherit a leftover desktop runtime from the parent shell.
-  OPENCHAMBER_RUNTIME: 'web',
+  YURI_RUNTIME: 'web',
 };
 
 const startApi = () => run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], apiEnv);
@@ -160,8 +160,8 @@ const startVite = () => run(
   'bun',
   viteArgs,
   {
-    OPENCHAMBER_PORT: backendPort,
-    OPENCHAMBER_DISABLE_PWA_DEV: '1',
+    YURI_PORT: backendPort,
+    YURI_DISABLE_PWA_DEV: '1',
   },
   { cwd: webRoot },
 );

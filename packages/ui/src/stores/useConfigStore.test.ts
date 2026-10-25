@@ -1420,7 +1420,7 @@ describe('useConfigStore provider persistence', () => {
 
   test('worktree sync config never changes the parent project snapshot', () => {
     const worktree = '/workspace/project-worktree';
-    storage.set('oc.worktreeProjectMap', JSON.stringify({ [worktree]: DIRECTORY }));
+    storage.set('yuri.worktreeProjectMap', JSON.stringify({ [worktree]: DIRECTORY }));
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       providers: [provider('openai', 'gpt-5.5')],
@@ -1535,7 +1535,7 @@ describe('useConfigStore provider persistence', () => {
 
   test('project loadAgents does not inherit defaults from a sibling worktree event', async () => {
     const worktree = '/workspace/project-worktree';
-    storage.set('oc.worktreeProjectMap', JSON.stringify({ [worktree]: DIRECTORY }));
+    storage.set('yuri.worktreeProjectMap', JSON.stringify({ [worktree]: DIRECTORY }));
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       providers: [provider('openai', 'gpt-5.5')],

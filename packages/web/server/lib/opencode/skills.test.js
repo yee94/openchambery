@@ -7,7 +7,7 @@ import { addSkillFromMdFile } from './shared.js';
 
 describe('skills', () => {
   it('uses the path-derived id even when frontmatter has a different display name', async () => {
-    const root = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-skill-id-'));
+    const root = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'yuri-skill-id-'));
     try {
       const dir = path.join(root, 'release');
       await fsPromises.mkdir(dir);
@@ -42,7 +42,7 @@ describe('skills', () => {
   it('resolves built-in OpenCode skill content without parsing virtual locations as files', () => {
     const sources = getSkillSources(
       'customize-opencode',
-      '/tmp/openchamber-skills-test-missing-project',
+      '/tmp/yuri-skills-test-missing-project',
       {
         name: 'customize-opencode',
         path: '<built-in>',
@@ -64,10 +64,10 @@ describe('skills', () => {
   });
 
   it('clears file metadata when a discovered skill path is unreadable', () => {
-    const missingPath = path.join(os.tmpdir(), 'openchamber-skills-test-missing-file', 'SKILL.md');
+    const missingPath = path.join(os.tmpdir(), 'yuri-skills-test-missing-file', 'SKILL.md');
     const sources = getSkillSources(
       'missing-agent-skill',
-      '/tmp/openchamber-skills-test-missing-project',
+      '/tmp/yuri-skills-test-missing-project',
       {
         name: 'missing-agent-skill',
         path: missingPath,
@@ -87,7 +87,7 @@ describe('skills', () => {
   });
 
   it('enriches discovered skills when their location is a real markdown file', async () => {
-    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-skills-'));
+    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'yuri-skills-'));
     const skillDir = path.join(tempRoot, 'example-skill');
     const skillPath = path.join(skillDir, 'SKILL.md');
 

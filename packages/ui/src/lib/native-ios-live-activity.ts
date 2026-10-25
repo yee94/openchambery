@@ -2,7 +2,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
-const NATIVE_IOS_LIVE_ACTIVITY_PLUGIN = 'OpenChamberLiveActivity';
+const NATIVE_IOS_LIVE_ACTIVITY_PLUGIN = 'YuriLiveActivity';
 export const NATIVE_LIVE_ACTIVITY_BUSY_START_MS = 5_000;
 export const NATIVE_LIVE_ACTIVITY_COMPLETE_DISMISSAL_SECONDS = 900;
 export const NATIVE_LIVE_ACTIVITY_ERROR_DISMISSAL_SECONDS = 3600;
@@ -90,7 +90,7 @@ export type NativeLiveActivityPlugin = {
   ) => Promise<PluginListenerHandle>;
 };
 
-const OpenChamberLiveActivity = registerPlugin<NativeLiveActivityPlugin>(NATIVE_IOS_LIVE_ACTIVITY_PLUGIN);
+const YuriLiveActivity = registerPlugin<NativeLiveActivityPlugin>(NATIVE_IOS_LIVE_ACTIVITY_PLUGIN);
 
 type NativeLiveActivityAvailabilityInput = {
   isCapacitor: boolean;
@@ -116,7 +116,7 @@ export function canUseNativeIosLiveActivity(): boolean {
   });
 }
 
-export const getNativeIosLiveActivityPlugin = (): NativeLiveActivityPlugin => OpenChamberLiveActivity;
+export const getNativeIosLiveActivityPlugin = (): NativeLiveActivityPlugin => YuriLiveActivity;
 
 export type NativeLiveActivityCatalogItem = {
   sessionId: string;

@@ -32,7 +32,7 @@ const tempDirs = [];
 
 /** Create a temp dir and register it for afterEach cleanup. */
 const createTempDir = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-git-service-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-git-service-'));
   tempDirs.push(dir);
   return dir;
 };
@@ -538,7 +538,7 @@ describe('createWorktree', () => {
       restore();
     }
   });
-  it('broadcasts openchamber bootstrap status events as state changes', async () => {
+  it('broadcasts yuri bootstrap status events as state changes', async () => {
     if (!canRunGit()) return;
 
     const events = [];
@@ -556,7 +556,7 @@ describe('createWorktree', () => {
       });
 
       expect(events.some((event) => (
-        event?.type === 'openchamber:worktree-bootstrap-status'
+        event?.type === 'yuri:worktree-bootstrap-status'
         && typeof event?.properties?.directory === 'string'
         && event.properties.status === 'pending'
       ))).toBe(true);
@@ -567,7 +567,7 @@ describe('createWorktree', () => {
       });
 
       expect(events.some((event) => (
-        event?.type === 'openchamber:worktree-bootstrap-status'
+        event?.type === 'yuri:worktree-bootstrap-status'
         && event.properties?.status !== 'pending'
       ))).toBe(true);
     } finally {

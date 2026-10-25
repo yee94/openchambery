@@ -59,8 +59,8 @@ export interface BridgeContext {
 
 const CLIENT_RELOAD_DELAY_MS = 800;
 
-const UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL || 'https://openchamber-update.vercel.app/v1/update/check';
-const GITHUB_BACKEND_DISABLED_ERROR = 'OpenChamberY VS Code backend GitHub integration is disabled. Use native VS Code GitHub integrations.';
+const UPDATE_CHECK_URL = process.env.YURI_UPDATE_API_URL || '';
+const GITHUB_BACKEND_DISABLED_ERROR = 'Yuri VS Code backend GitHub integration is disabled. Use native VS Code GitHub integrations.';
 
 
 export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeContext): Promise<BridgeResponse> {
@@ -135,8 +135,8 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
     if (systemResponse) {
       return systemResponse;
     }
-    // OpenChamber-owned turn-page aggregation must run before the generic
-    // OpenCode proxy so `/api/openchamber/sessions/:id/messages` is not
+    // Yuri-owned turn-page aggregation must run before the generic
+    // OpenCode proxy so `/api/yuri/sessions/:id/messages` is not
     // forwarded as a raw upstream path.
     const sessionTurnPageResponse = await handleSessionTurnPageBridgeMessage(
       { id, type, payload },

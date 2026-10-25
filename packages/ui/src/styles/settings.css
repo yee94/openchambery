@@ -1,58 +1,58 @@
 /* Shared Settings workspace grammar. Detail surfaces use the grouped material
    from Scheduled Tasks. Responsive layout also switches navigation between a
    flat desktop list and grouped mobile cards. */
-.oc-settings-workspace {
-  --oc-settings-base-font-size: var(--text-ui-label);
-  --oc-settings-base-line-height: var(--form-control-line-height);
-  --oc-settings-group-radius: 1rem;
-  --oc-settings-section-gap: 0.5rem;
+.yuri-settings-workspace {
+  --yuri-settings-base-font-size: var(--text-ui-label);
+  --yuri-settings-base-line-height: var(--form-control-line-height);
+  --yuri-settings-group-radius: 1rem;
+  --yuri-settings-section-gap: 0.5rem;
   /* One roomy vertical rhythm for navigation sections and detail groups across
      desktop and mobile. Keep this distinct from compact in-card row spacing. */
-  --oc-settings-section-stack-gap: 1.25rem;
-  --oc-settings-section-title-size: 0.75rem;
-  --oc-settings-section-title-line-height: 1rem;
-  --oc-settings-section-title-weight: 400;
-  --oc-settings-section-title-inset: 0.5rem;
-  --oc-settings-section-title-slot: calc(
-    var(--oc-settings-section-title-line-height) +
-      var(--oc-settings-section-gap)
+  --yuri-settings-section-stack-gap: 1.25rem;
+  --yuri-settings-section-title-size: 0.75rem;
+  --yuri-settings-section-title-line-height: 1rem;
+  --yuri-settings-section-title-weight: 400;
+  --yuri-settings-section-title-inset: 0.5rem;
+  --yuri-settings-section-title-slot: calc(
+    var(--yuri-settings-section-title-line-height) +
+      var(--yuri-settings-section-gap)
   );
   /* 3.25rem at --dpt 1 = 52px — settings rows stay above the 36px touch
      minimum while compacting with the density chain. */
-  --oc-settings-row-min-height: calc(3.25rem * var(--padding-scale, 1));
-  --oc-settings-row-gap: 0.625rem;
-  --oc-settings-row-label-size: var(--oc-settings-base-font-size);
-  --oc-settings-row-label-line-height: var(--oc-settings-base-line-height);
-  --oc-settings-row-meta-size: var(--form-helper-font-size);
-  --oc-settings-row-meta-line-height: var(--form-helper-line-height);
-  --oc-settings-row-block-padding: 0.6875rem;
-  --oc-settings-group-background: color-mix(
+  --yuri-settings-row-min-height: calc(3.25rem * var(--padding-scale, 1));
+  --yuri-settings-row-gap: 0.625rem;
+  --yuri-settings-row-label-size: var(--yuri-settings-base-font-size);
+  --yuri-settings-row-label-line-height: var(--yuri-settings-base-line-height);
+  --yuri-settings-row-meta-size: var(--form-helper-font-size);
+  --yuri-settings-row-meta-line-height: var(--form-helper-line-height);
+  --yuri-settings-row-block-padding: 0.6875rem;
+  --yuri-settings-group-background: color-mix(
     in srgb,
     var(--surface-muted) 55%,
     var(--surface-elevated)
   );
-  --oc-settings-group-border: var(--form-surface-border);
-  --oc-settings-row-divider: var(--form-row-divider);
-  --oc-settings-row-inset: 0.875rem;
-  --oc-settings-desktop-value-max-width: 12.5rem;
-  --oc-settings-avatar-action-background: white;
-  --oc-settings-avatar-action-foreground: black;
+  --yuri-settings-group-border: var(--form-surface-border);
+  --yuri-settings-row-divider: var(--form-row-divider);
+  --yuri-settings-row-inset: 0.875rem;
+  --yuri-settings-desktop-value-max-width: 12.5rem;
+  --yuri-settings-avatar-action-background: white;
+  --yuri-settings-avatar-action-foreground: black;
 }
 
-.oc-settings-section-stack,
-.oc-settings-page-content {
+.yuri-settings-section-stack,
+.yuri-settings-page-content {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: var(--oc-settings-section-stack-gap);
+  gap: var(--yuri-settings-section-stack-gap);
 }
 
-.oc-settings-section-stack > *,
-.oc-settings-page-content > * {
+.yuri-settings-section-stack > *,
+.yuri-settings-page-content > * {
   margin-block: 0 !important;
 }
 
-.oc-settings-page-section {
+.yuri-settings-page-section {
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -62,108 +62,108 @@
 /* Explicit Settings detail primitives. These intentionally mirror the grouped
    cards used by Scheduled Task detail, and are shared by desktop and narrow
    layouts instead of inferring structure from arbitrary section markup. */
-.oc-settings-group {
+.yuri-settings-group {
   display: flex;
   width: 100%;
   min-width: 0;
   flex-direction: column;
-  gap: var(--oc-settings-section-gap);
+  gap: var(--yuri-settings-section-gap);
 }
 
-.oc-settings-group-label {
-  padding-inline: var(--oc-settings-section-title-inset);
-  font-size: var(--oc-settings-section-title-size);
-  line-height: var(--oc-settings-section-title-line-height);
-  font-weight: var(--oc-settings-section-title-weight) !important;
+.yuri-settings-group-label {
+  padding-inline: var(--yuri-settings-section-title-inset);
+  font-size: var(--yuri-settings-section-title-size);
+  line-height: var(--yuri-settings-section-title-line-height);
+  font-weight: var(--yuri-settings-section-title-weight) !important;
   color: var(--surface-muted-foreground);
 }
 
 /* Latin-only labels have a visibly smaller x-height than CJK glyphs at the
    same nominal size. Apply one optical step without special-casing product
    names so mixed-language navigation keeps one perceived hierarchy. */
-.oc-settings-group-label[data-settings-label-script="latin"] {
-  font-size: calc(var(--oc-settings-section-title-size) + 0.0625rem);
+.yuri-settings-group-label[data-settings-label-script="latin"] {
+  font-size: calc(var(--yuri-settings-section-title-size) + 0.0625rem);
 }
 
-.oc-settings-group-card {
+.yuri-settings-group-card {
   container: settings-card / inline-size;
   width: 100%;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--oc-settings-group-border);
-  border-radius: var(--oc-settings-group-radius);
-  background: var(--oc-settings-group-background);
+  border: 1px solid var(--yuri-settings-group-border);
+  border-radius: var(--yuri-settings-group-radius);
+  background: var(--yuri-settings-group-background);
   box-shadow: none;
 }
 
-.oc-settings-group-description {
+.yuri-settings-group-description {
   margin: 0;
-  padding-inline: var(--oc-settings-section-title-inset);
-  font-size: var(--oc-settings-row-meta-size);
-  line-height: var(--oc-settings-row-meta-line-height);
+  padding-inline: var(--yuri-settings-section-title-inset);
+  font-size: var(--yuri-settings-row-meta-size);
+  line-height: var(--yuri-settings-row-meta-line-height);
 }
 
-.oc-settings-group-row {
+.yuri-settings-group-row {
   width: 100%;
   min-width: 0;
-  min-height: var(--oc-settings-row-min-height);
-  padding: var(--oc-settings-row-block-padding) var(--oc-settings-row-inset);
-  font-size: var(--oc-settings-row-label-size);
-  line-height: var(--oc-settings-row-label-line-height);
+  min-height: var(--yuri-settings-row-min-height);
+  padding: var(--yuri-settings-row-block-padding) var(--yuri-settings-row-inset);
+  font-size: var(--yuri-settings-row-label-size);
+  line-height: var(--yuri-settings-row-label-line-height);
 }
 
-.oc-settings-group-card > .oc-settings-group-row:not(:last-child) {
-  border-bottom: 1px solid var(--oc-settings-row-divider);
+.yuri-settings-group-card > .yuri-settings-group-row:not(:last-child) {
+  border-bottom: 1px solid var(--yuri-settings-row-divider);
 }
 
 /* Choice collections may need one semantic radiogroup wrapper. Keep their
    options on the same row/divider rhythm as direct SettingsRow children. */
-.oc-settings-group-card > [role="radiogroup"] > .oc-settings-group-row:not(:last-child) {
-  border-bottom: 1px solid var(--oc-settings-row-divider);
+.yuri-settings-group-card > [role="radiogroup"] > .yuri-settings-group-row:not(:last-child) {
+  border-bottom: 1px solid var(--yuri-settings-row-divider);
 }
 
 /* Older boolean settings are direct interactive rows. Once hosted by the
    shared SettingsGroup, they inherit the exact same tokenized geometry while
    their existing keyboard and checkbox behavior remains unchanged. */
-.oc-settings-detail-group .oc-settings-group-card > [role="button"] {
+.yuri-settings-detail-group .yuri-settings-group-card > [role="button"] {
   width: 100%;
   min-width: 0;
-  min-height: var(--oc-settings-row-min-height);
-  padding: var(--oc-settings-row-block-padding) var(--oc-settings-row-inset);
-  font-size: var(--oc-settings-row-label-size);
-  line-height: var(--oc-settings-row-label-line-height);
+  min-height: var(--yuri-settings-row-min-height);
+  padding: var(--yuri-settings-row-block-padding) var(--yuri-settings-row-inset);
+  font-size: var(--yuri-settings-row-label-size);
+  line-height: var(--yuri-settings-row-label-line-height);
 }
 
 /* Legacy boolean rows retain their interactive implementation while matching
    the shared label/value layout: copy on the left and the checkbox in the
    right-aligned value position. */
-.oc-settings-group-card > [role="button"]:has([role="checkbox"]) {
+.yuri-settings-group-card > [role="button"]:has([role="checkbox"]) {
   flex-direction: row-reverse;
   justify-content: space-between;
 }
 
-.oc-settings-detail-group .oc-settings-group-card > [role="button"]:not(:last-child) {
-  border-bottom: 1px solid var(--oc-settings-row-divider);
+.yuri-settings-detail-group .yuri-settings-group-card > [role="button"]:not(:last-child) {
+  border-bottom: 1px solid var(--yuri-settings-row-divider);
 }
 
-.oc-settings-detail-group .oc-settings-group-card > [role="button"] .typography-ui-label {
-  font-size: var(--oc-settings-row-label-size) !important;
-  line-height: var(--oc-settings-row-label-line-height) !important;
+.yuri-settings-detail-group .yuri-settings-group-card > [role="button"] .typography-ui-label {
+  font-size: var(--yuri-settings-row-label-size) !important;
+  line-height: var(--yuri-settings-row-label-line-height) !important;
 }
 
-.oc-settings-detail-group .oc-settings-group-card > [role="button"] .typography-meta {
-  font-size: var(--oc-settings-row-meta-size) !important;
-  line-height: var(--oc-settings-row-meta-line-height) !important;
+.yuri-settings-detail-group .yuri-settings-group-card > [role="button"] .typography-meta {
+  font-size: var(--yuri-settings-row-meta-size) !important;
+  line-height: var(--yuri-settings-row-meta-line-height) !important;
 }
 
-.oc-settings-split-row {
+.yuri-settings-split-row {
   display: grid;
   grid-template-columns: minmax(8.5rem, auto) minmax(0, 1fr);
   align-items: center;
   column-gap: clamp(1rem, 4vw, 3rem);
 }
 
-.oc-settings-split-row-copy {
+.yuri-settings-split-row-copy {
   display: flex;
   min-width: 0;
   max-width: 20rem;
@@ -171,20 +171,20 @@
   gap: 0.125rem;
 }
 
-.oc-settings-split-row-copy .typography-ui-label,
-.oc-settings-group-row .oc-mobile-settings-chip,
-.oc-settings-group-row [data-slot="select-trigger"],
-.oc-settings-group-row [data-slot="input"] {
+.yuri-settings-split-row-copy .typography-ui-label,
+.yuri-settings-group-row .yuri-mobile-settings-chip,
+.yuri-settings-group-row [data-slot="select-trigger"],
+.yuri-settings-group-row [data-slot="input"] {
   font-size: var(--form-control-font-size) !important;
   line-height: var(--form-control-line-height) !important;
 }
 
-.oc-settings-group-row .typography-meta {
-  font-size: var(--oc-settings-row-meta-size) !important;
-  line-height: var(--oc-settings-row-meta-line-height) !important;
+.yuri-settings-group-row .typography-meta {
+  font-size: var(--yuri-settings-row-meta-size) !important;
+  line-height: var(--yuri-settings-row-meta-line-height) !important;
 }
 
-.oc-settings-split-row-control {
+.yuri-settings-split-row-control {
   display: flex;
   width: min(100%, 28rem);
   min-width: 0;
@@ -194,16 +194,16 @@
   gap: 0.5rem;
 }
 
-.oc-settings-split-row-control > [data-slot="select-trigger"],
-.oc-settings-split-row-control > [data-slot="input"],
-.oc-settings-split-row-control > .oc-settings-inline-value {
+.yuri-settings-split-row-control > [data-slot="select-trigger"],
+.yuri-settings-split-row-control > [data-slot="input"],
+.yuri-settings-split-row-control > .yuri-settings-inline-value {
   width: auto;
   min-width: 0;
   max-width: 20rem;
   flex: 1 1 10rem;
 }
 
-.oc-settings-split-row-control > [data-slot="number-input"] {
+.yuri-settings-split-row-control > [data-slot="number-input"] {
   width: auto;
   min-width: 0;
   max-width: 100%;
@@ -214,8 +214,8 @@
    right-aligned values in their row instead of as permanently outlined input
    boxes. A transparent border is always reserved so the hover/focus affordance
    never changes the control's size or moves surrounding content. */
-.oc-settings-workspace .oc-settings-group-row
-  :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value) {
+.yuri-settings-workspace .yuri-settings-group-row
+  :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .yuri-settings-inline-value) {
   height: var(--form-control-height) !important;
   min-height: var(--form-control-height) !important;
   justify-content: flex-end !important;
@@ -229,15 +229,15 @@
   box-shadow: none !important;
 }
 
-.oc-settings-workspace
+.yuri-settings-workspace
   [data-settings-value]
-  .oc-settings-inline-value > :is(div, span) {
+  .yuri-settings-inline-value > :is(div, span) {
   flex: 0 1 auto !important;
   justify-content: flex-end;
   text-align: right;
 }
 
-.oc-settings-workspace .oc-settings-group-row
+.yuri-settings-workspace .yuri-settings-group-row
   [data-slot="select-trigger"]
   [data-slot="select-value"] {
   min-width: 0;
@@ -245,7 +245,7 @@
   text-align: right;
 }
 
-.oc-settings-workspace .oc-settings-group-row
+.yuri-settings-workspace .yuri-settings-group-row
   [data-slot="select-value"]:not(:has(> *)) {
   display: block !important;
   overflow: hidden;
@@ -253,49 +253,49 @@
   white-space: nowrap;
 }
 
-.oc-settings-workspace .oc-settings-group-row
-  :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value):hover:not(:focus),
-.oc-settings-workspace .oc-settings-group-row
+.yuri-settings-workspace .yuri-settings-group-row
+  :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .yuri-settings-inline-value):hover:not(:focus),
+.yuri-settings-workspace .yuri-settings-group-row
   [data-slot="select-trigger"][data-popup-open],
-.oc-settings-workspace .oc-settings-group-row
-  .oc-settings-inline-value[data-popup-open],
-.oc-settings-workspace .oc-settings-group-row
+.yuri-settings-workspace .yuri-settings-group-row
+  .yuri-settings-inline-value[data-popup-open],
+.yuri-settings-workspace .yuri-settings-group-row
   [data-slot="number-input"]:focus-within {
   border-color: var(--form-control-border) !important;
   background: var(--form-control-background) !important;
 }
 
-.oc-settings-workspace .oc-settings-group-row
-  :is([data-slot="select-trigger"], [data-slot="input"], .oc-settings-inline-value):focus-visible {
+.yuri-settings-workspace .yuri-settings-group-row
+  :is([data-slot="select-trigger"], [data-slot="input"], .yuri-settings-inline-value):focus-visible {
   box-shadow: 0 0 0 2px var(--interactive-focus-ring) !important;
 }
 
-.oc-settings-workspace .oc-settings-group-row
+.yuri-settings-workspace .yuri-settings-group-row
   [data-slot="input"] {
   text-align: right;
 }
 
-.oc-settings-workspace .oc-settings-group-row
+.yuri-settings-workspace .yuri-settings-group-row
   [data-slot="number-input"] > button:first-child {
   border-right-color: transparent !important;
 }
 
-.oc-settings-workspace .oc-settings-group-row
+.yuri-settings-workspace .yuri-settings-group-row
   [data-slot="number-input"] > button:last-child {
   border-left-color: transparent !important;
 }
 
-.oc-settings-workspace .oc-settings-group-row
+.yuri-settings-workspace .yuri-settings-group-row
   [data-slot="number-input"]:is(:hover, :focus-within) > button:first-child {
   border-right-color: var(--form-control-border) !important;
 }
 
-.oc-settings-workspace .oc-settings-group-row
+.yuri-settings-workspace .yuri-settings-group-row
   [data-slot="number-input"]:is(:hover, :focus-within) > button:last-child {
   border-left-color: var(--form-control-border) !important;
 }
 
-.oc-settings-split-row-stacked {
+.yuri-settings-split-row-stacked {
   grid-template-columns: minmax(0, 1fr);
   row-gap: 0.5rem;
 }
@@ -303,7 +303,7 @@
 /* Row-level value collection that mixes an editable control with adjacent
    actions. The actions keep their intrinsic width so they always sit on the
    input's line; the two-column value cap applies to the whole collection. */
-.oc-settings-value-inline {
+.yuri-settings-value-inline {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -311,284 +311,284 @@
   gap: 0.5rem;
 }
 
-.oc-settings-value-inline > [data-slot="input"] {
+.yuri-settings-value-inline > [data-slot="input"] {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.oc-settings-value-inline > button {
+.yuri-settings-value-inline > button {
   flex: 0 0 auto;
   white-space: nowrap;
 }
 
-.oc-settings-workspace .oc-settings-value-inline > button {
+.yuri-settings-workspace .yuri-settings-value-inline > button {
   height: var(--form-control-height);
   min-height: var(--form-control-height);
 }
 
-.oc-settings-workspace .oc-settings-group-row
-  .oc-settings-value-inline > [data-slot="input"] {
+.yuri-settings-workspace .yuri-settings-group-row
+  .yuri-settings-value-inline > [data-slot="input"] {
   margin-inline-end: 0;
 }
 
 /* Credentials are copied verbatim, so they read left-aligned in the font stack
    they will be pasted into instead of the right-aligned value grammar. */
-.oc-settings-workspace .oc-settings-group-row
-  [data-slot="input"].oc-settings-value-inline-input {
+.yuri-settings-workspace .yuri-settings-group-row
+  [data-slot="input"].yuri-settings-value-inline-input {
   text-align: left !important;
 }
 
-.oc-settings-split-row-stacked .oc-settings-split-row-copy {
+.yuri-settings-split-row-stacked .yuri-settings-split-row-copy {
   max-width: 32rem;
 }
 
-.oc-settings-split-row-stacked .oc-settings-split-row-control {
+.yuri-settings-split-row-stacked .yuri-settings-split-row-control {
   width: min(100%, 28rem);
   justify-self: start;
 }
 
 @media (max-width: 640px) {
-  .oc-settings-split-row {
+  .yuri-settings-split-row {
     grid-template-columns: minmax(0, 42%) minmax(0, 1fr);
     column-gap: 0.875rem;
   }
 
-  .oc-settings-split-row-control {
+  .yuri-settings-split-row-control {
     width: 100%;
   }
 
   /* Complex pickers and editors opt into a true full-width row. Keep this
      override after the narrow two-column rule so the generic mobile grid
      cannot squeeze their content back into the value column. */
-  .oc-settings-split-row.oc-settings-split-row-stacked {
+  .yuri-settings-split-row.yuri-settings-split-row-stacked {
     grid-template-columns: minmax(0, 1fr);
     row-gap: 0.5rem;
   }
 
-  .oc-settings-split-row.oc-settings-split-row-stacked
-    .oc-settings-split-row-control {
+  .yuri-settings-split-row.yuri-settings-split-row-stacked
+    .yuri-settings-split-row-control {
     width: 100%;
     max-width: none;
     justify-self: stretch;
   }
 }
 
-.oc-settings-workspace-desktop {
-  --oc-settings-section-title-size: var(--text-ui-label);
-  --oc-settings-section-title-line-height: var(--form-control-line-height);
+.yuri-settings-workspace-desktop {
+  --yuri-settings-section-title-size: var(--text-ui-label);
+  --yuri-settings-section-title-line-height: var(--form-control-line-height);
 }
 
 /* Desktop keeps a stable value column when the detail pane grows. Mobile
    retains the responsive grid above, while ordinary desktop control
    footprints — including an adjacent reset action — use the shared cap. */
-.oc-settings-workspace-desktop .oc-settings-split-row {
+.yuri-settings-workspace-desktop .yuri-settings-split-row {
   grid-template-columns:
     minmax(12rem, 1fr)
-    minmax(0, var(--oc-settings-desktop-value-max-width));
+    minmax(0, var(--yuri-settings-desktop-value-max-width));
   column-gap: 2rem;
 }
 
-.oc-settings-workspace-desktop .oc-settings-summary-model-source-row {
-  --oc-settings-desktop-value-max-width: 24rem;
+.yuri-settings-workspace-desktop .yuri-settings-summary-model-source-row {
+  --yuri-settings-desktop-value-max-width: 24rem;
 }
 
 /* Agent mode chips (主 Agent / 子 Agent / 全部) need a wider value column on
    desktop so the three options stay on one row. */
-.oc-settings-workspace-desktop .oc-settings-agents-mode-row {
-  --oc-settings-desktop-value-max-width: 18rem;
+.yuri-settings-workspace-desktop .yuri-settings-agents-mode-row {
+  --yuri-settings-desktop-value-max-width: 18rem;
 }
 
 /* SSH command and extra port-forward endpoints are longer than ordinary
    Settings values; keep them on one labeled row without truncating the host. */
-.oc-settings-workspace-desktop .oc-settings-ssh-command-row,
-.oc-settings-workspace-desktop .oc-settings-ssh-endpoint-row {
-  --oc-settings-desktop-value-max-width: 28rem;
+.yuri-settings-workspace-desktop .yuri-settings-ssh-command-row,
+.yuri-settings-workspace-desktop .yuri-settings-ssh-endpoint-row {
+  --yuri-settings-desktop-value-max-width: 28rem;
 }
 
-.oc-settings-workspace-desktop .oc-settings-split-row-copy {
+.yuri-settings-workspace-desktop .yuri-settings-split-row-copy {
   max-width: 24rem;
 }
 
-.oc-settings-workspace-desktop .oc-settings-split-row-control {
+.yuri-settings-workspace-desktop .yuri-settings-split-row-control {
   width: 100%;
-  max-width: var(--oc-settings-desktop-value-max-width);
+  max-width: var(--yuri-settings-desktop-value-max-width);
   justify-self: end;
 }
 
 /* Collection sidebars are narrower than detail panes. Keep Usage settings on
    one labeled row each instead of reserving the detail pane's 12rem copy
    column and squeezing the controls out of view. */
-.oc-settings-workspace-desktop
-  .oc-settings-usage-sidebar
-  .oc-settings-split-row {
+.yuri-settings-workspace-desktop
+  .yuri-settings-usage-sidebar
+  .yuri-settings-split-row {
   grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: var(--oc-settings-row-gap);
+  column-gap: var(--yuri-settings-row-gap);
 }
 
-.oc-settings-workspace-desktop
-  .oc-settings-usage-sidebar
-  .oc-settings-split-row-control {
+.yuri-settings-workspace-desktop
+  .yuri-settings-usage-sidebar
+  .yuri-settings-split-row-control {
   width: auto;
   max-width: none;
 }
 
 /* Complex editors explicitly opt out of the desktop value column. Keep their
    copy above one full-width control instead of squeezing the editor sideways. */
-.oc-settings-workspace-desktop .oc-settings-split-row-stacked {
+.yuri-settings-workspace-desktop .yuri-settings-split-row-stacked {
   grid-template-columns: minmax(0, 1fr);
   row-gap: 0.5rem;
 }
 
-.oc-settings-workspace-desktop
-  .oc-settings-split-row-stacked
-  .oc-settings-split-row-copy {
+.yuri-settings-workspace-desktop
+  .yuri-settings-split-row-stacked
+  .yuri-settings-split-row-copy {
   max-width: 32rem;
 }
 
-.oc-settings-workspace-desktop
-  .oc-settings-split-row-stacked
-  .oc-settings-split-row-control {
+.yuri-settings-workspace-desktop
+  .yuri-settings-split-row-stacked
+  .yuri-settings-split-row-control {
   width: 100%;
   max-width: none;
   justify-self: stretch;
 }
 
-.oc-settings-workspace-desktop
-  .oc-settings-split-row-control
-  > :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value) {
+.yuri-settings-workspace-desktop
+  .yuri-settings-split-row-control
+  > :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .yuri-settings-inline-value) {
   max-width: 100%;
 }
 
-.oc-settings-workspace-desktop .oc-settings-detail-pane {
+.yuri-settings-workspace-desktop .yuri-settings-detail-pane {
   container: settings-detail / inline-size;
   display: flex;
   min-width: 0;
   background: var(--surface-background) !important;
 }
 
-.oc-settings-entity-list {
+.yuri-settings-entity-list {
   width: 19rem;
   flex-shrink: 0;
 }
 
-.oc-settings-usage-results {
+.yuri-settings-usage-results {
   display: grid;
   grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
   align-items: start;
-  gap: var(--oc-settings-section-stack-gap);
+  gap: var(--yuri-settings-section-stack-gap);
 }
 
-.oc-settings-usage-detail > * {
+.yuri-settings-usage-detail > * {
   height: auto;
   overflow: visible;
 }
 
 @container settings-detail (max-width: 48rem) {
-  .oc-settings-entity-split {
+  .yuri-settings-entity-split {
     flex-direction: column;
   }
 
-  .oc-settings-entity-list {
+  .yuri-settings-entity-list {
     width: 100%;
     flex-basis: 38%;
     border-right: 0;
-    border-bottom: 1px solid var(--oc-settings-group-border);
+    border-bottom: 1px solid var(--yuri-settings-group-border);
     overflow: hidden;
   }
 
-  .oc-settings-usage-results {
+  .yuri-settings-usage-results {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @container settings-card (max-width: 32rem) {
-  .oc-settings-workspace .oc-settings-split-row:not(.oc-settings-split-row-stacked) {
+  .yuri-settings-workspace .yuri-settings-split-row:not(.yuri-settings-split-row-stacked) {
     grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: var(--oc-settings-row-gap);
+    column-gap: var(--yuri-settings-row-gap);
   }
 
-  .oc-settings-workspace .oc-settings-split-row:not(.oc-settings-split-row-stacked) > .oc-settings-split-row-control {
+  .yuri-settings-workspace .yuri-settings-split-row:not(.yuri-settings-split-row-stacked) > .yuri-settings-split-row-control {
     width: auto;
     max-width: min(60cqw, 20rem);
     justify-self: end;
   }
 
-  .oc-settings-workspace .oc-settings-split-row-copy {
+  .yuri-settings-workspace .yuri-settings-split-row-copy {
     overflow-wrap: anywhere;
   }
 
   /* Content-sized values must include their full padding in intrinsic sizing;
      a negative margin clips text in nested full-width select triggers. */
-  .oc-settings-workspace .oc-settings-group-row
-    :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value) {
+  .yuri-settings-workspace .yuri-settings-group-row
+    :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .yuri-settings-inline-value) {
     margin-inline-end: 0;
   }
 
-  .oc-settings-workspace .oc-settings-group-row [data-slot="number-input"] {
+  .yuri-settings-workspace .yuri-settings-group-row [data-slot="number-input"] {
     flex-shrink: 1;
     gap: 0 !important;
     padding-inline: 0 !important;
   }
 }
 
-.oc-settings-about .oc-settings-split-row:not([role="button"]) {
+.yuri-settings-about .yuri-settings-split-row:not([role="button"]) {
   display: flex;
   flex-wrap: nowrap;
   justify-content: space-between;
-  gap: var(--oc-settings-row-gap);
+  gap: var(--yuri-settings-row-gap);
 }
 
-.oc-settings-about .oc-settings-split-row:not([role="button"]) > .oc-settings-split-row-copy {
+.yuri-settings-about .yuri-settings-split-row:not([role="button"]) > .yuri-settings-split-row-copy {
   max-width: none;
   flex: 0 1 auto;
 }
 
-.oc-settings-about .oc-settings-split-row:not([role="button"]) > .oc-settings-split-row-copy > .typography-ui-label {
+.yuri-settings-about .yuri-settings-split-row:not([role="button"]) > .yuri-settings-split-row-copy > .typography-ui-label {
   white-space: nowrap;
 }
 
-.oc-settings-workspace .oc-settings-about .oc-settings-split-row:not([role="button"]) > .oc-settings-split-row-control {
+.yuri-settings-workspace .yuri-settings-about .yuri-settings-split-row:not([role="button"]) > .yuri-settings-split-row-control {
   width: auto;
   max-width: none;
   flex: 1 0 auto;
   white-space: nowrap;
 }
 
-.oc-scheduled-task-form.oc-settings-workspace .oc-settings-split-row {
+.yuri-scheduled-task-form.yuri-settings-workspace .yuri-settings-split-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   column-gap: 1rem;
 }
 
-.oc-scheduled-task-form .oc-settings-split-row > :first-child {
+.yuri-scheduled-task-form .yuri-settings-split-row > :first-child {
   white-space: nowrap;
 }
 
-.oc-scheduled-task-form.oc-settings-workspace .oc-settings-split-row-control {
+.yuri-scheduled-task-form.yuri-settings-workspace .yuri-settings-split-row-control {
   width: 100%;
   max-width: none;
   min-width: 0;
 }
 
-.oc-scheduled-task-form.oc-settings-workspace .oc-scheduled-task-detail-row {
+.yuri-scheduled-task-form.yuri-settings-workspace .yuri-scheduled-task-detail-row {
   grid-template-columns: minmax(0, 1fr);
   row-gap: 0.5rem;
 }
 
-.oc-scheduled-task-title[aria-invalid="true"] {
+.yuri-scheduled-task-title[aria-invalid="true"] {
   border-bottom: 1px solid var(--status-error) !important;
   border-radius: 0;
   box-shadow: none !important;
 }
 
-.oc-settings-workspace-desktop .oc-settings-detail-pane > * {
+.yuri-settings-workspace-desktop .yuri-settings-detail-pane > * {
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
 }
 
-.oc-settings-workspace-desktop .oc-settings-detail-pane .openchamber-page-body {
+.yuri-settings-workspace-desktop .yuri-settings-detail-pane .yuri-page-body {
   width: min(100%, 52rem);
   margin-inline: auto;
 }

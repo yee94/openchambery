@@ -38,7 +38,7 @@ test('parseVirtualAssetId accepts only opaque stream ids', () => {
   assert.equal(parseVirtualAssetId(`${ASSET_PROTOCOL}://user:pass@${ASSET_HOST}/id-1`), null);
   assert.equal(parseVirtualAssetId(`${ASSET_PROTOCOL}://${ASSET_HOST}/id-1?x=1`), null);
   assert.equal(parseVirtualAssetId(`${ASSET_PROTOCOL}://${ASSET_HOST}/id-1#frag`), null);
-  assert.equal(parseVirtualAssetId('openchamber-ui://app/index.html'), null);
+  assert.equal(parseVirtualAssetId('yuri-ui://app/index.html'), null);
   assert.equal(parseVirtualAssetId('file:///Users/secret/photo.png'), null);
 });
 

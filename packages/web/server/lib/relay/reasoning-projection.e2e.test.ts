@@ -2,7 +2,7 @@
  * Relay integration evidence for Host reasoning projection (`includeReasoning=false`).
  *
  * Stack (real components, not helper-only stubs):
- * - Layer 1: `@openchambery/relay-server` private relay (real auth gates)
+ * - Layer 1: `@yuri/relay-server` private relay (real auth gates)
  * - Host: `startRelayHost` + tunnel-host loopback dispatcher
  * - Client: TS `createRelayTunnelClient` (E2EE decrypt on receive)
  * - Origin: Express + `createUiAuth` (bearer) + `registerOpenCodeProxy`
@@ -287,10 +287,10 @@ const startFakeOpenCode = async (): Promise<{
 };
 
 /**
- * OpenChamber origin: real UI auth + real OpenCode proxy (Host filtering boundary).
+ * Yuri origin: real UI auth + real OpenCode proxy (Host filtering boundary).
  * Tunnel-host dials this loopback port.
  */
-const startOpenChamberOrigin = async (openCodePort: number) => {
+const startYuriOrigin = async (openCodePort: number) => {
   const clientAuthController = {
     authenticateBearerToken: async (token: string) =>
       token === 'client-token'
@@ -304,7 +304,7 @@ const startOpenChamberOrigin = async (openCodePort: number) => {
 
   const app = express();
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, service: 'openchamber-origin' });
+    res.json({ ok: true, service: 'yuri-origin' });
   });
 
   // Real auth gate before Host proxy routes (parity with remote clients).
@@ -365,13 +365,13 @@ describe('relay reasoning projection e2e (Host filter over private relay)', () =
     'filters reasoning on SSE + session.messages through real relay tunnel while enabled path keeps them',
     { timeout: 90_000 },
     async () => {
-      const temp = await mkdtemp(path.join(os.tmpdir(), 'openchamber-relay-reason-'));
-      const previousDataDir = process.env.OPENCHAMBER_DATA_DIR;
-      process.env.OPENCHAMBER_DATA_DIR = temp;
+      const temp = await mkdtemp(path.join(os.tmpdir(), 'yuri-relay-reason-'));
+      const previousDataDir = process.env.YURI_DATA_DIR;
+      process.env.YURI_DATA_DIR = temp;
 
       let relay: Awaited<ReturnType<typeof startPrivateRelayServer>> | undefined;
       let upstream: Awaited<ReturnType<typeof startFakeOpenCode>> | undefined;
-      let origin: Awaited<ReturnType<typeof startOpenChamberOrigin>> | undefined;
+      let origin: Awaited<ReturnType<typeof startYuriOrigin>> | undefined;
       let host: ReturnType<typeof startRelayHost> | undefined;
       let client: ReturnType<typeof createRelayTunnelClient> | undefined;
 
@@ -383,15 +383,15 @@ describe('relay reasoning projection e2e (Host filter over private relay)', () =
           upstream?.stop(),
           relay?.stop(),
         ]);
-        if (previousDataDir === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
-        else process.env.OPENCHAMBER_DATA_DIR = previousDataDir;
+        if (previousDataDir === undefined) delete process.env.YURI_DATA_DIR;
+        else process.env.YURI_DATA_DIR = previousDataDir;
         await rm(temp, { recursive: true, force: true });
         const failed = results.find((result) => result.status === 'rejected');
         if (failed?.status === 'rejected') throw failed.reason;
       };
 
       upstream = await startFakeOpenCode();
-      origin = await startOpenChamberOrigin(upstream.port);
+      origin = await startYuriOrigin(upstream.port);
       relay = await startPrivateRelayServer({ host: '127.0.0.1', port: 0 });
       const relayUrl = relay.wsUrl;
       if (!relayUrl) throw new Error('relay did not expose wsUrl');

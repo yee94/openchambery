@@ -12,7 +12,7 @@ afterEach(() => {
 
 it.each([false, true, 'timeout'])('runs a Host smart-title request and clears loading (model failure: %s)', async (fail) => {
   vi.useFakeTimers();
-  const metadata = { openchamber: { titleRefresh: { lastAutoTitle: 'Original', requestedAt: 1000 } } };
+  const metadata = { yuri: { titleRefresh: { lastAutoTitle: 'Original', requestedAt: 1000 } } };
   const session = { id: 'ses_title', title: 'Original', directory: '/repo', metadata };
   const updates = [];
   const sessionAccess = {
@@ -28,7 +28,7 @@ it.each([false, true, 'timeout'])('runs a Host smart-title request and clears lo
     ]),
   };
   const generate = vi.fn(async () => {
-    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBe(true);
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBe(true);
     if (fail === 'timeout') return new Promise(() => {});
     if (fail) throw new Error('title model unavailable');
     return { text: 'Title refresh', providerID: 'test', modelID: 'test' };
@@ -41,16 +41,16 @@ it.each([false, true, 'timeout'])('runs a Host smart-title request and clears lo
     now: () => 1000,
   });
   try {
-    runtime.processPayload({ type: 'openchamber:session-metadata', properties: {
+    runtime.processPayload({ type: 'yuri:session-metadata', properties: {
       sessionID: session.id, directory: '/repo', metadata,
     } });
     await vi.runAllTimersAsync();
     expect(generate).toHaveBeenCalledTimes(1);
     expect(session.title).toBe(fail ? 'Original' : 'Title refresh');
-    if (fail) expect(session.metadata.openchamber.titleRefresh.lastError).toBe(fail === 'timeout' ? 'Title generation timed out' : 'title model unavailable');
-    expect(session.metadata.openchamber.titleRefresh.isGenerating).not.toBe(true);
-    expect(session.metadata.openchamber.titleRefresh.requestedAt).toBeUndefined();
-    expect(updates.some((row) => row.metadata.openchamber.titleRefresh.isGenerating)).toBe(true);
+    if (fail) expect(session.metadata.yuri.titleRefresh.lastError).toBe(fail === 'timeout' ? 'Title generation timed out' : 'title model unavailable');
+    expect(session.metadata.yuri.titleRefresh.isGenerating).not.toBe(true);
+    expect(session.metadata.yuri.titleRefresh.requestedAt).toBeUndefined();
+    expect(updates.some((row) => row.metadata.yuri.titleRefresh.isGenerating)).toBe(true);
   } finally {
     runtime.stop();
   }
@@ -58,7 +58,7 @@ it.each([false, true, 'timeout'])('runs a Host smart-title request and clears lo
 
 it('runs a retry after a hung generation expires and ignores its late result', async () => {
   vi.useFakeTimers();
-  const session = { id: 'ses_retry', title: 'Original', metadata: { openchamber: {
+  const session = { id: 'ses_retry', title: 'Original', metadata: { yuri: {
     titleRefresh: { lastAutoTitle: 'Original', requestedAt: 1000 },
   } } };
   let finishOld;
@@ -76,14 +76,14 @@ it('runs a retry after a hung generation expires and ignores its late result', a
     },
     getSmallModelService: async () => ({ generateSmallModelText: generate }),
   });
-  const request = () => runtime.processPayload({ type: 'openchamber:session-metadata', properties: {
+  const request = () => runtime.processPayload({ type: 'yuri:session-metadata', properties: {
     sessionID: session.id, metadata: session.metadata,
   } });
   try {
     request();
     await vi.advanceTimersByTimeAsync(0);
-    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBe(true);
-    session.metadata = mergeMetadataPatch(session.metadata, { openchamber: { titleRefresh: {
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBe(true);
+    session.metadata = mergeMetadataPatch(session.metadata, { yuri: { titleRefresh: {
       isGenerating: null, requestedAt: 2000,
     } } });
     request();
@@ -92,12 +92,12 @@ it('runs a retry after a hung generation expires and ignores its late result', a
     await vi.runAllTimersAsync();
     expect(generate).toHaveBeenCalledTimes(2);
     expect(session.title).toBe('Recovered title');
-    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
-    expect(session.metadata.openchamber.titleRefresh.requestedAt).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.requestedAt).toBeUndefined();
     finishOld({ text: 'Obsolete title', providerID: 'test', modelID: 'test' });
     await vi.runAllTimersAsync();
     expect(session.title).toBe('Recovered title');
-    expect(session.metadata.openchamber.titleRefresh.lastError).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.lastError).toBeUndefined();
   } finally { runtime.stop(); }
 });
 
@@ -107,7 +107,7 @@ it.each([
   { forced: true, renamed: true, expectedTitle: 'Manual title' },
 ])('handles conversation progress during title generation (forced: $forced, renamed: $renamed)', async ({ forced, renamed, expectedTitle }) => {
   vi.useFakeTimers();
-  const session = { id: 'ses_progress', title: 'Original', metadata: { openchamber: {
+  const session = { id: 'ses_progress', title: 'Original', metadata: { yuri: {
     titleRefresh: { lastAutoTitle: 'Original', ...(forced ? { requestedAt: 1000 } : {}) },
   } } };
   const messages = [
@@ -132,21 +132,21 @@ it.each([
     now: () => 1000,
   });
   try {
-    if (forced) runtime.processPayload({ type: 'openchamber:session-metadata', properties: {
+    if (forced) runtime.processPayload({ type: 'yuri:session-metadata', properties: {
       sessionID: session.id, metadata: session.metadata,
     } });
     else runtime.armTimer(session.id, '/repo', 0);
     await vi.advanceTimersByTimeAsync(0);
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBe(true);
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBe(true);
     messages.push({ info: { id: 'a2', role: 'assistant' }, parts: [{ type: 'text', text: 'Next implementation step' }] });
     if (renamed) session.title = 'Manual title';
     finishTitle({ text: 'Title refresh', providerID: 'test', modelID: 'test' });
     await vi.runAllTimersAsync();
     expect(session.title).toBe(expectedTitle);
-    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
-    expect(session.metadata.openchamber.titleRefresh.requestedAt).toBeUndefined();
-    if (forced && !renamed) expect(session.metadata.openchamber.titleRefresh.forMessageID).toBe('a1');
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.requestedAt).toBeUndefined();
+    if (forced && !renamed) expect(session.metadata.yuri.titleRefresh.forMessageID).toBe('a1');
     runtime.processPayload({ type: 'session.execution.succeeded', data: { sessionID: session.id } });
     await vi.runAllTimersAsync();
     expect(generate).toHaveBeenCalledTimes(1);
@@ -163,7 +163,7 @@ it.each([
   } } },
 ])('preserves a pending manual title request across $type', async (event) => {
   vi.useFakeTimers();
-  const session = { id: 'ses_pending', title: 'Original', metadata: { openchamber: {
+  const session = { id: 'ses_pending', title: 'Original', metadata: { yuri: {
     titleRefresh: { lastAutoTitle: 'Original', requestedAt: 1000 },
   } } };
   const generate = vi.fn(async () => ({ text: 'Title refresh', providerID: 'test', modelID: 'test' }));
@@ -180,22 +180,22 @@ it.each([
     now: () => 1000,
   });
   try {
-    runtime.processPayload({ type: 'openchamber:session-metadata', properties: {
+    runtime.processPayload({ type: 'yuri:session-metadata', properties: {
       sessionID: session.id, metadata: session.metadata,
     } });
     for (let i = 0; i < 3; i += 1) runtime.processPayload(event);
     await vi.runAllTimersAsync();
     expect(generate).toHaveBeenCalledTimes(1);
     expect(session.title).toBe('Title refresh');
-    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
-    expect(session.metadata.openchamber.titleRefresh.requestedAt).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.requestedAt).toBeUndefined();
   } finally { runtime.stop(); }
 });
 
 it('does not start a pending initial title over a manual authority committed before generation', async () => {
   vi.useFakeTimers();
   const generate = vi.fn();
-  const session = { id: 'ses_manual', title: 'Manual', metadata: { openchamber: {
+  const session = { id: 'ses_manual', title: 'Manual', metadata: { yuri: {
     titleAuthority: { sessionID: 'ses_manual', title: 'Manual', revision: 'manual', source: 'manual' },
   } } };
   const runtime = createSessionTitleRuntime({
@@ -218,7 +218,7 @@ it('does not start a pending initial title over a manual authority committed bef
 it('uses the real v2 client and publishes the generated title without another session click', async () => {
   vi.useFakeTimers();
   configureServerOpenCodeFetchGate(null, { allowMissingContract: true });
-  let metadata = { openchamber: { titleRefresh: { lastAutoTitle: 'Original', requestedAt: 1000 } } };
+  let metadata = { yuri: { titleRefresh: { lastAutoTitle: 'Original', requestedAt: 1000 } } };
   const session = { id: 'ses_title', title: 'Original', location: { directory: '/repo' }, time: { created: 1, updated: 2 } };
   const requests = [];
   vi.stubGlobal('fetch', vi.fn(async (input, init) => {
@@ -263,13 +263,13 @@ it('uses the real v2 client and publishes the generated title without another se
     now: () => 1000,
   });
   try {
-    runtime.processPayload({ type: 'openchamber:session-metadata', properties: {
+    runtime.processPayload({ type: 'yuri:session-metadata', properties: {
       sessionID: session.id, metadata, directory: '/repo',
     } });
     await vi.runAllTimersAsync();
-    expect(events.some((event) => event.metadata?.openchamber?.titleRefresh?.isGenerating === true)).toBe(true);
+    expect(events.some((event) => event.metadata?.yuri?.titleRefresh?.isGenerating === true)).toBe(true);
     expect(events.at(-1)).toMatchObject({ type: 'session', row: { title: 'Title refresh', directory: '/repo' } });
-    expect(metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
+    expect(metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
     expect(requests).toContain('PATCH /api/session/ses_title');
     const writes = requests.filter((request) => request.startsWith('PATCH')).length;
     session.title = 'Late native title';
@@ -298,7 +298,7 @@ it.each([false, true].flatMap((missedEvent) =>
     id: 'ses_native_fork', title: 'Original (fork #1)',
     fork: { sessionID: 'ses_source', boundary: { type: 'through', messageID: 'a_source' } },
     time: { created: 100, updated: 100 },
-    metadata: { openchamber: {
+    metadata: { yuri: {
       titleAuthority: { sessionID: 'ses_source', title: 'Original', revision: 'source', source: 'manual' },
       titleRefresh: { lastAutoTitle: 'Original', generatedAt: 50, forMessageID: 'a_source', activityUpdatedAt: 200, forkFirstSendSessionID: 'ses_source' },
     } },
@@ -313,7 +313,7 @@ it.each([false, true].flatMap((missedEvent) =>
       get: async () => structuredClone(session),
       messages: async () => [],
       update: async (_id, _directory, patch) => {
-        if (rejectAdmission && patch.metadata?.openchamber?.titleRefresh?.forkFirstSendSessionID) {
+        if (rejectAdmission && patch.metadata?.yuri?.titleRefresh?.forkFirstSendSessionID) {
           rejectAdmission = false;
           throw new Error('Metadata unavailable');
         }
@@ -341,16 +341,16 @@ it.each([false, true].flatMap((missedEvent) =>
     await vi.runAllTimersAsync();
     if (result === 'metadata-retry') {
       expect(generate).not.toHaveBeenCalled();
-      expect(session.metadata.openchamber.titleRefresh.forkFirstSendSessionID).toBe('ses_source');
+      expect(session.metadata.yuri.titleRefresh.forkFirstSendSessionID).toBe('ses_source');
       runtime.processPayload(firstAdmission);
       await vi.runAllTimersAsync();
     }
     expect(generate).toHaveBeenCalledTimes(1);
     expect(generate.mock.calls[0][0].prompt).toContain('Implement the alternate direction');
     expect(session.title).toBe(['new-title', 'metadata-retry'].includes(result) ? 'Fork direction' : 'Original (fork #1)');
-    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
-    expect(session.metadata.openchamber.titleRefresh.forkFirstSendSessionID).toBe(session.id);
-    if (result === 'failure') expect(session.metadata.openchamber.titleRefresh.lastError).toBe('Summary unavailable');
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.forkFirstSendSessionID).toBe(session.id);
+    if (result === 'failure') expect(session.metadata.yuri.titleRefresh.lastError).toBe('Summary unavailable');
     runtime.stop();
     runtime = createRuntime();
     runtime.processPayload(forkEvent);
@@ -414,12 +414,12 @@ it.each(['new', 'missed-create', 'fork', 'missed-fork-create'].flatMap((scenario
     if (content !== 'text') expect(prompt).toContain('title-bug.png');
     expect(prompt).not.toContain('YQ==');
     expect(prompt.length).toBeLessThan(4000);
-    expect(session.metadata.openchamber?.titleRefresh?.isGenerating).toBe(true);
+    expect(session.metadata.yuri?.titleRefresh?.isGenerating).toBe(true);
     expect(access.messages).not.toHaveBeenCalled();
     finishTitle({ text: 'Session titles', providerID: 'test', modelID: 'test' });
     await vi.runAllTimersAsync();
     expect(session.title).toBe('Session titles');
-    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
     expect(access.messages).not.toHaveBeenCalled();
     emit('session.execution.succeeded', { sessionID: session.id });
     emit('session.inbox.enqueued', { sessionID: session.id, inboxID: 'msg_second', item: {

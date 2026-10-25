@@ -13,7 +13,7 @@ import type { ToolPopupContent } from '@/components/chat/message/types'
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery'
 import { Icon } from '@/components/icon/Icon'
 import { useI18n } from '@/lib/i18n'
-import { subscribeOpenchamberEvents, type OpenChamberEvent } from '@/lib/openchamberEvents'
+import { subscribeYuriEvents, type YuriEvent } from '@/lib/yuriEvents'
 import { createUuid } from '@/lib/uuid'
 import { cn } from '@/lib/utils'
 import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge'
@@ -69,7 +69,7 @@ import {
 const ToolOutputDialog = lazyWithChunkRecovery(() => import('@/components/chat/message/ToolOutputDialog'))
 
 /** Legacy internal settle markers — never render as user-visible bubbles. */
-const isInternalSettleText = (text: string) => text.trim().startsWith('oc.settle.')
+const isInternalSettleText = (text: string) => text.trim().startsWith('yuri.settle.') || text.trim().startsWith('oc.settle.')
 
 const isContactError = (message: AssistantContactMessage) => message.status === 'error'
   || (message.status === 'failed' && message.messageID.endsWith(':preview:failed'))
@@ -92,7 +92,7 @@ type AssistantConversationSurfaceProps = {
 }
 
 /**
- * Grok-like contact transcript. Renders OpenChamber-owned bubbles and
+ * Grok-like contact transcript. Renders Yuri-owned bubbles and
  * first-class session cards — not ChatContainer or Activity. Assistant/peer
  * text goes through MarkdownRenderer (markstream by default).
  *
@@ -183,7 +183,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const visibleMessages = mergeContactTranscript(messages, scopedOptimisticTurns, assistant.id, scopedTurnPreviews)
     .filter((message) => {
       if (message.status === 'admitted' && message.messageID.endsWith(':preview:admitted')) return false
-      // Drop legacy pure oc.settle.* rows so they leave no empty avatar shell.
+      // Drop legacy pure yuri.settle.* rows so they leave no empty avatar shell.
       const parts = Array.isArray(message.parts) ? message.parts : []
       if (parts.length === 0) return true
       return parts.some((part) => !(part.type === 'text' && isInternalSettleText(part.text)))
@@ -301,7 +301,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     }
   }, [assistant.id, setContactWorking])
 
-  const handleContactEvent = useEvent((event: OpenChamberEvent) => {
+  const handleContactEvent = useEvent((event: YuriEvent) => {
     if (!('assistantID' in event) || event.assistantID !== assistant.id) return
     if (event.type === 'contact-turn-start') {
       // A fresh start for this turn must win over a stale end that arrived first.
@@ -327,7 +327,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
 
   React.useEffect(() => {
     if (!active) return
-    return subscribeOpenchamberEvents(handleContactEvent)
+    return subscribeYuriEvents(handleContactEvent)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- active and Assistant identity own subscription lifecycle; useEvent keeps the handler current.
   }, [active, assistant.id])
 
@@ -375,7 +375,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       text,
       attachments: staged,
       assistantID: sentAssistantID,
-      createMessageID: () => retryID || `oc_contact_${createUuid()}`,
+      createMessageID: () => retryID || `yuri_contact_${createUuid()}`,
     })
     if (!begun.ok) return
     setContactWorking(sentAssistantID, true)
@@ -481,7 +481,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         className={cn(
           'min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 sm:px-8',
           overlayHeader
-            ? 'pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]'
+            ? 'pt-[calc(max(0.625rem,var(--yuri-safe-area-top,0px))+var(--yuri-mobile-detail-navigation-height)+1.25rem)]'
             : 'pt-5 sm:pt-7',
         )}
         // Match primary chat: disable native scroll anchoring so async Markdown
@@ -632,7 +632,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                         return <AssistantContactAttachment key={`${renderKey}:file:${index}`} assistantID={assistant.id} part={part} onShowPopup={handleShowPopup} />
                       }
                       if (part.type === 'text' && isInternalSettleText(part.text)) {
-                        // Legacy oc.settle.* markers: card status already shows outcome.
+                        // Legacy yuri.settle.* markers: card status already shows outcome.
                         return null
                       }
                       if (part.type === 'text' && (part.text.trim() || message.status === 'streaming')) {
@@ -717,7 +717,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
           <div className="chat-input-column mb-2 flex items-center gap-2"><p role="alert" className="typography-micro text-[var(--status-error)]">{sendError}</p>{retrySendRef.current ? <Button type="button" size="sm" variant="ghost" disabled={sending} onClick={() => void submit()}>{t('chat.history.retry')}</Button> : null}</div>
         ) : null}
         <form
-          className={cn('relative w-full pt-1.5 pb-4', isMobile && 'bottom-safe-area oc-mobile-composer')}
+          className={cn('relative w-full pt-1.5 pb-4', isMobile && 'bottom-safe-area yuri-mobile-composer')}
           onSubmit={(event) => {
             event.preventDefault()
             void submit()
@@ -759,7 +759,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               onPaste={handlePaste}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              className={cn('relative z-10', isMobile && 'oc-mobile-composer-surface')}
+              className={cn('relative z-10', isMobile && 'yuri-mobile-composer-surface')}
               style={{ borderRadius: '1.5rem' }}
               data-assistant-contact-composer-surface=""
               textareaProps={{

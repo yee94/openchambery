@@ -138,10 +138,10 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('role="listbox"');
     expect(mobileTab).toContain('onOpen={() => handleOpenAssistant(assistant.id)}');
     expect(mobileTab).toContain('key={assistant.id}');
-    expect(mobileTab).toContain('oc-mobile-assistant-card-shell');
-    expect(mobileTab).toContain('oc-mobile-assistant-card');
-    expect(mobileTab).toContain('oc-mobile-entity-title');
-    expect(mobileTab).not.toContain('oc-mobile-entity-meta');
+    expect(mobileTab).toContain('yuri-mobile-assistant-card-shell');
+    expect(mobileTab).toContain('yuri-mobile-assistant-card');
+    expect(mobileTab).toContain('yuri-mobile-entity-title');
+    expect(mobileTab).not.toContain('yuri-mobile-entity-meta');
     expect(phoneShell).toContain("secondaryKind === 'assistant'");
     expect(phoneShell).toContain('<AssistantView');
     expect(phoneShell).toContain('activeOverride');
@@ -186,11 +186,11 @@ describe('Assistant UI product contract', () => {
       read('../chat/AgentAvatar.tsx'),
       read('AssistantWorkingAvatar.tsx'),
     ]);
-    expect(mobileTab).toContain('className="oc-mobile-assistant-avatar"');
+    expect(mobileTab).toContain('className="yuri-mobile-assistant-avatar"');
     expect(mobileTab).not.toContain('avatarEmoji');
     expect(mobileTab).toContain('size={44}');
     expect(mobileTab).not.toContain('size={avatarEmoji ? 40 : 38}');
-    expect(mobileTab).not.toContain('oc-mobile-assistant-avatar oc-mobile-glass-control');
+    expect(mobileTab).not.toContain('yuri-mobile-assistant-avatar yuri-mobile-glass-control');
     expect(workingAvatar).not.toContain('className="block"');
     expect(workingAvatar).toContain('shape="rounded"');
     expect(workingAvatar).toContain('rounded-[0.5rem]');
@@ -202,22 +202,22 @@ describe('Assistant UI product contract', () => {
     expect(agentAvatar).toContain("justifyContent: 'center'");
     expect(agentAvatar).toContain("transform: 'translateY(0.06em)'");
     const avatarStyles = mobileStyles.slice(
-      mobileStyles.indexOf('.oc-mobile-assistant-avatar {'),
-      mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
+      mobileStyles.indexOf('.yuri-mobile-assistant-avatar {'),
+      mobileStyles.indexOf('.yuri-mobile-assistant-content > *'),
     );
     expect(avatarStyles).toContain('overflow: visible');
     expect(avatarStyles).toContain('border-radius: 0.5rem');
     expect(avatarStyles).toContain(':is(img, svg)');
     expect(avatarStyles).toContain('object-fit: cover');
-    expect(avatarStyles).toContain('.oc-mobile-assistant-avatar [data-agent-avatar]');
+    expect(avatarStyles).toContain('.yuri-mobile-assistant-avatar [data-agent-avatar]');
     expect(avatarStyles).toContain('overflow: clip !important');
     expect(avatarStyles).toContain('border-radius: 0.5rem !important');
     expect(avatarStyles).toContain('scrollbar-width: none');
-    expect(avatarStyles).not.toContain('.oc-mobile-assistant-avatar--emoji');
+    expect(avatarStyles).not.toContain('.yuri-mobile-assistant-avatar--emoji');
     // mobile-pointer rewrite must not reopen the face as a scrollport.
     expect(mobileStyles).toContain('[data-agent-avatar]');
     expect(mobileStyles).toContain('[data-assistant-working-avatar] .overflow-hidden');
-    expect(mobileStyles).toContain('.oc-mobile-assistant-avatar .overflow-hidden');
+    expect(mobileStyles).toContain('.yuri-mobile-assistant-avatar .overflow-hidden');
   });
 
   test('shows bounded latest-message previews without a model badge on Assistant cards', async () => {
@@ -226,12 +226,12 @@ describe('Assistant UI product contract', () => {
       read('AssistantView.tsx'),
       read('../../styles/mobile.css'),
     ]);
-    expect(mobileTab).toContain('oc-mobile-assistant-name');
-    expect(mobileTab).toContain('oc-mobile-assistant-summary');
+    expect(mobileTab).toContain('yuri-mobile-assistant-name');
+    expect(mobileTab).toContain('yuri-mobile-assistant-summary');
     expect(mobileTab).not.toContain('name="arrow-right-s"');
     // List cards keep name + latest-message preview only — no provider/model chip.
-    expect(mobileTab).not.toContain('oc-mobile-assistant-card-header');
-    expect(mobileTab).not.toContain('oc-mobile-assistant-mode');
+    expect(mobileTab).not.toContain('yuri-mobile-assistant-card-header');
+    expect(mobileTab).not.toContain('yuri-mobile-assistant-mode');
     expect(mobileTab).not.toContain('{subtitle}');
     expect(mobileTab).not.toContain('assistant.providerID');
     expect(mobileTab).not.toContain('assistant.modelID');
@@ -242,8 +242,8 @@ describe('Assistant UI product contract', () => {
     expect(view).not.toContain('item.modelID');
     expect(view).not.toContain('{subtitle}');
     const cardStyles = mobileStyles.slice(
-      mobileStyles.indexOf('.oc-mobile-assistant-catalog {'),
-      mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
+      mobileStyles.indexOf('.yuri-mobile-assistant-catalog {'),
+      mobileStyles.indexOf('.yuri-mobile-assistant-content > *'),
     );
     expect(cardStyles).toContain('gap: 0.875rem');
     expect(cardStyles).toContain('min-height: 4.75rem');
@@ -259,7 +259,7 @@ describe('Assistant UI product contract', () => {
       read('../../styles/mobile.css'),
     ]);
     expect(mobileTab).toContain("assistant-guide/assistant-guide-hero-wide.jpg");
-    expect(mobileTab).toContain('oc-mobile-assistant-guide-steps');
+    expect(mobileTab).toContain('yuri-mobile-assistant-guide-steps');
     expect(mobileTab).not.toContain("t('assistants.shareWelcome.description')");
     expect(mobileTab).toContain("t('assistants.guide.disabledTitle')");
     expect(mobileTab).toContain("t('assistants.guide.disabledDescription')");
@@ -272,8 +272,8 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('requestCreate();');
     expect(mobileTab).toContain("t('assistants.onboarding.action')");
     const guideStyles = mobileStyles.slice(
-      mobileStyles.indexOf('.oc-mobile-assistant-guide {'),
-      mobileStyles.indexOf('.oc-mobile-assistant-onboarding {'),
+      mobileStyles.indexOf('.yuri-mobile-assistant-guide {'),
+      mobileStyles.indexOf('.yuri-mobile-assistant-onboarding {'),
     );
     expect(guideStyles).toContain('aspect-ratio: 16 / 9');
     expect(guideStyles).toContain('object-fit: contain');
@@ -378,14 +378,14 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('data-assistant-contact-status-slot');
     expect(conversation).toContain('animate-pulse');
     expect(conversation).not.toContain('animate-bounce');
-    expect(conversation).toContain('subscribeOpenchamberEvents');
+    expect(conversation).toContain('subscribeYuriEvents');
     expect(conversation).toContain("event.type === 'contact-bubble-delta'");
     expect(conversation).toContain('streamingTextLength');
     expect(conversation).toContain('isMobile={isMobile}');
-    expect(conversation).toContain('oc-mobile-composer-surface');
+    expect(conversation).toContain('yuri-mobile-composer-surface');
     expect(conversation).toContain('chat-input-column');
     expect(conversation).toContain("borderRadius: '1.5rem'");
-    expect(conversation).toContain('bottom-safe-area oc-mobile-composer');
+    expect(conversation).toContain('bottom-safe-area yuri-mobile-composer');
     expect(conversation).toContain("event.preventDefault()");
     expect(conversation).toContain("'aria-label': t('assistants.contact.placeholder'");
     expect(conversation).toContain('onAddFiles');
@@ -607,7 +607,7 @@ describe('Assistant UI product contract', () => {
     expect(zh).not.toContain("'assistants.contact.addFiles': 'Attach files'");
   });
 
-  test('loads the OpenChamber contact transcript instead of OpenCode session history', async () => {
+  test('loads the Yuri contact transcript instead of OpenCode session history', async () => {
     const [conversation, queries, documentation] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
       read('../../queries/assistantQueries.ts'),
@@ -779,23 +779,23 @@ describe('Assistant UI product contract', () => {
     ]);
     expect(view).toContain('<MobileDetailNavigation');
     expect(mobileApp).toContain('<MobileSurfaceHeader>');
-    expect(header).toContain("paddingTop: 'var(--oc-safe-area-top, 0px)'");
-    expect(header).toContain('h-[var(--oc-header-height,56px)]');
-    expect(detailNavigation).toContain('var(--oc-safe-area-top');
+    expect(header).toContain("paddingTop: 'var(--yuri-safe-area-top, 0px)'");
+    expect(header).toContain('h-[var(--yuri-header-height,56px)]');
+    expect(detailNavigation).toContain('var(--yuri-safe-area-top');
     expect(detailNavigation).toContain("grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]");
     expect(detailNavigation).toContain("grid-cols-[2.75rem_minmax(0,1fr)_auto]");
     expect(detailNavigation).toContain('trailing?: ReactNode');
-    expect(mobileStyles).toContain('var(--oc-mobile-detail-action-edge-inset, 1rem)');
-    expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) +');
-    expect(mobileStyles).toContain('calc(var(--oc-safe-area-top, 0px) + 35%)');
+    expect(mobileStyles).toContain('var(--yuri-mobile-detail-action-edge-inset, 1rem)');
+    expect(mobileStyles).toContain('var(--yuri-safe-area-top, 0px) +');
+    expect(mobileStyles).toContain('calc(var(--yuri-safe-area-top, 0px) + 35%)');
     expect(view).toContain('overlay');
     expect(view).toContain('overlayHeader={isMobileSurface}');
     const conversation = await read('AssistantConversationSurface.tsx');
     expect(conversation).toContain('overlayHeader');
-    expect(conversation).toContain('pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]');
-    expect(mobileStyles).toContain('--oc-mobile-header-fade');
+    expect(conversation).toContain('pt-[calc(max(0.625rem,var(--yuri-safe-area-top,0px))+var(--yuri-mobile-detail-navigation-height)+1.25rem)]');
+    expect(mobileStyles).toContain('--yuri-mobile-header-fade');
     expect(mobileStyles).toContain('var(--surface-background) 85%');
-    expect(mobileStyles.match(/var\(--oc-mobile-header-fade\)/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(mobileStyles.match(/var\(--yuri-mobile-header-fade\)/g)?.length).toBeGreaterThanOrEqual(4);
   });
 
   test('shows the native share welcome once when a supported Assistant is opened', async () => {
@@ -946,8 +946,8 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('confirmContactAdmissionByMessageID');
     expect(conversation).toContain('admission_timeout');
     expect(conversation).toContain('isInternalSettleText');
-    expect(conversation).toContain("text.trim().startsWith('oc.settle.')");
-    expect(conversation).toContain('Drop legacy pure oc.settle.');
+    expect(conversation).toContain("text.trim().startsWith('yuri.settle.')");
+    expect(conversation).toContain('Drop legacy pure yuri.settle.');
     expect(conversation).not.toContain('assistants.contact.settle.complete');
     expect(conversation).not.toContain('<Activity');
     expect(mobileTab).toContain('<AssistantWorkingAvatar');

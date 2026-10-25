@@ -169,8 +169,8 @@ describe('tool busy title chrome', () => {
             toolPartSource.indexOf('{justificationText && ('),
             toolPartSource.indexOf('{!justificationText && normalizedPartTool === \'lsp\''),
         );
-        expect(descriptionBlock).toContain("['--oc-text-shimmer-base' as string]: 'var(--surface-muted-foreground)'");
-        expect(descriptionBlock).not.toContain("['--oc-text-shimmer-base' as string]: 'var(--tools-title)'");
+        expect(descriptionBlock).toContain("['--yuri-text-shimmer-base' as string]: 'var(--surface-muted-foreground)'");
+        expect(descriptionBlock).not.toContain("['--yuri-text-shimmer-base' as string]: 'var(--tools-title)'");
     });
 
     test('keeps lifecycle identity in the fixed leading slot and moves disclosure to the trailing edge', () => {

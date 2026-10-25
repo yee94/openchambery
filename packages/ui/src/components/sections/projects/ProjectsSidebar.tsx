@@ -60,7 +60,7 @@ export const ProjectsSidebar: React.FC<{ onItemSelect?: () => void }> = ({ onIte
     <SettingsSidebarLayout
       variant="background"
       header={
-        <div className="flex min-w-0 items-center justify-between gap-2 px-[var(--oc-settings-row-inset)]">
+        <div className="flex min-w-0 items-center justify-between gap-2 px-[var(--yuri-settings-row-inset)]">
           <span className="typography-ui-label text-foreground">
             {t('settings.projects.sidebar.total', { count: projects.length })}
           </span>

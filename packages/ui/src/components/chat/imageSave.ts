@@ -14,7 +14,7 @@ import {
 
 export type ImageSaveTarget = {
   kind?: 'image' | 'video';
-  /** Browser-consumable URL currently shown (blob / openchamber-asset / http / data). */
+  /** Browser-consumable URL currently shown (blob / yuri-asset / http / data). */
   displayUrl?: string;
   /** Original message source (file://, absolute path, http, data, …). */
   sourceUrl: string;
@@ -32,7 +32,7 @@ export type ImageSaveResult = 'downloaded' | 'saved';
 
 const DEFAULT_MIME = 'image/png';
 
-type OpenChamberMediaPlugin = {
+type YuriMediaPlugin = {
   saveFile: (options: { dataBase64: string; mimeType: string; filename: string }) => Promise<{ cancelled?: boolean }>;
   saveImage: (options: {
     dataBase64: string;
@@ -41,7 +41,7 @@ type OpenChamberMediaPlugin = {
   }) => Promise<void>;
 };
 
-const OpenChamberMedia = registerPlugin<OpenChamberMediaPlugin>('OpenChamberMedia');
+const YuriMedia = registerPlugin<YuriMediaPlugin>('YuriMedia');
 
 const extensionForMime = (mimeType: string): string => {
   const normalized = mimeType.toLowerCase().split(';')[0]?.trim() || DEFAULT_MIME;
@@ -98,7 +98,7 @@ const downloadBlob = (blob: Blob, filename: string): void => {
 };
 
 const fetchBlobFromUrl = async (url: string, signal?: AbortSignal, onProgress?: DownloadProgress): Promise<Blob> => {
-  if (url.startsWith('openchamber-asset:')) {
+  if (url.startsWith('yuri-asset:')) {
     const original = await readRelayImageDisplayBlob(url, signal, onProgress);
     if (original) return original;
     if (isCapacitorApp()) throw new Error('Image display stream is no longer available');
@@ -187,12 +187,12 @@ export const materializeImageBlob = async (
 
 const isNativeMediaAvailable = (): boolean => {
   if (!isCapacitorApp() || typeof Capacitor === 'undefined') return false;
-  return Capacitor.isPluginAvailable('OpenChamberMedia');
+  return Capacitor.isPluginAvailable('YuriMedia');
 };
 
 /**
  * Save an image via the best available surface:
- * - Capacitor: native gallery write (OpenChamberMedia)
+ * - Capacitor: native gallery write (YuriMedia)
  * - VS Code: native save dialog
  * - desktop/web: browser download (share is not used for "save to photos")
  */
@@ -208,11 +208,11 @@ export const saveImageToDevice = async (
     const dataBase64 = await blobToBase64(blob);
     signal?.throwIfAborted();
     if (target.kind === 'video') {
-      const result = await OpenChamberMedia.saveFile({ dataBase64, mimeType, filename });
+      const result = await YuriMedia.saveFile({ dataBase64, mimeType, filename });
       if (result?.cancelled) throw new DOMException('Save cancelled', 'AbortError');
       return 'saved';
     }
-    await OpenChamberMedia.saveImage({ dataBase64, mimeType, filename });
+    await YuriMedia.saveImage({ dataBase64, mimeType, filename });
     return 'saved';
   }
 

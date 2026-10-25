@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { extractAssetZip } from '@openchambery/web/server/lib/zip-assets.js';
+import { extractAssetZip } from '@yuri/web/server/lib/zip-assets.js';
 import { compareReleaseVersions, parseReleaseVersion } from '../../deploy/update-service/lib/semver.js';
 
-const UPDATE_ORIGIN = 'https://openchamber-update.vercel.app';
+const UPDATE_ORIGIN = process.env.YURI_UPDATE_ORIGIN || (typeof __YURI_UPDATE_ORIGIN__ === 'string' ? __YURI_UPDATE_ORIGIN__ : '');
 const MAX_BYTES = 64 * 1024 * 1024;
 const validId = (id) => typeof id === 'string' && /^[a-f0-9]{16}$/.test(id);
 
@@ -29,6 +29,7 @@ export class DesktopOta {
 
   async validateResources(dir, version) {
     const metadata = JSON.parse(await readFile(path.join(dir, 'desktop-ota.json'), 'utf8'));
+    if (metadata.applicationId !== 'dev.yuri.desktop' || metadata.shellApiVersion !== 2) throw new Error('OTA application identity mismatch; install a compatible Yuri shell');
     if (metadata.releaseVersion !== version) throw new Error('OTA resource version mismatch');
     await readFile(path.join(dir, 'index.html'));
     if (this.requireBackend) {
@@ -112,6 +113,7 @@ export class DesktopOta {
   }
 
   async check(channelOverride) {
+    if (!this.origin) throw new Error('Yuri update service is not configured (YURI_UPDATE_ORIGIN)');
     if (channelOverride !== undefined && channelOverride !== null && channelOverride !== 'beta' && channelOverride !== 'stable') {
       throw new Error('Invalid OTA channel');
     }
@@ -127,7 +129,7 @@ export class DesktopOta {
     const response = await this.fetchImpl(new URL('/v1/mobile/update/check', this.origin), {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000),
       body: JSON.stringify({ channel, platform: 'desktop', deviceId: this.state.deviceId,
-        nativeVersion: this.nativeVersion, nativeBuild: 1, shellApiVersion: 1,
+        applicationId: 'dev.yuri.desktop', nativeVersion: this.nativeVersion, nativeBuild: 1, shellApiVersion: 2,
         currentBundleId: this.version, releaseMajor: parseReleaseVersion(this.version)?.major }),
     });
     if (!response.ok) throw new Error(`OTA check failed (${response.status})`);
@@ -166,7 +168,7 @@ export class DesktopOta {
       || !Number.isSafeInteger(bundle.size) || bundle.size < 1 || bundle.size > MAX_BYTES
       || !target || target.major !== current?.major || !floor || floor.major !== target.major
       || compareReleaseVersions(this.nativeVersion, bundle.minShellReleaseVersion) < 0
-      || bundle.minShellApiVersion !== 1 || bundle.sessionKey) throw new Error('Incompatible desktop OTA bundle');
+      || bundle.minShellApiVersion !== 2 || bundle.sessionKey) throw new Error('Incompatible desktop OTA bundle');
     const url = new URL(bundle.url, this.origin);
     if (url.origin !== new URL(this.origin).origin || url.pathname !== `/ota/bundles/${bundle.bundleId}.zip` || url.search || url.hash) {
       throw new Error('Invalid desktop OTA URL');

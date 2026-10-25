@@ -30,14 +30,14 @@ describe('MobileSessionRow default React.memo behavior', () => {
     try {
       act(() => root.render(<I18nProvider><MobileSessionRow session={session('hold')}
         onSelect={noop} onPin={noop} onArchive={noop} onOpenActions={onActions} /></I18nProvider>));
-      const main = container.querySelector('.oc-mobile-session-row-main')!;
+      const main = container.querySelector('.yuri-mobile-session-row-main')!;
       act(() => {
         main.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', button: 0, pointerId: 1 }));
         vi.advanceTimersByTime(700);
         main.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 1 }));
       });
       expect(onActions).not.toHaveBeenCalled();
-      act(() => (container.querySelector('.oc-mobile-session-row-content > button[data-session-drag-ignore]') as HTMLButtonElement).click());
+      act(() => (container.querySelector('.yuri-mobile-session-row-content > button[data-session-drag-ignore]') as HTMLButtonElement).click());
       expect(onActions).toHaveBeenCalledOnce();
     } finally {
       act(() => root.unmount());

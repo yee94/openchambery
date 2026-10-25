@@ -319,7 +319,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-2 px-3 text-foreground">
+      <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-2 px-3 text-foreground">
         {onClose ? (
           <button
             type="button"
@@ -665,7 +665,7 @@ const MobileFileDetail: React.FC<{
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
       {!hideHeader ? (
-        <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
+        <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
           <button
             type="button"
             className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -699,7 +699,7 @@ const MobileFileDetail: React.FC<{
           <ScrollShadow className="h-full overflow-auto p-4">
             <button
               type="button"
-              className="mx-auto block w-full cursor-zoom-in rounded-lg border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&>.oc-image-frame]:w-full"
+              className="mx-auto block w-full cursor-zoom-in rounded-lg border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&>.yuri-image-frame]:w-full"
               onClick={openImagePreview}
               aria-label={imageFilename}
             >

@@ -12,10 +12,10 @@ export const TOOL_ROW_CHIP_GEOMETRY_CLASS = 'rounded-lg px-2 py-0.5';
  * `-mx-2` cancels `px-2` so hover wash expands outward without shifting icon/text.
  * Do not put `w-full` on the same node: specified width + both negative margins is
  * overconstrained, so the right margin is dropped and the chip ends 8px short.
- * `oc-tool-row` opts into pointer cursor even under desktop-runtime neutralization.
+ * `yuri-tool-row` opts into pointer cursor even under desktop-runtime neutralization.
  */
 export const TOOL_ROW_CHIP_CLASS =
-  `oc-tool-row -mx-2 ${TOOL_ROW_CHIP_GEOMETRY_CLASS} cursor-pointer`;
+  `yuri-tool-row -mx-2 ${TOOL_ROW_CHIP_GEOMETRY_CLASS} cursor-pointer`;
 
 /**
  * Every top-level tool uses this block wrapper. Padding keeps the rhythm stable

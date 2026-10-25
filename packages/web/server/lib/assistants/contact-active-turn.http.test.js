@@ -76,8 +76,8 @@ describe('contact active turn HTTP snapshot (isolated)', () => {
 
     const app = express();
     app.use(express.json({ limit: '2mb' }));
-    app.get('/api/openchamber/assistants/snapshot', (_req, res) => res.json(service.snapshot()));
-    app.post('/api/openchamber/assistants/:id/messages', async (req, res) => {
+    app.get('/api/yuri/assistants/snapshot', (_req, res) => res.json(service.snapshot()));
+    app.post('/api/yuri/assistants/:id/messages', async (req, res) => {
       try {
         const body = await service.send(req.params.id, req.body);
         res.status(202).json(body);
@@ -88,7 +88,7 @@ describe('contact active turn HTTP snapshot (isolated)', () => {
     const { base } = await listen(app);
 
     // Fresh client: idle
-    let snap = await json(base, '/api/openchamber/assistants/snapshot');
+    let snap = await json(base, '/api/yuri/assistants/snapshot');
     expect(snap.status).toBe(200);
     expect(snap.body.assistants[0]).toMatchObject({
       id: assistant.id,
@@ -96,7 +96,7 @@ describe('contact active turn HTTP snapshot (isolated)', () => {
       activeContactTurn: null,
     });
 
-    const admitted = await json(base, `/api/openchamber/assistants/${encodeURIComponent(assistant.id)}/messages`, {
+    const admitted = await json(base, `/api/yuri/assistants/${encodeURIComponent(assistant.id)}/messages`, {
       method: 'POST',
       body: JSON.stringify({ messageID: 'http_turn_1', parts: [{ type: 'text', text: 'hi' }] }),
     });
@@ -104,7 +104,7 @@ describe('contact active turn HTTP snapshot (isolated)', () => {
     expect(admitted.body).toMatchObject({ admitted: true, messageID: 'http_turn_1', revision: expect.any(Number) });
 
     // Live client observes working after admit
-    snap = await json(base, '/api/openchamber/assistants/snapshot');
+    snap = await json(base, '/api/yuri/assistants/snapshot');
     expect(snap.body.assistants[0].working).toBe(true);
     expect(snap.body.assistants[0].activeContactTurn).toMatchObject({
       turnID: 'http_turn_1',
@@ -113,7 +113,7 @@ describe('contact active turn HTTP snapshot (isolated)', () => {
     });
 
     // APP reload / new client: same authoritative snapshot
-    const reloaded = await json(base, '/api/openchamber/assistants/snapshot');
+    const reloaded = await json(base, '/api/yuri/assistants/snapshot');
     expect(reloaded.body.assistants[0].working).toBe(true);
     expect(reloaded.body.assistants[0].activeContactTurn.turnID).toBe('http_turn_1');
 
@@ -122,7 +122,7 @@ describe('contact active turn HTTP snapshot (isolated)', () => {
     await service.whenContactTurnSettled('http_turn_1');
     let idle = null;
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      idle = await json(base, '/api/openchamber/assistants/snapshot');
+      idle = await json(base, '/api/yuri/assistants/snapshot');
       if (!idle.body.assistants[0].working) break;
       await new Promise((r) => setTimeout(r, 25));
     }

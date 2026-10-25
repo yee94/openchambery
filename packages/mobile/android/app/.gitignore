@@ -1,2 +1,5 @@
 /build/*
 !/build/.npmkeep
+
+# Provision the registered application's Firebase configuration outside source control.
+/google-services.json

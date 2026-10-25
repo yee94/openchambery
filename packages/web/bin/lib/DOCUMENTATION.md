@@ -1,10 +1,12 @@
 # CLI Module Map
 
-This directory contains the non-entrypoint implementation for the OpenChamber CLI. `packages/web/bin/cli.js` should stay thin: it owns bootstrap, command wiring, top-level dispatch, signal/cancel handling, and compatibility exports. Domain logic belongs in these modules.
+This directory contains the non-entrypoint implementation for the Yuri CLI. `packages/web/bin/cli.js` should stay thin: it owns bootstrap, command wiring, top-level dispatch, signal/cancel handling, and compatibility exports. Domain logic belongs in these modules.
 
 The self-hosted Relay CLI belongs to `packages/relay-server/`.
 
 ## Entrypoint Boundary
+
+The CLI imports the synchronous Host brand-migration bootstrap before storage owners. Default-root migration, credential binding, SQLite snapshots, retry behavior and exact legacy exceptions are specified in `packages/web/BRAND-MIGRATION.md`. Explicit custom/Preview data roots stay isolated. New installations export only `yuri`.
 
 - `../cli.js`
   - Owns process bootstrap, package/version lookup, command table wiring, signal handlers, top-level error handling, and legacy exports used by tests or external consumers.
@@ -16,37 +18,37 @@ The self-hosted Relay CLI belongs to `packages/relay-server/`.
 Command modules implement user-facing commands and preserve output contracts across interactive, non-TTY, `--quiet`, and `--json` modes. They should use `../cli-output.js` for presentation helpers and keep safety validation in command logic, not prompts.
 
 - `commands-serve.js`
-  - Implements `openchamber serve`.
+  - Implements `yuri serve`.
   - Owns OpenCode CLI checks, port resolution, log rotation, PID/instance registry writes, foreground/background server launch, startup summaries, and foreground shutdown behavior.
   - The Host process always inherits the CLI's Node executable. Do not select Bun based on PATH availability: the Web API owns `better-sqlite3` and requires the prepared Node ABI.
-  - Sets `OPENCHAMBER_RUNTIME=web` for ordinary CLI serve (foreground and daemon) so a leftover desktop env cannot host or probe the private relay. Preserves `OPENCHAMBER_RUNTIME=ssh-remote` when SSH manager already set it.
-  - `--relay-host [url]` is valid only when `OPENCHAMBER_RUNTIME=ssh-remote`. It enables the private relay host before startup: writes `settings.privateRelay.enabled=true` (and optional pinned `relayUrl`), and when a URL is provided also sets `OPENCHAMBER_RELAY_URL`. Ordinary `web` serve rejects the flag.
+  - Sets `YURI_RUNTIME=web` for ordinary CLI serve (foreground and daemon) so a leftover desktop env cannot host or probe the private relay. Preserves `YURI_RUNTIME=ssh-remote` when SSH manager already set it.
+  - `--relay-host [url]` is valid only when `YURI_RUNTIME=ssh-remote`. It enables the private relay host before startup: writes `settings.privateRelay.enabled=true` (and optional pinned `relayUrl`), and when a URL is provided also sets `YURI_RELAY_URL`. Ordinary `web` serve rejects the flag.
 
 - `commands-lifecycle.js`
-  - Implements `openchamber stop` and `openchamber restart`.
+  - Implements `yuri stop` and `yuri restart`.
   - Owns lifecycle stop/restart semantics, desktop-managed port rejection, unmanaged instance shutdown attempts, PID/instance cleanup, and restart reuse of stored instance options.
 
 - `commands-status.js`
-  - Implements `openchamber status`.
+  - Implements `yuri status`.
   - Formats discovered instances for human, quiet, and JSON output.
 
 - `commands-logs.js`
-  - Implements `openchamber logs`.
+  - Implements `yuri logs`.
   - Resolves log files, tails recent lines, and follows log output.
 
 - `commands-startup.js`
-  - Implements `openchamber startup`.
+  - Implements `yuri startup`.
   - Handles startup subcommand dispatch and presentation around the lower-level startup service helpers.
 
 - `commands-connect-url.js`
-  - Implements `openchamber connect-url`.
+  - Implements `yuri connect-url`.
   - Finds or starts a local instance and prints the browser/connect URL according to the selected output mode.
-  - Emits a **pairing v2** link (`openchamber://connect?v=2&p=<base64url>`): it creates a one-time pairing session in the shared store (`client-pairing-sessions.json`) and encodes the pairing id + secret + transport candidates. The client redeems the secret over whichever candidate connects first (`/api/client-auth/pairing/redeem`). No standalone token is embedded — the QR itself is the single-use credential.
+  - Emits a **pairing v2** link (`yuri://connect?v=2&p=<base64url>`): it creates a one-time pairing session in the shared store (`client-pairing-sessions.json`) and encodes the pairing id + secret + transport candidates. The client redeems the secret over whichever candidate connects first (`/api/client-auth/pairing/redeem`). No standalone token is embedded — the QR itself is the single-use credential.
   - The default form advertises the resolved server URL as a direct (lan/tunnel) candidate and folds in a relay candidate when the host relay is enabled, so one link works on-LAN and off-network.
-  - `--relay` builds a relay-only pairing link (the sole candidate is the relay transport), for sharing with a device that is not on the host's network — no server URL, no auto-start. The relay endpoint follows `OPENCHAMBER_RELAY_URL` / the stored setting / the default, matching the running host; the host must be running with the relay enabled to serve the redeem over the tunnel.
+  - `--relay` builds a relay-only pairing link (the sole candidate is the relay transport), for sharing with a device that is not on the host's network — no server URL, no auto-start. The relay endpoint follows `YURI_RELAY_URL` / the stored setting / the default, matching the running host; the host must be running with the relay enabled to serve the redeem over the tunnel.
 
 - `commands-update.js`
-  - Implements `openchamber update`.
+  - Implements `yuri update`.
   - Loads the package-manager helper, performs update flow, and coordinates restart behavior after updates.
 
 ## Shared Helper Modules

@@ -92,7 +92,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     projectConfigRuntime,
     scheduledTasksRuntime,
     runHistoryStore = null,
-    getOpenChamberEventClients,
+    getYuriEventClients,
     writeSseEvent,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
@@ -162,7 +162,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
   };
 
-  app.get('/api/openchamber/scheduled-tasks', async (_req, res) => {
+  app.get('/api/yuri/scheduled-tasks', async (_req, res) => {
     let projects;
 
     try {
@@ -197,7 +197,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     return res.json({ tasks, failedProjectIds });
   });
 
-  app.get('/api/openchamber/scheduled-task-runs', async (req, res) => {
+  app.get('/api/yuri/scheduled-task-runs', async (req, res) => {
     if (!runHistoryStore || typeof runHistoryStore.listRuns !== 'function') {
       return res.status(500).json({ error: 'Run history store is unavailable' });
     }
@@ -399,7 +399,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/openchamber/scheduled-tasks/status', async (_req, res) => {
+  app.get('/api/yuri/scheduled-tasks/status', async (_req, res) => {
     try {
       if (typeof scheduledTasksRuntime.getStatus === 'function') {
         return res.json(scheduledTasksRuntime.getStatus());
@@ -438,14 +438,14 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/openchamber/events', (req, res) => {
+  app.get('/api/yuri/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
 
-    const clients = getOpenChamberEventClients();
+    const clients = getYuriEventClients();
     clients.add(res);
 
     let closed = false;
@@ -477,7 +477,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
 
     try {
       writeSseEvent(res, {
-        type: 'openchamber:event-stream-ready',
+        type: 'yuri:event-stream-ready',
         properties: {
           connectedAt: Date.now(),
         },
@@ -495,7 +495,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
 
       try {
         const ok = writeSseEvent(res, {
-          type: 'openchamber:heartbeat',
+          type: 'yuri:heartbeat',
           properties: {
             timestamp: Date.now(),
           },

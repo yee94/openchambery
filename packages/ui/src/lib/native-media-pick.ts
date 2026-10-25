@@ -4,7 +4,7 @@ import { getClientPlatform, isCapacitorApp, type ClientPlatform } from '@/lib/pl
 
 export const NATIVE_MEDIA_PICK_LIMIT = 20;
 
-type OpenChamberMediaPlugin = {
+type YuriMediaPlugin = {
   pickMedia: (options: {
     limit?: number;
   }) => Promise<{
@@ -18,7 +18,7 @@ type OpenChamberMediaPlugin = {
   }>;
 };
 
-const OpenChamberMedia = registerPlugin<OpenChamberMediaPlugin>('OpenChamberMedia');
+const YuriMedia = registerPlugin<YuriMediaPlugin>('YuriMedia');
 
 export type AndroidAttachPickSheetInput = {
   platform: ClientPlatform;
@@ -48,14 +48,14 @@ export function usesAndroidAttachPickSheet(): boolean {
 }
 
 /**
- * True only on Capacitor Android when the OpenChamberMedia native picker is
+ * True only on Capacitor Android when the YuriMedia native picker is
  * registered. iOS keeps the WKWebView document/photo picker; web, desktop,
  * and VS Code never use this bridge.
  */
 export function canUseNativeMediaPick(): boolean {
   return isCapacitorApp()
     && Capacitor.getPlatform() === 'android'
-    && Capacitor.isPluginAvailable('OpenChamberMedia');
+    && Capacitor.isPluginAvailable('YuriMedia');
 }
 
 /**
@@ -69,7 +69,7 @@ export function canUseNativeMediaPick(): boolean {
 export async function pickNativeMediaFiles(limit: number): Promise<File[] | null> {
   if (!canUseNativeMediaPick()) return null;
 
-  const result = await OpenChamberMedia.pickMedia({ limit });
+  const result = await YuriMedia.pickMedia({ limit });
   if (result.cancelled) return [];
 
   const files: File[] = [];

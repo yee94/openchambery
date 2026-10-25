@@ -1051,7 +1051,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
         sessionIds: [session.id],
         message: t('sessions.sidebar.session.archive.success'),
         undoLabel: t('sessions.sidebar.undo'),
-        settingsLabel: t('settings.openchamber.archivedSessions.actions.view'),
+        settingsLabel: t('settings.yuri.archivedSessions.actions.view'),
         undoFailedMessage: t('sessions.sidebar.session.archive.undoFailed'),
       });
     } else {
@@ -1101,7 +1101,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           ? t('sessions.sidebar.session.archive.success')
           : t('sessions.sidebar.bulkActions.archivedPlural', { count: archivedIds.length }),
         undoLabel: t('sessions.sidebar.undo'),
-        settingsLabel: t('settings.openchamber.archivedSessions.actions.view'),
+        settingsLabel: t('settings.yuri.archivedSessions.actions.view'),
         undoFailedMessage: archivedIds.length === 1
           ? t('sessions.sidebar.session.archive.undoFailed')
           : t('sessions.sidebar.bulkActions.archiveUndoFailed', { count: archivedIds.length }),
@@ -1934,7 +1934,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     if (!open) return null;
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center justify-end gap-2 px-4">
+        <div className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center justify-end gap-2 px-4">
           {trailingActions ? (
             <div className="flex shrink-0 items-center gap-2">{trailingActions}</div>
           ) : null}

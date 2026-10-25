@@ -102,7 +102,7 @@ describe('Host events on proxied SSE', () => {
     };
     const upstream = { type: 'session.execution.started', data: { sessionID: 's' } };
     const title = { type: 'session.updated', properties: { info: { id: 's', title: 'Updated', time: { created: 1, updated: 2 } } } };
-    const metadata = { type: 'openchamber:session-metadata', properties: { sessionID: 's', metadata: { openchamber: { titleRefresh: { isGenerating: false } } } } };
+    const metadata = { type: 'yuri:session-metadata', properties: { sessionID: 's', metadata: { yuri: { titleRefresh: { isGenerating: false } } } } };
     const text = `data: ${JSON.stringify(upstream)}\n\n`;
     let step = 0;
     globalThis.fetch = vi.fn(async () => ({ status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }), body: { getReader: () => ({
@@ -617,7 +617,7 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
     });
 
     const app = mountProxyWithMetadata(async () => ({
-      ses_1: { openchamber: { goal: { status: 'active' } }, shared: 'ours' },
+      ses_1: { yuri: { goal: { status: 'active' } }, shared: 'ours' },
     }));
 
     const list = await request(app).get('/api/session');
@@ -627,7 +627,7 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
       metadata: {
         fromOpenCode: true,
         shared: 'theirs',
-        openchamber: { goal: { status: 'active' } },
+        yuri: { goal: { status: 'active' } },
       },
     });
     expect(list.body[1].metadata).toBeUndefined();
@@ -639,7 +639,7 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
       metadata: {
         fromOpenCode: true,
         shared: 'theirs',
-        openchamber: { goal: { status: 'active' } },
+        yuri: { goal: { status: 'active' } },
       },
     });
   });
@@ -685,14 +685,14 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
     }));
 
     const app = mountProxyWithMetadata(async () => ({
-      ses_1: { openchamber: { archive: { archivedAt: 99 } } },
+      ses_1: { yuri: { archive: { archivedAt: 99 } } },
     }));
 
     const list = await request(app).get('/api/session');
     expect(list.status).toBe(200);
     expect(list.body.cursor).toBe('next-page');
     expect(list.body.data[0].time.archived).toBe(99);
-    expect(list.body.data[0].metadata.openchamber.archive.archivedAt).toBe(99);
+    expect(list.body.data[0].metadata.yuri.archive.archivedAt).toBe(99);
   });
 
   it('explicit Host archivedAt 0 clears upstream historical time.archived', async () => {
@@ -706,7 +706,7 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
     }));
 
     const app = mountProxyWithMetadata(async () => ({
-      ses_1: { openchamber: { archive: { archivedAt: 0 } } },
+      ses_1: { yuri: { archive: { archivedAt: 0 } } },
     }));
 
     const list = await request(app).get('/api/session');

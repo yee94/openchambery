@@ -85,7 +85,7 @@ export const applySessionEventToGlobalSessions = (payload: Event, directory?: st
 
   // Host metadata store: replace metadata on an existing session only — never
   // invent a row or clear the list.
-  if (payload.type === "openchamber:session-metadata") {
+  if (payload.type === "yuri:session-metadata") {
     const properties = (payload as { properties?: { sessionID?: unknown; metadata?: unknown } }).properties
     const sessionID = typeof properties?.sessionID === "string" ? properties.sessionID : ""
     const metadata = properties?.metadata

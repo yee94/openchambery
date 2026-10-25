@@ -98,8 +98,8 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
 
   React.useEffect(() => {
     const handleOpenAdd = () => setIsAddOpen(true);
-    window.addEventListener('openchamber:settings-open-plugin-add', handleOpenAdd);
-    return () => window.removeEventListener('openchamber:settings-open-plugin-add', handleOpenAdd);
+    window.addEventListener('yuri:settings-open-plugin-add', handleOpenAdd);
+    return () => window.removeEventListener('yuri:settings-open-plugin-add', handleOpenAdd);
   }, []);
 
   const runtimeTargets = React.useMemo(() => {
@@ -406,7 +406,7 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
 
         {isEmpty ? (
           <SettingsGroup>
-            <div className="oc-settings-group-row py-12 text-center text-muted-foreground">
+            <div className="yuri-settings-group-row py-12 text-center text-muted-foreground">
               <Icon name="plug" className="mx-auto mb-3 h-10 w-10 opacity-50" />
               <p className="typography-ui-label font-medium">
                 {t('settings.plugins.sidebar.empty.title')}

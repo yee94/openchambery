@@ -1,10 +1,10 @@
 {
-  "name": "@openchamber/mobile",
+  "name": "@yuri/mobile",
   "version": "2.1.10-beta.11",
   "private": true,
   "type": "module",
   "scripts": {
-    "generate:icons": "python3 ../../scripts/gen-mobile-icons.py",
+    "generate:icons": "python3 scripts/generate-icons.py",
     "build": "bun run --cwd ../web build && node scripts/prepare-web-assets.mjs",
     "sync": "node scripts/with-mobile-env.mjs \"bun run build && cap sync\"",
     "add:ios": "cap add ios",

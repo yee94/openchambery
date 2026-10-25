@@ -5,14 +5,14 @@ import { filterMobileProjectsForSearch } from './mobileProjectSearch';
 
 const projects: MobileProjectHomeItem[] = [{
   id: 'project-1',
-  name: 'OpenChamber',
-  path: '/code/openchamber',
+  name: 'Yuri',
+  path: '/code/yuri',
   sessionCount: 3,
   expanded: false,
   worktrees: [{
     id: 'main',
     name: 'Main workspace',
-    path: '/code/openchamber',
+    path: '/code/yuri',
     kind: 'main',
     sessionCount: 3,
     sessions: [{
@@ -33,7 +33,7 @@ const projects: MobileProjectHomeItem[] = [{
   }, {
     id: 'feature',
     name: 'Feature branch',
-    path: '/code/openchamber-feature',
+    path: '/code/yuri-feature',
     kind: 'worktree',
     sessionCount: 1,
     sessions: [{ id: 'feature-session', title: 'Branch work' }],
@@ -46,7 +46,7 @@ describe('filterMobileProjectsForSearch', () => {
   });
 
   test('returns a project-only result when its name or path matches', () => {
-    const result = filterMobileProjectsForSearch(projects, 'openchamber');
+    const result = filterMobileProjectsForSearch(projects, 'yuri');
     expect(result).toHaveLength(1);
     expect(result[0]?.worktrees).toEqual([]);
   });

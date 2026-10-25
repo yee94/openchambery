@@ -6,7 +6,7 @@ module.exports = (context) => {
 
   // Preview builds use a distinct PREVIEW-badged .icns. Do not overwrite that
   // dock/app icon with the production AppIcon Assets.car catalog.
-  const profile = String(process.env.OPENCHAMBER_DESKTOP_PROFILE || 'release').trim().toLowerCase();
+  const profile = String(process.env.YURI_DESKTOP_PROFILE || 'release').trim().toLowerCase();
   if (profile === 'preview' || profile === 'assistant-preview' || profile === 'assistant_preview') {
     return;
   }

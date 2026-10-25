@@ -10,7 +10,7 @@ import { createApnsProvider } from '../../../../relay-server/src/push/apns.js';
 // A real P-256 key so the ES256 signing path (direct mode) runs for real.
 const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
 const P8 = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-const APNS_CONFIG = { keyId: 'KEY123', teamId: 'TEAM123', p8: P8, bundleId: 'com.openchamber.app', environment: 'sandbox' };
+const APNS_CONFIG = { keyId: 'KEY123', teamId: 'TEAM123', p8: P8, bundleId: 'com.yuri.app', environment: 'sandbox' };
 
 // In-memory fs so add-then-read reflects within a test.
 const createMemoryFs = () => {
@@ -72,27 +72,27 @@ const isSend = ([url]) => String(url) === 'https://relay.test/v1/push/send';
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  delete process.env.OPENCHAMBER_PUSH_RELAY_URL;
-  delete process.env.OPENCHAMBER_PUSH_RELAY_DISABLED;
-  delete process.env.OPENCHAMBER_RELAY_URL;
-  delete process.env.OPENCHAMBER_APNS_KEY_ID;
-  delete process.env.OPENCHAMBER_APNS_TEAM_ID;
-  delete process.env.OPENCHAMBER_APNS_P8;
-  delete process.env.OPENCHAMBER_APNS_BUNDLE_ID;
-  delete process.env.OPENCHAMBER_APNS_ENVIRONMENT;
+  delete process.env.YURI_PUSH_RELAY_URL;
+  delete process.env.YURI_PUSH_RELAY_DISABLED;
+  delete process.env.YURI_RELAY_URL;
+  delete process.env.YURI_APNS_KEY_ID;
+  delete process.env.YURI_APNS_TEAM_ID;
+  delete process.env.YURI_APNS_P8;
+  delete process.env.YURI_APNS_BUNDLE_ID;
+  delete process.env.YURI_APNS_ENVIRONMENT;
 });
 
 describe('apns runtime bundle ID', () => {
   it('defaults to the current product bundle ID when env and settings omit it', async () => {
-    process.env.OPENCHAMBER_APNS_KEY_ID = 'KEY123';
-    process.env.OPENCHAMBER_APNS_TEAM_ID = 'TEAM123';
-    process.env.OPENCHAMBER_APNS_P8 = P8;
+    process.env.YURI_APNS_KEY_ID = 'KEY123';
+    process.env.YURI_APNS_TEAM_ID = 'TEAM123';
+    process.env.YURI_APNS_P8 = P8;
     const runtime = createApnsRuntime(makeDeps());
-    await expect(runtime.resolveApnsConfig()).resolves.toMatchObject({ bundleId: 'com.yee94.openchamber' });
+    await expect(runtime.resolveApnsConfig()).resolves.toMatchObject({ bundleId: 'com.yee94.yuri' });
   });
 
-  it('prefers OPENCHAMBER_APNS_BUNDLE_ID over the default and settings', async () => {
-    process.env.OPENCHAMBER_APNS_BUNDLE_ID = 'com.example.app';
+  it('prefers YURI_APNS_BUNDLE_ID over the default and settings', async () => {
+    process.env.YURI_APNS_BUNDLE_ID = 'com.example.app';
     const runtime = createApnsRuntime(
       makeDeps({
         readSettingsFromDiskMigrated: vi.fn(async () => ({
@@ -117,18 +117,18 @@ describe('apns runtime bundle ID', () => {
 
 describe('apns runtime APNs environment', () => {
   it('defaults resolveApnsConfig environment to production when env and settings omit it', async () => {
-    process.env.OPENCHAMBER_APNS_KEY_ID = 'KEY123';
-    process.env.OPENCHAMBER_APNS_TEAM_ID = 'TEAM123';
-    process.env.OPENCHAMBER_APNS_P8 = P8;
+    process.env.YURI_APNS_KEY_ID = 'KEY123';
+    process.env.YURI_APNS_TEAM_ID = 'TEAM123';
+    process.env.YURI_APNS_P8 = P8;
     const runtime = createApnsRuntime(makeDeps());
     await expect(runtime.resolveApnsConfig()).resolves.toMatchObject({ environment: 'production' });
   });
 
-  it('uses sandbox when OPENCHAMBER_APNS_ENVIRONMENT=sandbox', async () => {
-    process.env.OPENCHAMBER_APNS_KEY_ID = 'KEY123';
-    process.env.OPENCHAMBER_APNS_TEAM_ID = 'TEAM123';
-    process.env.OPENCHAMBER_APNS_P8 = P8;
-    process.env.OPENCHAMBER_APNS_ENVIRONMENT = 'sandbox';
+  it('uses sandbox when YURI_APNS_ENVIRONMENT=sandbox', async () => {
+    process.env.YURI_APNS_KEY_ID = 'KEY123';
+    process.env.YURI_APNS_TEAM_ID = 'TEAM123';
+    process.env.YURI_APNS_P8 = P8;
+    process.env.YURI_APNS_ENVIRONMENT = 'sandbox';
     const runtime = createApnsRuntime(makeDeps());
     await expect(runtime.resolveApnsConfig()).resolves.toMatchObject({ environment: 'sandbox' });
   });
@@ -147,7 +147,7 @@ describe('apns runtime relay mode (default)', () => {
           }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
 
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateApnsToken('s1', 'tokenA');
@@ -193,7 +193,7 @@ describe('apns runtime relay mode (default)', () => {
   it('reuses one persisted keypair (same serverId) across register + send', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
 
     const deps = makeDeps();
     const runtime = createApnsRuntime(deps);
@@ -218,7 +218,7 @@ describe('apns runtime relay mode (default)', () => {
   it('omits relay collapseId when CJK/emoji tags exceed 64 UTF-8 bytes', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateApnsToken('s1', 'tokenA');
 
@@ -248,7 +248,7 @@ describe('apns runtime relay mode (default)', () => {
 
 describe('apns runtime direct fallback (relay disabled)', () => {
   it('signs an ES256 JWT and sends over http2 when relay is disabled', async () => {
-    process.env.OPENCHAMBER_PUSH_RELAY_DISABLED = 'true';
+    process.env.YURI_PUSH_RELAY_DISABLED = 'true';
     const targeted = [];
     const http2 = {
       connect: () => ({
@@ -280,7 +280,7 @@ describe('apns runtime direct fallback (relay disabled)', () => {
   });
 
   it('keeps direct APNs collapse-id within 64 UTF-8 bytes and omits CJK/emoji over the limit', async () => {
-    process.env.OPENCHAMBER_PUSH_RELAY_DISABLED = 'true';
+    process.env.YURI_PUSH_RELAY_DISABLED = 'true';
     const collapseIds = [];
     const http2 = {
       connect: () => ({
@@ -339,7 +339,7 @@ describe('apns runtime direct fallback (relay disabled)', () => {
   });
 
   it('does not register tokens with the push relay in direct mode', async () => {
-    process.env.OPENCHAMBER_PUSH_RELAY_DISABLED = 'true';
+    process.env.YURI_PUSH_RELAY_DISABLED = 'true';
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
     vi.stubGlobal('fetch', fetchMock);
     const http2 = {
@@ -378,9 +378,9 @@ describe('apns runtime push relay derivation and re-register', () => {
   const sendUrls = (fetchMock) =>
     fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/v1/push/send')).map(([url]) => url);
 
-  it('prefers OPENCHAMBER_PUSH_RELAY_URL over derived relay URLs', async () => {
-    process.env.OPENCHAMBER_RELAY_URL = 'wss://env.example/ws';
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://explicit.test/v1/push/send';
+  it('prefers YURI_PUSH_RELAY_URL over derived relay URLs', async () => {
+    process.env.YURI_RELAY_URL = 'wss://env.example/ws';
+    process.env.YURI_PUSH_RELAY_URL = 'https://explicit.test/v1/push/send';
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -409,21 +409,21 @@ describe('apns runtime push relay derivation and re-register', () => {
     expect(registerUrls(fetchMock)).toEqual(['https://settings.example/v1/push/register-token']);
 
     fetchMock.mockClear();
-    process.env.OPENCHAMBER_RELAY_URL = 'wss://env.example/ws';
+    process.env.YURI_RELAY_URL = 'wss://env.example/ws';
     await runtime.addOrUpdateApnsToken('s1', 'tokenA');
     expect(registerUrls(fetchMock)).toEqual(['https://env.example/v1/push/register-token']);
   });
 
-  it('defaults to the hosted relay push endpoint', async () => {
+  it('does not send tokens to an unconfigured hosted endpoint', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateApnsToken('s1', 'tokenA');
-    expect(registerUrls(fetchMock)).toEqual(['https://relay.openchamber.dev/v1/push/register-token']);
+    expect(registerUrls(fetchMock)).toEqual([]);
   });
 
   it('re-registers persisted tokens against the current relay', async () => {
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-a.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay-a.test/v1/push/send';
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
     const runtime = createApnsRuntime(makeDeps());
@@ -431,7 +431,7 @@ describe('apns runtime push relay derivation and re-register', () => {
     await runtime.addOrUpdateApnsToken('s2', 'tokenB');
     await runtime.addOrUpdateApnsToken('s3', 'tokenA');
 
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-b.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay-b.test/v1/push/send';
     fetchMock.mockClear();
     await expect(runtime.reRegisterAllTokens()).resolves.toEqual({
       attempted: 2,
@@ -444,13 +444,13 @@ describe('apns runtime push relay derivation and re-register', () => {
   });
 
   it('registers with the new relay before the first send after a switch', async () => {
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-a.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay-a.test/v1/push/send';
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateApnsToken('s1', 'tokenA');
 
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-b.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay-b.test/v1/push/send';
     fetchMock.mockClear();
     await runtime.sendApnsToAllUiSessions({ title: 't', body: 'b' });
 
@@ -461,7 +461,7 @@ describe('apns runtime push relay derivation and re-register', () => {
   });
 
   it('sends only tokens that registered successfully after a partial failure', async () => {
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-a.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay-a.test/v1/push/send';
     const fetchMock = vi.fn(async (url, init) => {
       if (String(url).endsWith('/register-token')) {
         const body = JSON.parse(init.body);
@@ -475,7 +475,7 @@ describe('apns runtime push relay derivation and re-register', () => {
     await runtime.addOrUpdateApnsToken('s1', 'tokenA');
     await runtime.addOrUpdateApnsToken('s2', 'tokenB');
 
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-b.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay-b.test/v1/push/send';
     fetchMock.mockClear();
     await runtime.sendApnsToAllUiSessions({ title: 't', body: 'b' });
 
@@ -494,7 +494,7 @@ describe('apns runtime push relay derivation and re-register', () => {
     expect(JSON.parse(fetchMock.mock.calls.find(([url]) => String(url).endsWith('/v1/push/send'))[1].body).tokens).toEqual(['tokenA']);
   });
 
-  it('warns without leaking the URL when the resolver returns a non-WebSocket URL, then falls back to default', async () => {
+  it('warns without leaking the URL when the resolver returns a non-WebSocket URL, and leaves Push Relay unavailable', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -505,10 +505,10 @@ describe('apns runtime push relay derivation and re-register', () => {
 
     try {
       await runtime.addOrUpdateApnsToken('s1', 'tokenA');
-      expect(registerUrls(fetchMock)).toEqual(['https://relay.openchamber.dev/v1/push/register-token']);
+      expect(registerUrls(fetchMock)).toEqual([]);
       expect(warn).toHaveBeenCalled();
       const messages = warn.mock.calls.map((args) => args.map(String).join(' ')).join('\n');
-      expect(messages).toContain('falling back to default');
+      expect(messages).toContain('Push Relay unavailable');
       expect(messages).not.toContain(leaked);
       expect(messages).not.toContain('evil.example');
       expect(messages).not.toContain('secret');
@@ -518,7 +518,7 @@ describe('apns runtime push relay derivation and re-register', () => {
     }
   });
 
-  it('warns without leaking the error when the resolver throws, then falls back to default', async () => {
+  it('warns without leaking the error when the resolver throws, and leaves Push Relay unavailable', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -531,10 +531,10 @@ describe('apns runtime push relay derivation and re-register', () => {
 
     try {
       await runtime.addOrUpdateApnsToken('s1', 'tokenA');
-      expect(registerUrls(fetchMock)).toEqual(['https://relay.openchamber.dev/v1/push/register-token']);
+      expect(registerUrls(fetchMock)).toEqual([]);
       expect(warn).toHaveBeenCalled();
       const messages = warn.mock.calls.map((args) => args.map(String).join(' ')).join('\n');
-      expect(messages).toContain('falling back to default');
+      expect(messages).toContain('Push Relay unavailable');
       expect(messages).not.toContain(leaked);
       expect(messages).not.toContain('evil.example');
       expect(messages).not.toContain('secret');
@@ -545,7 +545,7 @@ describe('apns runtime push relay derivation and re-register', () => {
   });
 
   it('sends more than 100 tokens in batches of at most 100, each token exactly once', async () => {
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const fetchMock = vi.fn(async (url) =>
       String(url).endsWith('/register-token')
         ? jsonResponse({ ok: true })
@@ -577,7 +577,7 @@ describe('apns runtime push relay derivation and re-register', () => {
   });
 
   it('continues remaining send batches when one batch fails', async () => {
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     let sendCount = 0;
     const fetchMock = vi.fn(async (url) => {
       if (String(url).endsWith('/register-token')) return jsonResponse({ ok: true });
@@ -615,7 +615,7 @@ describe('apns runtime push relay derivation and re-register', () => {
   it('sends localized scenario titles grouped by stored token locale', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
 
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateApnsToken('s1', 'tokenEn', undefined, 'ios', 'en');
@@ -651,7 +651,7 @@ describe('apns runtime push relay derivation and re-register', () => {
   it('defaults missing token locale to English titles', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
 
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateApnsToken('s1', 'tokenLegacy');
@@ -705,7 +705,7 @@ describe('apns live activity token store', () => {
     }));
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const runtime = createApnsRuntime(makeDeps({ fsPromises }));
 
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
@@ -724,7 +724,7 @@ describe('apns live activity token store', () => {
   it('registers idempotently and replaces the token for the same activity', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const deps = makeDeps();
     const runtime = createApnsRuntime(deps);
 
@@ -757,7 +757,7 @@ describe('apns live activity token store', () => {
   it('refuses to unregister a token owned by a different UI session', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateLiveActivityToken('owner', 'la-token', 'act-1', 'ses_1');
 
@@ -788,7 +788,7 @@ describe('apns live activity token store', () => {
     }));
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const runtime = createApnsRuntime(makeDeps({ fsPromises }));
 
     for (let i = 0; i < 9; i += 1) {
@@ -876,7 +876,7 @@ describe('apns live activity relay and direct delivery', () => {
         : jsonResponse({ ok: true, results: [] }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const runtime = createApnsRuntime(makeDeps());
     const sessionId = 'ses_secret_session';
@@ -928,7 +928,7 @@ describe('apns live activity relay and direct delivery', () => {
   it('updates the aggregate live activity when one covered session completes', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const runtime = createApnsRuntime(makeDeps());
     const token = 'a'.repeat(64);
     await runtime.addOrUpdateLiveActivityToken('s1', token, 'act-1', 'live', [
@@ -956,7 +956,7 @@ describe('apns live activity relay and direct delivery', () => {
   it('uses a 60-minute dismissal for error ends', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
     const before = Date.now();
@@ -968,10 +968,10 @@ describe('apns live activity relay and direct delivery', () => {
     expect(sent.dismissalDate).toBeLessThanOrEqual(Math.floor(after / 1000) + 60 * 60);
   });
 
-  it('defaults live-activity relay env to production when OPENCHAMBER_APNS_ENVIRONMENT is unset', async () => {
+  it('defaults live-activity relay env to production when YURI_APNS_ENVIRONMENT is unset', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
     fetchMock.mockClear();
@@ -980,11 +980,11 @@ describe('apns live activity relay and direct delivery', () => {
     expect(sent.env).toBe('production');
   });
 
-  it('forwards OPENCHAMBER_APNS_ENVIRONMENT=sandbox as env on live-activity relay send', async () => {
+  it('forwards YURI_APNS_ENVIRONMENT=sandbox as env on live-activity relay send', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
-    process.env.OPENCHAMBER_APNS_ENVIRONMENT = 'sandbox';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_APNS_ENVIRONMENT = 'sandbox';
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
     fetchMock.mockClear();
@@ -999,7 +999,7 @@ describe('apns live activity relay and direct delivery', () => {
       return jsonResponse({ ok: true, results: [] });
     });
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const runtime = createApnsRuntime(makeDeps());
     try {
@@ -1023,7 +1023,7 @@ describe('apns live activity relay and direct delivery', () => {
   });
 
   it('sends direct live-activity headers without mixing alert tokens', async () => {
-    process.env.OPENCHAMBER_PUSH_RELAY_DISABLED = 'true';
+    process.env.YURI_PUSH_RELAY_DISABLED = 'true';
     const captured = [];
     const http2 = {
       connect: () => ({
@@ -1056,7 +1056,7 @@ describe('apns live activity relay and direct delivery', () => {
     await runtime.sendLiveActivityEnd({ sessionId: 'ses_secret', status: 'complete' });
     expect(captured).toHaveLength(1);
     expect(captured[0].headers[':path']).toBe('/3/device/la-token');
-    expect(captured[0].headers['apns-topic']).toBe('com.openchamber.app.push-type.liveactivity');
+    expect(captured[0].headers['apns-topic']).toBe('com.yuri.app.push-type.liveactivity');
     expect(captured[0].headers['apns-push-type']).toBe('liveactivity');
     expect(captured[0].headers.authorization).toMatch(/^bearer /);
     const body = JSON.parse(captured[0].body);
@@ -1071,12 +1071,12 @@ describe('apns live activity relay and direct delivery', () => {
     expect(captured).toHaveLength(1);
     expect(captured[0].headers[':path']).toBe('/3/device/alert-token');
     expect(captured[0].headers['apns-push-type']).toBe('alert');
-    expect(captured[0].headers['apns-topic']).toBe('com.openchamber.app');
+    expect(captured[0].headers['apns-topic']).toBe('com.yuri.app');
   });
 });
 
 describe('apns live activity host-relay compatibility', () => {
-  const LIVE_ACTIVITY_BUNDLE_ID = 'com.yee94.openchamber';
+  const LIVE_ACTIVITY_BUNDLE_ID = 'com.yee94.yuri';
   let pushServer;
 
   afterEach(async () => {
@@ -1135,12 +1135,12 @@ describe('apns live activity host-relay compatibility', () => {
     });
     await pushServer.start();
     const relayUrl = `${pushServer.url}/v1/push/send`;
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = relayUrl;
-    delete process.env.OPENCHAMBER_PUSH_RELAY_DISABLED;
-    delete process.env.OPENCHAMBER_APNS_KEY_ID;
-    delete process.env.OPENCHAMBER_APNS_TEAM_ID;
-    delete process.env.OPENCHAMBER_APNS_P8;
-    process.env.OPENCHAMBER_APNS_BUNDLE_ID = LIVE_ACTIVITY_BUNDLE_ID;
+    process.env.YURI_PUSH_RELAY_URL = relayUrl;
+    delete process.env.YURI_PUSH_RELAY_DISABLED;
+    delete process.env.YURI_APNS_KEY_ID;
+    delete process.env.YURI_APNS_TEAM_ID;
+    delete process.env.YURI_APNS_P8;
+    process.env.YURI_APNS_BUNDLE_ID = LIVE_ACTIVITY_BUNDLE_ID;
 
     const deps = makeDeps();
     const runtime = createApnsRuntime(deps);
@@ -1180,7 +1180,7 @@ describe('apns live activity refresh', () => {
   it('sends nothing when no snapshot changed', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const deps = makeDeps();
     const runtime = createApnsRuntime(deps);
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'live', [
@@ -1197,7 +1197,7 @@ describe('apns live activity refresh', () => {
   it('pushes an update with the recomputed snapshot and bumps the event version monotonically', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const deps = makeDeps();
     const runtime = createApnsRuntime(deps);
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'live', [
@@ -1236,7 +1236,7 @@ describe('apns live activity refresh', () => {
   it('ends and clears the token when nothing is working anymore', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const deps = makeDeps();
     const runtime = createApnsRuntime(deps);
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'live', [
@@ -1262,7 +1262,7 @@ describe('apns live activity refresh', () => {
   it('groups entries with identical snapshots into one send and keeps distinct snapshots separate', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token-a', 'act-1', 'live', [
       { sessionId: 'ses_1', title: 'One', status: 'working', startedAt: 1 },
@@ -1287,7 +1287,7 @@ describe('apns live activity refresh', () => {
   it('treats a computeSnapshot rejection as skip, not failure', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.YURI_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
     const deps = makeDeps();
     const runtime = createApnsRuntime(deps);
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'live', [

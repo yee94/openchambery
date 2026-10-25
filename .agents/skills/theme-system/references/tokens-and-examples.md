@@ -95,7 +95,7 @@ Input footers stay transparent over the elevated input surface.
 For one-of-N chips on a muted track (workspace tabs, filters, pill tab strips), use the shared design-system class instead of hand-rolled elevated + `shadow-sm dark:shadow-none`:
 
 ```tsx
-<span className="oc-segmented-selected-pill absolute inset-0 rounded-lg" aria-hidden />
+<span className="yuri-segmented-selected-pill absolute inset-0 rounded-lg" aria-hidden />
 ```
 
 - Light: `surface.elevated` + soft outer elevation.

@@ -1,11 +1,11 @@
-const START_MARK = 'openchamber.session-switch.start';
-const HIGHLIGHT_MARK = 'openchamber.session-switch.highlight-painted';
-const CONTENT_MARK = 'openchamber.session-switch.content-committed';
-const HIGHLIGHT_DATA_ATTRIBUTE = 'data-openchamber-session-switch-highlight-ms';
-const CONTENT_DATA_ATTRIBUTE = 'data-openchamber-session-switch-content-ms';
+const START_MARK = 'yuri.session-switch.start';
+const HIGHLIGHT_MARK = 'yuri.session-switch.highlight-painted';
+const CONTENT_MARK = 'yuri.session-switch.content-committed';
+const HIGHLIGHT_DATA_ATTRIBUTE = 'data-yuri-session-switch-highlight-ms';
+const CONTENT_DATA_ATTRIBUTE = 'data-yuri-session-switch-content-ms';
 
-const SESSION_SWITCH_HIGHLIGHT_MEASURE = 'openchamber.session-switch.highlight-latency';
-const SESSION_SWITCH_CONTENT_MEASURE = 'openchamber.session-switch.content-latency';
+const SESSION_SWITCH_HIGHLIGHT_MEASURE = 'yuri.session-switch.highlight-latency';
+const SESSION_SWITCH_CONTENT_MEASURE = 'yuri.session-switch.content-latency';
 
 const canMeasure = (): boolean => (
     typeof performance !== 'undefined'

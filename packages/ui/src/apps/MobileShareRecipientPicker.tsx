@@ -46,7 +46,7 @@ export function MobileShareRecipientPicker({ draft, entries, busy, onSelect, onC
           overlay
         />
         {entries.length ? (
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem)+0.75rem)]" role="listbox" aria-label={t('assistants.listAria')}>
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[calc(max(0.25rem,var(--yuri-safe-area-top,0px))+var(--yuri-mobile-detail-navigation-height,3.5rem)+0.75rem)]" role="listbox" aria-label={t('assistants.listAria')}>
             {entries.map((entry) => {
               const presentation = getAssistantPresentation(entry.name);
               const displayName = presentation.displayName || entry.name;
@@ -71,7 +71,7 @@ export function MobileShareRecipientPicker({ draft, entries, busy, onSelect, onC
             })}
           </div>
         ) : (
-          <p className="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem)+0.75rem)] typography-ui text-muted-foreground">
+          <p className="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[calc(max(0.25rem,var(--yuri-safe-area-top,0px))+var(--yuri-mobile-detail-navigation-height,3.5rem)+0.75rem)] typography-ui text-muted-foreground">
             {t('assistants.state.unavailable')}
           </p>
         )}

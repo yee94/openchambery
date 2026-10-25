@@ -12,7 +12,7 @@ const nativeFetch = globalThis.fetch;
 let dataDir;
 beforeEach(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speech-settings-'));
-  vi.stubEnv('OPENCHAMBER_DATA_DIR', dataDir);
+  vi.stubEnv('YURI_DATA_DIR', dataDir);
   await request(app()).put('/api/voice/settings').send({ voiceProvider: 'volcengine', sttProvider: 'volcengine' }).expect(200);
 });
 afterEach(() => {

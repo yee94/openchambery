@@ -50,7 +50,7 @@ function requestWithJson(payload) {
 
 const manifest = {
   latestVersion: '1.16.50',
-  releaseNotesUrl: 'https://github.com/yee94/openchamber/releases/tag/v1.16.50',
+  releaseNotesUrl: 'https://github.com/yee94/yuri/releases/tag/v1.16.50',
   nextSuggestedCheckInSec: 3600,
 };
 
@@ -82,7 +82,7 @@ test('returns the existing update API contract with changelog notes for a newer 
     latestVersion: '1.16.50',
     currentVersion: '1.16.48',
     updateAvailable: true,
-    releaseNotesUrl: 'https://github.com/yee94/openchamber/releases/tag/v1.16.50',
+    releaseNotesUrl: 'https://github.com/yee94/yuri/releases/tag/v1.16.50',
     nextSuggestedCheckInSec: 3600,
     releaseNotes: '## [1.16.50] - 2026-07-21\n\n- Latest change\n\n## [1.16.49] - 2026-07-21\n\n- Earlier change',
   });
@@ -99,7 +99,7 @@ test('returns an up-to-date result without fetching changelog content', async ()
     latestVersion: '1.16.50',
     currentVersion: '1.16.50',
     updateAvailable: false,
-    releaseNotesUrl: 'https://github.com/yee94/openchamber/releases/tag/v1.16.50',
+    releaseNotesUrl: 'https://github.com/yee94/yuri/releases/tag/v1.16.50',
     nextSuggestedCheckInSec: 3600,
   });
   assert.deepEqual(requests, ['/update-manifest.json']);
@@ -123,7 +123,7 @@ test('returns platform download targets for Capacitor clients', async () => {
     currentVersion: '1.16.49', appType: 'mobile-capacitor', platform: 'android',
   }));
   const android = await androidResponse.json();
-  assert.equal(android.downloadUrl, 'https://github.com/yee94/openchamber/releases/download/v1.16.50/app-release.apk');
+  assert.equal(android.downloadUrl, 'https://github.com/yee94/yuri/releases/download/v1.16.50/app-release.apk');
 
   restoreFetch?.();
   restoreFetch = null;

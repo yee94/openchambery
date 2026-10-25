@@ -9,7 +9,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-export const ASSET_PROTOCOL = 'openchamber-asset';
+export const ASSET_PROTOCOL = 'yuri-asset';
 export const ASSET_HOST = 'stream';
 
 export const DEFAULT_VIRTUAL_ASSET_LIMITS = Object.freeze({

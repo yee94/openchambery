@@ -112,7 +112,7 @@ const startLoopbackOrigin = () =>
     const server = http.createServer((req, res) => {
       if (req.url === '/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, service: 'stub', relayConn: req.headers['x-openchamber-relay-connection'] || null }));
+        res.end(JSON.stringify({ ok: true, service: 'stub', relayConn: req.headers['x-yuri-relay-connection'] || null }));
         return;
       }
       res.writeHead(404);

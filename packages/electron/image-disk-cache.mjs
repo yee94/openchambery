@@ -104,7 +104,7 @@ export function createImageDiskCache({ directory, maxBytes = 256 * 1024 * 1024, 
       entry.used = Date.now();
       const leaseId = randomUUID();
       leases.set(leaseId, { owner, entry });
-      return { leaseId, url: `openchamber-asset://cache/${entry.id}`, hit };
+      return { leaseId, url: `yuri-asset://cache/${entry.id}`, hit };
     }),
     append: (owner, leaseId, chunk) => serial(async () => {
       const entry = owned(owner, leaseId);
@@ -134,7 +134,7 @@ export function createImageDiskCache({ directory, maxBytes = 256 * 1024 * 1024, 
     handleRequest: async (request) => {
       await ready;
       const url = new URL(request.url);
-      if (url.protocol !== 'openchamber-asset:' || url.hostname !== 'cache' || url.search || url.hash
+      if (url.protocol !== 'yuri-asset:' || url.hostname !== 'cache' || url.search || url.hash
         || url.username || url.password || !['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 404 });
       const entry = [...entries.values()].find((item) => item.id === url.pathname.slice(1) && item.ready && item.refs > 0);
       if (!entry) return new Response(null, { status: 404 });

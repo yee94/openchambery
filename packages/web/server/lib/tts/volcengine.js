@@ -73,7 +73,7 @@ export async function synthesizeVolcengine({ text, apiKey, resourceId = 'seed-tt
     headers: headers(apiKey, resourceId),
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
     body: JSON.stringify({
-      user: { uid: 'openchamber' },
+      user: { uid: 'yuri' },
       req_params: {
         text: text.trim(),
         speaker: voice,
@@ -116,7 +116,7 @@ export async function transcribeVolcengine({ audioBuffer, apiKey, signal }) {
     method: 'POST',
     headers: { ...headers(apiKey, 'volc.bigasr.auc_turbo'), 'X-Api-Sequence': '-1' },
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
-    body: JSON.stringify({ user: { uid: 'openchamber' }, audio: { data: audioBuffer.toString('base64') }, request: { model_name: 'bigmodel', enable_itn: true, enable_punc: true } }),
+    body: JSON.stringify({ user: { uid: 'yuri' }, audio: { data: audioBuffer.toString('base64') }, request: { model_name: 'bigmodel', enable_itn: true, enable_punc: true } }),
   });
   const body = await readBody(response);
   const status = response.headers.get('x-api-status-code');

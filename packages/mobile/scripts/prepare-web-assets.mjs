@@ -15,7 +15,7 @@ const defaultSleep = (ms) => new Promise((resolve) => {
 const defaultFs = { rm, mkdir, cp, readFile };
 
 // Workspace `bun run --filter '*' build` runs this package in parallel with
-// `@openchambery/web`, while this script also invokes the web build. The other
+// `@yuri/web`, while this script also invokes the web build. The other
 // web job can empty `packages/web/dist` between our copy and the read.
 export const copyWebDistUntilMobileHtmlExists = async ({
   webDist = WEB_DIST,

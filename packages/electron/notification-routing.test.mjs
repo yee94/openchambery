@@ -8,7 +8,7 @@ const setup = () => {
   let nextId = 0;
   const makeWindow = (apiBaseUrl) => ({
     id: ++nextId,
-    __ocRuntimeConfig: { apiBaseUrl },
+    __yuriRuntimeConfig: { apiBaseUrl },
     isDestroyed: vi.fn(() => false), isFocused: () => false,
     isVisible: () => true, isMinimized: () => false,
     show: vi.fn(), focus: vi.fn(), webContents: { send: vi.fn() },
@@ -41,7 +41,7 @@ test('notification click focuses and navigates only its originating window', () 
   invokeNotify(owner, { payload: { sessionId: 'session-b', title: 'Done' } });
   notifications[0].handlers.click();
   expect(owner.focus).toHaveBeenCalledOnce();
-  expect(owner.webContents.send).toHaveBeenCalledWith('openchamber:open-session', { sessionId: 'session-b', directory: null });
+  expect(owner.webContents.send).toHaveBeenCalledWith('yuri:open-session', { sessionId: 'session-b', directory: null });
   expect(main.focus).not.toHaveBeenCalled();
   expect(main.webContents.send).not.toHaveBeenCalled();
 });
@@ -50,7 +50,7 @@ test('backend notifications target the local runtime rather than the remote main
   const { main, owner, notifications, notify } = setup();
   notify({ assistantID: 'assistant-local', title: 'Done' });
   notifications[0].handlers.click();
-  expect(owner.webContents.send).toHaveBeenCalledWith('openchamber:open-assistant', { assistantID: 'assistant-local' });
+  expect(owner.webContents.send).toHaveBeenCalledWith('yuri:open-assistant', { assistantID: 'assistant-local' });
   expect(main.webContents.send).not.toHaveBeenCalled();
 });
 
@@ -65,7 +65,7 @@ test('closing the owner does not redirect a notification to another instance', (
 test('switching the owner runtime does not open an old session on the new instance', () => {
   const { main, owner, notifications, notify } = setup();
   notify({ sessionId: 'session-b' }, owner);
-  owner.__ocRuntimeConfig = { apiBaseUrl: 'https://host-c.example' };
+  owner.__yuriRuntimeConfig = { apiBaseUrl: 'https://host-c.example' };
   notifications[0].handlers.click();
   expect(owner.webContents.send).not.toHaveBeenCalled();
   expect(main.webContents.send).not.toHaveBeenCalled();
@@ -84,7 +84,7 @@ test('identical tags from different windows do not suppress each other', () => {
 
 test('a relay window using local UI is not mistaken for the local backend', () => {
   const { main, owner, notifications, notify } = setup();
-  main.__ocRuntimeConfig = { ...owner.__ocRuntimeConfig, relayHostId: 'remote-relay' };
+  main.__yuriRuntimeConfig = { ...owner.__yuriRuntimeConfig, relayHostId: 'remote-relay' };
   notify({ sessionId: 'local-session' });
   notifications[0].handlers.click();
   expect(owner.focus).toHaveBeenCalledOnce();

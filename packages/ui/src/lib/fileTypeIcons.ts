@@ -4,7 +4,7 @@ import spriteContent from '../assets/icons/file-types/sprite.svg?raw';
 
 type ThemeVariant = 'light' | 'dark';
 
-const FILE_TYPE_SPRITE_ROOT_ID = 'oc-file-type-icon-sprite-root';
+const FILE_TYPE_SPRITE_ROOT_ID = 'yuri-file-type-icon-sprite-root';
 
 const mountFileTypeSprite = (): void => {
   if (typeof document === 'undefined') {

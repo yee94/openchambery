@@ -110,9 +110,9 @@ const shouldAttachRuntimeAuth = (input: string | URL | Request): boolean => {
 };
 
 const INTERACTIVE_SESSION_READ_PATH = /^\/api\/session\/(?!status$)([^/]+)(?:\/(?:message|children|todo|diff))?$/;
-/** OpenChamber Host turn-page for selected-session prepend / loadMore. */
-const INTERACTIVE_OPENCHAMBER_SESSION_MESSAGES_PATH =
-  /^\/api\/openchamber\/sessions\/([^/]+)\/messages\/?$/;
+/** Yuri Host turn-page for selected-session prepend / loadMore. */
+const INTERACTIVE_YURI_SESSION_MESSAGES_PATH =
+  /^\/api\/yuri\/sessions\/([^/]+)\/messages\/?$/;
 let interactiveSessionRequestId: string | null = null;
 
 export const setRuntimeInteractiveSessionRequestId = (sessionId: string | null): void => {
@@ -147,7 +147,7 @@ const BACKGROUND_READ_EXACT_PATHS = new Set([
   '/api/session/status',
   '/api/session-folders',
   '/api/github/pr/status',
-  '/api/openchamber/session-index',
+  '/api/yuri/session-index',
 ]);
 const BACKGROUND_READ_PREFIXES = [
   '/api/agent',
@@ -181,7 +181,7 @@ const isRuntimeRequestUrl = (rawUrl: string): boolean => {
 
 const runtimeRequestPathname = (rawUrl: string): string | null => {
   try {
-    return new URL(rawUrl, 'http://openchamber.local').pathname;
+    return new URL(rawUrl, 'http://yuri.local').pathname;
   } catch {
     return null;
   }
@@ -198,12 +198,12 @@ const REASONING_PROJECTION_GET_PATHS: readonly RegExp[] = [
   // Exact session.message
   /^\/api\/session\/(?!status$)[^/]+\/message\/[^/]+\/?$/,
   // Host turn-page
-  /^\/api\/openchamber\/sessions\/[^/]+\/messages\/?$/,
+  /^\/api\/yuri\/sessions\/[^/]+\/messages\/?$/,
   // Host turn-page reconcile
-  /^\/api\/openchamber\/sessions\/[^/]+\/messages\/reconcile\/?$/,
+  /^\/api\/yuri\/sessions\/[^/]+\/messages\/reconcile\/?$/,
   // Durable transcript-cache reads (response projection only; writes untouched)
-  /^\/api\/openchamber\/transcript-cache\/session\/?$/,
-  /^\/api\/openchamber\/transcript-cache\/message\/?$/,
+  /^\/api\/yuri\/transcript-cache\/session\/?$/,
+  /^\/api\/yuri\/transcript-cache\/message\/?$/,
   // Global + directory event SSE
   /^\/api\/global\/event\/?$/,
   /^\/api\/event\/?$/,
@@ -270,7 +270,7 @@ export const getRuntimeRequestPriority = (
   if (interactiveSessionMatch?.[1] && isInteractiveSessionId(interactiveSessionMatch[1])) {
     return 'high';
   }
-  const turnPageMatch = pathname.match(INTERACTIVE_OPENCHAMBER_SESSION_MESSAGES_PATH);
+  const turnPageMatch = pathname.match(INTERACTIVE_YURI_SESSION_MESSAGES_PATH);
   if (turnPageMatch?.[1] && isInteractiveSessionId(turnPageMatch[1])) {
     return 'high';
   }
@@ -346,7 +346,7 @@ const appendPathQuery = (path: string, query?: RuntimeUrlQuery): string => {
   return `${url.pathname}${url.search}`;
 };
 
-const readInjectedOrigin = (key: '__OPENCHAMBER_LOCAL_ORIGIN__' | '__OPENCHAMBER_API_BASE_URL__'): string => {
+const readInjectedOrigin = (key: '__YURI_LOCAL_ORIGIN__' | '__YURI_API_BASE_URL__'): string => {
   if (typeof window === 'undefined') return '';
   const value = (window as typeof window & Partial<Record<typeof key, string>>)[key];
   return typeof value === 'string' ? value.trim() : '';
@@ -361,15 +361,15 @@ const sameParsedOrigin = (url: URL, base: string): boolean => {
   }
 };
 
-// Packaged desktop UI is `openchamber-ui://` (`location.origin` is `"null"`),
+// Packaged desktop UI is `yuri-ui://` (`location.origin` is `"null"`),
 // while the SDK still addresses the injected loopback shell. Those absolute
 // calls are this runtime, not an external host. Tunnel them; leaving them on
 // the network hits local OpenCode and 404s remote sessions.
 const isRelayRuntimeAbsoluteUrl = (url: URL): boolean => {
   if (!shouldResolveApiPath(url.pathname)) return false;
   if (isCurrentWindowUrl(url) || isActiveRuntimeServiceUrl(url)) return true;
-  return sameParsedOrigin(url, readInjectedOrigin('__OPENCHAMBER_LOCAL_ORIGIN__'))
-    || sameParsedOrigin(url, readInjectedOrigin('__OPENCHAMBER_API_BASE_URL__'));
+  return sameParsedOrigin(url, readInjectedOrigin('__YURI_LOCAL_ORIGIN__'))
+    || sameParsedOrigin(url, readInjectedOrigin('__YURI_API_BASE_URL__'));
 };
 
 const extractRelayPath = (input: string | URL | Request, query?: RuntimeUrlQuery): string | null => {

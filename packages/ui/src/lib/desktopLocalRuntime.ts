@@ -3,10 +3,10 @@ import { desktopLocalClientTokenGet, type DesktopHost } from '@/lib/desktopHosts
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { switchDesktopHostInstance } from '@/queries/desktopHostSwitchMutation';
 
-/** Local in-process API origin (Electron injects `__OPENCHAMBER_LOCAL_ORIGIN__`). SSR-safe. */
+/** Local in-process API origin (Electron injects `__YURI_LOCAL_ORIGIN__`). SSR-safe. */
 export const getLocalRuntimeOrigin = (): string => {
   if (typeof window === 'undefined') return '';
-  return window.__OPENCHAMBER_LOCAL_ORIGIN__ || window.location.origin;
+  return window.__YURI_LOCAL_ORIGIN__ || window.location.origin;
 };
 
 /** True when the active runtime is the local in-process server (or non-Electron). */

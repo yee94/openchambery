@@ -151,7 +151,7 @@ export const fetchScheduledTaskRuns = async (
   if (options.projectId) params.set('projectId', options.projectId);
   if (options.taskId) params.set('taskId', options.taskId);
 
-  const response = await runtimeFetch(`/api/openchamber/scheduled-task-runs?${params.toString()}`, { signal });
+  const response = await runtimeFetch(`/api/yuri/scheduled-task-runs?${params.toString()}`, { signal });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, 'Failed to load scheduled task history'));
   }
@@ -173,7 +173,7 @@ export const fetchScheduledTasks = async (projectID: string): Promise<ScheduledT
 };
 
 export const fetchGlobalScheduledTasks = async ({ signal }: { signal?: AbortSignal } = {}): Promise<GlobalScheduledTasksResponse> => {
-  const response = await runtimeFetch('/api/openchamber/scheduled-tasks', { signal });
+  const response = await runtimeFetch('/api/yuri/scheduled-tasks', { signal });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, 'Failed to load schedules'));
   }

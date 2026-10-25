@@ -3,33 +3,33 @@ import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'b
 // Clear sticky mocks from other suites before installing this file's doubles.
 mock.restore();
 
-type OpenChamberEvent = {
+type YuriEvent = {
   type: string;
   revision?: number;
   occurredAt?: number;
 };
 type RevisionDomain = 'session-index-changed' | 'message-queue-changed' | 'assistants-changed';
-const tipListeners = new Set<(event: OpenChamberEvent) => void>();
+const tipListeners = new Set<(event: YuriEvent) => void>();
 const latestByDomain = new Map<RevisionDomain, number>();
 const isRevisionDomain = (type: string): type is RevisionDomain =>
   type === 'session-index-changed' || type === 'message-queue-changed' || type === 'assistants-changed';
-/** Deliver a tip (or ready) event to every active OpenChamber tip subscriber. */
-const emitTip = (event: OpenChamberEvent) => {
+/** Deliver a tip (or ready) event to every active Yuri tip subscriber. */
+const emitTip = (event: YuriEvent) => {
   if (isRevisionDomain(event.type) && typeof event.revision === 'number') {
     const previous = latestByDomain.get(event.type);
     if (previous === undefined || event.revision > previous) latestByDomain.set(event.type, event.revision);
   }
   for (const listener of [...tipListeners]) listener(event);
 };
-const realOpenchamberEvents = await import('@/lib/openchamberEvents');
-mock.module('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: (listener: (event: OpenChamberEvent) => void) => {
+const realYuriEvents = await import('@/lib/yuriEvents');
+mock.module('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: (listener: (event: YuriEvent) => void) => {
     tipListeners.add(listener);
     return () => { tipListeners.delete(listener); };
   },
-  getLatestOpenchamberEventRevision: (type: RevisionDomain) => latestByDomain.get(type),
+  getLatestYuriEventRevision: (type: RevisionDomain) => latestByDomain.get(type),
   // Keep the real parser so sibling suites can still assert envelope contracts.
-  parseOpenchamberEventEnvelope: realOpenchamberEvents.parseOpenchamberEventEnvelope,
+  parseYuriEventEnvelope: realYuriEvents.parseYuriEventEnvelope,
 }));
 
 import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from './runtime-url';
@@ -117,8 +117,8 @@ describe('message queue server adapter', () => {
     expect(await pending).toBe('tip');
     await api.fetchWorktreeOrder('/repo a', controller.signal);
     expect(readCalls()).toEqual([
-      ['/api/openchamber/message-queue/scopes/scope%2Fa%3F', { query: { offset: 2, limit: 8, expectedRevision: 4 }, signal: controller.signal }],
-      ['/api/openchamber/message-queue/worktrees/order', { query: { projectDirectory: '/repo a' }, signal: controller.signal }],
+      ['/api/yuri/message-queue/scopes/scope%2Fa%3F', { query: { offset: 2, limit: 8, expectedRevision: 4 }, signal: controller.signal }],
+      ['/api/yuri/message-queue/worktrees/order', { query: { projectDirectory: '/repo a' }, signal: controller.signal }],
     ]);
   });
 
@@ -194,11 +194,11 @@ describe('message queue server adapter', () => {
     await api.reorderQueueScope('scope/a', { requestID: 'r4', expectedRevision: 5, queueItemIDs: ['item/a'] });
     await api.setWorktreeOrder({ requestID: 'r5', projectDirectory: '/repo', expectedRevision: 2, orderedPaths: ['/repo/w'] });
     expect(fetchCalls.map((call) => [pathnameOf(call), call.method, JSON.parse(String(call.body))])).toEqual([
-      ['/api/openchamber/message-queue/items', 'POST', { requestID: 'r1', expectedRevision: 4, scope: { directory: '/repo', sessionID: 'session/a' }, item: { queueItemID: 'item/a', operationID: 'operation/a', messageID: 'message/a', content: 'secret', attachments: [], attachmentIssues: [], createdAt: 1 } }],
-      ['/api/openchamber/message-queue/items/item%2Fa', 'PATCH', { requestID: 'r2', expectedRevision: 5, expectedRowVersion: 2, item: { content: 'updated' } }],
-      ['/api/openchamber/message-queue/items/item%2Fa', 'DELETE', { requestID: 'r3', expectedRevision: 5, expectedRowVersion: 3 }],
-      ['/api/openchamber/message-queue/scopes/scope%2Fa/order', 'PUT', { requestID: 'r4', expectedRevision: 5, queueItemIDs: ['item/a'] }],
-      ['/api/openchamber/message-queue/worktrees/order', 'PUT', { requestID: 'r5', projectDirectory: '/repo', expectedRevision: 2, orderedPaths: ['/repo/w'] }],
+      ['/api/yuri/message-queue/items', 'POST', { requestID: 'r1', expectedRevision: 4, scope: { directory: '/repo', sessionID: 'session/a' }, item: { queueItemID: 'item/a', operationID: 'operation/a', messageID: 'message/a', content: 'secret', attachments: [], attachmentIssues: [], createdAt: 1 } }],
+      ['/api/yuri/message-queue/items/item%2Fa', 'PATCH', { requestID: 'r2', expectedRevision: 5, expectedRowVersion: 2, item: { content: 'updated' } }],
+      ['/api/yuri/message-queue/items/item%2Fa', 'DELETE', { requestID: 'r3', expectedRevision: 5, expectedRowVersion: 3 }],
+      ['/api/yuri/message-queue/scopes/scope%2Fa/order', 'PUT', { requestID: 'r4', expectedRevision: 5, queueItemIDs: ['item/a'] }],
+      ['/api/yuri/message-queue/worktrees/order', 'PUT', { requestID: 'r5', projectDirectory: '/repo', expectedRevision: 2, orderedPaths: ['/repo/w'] }],
     ]);
     expect(fetchCalls[0]?.signal).toBe(controller.signal);
   });
@@ -241,7 +241,7 @@ describe('message queue server adapter', () => {
     const parsed = await api.fetchMessageQueueScope('scope/a');
     expect(parsed.items[0]?.attachments?.[0]?.locator).toEqual({ kind: 'upload', uploadID: 'upload/a' });
     await api.sendQueueItemNow('item/a', { requestID: 'manual-1', expectedRevision: 4, expectedRowVersion: 2 });
-    expect(pathnameOf(fetchCalls.at(-1)!)).toBe('/api/openchamber/message-queue/items/item%2Fa/send');
+    expect(pathnameOf(fetchCalls.at(-1)!)).toBe('/api/yuri/message-queue/items/item%2Fa/send');
     expect(fetchCalls.at(-1)?.method).toBe('POST');
     expect(fetchCalls.at(-1)?.body).toBe(JSON.stringify({ requestID: 'manual-1', expectedRevision: 4, expectedRowVersion: 2 }));
     responseImplementation = async () => new Response(JSON.stringify({ ...scope, items: [{ ...item, attachments: [{ uploadID: 'legacy' }] }] }));
@@ -264,7 +264,7 @@ describe('message queue server adapter', () => {
     await api.releaseMessageQueueItemEditReservation('item/a', { token: reserved.token, signal });
     await api.removeReservedMessageQueueItem('item/a', { requestID: 'remove', expectedRevision: 4, expectedRowVersion: 2, token: reserved.token, generation: 1, signal });
     expect(blob.size).toBe(1); expect(blob.type).toBe('text/plain'); expect(fetchCalls[1]?.signal).toBe(signal); expect(fetchCalls.map(pathnameOf)).toEqual([
-      '/api/openchamber/message-queue/items/item%2Fa/reserve', '/api/openchamber/message-queue/items/item%2Fa/attachments/attachment%2Fa/content', '/api/openchamber/message-queue/items/item%2Fa/edit-reservations/token/renew', '/api/openchamber/message-queue/items/item%2Fa/release', '/api/openchamber/message-queue/items/item%2Fa/reserved-remove',
+      '/api/yuri/message-queue/items/item%2Fa/reserve', '/api/yuri/message-queue/items/item%2Fa/attachments/attachment%2Fa/content', '/api/yuri/message-queue/items/item%2Fa/edit-reservations/token/renew', '/api/yuri/message-queue/items/item%2Fa/release', '/api/yuri/message-queue/items/item%2Fa/reserved-remove',
     ]);
   });
 

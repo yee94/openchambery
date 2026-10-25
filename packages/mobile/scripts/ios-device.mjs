@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const mobileRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const BUNDLE_ID = process.env.IOS_DEV_BUNDLE_ID || 'com.yeewang.openchamber.dev';
+const BUNDLE_ID = process.env.IOS_DEV_BUNDLE_ID || 'com.yeewang.yuri.dev';
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -32,7 +32,7 @@ const run = (command, args, options = {}) => {
 // payload, so the report has to be read from a file: anything parsing stdout
 // meets the table first. Read it into a temp file rather than /dev/stdout.
 const listDevices = () => {
-  const directory = mkdtempSync(path.join(tmpdir(), 'openchamber-devicectl-'));
+  const directory = mkdtempSync(path.join(tmpdir(), 'yuri-devicectl-'));
   const reportPath = path.join(directory, 'devices.json');
   try {
     run('xcrun', ['devicectl', 'list', 'devices', '--json-output', reportPath], { capture: true });

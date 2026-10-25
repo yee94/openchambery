@@ -17,7 +17,7 @@ vi.hoisted(() => {
 
 const queryDefaults = queryClient.getDefaultOptions();
 beforeEach(() => {
-    getDeferredSafeStorage().removeItem('oc.sessionIndexStartupCache');
+    getDeferredSafeStorage().removeItem('yuri.sessionIndexStartupCache');
     queryClient.setDefaultOptions({ ...queryDefaults, queries: { ...queryDefaults.queries, retry: false } });
 });
 afterEach(() => {

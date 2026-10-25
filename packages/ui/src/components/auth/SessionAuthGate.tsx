@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import React from 'react';
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,7 @@ import { applyPersistedDirectoryPreferences } from '@/lib/directoryPersistence';
 import { ensureSettingsHydrated } from '@/lib/settingsStartup';
 import { createRuntimeEndpointTransitionCoalescer } from '@/lib/runtime-endpoint-transition';
 import { DesktopHostSwitcherInline } from '@/components/desktop/DesktopHostSwitcher';
-import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
+import { YuriLogo } from '@/components/ui/YuriLogo';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -39,13 +40,13 @@ const STATUS_CHECK_ENDPOINT = '/auth/session';
 // answers (200/401/429) are never retried.
 const TRANSIENT_RETRY_MAX_ATTEMPTS = 4;
 const TRANSIENT_RETRY_BASE_DELAY_MS = 1_500;
-const TRUST_DEVICE_STORAGE_KEY = 'openchamber.uiAuth.trustDevice';
+const TRUST_DEVICE_STORAGE_KEY = 'yuri.uiAuth.trustDevice';
 const LOCAL_DESKTOP_CLIENT_KIND = 'desktop-local';
 const LOCAL_DESKTOP_CLIENT_DEDUPE_KEY = 'desktop-local';
 
 const readLocalOrigin = (): string => {
   if (typeof window === 'undefined') return '';
-  const injected = (window as typeof window & { __OPENCHAMBER_LOCAL_ORIGIN__?: string }).__OPENCHAMBER_LOCAL_ORIGIN__;
+  const injected = (window as typeof window & { __YURI_LOCAL_ORIGIN__?: string }).__YURI_LOCAL_ORIGIN__;
   return typeof injected === 'string' ? injected.trim() : '';
 };
 
@@ -129,7 +130,7 @@ const submitPassword = async (password: string, trustDevice: boolean): Promise<R
       password,
       trustDevice,
       issueClientToken,
-      clientLabel: 'OpenChamberY Desktop',
+      clientLabel: 'Yuri Desktop',
       ...desktopClientAuthMetadata(),
     }),
   });
@@ -148,7 +149,7 @@ const issueDesktopClientToken = async (): Promise<string> => {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify({ label: 'OpenChamberY Desktop', ...desktopClientAuthMetadata() }),
+    body: JSON.stringify({ label: 'Yuri Desktop', ...desktopClientAuthMetadata() }),
   }).catch(() => null);
   if (!response?.ok) {
     return '';
@@ -239,8 +240,8 @@ const applyDesktopClientToken = async (clientToken: string): Promise<void> => {
 const AuthShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const titlebarDragStyle = React.useMemo<React.CSSProperties>(() => {
     return {
-      height: 'var(--oc-wco-titlebar-height, 0px)',
-      right: 'var(--oc-wco-right-inset, 0px)',
+      height: 'var(--yuri-wco-titlebar-height, 0px)',
+      right: 'var(--yuri-wco-right-inset, 0px)',
     };
   }, []);
 
@@ -272,7 +273,7 @@ const AuthShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const LoadingScreen: React.FC = () => (
   <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
-    <OpenChamberLogo width={120} height={120} />
+    <YuriLogo width={120} height={120} />
   </div>
 );
 
@@ -763,7 +764,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({
     try {
       const payload = await authenticateWithPasskey(trustDevice, {
         issueClientToken: shouldIssueDesktopClientToken(),
-        clientLabel: 'OpenChamberY Desktop',
+        clientLabel: 'Yuri Desktop',
         ...desktopClientAuthMetadata(),
       }) as { clientToken?: unknown } | null;
       const clientToken = shouldIssueDesktopClientToken() && typeof payload?.clientToken === 'string' && payload.clientToken.trim()
@@ -886,7 +887,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({
                 <div className="relative flex-1">
                   <Icon name="lock" className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
                   <Input
-                    id="openchamber-ui-password"
+                    id="yuri-ui-password"
                     ref={passwordInputRef}
                     type="password"
                     autoComplete="current-password"
@@ -900,7 +901,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({
                     }}
                     className="pl-10"
                     aria-invalid={Boolean(errorMessage) || undefined}
-                    aria-describedby={errorMessage ? 'oc-ui-auth-error' : undefined}
+                    aria-describedby={errorMessage ? 'yuri-ui-auth-error' : undefined}
                     disabled={isSubmitting}
                   />
                 </div>
@@ -957,7 +958,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({
                 </label>
               )}
               {errorMessage && (
-                <p id="oc-ui-auth-error" className="typography-meta text-destructive">
+                <p id="yuri-ui-auth-error" className="typography-meta text-destructive">
                   {errorMessage}
                 </p>
               )}

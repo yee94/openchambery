@@ -753,7 +753,7 @@ const NPM_CACHE_TTL_MS = 3_600_000;
 const lookupNpmPackage = async (name: string): Promise<NpmLookupResult> => {
   try {
     const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name).replace(/^%40/, '@')}`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'openchamber-vscode/dev' },
+      headers: { Accept: 'application/json', 'User-Agent': 'yuri-vscode/dev' },
       signal: AbortSignal.timeout(5000),
     });
     if (response.ok) {
@@ -1161,7 +1161,7 @@ const parseMdFile = (filePath: string): { frontmatter: Record<string, unknown>; 
   try {
     frontmatter = (yaml.parse(match[1]) || {}) as Record<string, unknown>;
   } catch (error) {
-    console.warn(`[OpenChamber][VSCode] Failed to parse frontmatter for ${filePath}, treating as empty:`, error);
+    console.warn(`[Yuri][VSCode] Failed to parse frontmatter for ${filePath}, treating as empty:`, error);
     frontmatter = {};
   }
   return { frontmatter, body: (match[2] || '').trim() };

@@ -8,7 +8,7 @@
 // when something actually changed (APNs budgets Live Activity updates per
 // hour, so unchanged snapshots never send).
 //
-// Interval: default 30s, override with OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS
+// Interval: default 30s, override with YURI_LIVE_ACTIVITY_REFRESH_INTERVAL_MS
 // (milliseconds; `0` disables the timer). Snapshots use unix seconds, matching
 // the persisted token store (apns-runtime.js parseLiveActivitySnapshot).
 
@@ -17,7 +17,7 @@ export const LIVE_ACTIVITY_REFRESH_ITEM_LIMIT = 4; // mirrors the UI catalog cap
 export const LIVE_ACTIVITY_REFRESH_TITLE_MAX = 80;
 
 export const resolveLiveActivityRefreshIntervalMs = (env = process.env) => {
-  const raw = env?.OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS;
+  const raw = env?.YURI_LIVE_ACTIVITY_REFRESH_INTERVAL_MS;
   if (raw === undefined || raw === null || String(raw).trim() === '') {
     return LIVE_ACTIVITY_REFRESH_DEFAULT_INTERVAL_MS;
   }

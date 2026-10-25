@@ -15,7 +15,7 @@ function Probe({ text = 'draft', draftID = 'one', enabled = true }: { text?: str
   result = useMobileComposerSnap({ enabled, hasContent: text.length > 0, draftID, inputRef });
   useComposerTextareaAutosize({ inputRef, message: text, expanded: false, isMobile: true, dictationHeight: null, manualHeight: result.manualHeight });
   return <section>
-    <header className="oc-mobile-detail-navigation" />
+    <header className="yuri-mobile-detail-navigation" />
     <div data-mobile-composer-surface>
       <div data-handle onPointerDown={result.handlePointerDown} onPointerMove={result.handlePointerMove}
         onPointerUp={result.handlePointerUp} onPointerCancel={result.handlePointerCancel} />
@@ -96,7 +96,7 @@ it('fits full mode to native keyboard layout changes without a visual viewport r
   expect(input.style.height).toBe('676px');
   for (const edge of [480, 440, 780, 480, 780]) {
     bottom = edge;
-    await act(async () => window.dispatchEvent(new CustomEvent('oc:keyboard-settled')));
+    await act(async () => window.dispatchEvent(new CustomEvent('yuri:keyboard-settled')));
     expect(input.style.height).toBe(`${edge - 64 - 40}px`);
     expect(result.snapPoint).toBe('full');
     expect(document.activeElement).toBe(input);
@@ -104,7 +104,7 @@ it('fits full mode to native keyboard layout changes without a visual viewport r
   }
   await act(async () => result.settleAt('min'));
   const measure = vi.spyOn(window, 'getComputedStyle'); measure.mockClear();
-  await act(async () => window.dispatchEvent(new CustomEvent('oc:keyboard-settled')));
+  await act(async () => window.dispatchEvent(new CustomEvent('yuri:keyboard-settled')));
   expect(measure).not.toHaveBeenCalled();
   expect(input.style.height).toBe('40px');
 });

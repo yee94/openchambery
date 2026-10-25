@@ -1,5 +1,5 @@
 /**
- * OpenChamber deep-link vocabulary — the single source of truth for the `openchamber://`
+ * Yuri deep-link vocabulary — the single source of truth for the `yuri://`
  * URL scheme used across every native entry point: notification taps, home-screen / lock-
  * screen widgets, and (later) Live Activities. Anything that wants to drive navigation
  * builds a URL with {@link buildDeepLink} and anything that receives one parses it with
@@ -7,8 +7,8 @@
  * (deepLinkNavigation) is the only place that knows how to *apply* an intent.
  *
  * Desktop openers (Raycast / `open`) should prefer the OpenCode-aligned forms:
- *   openchamber://new-session?directory=${path}
- *   openchamber://open-project?directory=${path}
+ *   yuri://new-session?directory=${path}
+ *   yuri://open-project?directory=${path}
  * Legacy aliases (`dir`, `path`, `new`, `project/<path>`) remain accepted on parse.
  *
  * Keep this file pure (no React, no stores, no Capacitor) so it can be imported from any
@@ -21,7 +21,7 @@ import {
   type PairingConnectionPayload,
 } from '@/lib/connectionPayload';
 
-export const DEEP_LINK_SCHEME = 'openchamber';
+export const DEEP_LINK_SCHEME = 'yuri';
 
 export type SessionsFilter = 'all' | 'attention' | 'recent';
 export type ViewTarget = 'files' | 'mcp' | 'instances' | 'update';
@@ -55,8 +55,8 @@ const readDirectoryParam = (query: URLSearchParams): string | undefined => {
 };
 
 const segmentsOf = (url: URL): string[] => {
-  // Custom-scheme URLs put the first route token in `host` (openchamber://session/<id>),
-  // but be tolerant of authority-less forms (openchamber:/session/<id>) where it lands in
+  // Custom-scheme URLs put the first route token in `host` (yuri://session/<id>),
+  // but be tolerant of authority-less forms (yuri:/session/<id>) where it lands in
   // the pathname instead.
   const pathSegments = trimSlashes(url.pathname).split('/').filter(Boolean);
   if (url.host) {
@@ -66,8 +66,8 @@ const segmentsOf = (url: URL): string[] => {
 };
 
 /**
- * Parse a raw `openchamber://…` string into a typed intent, or `null` if it isn't a
- * recognised OpenChamber deep link. Tolerant by design: unknown routes return `null`
+ * Parse a raw `yuri://…` string into a typed intent, or `null` if it isn't a
+ * recognised Yuri deep link. Tolerant by design: unknown routes return `null`
  * rather than throwing, so callers can fall back without a try/catch.
  */
 export function parseDeepLink(raw: string | null | undefined): DeepLinkIntent | null {
@@ -82,7 +82,7 @@ export function parseDeepLink(raw: string | null | undefined): DeepLinkIntent | 
     return null;
   }
 
-  if (url.protocol !== `${DEEP_LINK_SCHEME}:`) {
+  if (![`${DEEP_LINK_SCHEME}:`, 'openchamber:', 'openchambery:'].includes(url.protocol)) {
     return null;
   }
 
@@ -126,8 +126,8 @@ export function parseDeepLink(raw: string | null | undefined): DeepLinkIntent | 
       };
     }
 
-    // Align with OpenCode: openchamber://open-project?directory=${path}
-    // Also accept legacy path-form openchamber://project/<path>.
+    // Align with OpenCode: yuri://open-project?directory=${path}
+    // Also accept legacy path-form yuri://project/<path>.
     case 'project':
     case 'open-project': {
       let fromPath: string | undefined;
@@ -184,7 +184,7 @@ export function parseDeepLink(raw: string | null | undefined): DeepLinkIntent | 
 }
 
 /**
- * Build a canonical `openchamber://…` URL for an intent. Used by anything that needs to hand
+ * Build a canonical `yuri://…` URL for an intent. Used by anything that needs to hand
  * a deep link to iOS — notification payloads, `widgetURL(...)`, Live Activity tap targets —
  * so every producer emits the exact shape {@link parseDeepLink} understands.
  */

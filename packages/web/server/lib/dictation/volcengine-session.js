@@ -90,7 +90,7 @@ export class VolcengineTranscriptionSession extends EventEmitter {
       socket.on('open', () => {
         if (this.closed) return;
         socket.send(encodeFrame(1, Buffer.from(JSON.stringify({
-          user: { uid: 'openchamber' },
+          user: { uid: 'yuri' },
           audio: { format: 'pcm', codec: 'raw', rate: 16000, bits: 16, channel: 1 },
           request: { model_name: 'bigmodel', result_type: 'full', enable_itn: true, enable_punc: true, enable_nonstream: true, show_utterances: true,
             ...(this.asrContext.trim() ? { corpus: { context: JSON.stringify({ context_type: 'dialog_ctx', context_data: [{ text: this.asrContext.trim() }] }) } } : {}),

@@ -38,7 +38,7 @@ const SCAN_LIMIT_DEFAULT = 100;
  * "operator chose 100" apart from "nobody chose anything".
  */
 const _inner_scanLimitEnv = (() => {
-  const raw = process.env.OPENCHAMBER_SESSION_TURN_SCAN_LIMIT;
+  const raw = process.env.YURI_SESSION_TURN_SCAN_LIMIT;
   if (raw === undefined || raw === null || raw === '') {
     return null;
   }
@@ -52,7 +52,7 @@ const _inner_scanLimitEnv = (() => {
 /**
  * Server-owned upstream OpenCode scan chunk (messages per page).
  * Host always calls OpenCode locally; this is not a client-network concern.
- * Override via env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT` (10..200).
+ * Override via env `YURI_SESSION_TURN_SCAN_LIMIT` (10..200).
  * Clients may still pass `scanLimit` as an optional override; when omitted,
  * this inner default is used.
  */
@@ -63,25 +63,25 @@ const RECONCILE_TIMEOUT_MS = 45_000;
 
 /** Host reconcile page budgets (records / JSON bytes per HTTP response page). */
 const RECONCILE_PAGE_RECORD_LIMIT = (() => {
-  const raw = process.env.OPENCHAMBER_SESSION_RECONCILE_PAGE_RECORDS;
+  const raw = process.env.YURI_SESSION_RECONCILE_PAGE_RECORDS;
   const parsed = Number(String(raw ?? '').trim());
   if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 500) return parsed;
   return 100;
 })();
 const RECONCILE_PAGE_BYTE_LIMIT = (() => {
-  const raw = process.env.OPENCHAMBER_SESSION_RECONCILE_PAGE_BYTES;
+  const raw = process.env.YURI_SESSION_RECONCILE_PAGE_BYTES;
   const parsed = Number(String(raw ?? '').trim());
   if (Number.isInteger(parsed) && parsed >= 1024 && parsed <= 4 * 1024 * 1024) return parsed;
   return 512 * 1024;
 })();
 const RECONCILE_TOTAL_PAGE_LIMIT = (() => {
-  const raw = process.env.OPENCHAMBER_SESSION_RECONCILE_TOTAL_PAGES;
+  const raw = process.env.YURI_SESSION_RECONCILE_TOTAL_PAGES;
   const parsed = Number(String(raw ?? '').trim());
   if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 100) return parsed;
   return 20;
 })();
 const RECONCILE_TOTAL_BYTE_LIMIT = (() => {
-  const raw = process.env.OPENCHAMBER_SESSION_RECONCILE_TOTAL_BYTES;
+  const raw = process.env.YURI_SESSION_RECONCILE_TOTAL_BYTES;
   const parsed = Number(String(raw ?? '').trim());
   if (Number.isInteger(parsed) && parsed >= 1024 && parsed <= 50 * 1024 * 1024) return parsed;
   return 5 * 1024 * 1024;
@@ -459,16 +459,16 @@ const logInternalError = (logger, error, context = {}) => {
 };
 
 /**
- * Register OpenChamber-owned session message routes:
- * - GET /api/openchamber/sessions/:sessionID/messages
- * - GET /api/openchamber/sessions/:sessionID/messages/reconcile
- * - GET /api/openchamber/sessions/:sessionID/changes
+ * Register Yuri-owned session message routes:
+ * - GET /api/yuri/sessions/:sessionID/messages
+ * - GET /api/yuri/sessions/:sessionID/messages/reconcile
+ * - GET /api/yuri/sessions/:sessionID/changes
  * - GET /api/session/:sessionID/message/:messageID  (L1 exact message; before proxy)
  *
  * Global /api auth is enforced by core-routes requireApiAuth before feature
  * routes. This module does not add redundant auth middleware.
  *
- * Must be registered before the generic OpenCode proxy so the OpenChamber-owned
+ * Must be registered before the generic OpenCode proxy so the Yuri-owned
  * paths are not forwarded upstream. The more-specific reconcile path is
  * registered first for match-order clarity.
  */
@@ -486,7 +486,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
 
   const resolvedRuntimeKey = typeof runtimeKey === 'string' && runtimeKey.length > 0
     ? runtimeKey
-    : (process.env.OPENCHAMBER_RUNTIME || 'web');
+    : (process.env.YURI_RUNTIME || 'web');
 
   const needsDefaultFetch = !injectedService || !injectedReconcileService;
   const defaultFetchPage = needsDefaultFetch
@@ -517,7 +517,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
   });
 
   // More-specific path first (before generic messages route).
-  app.get('/api/openchamber/sessions/:sessionID/messages/reconcile', async (req, res) => {
+  app.get('/api/yuri/sessions/:sessionID/messages/reconcile', async (req, res) => {
     const sessionID = req.params?.sessionID;
     if (typeof sessionID !== 'string' || sessionID.length === 0) {
       return res.status(400).json({ error: SAFE_ERRORS.invalid_session });
@@ -601,7 +601,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
     }
   });
 
-  app.get('/api/openchamber/sessions/:sessionID/messages', async (req, res) => {
+  app.get('/api/yuri/sessions/:sessionID/messages', async (req, res) => {
     const sessionID = req.params?.sessionID;
     if (typeof sessionID !== 'string' || sessionID.length === 0) {
       return res.status(400).json({ error: SAFE_ERRORS.invalid_session });
@@ -752,7 +752,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
    * Changes API — L2 file list (no `file`) or L3 single-file patch (`file=`).
    * Never returns the full message envelope or unrelated file patches.
    */
-  app.get('/api/openchamber/sessions/:sessionID/changes', async (req, res) => {
+  app.get('/api/yuri/sessions/:sessionID/changes', async (req, res) => {
     const sessionID = req.params?.sessionID;
     if (!isBoundedId(sessionID, { min: SESSION_ID_MIN, max: SESSION_ID_MAX })) {
       return res.status(400).json({ error: SAFE_ERRORS.invalid_session, code: 'invalid_session' });

@@ -30,7 +30,7 @@ export function MobileScheduledTab({
       surface={false}
       scrollsWithPage
       showHeader={showHeader}
-      surfaceClassName={cn('oc-mobile-scheduled-content', contentClassName)}
+      surfaceClassName={cn('yuri-mobile-scheduled-content', contentClassName)}
     >
       {children ?? content}
     </MobileTabPageScaffold>

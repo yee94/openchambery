@@ -22,11 +22,11 @@ function writeVersionBinary(filePath, version) {
 async function withIsolatedOpenCodeEnv(fn) {
   const previousBinary = process.env.OPENCODE_BINARY;
   const previousPath = process.env.PATH;
-  const previousDataDir = process.env.OPENCHAMBER_DATA_DIR;
-  const previousAutoInstall = process.env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL;
-  const dataDir = createTempDir('openchamber-cli-opencode-data-');
-  process.env.OPENCHAMBER_DATA_DIR = dataDir;
-  process.env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL = '0';
+  const previousDataDir = process.env.YURI_DATA_DIR;
+  const previousAutoInstall = process.env.YURI_OPENCODE2_AUTO_INSTALL;
+  const dataDir = createTempDir('yuri-cli-opencode-data-');
+  process.env.YURI_DATA_DIR = dataDir;
+  process.env.YURI_OPENCODE2_AUTO_INSTALL = '0';
   try {
     return await fn({ dataDir });
   } finally {
@@ -41,14 +41,14 @@ async function withIsolatedOpenCodeEnv(fn) {
       delete process.env.PATH;
     }
     if (typeof previousDataDir === 'string') {
-      process.env.OPENCHAMBER_DATA_DIR = previousDataDir;
+      process.env.YURI_DATA_DIR = previousDataDir;
     } else {
-      delete process.env.OPENCHAMBER_DATA_DIR;
+      delete process.env.YURI_DATA_DIR;
     }
     if (typeof previousAutoInstall === 'string') {
-      process.env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL = previousAutoInstall;
+      process.env.YURI_OPENCODE2_AUTO_INSTALL = previousAutoInstall;
     } else {
-      delete process.env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL;
+      delete process.env.YURI_OPENCODE2_AUTO_INSTALL;
     }
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
@@ -57,11 +57,11 @@ async function withIsolatedOpenCodeEnv(fn) {
 describe('checkOpenCodeCLI v2 gate', () => {
   it('uses the same binary validation for TTY, non-TTY, --quiet, and --json notice styles', async () => {
     await withIsolatedOpenCodeEnv(async () => {
-      const dir = createTempDir('openchamber-cli-mode-parity-');
+      const dir = createTempDir('yuri-cli-mode-parity-');
       const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
       writeVersionBinary(binary, '1.18.4');
       process.env.OPENCODE_BINARY = binary;
-      const pathDir = createTempDir('openchamber-cli-mode-path-');
+      const pathDir = createTempDir('yuri-cli-mode-path-');
       writeVersionBinary(path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2'), '2.0.12');
       process.env.PATH = pathDir;
 
@@ -91,14 +91,14 @@ describe('checkOpenCodeCLI v2 gate', () => {
       const names = process.platform === 'win32'
         ? ['opencode.exe', 'opencode.cmd']
         : ['opencode', 'opencode.exe', 'opencode.cmd'];
-      const pathDir = createTempDir('openchamber-cli-legacy-path-');
+      const pathDir = createTempDir('yuri-cli-legacy-path-');
       const v2 = path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
       writeVersionBinary(v2, '2.0.12');
       process.env.PATH = pathDir;
 
       try {
         for (const name of names) {
-          const dir = createTempDir(`openchamber-cli-legacy-${name}-`);
+          const dir = createTempDir(`yuri-cli-legacy-${name}-`);
           const binary = path.join(dir, name);
           writeVersionBinary(binary, '1.18.4');
           process.env.OPENCODE_BINARY = binary;
@@ -120,7 +120,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
 
   it('discovers official opencode from PATH and ignores the opencode2 alias', async () => {
     await withIsolatedOpenCodeEnv(async () => {
-      const pathDir = createTempDir('openchamber-cli-path-opencode2-');
+      const pathDir = createTempDir('yuri-cli-path-opencode2-');
       const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
       const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode.cmd' : 'opencode');
       writeVersionBinary(legacy, '2.0.15');
@@ -139,12 +139,12 @@ describe('checkOpenCodeCLI v2 gate', () => {
 
   it('fails closed when settings.opencodeBinary is a 1.x basename', async () => {
     await withIsolatedOpenCodeEnv(async ({ dataDir }) => {
-      const dir = createTempDir('openchamber-cli-settings-1x-');
+      const dir = createTempDir('yuri-cli-settings-1x-');
       const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
       writeVersionBinary(binary, '1.18.4');
       fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ opencodeBinary: binary }));
       delete process.env.OPENCODE_BINARY;
-      const pathDir = createTempDir('openchamber-cli-settings-path-');
+      const pathDir = createTempDir('yuri-cli-settings-path-');
       writeVersionBinary(path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2'), '2.0.12');
       process.env.PATH = pathDir;
       try {
@@ -161,12 +161,12 @@ describe('checkOpenCodeCLI v2 gate', () => {
 
   it('accepts a configured opencode2 path after the v2 version gate', async () => {
     await withIsolatedOpenCodeEnv(async ({ dataDir }) => {
-      const dir = createTempDir('openchamber-cli-settings-v2-');
+      const dir = createTempDir('yuri-cli-settings-v2-');
       const binary = path.join(dir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
       writeVersionBinary(binary, '2.0.12');
       fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ opencodeBinary: binary }));
       delete process.env.OPENCODE_BINARY;
-      process.env.PATH = createTempDir('openchamber-cli-settings-empty-');
+      process.env.PATH = createTempDir('yuri-cli-settings-empty-');
       try {
         await expect(checkOpenCodeCLI()).resolves.toBe(binary);
         expect(process.env.OPENCODE_BINARY).toBe(binary);
@@ -179,7 +179,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
   it('names opencode2 when PATH lookup finds nothing', async () => {
     await withIsolatedOpenCodeEnv(async () => {
       delete process.env.OPENCODE_BINARY;
-      process.env.PATH = createTempDir('openchamber-cli-missing-');
+      process.env.PATH = createTempDir('yuri-cli-missing-');
       await expect(checkOpenCodeCLI()).rejects.toThrow(/opencode/);
     });
   });
@@ -187,7 +187,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
   it('installs pinned opencode2 when PATH has no usable binary', async () => {
     await withIsolatedOpenCodeEnv(async ({ dataDir }) => {
       delete process.env.OPENCODE_BINARY;
-      process.env.PATH = createTempDir('openchamber-cli-install-missing-');
+      process.env.PATH = createTempDir('yuri-cli-install-missing-');
       const installed = path.join(dataDir, 'opencode-cli', '2.0.12', process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
       writeVersionBinary(installed, '2.0.12');
       const notices = [];

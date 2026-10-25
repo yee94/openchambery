@@ -4,7 +4,7 @@ import { CSSVariableGenerator } from '@/lib/theme/cssGenerator';
 import { buildTextMateThemeFromAppTheme } from '@/lib/shiki/textMateThemeFromAppTheme';
 import { getThemeById, themes } from '@/lib/theme/themes';
 
-/** Matches OpenChamberVisualSettings formatThemeLabel: variant pickers strip the suffix. */
+/** Matches YuriVisualSettings formatThemeLabel: variant pickers strip the suffix. */
 const selectorLabel = (name: string, variant: 'light' | 'dark'): string => {
   const suffix = variant === 'dark' ? ' Dark' : ' Light';
   return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
@@ -76,8 +76,8 @@ describe('built-in Cursor and Osaka Jade palettes', () => {
       'flexoki-dark',
       'flexoki-light',
       'dracula-dark',
-      'openchamber-dark',
-      'openchamber-light',
+      'yuri-dark',
+      'yuri-light',
     ]) {
       expect(ids.has(id), id).toBe(true);
     }

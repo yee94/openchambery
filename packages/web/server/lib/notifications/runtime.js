@@ -130,7 +130,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       data: stringifyApnsData({
         assistantID: data.assistantID,
         url: typeof data.assistantID === 'string' && data.assistantID.trim()
-          ? `openchamber://assistant/${encodeURIComponent(data.assistantID.trim())}`
+          ? `yuri://assistant/${encodeURIComponent(data.assistantID.trim())}`
           : (typeof data.url === 'string' ? data.url : undefined),
       }),
     };
@@ -245,21 +245,21 @@ export const createNotificationTriggerRuntime = (deps) => {
     });
   };
 
-  const metaFromOpenchamber = (openchamber, extras = {}) => {
-    const assignedFrom = typeof openchamber?.assigned?.from === 'string'
-      ? openchamber.assigned.from
+  const metaFromYuri = (yuri, extras = {}) => {
+    const assignedFrom = typeof yuri?.assigned?.from === 'string'
+      ? yuri.assigned.from
       : null;
     return {
-      smallModelPurpose: normalizeSmallModelPurpose(openchamber?.smallModel?.purpose),
-      // Throwaway LLM gateway sessions (`metadata.openchamber.llm.purpose`) share
+      smallModelPurpose: normalizeSmallModelPurpose(yuri?.smallModel?.purpose),
+      // Throwaway LLM gateway sessions (`metadata.yuri.llm.purpose`) share
       // the same sidebar-hidden contract as small-model system sessions.
-      llmPurpose: normalizeSmallModelPurpose(openchamber?.llm?.purpose),
-      assistantID: nonEmptySystemID(openchamber?.assistant?.assistantID)
-        ? openchamber.assistant.assistantID
+      llmPurpose: normalizeSmallModelPurpose(yuri?.llm?.purpose),
+      assistantID: nonEmptySystemID(yuri?.assistant?.assistantID)
+        ? yuri.assistant.assistantID
         : null,
       assignedFrom,
-      scheduledTaskID: nonEmptySystemID(openchamber?.scheduledTask?.taskID)
-        ? openchamber.scheduledTask.taskID
+      scheduledTaskID: nonEmptySystemID(yuri?.scheduledTask?.taskID)
+        ? yuri.scheduledTask.taskID
         : null,
       ...extras,
     };
@@ -277,7 +277,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       parentID: normalizeParentID(info.parentID),
       title: typeof info.title === 'string' ? info.title : null,
       complete: true,
-      ...metaFromOpenchamber(info.metadata?.openchamber),
+      ...metaFromYuri(info.metadata?.yuri),
     });
   };
 
@@ -310,7 +310,7 @@ export const createNotificationTriggerRuntime = (deps) => {
         parentID: normalizeParentID(session.parentID),
         title: trimmedText(session.title) || null,
         complete: true,
-        ...metaFromOpenchamber(session.metadata?.openchamber),
+        ...metaFromYuri(session.metadata?.yuri),
       };
       setCachedSessionMeta(sessionId, directory, meta);
       return getCachedSessionMeta(sessionId, directory) ?? meta;
@@ -460,7 +460,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       });
       if (!response.ok) return false;
       const session = readNotificationSessionRecord(await response.json().catch(() => null));
-      const goal = session?.metadata?.openchamber?.goal;
+      const goal = session?.metadata?.yuri?.goal;
       return Boolean(goal && typeof goal === 'object' && goal.status === 'active');
     } catch {
       return false;

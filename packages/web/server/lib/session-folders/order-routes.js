@@ -1,7 +1,7 @@
 const emptySnapshot = () => ({ revision: 0, sessionOrderByScope: {}, sessionOrderActivityByScope: {} });
 
-export function registerSessionOrderRoutes(app, { fsPromises: fs, path, openchamberDataDir, broadcastOpenChamberEvent }) {
-  const file = path.join(openchamberDataDir, 'session-order.json');
+export function registerSessionOrderRoutes(app, { fsPromises: fs, path, yuriDataDir, broadcastYuriEvent }) {
+  const file = path.join(yuriDataDir, 'session-order.json');
   let writes = Promise.resolve();
   const read = async () => {
     try {
@@ -44,7 +44,7 @@ export function registerSessionOrderRoutes(app, { fsPromises: fs, path, opencham
         sessionOrderByScope: { ...current.sessionOrderByScope, [scopeKey]: [...new Set(order)] },
         sessionOrderActivityByScope: { ...current.sessionOrderActivityByScope, [scopeKey]: activity },
       };
-      await fs.mkdir(openchamberDataDir, { recursive: true });
+      await fs.mkdir(yuriDataDir, { recursive: true });
       const tmp = `${file}.tmp-${process.pid}-${next.revision}`;
       try {
         await fs.writeFile(tmp, JSON.stringify(next), 'utf8');
@@ -53,8 +53,8 @@ export function registerSessionOrderRoutes(app, { fsPromises: fs, path, opencham
         await fs.unlink(tmp).catch(() => {});
         throw error;
       }
-      broadcastOpenChamberEvent?.({
-        type: 'openchamber:session-order-changed',
+      broadcastYuriEvent?.({
+        type: 'yuri:session-order-changed',
         properties: { occurredAt: Date.now() },
       });
       return next;

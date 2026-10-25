@@ -3,6 +3,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import {
   MOBILE_EDGEONE_UPDATE_CHECK_URL,
   MOBILE_GITHUB_LATEST_RELEASE_URL,
+  MOBILE_IOS_TESTFLIGHT_URL,
   MOBILE_UPDATE_CHECK_TIMEOUT_MS,
   MOBILE_VERCEL_UPDATE_CHECK_URL,
   checkForMobileClientUpdates,
@@ -47,8 +48,8 @@ describe('checkForMobileClientUpdates', () => {
       return new Response(JSON.stringify({
         latestVersion: '1.16.106',
         updateAvailable: true,
-        downloadUrl: 'https://github.com/yee94/openchamber/releases/download/v1.16.106/app-release.apk',
-        releaseNotesUrl: 'https://github.com/yee94/openchamber/releases/tag/v1.16.106',
+        downloadUrl: 'https://github.com/yee94/yuri/releases/download/v1.16.106/app-release.apk',
+        releaseNotesUrl: 'https://github.com/yee94/yuri/releases/tag/v1.16.106',
         nextSuggestedCheckInSec: 3600,
       }), {
         status: 200,
@@ -78,7 +79,7 @@ describe('checkForMobileClientUpdates', () => {
         return {
           ok: true,
           status: 200,
-          url: 'https://github.com/yee94/openchamber/releases/tag/v1.16.106',
+          url: 'https://github.com/yee94/yuri/releases/tag/v1.16.106',
           json: async () => ({}),
         } as Response;
       }
@@ -92,7 +93,7 @@ describe('checkForMobileClientUpdates', () => {
     });
 
     expect(result.available).toBe(true);
-    expect(result.downloadUrl).toBe('https://testflight.apple.com/join/ZCENBHtm');
+    expect(result.downloadUrl).toBe(MOBILE_IOS_TESTFLIGHT_URL);
   });
 
   test('falls through EdgeOne and Vercel to GitHub Releases', async () => {
@@ -107,7 +108,7 @@ describe('checkForMobileClientUpdates', () => {
         return {
           ok: true,
           status: 200,
-          url: 'https://github.com/yee94/openchamber/releases/tag/v1.16.106',
+          url: 'https://github.com/yee94/yuri/releases/tag/v1.16.106',
           json: async () => ({}),
         } as Response;
       }
@@ -123,7 +124,7 @@ describe('checkForMobileClientUpdates', () => {
     expect(result.available).toBe(true);
     expect(result.version).toBe('1.16.106');
     expect(result.downloadUrl).toBe(
-      'https://github.com/yee94/openchamber/releases/download/v1.16.106/app-release.apk',
+      'https://github.com/yee94/yuri/releases/download/v1.16.106/app-release.apk',
     );
     expect(fetchCalls).toEqual([
       MOBILE_EDGEONE_UPDATE_CHECK_URL,

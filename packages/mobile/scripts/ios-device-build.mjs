@@ -15,30 +15,30 @@ const mobileRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const iosAppDir = join(mobileRoot, 'ios', 'App');
 
 const developmentTeam = process.env.DEVELOPMENT_TEAM || process.env.IOS_DEVELOPMENT_TEAM || '6W97S9B7CZ';
-const devAppGroup = process.env.IOS_DEV_APP_GROUP || 'group.com.yeewang.openchamber.dev';
-const productionAppGroup = 'group.com.yee94.openchamber';
-const devBundlePrefix = process.env.IOS_DEV_BUNDLE_ID || 'com.yeewang.openchamber.dev';
+const devAppGroup = process.env.IOS_DEV_APP_GROUP || 'group.com.yeewang.yuri.dev';
+const productionAppGroup = 'group.com.yee94.yuri';
+const devBundlePrefix = process.env.IOS_DEV_BUNDLE_ID || 'com.yeewang.yuri.dev';
 const pbxprojPath = join(iosAppDir, 'App.xcodeproj', 'project.pbxproj');
 
 const bundleIdReplacements = [
-  ['com.yee94.openchamber.OpenChamberShareExtension', `${devBundlePrefix}.OpenChamberShareExtension`],
-  ['com.yee94.openchamber.OpenChamberNotificationService', `${devBundlePrefix}.OpenChamberNotificationService`],
-  ['com.yee94.openchamber.OpenChamberWidget', `${devBundlePrefix}.OpenChamberWidget`],
-  ['com.yee94.openchamber', devBundlePrefix],
+  ['com.yee94.yuri.YuriShareExtension', `${devBundlePrefix}.YuriShareExtension`],
+  ['com.yee94.yuri.YuriNotificationService', `${devBundlePrefix}.YuriNotificationService`],
+  ['com.yee94.yuri.YuriWidget', `${devBundlePrefix}.YuriWidget`],
+  ['com.yee94.yuri', devBundlePrefix],
 ];
 
 const entitlementPaths = [
   join(iosAppDir, 'App', 'App.entitlements'),
-  join(iosAppDir, 'OpenChamberWidget', 'OpenChamberWidget.entitlements'),
-  join(iosAppDir, 'OpenChamberNotificationService', 'OpenChamberNotificationService.entitlements'),
-  join(iosAppDir, 'OpenChamberShareExtension', 'OpenChamberShareExtension.entitlements'),
+  join(iosAppDir, 'YuriWidget', 'YuriWidget.entitlements'),
+  join(iosAppDir, 'YuriNotificationService', 'YuriNotificationService.entitlements'),
+  join(iosAppDir, 'YuriShareExtension', 'YuriShareExtension.entitlements'),
 ];
 
 const appGroupSourcePaths = [
-  join(iosAppDir, 'App', 'OpenChamberShareStore.swift'),
+  join(iosAppDir, 'App', 'YuriShareStore.swift'),
   join(iosAppDir, 'App', 'AppDelegate.swift'),
-  join(iosAppDir, 'OpenChamberWidget', 'WidgetShared.swift'),
-  join(iosAppDir, 'OpenChamberNotificationService', 'NotificationService.swift'),
+  join(iosAppDir, 'YuriWidget', 'WidgetShared.swift'),
+  join(iosAppDir, 'YuriNotificationService', 'NotificationService.swift'),
 ];
 
 const run = (command, args, cwd = mobileRoot) => {

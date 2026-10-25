@@ -1,8 +1,8 @@
 /**
  * Host authority projection for OpenCode sessions.
  *
- * OpenCode 2.x has no durable archive write. OpenChamber stores archive state
- * under `metadata.openchamber.archive.archivedAt` and folds it onto session
+ * OpenCode 2.x has no durable archive write. Yuri stores archive state
+ * under `metadata.yuri.archive.archivedAt` and folds it onto session
  * list/detail/event payloads so clients keep reading `time.archived`.
  *
  * Authority:
@@ -13,8 +13,16 @@
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+// Yuri 2.x read bridge for owned keys on existing OpenCode records. Preserve
+// the source namespace and user content; any new namespace is authoritative.
+const normalizeOwnedMetadata = (metadata) => {
+  if (!isPlainObject(metadata) || Object.prototype.hasOwnProperty.call(metadata, 'yuri')) return metadata;
+  const legacy = metadata.openchamber;
+  return isPlainObject(legacy) ? { ...metadata, yuri: { ...legacy } } : metadata;
+};
+
 export const readSessionTitleAuthority = (sessionID, metadata) => {
-  const authority = metadata?.openchamber?.titleAuthority;
+  const authority = normalizeOwnedMetadata(metadata)?.yuri?.titleAuthority;
   return typeof sessionID === 'string' && sessionID.length > 0 && authority?.sessionID === sessionID
     && typeof authority.title === 'string' && authority.title.trim()
     && typeof authority.revision === 'string' && authority.revision
@@ -107,10 +115,10 @@ export const resolveSessionDirectory = (session) => {
  */
 export const readHostArchivedAt = (metadata) => {
   if (!isPlainObject(metadata)) return null;
-  const openchamber = metadata.openchamber;
-  if (!isPlainObject(openchamber)) return null;
-  if (!Object.prototype.hasOwnProperty.call(openchamber, HOST_ARCHIVE_METADATA_KEY)) return null;
-  const archive = openchamber[HOST_ARCHIVE_METADATA_KEY];
+  const yuri = normalizeOwnedMetadata(metadata).yuri;
+  if (!isPlainObject(yuri)) return null;
+  if (!Object.prototype.hasOwnProperty.call(yuri, HOST_ARCHIVE_METADATA_KEY)) return null;
+  const archive = yuri[HOST_ARCHIVE_METADATA_KEY];
   if (!isPlainObject(archive) || !Object.prototype.hasOwnProperty.call(archive, 'archivedAt')) return null;
   const value = archive.archivedAt;
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
@@ -148,8 +156,8 @@ export const projectSessionWithHostMetadata = (session, hostMetadata) => {
   if (!session || typeof session !== 'object' || Array.isArray(session)) return session;
   if (typeof session.id !== 'string' || !session.id) return session;
 
-  const theirs = isPlainObject(session.metadata) ? session.metadata : {};
-  const ours = isPlainObject(hostMetadata) ? hostMetadata : null;
+  const theirs = isPlainObject(session.metadata) ? normalizeOwnedMetadata(session.metadata) : {};
+  const ours = isPlainObject(hostMetadata) ? normalizeOwnedMetadata(hostMetadata) : null;
   const metadata = ours ? mergeMetadataPatch(theirs, ours) : theirs;
 
   const hostArchivedAt = readHostArchivedAt(ours ?? metadata);
@@ -185,11 +193,11 @@ export const projectSessionWithHostMetadata = (session, hostMetadata) => {
  * @param {unknown} sideMetadata
  */
 export const mergeOwnedMetadata = (openCodeMetadata, sideMetadata) => {
-  const openCode = isPlainObject(openCodeMetadata) ? openCodeMetadata : {};
+  const openCode = isPlainObject(openCodeMetadata) ? normalizeOwnedMetadata(openCodeMetadata) : {};
   if (!isPlainObject(sideMetadata) || Object.keys(sideMetadata).length === 0) {
     return { ...openCode };
   }
-  return mergeMetadataPatch(sideMetadata, openCode);
+  return mergeMetadataPatch(normalizeOwnedMetadata(sideMetadata), openCode);
 };
 
 const projectRecordMetadata = (session, sideMetadata) => {

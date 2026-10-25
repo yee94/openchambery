@@ -1,8 +1,9 @@
+import '@/lib/brand-storage-bootstrap';
 import { lazy } from 'react';
 
 declare const __APP_VERSION__: string | undefined;
 
-const RELOAD_STORAGE_KEY = 'openchamber:chunk-import-reload';
+const RELOAD_STORAGE_KEY = 'yuri:chunk-import-reload';
 const RETRY_DELAY_MS = 250;
 const RELOAD_GUARD_MS = 30_000;
 

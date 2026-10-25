@@ -147,7 +147,7 @@ export const useSidebarBulkActions = (args: Args) => {
             ? t('sessions.sidebar.bulkActions.archivedSingle', { count: archivedIds.length })
             : t('sessions.sidebar.bulkActions.archivedPlural', { count: archivedIds.length }),
           undoLabel: t('sessions.sidebar.undo'),
-          settingsLabel: t('settings.openchamber.archivedSessions.actions.view'),
+          settingsLabel: t('settings.yuri.archivedSessions.actions.view'),
           undoFailedMessage: archivedIds.length === 1
             ? t('sessions.sidebar.session.archive.undoFailed')
             : t('sessions.sidebar.bulkActions.archiveUndoFailed', { count: archivedIds.length }),

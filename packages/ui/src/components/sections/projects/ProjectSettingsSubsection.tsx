@@ -31,7 +31,7 @@ export const ProjectSettingsSubsection: React.FC<ProjectSettingsSubsectionProps>
       className={className}
     >
       <SettingsGroup
-        className="oc-settings-detail-group"
+        className="yuri-settings-detail-group"
         label={(
           <div className="flex min-w-0 items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
@@ -43,7 +43,7 @@ export const ProjectSettingsSubsection: React.FC<ProjectSettingsSubsectionProps>
         )}
         description={description}
       >
-        <div className={cn('oc-settings-group-row', contentClassName)}>{children}</div>
+        <div className={cn('yuri-settings-group-row', contentClassName)}>{children}</div>
       </SettingsGroup>
     </div>
   );

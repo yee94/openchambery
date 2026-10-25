@@ -5,12 +5,12 @@ import { describe, expect, test } from 'vitest';
 import { browserProviderUnsupportedBody, isBrowserProviderRoute } from './browserProviderRoute';
 
 describe('browser provider route', () => {
-  test('matches the host paths and not neighboring OpenChamber routes', () => {
+  test('matches the host paths and not neighboring Yuri routes', () => {
     expect(isBrowserProviderRoute('/api/browser-providers')).toBe(true);
     expect(isBrowserProviderRoute('/api/browser-providers/')).toBe(true);
     expect(isBrowserProviderRoute('/api/browser-providers/actions')).toBe(true);
     expect(isBrowserProviderRoute('/api/browser-providers/selection')).toBe(true);
-    expect(isBrowserProviderRoute('/api/openchamber/message-queue')).toBe(false);
+    expect(isBrowserProviderRoute('/api/yuri/message-queue')).toBe(false);
     expect(isBrowserProviderRoute('/api/browser-providers-other')).toBe(false);
   });
 

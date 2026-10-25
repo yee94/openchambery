@@ -104,7 +104,7 @@ const useExternalLinkInteractions = ({
       return;
     }
 
-    if (anchor.getAttribute('data-openchamber-file-link') === 'true') {
+    if (anchor.getAttribute('data-yuri-file-link') === 'true') {
       return;
     }
 
@@ -375,7 +375,7 @@ const useMarkdownImageInteractions = ({
       container.removeEventListener('contextmenu', handleContextMenu);
       // A StrictMode effect replay tears down and restores this effect in the
       // same task. Keep the virtual URL through that replay so Chromium never
-      // races a just-cancelled openchamber-asset request. A real unmount reaches
+      // races a just-cancelled yuri-asset request. A real unmount reaches
       // this timer without a following setup and releases every resource.
       deferredImageCleanupTimerRef.current = setTimeout(() => {
         deferredImageCleanupTimerRef.current = null;
@@ -462,10 +462,10 @@ const useFileReferenceInteractions = ({
     const fileReferencesEnabled = enabled;
 
     const clearFileLinkAttributes = (candidate: HTMLElement) => {
-      candidate.removeAttribute('data-openchamber-file-link');
-      candidate.removeAttribute('data-openchamber-file-ref');
-      candidate.removeAttribute('data-openchamber-file-path');
-      candidate.removeAttribute('data-openchamber-file-binary');
+      candidate.removeAttribute('data-yuri-file-link');
+      candidate.removeAttribute('data-yuri-file-ref');
+      candidate.removeAttribute('data-yuri-file-path');
+      candidate.removeAttribute('data-yuri-file-binary');
       if (candidate.getAttribute('title') === FILE_REFERENCE_OPEN_TITLE) {
         candidate.removeAttribute('title');
       }
@@ -528,8 +528,8 @@ const useFileReferenceInteractions = ({
         linkedCount += 1;
 
         if (
-          candidate.getAttribute('data-openchamber-file-link') === 'true'
-          && candidate.getAttribute('data-openchamber-file-path') === resolved.resolvedPath
+          candidate.getAttribute('data-yuri-file-link') === 'true'
+          && candidate.getAttribute('data-yuri-file-path') === resolved.resolvedPath
         ) {
           continue;
         }
@@ -549,10 +549,10 @@ const useFileReferenceInteractions = ({
             return;
           }
 
-          candidate.setAttribute('data-openchamber-file-link', 'true');
-          candidate.setAttribute('data-openchamber-file-ref', latestRawCandidate);
-          candidate.setAttribute('data-openchamber-file-path', latestResolved.resolvedPath);
-          candidate.setAttribute('data-openchamber-file-binary', String(info.isBinary));
+          candidate.setAttribute('data-yuri-file-link', 'true');
+          candidate.setAttribute('data-yuri-file-ref', latestRawCandidate);
+          candidate.setAttribute('data-yuri-file-path', latestResolved.resolvedPath);
+          candidate.setAttribute('data-yuri-file-binary', String(info.isBinary));
           candidate.setAttribute('title', FILE_REFERENCE_OPEN_TITLE);
           if (candidate.tagName.toLowerCase() !== 'a') {
             candidate.setAttribute('role', 'button');
@@ -598,7 +598,7 @@ const useFileReferenceInteractions = ({
       }
 
       const target = event.target;
-      if (!(target instanceof HTMLElement) || target.getAttribute('data-openchamber-file-link') !== 'true') {
+      if (!(target instanceof HTMLElement) || target.getAttribute('data-yuri-file-link') !== 'true') {
         return;
       }
 

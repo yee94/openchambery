@@ -3,10 +3,10 @@ import os from 'os';
 import path from 'path';
 
 function getDataDir() {
-  if (typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim().length > 0) {
-    return path.resolve(process.env.OPENCHAMBER_DATA_DIR.trim());
+  if (typeof process.env.YURI_DATA_DIR === 'string' && process.env.YURI_DATA_DIR.trim().length > 0) {
+    return path.resolve(process.env.YURI_DATA_DIR.trim());
   }
-  return path.join(os.homedir(), '.config', 'openchamber');
+  return path.join(os.homedir(), '.config', 'yuri');
 }
 
 function getLogsDir() {
@@ -36,7 +36,7 @@ function ensureLogsDir() {
 }
 
 function getLogFilePath(port) {
-  return path.join(getLogsDir(), `openchamber-${port}.log`);
+  return path.join(getLogsDir(), `yuri-${port}.log`);
 }
 
 

@@ -71,7 +71,7 @@ export const resolveRelayPreviewFrameSrc = (
 
     const asset = ABSOLUTE_URL_PATTERN.test(authenticatedAssetUrl)
       ? new URL(authenticatedAssetUrl)
-      : new URL(authenticatedAssetUrl, 'http://openchamber.local');
+      : new URL(authenticatedAssetUrl, 'http://yuri.local');
 
     if (!asset.pathname.startsWith(PREVIEW_PROXY_PATH_PREFIX)) {
       return authenticatedAssetUrl;

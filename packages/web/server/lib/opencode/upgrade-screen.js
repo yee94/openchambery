@@ -16,7 +16,7 @@ import {
   npmPackageForOpenCode2,
 } from './opencode2-pin.js';
 
-/** Oldest OpenCode this OpenChamber build will enter a session against. */
+/** Oldest OpenCode this Yuri build will enter a session against. */
 export const REQUIRED_OPENCODE_VERSION = MINIMUM_OPENCODE2_VERSION;
 
 const normalizeVersion = (value) => {
@@ -124,7 +124,7 @@ export function evaluateUpgradeScreenInstallResult(input = {}) {
       version,
       targetVersion,
       errorCode: 'UPGRADE_SCREEN_NOT_VERIFIED',
-      error: `OpenCode is still ${found}. OpenChamber requires ${REQUIRED_OPENCODE_VERSION} or newer.`,
+      error: `OpenCode is still ${found}. Yuri requires ${REQUIRED_OPENCODE_VERSION} or newer.`,
     };
   }
   return {

@@ -5,6 +5,8 @@ export type MobileUpdatePlatform = 'ios' | 'android';
 export interface MobileUpdateCheckRequest {
   channel: MobileUpdateChannel;
   platform: MobileUpdatePlatform;
+  /** Installed native AppInfo.id; absent when the native identity cannot be read. */
+  applicationId?: string;
   deviceId: string;
   nativeVersion: string;
   nativeBuild: number;

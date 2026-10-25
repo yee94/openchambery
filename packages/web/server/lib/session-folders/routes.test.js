@@ -58,7 +58,7 @@ describe('session folders routes', () => {
     };
     const broadcast = vi.fn();
     const registry = createRouteRegistry();
-    const deps = { fsPromises, path, openchamberDataDir: '/test/data', broadcastOpenChamberEvent: broadcast };
+    const deps = { fsPromises, path, yuriDataDir: '/test/data', broadcastYuriEvent: broadcast };
     registerSessionFoldersRoutes(registry.app, deps);
     const post = registry.getRoute('POST', '/api/session-folders/order');
     const write = async (body) => {
@@ -108,7 +108,7 @@ describe('session folders routes', () => {
     registerSessionFoldersRoutes(app, {
       fsPromises,
       path,
-      openchamberDataDir: '/tmp/openchamber-test',
+      yuriDataDir: '/tmp/yuri-test',
     });
 
     const handler = getRoute('POST', '/api/session-folders');
@@ -137,7 +137,7 @@ describe('session folders routes', () => {
     registerSessionFoldersRoutes(app, {
       fsPromises,
       path,
-      openchamberDataDir: '/tmp/openchamber-test',
+      yuriDataDir: '/tmp/yuri-test',
     });
 
     const handler = getRoute('POST', '/api/session-folders');

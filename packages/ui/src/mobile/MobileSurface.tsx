@@ -16,7 +16,7 @@ export function MobileFloatingSurface({
   ...props
 }: MobileFloatingSurfaceProps) {
   const Comp = asChild ? Slot : 'div';
-  return <Comp className={cn('oc-mobile-floating-surface', className)} {...props} />;
+  return <Comp className={cn('yuri-mobile-floating-surface', className)} {...props} />;
 }
 
 export type MobileFloatingBottomBarProps = Omit<ComponentPropsWithoutRef<'div'>, 'children'> & {
@@ -40,14 +40,14 @@ export function MobileFloatingBottomBar({
   ...props
 }: MobileFloatingBottomBarProps) {
   return (
-    <Component className={cn('oc-mobile-floating-bottom-bar-frame', className)} {...props}>
+    <Component className={cn('yuri-mobile-floating-bottom-bar-frame', className)} {...props}>
       <MobileFloatingSurface
         {...surfaceProps}
         className={cn(
-          'oc-mobile-floating-bottom-bar',
+          'yuri-mobile-floating-bottom-bar',
           variant === 'navigation'
-            ? 'oc-mobile-floating-bottom-bar-navigation'
-            : 'oc-mobile-floating-bottom-bar-actions',
+            ? 'yuri-mobile-floating-bottom-bar-navigation'
+            : 'yuri-mobile-floating-bottom-bar-actions',
         )}
       >
         {children}
@@ -87,17 +87,17 @@ export function MobileTabPageScaffold({
   surfaceAriaLabel,
 }: MobileTabPageScaffoldProps) {
   return (
-    <div className={cn('oc-mobile-tab-page', scrollsWithPage && 'oc-mobile-tab-page-flow', !showHeader && 'gap-0', className)}>
+    <div className={cn('yuri-mobile-tab-page', scrollsWithPage && 'yuri-mobile-tab-page-flow', !showHeader && 'gap-0', className)}>
       {showHeader ? <MobileTabPageHeader title={title} trailing={trailing} /> : null}
       {surface ? (
         <MobileFloatingSurface
-          className={cn('oc-mobile-tab-page-surface', surfaceClassName)}
+          className={cn('yuri-mobile-tab-page-surface', surfaceClassName)}
           aria-label={surfaceAriaLabel}
         >
           {children}
         </MobileFloatingSurface>
       ) : (
-        <div className={cn('oc-mobile-tab-page-content', surfaceClassName)} aria-label={surfaceAriaLabel}>
+        <div className={cn('yuri-mobile-tab-page-content', surfaceClassName)} aria-label={surfaceAriaLabel}>
           {children}
         </div>
       )}
@@ -127,11 +127,11 @@ export function MobileLabeledSurfaceGroup({
 }: MobileLabeledSurfaceGroupProps) {
   return (
     <section
-      className={cn('oc-mobile-labeled-surface-group', cardClassName, className)}
+      className={cn('yuri-mobile-labeled-surface-group', cardClassName, className)}
       aria-label={ariaLabel}
     >
-      <div className="oc-mobile-labeled-surface-group-label">{label}</div>
-      {children ? <div className="oc-mobile-labeled-surface-group-content">{children}</div> : null}
+      <div className="yuri-mobile-labeled-surface-group-label">{label}</div>
+      {children ? <div className="yuri-mobile-labeled-surface-group-content">{children}</div> : null}
     </section>
   );
 }

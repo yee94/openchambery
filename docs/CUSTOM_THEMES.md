@@ -1,17 +1,17 @@
 # Custom Themes
 
-OpenChamberY supports user-defined themes. Drop a JSON file into the themes directory and reload — no app restart required.
+Yuri supports user-defined themes. Drop a JSON file into the themes directory and reload — no app restart required.
 
 ## Quick Start
 
 1. Create the themes directory:
    ```bash
-   mkdir -p ~/.config/openchamber/themes
+   mkdir -p ~/.config/yuri/themes
    ```
 
 2. Create a theme JSON file (e.g., `my-theme.json`) with the format below.
 
-3. In OpenChamberY: **Settings → Theme → Reload themes**.
+3. In Yuri: **Settings → Theme → Reload themes**.
 
 4. Select your theme from the dropdown.
 
@@ -19,7 +19,7 @@ OpenChamberY supports user-defined themes. Drop a JSON file into the themes dire
 
 | Platform | Path |
 |----------|------|
-| macOS/Linux | `~/.config/openchamber/themes/` |
+| macOS/Linux | `~/.config/yuri/themes/` |
 
 ## Theme Format
 
@@ -28,7 +28,7 @@ OpenChamberY supports user-defined themes. Drop a JSON file into the themes dire
   "metadata": {
     "id": "my-custom-theme",
     "name": "My Custom Theme",
-    "description": "A custom theme for OpenChamberY",
+    "description": "A custom theme for Yuri",
     "version": "1.0.0",
     "variant": "dark",
     "tags": ["dark", "custom"]

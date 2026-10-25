@@ -1,28 +1,28 @@
 services:
-  openchamber:
+  yuri:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: openchamber
+    container_name: yuri
     ports:
       - "3000:3000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./data/openchamber:/home/openchamber/.config/openchamber
-      - ./data/opencode/share:/home/openchamber/.local/share/opencode
-      - ./data/opencode/state:/home/openchamber/.local/state/opencode
-      - ./data/opencode/config:/home/openchamber/.config/opencode
-      - ./data/ssh:/home/openchamber/.ssh
-      - ./workspaces:/home/openchamber/workspaces
+      - ./data/yuri:/home/yuri/.config/yuri
+      - ./data/opencode/share:/home/yuri/.local/share/opencode
+      - ./data/opencode/state:/home/yuri/.local/state/opencode
+      - ./data/opencode/config:/home/yuri/.config/opencode
+      - ./data/ssh:/home/yuri/.ssh
+      - ./workspaces:/home/yuri/workspaces
     environment:
-      # Docker binds OpenChamber to 0.0.0.0 for port mapping, so UI auth is required.
+      # Docker binds Yuri to 0.0.0.0 for port mapping, so UI auth is required.
       # Set this before starting, for example:
-      #   OPENCHAMBER_UI_PASSWORD="$(openssl rand -base64 24)" docker compose up -d
-      OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD before exposing OpenChamber through Docker}
-    # OPENCHAMBER_HOST: 0.0.0.0  # Bind address (default in Docker entrypoint: 0.0.0.0)
+      #   YURI_UI_PASSWORD="$(openssl rand -base64 24)" docker compose up -d
+      YURI_UI_PASSWORD: ${YURI_UI_PASSWORD:?Set YURI_UI_PASSWORD before exposing Yuri through Docker}
+    # YURI_HOST: 0.0.0.0  # Bind address (default in Docker entrypoint: 0.0.0.0)
     # OH_MY_OPENCODE: true # enable oh-my-opencode
     # OPENCODE_HOST: http://172.17.0.1:4096 # Connect to external OpenCode server
     # OPENCODE_SKIP_START: true # skip start opencode
-    # OPENCHAMBER_OPENCODE_HOSTNAME: 0.0.0.0 # Bind OpenCode to all interfaces
+    # YURI_OPENCODE_HOSTNAME: 0.0.0.0 # Bind OpenCode to all interfaces
     restart: unless-stopped

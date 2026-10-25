@@ -88,7 +88,7 @@ const awaitablePath = await import('node:path');
 describe('managed scheduled task tool route', () => {
   it('uses the shared managed tool contract', () => {
     expect(MANAGED_SCHEDULED_TASK_TOOL_PATH).toBe('/api/internal/managed-opencode/scheduled-task');
-    expect(MANAGED_SCHEDULED_TASK_TOKEN_HEADER).toBe('x-openchamber-scheduled-task-token');
+    expect(MANAGED_SCHEDULED_TASK_TOKEN_HEADER).toBe('x-yuri-scheduled-task-token');
   });
 
   it('uses authoritative message defaults and the deepest containing project for create', async () => {

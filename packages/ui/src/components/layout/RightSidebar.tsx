@@ -35,7 +35,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
     sidebar.style.width = `${nextWidth}px`;
     sidebar.style.minWidth = `${nextWidth}px`;
     sidebar.style.maxWidth = `${nextWidth}px`;
-    sidebar.style.setProperty('--oc-right-sidebar-width', `${nextWidth}px`);
+    sidebar.style.setProperty('--yuri-right-sidebar-width', `${nextWidth}px`);
   }, []);
 
   const openWidth = Math.min(RIGHT_SIDEBAR_MAX_WIDTH, Math.max(RIGHT_SIDEBAR_MIN_WIDTH, rightSidebarWidth || RIGHT_SIDEBAR_CONTENT_WIDTH));
@@ -114,14 +114,14 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
     <aside
       ref={sidebarRef}
       className={cn(
-        'relative flex h-full overflow-hidden oc-layout-divider-l will-change-[width] motion-reduce:transition-none',
+        'relative flex h-full overflow-hidden yuri-layout-divider-l will-change-[width] motion-reduce:transition-none',
         'bg-sidebar',
         !isOpen && 'border-l-0',
         className,
       )}
       style={{
         width: `${currentWidth}px`,
-        ['--oc-right-sidebar-width' as string]: `${isResizing ? currentWidth : openWidth}px`,
+        ['--yuri-right-sidebar-width' as string]: `${isResizing ? currentWidth : openWidth}px`,
         overflowX: 'clip',
         transitionProperty: isResizing ? 'none' : 'width',
         transitionDuration: '200ms',
@@ -150,7 +150,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
           isResizing && 'pointer-events-none',
           !isOpen && 'pointer-events-none select-none opacity-0'
         )}
-        style={{ width: 'var(--oc-right-sidebar-width)' }}
+        style={{ width: 'var(--yuri-right-sidebar-width)' }}
         aria-hidden={!isOpen}
       >
         {isOpen ? children : null}

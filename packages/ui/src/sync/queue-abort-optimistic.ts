@@ -111,7 +111,7 @@ const sendConfigOf = (item: { sendConfig?: { providerID?: string; modelID?: stri
 }
 
 const isOptimisticPart = (part: unknown): boolean => (
-  Boolean(part) && typeof part === 'object' && (part as { __openchamberOptimistic?: unknown }).__openchamberOptimistic === true
+  Boolean(part) && typeof part === 'object' && (part as { __yuriOptimistic?: unknown }).__yuriOptimistic === true
 )
 
 const readMessageParts = (sessionID: string, directory: string, messageID: string) => {

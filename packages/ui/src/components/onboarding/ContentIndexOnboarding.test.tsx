@@ -92,7 +92,7 @@ test('continuing in background is local to this startup and runtime, never a ser
   await render();
   await tick(1);
   expect(document.querySelector('[data-content-index-onboarding]')).not.toBeNull();
-  expect(fixture.fetch.mock.calls.every(([url, options]) => url === '/api/openchamber/content-search' && !options.method)).toBe(true);
+  expect(fixture.fetch.mock.calls.every(([url, options]) => url === '/api/yuri/content-search' && !options.method)).toBe(true);
 });
 
 test('a previously complete Host is checked without flashing onboarding; VS Code never requests Host FTS', async () => {

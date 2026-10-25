@@ -19,8 +19,8 @@ jobs:
   review:
     if: |
       (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login != 'openchamber-bot[bot]' && (github.event.comment.body == '/oc-review' || startsWith(github.event.comment.body, '/oc-review ') || github.event.comment.body == '@openchamber-bot review' || startsWith(github.event.comment.body, '@openchamber-bot review '))) ||
-      (github.event_name == 'pull_request_review_comment' && github.event.comment.user.login != 'openchamber-bot[bot]' && (github.event.comment.body == '/oc-review' || startsWith(github.event.comment.body, '/oc-review ') || github.event.comment.body == '@openchamber-bot review' || startsWith(github.event.comment.body, '@openchamber-bot review ')))
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login != 'yuri-bot[bot]' && (github.event.comment.body == '/yuri-review' || startsWith(github.event.comment.body, '/yuri-review ') || github.event.comment.body == '@yuri-bot review' || startsWith(github.event.comment.body, '@yuri-bot review '))) ||
+      (github.event_name == 'pull_request_review_comment' && github.event.comment.user.login != 'yuri-bot[bot]' && (github.event.comment.body == '/yuri-review' || startsWith(github.event.comment.body, '/yuri-review ') || github.event.comment.body == '@yuri-bot review' || startsWith(github.event.comment.body, '@yuri-bot review ')))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,8 +36,8 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
-          app-id: ${{ secrets.OC_REVIEW_APP_ID }}
-          private-key: ${{ secrets.OC_REVIEW_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.YURI_REVIEW_APP_ID }}
+          private-key: ${{ secrets.YURI_REVIEW_APP_PRIVATE_KEY }}
 
       - name: Resolve pull request context
         id: pr
@@ -96,11 +96,11 @@ jobs:
           first_line="${COMMENT_BODY%%$'\n'*}"
 
           case "$first_line" in
-            /oc-review|/oc-review\ *)
-              focus="${first_line#/oc-review}"
+            /yuri-review|/yuri-review\ *)
+              focus="${first_line#/yuri-review}"
               ;;
-            "@openchamber-bot review"|"@openchamber-bot review "*)
-              focus="${first_line#@openchamber-bot review}"
+            "@yuri-bot review"|"@yuri-bot review "*)
+              focus="${first_line#@yuri-bot review}"
               ;;
             *)
               echo "Unsupported manual review command: $first_line" >&2
@@ -183,7 +183,7 @@ jobs:
             model_args=(--model "$OPENCODE_MODEL")
           fi
 
-          opencode run --agent pr-review "${model_args[@]}" "A pull request in the OpenChamber repository needs code review.
+          opencode run --agent pr-review "${model_args[@]}" "A pull request in the Yuri repository needs code review.
 
           This may be a repeated review request. Before writing a new review, inspect prior PR comments, bot comments, reviews, inline comments, and the commit timeline via GitHub. Compare prior findings against commits pushed after those comments, then only repeat findings that still exist in the current diff/current file state.
 
@@ -214,10 +214,10 @@ jobs:
           review_comment_count="$(gh api \
             "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
             --paginate \
-            | jq -s --arg created_at "$COMMAND_CREATED_AT" '[.[][] | select(.created_at > $created_at and .user.login == "openchamber-bot[bot]" and (.body | contains("<h3>Code Review Summary</h3>")))] | length')"
+            | jq -s --arg created_at "$COMMAND_CREATED_AT" '[.[][] | select(.created_at > $created_at and .user.login == "yuri-bot[bot]" and (.body | contains("<h3>Code Review Summary</h3>")))] | length')"
 
           if [ "$review_comment_count" -lt 1 ]; then
-            echo "Manual /oc-review completed without creating a new OpenChamber Bot PR comment." >&2
+            echo "Manual /yuri-review completed without creating a new Yuri Bot PR comment." >&2
             exit 1
           fi
 

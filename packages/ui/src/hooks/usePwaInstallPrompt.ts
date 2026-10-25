@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import React from 'react';
 import { toast } from '@/components/ui';
 import { isWebRuntime } from '@/lib/desktop';

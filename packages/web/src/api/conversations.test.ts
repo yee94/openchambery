@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ConversationMessagePart } from '@openchamber/ui/lib/api/types';
+import type { ConversationMessagePart } from '@yuri/ui/lib/api/types';
 
 const mockRuntimeFetch = vi.fn();
 
-vi.mock('@openchamber/ui/lib/runtime-fetch', () => ({
+vi.mock('@yuri/ui/lib/runtime-fetch', () => ({
   runtimeFetch: mockRuntimeFetch,
 }));
 
@@ -52,7 +52,7 @@ describe('web conversations API', () => {
       messageID: 'msg_01',
     });
     expect(mockRuntimeFetch).toHaveBeenCalledWith(
-      '/api/openchamber/conversations',
+      '/api/yuri/conversations',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,7 +80,7 @@ describe('web conversations API', () => {
     await api.createWithPrompt(inputWithOpts);
 
     expect(mockRuntimeFetch).toHaveBeenCalledWith(
-      '/api/openchamber/conversations',
+      '/api/yuri/conversations',
       expect.objectContaining({
         body: JSON.stringify(inputWithOpts),
       }),
@@ -302,7 +302,7 @@ describe('web conversations API', () => {
     await api.createWithPrompt(validInput, controller.signal);
 
     expect(mockRuntimeFetch).toHaveBeenCalledWith(
-      '/api/openchamber/conversations',
+      '/api/yuri/conversations',
       expect.objectContaining({
         signal: controller.signal,
       }),

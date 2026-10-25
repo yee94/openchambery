@@ -7,11 +7,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 test.skipIf(process.platform !== 'darwin')('native loopback server handles ranges, HEAD, disconnect cancellation and opaque paths', async () => {
-  const work = await mkdtemp(join(tmpdir(), 'oc-video-native-'));
+  const work = await mkdtemp(join(tmpdir(), 'yuri-video-native-'));
   let child;
   try {
     const binary = join(work, 'video-probe');
-    execFileSync('swiftc', [fileURLToPath(new URL('../ios/App/App/OpenChamberVideoServer.swift', import.meta.url)),
+    execFileSync('swiftc', [fileURLToPath(new URL('../ios/App/App/YuriVideoServer.swift', import.meta.url)),
       fileURLToPath(new URL('./fixtures/VideoServerProbe.swift', import.meta.url)), '-o', binary]);
     child = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
     const events = [];
@@ -54,10 +54,10 @@ test.skipIf(process.platform !== 'darwin')('native loopback server handles range
 }, 30_000);
 
 test.skipIf(process.platform !== 'darwin')('AVFoundation decodes first frame and seeks through the production loopback server', async () => {
-  const work = await mkdtemp(join(tmpdir(), 'oc-video-playback-'));
+  const work = await mkdtemp(join(tmpdir(), 'yuri-video-playback-'));
   try {
     const binary = join(work, 'playback-probe');
-    execFileSync('swiftc', [fileURLToPath(new URL('../ios/App/App/OpenChamberVideoServer.swift', import.meta.url)),
+    execFileSync('swiftc', [fileURLToPath(new URL('../ios/App/App/YuriVideoServer.swift', import.meta.url)),
       fileURLToPath(new URL('./fixtures/VideoPlaybackProbe.swift', import.meta.url)), '-o', binary]);
     const output = execFileSync(binary, [], { timeout: 20_000, encoding: 'utf8' });
     expect(output).toContain('AVFoundation first frame and forward/backward seek passed');

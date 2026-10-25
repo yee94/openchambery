@@ -123,13 +123,13 @@ const FileReferenceToken: React.FC<{
 
   return (
     <span
-      data-openchamber-block-path-token="true"
+      data-yuri-block-path-token="true"
       {...(offered
         ? {
-          'data-openchamber-file-link': 'true',
-          'data-openchamber-file-ref': raw,
-          'data-openchamber-file-path': resolved.resolvedPath,
-          'data-openchamber-file-binary': String(info?.isBinary === true),
+          'data-yuri-file-link': 'true',
+          'data-yuri-file-ref': raw,
+          'data-yuri-file-path': resolved.resolvedPath,
+          'data-yuri-file-binary': String(info?.isBinary === true),
           title: FILE_REFERENCE_OPEN_TITLE,
           ...(children ? {} : { role: 'button', tabIndex: 0 }),
         }

@@ -11,13 +11,13 @@ import {
   planOpenCodeConfigSyncFromInventory,
   prepareLocalSyncDestination,
   syncTargetIdForDirectHost,
-} from '@openchambery/web/server/lib/config-sync/index.js';
+} from '@yuri/web/server/lib/config-sync/index.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 /**
- * Build Authorization headers for a direct OpenChamber host.
+ * Build Authorization headers for a direct Yuri host.
  * @param {{ clientToken?: string, requestHeaders?: Record<string, string> }} host
  */
 export const buildDirectHostAuthHeaders = (host) => {
@@ -48,7 +48,7 @@ const resolveApiBase = (host) => {
 };
 
 /**
- * Direct-host TargetExecutor over OpenChamber HTTP config-sync routes.
+ * Direct-host TargetExecutor over Yuri HTTP config-sync routes.
  * putTar sends Buffer | Uint8Array as a single request body.
  */
 export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
@@ -82,13 +82,13 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
 
   return {
     async magpieInventory() {
-      const result = await jsonFetch('GET', '/api/openchamber/config-sync/magpie/inventory');
+      const result = await jsonFetch('GET', '/api/yuri/config-sync/magpie/inventory');
       if (typeof result.magpie?.available !== 'boolean' || typeof result.magpie?.installed !== 'boolean') throw new Error('Invalid Magpie inventory');
       return result.magpie;
     },
 
     async importMagpie(payload) {
-      const response = await fetchImpl(`${base}/api/openchamber/config-sync/magpie`, {
+      const response = await fetchImpl(`${base}/api/yuri/config-sync/magpie`, {
         method: 'PUT', headers: { ...headers, 'Content-Type': 'application/octet-stream' }, body: payload,
       });
       const result = await response.json().catch(() => null);
@@ -97,13 +97,13 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
     },
 
     async credentialInventory() {
-      const result = await jsonFetch('GET', '/api/openchamber/config-sync/credentials/inventory');
+      const result = await jsonFetch('GET', '/api/yuri/config-sync/credentials/inventory');
       if (!Object.hasOwn(result, 'providerCredentials')) throw new Error('Invalid provider credential inventory');
       return result.providerCredentials;
     },
 
     async importCredentials(payload) {
-      const response = await fetchImpl(`${base}/api/openchamber/config-sync/credentials`, {
+      const response = await fetchImpl(`${base}/api/yuri/config-sync/credentials`, {
         method: 'PUT', headers: { ...headers, 'Content-Type': 'application/octet-stream' }, body: payload,
       });
       const result = await response.json().catch(() => null);
@@ -111,7 +111,7 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
     },
 
     async probe(plan) {
-      const result = await jsonFetch('POST', '/api/openchamber/config-sync/probe', { plan });
+      const result = await jsonFetch('POST', '/api/yuri/config-sync/probe', { plan });
       return {
         remoteExisting: Array.isArray(result.remoteExisting) ? result.remoteExisting : [],
         remoteAgentsRootExists: result.remoteAgentsRootExists === true,
@@ -121,7 +121,7 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
     },
 
     async prepare(plan, ctx) {
-      await jsonFetch('POST', '/api/openchamber/config-sync/prepare', {
+      await jsonFetch('POST', '/api/yuri/config-sync/prepare', {
         plan,
         syncRunId: ctx.syncRunId,
       });
@@ -130,7 +130,7 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
     async putTar({ kind, payload, syncRunId }) {
       const body = bodyFromPayload(payload);
       const response = await fetchImpl(
-        `${base}/api/openchamber/config-sync/put/${encodeURIComponent(kind)}?syncRunId=${encodeURIComponent(syncRunId)}`,
+        `${base}/api/yuri/config-sync/put/${encodeURIComponent(kind)}?syncRunId=${encodeURIComponent(syncRunId)}`,
         {
           method: 'PUT',
           headers: {
@@ -150,16 +150,16 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
     },
 
     async finalize(_plan, ctx) {
-      return jsonFetch('POST', '/api/openchamber/config-sync/finalize', { syncRunId: ctx.syncRunId });
+      return jsonFetch('POST', '/api/yuri/config-sync/finalize', { syncRunId: ctx.syncRunId });
     },
 
     async abort(syncRunId) {
-      await jsonFetch('POST', '/api/openchamber/config-sync/abort', { syncRunId });
+      await jsonFetch('POST', '/api/yuri/config-sync/abort', { syncRunId });
     },
 
     async download(kind) {
       const response = await fetchImpl(
-        `${base}/api/openchamber/config-sync/download/${encodeURIComponent(kind)}`,
+        `${base}/api/yuri/config-sync/download/${encodeURIComponent(kind)}`,
         { method: 'GET', headers },
       );
       if (!response.ok) {

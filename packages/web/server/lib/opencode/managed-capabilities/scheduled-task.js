@@ -1,8 +1,8 @@
 export default async function scheduledTaskPlugin() {
-  const bridgeOrigin = process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_ORIGIN;
-  const bridgePath = process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_PATH;
-  const tokenHeader = process.env.OPENCHAMBER_SCHEDULED_TASK_TOKEN_HEADER;
-  const bridgeToken = process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_TOKEN;
+  const bridgeOrigin = process.env.YURI_SCHEDULED_TASK_BRIDGE_ORIGIN;
+  const bridgePath = process.env.YURI_SCHEDULED_TASK_BRIDGE_PATH;
+  const tokenHeader = process.env.YURI_SCHEDULED_TASK_TOKEN_HEADER;
+  const bridgeToken = process.env.YURI_SCHEDULED_TASK_BRIDGE_TOKEN;
   const operations = ['list', 'create', 'update', 'delete', 'run'];
 
   const requestSchema = {
@@ -61,7 +61,7 @@ export default async function scheduledTaskPlugin() {
     },
     tool: {
       scheduled_task: {
-        description: 'Manage OpenChamber schedules. Daily uses time or times; weekly uses weekdays (0=Sunday) with time or times; once uses date and time; cron uses cron. The current session model is the execution default. Update with enabled:false pauses and enabled:true resumes.',
+        description: 'Manage Yuri schedules. Daily uses time or times; weekly uses weekdays (0=Sunday) with time or times; once uses date and time; cron uses cron. The current session model is the execution default. Update with enabled:false pauses and enabled:true resumes.',
         args: { request: requestSchema },
         execute: async (args, context) => {
           const request = args?.request;

@@ -7,14 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-        AAF200000000000000000001 /* OpenChamberVideoServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF200000000000000000002 /* OpenChamberVideoServer.swift */; };
-        AAF200000000000000000003 /* OpenChamberVideoPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF200000000000000000004 /* OpenChamberVideoPlugin.swift */; };
-        AAF100000000000000000001 /* OpenChamberScreenAwakePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF100000000000000000002 /* OpenChamberScreenAwakePlugin.swift */; };
+        AAF200000000000000000001 /* YuriVideoServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF200000000000000000002 /* YuriVideoServer.swift */; };
+        AAF200000000000000000003 /* YuriVideoPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF200000000000000000004 /* YuriVideoPlugin.swift */; };
+        AAF100000000000000000001 /* YuriScreenAwakePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF100000000000000000002 /* YuriScreenAwakePlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
-		D0C2000000000000000000B2 /* OpenChamberHapticsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C1000000000000000000A2 /* OpenChamberHapticsPlugin.swift */; };
-		D0C2000000000000000000B3 /* OpenChamberBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C1000000000000000000A3 /* OpenChamberBridgeViewController.swift */; };
+		D0C2000000000000000000B2 /* YuriHapticsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C1000000000000000000A2 /* YuriHapticsPlugin.swift */; };
+		D0C2000000000000000000B3 /* YuriBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C1000000000000000000A3 /* YuriBridgeViewController.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		D0C2000000000000000000B1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D0C1000000000000000000A1 /* PrivacyInfo.xcprivacy */; };
@@ -23,47 +23,47 @@
 		8E7A4F1A2C4B4C749E0A1001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8E7A4F192C4B4C749E0A1001 /* AppIcon.icon */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
 		D0A2000000000000000000B1 /* WidgetShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A1 /* WidgetShared.swift */; };
-		D0A2000000000000000000B2 /* OpenChamberWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A2 /* OpenChamberWidgets.swift */; };
-		D0A2000000000000000000B3 /* OpenChamberControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A3 /* OpenChamberControl.swift */; };
-		D0A2000000000000000000B6 /* OpenChamberControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A3 /* OpenChamberControl.swift */; };
+		D0A2000000000000000000B2 /* YuriWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A2 /* YuriWidgets.swift */; };
+		D0A2000000000000000000B3 /* YuriControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A3 /* YuriControl.swift */; };
+		D0A2000000000000000000B6 /* YuriControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A3 /* YuriControl.swift */; };
 		D0A2000000000000000000B4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A4 /* Assets.xcassets */; };
-		D0A2000000000000000000B5 /* OpenChamberWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A7 /* OpenChamberWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D0A2000000000000000000B5 /* YuriWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0A1000000000000000000A7 /* YuriWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D0B2000000000000000000B1 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B1000000000000000000A1 /* NotificationService.swift */; };
-		D0B2000000000000000000B5 /* OpenChamberNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0B1000000000000000000A7 /* OpenChamberNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		D0D2000000000000000000B1 /* OpenChamberShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A1 /* OpenChamberShareStore.swift */; };
-		D0D2000000000000000000B2 /* OpenChamberSharePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A2 /* OpenChamberSharePlugin.swift */; };
-		D0F2000000000000000000B1 /* OpenChamberVirtualAssetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A1 /* OpenChamberVirtualAssetStore.swift */; };
-		D0F2000000000000000000B2 /* OpenChamberVirtualAssetHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A2 /* OpenChamberVirtualAssetHandler.swift */; };
-		D0F2000000000000000000B3 /* OpenChamberVirtualAssetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A3 /* OpenChamberVirtualAssetPlugin.swift */; };
-		D0G2000000000000000000B1 /* OpenChamberMediaPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0G1000000000000000000A1 /* OpenChamberMediaPlugin.swift */; };
-		D0H2000000000000000000B1 /* OpenChamberPhysicalScalePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0H1000000000000000000A1 /* OpenChamberPhysicalScalePlugin.swift */; };
-		D0J2000000000000000000B1 /* OpenChamberComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0J1000000000000000000A1 /* OpenChamberComposerView.swift */; };
-		D0J2000000000000000000B2 /* OpenChamberComposerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0J1000000000000000000A2 /* OpenChamberComposerPlugin.swift */; };
-		D0J2000000000000000000B3 /* OpenChamberComposerAutocomplete.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0J1000000000000000000A3 /* OpenChamberComposerAutocomplete.swift */; };
-		D0K2000000000000000000B1 /* OpenChamberTabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0K1000000000000000000A1 /* OpenChamberTabBarView.swift */; };
-		D0K2000000000000000000B2 /* OpenChamberTabBarPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0K1000000000000000000A2 /* OpenChamberTabBarPlugin.swift */; };
-		D0L2000000000000000000B1 /* OpenChamberActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A1 /* OpenChamberActivityAttributes.swift */; };
-		D0L2000000000000000000B2 /* OpenChamberActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A1 /* OpenChamberActivityAttributes.swift */; };
-		D0L2000000000000000000B3 /* OpenChamberLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A2 /* OpenChamberLiveActivityManager.swift */; };
-		D0L2000000000000000000B4 /* OpenChamberLiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A3 /* OpenChamberLiveActivityPlugin.swift */; };
-		D0L2000000000000000000B5 /* OpenChamberLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A4 /* OpenChamberLiveActivity.swift */; };
+		D0B2000000000000000000B5 /* YuriNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0B1000000000000000000A7 /* YuriNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D0D2000000000000000000B1 /* YuriShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A1 /* YuriShareStore.swift */; };
+		D0D2000000000000000000B2 /* YuriSharePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A2 /* YuriSharePlugin.swift */; };
+		D0F2000000000000000000B1 /* YuriVirtualAssetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A1 /* YuriVirtualAssetStore.swift */; };
+		D0F2000000000000000000B2 /* YuriVirtualAssetHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A2 /* YuriVirtualAssetHandler.swift */; };
+		D0F2000000000000000000B3 /* YuriVirtualAssetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A3 /* YuriVirtualAssetPlugin.swift */; };
+		D0G2000000000000000000B1 /* YuriMediaPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0G1000000000000000000A1 /* YuriMediaPlugin.swift */; };
+		D0H2000000000000000000B1 /* YuriPhysicalScalePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0H1000000000000000000A1 /* YuriPhysicalScalePlugin.swift */; };
+		D0J2000000000000000000B1 /* YuriComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0J1000000000000000000A1 /* YuriComposerView.swift */; };
+		D0J2000000000000000000B2 /* YuriComposerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0J1000000000000000000A2 /* YuriComposerPlugin.swift */; };
+		D0J2000000000000000000B3 /* YuriComposerAutocomplete.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0J1000000000000000000A3 /* YuriComposerAutocomplete.swift */; };
+		D0K2000000000000000000B1 /* YuriTabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0K1000000000000000000A1 /* YuriTabBarView.swift */; };
+		D0K2000000000000000000B2 /* YuriTabBarPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0K1000000000000000000A2 /* YuriTabBarPlugin.swift */; };
+		D0L2000000000000000000B1 /* YuriActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A1 /* YuriActivityAttributes.swift */; };
+		D0L2000000000000000000B2 /* YuriActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A1 /* YuriActivityAttributes.swift */; };
+		D0L2000000000000000000B3 /* YuriLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A2 /* YuriLiveActivityManager.swift */; };
+		D0L2000000000000000000B4 /* YuriLiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A3 /* YuriLiveActivityPlugin.swift */; };
+		D0L2000000000000000000B5 /* YuriLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A4 /* YuriLiveActivity.swift */; };
 		D0E2000000000000000000B1 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A1 /* ShareViewController.swift */; };
-		D0E2000000000000000000B2 /* OpenChamberShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A1 /* OpenChamberShareStore.swift */; };
-		D0E2000000000000000000B3 /* OpenChamberShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D0E2000000000000000000B2 /* YuriShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A1 /* YuriShareStore.swift */; };
+		D0E2000000000000000000B3 /* YuriShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A4 /* YuriShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D0E2000000000000000000B4 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A7 /* Localizable.strings */; };
 		D0E2000000000000000000B5 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000AA /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-        AAF200000000000000000002 /* OpenChamberVideoServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberVideoServer.swift; sourceTree = "<group>"; };
-        AAF200000000000000000004 /* OpenChamberVideoPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberVideoPlugin.swift; sourceTree = "<group>"; };
-        AAF100000000000000000002 /* OpenChamberScreenAwakePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberScreenAwakePlugin.swift; sourceTree = "<group>"; };
+        AAF200000000000000000002 /* YuriVideoServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriVideoServer.swift; sourceTree = "<group>"; };
+        AAF200000000000000000004 /* YuriVideoPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriVideoPlugin.swift; sourceTree = "<group>"; };
+        AAF100000000000000000002 /* YuriScreenAwakePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriScreenAwakePlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		D0C1000000000000000000A2 /* OpenChamberHapticsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberHapticsPlugin.swift; sourceTree = "<group>"; };
-		D0C1000000000000000000A3 /* OpenChamberBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberBridgeViewController.swift; sourceTree = "<group>"; };
+		D0C1000000000000000000A2 /* YuriHapticsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriHapticsPlugin.swift; sourceTree = "<group>"; };
+		D0C1000000000000000000A3 /* YuriBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriBridgeViewController.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D0C1000000000000000000A1 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -75,36 +75,36 @@
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
 		D0A1000000000000000000A1 /* WidgetShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetShared.swift; sourceTree = "<group>"; };
-		D0A1000000000000000000A2 /* OpenChamberWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberWidgets.swift; sourceTree = "<group>"; };
-		D0A1000000000000000000A3 /* OpenChamberControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberControl.swift; sourceTree = "<group>"; };
+		D0A1000000000000000000A2 /* YuriWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriWidgets.swift; sourceTree = "<group>"; };
+		D0A1000000000000000000A3 /* YuriControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriControl.swift; sourceTree = "<group>"; };
 		D0A1000000000000000000A4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D0A1000000000000000000A5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		D0A1000000000000000000A6 /* OpenChamberWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenChamberWidget.entitlements; sourceTree = "<group>"; };
-		D0A1000000000000000000A7 /* OpenChamberWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenChamberWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0A1000000000000000000A6 /* YuriWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = YuriWidget.entitlements; sourceTree = "<group>"; };
+		D0A1000000000000000000A7 /* YuriWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = YuriWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0B1000000000000000000A1 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		D0B1000000000000000000A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		D0B1000000000000000000A3 /* OpenChamberNotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenChamberNotificationService.entitlements; sourceTree = "<group>"; };
-		D0B1000000000000000000A7 /* OpenChamberNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenChamberNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		D0D1000000000000000000A1 /* OpenChamberShareStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberShareStore.swift; sourceTree = "<group>"; };
-		D0D1000000000000000000A2 /* OpenChamberSharePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberSharePlugin.swift; sourceTree = "<group>"; };
-		D0F1000000000000000000A1 /* OpenChamberVirtualAssetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberVirtualAssetStore.swift; sourceTree = "<group>"; };
-		D0F1000000000000000000A2 /* OpenChamberVirtualAssetHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberVirtualAssetHandler.swift; sourceTree = "<group>"; };
-		D0F1000000000000000000A3 /* OpenChamberVirtualAssetPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberVirtualAssetPlugin.swift; sourceTree = "<group>"; };
-		D0G1000000000000000000A1 /* OpenChamberMediaPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberMediaPlugin.swift; sourceTree = "<group>"; };
-		D0H1000000000000000000A1 /* OpenChamberPhysicalScalePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberPhysicalScalePlugin.swift; sourceTree = "<group>"; };
-		D0J1000000000000000000A1 /* OpenChamberComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberComposerView.swift; sourceTree = "<group>"; };
-		D0J1000000000000000000A2 /* OpenChamberComposerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberComposerPlugin.swift; sourceTree = "<group>"; };
-		D0J1000000000000000000A3 /* OpenChamberComposerAutocomplete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberComposerAutocomplete.swift; sourceTree = "<group>"; };
-		D0K1000000000000000000A1 /* OpenChamberTabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberTabBarView.swift; sourceTree = "<group>"; };
-		D0K1000000000000000000A2 /* OpenChamberTabBarPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberTabBarPlugin.swift; sourceTree = "<group>"; };
-		D0L1000000000000000000A1 /* OpenChamberActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberActivityAttributes.swift; sourceTree = "<group>"; };
-		D0L1000000000000000000A2 /* OpenChamberLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLiveActivityManager.swift; sourceTree = "<group>"; };
-		D0L1000000000000000000A3 /* OpenChamberLiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLiveActivityPlugin.swift; sourceTree = "<group>"; };
-		D0L1000000000000000000A4 /* OpenChamberLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLiveActivity.swift; sourceTree = "<group>"; };
+		D0B1000000000000000000A3 /* YuriNotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = YuriNotificationService.entitlements; sourceTree = "<group>"; };
+		D0B1000000000000000000A7 /* YuriNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = YuriNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0D1000000000000000000A1 /* YuriShareStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriShareStore.swift; sourceTree = "<group>"; };
+		D0D1000000000000000000A2 /* YuriSharePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriSharePlugin.swift; sourceTree = "<group>"; };
+		D0F1000000000000000000A1 /* YuriVirtualAssetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriVirtualAssetStore.swift; sourceTree = "<group>"; };
+		D0F1000000000000000000A2 /* YuriVirtualAssetHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriVirtualAssetHandler.swift; sourceTree = "<group>"; };
+		D0F1000000000000000000A3 /* YuriVirtualAssetPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriVirtualAssetPlugin.swift; sourceTree = "<group>"; };
+		D0G1000000000000000000A1 /* YuriMediaPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriMediaPlugin.swift; sourceTree = "<group>"; };
+		D0H1000000000000000000A1 /* YuriPhysicalScalePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriPhysicalScalePlugin.swift; sourceTree = "<group>"; };
+		D0J1000000000000000000A1 /* YuriComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriComposerView.swift; sourceTree = "<group>"; };
+		D0J1000000000000000000A2 /* YuriComposerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriComposerPlugin.swift; sourceTree = "<group>"; };
+		D0J1000000000000000000A3 /* YuriComposerAutocomplete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriComposerAutocomplete.swift; sourceTree = "<group>"; };
+		D0K1000000000000000000A1 /* YuriTabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriTabBarView.swift; sourceTree = "<group>"; };
+		D0K1000000000000000000A2 /* YuriTabBarPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriTabBarPlugin.swift; sourceTree = "<group>"; };
+		D0L1000000000000000000A1 /* YuriActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriActivityAttributes.swift; sourceTree = "<group>"; };
+		D0L1000000000000000000A2 /* YuriLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriLiveActivityManager.swift; sourceTree = "<group>"; };
+		D0L1000000000000000000A3 /* YuriLiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriLiveActivityPlugin.swift; sourceTree = "<group>"; };
+		D0L1000000000000000000A4 /* YuriLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YuriLiveActivity.swift; sourceTree = "<group>"; };
 		D0E1000000000000000000A1 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		D0E1000000000000000000A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		D0E1000000000000000000A3 /* OpenChamberShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenChamberShareExtension.entitlements; sourceTree = "<group>"; };
-		D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenChamberShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0E1000000000000000000A3 /* YuriShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = YuriShareExtension.entitlements; sourceTree = "<group>"; };
+		D0E1000000000000000000A4 /* YuriShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = YuriShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0E1000000000000000000A5 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		D0E1000000000000000000A6 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		D0E1000000000000000000A8 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -143,16 +143,16 @@
 			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = D0A4000000000000000000D1;
-			remoteInfo = OpenChamberWidget;
+			remoteInfo = YuriWidget;
 		};
 		D0B4000000000000000000D3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = D0B4000000000000000000D1;
-			remoteInfo = OpenChamberNotificationService;
+			remoteInfo = YuriNotificationService;
 		};
-		D0E4000000000000000000D3 /* PBXContainerItemProxy */ = { isa = PBXContainerItemProxy; containerPortal = 504EC2FC1FED79650016851F /* Project object */; proxyType = 1; remoteGlobalIDString = D0E4000000000000000000D1; remoteInfo = OpenChamberShareExtension; };
+		D0E4000000000000000000D3 /* PBXContainerItemProxy */ = { isa = PBXContainerItemProxy; containerPortal = 504EC2FC1FED79650016851F /* Project object */; proxyType = 1; remoteGlobalIDString = D0E4000000000000000000D1; remoteInfo = YuriShareExtension; };
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -162,9 +162,9 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				D0A2000000000000000000B5 /* OpenChamberWidget.appex in Embed App Extensions */,
-				D0B2000000000000000000B5 /* OpenChamberNotificationService.appex in Embed App Extensions */,
-				D0E2000000000000000000B3 /* OpenChamberShareExtension.appex in Embed App Extensions */,
+				D0A2000000000000000000B5 /* YuriWidget.appex in Embed App Extensions */,
+				D0B2000000000000000000B5 /* YuriNotificationService.appex in Embed App Extensions */,
+				D0E2000000000000000000B3 /* YuriShareExtension.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -184,9 +184,9 @@
 			isa = PBXGroup;
 			children = (
 				504EC3061FED79650016851F /* App */,
-				D0A6000000000000000000F1 /* OpenChamberWidget */,
-				D0B6000000000000000000F1 /* OpenChamberNotificationService */,
-				D0E6000000000000000000F1 /* OpenChamberShareExtension */,
+				D0A6000000000000000000F1 /* YuriWidget */,
+				D0B6000000000000000000F1 /* YuriNotificationService */,
+				D0E6000000000000000000F1 /* YuriShareExtension */,
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
@@ -197,63 +197,63 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
-				D0A1000000000000000000A7 /* OpenChamberWidget.appex */,
-				D0B1000000000000000000A7 /* OpenChamberNotificationService.appex */,
-				D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */,
+				D0A1000000000000000000A7 /* YuriWidget.appex */,
+				D0B1000000000000000000A7 /* YuriNotificationService.appex */,
+				D0E1000000000000000000A4 /* YuriShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		D0A6000000000000000000F1 /* OpenChamberWidget */ = {
+		D0A6000000000000000000F1 /* YuriWidget */ = {
 			isa = PBXGroup;
 			children = (
 				D0A1000000000000000000A1 /* WidgetShared.swift */,
-				D0A1000000000000000000A2 /* OpenChamberWidgets.swift */,
-				D0L1000000000000000000A1 /* OpenChamberActivityAttributes.swift */,
-				D0L1000000000000000000A4 /* OpenChamberLiveActivity.swift */,
-				D0A1000000000000000000A3 /* OpenChamberControl.swift */,
+				D0A1000000000000000000A2 /* YuriWidgets.swift */,
+				D0L1000000000000000000A1 /* YuriActivityAttributes.swift */,
+				D0L1000000000000000000A4 /* YuriLiveActivity.swift */,
+				D0A1000000000000000000A3 /* YuriControl.swift */,
 				D0A1000000000000000000A4 /* Assets.xcassets */,
 				D0A1000000000000000000A5 /* Info.plist */,
-				D0A1000000000000000000A6 /* OpenChamberWidget.entitlements */,
+				D0A1000000000000000000A6 /* YuriWidget.entitlements */,
 			);
-			path = OpenChamberWidget;
+			path = YuriWidget;
 			sourceTree = "<group>";
 		};
-		D0B6000000000000000000F1 /* OpenChamberNotificationService */ = {
+		D0B6000000000000000000F1 /* YuriNotificationService */ = {
 			isa = PBXGroup;
 			children = (
 				D0B1000000000000000000A1 /* NotificationService.swift */,
 				D0B1000000000000000000A2 /* Info.plist */,
-				D0B1000000000000000000A3 /* OpenChamberNotificationService.entitlements */,
+				D0B1000000000000000000A3 /* YuriNotificationService.entitlements */,
 			);
-			path = OpenChamberNotificationService;
+			path = YuriNotificationService;
 			sourceTree = "<group>";
 		};
-		D0E6000000000000000000F1 /* OpenChamberShareExtension */ = { isa = PBXGroup; children = (D0E1000000000000000000A1 /* ShareViewController.swift */, D0E1000000000000000000A7 /* Localizable.strings */, D0E1000000000000000000AA /* InfoPlist.strings */, D0E1000000000000000000A2 /* Info.plist */, D0E1000000000000000000A3 /* OpenChamberShareExtension.entitlements */, ); path = OpenChamberShareExtension; sourceTree = "<group>"; };
+		D0E6000000000000000000F1 /* YuriShareExtension */ = { isa = PBXGroup; children = (D0E1000000000000000000A1 /* ShareViewController.swift */, D0E1000000000000000000A7 /* Localizable.strings */, D0E1000000000000000000AA /* InfoPlist.strings */, D0E1000000000000000000A2 /* Info.plist */, D0E1000000000000000000A3 /* YuriShareExtension.entitlements */, ); path = YuriShareExtension; sourceTree = "<group>"; };
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
-				D0C1000000000000000000A2 /* OpenChamberHapticsPlugin.swift */,
-				D0C1000000000000000000A3 /* OpenChamberBridgeViewController.swift */,
-				D0D1000000000000000000A1 /* OpenChamberShareStore.swift */,
-				D0D1000000000000000000A2 /* OpenChamberSharePlugin.swift */,
-				D0F1000000000000000000A1 /* OpenChamberVirtualAssetStore.swift */,
-				D0F1000000000000000000A2 /* OpenChamberVirtualAssetHandler.swift */,
-				D0F1000000000000000000A3 /* OpenChamberVirtualAssetPlugin.swift */,
-				D0G1000000000000000000A1 /* OpenChamberMediaPlugin.swift */,
-                AAF200000000000000000002 /* OpenChamberVideoServer.swift */,
-                AAF200000000000000000004 /* OpenChamberVideoPlugin.swift */,
-				D0H1000000000000000000A1 /* OpenChamberPhysicalScalePlugin.swift */,
-                AAF100000000000000000002 /* OpenChamberScreenAwakePlugin.swift */,
-				D0J1000000000000000000A1 /* OpenChamberComposerView.swift */,
-				D0J1000000000000000000A2 /* OpenChamberComposerPlugin.swift */,
-				D0J1000000000000000000A3 /* OpenChamberComposerAutocomplete.swift */,
-				D0K1000000000000000000A1 /* OpenChamberTabBarView.swift */,
-				D0K1000000000000000000A2 /* OpenChamberTabBarPlugin.swift */,
-				D0L1000000000000000000A2 /* OpenChamberLiveActivityManager.swift */,
-				D0L1000000000000000000A3 /* OpenChamberLiveActivityPlugin.swift */,
+				D0C1000000000000000000A2 /* YuriHapticsPlugin.swift */,
+				D0C1000000000000000000A3 /* YuriBridgeViewController.swift */,
+				D0D1000000000000000000A1 /* YuriShareStore.swift */,
+				D0D1000000000000000000A2 /* YuriSharePlugin.swift */,
+				D0F1000000000000000000A1 /* YuriVirtualAssetStore.swift */,
+				D0F1000000000000000000A2 /* YuriVirtualAssetHandler.swift */,
+				D0F1000000000000000000A3 /* YuriVirtualAssetPlugin.swift */,
+				D0G1000000000000000000A1 /* YuriMediaPlugin.swift */,
+                AAF200000000000000000002 /* YuriVideoServer.swift */,
+                AAF200000000000000000004 /* YuriVideoPlugin.swift */,
+				D0H1000000000000000000A1 /* YuriPhysicalScalePlugin.swift */,
+                AAF100000000000000000002 /* YuriScreenAwakePlugin.swift */,
+				D0J1000000000000000000A1 /* YuriComposerView.swift */,
+				D0J1000000000000000000A2 /* YuriComposerPlugin.swift */,
+				D0J1000000000000000000A3 /* YuriComposerAutocomplete.swift */,
+				D0K1000000000000000000A1 /* YuriTabBarView.swift */,
+				D0K1000000000000000000A2 /* YuriTabBarPlugin.swift */,
+				D0L1000000000000000000A2 /* YuriLiveActivityManager.swift */,
+				D0L1000000000000000000A3 /* YuriLiveActivityPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				D0C1000000000000000000A1 /* PrivacyInfo.xcprivacy */,
@@ -301,9 +301,9 @@
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
 		};
-		D0A4000000000000000000D1 /* OpenChamberWidget */ = {
+		D0A4000000000000000000D1 /* YuriWidget */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D0A5000000000000000000E1 /* Build configuration list for PBXNativeTarget "OpenChamberWidget" */;
+			buildConfigurationList = D0A5000000000000000000E1 /* Build configuration list for PBXNativeTarget "YuriWidget" */;
 			buildPhases = (
 				D0A3000000000000000000C1 /* Sources */,
 				D0A3000000000000000000C2 /* Frameworks */,
@@ -313,14 +313,14 @@
 			);
 			dependencies = (
 			);
-			name = OpenChamberWidget;
-			productName = OpenChamberWidget;
-			productReference = D0A1000000000000000000A7 /* OpenChamberWidget.appex */;
+			name = YuriWidget;
+			productName = YuriWidget;
+			productReference = D0A1000000000000000000A7 /* YuriWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		D0B4000000000000000000D1 /* OpenChamberNotificationService */ = {
+		D0B4000000000000000000D1 /* YuriNotificationService */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D0B5000000000000000000E1 /* Build configuration list for PBXNativeTarget "OpenChamberNotificationService" */;
+			buildConfigurationList = D0B5000000000000000000E1 /* Build configuration list for PBXNativeTarget "YuriNotificationService" */;
 			buildPhases = (
 				D0B3000000000000000000C1 /* Sources */,
 				D0B3000000000000000000C2 /* Frameworks */,
@@ -329,12 +329,12 @@
 			);
 			dependencies = (
 			);
-			name = OpenChamberNotificationService;
-			productName = OpenChamberNotificationService;
-			productReference = D0B1000000000000000000A7 /* OpenChamberNotificationService.appex */;
+			name = YuriNotificationService;
+			productName = YuriNotificationService;
+			productReference = D0B1000000000000000000A7 /* YuriNotificationService.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		D0E4000000000000000000D1 /* OpenChamberShareExtension */ = { isa = PBXNativeTarget; buildConfigurationList = D0E5000000000000000000E1 /* Build configuration list for PBXNativeTarget "OpenChamberShareExtension" */; buildPhases = (D0E3000000000000000000C1 /* Sources */, D0E3000000000000000000C2 /* Frameworks */, D0E3000000000000000000C3 /* Resources */, ); buildRules = (); dependencies = (); name = OpenChamberShareExtension; productName = OpenChamberShareExtension; productReference = D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */; productType = "com.apple.product-type.app-extension"; };
+		D0E4000000000000000000D1 /* YuriShareExtension */ = { isa = PBXNativeTarget; buildConfigurationList = D0E5000000000000000000E1 /* Build configuration list for PBXNativeTarget "YuriShareExtension" */; buildPhases = (D0E3000000000000000000C1 /* Sources */, D0E3000000000000000000C2 /* Frameworks */, D0E3000000000000000000C3 /* Resources */, ); buildRules = (); dependencies = (); name = YuriShareExtension; productName = YuriShareExtension; productReference = D0E1000000000000000000A4 /* YuriShareExtension.appex */; productType = "com.apple.product-type.app-extension"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -378,9 +378,9 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
-				D0A4000000000000000000D1 /* OpenChamberWidget */,
-				D0B4000000000000000000D1 /* OpenChamberNotificationService */,
-				D0E4000000000000000000D1 /* OpenChamberShareExtension */,
+				D0A4000000000000000000D1 /* YuriWidget */,
+				D0B4000000000000000000D1 /* YuriNotificationService */,
+				D0E4000000000000000000D1 /* YuriShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -462,27 +462,27 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
-				D0C2000000000000000000B2 /* OpenChamberHapticsPlugin.swift in Sources */,
-				D0C2000000000000000000B3 /* OpenChamberBridgeViewController.swift in Sources */,
-				D0D2000000000000000000B1 /* OpenChamberShareStore.swift in Sources */,
-				D0D2000000000000000000B2 /* OpenChamberSharePlugin.swift in Sources */,
-				D0F2000000000000000000B1 /* OpenChamberVirtualAssetStore.swift in Sources */,
-				D0F2000000000000000000B2 /* OpenChamberVirtualAssetHandler.swift in Sources */,
-				D0F2000000000000000000B3 /* OpenChamberVirtualAssetPlugin.swift in Sources */,
-				D0G2000000000000000000B1 /* OpenChamberMediaPlugin.swift in Sources */,
-                AAF200000000000000000001 /* OpenChamberVideoServer.swift in Sources */,
-                AAF200000000000000000003 /* OpenChamberVideoPlugin.swift in Sources */,
-				D0H2000000000000000000B1 /* OpenChamberPhysicalScalePlugin.swift in Sources */,
-                AAF100000000000000000001 /* OpenChamberScreenAwakePlugin.swift in Sources */,
-				D0J2000000000000000000B1 /* OpenChamberComposerView.swift in Sources */,
-				D0J2000000000000000000B2 /* OpenChamberComposerPlugin.swift in Sources */,
-				D0J2000000000000000000B3 /* OpenChamberComposerAutocomplete.swift in Sources */,
-				D0K2000000000000000000B1 /* OpenChamberTabBarView.swift in Sources */,
-				D0K2000000000000000000B2 /* OpenChamberTabBarPlugin.swift in Sources */,
-				D0L2000000000000000000B1 /* OpenChamberActivityAttributes.swift in Sources */,
-				D0L2000000000000000000B3 /* OpenChamberLiveActivityManager.swift in Sources */,
-				D0L2000000000000000000B4 /* OpenChamberLiveActivityPlugin.swift in Sources */,
-				D0A2000000000000000000B6 /* OpenChamberControl.swift in Sources */,
+				D0C2000000000000000000B2 /* YuriHapticsPlugin.swift in Sources */,
+				D0C2000000000000000000B3 /* YuriBridgeViewController.swift in Sources */,
+				D0D2000000000000000000B1 /* YuriShareStore.swift in Sources */,
+				D0D2000000000000000000B2 /* YuriSharePlugin.swift in Sources */,
+				D0F2000000000000000000B1 /* YuriVirtualAssetStore.swift in Sources */,
+				D0F2000000000000000000B2 /* YuriVirtualAssetHandler.swift in Sources */,
+				D0F2000000000000000000B3 /* YuriVirtualAssetPlugin.swift in Sources */,
+				D0G2000000000000000000B1 /* YuriMediaPlugin.swift in Sources */,
+                AAF200000000000000000001 /* YuriVideoServer.swift in Sources */,
+                AAF200000000000000000003 /* YuriVideoPlugin.swift in Sources */,
+				D0H2000000000000000000B1 /* YuriPhysicalScalePlugin.swift in Sources */,
+                AAF100000000000000000001 /* YuriScreenAwakePlugin.swift in Sources */,
+				D0J2000000000000000000B1 /* YuriComposerView.swift in Sources */,
+				D0J2000000000000000000B2 /* YuriComposerPlugin.swift in Sources */,
+				D0J2000000000000000000B3 /* YuriComposerAutocomplete.swift in Sources */,
+				D0K2000000000000000000B1 /* YuriTabBarView.swift in Sources */,
+				D0K2000000000000000000B2 /* YuriTabBarPlugin.swift in Sources */,
+				D0L2000000000000000000B1 /* YuriActivityAttributes.swift in Sources */,
+				D0L2000000000000000000B3 /* YuriLiveActivityManager.swift in Sources */,
+				D0L2000000000000000000B4 /* YuriLiveActivityPlugin.swift in Sources */,
+				D0A2000000000000000000B6 /* YuriControl.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -491,10 +491,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				D0A2000000000000000000B1 /* WidgetShared.swift in Sources */,
-				D0A2000000000000000000B2 /* OpenChamberWidgets.swift in Sources */,
-				D0L2000000000000000000B2 /* OpenChamberActivityAttributes.swift in Sources */,
-				D0L2000000000000000000B5 /* OpenChamberLiveActivity.swift in Sources */,
-				D0A2000000000000000000B3 /* OpenChamberControl.swift in Sources */,
+				D0A2000000000000000000B2 /* YuriWidgets.swift in Sources */,
+				D0L2000000000000000000B2 /* YuriActivityAttributes.swift in Sources */,
+				D0L2000000000000000000B5 /* YuriLiveActivity.swift in Sources */,
+				D0A2000000000000000000B3 /* YuriControl.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -506,21 +506,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D0E3000000000000000000C1 /* Sources */ = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (D0E2000000000000000000B1 /* ShareViewController.swift in Sources */, D0E2000000000000000000B2 /* OpenChamberShareStore.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+		D0E3000000000000000000C1 /* Sources */ = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (D0E2000000000000000000B1 /* ShareViewController.swift in Sources */, D0E2000000000000000000B2 /* YuriShareStore.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
 		D0A4000000000000000000D2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = D0A4000000000000000000D1 /* OpenChamberWidget */;
+			target = D0A4000000000000000000D1 /* YuriWidget */;
 			targetProxy = D0A4000000000000000000D3 /* PBXContainerItemProxy */;
 		};
 		D0B4000000000000000000D2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = D0B4000000000000000000D1 /* OpenChamberNotificationService */;
+			target = D0B4000000000000000000D1 /* YuriNotificationService */;
 			targetProxy = D0B4000000000000000000D3 /* PBXContainerItemProxy */;
 		};
-		D0E4000000000000000000D2 /* PBXTargetDependency */ = { isa = PBXTargetDependency; target = D0E4000000000000000000D1 /* OpenChamberShareExtension */; targetProxy = D0E4000000000000000000D3 /* PBXContainerItemProxy */; };
+		D0E4000000000000000000D2 /* PBXTargetDependency */ = { isa = PBXTargetDependency; target = D0E4000000000000000000D1 /* YuriShareExtension */; targetProxy = D0E4000000000000000000D3 /* PBXContainerItemProxy */; };
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
@@ -692,7 +692,7 @@
 					CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = OpenChamber;
+				INFOPLIST_KEY_CFBundleDisplayName = Yuri;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -701,7 +701,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.yuri;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
@@ -718,7 +718,7 @@
 					CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = OpenChamber;
+				INFOPLIST_KEY_CFBundleDisplayName = Yuri;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -726,7 +726,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.yuri;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
@@ -737,12 +737,12 @@
 		D0A5000000000000000000E2 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = OpenChamberWidget/OpenChamberWidget.entitlements;
+				CODE_SIGN_ENTITLEMENTS = YuriWidget/YuriWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = OpenChamberWidget/Info.plist;
+				INFOPLIST_FILE = YuriWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -750,7 +750,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.yuri.YuriWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -762,12 +762,12 @@
 		D0A5000000000000000000E3 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = OpenChamberWidget/OpenChamberWidget.entitlements;
+				CODE_SIGN_ENTITLEMENTS = YuriWidget/YuriWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = OpenChamberWidget/Info.plist;
+				INFOPLIST_FILE = YuriWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -775,7 +775,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.yuri.YuriWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -786,12 +786,12 @@
 		D0B5000000000000000000E2 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = OpenChamberNotificationService/OpenChamberNotificationService.entitlements;
+				CODE_SIGN_ENTITLEMENTS = YuriNotificationService/YuriNotificationService.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = OpenChamberNotificationService/Info.plist;
+				INFOPLIST_FILE = YuriNotificationService/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -799,7 +799,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberNotificationService;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.yuri.YuriNotificationService;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -811,12 +811,12 @@
 		D0B5000000000000000000E3 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = OpenChamberNotificationService/OpenChamberNotificationService.entitlements;
+				CODE_SIGN_ENTITLEMENTS = YuriNotificationService/YuriNotificationService.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = OpenChamberNotificationService/Info.plist;
+				INFOPLIST_FILE = YuriNotificationService/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -824,7 +824,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberNotificationService;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.yuri.YuriNotificationService;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -835,12 +835,12 @@
 		D0E5000000000000000000E2 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = OpenChamberShareExtension/OpenChamberShareExtension.entitlements;
+				CODE_SIGN_ENTITLEMENTS = YuriShareExtension/YuriShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = OpenChamberShareExtension/Info.plist;
+				INFOPLIST_FILE = YuriShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -848,7 +848,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberShareExtension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.yuri.YuriShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -860,12 +860,12 @@
 		D0E5000000000000000000E3 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = OpenChamberShareExtension/OpenChamberShareExtension.entitlements;
+				CODE_SIGN_ENTITLEMENTS = YuriShareExtension/YuriShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = OpenChamberShareExtension/Info.plist;
+				INFOPLIST_FILE = YuriShareExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -873,7 +873,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberShareExtension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.yuri.YuriShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -902,7 +902,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D0A5000000000000000000E1 /* Build configuration list for PBXNativeTarget "OpenChamberWidget" */ = {
+		D0A5000000000000000000E1 /* Build configuration list for PBXNativeTarget "YuriWidget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D0A5000000000000000000E2 /* Debug */,
@@ -911,7 +911,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D0B5000000000000000000E1 /* Build configuration list for PBXNativeTarget "OpenChamberNotificationService" */ = {
+		D0B5000000000000000000E1 /* Build configuration list for PBXNativeTarget "YuriNotificationService" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D0B5000000000000000000E2 /* Debug */,
@@ -920,7 +920,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D0E5000000000000000000E1 /* Build configuration list for PBXNativeTarget "OpenChamberShareExtension" */ = {
+		D0E5000000000000000000E1 /* Build configuration list for PBXNativeTarget "YuriShareExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D0E5000000000000000000E2 /* Debug */,

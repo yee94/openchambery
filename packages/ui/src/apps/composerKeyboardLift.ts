@@ -8,7 +8,7 @@
  * fields, or a model-picker / settings search tap loses the IME.
  */
 
-export const COMPOSER_KEYBOARD_LIFT_SELECTOR = '.oc-mobile-composer';
+export const COMPOSER_KEYBOARD_LIFT_SELECTOR = '.yuri-mobile-composer';
 export const BTW_COMPOSER_KEYBOARD_SELECTOR = '[data-btw-composer]';
 
 /**

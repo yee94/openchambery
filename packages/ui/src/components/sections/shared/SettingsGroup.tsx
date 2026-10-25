@@ -39,10 +39,10 @@ export function SettingsGroup({
     : undefined;
 
   return (
-    <section className={cn('oc-settings-group', className)} aria-label={ariaLabel}>
+    <section className={cn('yuri-settings-group', className)} aria-label={ariaLabel}>
       {label ? (
         <div
-          className="oc-settings-group-label"
+          className="yuri-settings-group-label"
           data-settings-label-script={labelScript}
         >
           {label}
@@ -51,12 +51,12 @@ export function SettingsGroup({
       <div
         id={cardId}
         data-settings-item={itemId}
-        className={cn('oc-settings-group-card', cardClassName)}
+        className={cn('yuri-settings-group-card', cardClassName)}
       >
         {children}
       </div>
       {description ? (
-        <p className="oc-settings-group-description text-muted-foreground">
+        <p className="yuri-settings-group-description text-muted-foreground">
           {description}
         </p>
       ) : null}
@@ -131,9 +131,9 @@ export function SettingsRow({
   return (
     <div
       data-settings-item={itemId}
-      className={cn('oc-settings-group-row oc-settings-split-row', className)}
+      className={cn('yuri-settings-group-row yuri-settings-split-row', className)}
     >
-      <div className={cn('oc-settings-split-row-copy', copyClassName)}>
+      <div className={cn('yuri-settings-split-row-copy', copyClassName)}>
         {label ? (
           <div className="typography-ui-label text-foreground">{label}</div>
         ) : null}
@@ -143,7 +143,7 @@ export function SettingsRow({
       </div>
       <div
         data-settings-value=""
-        className={cn('oc-settings-split-row-control', controlClassName)}
+        className={cn('yuri-settings-split-row-control', controlClassName)}
       >
         {children}
       </div>
@@ -186,7 +186,7 @@ export function SettingsToggleRow({
     <div
       data-settings-item={itemId}
       className={cn(
-        'oc-settings-group-row oc-settings-split-row group',
+        'yuri-settings-group-row yuri-settings-split-row group',
         disabled ? 'cursor-not-allowed' : 'cursor-pointer',
         className,
       )}
@@ -205,13 +205,13 @@ export function SettingsToggleRow({
         }
       }}
     >
-      <div className="oc-settings-split-row-copy">
+      <div className="yuri-settings-split-row-copy">
         <span className="typography-ui-label text-foreground">{label}</span>
         {description ? (
           <span className="typography-meta text-muted-foreground">{description}</span>
         ) : null}
       </div>
-      <div data-settings-value="" className="oc-settings-split-row-control">
+      <div data-settings-value="" className="yuri-settings-split-row-control">
         <Checkbox
           checked={checked}
           onChange={onChange}

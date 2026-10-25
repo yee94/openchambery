@@ -36,7 +36,7 @@ const subtaskParts = () => [{ type: 'subtask', prompt: 'do it', description: 'ta
 const compactionParts = () => [{ type: 'compaction', auto: false }];
 const hostedDivider = (sessionID = 'ses_old') => ({
   info: {
-    id: `oc_asst_session_divider:${sessionID}`,
+    id: `yuri_asst_session_divider:${sessionID}`,
     role: 'system',
     time: { created: 0 },
   },

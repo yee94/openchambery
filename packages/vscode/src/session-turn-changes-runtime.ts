@@ -1,5 +1,5 @@
 /**
- * OpenChamber-owned session Changes helpers (L2 file list / L3 single-file patch).
+ * Yuri-owned session Changes helpers (L2 file list / L3 single-file patch).
  *
  * Parity with packages/web/server/lib/session-turn-pages/changes.service.js:
  * L2 (no `file`): project summary.diffs to `{ files: [...] }` — never patch bodies.

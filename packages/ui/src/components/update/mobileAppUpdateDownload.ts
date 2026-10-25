@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 
 import { openExternalUrl } from '@/lib/url';
-import { OpenChamberExternalBrowser } from '@/lib/native-external-browser';
+import { YuriExternalBrowser } from '@/lib/native-external-browser';
 
 type MobileAppUpdateDownloadDependencies = {
   getPlatform: () => string;
@@ -13,7 +13,7 @@ type MobileAppUpdateDownloadDependencies = {
 const defaultDependencies: MobileAppUpdateDownloadDependencies = {
   getPlatform: () => Capacitor.getPlatform(),
   isPluginAvailable: (name) => Capacitor.isPluginAvailable(name),
-  openInSystemBrowser: (options) => OpenChamberExternalBrowser.open(options),
+  openInSystemBrowser: (options) => YuriExternalBrowser.open(options),
   openExternal: openExternalUrl,
 };
 
@@ -22,7 +22,7 @@ export const openMobileAppUpdateDownload = async (
   dependencies: MobileAppUpdateDownloadDependencies = defaultDependencies,
 ): Promise<boolean> => {
   if (dependencies.getPlatform() === 'android') {
-    if (!dependencies.isPluginAvailable('OpenChamberExternalBrowser')) {
+    if (!dependencies.isPluginAvailable('YuriExternalBrowser')) {
       return false;
     }
 

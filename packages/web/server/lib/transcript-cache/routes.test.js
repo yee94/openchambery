@@ -94,7 +94,7 @@ describe('transcript cache routes', () => {
     expect(transcriptCacheService.evictToBytes).not.toHaveBeenCalled();
   });
 
-  it('reads a session and a message through the OpenChamber prefix', async () => {
+  it('reads a session and a message through the Yuri prefix', async () => {
     const { app, route } = registry();
     const record = { messageID: 'msg_user', scope: SCOPE };
     const transcriptCacheService = {
@@ -226,7 +226,7 @@ describe('transcript cache routes', () => {
     try {
       const queryToken = await invoke(route('GET', `${prefix}/session`), {
         query: { ...SCOPE, generation: '1' },
-        originalUrl: `${prefix}/session?oc_preview_token=preview-secret`,
+        originalUrl: `${prefix}/session?yuri_preview_token=preview-secret`,
       });
       expect(queryToken.statusCode).toBe(403);
       expect(queryToken.body).toMatchObject({ error: 'Forbidden' });
@@ -240,7 +240,7 @@ describe('transcript cache routes', () => {
     const cookieToken = await invoke(route('PUT', `${prefix}/message`), {
       body: { scope: SCOPE, info: { id: 'msg_user' }, parts: [] },
       url: `${prefix}/message`,
-      headers: { cookie: 'oc_preview_token=preview-secret' },
+      headers: { cookie: 'yuri_preview_token=preview-secret' },
     });
     expect(cookieToken.statusCode).toBe(403);
     expect(upsertSettled).not.toHaveBeenCalled();

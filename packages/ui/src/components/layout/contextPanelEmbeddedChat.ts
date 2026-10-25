@@ -1,19 +1,19 @@
 import type { Theme } from '@/types/theme';
 
-export const EMBEDDED_SESSION_CHAT_CLOSE_TAB_EVENT = 'openchamber:close-embedded-session-chat';
+export const EMBEDDED_SESSION_CHAT_CLOSE_TAB_EVENT = 'yuri:close-embedded-session-chat';
 
 /** Parent → child: current active-tab visibility for an embedded session-chat iframe. */
-export const EMBEDDED_SESSION_CHAT_VISIBILITY_EVENT = 'openchamber:embedded-visibility';
+export const EMBEDDED_SESSION_CHAT_VISIBILITY_EVENT = 'yuri:embedded-visibility';
 
 /**
  * Child → parent: iframe finished wiring its visibility listener and needs the
  * authoritative active-tab state. Parent should re-post visibility for all
- * chat frames (same pattern as `openchamber:chat-settings-request`).
+ * chat frames (same pattern as `yuri:chat-settings-request`).
  */
-export const EMBEDDED_SESSION_CHAT_VISIBILITY_REQUEST_EVENT = 'openchamber:embedded-visibility-request';
+export const EMBEDDED_SESSION_CHAT_VISIBILITY_REQUEST_EVENT = 'yuri:embedded-visibility-request';
 
 export const isEmbeddedSessionChatSearch = (search: string): boolean => (
-  new URLSearchParams(search).get('ocPanel') === 'session-chat'
+  new URLSearchParams(search).get('yuriPanel') === 'session-chat'
 );
 
 export type EmbeddedSessionChatThemeBootstrap = {
@@ -45,7 +45,7 @@ export const buildEmbeddedSessionChatURL = (
   }
 
   const url = new URL(window.location.pathname, window.location.origin);
-  url.searchParams.set('ocPanel', 'session-chat');
+  url.searchParams.set('yuriPanel', 'session-chat');
   url.searchParams.set('surface', 'desktop');
   url.searchParams.set('sessionId', sessionID);
   if (readOnly) {
@@ -89,7 +89,7 @@ export const getOrCreateEmbeddedSessionChatURL = (
 
 /**
  * True when the current document is the embedded session-chat iframe
- * (`?ocPanel=session-chat`). Used to distinguish the embedded iframe from
+ * (`?yuriPanel=session-chat`). Used to distinguish the embedded iframe from
  * the main app so callers can route behavior accordingly (e.g. in-place
  * subtask navigation instead of opening a new side-panel tab, or skipping
  * URL rewrites that would strip the iframe's identity params).
@@ -110,7 +110,7 @@ export const isEmbeddedSessionChat = (): boolean => {
   }
   try {
     embeddedSessionChatCached =
-      new URLSearchParams(window.location.search).get('ocPanel') === 'session-chat';
+      new URLSearchParams(window.location.search).get('yuriPanel') === 'session-chat';
     return embeddedSessionChatCached;
   } catch {
     embeddedSessionChatCached = false;
@@ -128,7 +128,7 @@ export const resetEmbeddedSessionChatCache = (): void => {
 
 /**
  * The session ID recorded in the embedded iframe's URL
- * (`?ocPanel=session-chat&sessionId=…`), i.e. the session the panel was
+ * (`?yuriPanel=session-chat&sessionId=…`), i.e. the session the panel was
  * opened to show. Returns `null` outside the embedded iframe or when the
  * URL is malformed.
  */

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import '../server/lib/brand-migration-bootstrap.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -33,7 +34,7 @@ import { createLifecycleCommands } from './lib/commands-lifecycle.js';
 import { createServeCommand } from './lib/commands-serve.js';
 import {
   discoverRunningInstances,
-  discoverOpenChamberInstanceOnPort,
+  discoverYuriInstanceOnPort,
   discoverLifecycleInstances,
   discoverUnconfirmedRegistryInstanceOnPort,
 } from './lib/cli-lifecycle.js';
@@ -44,9 +45,9 @@ import {
   getPidFilePath,
   getInstanceFilePath,
   isProcessRunning,
-  isOpenchamberCmdline,
-  isOpenchamberProcessRunning,
-  getOpenchamberProcessState,
+  isYuriCmdline,
+  isYuriProcessRunning,
+  getYuriProcessState,
 } from './lib/cli-process.js';
 import {
   intro as clackIntro, outro as clackOutro, cancel as clackCancel,
@@ -265,7 +266,7 @@ async function main() {
   await commands[command](options);
 }
 
-const isCliExecution = isModuleCliExecution(process.argv[1], import.meta.url, fs.realpathSync, 'openchamber');
+const isCliExecution = isModuleCliExecution(process.argv[1], import.meta.url, fs.realpathSync, 'yuri');
 
 if (isCliExecution) {
   let isHandlingSigint = false;
@@ -345,12 +346,12 @@ export {
   getPidFilePath,
   getInstanceFilePath,
   isProcessRunning,
-  isOpenchamberProcessRunning,
-  isOpenchamberCmdline,
-  getOpenchamberProcessState,
+  isYuriProcessRunning,
+  isYuriCmdline,
+  getYuriProcessState,
   fetchSystemInfoFromPort,
   discoverRunningInstances,
-  discoverOpenChamberInstanceOnPort,
+  discoverYuriInstanceOnPort,
   discoverLifecycleInstances,
   discoverUnconfirmedRegistryInstanceOnPort,
   findClosestMatch,

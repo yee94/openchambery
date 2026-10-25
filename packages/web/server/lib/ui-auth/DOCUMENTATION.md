@@ -1,9 +1,9 @@
 # UI Auth Module Documentation
 
 ## Purpose
-This module owns OpenChamber UI authentication for browser access, including password session auth, WebAuthn passkeys, and trusted-device session handling.
+This module owns Yuri UI authentication for browser access, including password session auth, WebAuthn passkeys, and trusted-device session handling.
 
-Trusted-device access has one durable credential model: a remote client bearer token stored by `packages/web/server/lib/client-auth/remote-clients.js`. Password, passkey, and Pairing v2 are issuance methods for that credential, not separate credential systems. Issued client tokens are returned once, stored server-side only as hashes, and are later authenticated via `Authorization: Bearer oc_client_...`.
+Trusted-device access has one durable credential model: a remote client bearer token stored by `packages/web/server/lib/client-auth/remote-clients.js`. Password, passkey, and Pairing v2 are issuance methods for that credential, not separate credential systems. Issued client tokens are returned once, stored server-side only as hashes, and are later authenticated via `Authorization: Bearer yuri_client_...`.
 
 Pairing v2 is implemented by `packages/web/server/lib/client-auth/pairing.js`. It stores short-lived one-time pairing sessions with hashed secrets, exposes create/cancel/redeem routes under `/api/client-auth/pairing/*`, and redeems a valid pairing secret into the same remote client token used by password/passkey trusted-device flows.
 
@@ -14,7 +14,7 @@ Pairing v2 is implemented by `packages/web/server/lib/client-auth/pairing.js`. I
 - `packages/web/server/lib/client-auth/pairing.js`: short-lived Pairing v2 sessions and one-time secret redemption into trusted-device client tokens.
 
 ## Public exports (ui-auth.js)
-- `isUrlAuthWebSocketPath(pathname)`: true when a WebSocket upgrade may authenticate with `oc_url_token` (exact terminal/dictation/event/realtime-proxy paths, plus prefix `/api/preview/proxy/` for Preview HMR). Keep in sync with tunnel-host `isTunnelWsPathAllowed`.
+- `isUrlAuthWebSocketPath(pathname)`: true when a WebSocket upgrade may authenticate with `yuri_url_token` (exact terminal/dictation/event/realtime-proxy paths, plus prefix `/api/preview/proxy/` for Preview HMR). Keep in sync with tunnel-host `isTunnelWsPathAllowed`.
 - `createUiAuth({ password, cookieName, sessionTtlMs, readSettingsFromDiskMigrated })`: creates UI auth controller with methods:
   - `enabled`
   - `requireAuth(req, res, next)`

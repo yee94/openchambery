@@ -18,45 +18,45 @@ const scheduledEditorSource = readFileSync(join(__dirname, '../components/sessio
 
 describe('mobile press feedback scale policy', () => {
   test('default and compact press scales grow with restrained bounds', () => {
-    expect(mobileCss).toContain('--oc-press-soft-scale');
-    expect(mobileCss).toContain('--oc-press-compact-scale: 1.05');
-    expect(mobileCss).toContain('--oc-press-edge-outset: 3px');
-    expect(mobileCss).toContain('calc(1 + (2 * var(--oc-press-edge-outset)) / 100cqi)');
+    expect(mobileCss).toContain('--yuri-press-soft-scale');
+    expect(mobileCss).toContain('--yuri-press-compact-scale: 1.05');
+    expect(mobileCss).toContain('--yuri-press-edge-outset: 3px');
+    expect(mobileCss).toContain('calc(1 + (2 * var(--yuri-press-edge-outset)) / 100cqi)');
     expect(mobileCss).toContain('1.006,');
     expect(mobileCss).toContain('1.03');
     expect(mobileCss).toContain('[data-mobile-press-feedback="compact"]');
     expect(mobileCss).toContain(
       ':not(\n      [data-mobile-press-feedback="compact"]\n    ):not(\n      [data-mobile-press-surface-trigger]\n    ):active:not(:has(:where(button, [role="button"], [role="menuitem"]):active))',
     );
-    expect(mobileCss).toContain('scale: var(--oc-press-soft-scale)');
+    expect(mobileCss).toContain('scale: var(--yuri-press-soft-scale)');
     expect(mobileCss).toContain('.pwa-overlay-panel,');
     const compactActiveBlock = mobileCss.slice(
       mobileCss.indexOf('[data-mobile-press-feedback="compact"]'),
     );
-    expect(compactActiveBlock).toContain('scale: var(--oc-press-compact-scale)');
+    expect(compactActiveBlock).toContain('scale: var(--yuri-press-compact-scale)');
   });
 
   test('engage and release use the shared fast-in spring-like timing', () => {
-    expect(mobileCss).toContain('--oc-press-engage-duration: 80ms');
-    expect(mobileCss).toContain('--oc-press-engage-ease: cubic-bezier(0.16, 1, 0.3, 1)');
-    expect(mobileCss).toContain('--oc-press-release-duration: 260ms');
-    expect(mobileCss).toContain('--oc-press-release-ease: cubic-bezier(0.2, 1.28, 0.3, 1)');
-    expect(mobileCss).toContain('transition-duration: var(--oc-press-engage-duration)');
-    expect(mobileCss).toContain('transition: scale var(--oc-press-release-duration) var(--oc-press-release-ease)');
+    expect(mobileCss).toContain('--yuri-press-engage-duration: 80ms');
+    expect(mobileCss).toContain('--yuri-press-engage-ease: cubic-bezier(0.16, 1, 0.3, 1)');
+    expect(mobileCss).toContain('--yuri-press-release-duration: 260ms');
+    expect(mobileCss).toContain('--yuri-press-release-ease: cubic-bezier(0.2, 1.28, 0.3, 1)');
+    expect(mobileCss).toContain('transition-duration: var(--yuri-press-engage-duration)');
+    expect(mobileCss).toContain('transition: scale var(--yuri-press-release-duration) var(--yuri-press-release-ease)');
   });
 
   test('changes panel scopes its container and lighter soft grow scale', () => {
-    const containerRule = mobileCss.match(/([^{}]*\.oc-changes-panel[^{}]*)\{\s*container-type: inline-size;\s*\}/);
-    expect(containerRule?.[1]).toContain('.oc-changes-panel');
+    const containerRule = mobileCss.match(/([^{}]*\.yuri-changes-panel[^{}]*)\{\s*container-type: inline-size;\s*\}/);
+    expect(containerRule?.[1]).toContain('.yuri-changes-panel');
 
-    const changesPanelRule = mobileCss.match(/\.oc-changes-panel\s*\{([^}]+)\}/);
-    expect(changesPanelRule?.[1]).toContain('--oc-press-edge-outset: 2px');
+    const changesPanelRule = mobileCss.match(/\.yuri-changes-panel\s*\{([^}]+)\}/);
+    expect(changesPanelRule?.[1]).toContain('--yuri-press-edge-outset: 2px');
     expect(changesPanelRule?.[1]).toContain('1.004');
     expect(changesPanelRule?.[1]).toContain('1.02');
   });
 
   test('reduced motion settles immediately while semantic active fill remains', () => {
-    const pressPolicyStart = mobileCss.indexOf('--oc-press-soft-scale');
+    const pressPolicyStart = mobileCss.indexOf('--yuri-press-soft-scale');
     const reducedMotionBlock = mobileCss.slice(
       mobileCss.indexOf('@media (prefers-reduced-motion: reduce)', pressPolicyStart),
     );
@@ -83,7 +83,7 @@ describe('mobile press feedback scale policy', () => {
 
   test('composer and fill-only action rows preserve their functional opt-outs', () => {
     expect(mobileCss).not.toContain('[data-mobile-composer-surface="true"]:has(textarea:active)');
-    expect(mobileCss).not.toContain('@keyframes oc-mobile-composer-expand');
+    expect(mobileCss).not.toContain('@keyframes yuri-mobile-composer-expand');
     expect(mobileCss).toContain('Composer surface must not press-scale');
     expect(mobileCss).not.toContain('transition: border-radius');
     expect(rowActionsSource).toContain('data-mobile-press-feedback="none"');
@@ -122,7 +122,7 @@ describe('mobile press feedback scale policy', () => {
     expect(tabBarSource).not.toContain('data-mobile-press-feedback="none"');
     expect(tabBarSource).not.toContain('active:scale');
     expect(mobileCss).not.toContain('transform: scale(0.97)');
-    expect(mobileCss).toContain('.oc-mobile-segmented-item:active > .oc-segmented-selected-pill');
+    expect(mobileCss).toContain('.yuri-mobile-segmented-item:active > .yuri-segmented-selected-pill');
     expect(scheduledTasksSource).not.toContain('active:scale');
     expect(scheduledEditorSource).not.toContain('group-active:scale');
     expect(assistantViewSource).not.toContain('active:scale');
@@ -131,9 +131,9 @@ describe('mobile press feedback scale policy', () => {
   test('assistant dock unread badge is not clipped by tab overflow rules', () => {
     expect(tabBarSource).toContain('AssistantNavigationUnreadBadge');
     expect(tabBarSource).toContain('overflow-visible');
-    expect(tabBarSource).toContain('oc-mobile-tab-label');
-    expect(mobileCss).toMatch(/\.oc-mobile-tab-button\s*\{[^}]*overflow:\s*visible/s);
-    expect(mobileCss).toContain('.oc-mobile-tab-button > .oc-mobile-tab-label');
-    expect(mobileCss).toMatch(/\.oc-mobile-floating-bottom-bar-navigation\s*\{[^}]*overflow:\s*visible/s);
+    expect(tabBarSource).toContain('yuri-mobile-tab-label');
+    expect(mobileCss).toMatch(/\.yuri-mobile-tab-button\s*\{[^}]*overflow:\s*visible/s);
+    expect(mobileCss).toContain('.yuri-mobile-tab-button > .yuri-mobile-tab-label');
+    expect(mobileCss).toMatch(/\.yuri-mobile-floating-bottom-bar-navigation\s*\{[^}]*overflow:\s*visible/s);
   });
 });

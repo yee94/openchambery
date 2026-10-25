@@ -13,7 +13,7 @@ import {
 
 const temps = [];
 const temp = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-pi-tools-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-pi-tools-'));
   temps.push(dir);
   return dir;
 };

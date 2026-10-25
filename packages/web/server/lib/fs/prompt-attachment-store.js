@@ -117,7 +117,7 @@ export async function collectRequestBytes(req, { expectedSize, maxBytes = MAX_PR
 
 /** Prompt-only uploads live on the model host and are streamed without the inline-context size limit. */
 export async function storeTemporaryPromptAttachment(req, { expectedSize, expectedSha256, mime, filename, signal }) {
-  const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'openchamber-prompt-'));
+  const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'yuri-prompt-'));
   let decodedName;
   try { decodedName = decodeURIComponent(filename || 'attachment'); } catch { decodedName = 'attachment'; }
   const name = Array.from(path.basename(decodedName.replace(/\\/g, '/')).replace(/[\x00-\x1f\x7f]/g, '_')).slice(-60).join('');

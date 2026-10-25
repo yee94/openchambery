@@ -34,7 +34,7 @@ const subtaskParts = () => [{ type: 'subtask', prompt: 'do it', description: 'ta
 const compactionParts = () => [{ type: 'compaction', auto: false }];
 const hostedDivider = (sessionID = 'ses_old') => ({
   info: {
-    id: `oc_asst_session_divider:${sessionID}`,
+    id: `yuri_asst_session_divider:${sessionID}`,
     role: 'system',
     time: { created: 0 },
   },
@@ -1268,7 +1268,7 @@ describe('SessionMessageInfo turn pages', () => {
     expect(isUserAuthoredTurnBoundary(v2Assistant('msg_a1'))).toBe(false);
     expect(isUserAuthoredTurnBoundary({ id: 'msg_syn', type: 'synthetic', time: { created: 1 }, text: 'loop' })).toBe(false);
     expect(isUserAuthoredTurnBoundary({
-      id: `oc_asst_session_divider:ses_old`,
+      id: `yuri_asst_session_divider:ses_old`,
       type: 'system',
       time: { created: 0 },
     })).toBe(false);

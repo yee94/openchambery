@@ -6,22 +6,22 @@ const require = createRequire(import.meta.url);
 const SCHEMA_VERSION = 6;
 const MAX_ROOT_SESSIONS = 20;
 const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
-const BACKGROUND_SESSION_TITLE = /^\[(?:Scheduled|Assistant|openchamber-llm)\]/;
+const BACKGROUND_SESSION_TITLE = /^\[(?:Scheduled|Assistant|yuri-llm)\]/;
 
 const nonEmptySystemID = (value) => typeof value === 'string' && value.length > 0;
 
 /** System sessions are isolated by authoritative metadata only — never by title prefix. */
-const isContactAssignedSession = (openchamber) => openchamber?.assigned?.from === 'contact';
+const isContactAssignedSession = (yuri) => yuri?.assigned?.from === 'contact';
 
 const isSystemSession = (session) => {
-  const openchamber = session?.metadata?.openchamber;
-  if (!openchamber || typeof openchamber !== 'object') return false;
+  const yuri = session?.metadata?.yuri;
+  if (!yuri || typeof yuri !== 'object') return false;
   // Contact-assigned workers stay visible in Chat. Only archived Assistant
-  // bindings use `openchamber.assistant` as a hide marker.
-  if (nonEmptySystemID(openchamber.assistant?.assistantID) && !isContactAssignedSession(openchamber)) return true;
-  if (nonEmptySystemID(openchamber.scheduledTask?.taskID)) return true;
-  if (nonEmptySystemID(openchamber.smallModel?.purpose)) return true;
-  if (nonEmptySystemID(openchamber.llm?.purpose)) return true;
+  // bindings use `yuri.assistant` as a hide marker.
+  if (nonEmptySystemID(yuri.assistant?.assistantID) && !isContactAssignedSession(yuri)) return true;
+  if (nonEmptySystemID(yuri.scheduledTask?.taskID)) return true;
+  if (nonEmptySystemID(yuri.smallModel?.purpose)) return true;
+  if (nonEmptySystemID(yuri.llm?.purpose)) return true;
   return false;
 };
 
@@ -44,7 +44,7 @@ const toTimestamp = (value) => (typeof value === 'number' && Number.isFinite(val
 const toBooleanInt = (value) => (value ? 1 : 0);
 
 const getActivityUpdatedAt = (session) => {
-  const activityUpdatedAt = session?.metadata?.openchamber?.titleRefresh?.activityUpdatedAt;
+  const activityUpdatedAt = session?.metadata?.yuri?.titleRefresh?.activityUpdatedAt;
   return Math.max(toTimestamp(activityUpdatedAt), toTimestamp(session?.time?.updated), toTimestamp(session?.time?.created));
 };
 
@@ -59,9 +59,9 @@ const toSummary = (session, fallbackDirectory, resolveDirectory = normalizeDirec
   if (!session || !isVisibleSession(session) || typeof session.id !== 'string' || !session.id) return null;
   const directory = resolveDirectory(session.location?.directory ?? session.directory ?? session.project?.worktree ?? fallbackDirectory);
   if (!directory) return null;
-  const openchamber = session.metadata?.openchamber;
-  const assistant = openchamber?.assistant;
-  const hideAssistantMarker = isContactAssignedSession(openchamber);
+  const yuri = session.metadata?.yuri;
+  const assistant = yuri?.assistant;
+  const hideAssistantMarker = isContactAssignedSession(yuri);
   return {
     id: session.id,
     directory,
@@ -535,7 +535,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
               : {}),
           },
           metadata: {
-            openchamber: {
+            yuri: {
               titleRefresh: { activityUpdatedAt: session.activityUpdatedAt },
               sessionStatus: { type: session.status ?? 'idle', changedAt: session.statusChangedAt },
               ...(session.assistantID ? { assistant: { assistantID: session.assistantID, ...(session.assistantName ? { name: session.assistantName } : {}) } } : {}),

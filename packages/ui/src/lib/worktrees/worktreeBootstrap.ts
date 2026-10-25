@@ -3,7 +3,7 @@ import type { GitWorktreeBootstrapStatus } from '@/lib/api/types';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { toast } from '@/components/ui';
 import { formatMessage, useI18nStore, type I18nKey, type I18nParams } from '@/lib/i18n';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeYuriEvents } from '@/lib/yuriEvents';
 
 type WorktreeBootstrapState = GitWorktreeBootstrapStatus;
 type WorktreeBootstrapFailureHandler = (status: GitWorktreeBootstrapStatus) => void;
@@ -128,7 +128,7 @@ export const applyWorktreeBootstrapStatusEvent = (
 
 const ensureBootstrapEventSubscription = (): void => {
   if (!eventSubscription) {
-    eventSubscription = subscribeOpenchamberEvents((event) => {
+    eventSubscription = subscribeYuriEvents((event) => {
       if (event.type !== 'worktree-bootstrap-status') return;
       applyWorktreeBootstrapStatusEvent(event.directory, event);
     });
@@ -138,7 +138,7 @@ const ensureBootstrapEventSubscription = (): void => {
     return;
   }
   windowEventBound = true;
-  window.addEventListener('openchamber:worktree-bootstrap-status', ((event: Event) => {
+  window.addEventListener('yuri:worktree-bootstrap-status', ((event: Event) => {
     const detail = (event as CustomEvent<unknown>).detail;
     if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return;
     const record = detail as Record<string, unknown>;

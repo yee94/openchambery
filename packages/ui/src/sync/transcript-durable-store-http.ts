@@ -1,5 +1,5 @@
 /**
- * HTTP TranscriptDurableStore over the local OpenChamber transcript-cache route.
+ * HTTP TranscriptDurableStore over the local Yuri transcript-cache route.
  *
  * Only the Electron local sidecar enables SQLite. 501 means the cache is
  * disabled for this runtime (treat as miss / no-op). Any other failure throws
@@ -24,7 +24,7 @@ import type {
 } from "./transcript-durable-store"
 import { cloneTranscriptScope } from "./transcript-durable-store"
 
-export const TRANSCRIPT_CACHE_ROUTE_PREFIX = "/api/openchamber/transcript-cache"
+export const TRANSCRIPT_CACHE_ROUTE_PREFIX = "/api/yuri/transcript-cache"
 
 export type TranscriptDurableHttpFetch = (
   path: string,
@@ -190,7 +190,7 @@ const jsonInit = (method: string, body: unknown): RuntimeFetchOptions => ({
 })
 
 /**
- * HTTP adapter for the local `/api/openchamber/transcript-cache` route.
+ * HTTP adapter for the local `/api/yuri/transcript-cache` route.
  *
  * Inject `fetch` in tests. Production uses `runtimeFetch` so auth and the
  * active local origin stay on the existing runtime helpers.

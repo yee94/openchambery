@@ -112,7 +112,7 @@ export function createMessageStreamWsRuntime({
     const isGlobalStream = pathname === MESSAGE_STREAM_GLOBAL_WS_PATH;
     const requestedLastEventId = requestUrl.searchParams.get('lastEventId')?.trim() || '';
     const requestedDirectory = requestUrl.searchParams.get('directory')?.trim() || '';
-    // OpenChamber projection only — never forwarded to OpenCode upstream URLs.
+    // Yuri projection only — never forwarded to OpenCode upstream URLs.
     // Default (include) path keeps reasoningFilter null for zero send-path overhead.
     const includeReasoning = shouldIncludeReasoning(requestUrl.searchParams.get('includeReasoning'));
     const reasoningFilter = includeReasoning ? null : createReasoningOutboundFilter();

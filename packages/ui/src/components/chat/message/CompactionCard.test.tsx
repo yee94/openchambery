@@ -28,7 +28,7 @@ test('running and completed are one-line style separators, not cards', async () 
     expect(host.textContent).toContain(zh['chat.activity.compacting']);
     expect(host.querySelector('.animate-text-shimmer')).toBeNull();
     expect(host.querySelector('[data-compaction-card]')?.getAttribute('role')).toBe('separator');
-    expect(host.querySelector('[data-compaction-card]')?.className).not.toMatch(/rounded-xl|border-border|oc-tool-row/);
+    expect(host.querySelector('[data-compaction-card]')?.className).not.toMatch(/rounded-xl|border-border|yuri-tool-row/);
     expect(host.querySelector('button')).toBeNull();
 
     await act(async () => root.render(<CompactionCard part={{ ...part('completed'), summary: 'checkpoint' }} />));

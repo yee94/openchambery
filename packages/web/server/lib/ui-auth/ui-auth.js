@@ -5,17 +5,17 @@ import path from 'path';
 import os from 'os';
 import { createUiPasskeys } from './ui-passkeys.js';
 
-const SESSION_COOKIE_NAME = 'oc_ui_session';
+const SESSION_COOKIE_NAME = 'yuri_ui_session';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const TRUSTED_DEVICE_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const URL_AUTH_TOKEN_TTL_MS = 60 * 1000;
-const URL_AUTH_TOKEN_PREFIX = 'oc_url_';
+const URL_AUTH_TOKEN_PREFIX = 'yuri_url_';
 
 const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
-const RATE_LIMIT_MAX_ATTEMPTS = Number(process.env.OPENCHAMBER_RATE_LIMIT_MAX_ATTEMPTS) || 10;
+const RATE_LIMIT_MAX_ATTEMPTS = Number(process.env.YURI_RATE_LIMIT_MAX_ATTEMPTS) || 10;
 const RATE_LIMIT_LOCKOUT_MS = 15 * 60 * 1000;
 const RATE_LIMIT_CLEANUP_MS = 60 * 60 * 1000;
-const RATE_LIMIT_NO_IP_MAX_ATTEMPTS = Number(process.env.OPENCHAMBER_RATE_LIMIT_NO_IP_MAX_ATTEMPTS) || 3;
+const RATE_LIMIT_NO_IP_MAX_ATTEMPTS = Number(process.env.YURI_RATE_LIMIT_NO_IP_MAX_ATTEMPTS) || 3;
 
 const loginRateLimiter = new Map();
 let rateLimitCleanupTimer = null;
@@ -257,11 +257,11 @@ const getBearerTokenFromRequest = (req) => {
 };
 
 const getUrlAuthTokenFromRequest = (req) => {
-  const queryToken = req?.query?.oc_url_token;
+  const queryToken = req?.query?.yuri_url_token;
   let token = Array.isArray(queryToken) ? queryToken[0] : queryToken;
   if (typeof token !== 'string' && typeof req?.url === 'string') {
     try {
-      token = new URL(req.url, 'http://localhost').searchParams.get('oc_url_token') || undefined;
+      token = new URL(req.url, 'http://localhost').searchParams.get('yuri_url_token') || undefined;
     } catch {
       token = undefined;
     }
@@ -294,8 +294,8 @@ const isWebSocketUpgrade = (req) => {
 const isUrlAuthReadableHttpPath = (pathname) => {
   return pathname === '/api/event'
     || pathname === '/api/global/event'
-    || pathname === '/api/openchamber/events'
-    || pathname === '/api/openchamber/realtime-proxy/sse'
+    || pathname === '/api/yuri/events'
+    || pathname === '/api/yuri/realtime-proxy/sse'
     || pathname === '/api/notifications/stream'
     || pathname === '/api/fs/raw'
     || pathname === '/api/fs/serve'
@@ -306,7 +306,7 @@ const isUrlAuthReadableHttpPath = (pathname) => {
 };
 
 /**
- * Paths that may authenticate a WebSocket upgrade with `oc_url_token`.
+ * Paths that may authenticate a WebSocket upgrade with `yuri_url_token`.
  * Keep in sync with tunnel-host `isTunnelWsPathAllowed` for preview proxy prefix
  * and exact terminal/dictation/event sockets (plus realtime-proxy on desktop).
  *
@@ -317,7 +317,7 @@ export const isUrlAuthWebSocketPath = (pathname) => {
   if (typeof pathname !== 'string' || !pathname) return false;
   return pathname === '/api/event/ws'
     || pathname === '/api/global/event/ws'
-    || pathname === '/api/openchamber/realtime-proxy/ws'
+    || pathname === '/api/yuri/realtime-proxy/ws'
     || pathname === '/api/terminal/ws'
     || pathname === '/api/dictation/ws'
     || pathname.startsWith('/api/preview/proxy/');
@@ -371,10 +371,10 @@ const normalizePassword = (candidate) => {
 
 const isTrustedDeviceRequest = (value) => value === true;
 
-const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
-  ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-  : path.join(os.homedir(), '.config', 'openchamber');
-const JWT_SECRET_FILE = path.join(OPENCHAMBER_DATA_DIR, 'jwt-secret');
+const YURI_DATA_DIR = process.env.YURI_DATA_DIR
+  ? path.resolve(process.env.YURI_DATA_DIR)
+  : path.join(os.homedir(), '.config', 'yuri');
+const JWT_SECRET_FILE = path.join(YURI_DATA_DIR, 'jwt-secret');
 
 function getOrCreateJwtSecret() {
   const envSecret = process.env.OPENCODE_JWT_SECRET;
@@ -392,7 +392,7 @@ function getOrCreateJwtSecret() {
 
   const secret = crypto.randomBytes(32).toString('hex');
   try {
-    fs.mkdirSync(OPENCHAMBER_DATA_DIR, { recursive: true });
+    fs.mkdirSync(YURI_DATA_DIR, { recursive: true });
     fs.writeFileSync(JWT_SECRET_FILE, secret, { mode: 0o600 });
     console.log('[JWT] Generated and persisted new secret to', JWT_SECRET_FILE);
   } catch (e) {
@@ -409,7 +409,7 @@ function persistJwtSecret(secret) {
     throw error;
   }
 
-  fs.mkdirSync(OPENCHAMBER_DATA_DIR, { recursive: true });
+  fs.mkdirSync(YURI_DATA_DIR, { recursive: true });
   fs.writeFileSync(JWT_SECRET_FILE, secret, { mode: 0o600 });
   return new TextEncoder().encode(secret);
 }

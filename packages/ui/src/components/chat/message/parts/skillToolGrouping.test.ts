@@ -27,8 +27,8 @@ describe('skill tool grouping', () => {
             state: { input: { name: '  diagnosing-bugs  ' } },
         })).toBe('diagnosing-bugs');
         expect(getSkillNameFromToolPart({
-            state: { input: { id: 'openchamber-change-discipline' } },
-        })).toBe('openchamber-change-discipline');
+            state: { input: { id: 'yuri-change-discipline' } },
+        })).toBe('yuri-change-discipline');
         expect(getSkillNameFromToolPart({
             state: {
                 input: { id: 'skill-id' },

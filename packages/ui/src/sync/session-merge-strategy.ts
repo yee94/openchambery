@@ -46,7 +46,7 @@ export type MessageMergeMode = "upsert" | "insert-only"
 export type PartMergeMode = "replace" | "skip-existing"
 
 /**
- * Unconfirmed optimistic parts (`__openchamberOptimistic: true`) already
+ * Unconfirmed optimistic parts (`__yuriOptimistic: true`) already
  * held on a local message.
  * - `none`: incoming parts follow the normal `parts` mode.
  * - `keep-unless-full`: a slim or empty incoming snapshot keeps the local

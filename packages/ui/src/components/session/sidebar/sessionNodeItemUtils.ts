@@ -20,20 +20,20 @@ export const resolvedSessionRenderKey = (session: Session): string => {
     hasChildren?: boolean;
     parentID?: string | null;
     metadata?: {
-      openchamber?: {
+      yuri?: {
         assistant?: unknown;
         titleRefresh?: { isGenerating?: unknown; lastError?: unknown; failedAt?: unknown };
       };
     };
   };
-  const titleRefresh = extended.metadata?.openchamber?.titleRefresh;
+  const titleRefresh = extended.metadata?.yuri?.titleRefresh;
   const activity = getSessionActivityUpdatedAt(session) || 0;
   return [
     session.title ?? '',
     session.share ? (session.share.url ?? '1') : '',
     extended.hasChildren ? '1' : '',
     extended.parentID ?? '',
-    extended.metadata?.openchamber?.assistant ? '1' : '',
+    extended.metadata?.yuri?.assistant ? '1' : '',
     titleRefresh?.isGenerating ? '1' : '',
     String(titleRefresh?.lastError ?? ''),
     String(titleRefresh?.failedAt ?? ''),

@@ -7,7 +7,7 @@ export const createRequestSecurityRuntime = (deps) => {
   // the Android origin 403'd every WebSocket upgrade from the Android app
   // (message stream, terminal, dictation) while SSE kept working.
   const packagedClientOrigins = new Set([
-    'openchamber-ui://app',
+    'yuri-ui://app',
     'capacitor://localhost',
     'https://localhost',
   ]);
@@ -22,7 +22,7 @@ export const createRequestSecurityRuntime = (deps) => {
       const [rawName, ...rest] = segment.split('=');
       const name = rawName?.trim();
       if (!name) continue;
-      if (name !== 'oc_ui_session') continue;
+      if (name !== 'yuri_ui_session') continue;
       const value = rest.join('=').trim();
       try {
         return decodeURIComponent(value || '');

@@ -34,7 +34,7 @@ type OtaPhase = 'idle' | 'checking' | 'available' | 'downloading' | 'pending_res
  *    (no separate download API).
  *
  * Turning the switch on → `setOtaChannelOverride('beta')` + `checkForUpdates()`.
- * `null` override follows the build-time baked `OpenChamberOTA.channel`.
+ * `null` override follows the build-time baked `YuriOTA.channel`.
  */
 export type MobileOtaChannelRollbackUiFlow = {
   setOverride: 'useUIStore.setOtaChannelOverride';
@@ -162,7 +162,7 @@ async function checkForWebUpdates(runtime: ClientRuntime, currentVersion?: strin
       : undefined;
     if (currentVersion) params.set('currentVersion', currentVersion);
     else if (runtime === 'vscode' && vscodeVersion) params.set('currentVersion', vscodeVersion);
-    const response = await runtimeFetch(`/api/openchamber/update-check?${params.toString()}`, {
+    const response = await runtimeFetch(`/api/yuri/update-check?${params.toString()}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });
@@ -443,7 +443,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
 
         // Capacitor client updates compare the native APK/IPA version against
         // public update feeds directly. Do not route this through the connected
-        // OpenChamber Server — that instance's network and version are unrelated.
+        // Yuri Server — that instance's network and version are unrelated.
         info = await checkForMobileClientUpdates({
           currentVersion,
           platform: detectPlatform() === 'ios' ? 'ios' : 'android',

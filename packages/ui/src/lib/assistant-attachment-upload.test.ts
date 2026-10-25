@@ -59,7 +59,7 @@ describe('uploadAssistantAttachment', () => {
       mime: 'image/png',
       filename: 'photo.png',
     });
-    expect(fetchCalls[0]?.path).toBe('/api/openchamber/assistants/asst-1/contact/attachments/upload-1');
+    expect(fetchCalls[0]?.path).toBe('/api/yuri/assistants/asst-1/contact/attachments/upload-1');
     const headers = new Headers(fetchCalls[0]?.init?.headers);
     expect(headers.get('X-Content-SHA256')).toBe(sha256);
     expect(headers.get('X-Content-Size')).toBe('4');

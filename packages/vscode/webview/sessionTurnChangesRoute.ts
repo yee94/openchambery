@@ -1,7 +1,7 @@
 /**
- * Webview local route for GET `/api/openchamber/sessions/:id/changes`.
+ * Webview local route for GET `/api/yuri/sessions/:id/changes`.
  *
- * Identify this OpenChamber-owned path ahead of the generic OpenCode proxy,
+ * Identify this Yuri-owned path ahead of the generic OpenCode proxy,
  * parse query (messageID, directory, optional file), dispatch
  * `api:session-turn-changes` bridge, and return `{ files }` or `{ diff }`.
  *
@@ -39,7 +39,7 @@ const ALLOWED_BRIDGE_ERROR_CODES = new Set<keyof typeof SAFE_ERRORS>([
 ]);
 
 const SESSION_TURN_CHANGES_PATH =
-  /^\/api\/openchamber\/sessions\/([^/]+)\/changes\/?$/;
+  /^\/api\/yuri\/sessions\/([^/]+)\/changes\/?$/;
 
 const hasControlOrNul = (value: string): boolean => {
   for (let i = 0; i < value.length; i += 1) {
@@ -125,7 +125,7 @@ const isBoundedId = (
 export const isSessionTurnChangesRoute = (pathname: string): boolean => {
   if (typeof pathname !== 'string' || pathname.length === 0) return false;
   const normalized = pathname.replace(/\/+$/, '') || '/';
-  const match = normalized.match(/^\/api\/openchamber\/sessions\/([^/]+)\/changes$/);
+  const match = normalized.match(/^\/api\/yuri\/sessions\/([^/]+)\/changes$/);
   return match != null && match[1].length > 0;
 };
 
@@ -209,7 +209,7 @@ export type SessionTurnChangesRouteInput = {
 };
 
 /**
- * Handle GET `/api/openchamber/sessions/:id/changes` in the webview fetch layer.
+ * Handle GET `/api/yuri/sessions/:id/changes` in the webview fetch layer.
  * Callers must check `isSessionTurnChangesRoute` before falling through to api:proxy.
  */
 export const handleSessionTurnChangesRoute = async (

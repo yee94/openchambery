@@ -100,13 +100,13 @@ vi.mock('@/lib/session-startup-barrier', () => ({
   waitForSessionStartupBarrier: async () => undefined,
 }))
 
-vi.mock('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: (listener: (event: TipEvent) => void) => {
+vi.mock('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: (listener: (event: TipEvent) => void) => {
     hoisted.tipListeners.add(listener)
     return () => { hoisted.tipListeners.delete(listener) }
   },
-  getLatestOpenchamberEventRevision: () => undefined,
-  parseOpenchamberEventEnvelope: () => null,
+  getLatestYuriEventRevision: () => undefined,
+  parseYuriEventEnvelope: () => null,
 }))
 
 vi.mock('@/lib/queryRuntime', () => ({

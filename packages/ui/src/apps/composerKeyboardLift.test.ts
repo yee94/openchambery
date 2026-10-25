@@ -26,7 +26,7 @@ const createElement = (tag: string, className = ''): HTMLElement => {
 
 describe('composerKeyboardLift', () => {
   test('detects targets inside the bottom mobile composer', () => {
-    const composer = createElement('form', 'oc-mobile-composer');
+    const composer = createElement('form', 'yuri-mobile-composer');
     const textarea = createElement('textarea');
     composer.appendChild(textarea);
 
@@ -46,7 +46,7 @@ describe('composerKeyboardLift', () => {
   });
 
   test('reserves chat scroll inset only for non-composer text fields', () => {
-    const composer = createElement('form', 'oc-mobile-composer');
+    const composer = createElement('form', 'yuri-mobile-composer');
     const composerTextarea = createElement('textarea');
     const questionInput = createElement('input');
     const questionContentEditable = createElement('div') as HTMLElement & { isContentEditable: boolean };
@@ -60,7 +60,7 @@ describe('composerKeyboardLift', () => {
   });
 
   test('focus transfer stays armed only inside the composer', () => {
-    const composer = createElement('form', 'oc-mobile-composer');
+    const composer = createElement('form', 'yuri-mobile-composer');
     const a = createElement('textarea');
     const b = createElement('input');
     composer.append(a, b);
@@ -72,7 +72,7 @@ describe('composerKeyboardLift', () => {
   });
 
   test('routes native IME state to composer lift, cache, or field inset', () => {
-    const composer = createElement('form', 'oc-mobile-composer');
+    const composer = createElement('form', 'yuri-mobile-composer');
     const textarea = createElement('textarea');
     const outside = createElement('input');
     composer.appendChild(textarea);

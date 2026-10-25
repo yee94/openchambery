@@ -299,7 +299,7 @@ describe('scheduled-tasks history recovery', () => {
     };
     const runtime = createRuntime(vi.fn(async () => ({ task: null })), {
       runHistoryStore: store,
-      readSessionMetadata: vi.fn(async () => ({ openchamber: { goal: { status: goalStatus } } })),
+      readSessionMetadata: vi.fn(async () => ({ yuri: { goal: { status: goalStatus } } })),
     });
     try {
       await runtime.start();
@@ -355,7 +355,7 @@ describe('scheduled task result handoff', () => {
       if (mode === 'failure') expect(input.userText).toContain('upstream failed');
       else expect(input.userText).toContain('Actual research findings');
       return reviewTaskResult({ ...input, createChatCompletion: async () => ({ text: mode === 'silent'
-        ? '```openchamber-final\n{"status":"silent","text":""}\n```'
+        ? '```yuri-final\n{"status":"silent","text":""}\n```'
         : mode === 'failure' ? '任务执行失败，需要检查服务。' : '资料汇总：有两项值得关注的更新。' }) });
     });
     const runtime = createRuntime(null, {
@@ -880,7 +880,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       title: expect.stringMatching(/^\[Scheduled\] Task /),
       model: { id: 'gpt-4.1', providerID: 'openai' },
       metadata: {
-        openchamber: {
+        yuri: {
           scheduledTask: expect.objectContaining({
             projectID: 'project-1',
             taskID: 'task-1',
@@ -892,7 +892,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(client.create.mock.calls[0][0].directory).toBeUndefined();
     expect(persistSessionMetadata).toHaveBeenCalledWith('ses_1', {
-      openchamber: {
+      yuri: {
         scheduledTask: expect.objectContaining({
           projectID: 'project-1',
           taskID: 'task-1',
@@ -905,7 +905,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       sessionID: 'ses_1',
       directory: '/tmp/project-1',
       metadata: expect.objectContaining({
-        openchamber: expect.objectContaining({
+        yuri: expect.objectContaining({
           scheduledTask: expect.objectContaining({ taskID: 'task-1' }),
         }),
       }),
@@ -1398,7 +1398,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     const history = createHistoryStore();
     const client = createSuccessfulClient({ sessionID: 'ses_goal_ok' });
     const persistSessionGoal = vi.fn(async (_sessionId, _directory, goal) => ({
-      openchamber: { goal },
+      yuri: { goal },
     }));
     const onGoalPersisted = vi.fn();
 
@@ -1457,7 +1457,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       sessionID: 'ses_goal_ok',
       directory: '/tmp/project-1',
       metadata: expect.objectContaining({
-        openchamber: expect.objectContaining({
+        yuri: expect.objectContaining({
           goal: expect.objectContaining({ status: 'active' }),
         }),
       }),

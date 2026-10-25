@@ -1,5 +1,5 @@
 /**
- * Router module for URL-based navigation in OpenChamber.
+ * Router module for URL-based navigation in Yuri.
  *
  * Path mode (history):
  * - `/session/<id>` — open session (chat default)

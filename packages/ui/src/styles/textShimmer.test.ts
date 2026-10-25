@@ -15,14 +15,14 @@ const reducedMotionRule = indexCss.match(
 
 describe('live text shimmer', () => {
   test('keeps a muted clip-text sweep with a plain foreground highlight', () => {
-    // color:transparent + background-clip:text vanishes when --oc-text-shimmer-base
+    // color:transparent + background-clip:text vanishes when --yuri-text-shimmer-base
     // is an invalid custom-property (Android WebView often rejects color-mix there).
     // Base stays muted so the foreground highlight band is actually visible.
     expect(shimmerRule).toContain('color: transparent');
     expect(shimmerRule).toContain('background-clip: text');
-    expect(shimmerRule).toContain('--oc-text-shimmer-base: var(--surface-muted-foreground)');
+    expect(shimmerRule).toContain('--yuri-text-shimmer-base: var(--surface-muted-foreground)');
     expect(shimmerRule).toContain('var(--surface-foreground) 50%');
-    expect(shimmerRule).not.toMatch(/--oc-text-shimmer-base:\s*color-mix/);
+    expect(shimmerRule).not.toMatch(/--yuri-text-shimmer-base:\s*color-mix/);
     expect(shimmerRule).not.toMatch(/color-mix/);
     expect(reducedMotionRule).toContain('var(--surface-muted-foreground)');
     expect(reducedMotionRule).not.toMatch(/color-mix/);

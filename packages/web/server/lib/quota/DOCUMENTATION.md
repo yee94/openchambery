@@ -18,7 +18,7 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | --- | --- | --- | --- |
 | `claude` | Claude | `providers/claude.js` | `anthropic`, `claude` |
 | `codex` | Codex | `providers/codex.js` | `openai`, `codex`, `chatgpt` |
-| `cursor` | Cursor | `providers/cursor.js` | Environment/token files, OpenChamber-managed credentials, or explicit one-time Cursor import |
+| `cursor` | Cursor | `providers/cursor.js` | Environment/token files, Yuri-managed credentials, or explicit one-time Cursor import |
 | `google` | Google | `providers/google/index.js` | `google`, `google.oauth`, Antigravity accounts file |
 | `github-copilot` | GitHub Copilot | `providers/copilot.js` | `github-copilot`, `copilot` |
 | `github-copilot-addon` | GitHub Copilot Add-on | `providers/copilot.js` | `github-copilot`, `copilot` |
@@ -29,10 +29,10 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `zhipuai-coding-plan` | Zhipu AI Coding Plan | `providers/zhipuai-coding-plan.js` | `zhipuai-coding-plan`, `zhipuai`, `zhipu` |
 | `minimax-coding-plan` | MiniMax Coding Plan (minimax.io) | `providers/minimax-coding-plan.js` / `providers/minimax-shared.js` | `minimax-coding-plan` |
 | `minimax-cn-coding-plan` | MiniMax Coding Plan (minimaxi.com) | `providers/minimax-cn-coding-plan.js` / `providers/minimax-shared.js` | `minimax-cn-coding-plan` |
-| `ollama-cloud` | Ollama Cloud | `providers/ollama-cloud.js` | Manual cookie stored under `~/.config/openchamber/quota/` |
+| `ollama-cloud` | Ollama Cloud | `providers/ollama-cloud.js` | Manual cookie stored under `~/.config/yuri/quota/` |
 | `wafer` | Wafer.ai | `providers/wafer.js` | `wafer`, `wafer-ai`, `wafer_ai`, `wafer.ai` |
-| `opencode-go` | OpenCode Go | `providers/opencode-go.js` | Manual workspace ID and auth cookie stored under `~/.config/openchamber/quota/` |
-| `xai` | Grok | `providers/xai.js` | Grok Build CLI login state (`~/.grok/auth.json`; override via `GROK_HOME`, `GROK_AUTH_PATH`, or `OPENCHAMBER_GROK_AUTH_PATH`) |
+| `opencode-go` | OpenCode Go | `providers/opencode-go.js` | Manual workspace ID and auth cookie stored under `~/.config/yuri/quota/` |
+| `xai` | Grok | `providers/xai.js` | Grok Build CLI login state (`~/.grok/auth.json`; override via `GROK_HOME`, `GROK_AUTH_PATH`, or `YURI_GROK_AUTH_PATH`) |
 
 ## Magpie aggregate source
 
@@ -53,11 +53,11 @@ unreported previous sources instead of treating them as authoritatively removed.
 
 Usage shows connection status by default; the optional address form is collapsed under “Connect another
 Magpie” and stacks its label, input and action in narrow sidebars. No manual configuration is required
-when Magpie runs beside the OpenChamber server. This does not discover a Magpie on the phone/browser's
+when Magpie runs beside the Yuri server. This does not discover a Magpie on the phone/browser's
 machine when connected to a different server.
 
 Settings → Usage also accepts `magpieUsageUrl`, an optional explicit gateway URL. Its optional remote
-key comes from the host environment's `OPENCHAMBER_MAGPIE_API_KEY`; no key is stored in UI settings.
+key comes from the host environment's `YURI_MAGPIE_API_KEY`; no key is stored in UI settings.
 Magpie must allow quota access for remote keys. An identity/permission failure remains visible.
 
 Opening uses `/v1/magpie/quotas?kept=1`; refresh uses `/v1/magpie/quotas`. A failed refresh may fall back
@@ -91,7 +91,7 @@ logout are observed on the next request, without file fallback or persisted secr
 cache. Credential-list transport/auth/schema failure rejects the configured-provider
 list instead of returning an authoritative empty list; per-provider quota requests
 return `ok: false` with a sanitized error. VS Code uses the same credential adapter.
-OpenChamber-owned quota cookies and Grok/Antigravity-specific stores retain their
+Yuri-owned quota cookies and Grok/Antigravity-specific stores retain their
 separate explicit sources; they are not legacy OpenCode `auth.json` fallbacks.
 
 All providers should return results via shared helpers to preserve API shape:
@@ -102,7 +102,7 @@ All providers should return results via shared helpers to preserve API shape:
 Provider modules must export `providerId`, `providerName`, `aliases`, `isConfigured(auth?)`, and `fetchQuota()`.
 `fetchQuota()` should return a quota result with `usage.windows` keyed by window name (for example `5h`, `7d`, `daily`) and optional provider-specific `usage.models` data.
 
-OpenCode Go, Ollama Cloud, and Cursor credentials are explicitly managed through Settings. The server validates credentials before atomic `0600` writes and never returns secrets through its API. OpenChamber never scans browser cookie stores or automatically reads Cursor storage; Cursor import is an explicit one-time user action and never modifies Cursor's database.
+OpenCode Go, Ollama Cloud, and Cursor credentials are explicitly managed through Settings. The server validates credentials before atomic `0600` writes and never returns secrets through its API. Yuri never scans browser cookie stores or automatically reads Cursor storage; Cursor import is an explicit one-time user action and never modifies Cursor's database.
 
 ## Add a new provider (quick steps)
 1. Choose module shape based on complexity:

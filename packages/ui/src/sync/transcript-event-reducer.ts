@@ -345,7 +345,7 @@ export function applyTranscriptDirectoryEvent(
         // them from authoritative parts. The local-only marker is set at insertion
         // time and disappears when this replacement writes the server part.
         const optimisticIdx = (part.type === "text" || part.type === "file")
-          ? next.findIndex((p) => p.type === part.type && (p as { __openchamberOptimistic?: boolean }).__openchamberOptimistic === true)
+          ? next.findIndex((p) => p.type === part.type && (p as { __yuriOptimistic?: boolean }).__yuriOptimistic === true)
           : -1
         if (optimisticIdx >= 0) {
           next[optimisticIdx] = part

@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Icon } from "@/components/icon/Icon";

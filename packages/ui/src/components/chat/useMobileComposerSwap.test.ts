@@ -28,13 +28,13 @@ const setDistance = (scrollEl: HTMLElement, distance: number) => {
 };
 
 const readSwap = (scopeEl: HTMLElement) => ({
-    phase: scopeEl.dataset.ocComposerSwapPhase,
-    rest: scopeEl.dataset.ocComposerSwapRest,
+    phase: scopeEl.dataset.yuriComposerSwapPhase,
+    rest: scopeEl.dataset.yuriComposerSwapRest,
     progress: scopeEl.style.getPropertyValue(COMPOSER_SWAP_CSS_VAR),
 });
 
 const readDock = (scopeEl: HTMLElement) => ({
-    rest: scopeEl.dataset.ocNativeComposerDock,
+    rest: scopeEl.dataset.yuriNativeComposerDock,
     progress: scopeEl.style.getPropertyValue(NATIVE_COMPOSER_DOCK_CSS_VAR),
 });
 
@@ -224,9 +224,9 @@ describe('useMobileComposerSwap gesture commit', () => {
         await beginSwipe();
         await fireScroll(100);
         const compact = document.createElement('div');
-        compact.dataset.ocComposerCompactSurface = 'true';
+        compact.dataset.yuriComposerCompactSurface = 'true';
         const preview = document.createElement('div');
-        preview.className = 'oc-mobile-composer-compact-preview';
+        preview.className = 'yuri-mobile-composer-compact-preview';
         compact.append(preview);
         scopeEl.append(compact);
         const down = new Event('pointerdown', { bubbles: true, cancelable: true });

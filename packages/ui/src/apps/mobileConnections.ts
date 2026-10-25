@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 // Saved-connection storage + the shared connect/unlock flow for the dedicated
 // mobile app. Both the onboarding welcome screen and the Instances sheet drive
 // connections through `useMobileConnection` so the health-check + progressive
@@ -28,9 +29,9 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, getRuntimeKey, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { createUuid } from '@/lib/uuid';
 
-const MOBILE_CONNECTIONS_STORAGE_KEY = 'openchamber.mobile.connections.v1';
-const MOBILE_SECURE_STORAGE_PREFIX = 'openchamber.mobile.';
-const MOBILE_DEVICE_ID_STORAGE_KEY = 'openchamber.mobile.deviceId';
+const MOBILE_CONNECTIONS_STORAGE_KEY = 'yuri.mobile.connections.v1';
+const MOBILE_SECURE_STORAGE_PREFIX = 'yuri.mobile.';
+const MOBILE_DEVICE_ID_STORAGE_KEY = 'yuri.mobile.deviceId';
 
 // Stable per-install identifier for this phone, persisted in localStorage. Used
 // as the client dedupe key so every way this device authenticates to a given
@@ -1515,9 +1516,9 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       const redeemBody = JSON.stringify({
         pairingId: payload.pairingId,
         secret: payload.secret,
-        clientLabel: 'OpenChamberY Mobile',
+        clientLabel: 'Yuri Mobile',
         clientKind: 'mobile',
-        deviceName: 'OpenChamberY Mobile',
+        deviceName: 'Yuri Mobile',
         devicePlatform: mobileDevicePlatform(),
         // Re-pairing this same phone reuses its one device record instead of
         // adding a duplicate row on the server.
@@ -1601,7 +1602,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         // Same dedupe key as pairing: re-authenticating after a token expires
         // reuses this phone's existing device record instead of duplicating it.
-        body: JSON.stringify({ password, trustDevice: true, issueClientToken: true, clientLabel: 'OpenChamberY Mobile', clientKind: 'mobile', devicePlatform: mobileDevicePlatform(), dedupeKey: mobileClientDedupeKey() }),
+        body: JSON.stringify({ password, trustDevice: true, issueClientToken: true, clientLabel: 'Yuri Mobile', clientKind: 'mobile', devicePlatform: mobileDevicePlatform(), dedupeKey: mobileClientDedupeKey() }),
       };
       logConnect('password:start', { transport: chosen.kind });
       const response = chosen.kind === 'relay'

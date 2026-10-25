@@ -6,9 +6,9 @@ const toFiniteNumber = (value: unknown): number | null => (
 
 export const getSessionActivityUpdatedAt = (session: Session): number => {
   const metadata = (session as Session & {
-    metadata?: { openchamber?: { titleRefresh?: { activityUpdatedAt?: unknown } } };
+    metadata?: { yuri?: { titleRefresh?: { activityUpdatedAt?: unknown } } };
   }).metadata;
-  const activityUpdatedAt = toFiniteNumber(metadata?.openchamber?.titleRefresh?.activityUpdatedAt);
+  const activityUpdatedAt = toFiniteNumber(metadata?.yuri?.titleRefresh?.activityUpdatedAt);
   return activityUpdatedAt
     ?? toFiniteNumber(session.time?.updated)
     ?? toFiniteNumber(session.time?.created)

@@ -68,7 +68,7 @@ describe("fetchSessionTurnPage", () => {
     mock.restore()
   })
 
-  test("GET /api/openchamber/sessions/:encodedSessionID/messages with directory,before,turns — omits scanLimit by default", async () => {
+  test("GET /api/yuri/sessions/:encodedSessionID/messages with directory,before,turns — omits scanLimit by default", async () => {
     const { fetchSessionTurnPage } = await import("./session-turn-page-api")
     const signal = new AbortController().signal
 
@@ -83,7 +83,7 @@ describe("fetchSessionTurnPage", () => {
     const call = calls[0]!
     expect(call.method).toBe("GET")
     expect(call.url.pathname).toBe(
-      `/api/openchamber/sessions/${encodeURIComponent("ses/a b")}/messages`,
+      `/api/yuri/sessions/${encodeURIComponent("ses/a b")}/messages`,
     )
     expect(call.url.searchParams.get("directory")).toBe("/repo a")
     expect(call.url.searchParams.get("before")).toBe("msg_cursor")
@@ -112,7 +112,7 @@ describe("fetchSessionTurnPage", () => {
 
     expect(calls).toHaveLength(1)
     const call = calls[0]!
-    expect(call.url.pathname).toBe("/api/openchamber/sessions/ses_1/messages")
+    expect(call.url.pathname).toBe("/api/yuri/sessions/ses_1/messages")
     expect(call.url.searchParams.get("directory")).toBe("/repo")
     expect(call.url.searchParams.has("before")).toBe(false)
     // Bare fetchSessionTurnPage defaults to history/loadMore turn limit (4).

@@ -22,7 +22,7 @@ test('pins a full installer to the shared beta decision and installs only after 
   expect(updater.autoDownload).toBe(false);
   expect(updater.autoInstallOnAppQuit).toBe(false);
   await installer.check('2.1.0-beta.1', { channel: 'beta' });
-  expect(updater.setFeedURL.mock.calls[0][0]).toMatchObject({ channel: 'full', url: 'https://github.com/yee94/openchamber/releases/download/v2.1.0-beta.1/' });
+  expect(updater.setFeedURL.mock.calls[0][0]).toMatchObject({ channel: 'full', url: 'https://github.com/yee94/yuri/releases/download/v2.1.0-beta.1/' });
   expect(() => installer.install()).toThrow('No downloaded installer');
   await installer.download();
   expect(await installer.check('2.1.0-beta.1', { channel: 'beta' })).toEqual({ downloaded: true });
@@ -63,7 +63,7 @@ test.each([
 ])('writes checksum-verified %s/%s installer metadata', async (platform, arch, suffix, manifest) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'installer-feed-'));
   try {
-    const name = `OpenChamber-2.1.0-beta.1-${suffix}`;
+    const name = `Yuri-2.1.0-beta.1-${suffix}`;
     await writeFile(path.join(directory, name), 'full installer bytes');
     await writeInstallerFeed({ directory, version: '2.1.0-beta.1', platform, arch });
     const feed = JSON.parse(await readFile(path.join(directory, manifest), 'utf8'));

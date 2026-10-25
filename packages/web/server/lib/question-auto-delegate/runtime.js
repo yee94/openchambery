@@ -32,7 +32,7 @@ export function createQuestionAutoDelegateRuntime({
   /** Optional: session-index / worktree inventory directories. */
   listIndexedDirectories,
   broadcastGlobalUiEvent,
-  broadcastOpenChamberEvent,
+  broadcastYuriEvent,
   fetchImpl = fetch,
   requestTimeoutMs = REQUEST_TIMEOUT_MS,
   delayMs = QUESTION_AUTO_DELEGATE_DELAY_MS,
@@ -85,14 +85,14 @@ export function createQuestionAutoDelegateRuntime({
 
   const emitChanged = (tip) => {
     const event = {
-      type: 'openchamber:question-auto-delegate-changed',
+      type: 'yuri:question-auto-delegate-changed',
       properties: {
         epoch: tip.epoch,
         revision: tip.revision,
       },
     };
     try {
-      broadcastOpenChamberEvent?.(event);
+      broadcastYuriEvent?.(event);
     } catch {
       // ignore
     }

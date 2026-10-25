@@ -203,7 +203,7 @@ type SyncSystem = {
   directory: string
 }
 
-const SYNC_CONTEXT_GLOBAL_KEY = "__openchamber_sync_context__"
+const SYNC_CONTEXT_GLOBAL_KEY = "__yuri_sync_context__"
 type SyncGlobal = typeof globalThis & {
   [SYNC_CONTEXT_GLOBAL_KEY]?: React.Context<SyncSystem | null>
 }
@@ -753,7 +753,7 @@ const asOptionalString = (value: unknown): string | undefined => {
 }
 
 const handleUiNotificationEvent = (payload: Event, fallbackDirectory: string): boolean => {
-  if ((payload as { type?: unknown }).type !== "openchamber:notification") {
+  if ((payload as { type?: unknown }).type !== "yuri:notification") {
     return false
   }
 
@@ -973,7 +973,7 @@ const SHOULD_DISPATCH_VSCODE_NOTIFICATIONS = isVSCodeRuntime()
 
 const dispatchVSCodeRuntimeNotificationEvent = (directory: string, payload: Event) => {
   if (!SHOULD_DISPATCH_VSCODE_NOTIFICATIONS || typeof window === "undefined") return
-  window.dispatchEvent(new CustomEvent("openchamber:vscode-notification-event", {
+  window.dispatchEvent(new CustomEvent("yuri:vscode-notification-event", {
     detail: { directory, payload },
   }))
 }
@@ -2224,7 +2224,7 @@ export function handleEvent(
     return
   }
   if (configLiveRefresh.event(payload.type, rawDirectory) && payload.type !== 'server.connected') return
-  if ((payload as { type?: unknown }).type === "openchamber:worktree-bootstrap-status") {
+  if ((payload as { type?: unknown }).type === "yuri:worktree-bootstrap-status") {
     const properties = (payload as unknown as { properties?: unknown }).properties
     if (properties && typeof properties === "object" && !Array.isArray(properties)) {
       const record = properties as Record<string, unknown>
@@ -2240,12 +2240,12 @@ export function handleEvent(
     return
   }
 
-  if ((payload as { type?: unknown }).type === "openchamber:question-auto-delegate-changed") {
+  if ((payload as { type?: unknown }).type === "yuri:question-auto-delegate-changed") {
     void refreshQuestionAutoDelegate()
     return
   }
 
-  if ((payload as { type?: unknown }).type === "openchamber:permission-auto-accept.updated") {
+  if ((payload as { type?: unknown }).type === "yuri:permission-auto-accept.updated") {
     const properties = (payload as unknown as { properties?: unknown }).properties
     if (properties && typeof properties === "object") {
       const snapshot = properties as { sessions?: unknown }
@@ -2724,7 +2724,7 @@ export function handleEvent(
     case "session.updated":
     case "session.deleted":
     case "session.renamed":
-    case "openchamber:session-metadata":
+    case "yuri:session-metadata":
       draft.session = [...current.session]
       draft.session_status_observed_at = { ...current.session_status_observed_at }
       draft.permission = { ...current.permission }
@@ -2821,7 +2821,7 @@ export function handleEvent(
 
 const dispatchOpenCodeUpdateAvailable = (payload: { version: string }) => {
   if (typeof window === "undefined") return
-  window.dispatchEvent(new CustomEvent("openchamber:opencode-update-available", { detail: payload }))
+  window.dispatchEvent(new CustomEvent("yuri:opencode-update-available", { detail: payload }))
 }
 
 let bundledOpenCodeRuntimeCache: { runtimeKey: string; promise: Promise<boolean> } | null = null

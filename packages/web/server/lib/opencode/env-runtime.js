@@ -331,8 +331,8 @@ export const createOpenCodeEnvRuntime = (deps) => {
     const explicit = [
       process.env.OPENCODE_BINARY,
       process.env.OPENCODE_PATH,
-      process.env.OPENCHAMBER_OPENCODE_PATH,
-      process.env.OPENCHAMBER_OPENCODE_BIN,
+      process.env.YURI_OPENCODE_PATH,
+      process.env.YURI_OPENCODE_BIN,
     ]
       .map(stripWrappingQuotes)
       .filter(Boolean);
@@ -452,7 +452,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const resolveNodeCliPath = () => {
-    const explicit = [process.env.NODE_BINARY, process.env.OPENCHAMBER_NODE_BINARY]
+    const explicit = [process.env.NODE_BINARY, process.env.YURI_NODE_BINARY]
       .map((v) => (typeof v === 'string' ? v.trim() : ''))
       .filter(Boolean);
 
@@ -517,7 +517,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const resolveBunCliPath = () => {
-    const explicit = [process.env.BUN_BINARY, process.env.OPENCHAMBER_BUN_BINARY]
+    const explicit = [process.env.BUN_BINARY, process.env.YURI_BUN_BINARY]
       .map((v) => (typeof v === 'string' ? v.trim() : ''))
       .filter(Boolean);
 
@@ -908,7 +908,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   const createConfiguredOpencodeBinaryError = (raw, normalized) => {
     const configured = typeof raw === 'string' ? raw.trim() : '';
     const candidate = typeof normalized === 'string' && normalized.trim().length > 0 ? normalized.trim() : configured;
-    const messageSuffix = 'OpenChamber needs the standalone OpenCode v2 CLI (`opencode`). Install it and set settings.opencodeBinary to the CLI path, for example ~/.opencode/bin/opencode, or leave the setting empty to use PATH lookup.';
+    const messageSuffix = 'Yuri needs the standalone OpenCode v2 CLI (`opencode`). Install it and set settings.opencodeBinary to the CLI path, for example ~/.opencode/bin/opencode, or leave the setting empty to use PATH lookup.';
     const error = (() => {
       if (isKnownOpenCodeDesktopAppPath(candidate) || isKnownOpenCodeDesktopAppPath(configured)) {
         const platformName = process.platform === 'win32' ? 'Windows desktop app install' : 'macOS desktop app bundle';
@@ -941,7 +941,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const createConfiguredWslOpencodeError = (raw) => new Error(
-    `Configured settings.opencodeBinary uses WSL but OpenChamber could not resolve a WSL OpenCode command: ${raw}. Ensure WSL is available and opencode is installed in the configured distro.`
+    `Configured settings.opencodeBinary uses WSL but Yuri could not resolve a WSL OpenCode command: ${raw}. Ensure WSL is available and opencode is installed in the configured distro.`
   );
 
   const normalizeOpencodeBinarySetting = (raw) => {
@@ -996,7 +996,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
         if (strict) {
           throw createConfiguredWslOpencodeError(raw);
         }
-        console.warn(`Configured settings.opencodeBinary uses WSL, which is no longer supported by OpenChamber desktop: ${raw}`);
+        console.warn(`Configured settings.opencodeBinary uses WSL, which is no longer supported by Yuri desktop: ${raw}`);
         return null;
       }
 
@@ -1005,7 +1005,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
         if (strict) {
           throw createConfiguredWslOpencodeError(raw);
         }
-        console.warn(`Configured settings.opencodeBinary points to WSL, which is no longer supported by OpenChamber desktop: ${raw}`);
+        console.warn(`Configured settings.opencodeBinary points to WSL, which is no longer supported by Yuri desktop: ${raw}`);
         return null;
       }
 
@@ -1098,8 +1098,8 @@ export const createOpenCodeEnvRuntime = (deps) => {
   // Last-resort only: used after pin install fails. Never consulted by resolveOpencodeCliPath.
   const resolveBundledOpenCodeCliPath = () => {
     const dirs = [];
-    const envDir = typeof process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR === 'string'
-      ? process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR.trim()
+    const envDir = typeof process.env.YURI_BUNDLED_OPENCODE_CLI_DIR === 'string'
+      ? process.env.YURI_BUNDLED_OPENCODE_CLI_DIR.trim()
       : '';
     if (envDir) {
       dirs.push(envDir);
@@ -1165,7 +1165,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return state.resolvedGitBinary;
     }
 
-    const explicit = [process.env.GIT_BINARY, process.env.OPENCHAMBER_GIT_BINARY]
+    const explicit = [process.env.GIT_BINARY, process.env.YURI_GIT_BINARY]
       .map((value) => (typeof value === 'string' ? value.trim() : ''))
       .filter(Boolean);
     for (const candidate of explicit) {

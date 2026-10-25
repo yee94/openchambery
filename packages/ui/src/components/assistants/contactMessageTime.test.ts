@@ -24,7 +24,7 @@ describe('contact time separators', () => {
   test('hidden settle markers and processing previews do not consume a gap', () => {
     expect([...getContactTimeSeparators([
       message('first', at(18, 10, 0)),
-      message('hidden', at(18, 10, 8), { parts: [{ type: 'text', text: 'oc.settle.complete' }] }),
+      message('hidden', at(18, 10, 8), { parts: [{ type: 'text', text: 'yuri.settle.complete' }] }),
       message('processing', at(18, 10, 9), { status: 'admitted', parts: [] }),
       message('reply', at(18, 10, 10)),
     ]).keys()]).toEqual(['first', 'reply'])

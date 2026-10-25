@@ -1,6 +1,7 @@
+import '@/lib/brand-storage-bootstrap';
 export type MobileKeyboardMode = 'native' | 'resize-content';
 
-const MOBILE_KEYBOARD_MODE_STORAGE_KEY = 'openchamber.mobileKeyboardMode';
+const MOBILE_KEYBOARD_MODE_STORAGE_KEY = 'yuri.mobileKeyboardMode';
 const VIEWPORT_META_SELECTOR = 'meta[name="viewport"]';
 const VIEWPORT_CONTENT_BASE = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
 
@@ -65,7 +66,7 @@ export const applyMobileKeyboardMode = (value: unknown): MobileKeyboardMode => {
     return mode;
   }
 
-  document.documentElement.setAttribute('data-oc-mobile-keyboard-mode', mode);
+  document.documentElement.setAttribute('data-yuri-mobile-keyboard-mode', mode);
 
   const viewportMeta = document.querySelector(VIEWPORT_META_SELECTOR);
   if (viewportMeta instanceof HTMLMetaElement) {

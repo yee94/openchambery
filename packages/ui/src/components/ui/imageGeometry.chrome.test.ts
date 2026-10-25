@@ -12,14 +12,14 @@ test.skipIf(!resolveChrome())('file images fill the sheet width and fullscreen p
   const buttonClass = source.match(/className="([^"]+)"\s+onClick=\{openImagePreview\}/)![1];
   const imageClass = source.match(/alt=\{imageFilename\}\s+className="([^"]+)"/)![1];
   const overlayClass = overlay.match(/className="(fixed inset-0 [^"]+)"/)![1];
-  const sheetClass = sheet.match(/className=\{cn\('([^']*oc-mobile-window-motion [^']+)'/)![1];
+  const sheetClass = sheet.match(/className=\{cn\('([^']*yuri-mobile-window-motion [^']+)'/)![1];
   const work = mkdtempSync(join(evidenceRoot(), 'file-image-geometry-'));
   const browser = await openChromeSession({ width: 390, height: 844 });
   try {
     const css = await compileProductionCssAsync(join(here, '../..'));
     const src = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="200"/>')}`;
     const file = join(work, 'index.html');
-    writeFileSync(file, `<meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div class="${sheetClass}"><div style="margin-top:auto;height:72vh;background:white;padding:16px"><button id="file" class="${buttonClass}"><span class="oc-image-frame" data-image-state="loaded"><img class="${imageClass}" src="${src}"></span></button></div></div><div id="preview" class="${overlayClass}" style="visibility:hidden"></div>`);
+    writeFileSync(file, `<meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div class="${sheetClass}"><div style="margin-top:auto;height:72vh;background:white;padding:16px"><button id="file" class="${buttonClass}"><span class="yuri-image-frame" data-image-state="loaded"><img class="${imageClass}" src="${src}"></span></button></div></div><div id="preview" class="${overlayClass}" style="visibility:hidden"></div>`);
     const page = await openPageSession(browser, { width: 390, height: 844, standalone: false });
     await page.navigateFile(file);
     const result = await page.evaluate<{ image: number; available: number; ratio: number; top: string; height: number }>(`(async () => {
@@ -47,8 +47,8 @@ test.skipIf(!resolveChrome()).each([1500, 500, 3000])('content images stay insid
   const file = join(work, 'index.html');
   const src = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="1000"/>`)}`;
   writeFileSync(file, `<style>${css}</style><style>${theme}</style>
-    <div class="oc-markstream-host"><div class="markstream-react" style="width:269px">
-    <span class="oc-image-frame" data-image-content="mobile" data-image-state="loading"><img src="${src}"></span>
+    <div class="yuri-markstream-host"><div class="markstream-react" style="width:269px">
+    <span class="yuri-image-frame" data-image-content="mobile" data-image-state="loading"><img src="${src}"></span>
     <span data-md-image-presentation="true" data-mobile-image="true" style="display:block"><img src="${src}" data-md-image-state="loading"></span>
     <p id="next">Next message</p></div></div>`);
   const browser = await openChromeSession({ width: 390, height: 844 });
@@ -59,9 +59,9 @@ test.skipIf(!resolveChrome()).each([1500, 500, 3000])('content images stay insid
       await Promise.all([...document.images].map(i => i.decode()));
       const result = [];
       for (const phase of ['loading', 'loaded', 'error']) {
-        document.querySelector('.oc-image-frame').dataset.imageState = phase;
+        document.querySelector('.yuri-image-frame').dataset.imageState = phase;
         document.querySelector('[data-md-image-presentation] img').dataset.mdImageState = phase;
-        for (const frame of document.querySelectorAll('.oc-image-frame, [data-md-image-presentation]')) {
+        for (const frame of document.querySelectorAll('.yuri-image-frame, [data-md-image-presentation]')) {
           const f = frame.getBoundingClientRect(), i = frame.querySelector('img').getBoundingClientRect();
           result.push({ phase, width: f.width, imageWidth: i.width, frame: f.height, image: i.height, overflow: i.bottom - f.bottom, next: document.querySelector('#next').getBoundingClientRect().top });
         }
@@ -102,8 +102,8 @@ test.skipIf(!resolveChrome())('contact image bubbles have no painted backing and
     <main style="width:269px;margin:24px;--surface-muted:lightgray">
     <div id="text" class="${baseClass} px-4 py-2.5 bg-[var(--surface-muted)]">Text bubble</div>
     ${['markstream', 'legacy'].map(renderer => `<div data-assistant-contact-text data-assistant-contact-media class="${baseClass} ${mediaClass} ${mediaColor}" style="margin-top:8px">
-      <div class="markdown-content oc-markstream-host"><div class="markstream-react"><p class="paragraph-node" style="margin:0">
-      ${renderer === 'markstream' ? `<span class="oc-image-frame" data-image-content="mobile" data-image-state="loading"><img class="rounded-lg" src="${src}"></span>` : `<span data-md-image-presentation="true" data-mobile-image="true" class="relative my-4 block w-fit max-w-full"><img class="rounded-lg" src="${src}" data-md-image-state="loading"></span>`}
+      <div class="markdown-content yuri-markstream-host"><div class="markstream-react"><p class="paragraph-node" style="margin:0">
+      ${renderer === 'markstream' ? `<span class="yuri-image-frame" data-image-content="mobile" data-image-state="loading"><img class="rounded-lg" src="${src}"></span>` : `<span data-md-image-presentation="true" data-mobile-image="true" class="relative my-4 block w-fit max-w-full"><img class="rounded-lg" src="${src}" data-md-image-state="loading"></span>`}
       </p></div></div></div>`).join('')}
     <div id="next">Next message</div></main>`);
   const browser = await openChromeSession({ width: 390, height: 844 });
@@ -113,7 +113,7 @@ test.skipIf(!resolveChrome())('contact image bubbles have no painted backing and
     const result = await page.evaluate<{ before: number; after: number; samples: Array<{ background: string; radius: string; textRadius: string; ratio: number; padding: string }> }>(`(async () => {
       await Promise.all([...document.images].map(image => image.decode()));
       const before = document.querySelector('#next').getBoundingClientRect().top;
-      document.querySelector('.oc-image-frame').dataset.imageState = 'loaded';
+      document.querySelector('.yuri-image-frame').dataset.imageState = 'loaded';
       document.querySelector('[data-md-image-presentation] img').dataset.mdImageState = 'loaded';
       return { before, after: document.querySelector('#next').getBoundingClientRect().top,
         samples: [...document.querySelectorAll('[data-assistant-contact-media]')].map(bubble => {

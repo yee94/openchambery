@@ -199,7 +199,7 @@ export function isPrereleaseClientVersion(version: string | null | undefined): b
   return typeof version === "string" && version.includes("-")
 }
 
-export const TRANSCRIPT_DIAGNOSTICS_PREFERENCE_KEY = "openchamber.client-diagnostics.enabled"
+export const TRANSCRIPT_DIAGNOSTICS_PREFERENCE_KEY = "yuri.client-diagnostics.enabled"
 
 export function parseTranscriptDiagnosticsPreference(raw: string | null | undefined): boolean | null {
   if (raw === "true") return true
@@ -217,7 +217,7 @@ export function resolveTranscriptDiagnosticsEnabled(input: {
 }
 
 export function diagnosticsExportFileName(now = Date.now()): string {
-  return `openchamber-diagnostics-${new Date(now).toISOString().replace(/[:.]/g, "-")}.json`
+  return `yuri-diagnostics-${new Date(now).toISOString().replace(/[:.]/g, "-")}.json`
 }
 
 export function diagnosticsExportEventCount(content: string): number {
@@ -383,7 +383,7 @@ export function createTranscriptDiagnosticsRecorder(input: {
       const events = await input.sink.read()
       const feats = [...new Set(events.map((event) => event.feat))]
       return JSON.stringify({
-        schema: "openchamber.client-diagnostics.v1",
+        schema: "yuri.client-diagnostics.v1",
         exportedAt: Date.now(),
         eventCount: events.length,
         feats,
@@ -450,7 +450,7 @@ export function countSettledMessages(messagesByID: Readonly<Record<string, Messa
 }
 
 function isOptimisticPart(part: Part): boolean {
-  return (part as { __openchamberOptimistic?: unknown }).__openchamberOptimistic === true
+  return (part as { __yuriOptimistic?: unknown }).__yuriOptimistic === true
 }
 
 export function extractDiagnosticsUserText(parts: readonly Part[]): string | undefined {

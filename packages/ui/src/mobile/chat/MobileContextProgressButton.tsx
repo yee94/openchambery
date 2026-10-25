@@ -212,7 +212,7 @@ const SessionMetadataOverlay: React.FC<{
     <div className="fixed inset-0 z-40 pointer-events-none">
       <button
         type="button"
-        className="pointer-events-auto absolute inset-x-0 bottom-0 cursor-default top-[calc(var(--oc-safe-area-top,0px)+var(--oc-mobile-detail-navigation-height,3.5rem)+0.25rem)]"
+        className="pointer-events-auto absolute inset-x-0 bottom-0 cursor-default top-[calc(var(--yuri-safe-area-top,0px)+var(--yuri-mobile-detail-navigation-height,3.5rem)+0.25rem)]"
         aria-label={t('mobile.surface.closeAria')}
         onPointerDown={(event) => {
           event.preventDefault();
@@ -224,12 +224,12 @@ const SessionMetadataOverlay: React.FC<{
         role="dialog"
         aria-label={t('mobile.header.openMetadataAria')}
         className={cn(
-          'pointer-events-auto absolute inset-x-3 top-[calc(var(--oc-safe-area-top,0px)+var(--oc-mobile-detail-navigation-height,3.5rem)+0.5rem)] overflow-y-auto overscroll-contain rounded-[20px] oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent p-2 will-change-transform',
+          'pointer-events-auto absolute inset-x-3 top-[calc(var(--yuri-safe-area-top,0px)+var(--yuri-mobile-detail-navigation-height,3.5rem)+0.5rem)] overflow-y-auto overscroll-contain rounded-[20px] yuri-mobile-overlay-surface yuri-mobile-overlay-surface--translucent p-2 will-change-transform',
           isExiting && 'pointer-events-none',
         )}
         style={{
           animation: `${isExiting ? 'session-metadata-out' : 'session-metadata-in'} ${isExiting ? 140 : 170}ms cubic-bezier(0.32, 0.72, 0, 1) forwards`,
-          maxHeight: 'min(72dvh, calc(100dvh - var(--oc-safe-area-top, 0px) - var(--oc-mobile-detail-navigation-height, 3.5rem) - 1rem))',
+          maxHeight: 'min(72dvh, calc(100dvh - var(--yuri-safe-area-top, 0px) - var(--yuri-mobile-detail-navigation-height, 3.5rem) - 1rem))',
         }}
         onPointerDown={(event) => {
           // Keep panel interactions from hitting the outside dismiss layer.

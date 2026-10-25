@@ -83,7 +83,7 @@ export const computeMobileAutocompleteMaxHeight = (args: {
 /**
  * Resolve the upper boundary for a mobile autocomplete popup.
  *
- * Phone chat uses an overlay `.oc-mobile-detail-navigation` that floats above
+ * Phone chat uses an overlay `.yuri-mobile-detail-navigation` that floats above
  * the chat `<main>`, so `main.top` alone is under the header and lets the
  * popup cover un-tappable chrome. Prefer that header's bottom edge when
  * present; otherwise fall back to the chat main top.
@@ -100,7 +100,7 @@ export const resolveMobileAutocompleteBoundaryTop = (
     ?? chatMain.parentElement?.closest('main')
     ?? chatMain;
   const overlayHeader = screenRoot.querySelector<HTMLElement>(
-    ':scope > .oc-mobile-detail-navigation',
+    ':scope > .yuri-mobile-detail-navigation',
   );
   const headerBottom = overlayHeader?.getBoundingClientRect().bottom;
   const mainTop = chatMain.getBoundingClientRect().top;
@@ -154,14 +154,14 @@ export const useMobileAutocompleteMaxHeight = (
         };
         measure();
         window.addEventListener('resize', measure);
-        window.addEventListener('oc:keyboard-settled', measure);
-        window.addEventListener('oc:keyboard-anim', measure);
+        window.addEventListener('yuri:keyboard-settled', measure);
+        window.addEventListener('yuri:keyboard-anim', measure);
         window.visualViewport?.addEventListener('resize', measure);
         window.visualViewport?.addEventListener('scroll', measure);
         return () => {
             window.removeEventListener('resize', measure);
-            window.removeEventListener('oc:keyboard-settled', measure);
-            window.removeEventListener('oc:keyboard-anim', measure);
+            window.removeEventListener('yuri:keyboard-settled', measure);
+            window.removeEventListener('yuri:keyboard-anim', measure);
             window.visualViewport?.removeEventListener('resize', measure);
             window.visualViewport?.removeEventListener('scroll', measure);
         };
@@ -174,7 +174,7 @@ export const useMobileAutocompleteMaxHeight = (
  * Phone slash catalogs must be `position: fixed` against the layout viewport
  * (body portal). `absolute` inside the composer cannot backdrop-filter the
  * transcript on iOS — WebKit only frosts within that ancestor — and Capacitor
- * keeps `will-change: transform` on `.oc-mobile-composer`, which traps fixed
+ * keeps `will-change: transform` on `.yuri-mobile-composer`, which traps fixed
  * descendants. `probeRef` stays in the composer; its parent is the card.
  */
 export const useMobileAutocompleteFixedBox = (
@@ -238,16 +238,16 @@ export const useMobileAutocompleteFixedBox = (
         };
         measure();
         window.addEventListener('resize', measure);
-        window.addEventListener('oc:keyboard-settled', measureAfterLift);
-        window.addEventListener('oc:keyboard-anim', measureAfterLift);
+        window.addEventListener('yuri:keyboard-settled', measureAfterLift);
+        window.addEventListener('yuri:keyboard-anim', measureAfterLift);
         window.visualViewport?.addEventListener('resize', measure);
         window.visualViewport?.addEventListener('scroll', measure);
         return () => {
             if (animFrame) window.cancelAnimationFrame(animFrame);
             if (settleTimer) window.clearTimeout(settleTimer);
             window.removeEventListener('resize', measure);
-            window.removeEventListener('oc:keyboard-settled', measureAfterLift);
-            window.removeEventListener('oc:keyboard-anim', measureAfterLift);
+            window.removeEventListener('yuri:keyboard-settled', measureAfterLift);
+            window.removeEventListener('yuri:keyboard-anim', measureAfterLift);
             window.visualViewport?.removeEventListener('resize', measure);
             window.visualViewport?.removeEventListener('scroll', measure);
         };

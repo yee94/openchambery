@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 // Multi-listener event-target stub. waitForRetry and the top-level
-// onSystemResume handler both register for `openchamber:system-resume`,
+// onSystemResume handler both register for `yuri:system-resume`,
 // so a single-slot stub would silently drop one of them.
 function createEventTarget(extras = {}) {
   const listeners = new Map();
@@ -70,7 +70,7 @@ describe('createEventPipeline — system resume reconnect', () => {
     }
   });
 
-  it('reconnects immediately on openchamber:system-resume event', async () => {
+  it('reconnects immediately on yuri:system-resume event', async () => {
     const winListeners = {};
     globalThis.document = {
       visibilityState: 'visible',
@@ -152,7 +152,7 @@ describe('createEventPipeline — system resume reconnect', () => {
       // Wait for first SSE attempt to start and deliver the event, then
       // simulate OS resume by invoking the registered handler directly.
       setTimeout(() => {
-        const handler = winListeners['openchamber:system-resume'];
+        const handler = winListeners['yuri:system-resume'];
         if (handler) handler();
       }, 80);
     });
@@ -219,7 +219,7 @@ describe('createEventPipeline — system resume reconnect', () => {
       });
 
       setTimeout(() => {
-        globalThis.window.dispatch('openchamber:system-resume');
+        globalThis.window.dispatch('yuri:system-resume');
       }, 80);
     });
 
@@ -230,7 +230,7 @@ describe('createEventPipeline — system resume reconnect', () => {
   it('wakes waitForRetry when system-resume fires during the inter-attempt sleep', async () => {
     // Hidden tab, browser online: first attempt fails immediately, so the
     // loop enters waitForRetry on the hidden-cap backoff. No `online` event
-    // and no visibilitychange to visible — only `openchamber:system-resume`
+    // and no visibilitychange to visible — only `yuri:system-resume`
     // may cut the sleep short.
     globalThis.document = createEventTarget({ visibilityState: 'hidden' });
     globalThis.window = createEventTarget({
@@ -272,7 +272,7 @@ describe('createEventPipeline — system resume reconnect', () => {
           // Now inside waitForRetry on the 60s offline/hidden cap. Dispatch
           // system-resume only — it must wake the sleep on its own.
           setTimeout(() => {
-            globalThis.window.dispatch('openchamber:system-resume');
+            globalThis.window.dispatch('yuri:system-resume');
           }, 50);
         },
         onReconnect: () => {

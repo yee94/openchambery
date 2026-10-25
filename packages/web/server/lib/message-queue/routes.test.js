@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { registerMessageQueueRoutes } from './routes.js';
 
-const prefix = '/api/openchamber/message-queue';
+const prefix = '/api/yuri/message-queue';
 const registry = () => { const routes = new Map(); const app = {}; for (const method of ['get', 'post', 'patch', 'put', 'delete']) app[method] = (path, handler) => routes.set(`${method.toUpperCase()} ${path}`, handler); return { app, route: (method, path) => routes.get(`${method} ${path}`) }; };
 const response = () => ({ statusCode: 200, body: undefined, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } });
 

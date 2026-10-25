@@ -30,7 +30,7 @@ import {
   prepareLocalSyncDestination,
   probePathsForPlan,
   shellQuote,
-} from '@openchambery/web/server/lib/config-sync/index.js';
+} from '@yuri/web/server/lib/config-sync/index.js';
 
 import { createSettingsStore } from './settings-store.mjs';
 import { createDirectTargetExecutor } from './direct-config-sync.mjs';
@@ -59,7 +59,7 @@ export const buildRemoteSyncPrepareScript = (plan, options = {}) => buildRemoteS
   ...(Number.isFinite(options.generations) ? { generations: options.generations } : {}),
 });
 
-const OPENCHAMBER_NPM_PACKAGE = '@openchambery/web';
+const YURI_NPM_PACKAGE = '@yuri/web';
 // v2 CLI package installs the `opencode` binary. Never install 1.x `opencode-ai`.
 const OPENCODE_NPM_PACKAGE = '@opencode/cli';
 export const REMOTE_NODE_MIN_MAJOR = 22;
@@ -81,7 +81,7 @@ const LOCAL_HOST_ID = 'local';
 // create remote clients).
 const SSH_DESKTOP_CLIENT_KIND = 'desktop-local';
 const SSH_DESKTOP_CLIENT_DEDUPE_KEY = 'desktop-local';
-const SSH_DESKTOP_CLIENT_LABEL = 'OpenChamber Desktop SSH';
+const SSH_DESKTOP_CLIENT_LABEL = 'Yuri Desktop SSH';
 const DEFAULT_CONNECTION_TIMEOUT_SEC = 60;
 const DEFAULT_LOCAL_BIND_HOST = '127.0.0.1';
 const DEFAULT_CONTROL_PERSIST_SEC = 300;
@@ -92,30 +92,30 @@ const MAX_LOG_LINES_PER_INSTANCE = 1200;
 const MONITOR_INITIAL_POLL_MS = 2000;
 const MONITOR_STEADY_POLL_MS = 10000;
 const MONITOR_STABILIZE_TICKS = 5;
-const SSH_STATUS_EVENT = 'openchamber:ssh-instance-status';
+const SSH_STATUS_EVENT = 'yuri:ssh-instance-status';
 const WINDOWS_HIDDEN_SPAWN_OPTIONS = process.platform === 'win32' ? { windowsHide: true } : {};
 
 const nowMillis = () => Date.now();
 
-/** One-time UI password for an SSH-started remote OpenChamber. Memory-only. */
+/** One-time UI password for an SSH-started remote Yuri. Memory-only. */
 export const createEphemeralUiPassword = () => crypto.randomBytes(24).toString('base64url');
 
 export const buildManagedServeEnvPrefix = (uiPassword) => {
   const password = typeof uiPassword === 'string' ? uiPassword.trim() : '';
   if (!password) {
-    throw new Error('Managed SSH OpenChamberY requires a UI password');
+    throw new Error('Managed SSH Yuri requires a UI password');
   }
-  return `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD=${shellQuote(password)}`;
+  return `YURI_RUNTIME=ssh-remote YURI_UI_PASSWORD=${shellQuote(password)}`;
 };
 
 export const MANAGED_SSH_BOOTSTRAP_ERROR_CODES = [
   'nodeRuntimeMissing',
   'packageManagerMissing',
   'nativeBinding',
-  'openchamberCliMissing',
-  'openchamberRegistry',
-  'openchamberInstall',
-  'openchamberCliIncompatible',
+  'yuriCliMissing',
+  'yuriRegistry',
+  'yuriInstall',
+  'yuriCliIncompatible',
   'opencodeInstall',
   'serverStart',
   'sshAuth',
@@ -128,7 +128,7 @@ export const MANAGED_SSH_BOOTSTRAP_ERROR_CODES = [
 export const buildRelayHostFlag = (instance) => {
   const candidates = [
     instance?.relayUrl,
-    instance?.remoteOpenchamber?.relayUrl,
+    instance?.remoteYuri?.relayUrl,
   ];
   for (const candidate of candidates) {
     const url = typeof candidate === 'string' ? candidate.trim() : '';
@@ -146,7 +146,7 @@ export const buildRelayHostFlag = (instance) => {
 };
 
 /** Managed remotes host private relay unless the instance explicitly opts out. */
-export const instanceWantsRelayHost = (instance) => instance?.remoteOpenchamber?.relayHost !== false;
+export const instanceWantsRelayHost = (instance) => instance?.remoteYuri?.relayHost !== false;
 
 /** Managed remotes must be ssh-remote (or a leftover desktop) to host private relay. */
 export const remoteRuntimeCanHostRelay = (info) => {
@@ -154,7 +154,7 @@ export const remoteRuntimeCanHostRelay = (info) => {
   return runtime === 'ssh-remote' || runtime === 'desktop';
 };
 
-/** Public relay descriptor from `/api/openchamber/relay/status` (no private key). */
+/** Public relay descriptor from `/api/yuri/relay/status` (no private key). */
 export const parseRelayDescriptorFromStatus = (payload) => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
   if (payload.hostAllowed !== true) return null;
@@ -177,7 +177,7 @@ export const parseRelayDescriptorFromStatus = (payload) => {
 export const remoteHelpMentionsRelayHost = (raw) => /--relay-host\b/.test(String(raw || ''));
 
 /**
- * Exact remote command managed SSH uses to start OpenChamber.
+ * Exact remote command managed SSH uses to start Yuri.
  * Default instances include `--relay-host` when the remote CLI advertises it;
  * `relayHost: false` or an older CLI omits it.
  * @param {{ relayHostSupported?: boolean }} [options]
@@ -190,7 +190,7 @@ export const buildManagedServeCommand = (instance, desiredPort, uiPassword, opti
     : '';
   return [
     envPrefix,
-    'openchamber serve --hostname 127.0.0.1 --port',
+    'yuri serve --hostname 127.0.0.1 --port',
     String(desiredPort),
     relayHostFlag,
   ].filter(Boolean).join(' ');
@@ -207,21 +207,21 @@ export const classifyManagedSshBootstrapError = (raw) => {
   if (/requires Node\.js \d+|no supported Node runtime/i.test(text)) return 'nodeRuntimeMissing';
   if (/neither bun nor npm/i.test(text)) return 'packageManagerMissing';
   if (/better-sqlite3|node_gyp_bins|gyp ERR|failed to prepare better-sqlite3/i.test(text)) return 'nativeBinding';
-  if (/OpenChamber installation completed but the executable is unavailable/i.test(text)) {
-    return 'openchamberCliMissing';
+  if (/Yuri installation completed but the executable is unavailable/i.test(text)) {
+    return 'yuriCliMissing';
   }
   if (/could not reach the npm registry|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|CERT_HAS_EXPIRED|UNABLE_TO_GET_ISSUER_CERT|self-signed certificate|registry\.npmjs|npm error code E404|npm ERR! code E404|getaddrinfo/i.test(text)) {
-    return 'openchamberRegistry';
+    return 'yuriRegistry';
   }
-  if (/Failed to install OpenChamber/i.test(text)) {
-    return 'openchamberInstall';
+  if (/Failed to install Yuri/i.test(text)) {
+    return 'yuriInstall';
   }
   if (/Unknown option:\s*--relay-host|does not advertise --relay-host|does not support --relay-host/i.test(text)) {
-    return 'openchamberCliIncompatible';
+    return 'yuriCliIncompatible';
   }
-  if (/Unknown option:/i.test(text)) return 'openchamberCliIncompatible';
+  if (/Unknown option:/i.test(text)) return 'yuriCliIncompatible';
   if (/Failed to install OpenCode|OpenCode CLI/i.test(text)) return 'opencodeInstall';
-  if (/failed to become reachable|Managed OpenChamber server failed/i.test(text)) return 'serverStart';
+  if (/failed to become reachable|Managed Yuri server failed/i.test(text)) return 'serverStart';
   if (/Permission denied|Authentication failed|publickey|keyboard-interactive/i.test(text)) return 'sshAuth';
   if (/Could not resolve hostname|Connection refused|Connection timed out|ControlMaster connection timed out|SSH master process exited|Network is unreachable/i.test(text)) {
     return 'sshUnreachable';
@@ -232,14 +232,14 @@ export const classifyManagedSshBootstrapError = (raw) => {
 
 const SHORT_BOOTSTRAP_ERROR_DETAIL = {
   nodeRuntimeMissing: 'Managed SSH remote requires Node.js 22+; no supported Node runtime was found on the remote host',
-  packageManagerMissing: 'Remote host has neither bun nor npm available to install OpenChamberY',
+  packageManagerMissing: 'Remote host has neither bun nor npm available to install Yuri',
   nativeBinding: 'failed to prepare better-sqlite3 for the selected remote Node runtime',
-  openchamberCliMissing: 'OpenChamberY installation completed but the executable is unavailable',
-  openchamberRegistry: 'Failed to install OpenChamberY because the remote could not reach the npm registry',
-  openchamberInstall: 'Failed to install OpenChamberY on remote host',
-  openchamberCliIncompatible: 'Remote OpenChamberY CLI does not support --relay-host',
+  yuriCliMissing: 'Yuri installation completed but the executable is unavailable',
+  yuriRegistry: 'Failed to install Yuri because the remote could not reach the npm registry',
+  yuriInstall: 'Failed to install Yuri on remote host',
+  yuriCliIncompatible: 'Remote Yuri CLI does not support --relay-host',
   opencodeInstall: 'Failed to install OpenCode CLI on remote host',
-  serverStart: 'Managed OpenChamberY server failed to become reachable',
+  serverStart: 'Managed Yuri server failed to become reachable',
   sshAuth: 'SSH authentication failed',
   sshUnreachable: 'Could not reach the SSH host',
   timeout: 'Timed out waiting for SSH connection',
@@ -399,31 +399,31 @@ export const buildRemoteNativeBindingRepairScript = (options = {}) => {
   const reinstallSpec = packageName && version ? `${packageName}@${version}` : '';
   const quotedSpec = reinstallSpec ? shellQuote(reinstallSpec) : '';
   return `
-openchamber_bin="$(command -v openchamber)"
-if [ -z "$openchamber_bin" ]; then
-  echo "openchamber CLI is not on PATH after managed install" >&2
+yuri_bin="$(command -v yuri)"
+if [ -z "$yuri_bin" ]; then
+  echo "yuri CLI is not on PATH after managed install" >&2
   exit 1
 fi
 
-locate_openchamber() {
-  openchamber_bin="$(command -v openchamber)"
-  [ -n "$openchamber_bin" ] || return 1
-  openchamber_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$openchamber_bin")"
-  openchamber_root="$(CDPATH= cd -- "$(dirname "$openchamber_entry")/.." && pwd)"
+locate_yuri() {
+  yuri_bin="$(command -v yuri)"
+  [ -n "$yuri_bin" ] || return 1
+  yuri_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$yuri_bin")"
+  yuri_root="$(CDPATH= cd -- "$(dirname "$yuri_entry")/.." && pwd)"
 }
 
 resolve_sqlite_dir() {
-  sqlite_dir="$(cd "$openchamber_root" && node -e "try { process.stdout.write(require('path').dirname(require.resolve('better-sqlite3/package.json'))) } catch { process.exit(1) }" 2>/dev/null || true)"
+  sqlite_dir="$(cd "$yuri_root" && node -e "try { process.stdout.write(require('path').dirname(require.resolve('better-sqlite3/package.json'))) } catch { process.exit(1) }" 2>/dev/null || true)"
   if [ -z "$sqlite_dir" ] || [ ! -d "$sqlite_dir" ]; then
-    sqlite_dir="$openchamber_root/node_modules/better-sqlite3"
+    sqlite_dir="$yuri_root/node_modules/better-sqlite3"
   fi
 }
 
-locate_openchamber
+locate_yuri
 resolve_sqlite_dir
 
 probe_sqlite() {
-  (cd "$openchamber_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()") >/dev/null 2>&1
+  (cd "$yuri_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()") >/dev/null 2>&1
 }
 
 prepare_native_toolchain() {
@@ -464,7 +464,7 @@ if probe_sqlite; then exit 0; fi
 rebuild_sqlite || true
 if probe_sqlite; then exit 0; fi
 ${quotedSpec ? `npm install -g ${quotedSpec} --force || true
-locate_openchamber
+locate_yuri
 resolve_sqlite_dir
 if probe_sqlite; then exit 0; fi
 rebuild_sqlite || true
@@ -914,9 +914,9 @@ const stopControlMasterBestEffort = async (parsed, controlPath) => {
 const askpassScriptContent = () => `#!/bin/bash
 PROMPT="$1"
 
-if [[ -n "$OPENCHAMBER_SSH_ASKPASS_VALUE" ]]; then
+if [[ -n "$YURI_SSH_ASKPASS_VALUE" ]]; then
   if [[ "$PROMPT" == *"assword"* || "$PROMPT" == *"passphrase"* ]]; then
-    printf '%s\\n' "$OPENCHAMBER_SSH_ASKPASS_VALUE"
+    printf '%s\\n' "$YURI_SSH_ASKPASS_VALUE"
     exit 0
   fi
 fi
@@ -1019,11 +1019,11 @@ const waitLocalForwardReady = async (localPort) => {
     await new Promise((resolve) => setTimeout(resolve, pollMs));
     pollMs = Math.min(pollMs * 2, 2000);
   }
-  throw new Error('Timed out waiting for forwarded OpenChamberY health');
+  throw new Error('Timed out waiting for forwarded Yuri health');
 };
 
 /**
- * Parse a version token from CLI output (`openchamber --version`, `opencode2 --version`).
+ * Parse a version token from CLI output (`yuri --version`, `opencode2 --version`).
  * Accepts stable and prerelease/build semver so a matching beta is not treated as missing.
  * @param {unknown} raw
  * @returns {string | null}
@@ -1243,9 +1243,21 @@ export class ElectronSshManager {
       .sort((left, right) => left.host.localeCompare(right.host));
   }
 
+  migrateStoredInstance(instance) {
+    if (!instance || typeof instance !== 'object') return instance;
+    // Read-only compatibility for persisted pre-Yuri SSH configuration (2.x window).
+    const { remoteOpenchamber, ...current } = instance;
+    const { openchamberPassword, ...auth } = instance.auth || {};
+    return {
+      ...current,
+      remoteYuri: Object.hasOwn(current, 'remoteYuri') ? current.remoteYuri : remoteOpenchamber,
+      auth: { ...auth, ...(Object.hasOwn(auth, 'yuriPassword') ? {} : openchamberPassword ? { yuriPassword: openchamberPassword } : {}) },
+    };
+  }
+
   readInstances() {
     const root = this.readSettingsRoot();
-    return { instances: Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [] };
+    return { instances: Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances.map((instance) => this.migrateStoredInstance(instance)) : [] };
   }
 
   async setInstances(config) {
@@ -1333,6 +1345,7 @@ export class ElectronSshManager {
   }
 
   sanitizeInstance(instance) {
+    instance = this.migrateStoredInstance(instance);
     const id = typeof instance?.id === 'string' ? instance.id.trim() : '';
     const sshCommand = typeof instance?.sshCommand === 'string' ? instance.sshCommand.trim() : '';
     if (!id || id === LOCAL_HOST_ID) {
@@ -1359,15 +1372,15 @@ export class ElectronSshManager {
       connectionTimeoutSec: Number.isFinite(instance?.connectionTimeoutSec) && Number(instance.connectionTimeoutSec) > 0
         ? Number(instance.connectionTimeoutSec)
         : DEFAULT_CONNECTION_TIMEOUT_SEC,
-      remoteOpenchamber: {
-        mode: instance?.remoteOpenchamber?.mode === 'external' ? 'external' : 'managed',
-        keepRunning: instance?.remoteOpenchamber?.keepRunning !== false,
-        relayHost: instance?.remoteOpenchamber?.relayHost !== false,
-        ...(Number.isFinite(instance?.remoteOpenchamber?.preferredPort) ? { preferredPort: Number(instance.remoteOpenchamber.preferredPort) } : {}),
-        installMethod: ['npm', 'bun', 'download_release', 'upload_bundle'].includes(instance?.remoteOpenchamber?.installMethod)
-          ? instance.remoteOpenchamber.installMethod
+      remoteYuri: {
+        mode: instance?.remoteYuri?.mode === 'external' ? 'external' : 'managed',
+        keepRunning: instance?.remoteYuri?.keepRunning !== false,
+        relayHost: instance?.remoteYuri?.relayHost !== false,
+        ...(Number.isFinite(instance?.remoteYuri?.preferredPort) ? { preferredPort: Number(instance.remoteYuri.preferredPort) } : {}),
+        installMethod: ['npm', 'bun', 'download_release', 'upload_bundle'].includes(instance?.remoteYuri?.installMethod)
+          ? instance.remoteYuri.installMethod
           : 'bun',
-        uploadBundleOverSsh: Boolean(instance?.remoteOpenchamber?.uploadBundleOverSsh),
+        uploadBundleOverSsh: Boolean(instance?.remoteYuri?.uploadBundleOverSsh),
       },
       localForward: {
         bindHost: sanitizeBindHost(instance?.localForward?.bindHost),
@@ -1375,7 +1388,7 @@ export class ElectronSshManager {
       },
       auth: {
         ...(this.sanitizeStoredSecret(instance?.auth?.sshPassword) ? { sshPassword: this.sanitizeStoredSecret(instance.auth.sshPassword) } : {}),
-        ...(this.sanitizeStoredSecret(instance?.auth?.openchamberPassword) ? { openchamberPassword: this.sanitizeStoredSecret(instance.auth.openchamberPassword) } : {}),
+        ...(this.sanitizeStoredSecret(instance?.auth?.yuriPassword) ? { yuriPassword: this.sanitizeStoredSecret(instance.auth.yuriPassword) } : {}),
       },
       portForwards,
       // Optional LAN bind (0.0.0.0) for direct LAN access to the remote instance.
@@ -1423,7 +1436,7 @@ export class ElectronSshManager {
     const token = typeof clientToken === 'string' ? clientToken.trim() : '';
     if (!token) return null;
     try {
-      const response = await fetch(new URL('/api/openchamber/relay/status', `${localUrl}/`).toString(), {
+      const response = await fetch(new URL('/api/yuri/relay/status', `${localUrl}/`).toString(), {
         method: 'GET',
         signal: AbortSignal.timeout(8_000),
         headers: {
@@ -1439,10 +1452,10 @@ export class ElectronSshManager {
     }
   }
 
-  async issueClientToken(localUrl, openchamberPassword) {
-    const password = typeof openchamberPassword === 'string' ? openchamberPassword.trim() : '';
+  async issueClientToken(localUrl, yuriPassword) {
+    const password = typeof yuriPassword === 'string' ? yuriPassword.trim() : '';
     if (!password) {
-      throw new Error('OpenChamberY UI password is required to mint a client token');
+      throw new Error('Yuri UI password is required to mint a client token');
     }
 
     const loginResponse = await fetch(new URL('/auth/session', `${localUrl}/`).toString(), {
@@ -1462,7 +1475,7 @@ export class ElectronSshManager {
       }),
     });
     if (!loginResponse.ok) {
-      throw new Error(`OpenChamberY UI password was rejected by forwarded server (status ${loginResponse.status})`);
+      throw new Error(`Yuri UI password was rejected by forwarded server (status ${loginResponse.status})`);
     }
 
     const payload = await loginResponse.json().catch(() => null);
@@ -1471,11 +1484,11 @@ export class ElectronSshManager {
 
     const cookie = this.extractCookieHeader(loginResponse);
     if (!cookie) {
-      throw new Error('Forwarded OpenChamberY did not issue an SSH host token');
+      throw new Error('Forwarded Yuri did not issue an SSH host token');
     }
     const minted = await this.createClientToken(localUrl, { Cookie: cookie });
     if (!minted) {
-      throw new Error('Forwarded OpenChamberY did not issue an SSH host token');
+      throw new Error('Forwarded Yuri did not issue an SSH host token');
     }
     return minted;
   }
@@ -1505,7 +1518,7 @@ export class ElectronSshManager {
     if (ephemeral) return ephemeral;
     const remembered = this.ephemeralUiPasswords.get(instance?.id || session?.instance?.id);
     if (typeof remembered === 'string' && remembered.trim()) return remembered.trim();
-    return this.configuredOpenChamberPassword(instance || session?.instance);
+    return this.configuredYuriPassword(instance || session?.instance);
   }
 
   /**
@@ -1546,7 +1559,7 @@ export class ElectronSshManager {
 
   async persistLocalPort(instanceId, localPort) {
     await this.mutateSettingsRoot((root) => {
-      const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
+      const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances.map((instance) => this.migrateStoredInstance(instance)) : [];
       for (const instance of instances) {
         if (instance?.id !== instanceId) continue;
         instance.localForward = instance.localForward && typeof instance.localForward === 'object' ? instance.localForward : {};
@@ -1563,7 +1576,7 @@ export class ElectronSshManager {
    */
   async persistLanForward(instanceId, { enabled, localPort } = {}) {
     await this.mutateSettingsRoot((root) => {
-      const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
+      const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances.map((instance) => this.migrateStoredInstance(instance)) : [];
       for (const instance of instances) {
         if (instance?.id !== instanceId) continue;
         const previous = instance.lanForward && typeof instance.lanForward === 'object' ? instance.lanForward : {};
@@ -1624,13 +1637,13 @@ export class ElectronSshManager {
         SSH_ASKPASS_REQUIRE: 'force',
         SSH_ASKPASS: askpassPath,
         DISPLAY: '1',
-        ...(sshPassword ? { OPENCHAMBER_SSH_ASKPASS_VALUE: sshPassword.trim() } : {}),
+        ...(sshPassword ? { YURI_SSH_ASKPASS_VALUE: sshPassword.trim() } : {}),
       },
     });
     // Capture stderr while waiting for ControlMaster so early exits surface
     // ssh's own diagnostic (e.g. DNS failure) instead of a bare exit message.
     const stderrTail = attachProcessStderrTail(child);
-    child.__openchamberStderrTail = stderrTail;
+    child.__yuriStderrTail = stderrTail;
     return child;
   }
 
@@ -1638,7 +1651,7 @@ export class ElectronSshManager {
     const deadline = Date.now() + (timeoutSec * 1000);
     let pollMs = 250;
     const readStderrTail = () => {
-      const getter = master?.__openchamberStderrTail?.getTail;
+      const getter = master?.__yuriStderrTail?.getTail;
       return typeof getter === 'function' ? getter() : '';
     };
     while (Date.now() < deadline) {
@@ -1659,8 +1672,8 @@ export class ElectronSshManager {
     throw new Error('SSH ControlMaster connection timed out');
   }
 
-  configuredOpenChamberPassword(instance) {
-    const secret = instance?.auth?.openchamberPassword;
+  configuredYuriPassword(instance) {
+    const secret = instance?.auth?.yuriPassword;
     return secret?.enabled && typeof secret.value === 'string' && secret.value.trim() ? secret.value.trim() : null;
   }
 
@@ -1673,9 +1686,9 @@ export class ElectronSshManager {
     }
   }
 
-  async currentRemoteOpenChamberVersion(parsed, controlPath) {
+  async currentRemoteYuriVersion(parsed, controlPath) {
     try {
-      const output = await this.runManagedRemoteCommand(parsed, controlPath, 'openchamber --version 2>/dev/null || true');
+      const output = await this.runManagedRemoteCommand(parsed, controlPath, 'yuri --version 2>/dev/null || true');
       return parseVersionToken(output);
     } catch {
       return null;
@@ -1761,14 +1774,14 @@ if (kind === 'zsh') {
 } else {
   throw new Error('OpenCode CLI: unsupported login shell ' + kind);
 }
-const envFile = path.join(home, '.config', 'openchamber', kind === 'fish' ? 'ssh-path.fish' : 'ssh-path.sh');
+const envFile = path.join(home, '.config', 'yuri', kind === 'fish' ? 'ssh-path.fish' : 'ssh-path.sh');
 fs.mkdirSync(path.dirname(envFile), { recursive: true });
 const content = kind === 'fish'
   ? 'set -gx PATH ' + directories.map(quote).join(' ') + ' $PATH\n'
   : 'export PATH=' + quote(directories.join(':')) + ':"$PATH"\n';
 fs.writeFileSync(envFile + '.tmp', content, { mode: 0o600 });
 fs.renameSync(envFile + '.tmp', envFile);
-const line = (kind === 'fish' ? 'source ' : '. ') + quote(envFile) + ' # OpenChamber SSH CLI PATH';
+const line = (kind === 'fish' ? 'source ' : '. ') + quote(envFile) + ' # Yuri SSH CLI PATH';
 for (const file of files) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
@@ -1785,15 +1798,15 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
 }
 `;
     await this.runManagedRemoteCommand(parsed, controlPath,
-      `node -e ${shellQuote(script)} "$(command -v opencode)" "$(command -v openchamber)"`);
+      `node -e ${shellQuote(script)} "$(command -v opencode)" "$(command -v yuri)"`);
   }
 
-  async ensureRemoteOpenChamberNativeBinding(parsed, controlPath) {
+  async ensureRemoteYuriNativeBinding(parsed, controlPath) {
     await this.runManagedRemoteCommand(
       parsed,
       controlPath,
       buildRemoteNativeBindingRepairScript({
-        packageName: OPENCHAMBER_NPM_PACKAGE,
+        packageName: YURI_NPM_PACKAGE,
         version: this.appVersion,
       }),
     );
@@ -1814,22 +1827,22 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     }
   }
 
-  async installOpenChamberManaged(parsed, controlPath, version, preferred) {
+  async installYuriManaged(parsed, controlPath, version, preferred) {
     const hasBun = await this.remoteCommandExists(parsed, controlPath, 'bun');
     const hasNpm = await this.remoteCommandExists(parsed, controlPath, 'npm');
     // npm refuses to overwrite an existing global bin (EEXIST) when a previous
     // install left the bin file behind; --force makes the reinstall idempotent.
-    const npmInstall = `npm install -g ${OPENCHAMBER_NPM_PACKAGE}@${version} --force`;
+    const npmInstall = `npm install -g ${YURI_NPM_PACKAGE}@${version} --force`;
     const commands = [];
 
     if (preferred === 'bun') {
-      if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasBun) commands.push(`bun add -g ${YURI_NPM_PACKAGE}@${version}`);
       if (hasNpm) commands.push(npmInstall);
     } else if (preferred === 'npm') {
       if (hasNpm) commands.push(npmInstall);
-      if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasBun) commands.push(`bun add -g ${YURI_NPM_PACKAGE}@${version}`);
     } else {
-      if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasBun) commands.push(`bun add -g ${YURI_NPM_PACKAGE}@${version}`);
       if (hasNpm) commands.push(npmInstall);
     }
 
@@ -1841,18 +1854,18 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     for (const command of commands) {
       try {
         await this.runManagedRemoteCommand(parsed, controlPath, command);
-        if (await this.currentRemoteOpenChamberVersion(parsed, controlPath)) return;
-        lastError = new Error('OpenChamberY installation completed but the executable is unavailable');
+        if (await this.currentRemoteYuriVersion(parsed, controlPath)) return;
+        lastError = new Error('Yuri installation completed but the executable is unavailable');
       } catch (error) {
         lastError = error;
       }
     }
-    throw lastError || new Error('Failed to install OpenChamberY on remote host');
+    throw lastError || new Error('Failed to install Yuri on remote host');
   }
 
-  async probeRemoteSystemInfo(parsed, controlPath, port, openchamberPassword) {
-    const authPayload = openchamberPassword ? JSON.stringify({ password: openchamberPassword }) : '{}';
-    const authEnabled = openchamberPassword ? '1' : '0';
+  async probeRemoteSystemInfo(parsed, controlPath, port, yuriPassword) {
+    const authPayload = yuriPassword ? JSON.stringify({ password: yuriPassword }) : '{}';
+    const authEnabled = yuriPassword ? '1' : '0';
     const script = `AUTH_STATUS=0; INFO_STATUS=0; HEALTH_STATUS=0; BODY_FILE="$(mktemp)"; COOKIE_FILE="$(mktemp)"; cleanup(){ rm -f "$BODY_FILE" "$COOKIE_FILE"; }; trap cleanup EXIT; if command -v curl >/dev/null 2>&1; then if [ "${authEnabled}" = "1" ]; then AUTH_STATUS="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' -c "$COOKIE_FILE" -H 'content-type: application/json' --data ${shellQuote(authPayload)} http://127.0.0.1:${port}/auth/session || true)"; if [ "$AUTH_STATUS" = "200" ]; then INFO_STATUS="$(curl -sS --max-time 3 -b "$COOKIE_FILE" -o "$BODY_FILE" -w '%{http_code}' http://127.0.0.1:${port}/api/system/info || true)"; else INFO_STATUS="$(curl -sS --max-time 3 -o "$BODY_FILE" -w '%{http_code}' http://127.0.0.1:${port}/api/system/info || true)"; fi; else INFO_STATUS="$(curl -sS --max-time 3 -o "$BODY_FILE" -w '%{http_code}' http://127.0.0.1:${port}/api/system/info || true)"; fi; HEALTH_STATUS="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/health || true)"; elif command -v wget >/dev/null 2>&1; then wget -qO "$BODY_FILE" http://127.0.0.1:${port}/api/system/info >/dev/null 2>&1; if [ $? -eq 0 ]; then INFO_STATUS=200; fi; wget -qO- http://127.0.0.1:${port}/health >/dev/null 2>&1; if [ $? -eq 0 ]; then HEALTH_STATUS=200; fi; else exit 127; fi; printf 'INFO_STATUS=%s\\nAUTH_STATUS=%s\\nHEALTH_STATUS=%s\\n' "$INFO_STATUS" "$AUTH_STATUS" "$HEALTH_STATUS"; cat "$BODY_FILE" 2>/dev/null || true`;
     const output = await runRemoteCommand(parsed, controlPath, script);
     const lines = output.split(/\r?\n/);
@@ -1863,16 +1876,16 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
 
     if (isLivenessHttpStatus(infoStatus)) {
       if (isAuthHttpStatus(infoStatus)) {
-        if (openchamberPassword && authStatus !== 200) {
-          throw new Error(`Remote OpenChamberY requires UI authentication and configured password was rejected (auth status ${authStatus})`);
+        if (yuriPassword && authStatus !== 200) {
+          throw new Error(`Remote Yuri requires UI authentication and configured password was rejected (auth status ${authStatus})`);
         }
         if (isLivenessHttpStatus(healthStatus)) return {};
-        throw new Error('Remote OpenChamberY requires UI authentication on /api/system/info; configure OpenChamberY UI password');
+        throw new Error('Remote Yuri requires UI authentication on /api/system/info; configure Yuri UI password');
       }
     } else if (isLivenessHttpStatus(healthStatus)) {
       return {};
     } else {
-      throw new Error(`Remote OpenChamberY probe failed (info status ${infoStatus}, health status ${healthStatus})`);
+      throw new Error(`Remote Yuri probe failed (info status ${infoStatus}, health status ${healthStatus})`);
     }
 
     try {
@@ -1882,9 +1895,9 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     }
   }
 
-  async remoteServerRunning(parsed, controlPath, port, openchamberPassword) {
+  async remoteServerRunning(parsed, controlPath, port, yuriPassword) {
     try {
-      await this.probeRemoteSystemInfo(parsed, controlPath, port, openchamberPassword);
+      await this.probeRemoteSystemInfo(parsed, controlPath, port, yuriPassword);
       return true;
     } catch {
       return false;
@@ -1892,16 +1905,16 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
   }
 
   async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
-    const uiPassword = this.configuredOpenChamberPassword(instance) || createEphemeralUiPassword();
+    const uiPassword = this.configuredYuriPassword(instance) || createEphemeralUiPassword();
     let relayHostSupported = true;
     if (instanceWantsRelayHost(instance)) {
-      const help = await this.runManagedRemoteCommand(parsed, controlPath, 'openchamber serve --help 2>&1 || true');
+      const help = await this.runManagedRemoteCommand(parsed, controlPath, 'yuri serve --help 2>&1 || true');
       relayHostSupported = remoteHelpMentionsRelayHost(help);
       if (!relayHostSupported) {
         this.appendLogWithLevel(
           instance.id,
           'WARN',
-          'Remote OpenChamberY CLI does not advertise --relay-host; starting without a private relay host',
+          'Remote Yuri CLI does not advertise --relay-host; starting without a private relay host',
         );
       }
     }
@@ -2034,7 +2047,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
    * putTar currently buffers the whole archive (SSH stdin); the payload type
    * still accepts AsyncIterable/Readable for a later streaming relay path.
    * @param {{ parsed: object, controlPath: string, instance?: object }} session
-   * @returns {import('@openchambery/web/server/lib/config-sync/contract.js').TargetExecutor}
+   * @returns {import('@yuri/web/server/lib/config-sync/contract.js').TargetExecutor}
    */
   createSshTargetExecutor(session) {
     let magpieWarnings;
@@ -2468,34 +2481,34 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
   }
 
   async ensureRemoteServer(instance, parsed, controlPath) {
-    if (instance.remoteOpenchamber.mode === 'external') {
-      if (!instance.remoteOpenchamber.preferredPort) {
-        throw new Error('External mode requires a preferred remote OpenChamberY port');
+    if (instance.remoteYuri.mode === 'external') {
+      if (!instance.remoteYuri.preferredPort) {
+        throw new Error('External mode requires a preferred remote Yuri port');
       }
-      const port = instance.remoteOpenchamber.preferredPort;
-      const uiPassword = this.configuredOpenChamberPassword(instance);
-      this.setStatus(instance.id, 'server_detecting', 'Probing external OpenChamberY server', null, null, port, false, 0, false);
+      const port = instance.remoteYuri.preferredPort;
+      const uiPassword = this.configuredYuriPassword(instance);
+      this.setStatus(instance.id, 'server_detecting', 'Probing external Yuri server', null, null, port, false, 0, false);
       await this.probeRemoteSystemInfo(parsed, controlPath, port, uiPassword);
       return { remotePort: port, startedByUs: false, uiPassword };
     }
 
-    this.setStatus(instance.id, 'remote_probe', 'Checking remote OpenChamberY installation');
+    this.setStatus(instance.id, 'remote_probe', 'Checking remote Yuri installation');
     await this.ensureManagedNodeRuntime(parsed, controlPath);
-    const installedVersion = await this.currentRemoteOpenChamberVersion(parsed, controlPath);
+    const installedVersion = await this.currentRemoteYuriVersion(parsed, controlPath);
     if (!installedVersion) {
-      this.setStatus(instance.id, 'installing', 'Installing OpenChamberY on remote host');
-      await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
+      this.setStatus(instance.id, 'installing', 'Installing Yuri on remote host');
+      await this.installYuriManaged(parsed, controlPath, this.appVersion, instance.remoteYuri.installMethod);
     } else if (installedVersion !== this.appVersion) {
-      this.setStatus(instance.id, 'updating', `Updating remote OpenChamberY from ${installedVersion} to ${this.appVersion}`);
-      await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
+      this.setStatus(instance.id, 'updating', `Updating remote Yuri from ${installedVersion} to ${this.appVersion}`);
+      await this.installYuriManaged(parsed, controlPath, this.appVersion, instance.remoteYuri.installMethod);
     }
-    await this.ensureRemoteOpenChamberNativeBinding(parsed, controlPath);
-    await this.ensureRemoteOpenCodeCli(parsed, controlPath, instance.remoteOpenchamber.installMethod);
+    await this.ensureRemoteYuriNativeBinding(parsed, controlPath);
+    await this.ensureRemoteOpenCodeCli(parsed, controlPath, instance.remoteYuri.installMethod);
 
-    this.setStatus(instance.id, 'server_detecting', 'Detecting managed OpenChamberY server');
-    let remotePort = instance.remoteOpenchamber.preferredPort || null;
+    this.setStatus(instance.id, 'server_detecting', 'Detecting managed Yuri server');
+    let remotePort = instance.remoteYuri.preferredPort || null;
     let startedByUs = false;
-    let uiPassword = this.configuredOpenChamberPassword(instance)
+    let uiPassword = this.configuredYuriPassword(instance)
       || this.ephemeralUiPasswords.get(instance.id)
       || null;
     let runningInfo = null;
@@ -2509,7 +2522,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     }
     // Default relay-host SSH remotes cannot reuse a leftover `web` serve.
     if (remotePort && instanceWantsRelayHost(instance) && !remoteRuntimeCanHostRelay(runningInfo)) {
-      this.setStatus(instance.id, 'server_starting', 'Restarting remote OpenChamberY as a relay host');
+      this.setStatus(instance.id, 'server_starting', 'Restarting remote Yuri as a relay host');
       await this.stopRemoteServerBestEffort(parsed, controlPath, remotePort);
       const deadline = Date.now() + 8_000;
       while (Date.now() < deadline) {
@@ -2519,8 +2532,8 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
       remotePort = null;
     }
     if (!remotePort) {
-      this.setStatus(instance.id, 'server_starting', 'Starting managed OpenChamberY server');
-      const desiredPort = instance.remoteOpenchamber.preferredPort || randomPortCandidate(instance.id);
+      this.setStatus(instance.id, 'server_starting', 'Starting managed Yuri server');
+      const desiredPort = instance.remoteYuri.preferredPort || randomPortCandidate(instance.id);
       const started = await this.startRemoteServerManaged(parsed, controlPath, instance, desiredPort);
       remotePort = started.port;
       uiPassword = started.uiPassword;
@@ -2528,7 +2541,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
       this.ephemeralUiPasswords.set(instance.id, uiPassword);
     }
     if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) {
-      throw new Error('Managed OpenChamberY server failed to become reachable');
+      throw new Error('Managed Yuri server failed to become reachable');
     }
     return { remotePort, startedByUs, uiPassword };
   }
@@ -2544,15 +2557,15 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     this.sessions.delete(id);
     const keepRemoteRunning = Boolean(
       session?.startedByUs
-      && session?.instance?.remoteOpenchamber?.mode === 'managed'
-      && session.instance.remoteOpenchamber.keepRunning,
+      && session?.instance?.remoteYuri?.mode === 'managed'
+      && session.instance.remoteYuri.keepRunning,
     );
     if (!keepRemoteRunning) {
       this.ephemeralUiPasswords.delete(id);
     }
 
     if (session) {
-      if (session.startedByUs && session.instance.remoteOpenchamber.mode === 'managed' && !session.instance.remoteOpenchamber.keepRunning) {
+      if (session.startedByUs && session.instance.remoteYuri.mode === 'managed' && !session.instance.remoteYuri.keepRunning) {
         await this.stopRemoteServerBestEffort(session.parsed, session.controlPath, session.remotePort);
       }
       await stopControlMasterBestEffort(session.parsed, session.controlPath);
@@ -2648,7 +2661,7 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     const localUrl = `http://127.0.0.1:${localPort}`;
     const label = instance.nickname?.trim() || parsed.destination || id;
     if (!uiPassword) {
-      throw new Error('OpenChamberY UI password is required to mint a client token');
+      throw new Error('Yuri UI password is required to mint a client token');
     }
     const clientToken = await this.issueClientToken(localUrl, uiPassword);
     const relay = instanceWantsRelayHost(instance)

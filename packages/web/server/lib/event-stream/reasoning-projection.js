@@ -1,8 +1,8 @@
 /**
- * OpenChamber outbound reasoning projection.
+ * Yuri outbound reasoning projection.
  *
  * `includeReasoning=false` (strict string only) strips reasoning from Host→client
- * HTTP/SSE/WS payloads. Missing/other values keep current behavior. OpenChamber
+ * HTTP/SSE/WS payloads. Missing/other values keep current behavior. Yuri
  * projection only — never forward the param to OpenCode. Hub/upstream stay full.
  *
  * Shared by HTTP snapshots and stateful stream filters:
@@ -50,20 +50,20 @@ export function readIncludeReasoningQuery(query) {
 export function readIncludeReasoningFromUrl(rawUrl) {
   if (typeof rawUrl !== 'string' || !rawUrl.includes('includeReasoning=')) return true;
   try {
-    return shouldIncludeReasoning(new URL(rawUrl, 'http://openchamber.local').searchParams.get('includeReasoning'));
+    return shouldIncludeReasoning(new URL(rawUrl, 'http://yuri.local').searchParams.get('includeReasoning'));
   } catch {
     return true;
   }
 }
 
 /**
- * Strip OpenChamber-only `includeReasoning` before OpenCode upstream.
+ * Strip Yuri-only `includeReasoning` before OpenCode upstream.
  * @param {string} requestUrl
  */
 export function stripIncludeReasoningParam(requestUrl) {
   if (typeof requestUrl !== 'string' || !requestUrl.includes('includeReasoning=')) return requestUrl;
   try {
-    const url = new URL(requestUrl, 'http://openchamber.local');
+    const url = new URL(requestUrl, 'http://yuri.local');
     if (!url.searchParams.has('includeReasoning')) return requestUrl;
     url.searchParams.delete('includeReasoning');
     const search = url.searchParams.toString();

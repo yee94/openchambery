@@ -11,26 +11,26 @@ describe('shouldSkipVSCodeNotificationSession', () => {
   test('allows ordinary root sessions', () => {
     expect(shouldSkipVSCodeNotificationSession({ parentID: null, metadata: {} })).toBe(false);
     expect(shouldSkipVSCodeNotificationSession({
-      metadata: { openchamber: { kind: 'review' } as never },
+      metadata: { yuri: { kind: 'review' } as never },
     })).toBe(false);
   });
 
   test('skips small-model, scheduled-task, and non-contact assistant sessions', () => {
     expect(shouldSkipVSCodeNotificationSession({
-      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+      metadata: { yuri: { smallModel: { purpose: 'session-title' } } },
     })).toBe(true);
     expect(shouldSkipVSCodeNotificationSession({
-      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+      metadata: { yuri: { scheduledTask: { taskID: 'task_1' } } },
     })).toBe(true);
     expect(shouldSkipVSCodeNotificationSession({
-      metadata: { openchamber: { assistant: { assistantID: 'assistant_1' } } },
+      metadata: { yuri: { assistant: { assistantID: 'assistant_1' } } },
     })).toBe(true);
   });
 
   test('keeps contact-assigned workers eligible', () => {
     expect(shouldSkipVSCodeNotificationSession({
       metadata: {
-        openchamber: {
+        yuri: {
           assistant: { assistantID: 'assistant_1' },
           assigned: { from: 'contact' },
         },
@@ -40,16 +40,16 @@ describe('shouldSkipVSCodeNotificationSession', () => {
 
   test('skips LLM gateway throwaway sessions with non-empty llm.purpose', () => {
     expect(shouldSkipVSCodeNotificationSession({
-      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+      metadata: { yuri: { llm: { purpose: 'chat-completions' } } },
     })).toBe(true);
   });
 
   test('does not treat empty smallModel/llm purpose as system sessions', () => {
     expect(shouldSkipVSCodeNotificationSession({
-      metadata: { openchamber: { smallModel: { purpose: '' } } },
+      metadata: { yuri: { smallModel: { purpose: '' } } },
     })).toBe(false);
     expect(shouldSkipVSCodeNotificationSession({
-      metadata: { openchamber: { llm: { purpose: '' } } },
+      metadata: { yuri: { llm: { purpose: '' } } },
     })).toBe(false);
   });
 });

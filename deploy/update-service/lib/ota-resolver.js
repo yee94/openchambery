@@ -23,6 +23,7 @@ export function rolloutBucket(deviceId, rolloutSalt) {
 
 function publicBundle(activeBundle) {
   const bundle = {
+    applicationId: activeBundle.applicationId,
     bundleId: activeBundle.bundleId,
     releaseVersion: activeBundle.releaseVersion,
     url: activeBundle.url,
@@ -38,6 +39,7 @@ function publicBundle(activeBundle) {
     bundle.sessionKey = activeBundle.sessionKey;
   }
   if (activeBundle.minShellReleaseVersion) bundle.minShellReleaseVersion = activeBundle.minShellReleaseVersion;
+  if (activeBundle.shellFingerprint) bundle.shellFingerprint = activeBundle.shellFingerprint;
   return bundle;
 }
 
@@ -151,6 +153,16 @@ function nativeAvailableIfNewer(nativeTarget, nativeBuild) {
  * `manifest` may be null when the channel file is missing (channel not using OTA yet).
  */
 export function resolveMobileUpdate(manifest, request) {
+  const applicationId = request.platform === 'desktop' ? 'dev.yuri.desktop' : 'com.yee94.yuri';
+  if (request.applicationId !== applicationId || !Number.isInteger(request.shellApiVersion) || request.shellApiVersion < 2) {
+    return {
+      status: 'ok',
+      primaryAction: 'install_native_required',
+      ota: { state: 'incompatible' },
+      native: { state: 'required' },
+      nextCheckInSec: DEFAULT_NEXT_CHECK_IN_SEC,
+    };
+  }
   const major = request.releaseMajor
     ?? parseReleaseVersion(request.currentBundleId)?.major
     ?? parseReleaseVersion(request.nativeVersion)?.major;
@@ -160,7 +172,11 @@ export function resolveMobileUpdate(manifest, request) {
     if (!desktop) manifest = { ...manifest, activeBundle: null };
     else {
       const { sessionKey, ...shared } = manifest.activeBundle;
-      manifest = { ...manifest, activeBundle: { ...shared, ...desktop, minShellApiVersion: 1 } };
+      manifest = { ...manifest, activeBundle: {
+        ...shared, ...desktop,
+        applicationId: desktop.applicationId,
+        minShellApiVersion: desktop.minShellApiVersion,
+      } };
     }
   }
   const nextCheckInSec = DEFAULT_NEXT_CHECK_IN_SEC;
@@ -179,6 +195,16 @@ export function resolveMobileUpdate(manifest, request) {
   }
 
   const activeBundle = manifest.activeBundle;
+  if (activeBundle.applicationId !== applicationId
+    || !Number.isInteger(activeBundle.minShellApiVersion) || activeBundle.minShellApiVersion < 2) {
+    return {
+      status: 'ok',
+      primaryAction: 'install_native_required',
+      ota: { state: 'incompatible' },
+      native: { state: 'required' },
+      nextCheckInSec,
+    };
+  }
   const gateIdentity = resolveShellGateIdentity(request);
 
   // 2. Shell / native too old for this bundle.

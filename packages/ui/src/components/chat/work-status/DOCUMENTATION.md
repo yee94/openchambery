@@ -56,7 +56,7 @@ only own labels; no extra message fetch is needed.
 Changes uses a vertical plus/minus glyph and opens the Git sidebar. The branch
 and worktree copy buttons, and the changes row, use the hand cursor. The
 desktop shell otherwise draws an arrow on buttons; these controls keep the
-hand through `.oc-work-status-action`. Project, branch, and worktree text stay
+hand through `.yuri-work-status-action`. Project, branch, and worktree text stay
 the arrow. Branch and worktree rows each reveal a copy button on hover or keyboard focus,
 immediately after the name. Branch copies the branch name; worktree copies the
 full worktree path. Both use the shared clipboard helper and briefly show a

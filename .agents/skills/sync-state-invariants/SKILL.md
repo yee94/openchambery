@@ -62,8 +62,8 @@ For streaming-frequency work, also load `performance-engineering`.
 
 ## Polling And Bootstrap
 
-- Cross-runtime sync invalidation uses OpenChamber SSE revision tips
-  (`openchamber:*-changed`) plus authoritative GET snapshots. Observers must
+- Cross-runtime sync invalidation uses Yuri SSE revision tips
+  (`yuri:*-changed`) plus authoritative GET snapshots. Observers must
   lead with GET (apply, then wait); never wait-first across paging or other
   gaps where tips can be missed. Do not add new hanging `*/changes` long-poll
   routes for sync domains.

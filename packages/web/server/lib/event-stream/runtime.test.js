@@ -70,7 +70,7 @@ describe('event stream broadcaster', () => {
     const received = [];
     const removeFailed = broadcast.subscribe(() => { throw new Error('closed'); });
     const remove = broadcast.subscribe((payload, options) => received.push({ payload, options }));
-    const payload = { type: 'openchamber:session-metadata' };
+    const payload = { type: 'yuri:session-metadata' };
     broadcast(payload, { directory: '/repo' });
     remove();
     removeFailed();
@@ -96,18 +96,18 @@ describe('event stream broadcaster', () => {
       },
     });
 
-    broadcast({ type: 'openchamber:session-status' }, { eventId: 'evt-1', directory: '/tmp/project' });
+    broadcast({ type: 'yuri:session-status' }, { eventId: 'evt-1', directory: '/tmp/project' });
 
     expect(sseEvents).toEqual([
       {
         res: sseClient,
-        payload: { type: 'openchamber:session-status' },
+        payload: { type: 'yuri:session-status' },
       },
     ]);
     expect(wsPayloads).toEqual([
       {
         type: 'event',
-        payload: { type: 'openchamber:session-status' },
+        payload: { type: 'yuri:session-status' },
         eventId: 'evt-1',
         directory: '/tmp/project',
       },
@@ -132,7 +132,7 @@ describe('event stream broadcaster', () => {
       },
     });
 
-    broadcast({ type: 'openchamber:notification' });
+    broadcast({ type: 'yuri:notification' });
 
     expect(wsClients.size).toBe(0);
   });
@@ -663,7 +663,7 @@ describe('message stream websocket runtime', () => {
       getOpenCodeAuthHeaders: () => ({}),
       processForwardedEventPayload(payload, emitSynthetic) {
         if (payload.type === 'session.updated') {
-          emitSynthetic({ type: 'openchamber:session-status', sessionID: 'ses_1' });
+          emitSynthetic({ type: 'yuri:session-status', sessionID: 'ses_1' });
         }
       },
       wsClients,
@@ -690,7 +690,7 @@ describe('message stream websocket runtime', () => {
     });
     expect(socket.sent).toContainEqual({
       type: 'event',
-      payload: { type: 'openchamber:session-status', sessionID: 'ses_1' },
+      payload: { type: 'yuri:session-status', sessionID: 'ses_1' },
       directory: 'global',
     });
 

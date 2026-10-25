@@ -189,8 +189,8 @@ export function MobileTabsRoot({
   return (
     <div
       className={cn(
-        'oc-mobile-floating-shell relative isolate flex h-full min-h-0 flex-col overflow-hidden text-foreground',
-        'bg-[var(--oc-mobile-page-background)]',
+        'yuri-mobile-floating-shell relative isolate flex h-full min-h-0 flex-col overflow-hidden text-foreground',
+        'bg-[var(--yuri-mobile-page-background)]',
         className,
       )}
     >
@@ -213,9 +213,9 @@ export function MobileTabsRoot({
               hidden={selectedTab !== tab.id}
               tabIndex={0}
               className={cn(
-                'scrollbar-none h-full min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] outline-none',
+                'scrollbar-none h-full min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--yuri-mobile-page-inline-inset)] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] outline-none',
                 showTabBar
-                  ? 'pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]'
+                  ? 'pb-[calc(var(--yuri-mobile-dock-height)+2.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]'
                   : 'pb-0',
               )}
             >

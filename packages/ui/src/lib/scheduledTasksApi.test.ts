@@ -43,13 +43,13 @@ describe('fetchScheduledTaskRuns', () => {
       taskId: 'task-1',
     });
 
-    expect(seenPath).toBe('/api/openchamber/scheduled-task-runs?before=opaque+cursor%2F%2B&limit=20&projectId=project-1&taskId=task-1');
+    expect(seenPath).toBe('/api/yuri/scheduled-task-runs?before=opaque+cursor%2F%2B&limit=20&projectId=project-1&taskId=task-1');
     expect(result).toEqual(responsePayload);
   });
 
   test('uses the bounded default page size', async () => {
     await fetchScheduledTaskRuns({});
-    expect(seenPath).toBe('/api/openchamber/scheduled-task-runs?limit=20');
+    expect(seenPath).toBe('/api/yuri/scheduled-task-runs?limit=20');
   });
 
   test('rejects malformed authoritative responses', async () => {

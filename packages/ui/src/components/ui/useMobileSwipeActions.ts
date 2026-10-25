@@ -3,7 +3,7 @@ import { useEvent, useEventListener } from '@reactuses/core';
 
 const INTENT_LOCK_PX = 10;
 // Keep the homepage event so session and contact rows share one revealed rail.
-const REVEALED_ROW_EVENT = 'oc:mobile-session-row-revealed';
+const REVEALED_ROW_EVENT = 'yuri:mobile-session-row-revealed';
 const broadcastRowRevealed = (id: string) => {
   window.dispatchEvent(new CustomEvent(REVEALED_ROW_EVENT, { detail: id }));
 };

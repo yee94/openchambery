@@ -37,8 +37,8 @@ const installWindow = (options: {
   const previousLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   const runtimeWindow = {
     localStorage: storage,
-    __OPENCHAMBER_API_BASE_URL__: options.apiBaseUrl,
-    __OPENCHAMBER_LOCAL_ORIGIN__: options.localOrigin,
+    __YURI_API_BASE_URL__: options.apiBaseUrl,
+    __YURI_LOCAL_ORIGIN__: options.localOrigin,
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
     dispatchEvent: () => true,

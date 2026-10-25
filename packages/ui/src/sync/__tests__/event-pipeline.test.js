@@ -153,7 +153,7 @@ describe('createEventPipeline', () => {
       payload: {
         type: 'session.status',
         properties: {
-          directory: 'C:/Users/daveotero/localdev/openchamber',
+          directory: 'C:/Users/daveotero/localdev/yuri',
           sessionID: 'session-1',
           status: { type: 'busy' },
         },
@@ -175,7 +175,7 @@ describe('createEventPipeline', () => {
     await delivered;
 
     expect(received).toHaveLength(1);
-    expect(received[0].directory).toBe('C:/Users/daveotero/localdev/openchamber');
+    expect(received[0].directory).toBe('C:/Users/daveotero/localdev/yuri');
     expect(received[0].payload.type).toBe('session.status');
   });
 
@@ -1607,7 +1607,7 @@ describe('createEventPipeline', () => {
         handler({ persisted: true });
       }
       if (typeof globalThis.window.dispatch === 'function') {
-        globalThis.window.dispatch('openchamber:system-resume');
+        globalThis.window.dispatch('yuri:system-resume');
       }
       expect(recoveryCaptures).toHaveLength(1);
 

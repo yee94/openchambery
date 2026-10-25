@@ -57,7 +57,7 @@ const run = async () => {
   stage = "loading renderer fixture"
   await waitFor(window.loadURL(pathToFileURL(resolvedFixturePath).href), "Renderer fixture load")
   stage = "running IndexedDB evidence"
-  const result = await window.webContents.executeJavaScript("window.__OPENCHAMBER_TRANSCRIPT_DURABLE_INDEXEDDB_EVIDENCE__")
+  const result = await window.webContents.executeJavaScript("window.__YURI_TRANSCRIPT_DURABLE_INDEXEDDB_EVIDENCE__")
   if (!result?.ok) throw new Error(result?.error ?? "Renderer did not return IndexedDB evidence")
   console.log(`Chromium transcript durable IndexedDB evidence passed: ${result.evidence.map(({ name }) => name).join(", ")}`)
 }

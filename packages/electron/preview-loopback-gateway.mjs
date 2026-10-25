@@ -7,7 +7,7 @@
  * bearer tokens live here.
  *
  * Auth for the Host preview proxy stays in the renderer (`runtimeFetch` /
- * `openRuntimeWebSocket` + `oc_preview_token` / `oc_url_token` query rewrite).
+ * `openRuntimeWebSocket` + `yuri_preview_token` / `yuri_url_token` query rewrite).
  * Chromium cannot surface upstream `Set-Cookie` from the tunneled response
  * into the iframe jar, so we never re-emit Set-Cookie — previewed-app login
  * cookies are dropped on Relay.
@@ -19,13 +19,13 @@ import { createRequire } from 'node:module';
 
 export const PREVIEW_GATEWAY_PATH_PREFIX = '/api/preview/proxy/';
 
-/** Resolve `ws` through `@openchambery/web` (no direct electron dependency). */
+/** Resolve `ws` through `@yuri/web` (no direct electron dependency). */
 const loadWs = () => {
   const requireHere = createRequire(import.meta.url);
   try {
     return requireHere('ws');
   } catch {
-    const webPkg = requireHere.resolve('@openchambery/web/package.json');
+    const webPkg = requireHere.resolve('@yuri/web/package.json');
     return createRequire(webPkg)('ws');
   }
 };
@@ -44,7 +44,7 @@ export const PREVIEW_GATEWAY_RESPONSE_HEADER_BLOCKLIST = Object.freeze(new Set([
   'content-length',
   'content-encoding',
   // Chromium renderer cannot apply tunneled Set-Cookie into the iframe jar.
-  // Auth relies on oc_preview_token + oc_url_token query rewrite only.
+  // Auth relies on yuri_preview_token + yuri_url_token query rewrite only.
   'set-cookie',
   'set-cookie2',
 ]));

@@ -1,14 +1,14 @@
 /**
- * OpenChamber session metadata cache and migration source.
+ * Yuri session metadata cache and migration source.
  *
  * The OpenCode session record is the durable authority for title, archive, and
- * other OpenChamber metadata (`opencode-session-record.js`). This JSON file
+ * other Yuri metadata (`opencode-session-record.js`). This JSON file
  * remains the cache and the pre-migration source. A failed or corrupt read is
  * never empty success: the store stays unwritable and does not overwrite
  * unknown disk state or the OpenCode record.
  *
  * Writes are a JSON Merge Patch (RFC 7386): nested objects merge key by key and
- * a `null` deletes. That keeps two features writing into the same `openchamber`
+ * a `null` deletes. That keeps two features writing into the same `yuri`
  * namespace from erasing each other — goal mode saving progress must not drop
  * an assist recap. When a record reader and writer are wired, the merged object
  * is written onto the OpenCode session before the local cache commits. A failed
@@ -52,9 +52,9 @@ export const mergeMetadataPatch = (current, patch) => {
 };
 
 const readPriorArchivedAt = (metadata) => {
-  if (!isPlainObject(metadata?.openchamber)) return null;
-  if (!Object.prototype.hasOwnProperty.call(metadata.openchamber, HOST_ARCHIVE_KEY)) return null;
-  const archive = metadata.openchamber[HOST_ARCHIVE_KEY];
+  if (!isPlainObject(metadata?.yuri)) return null;
+  if (!Object.prototype.hasOwnProperty.call(metadata.yuri, HOST_ARCHIVE_KEY)) return null;
+  const archive = metadata.yuri[HOST_ARCHIVE_KEY];
   if (!isPlainObject(archive) || !Object.prototype.hasOwnProperty.call(archive, 'archivedAt')) return null;
   const value = archive.archivedAt;
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -62,46 +62,46 @@ const readPriorArchivedAt = (metadata) => {
 
 /** Strip Host archive writes from generic metadata patches. */
 const stripArchiveFromMetadataPatch = (patch) => {
-  if (!isPlainObject(patch) || !isPlainObject(patch.openchamber)) return patch;
-  if (!Object.prototype.hasOwnProperty.call(patch.openchamber, HOST_ARCHIVE_KEY)) return patch;
-  const openchamber = { ...patch.openchamber };
-  delete openchamber[HOST_ARCHIVE_KEY];
-  return { ...patch, openchamber };
+  if (!isPlainObject(patch) || !isPlainObject(patch.yuri)) return patch;
+  if (!Object.prototype.hasOwnProperty.call(patch.yuri, HOST_ARCHIVE_KEY)) return patch;
+  const yuri = { ...patch.yuri };
+  delete yuri[HOST_ARCHIVE_KEY];
+  return { ...patch, yuri };
 };
 
 /**
  * Restore reserved archive after a generic merge so null ancestor deletes
- * (`openchamber: null` / `archive: null`) cannot wipe Host archive state.
+ * (`yuri: null` / `archive: null`) cannot wipe Host archive state.
  */
 const applyReservedArchiveProtection = (previous, patch, merged, { allowArchive = false } = {}) => {
   if (allowArchive) return merged;
   const priorArchive = readPriorArchivedAt(previous);
   const result = isPlainObject(merged) ? { ...merged } : {};
-  const openchamber = isPlainObject(result.openchamber) ? { ...result.openchamber } : {};
+  const yuri = isPlainObject(result.yuri) ? { ...result.yuri } : {};
 
-  if (isPlainObject(patch?.openchamber) && Object.prototype.hasOwnProperty.call(patch.openchamber, HOST_ARCHIVE_KEY)) {
-    delete openchamber[HOST_ARCHIVE_KEY];
+  if (isPlainObject(patch?.yuri) && Object.prototype.hasOwnProperty.call(patch.yuri, HOST_ARCHIVE_KEY)) {
+    delete yuri[HOST_ARCHIVE_KEY];
   }
 
   if (priorArchive !== null) {
-    openchamber[HOST_ARCHIVE_KEY] = {
-      ...(isPlainObject(previous?.openchamber?.[HOST_ARCHIVE_KEY])
-        ? previous.openchamber[HOST_ARCHIVE_KEY]
+    yuri[HOST_ARCHIVE_KEY] = {
+      ...(isPlainObject(previous?.yuri?.[HOST_ARCHIVE_KEY])
+        ? previous.yuri[HOST_ARCHIVE_KEY]
         : {}),
       archivedAt: priorArchive,
     };
   } else {
-    delete openchamber[HOST_ARCHIVE_KEY];
+    delete yuri[HOST_ARCHIVE_KEY];
   }
 
-  if (Object.keys(openchamber).length > 0) result.openchamber = openchamber;
-  else delete result.openchamber;
+  if (Object.keys(yuri).length > 0) result.yuri = yuri;
+  else delete result.yuri;
   return result;
 };
 
 /**
  * @param {object} options
- * @param {string} options.dataDir OpenChamber data directory for this instance.
+ * @param {string} options.dataDir Yuri data directory for this instance.
  * @param {typeof fsDefault.promises} [options.fsPromises]
  * @param {typeof pathDefault} [options.path]
  * @param {() => number} [options.now]
@@ -270,7 +270,7 @@ export const createSessionMetadataStore = ({
    */
   const commitMergedPatch = async (id, previous, patch, options = {}) => {
     const allowArchive = options.allowArchive === true;
-    let base = previous;
+    let base = mergeOwnedMetadata({}, previous);
     if (typeof recordReader === 'function') {
       let record;
       try {

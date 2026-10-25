@@ -41,7 +41,7 @@ export const COMPOSER_SWAP_REVEAL_TRAVEL_PX = 24;
  * from this window. Sized to outlast fling momentum after the finger lifts.
  */
 export const COMPOSER_SWAP_USER_SCROLL_WINDOW_MS = 1200;
-export const COMPOSER_SWAP_CSS_VAR = '--oc-mobile-composer-swap';
+export const COMPOSER_SWAP_CSS_VAR = '--yuri-mobile-composer-swap';
 /**
  * Native iOS accessory fade (Changes / TODO / queue). Independent of swap:
  * swap can rest expanded hundreds of px from the live edge (downward reveal /
@@ -52,7 +52,7 @@ export const COMPOSER_SWAP_CSS_VAR = '--oc-mobile-composer-swap';
  * the edge stays hidden until the true bottom (NOISE); leaving fades out over
  * the first FOLLOW_RANGE px so a 1px nudge does not flash them on or off.
  */
-export const NATIVE_COMPOSER_DOCK_CSS_VAR = '--oc-native-composer-dock';
+export const NATIVE_COMPOSER_DOCK_CSS_VAR = '--yuri-native-composer-dock';
 
 export type NativeComposerDockRest = 'bottom' | 'away';
 
@@ -341,9 +341,9 @@ export const resolveNativeComposerDock = (
 export const clearComposerSwap = (scope: HTMLElement): void => {
     scope.style.removeProperty(COMPOSER_SWAP_CSS_VAR);
     scope.style.removeProperty(NATIVE_COMPOSER_DOCK_CSS_VAR);
-    delete scope.dataset.ocComposerSwapPhase;
-    delete scope.dataset.ocComposerSwapRest;
-    delete scope.dataset.ocNativeComposerDock;
+    delete scope.dataset.yuriComposerSwapPhase;
+    delete scope.dataset.yuriComposerSwapRest;
+    delete scope.dataset.yuriNativeComposerDock;
 };
 
 export const publishNativeComposerDock = (
@@ -361,7 +361,7 @@ export const publishNativeComposerDock = (
         scope.style.setProperty(NATIVE_COMPOSER_DOCK_CSS_VAR, progress);
     }
     if (last?.rest !== rest) {
-        scope.dataset.ocNativeComposerDock = rest;
+        scope.dataset.yuriNativeComposerDock = rest;
     }
     return { progress, rest };
 };
@@ -376,7 +376,7 @@ export const publishComposerSwap = (
     const rest = state.rest;
     // Phase first so snapping can arm the CSS transition before progress jumps.
     if (last?.phase !== phase) {
-        scope.dataset.ocComposerSwapPhase = phase;
+        scope.dataset.yuriComposerSwapPhase = phase;
         if (phase === 'snapping' && last && last.phase !== 'snapping') {
             void scope.offsetWidth;
         }
@@ -385,7 +385,7 @@ export const publishComposerSwap = (
         scope.style.setProperty(COMPOSER_SWAP_CSS_VAR, progress);
     }
     if (last?.rest !== rest) {
-        scope.dataset.ocComposerSwapRest = rest;
+        scope.dataset.yuriComposerSwapRest = rest;
     }
     return { progress, phase, rest };
 };

@@ -22,7 +22,7 @@ beforeEach(() => {
   const disk = new Set<string>();
   state.acquire.mockImplementation(async ({ key }: { key: string }) => {
     const hit = disk.has(key); disk.add(key);
-    return { leaseId: key, url: `openchamber-asset://cache/${key}`, hit };
+    return { leaseId: key, url: `yuri-asset://cache/${key}`, hit };
   });
   state.fetch.mockImplementation(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }));
   state.append.mockResolvedValue(undefined); state.commit.mockResolvedValue(undefined); state.release.mockResolvedValue(undefined);
@@ -77,7 +77,7 @@ test('one cancelled subscriber cannot abort its peer', async () => {
   a.abort();
   await expect(first).rejects.toThrow('Aborted');
   const result = await peer;
-  expect(result.url).toMatch(/^openchamber-asset:/);
+  expect(result.url).toMatch(/^yuri-asset:/);
   expect(state.release).not.toHaveBeenCalled();
   result.release();
   expect(state.release).toHaveBeenCalledTimes(1);
@@ -85,7 +85,7 @@ test('one cancelled subscriber cannot abort its peer', async () => {
 test('late results after a runtime switch are released without publishing', async () => {
   state.acquire.mockImplementation(async () => {
     state.generation += 1;
-    return { leaseId: 'late', hit: true, url: 'openchamber-asset://cache/late' };
+    return { leaseId: 'late', hit: true, url: 'yuri-asset://cache/late' };
   });
   await expect(acquire()).rejects.toThrow('superseded');
   expect(state.release).toHaveBeenCalledWith('late');
@@ -106,7 +106,7 @@ test('a late native acquire after the last subscriber leaves is released without
   await vi.waitFor(() => expect(state.acquire).toHaveBeenCalledTimes(1));
   controller.abort();
   await expect(pending).rejects.toThrow('Aborted');
-  finish({ leaseId: 'orphan', url: 'openchamber-asset://cache/orphan', hit: false });
+  finish({ leaseId: 'orphan', url: 'yuri-asset://cache/orphan', hit: false });
   await vi.waitFor(() => expect(state.release).toHaveBeenCalledWith('orphan'));
   expect(state.fetch).not.toHaveBeenCalled();
 });

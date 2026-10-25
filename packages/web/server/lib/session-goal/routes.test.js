@@ -104,7 +104,7 @@ describe('session-goal routes capability gating', () => {
   it('creates an active goal via persist when injected', async () => {
     writeObjective.mockClear();
     const persistSessionGoal = vi.fn(async (_id, _dir, goal) => ({
-      openchamber: { goal },
+      yuri: { goal },
     }));
     const onGoalPersisted = vi.fn();
     const getRoute = register({ persistSessionGoal, onGoalPersisted });
@@ -152,10 +152,10 @@ describe('session-goal routes capability gating', () => {
       updatedAt: 2,
     };
     const readSessionMetadata = vi.fn(async () => ({
-      openchamber: { goal: existing },
+      yuri: { goal: existing },
     }));
     const persistSessionGoal = vi.fn(async (_id, _dir, goal) => ({
-      openchamber: { goal },
+      yuri: { goal },
     }));
     const getRoute = register({ persistSessionGoal, readSessionMetadata });
     const response = createResponse();

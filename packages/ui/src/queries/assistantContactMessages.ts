@@ -32,7 +32,7 @@ export const isContactVisiblePart = (part: { type: string; text?: string }): boo
   if (part.type === 'file' || part.type === 'card') return true
   if (part.type !== 'text') return false
   const trimmed = typeof part.text === 'string' ? part.text.trim() : ''
-  return Boolean(trimmed) && !trimmed.startsWith('oc.settle.')
+  return Boolean(trimmed) && !trimmed.startsWith('yuri.settle.') && !trimmed.startsWith('oc.settle.')
 }
 
 export const getLoadedAssistantReadPosition = (

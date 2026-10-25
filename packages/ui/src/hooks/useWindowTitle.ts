@@ -5,7 +5,7 @@ import { desktopHostsGet, getDesktopHostApiUrl, locationMatchesHost, redactSensi
 import { setDesktopWindowTitle } from '@/lib/desktopNative';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 
-const APP_TITLE = 'OpenChamberY';
+const APP_TITLE = 'Yuri';
 
 const getProjectNameFromPath = (path: string): string => {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -46,7 +46,7 @@ export const useWindowTitle = () => {
           return;
         }
 
-        const localOrigin = window.__OPENCHAMBER_LOCAL_ORIGIN__ || window.location.origin;
+        const localOrigin = window.__YURI_LOCAL_ORIGIN__ || window.location.origin;
         const runtimeApiBaseUrl = getRuntimeApiBaseUrl();
 
         if (runtimeApiBaseUrl && locationMatchesHost(runtimeApiBaseUrl, localOrigin)) {

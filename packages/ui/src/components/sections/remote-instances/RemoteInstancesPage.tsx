@@ -93,7 +93,7 @@ import {
 } from '@/lib/desktopHostSwitch';
 import { createRelayTunnelClient } from '@/lib/relay/tunnel-client';
 import { getDesktopLanAddress, hasDesktopInvoke, isDesktopLocalOriginActive, isDesktopShell } from '@/lib/desktop';
-import { DesktopLanAccessSettings } from '@/components/sections/openchamber/DesktopLanAccessSettings';
+import { DesktopLanAccessSettings } from '@/components/sections/yuri/DesktopLanAccessSettings';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, getRuntimeKey, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import {
@@ -108,7 +108,7 @@ import {
   writePairingRelayUrlPreference,
 } from '@/lib/pairingRelayPreference';
 
-const SELF_HOSTED_RELAY_DOCS_URL = 'https://github.com/yee94/openchambery/tree/main/packages/relay-server';
+const SELF_HOSTED_RELAY_DOCS_URL = 'https://github.com/yee94/yuri/tree/main/packages/relay-server';
 
 const randomPort = (): number => {
   return Math.floor(20000 + Math.random() * 30000);
@@ -816,9 +816,9 @@ const phaseLabelKey = (phase?: string): I18nKey => {
     case 'remote_probe':
       return 'settings.remoteInstances.page.phase.probingRemote';
     case 'installing':
-      return 'settings.remoteInstances.page.phase.installingOpenChamber';
+      return 'settings.remoteInstances.page.phase.installingYuri';
     case 'updating':
-      return 'settings.remoteInstances.page.phase.updatingOpenChamber';
+      return 'settings.remoteInstances.page.phase.updatingYuri';
     case 'server_detecting':
       return 'settings.remoteInstances.page.phase.detectingServer';
     case 'server_starting':
@@ -904,7 +904,7 @@ const RemoteSettingsSection = ({
 }: RemoteSettingsSectionProps) => (
   <SettingsGroup
     itemId={itemId}
-    className="oc-settings-detail-group"
+    className="yuri-settings-detail-group"
     label={action ? (
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">{label}</div>
@@ -913,7 +913,7 @@ const RemoteSettingsSection = ({
     ) : label}
     description={description}
   >
-    <div className="oc-settings-group-row">{children}</div>
+    <div className="yuri-settings-group-row">{children}</div>
   </SettingsGroup>
 );
 
@@ -1056,11 +1056,11 @@ const normalizeForSave = (instance: DesktopSshInstance): DesktopSshInstance => {
           ? Math.max(1, Math.min(65535, Math.round(instance.localForward.preferredLocalPort)))
           : undefined,
     },
-    remoteOpenchamber: {
-      ...instance.remoteOpenchamber,
+    remoteYuri: {
+      ...instance.remoteYuri,
       preferredPort:
-        typeof instance.remoteOpenchamber.preferredPort === 'number'
-          ? Math.max(1, Math.min(65535, Math.round(instance.remoteOpenchamber.preferredPort)))
+        typeof instance.remoteYuri.preferredPort === 'number'
+          ? Math.max(1, Math.min(65535, Math.round(instance.remoteYuri.preferredPort)))
           : undefined,
     },
     portForwards: forwards,
@@ -1235,9 +1235,9 @@ export const RemoteInstancesPage: React.FC = () => {
     const redeemBody = JSON.stringify({
       pairingId: payload.pairingId,
       secret: payload.secret,
-      clientLabel: payload.label || 'OpenChamberY Desktop',
+      clientLabel: payload.label || 'Yuri Desktop',
       clientKind: 'desktop',
-      deviceName: 'OpenChamberY Desktop',
+      deviceName: 'Yuri Desktop',
       devicePlatform: desktopPlatformName(),
       ...(installId ? { dedupeKey: `desktop:${installId}` } : {}),
     });
@@ -1807,7 +1807,7 @@ export const RemoteInstancesPage: React.FC = () => {
 
   React.useEffect(() => {
     let cancelled = false;
-    if (!selectedId || selectedInstance?.remoteOpenchamber?.mode !== 'managed') {
+    if (!selectedId || selectedInstance?.remoteYuri?.mode !== 'managed') {
       setSyncRuns([]);
       return () => {
         cancelled = true;
@@ -1827,7 +1827,7 @@ export const RemoteInstancesPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedId, selectedInstance?.remoteOpenchamber?.mode, syncDialogOpen]);
+  }, [selectedId, selectedInstance?.remoteYuri?.mode, syncDialogOpen]);
 
   React.useEffect(() => {
     if (!selectedId) {
@@ -1934,14 +1934,14 @@ export const RemoteInstancesPage: React.FC = () => {
     }
 
     if (
-      normalized.auth.openchamberPassword?.enabled &&
-      normalized.auth.openchamberPassword.value?.trim() &&
-      normalized.auth.openchamberPassword.store !== 'settings'
+      normalized.auth.yuriPassword?.enabled &&
+      normalized.auth.yuriPassword.value?.trim() &&
+      normalized.auth.yuriPassword.store !== 'settings'
     ) {
       const store = window.confirm(t('settings.remoteInstances.page.confirm.storeUiPasswordPlaintext'));
-      normalized.auth.openchamberPassword.store = store ? 'settings' : 'never';
+      normalized.auth.yuriPassword.store = store ? 'settings' : 'never';
       if (!store) {
-        normalized.auth.openchamberPassword.value = undefined;
+        normalized.auth.yuriPassword.value = undefined;
       }
     }
 
@@ -2564,7 +2564,7 @@ export const RemoteInstancesPage: React.FC = () => {
                             </TooltipContent>
                           </Tooltip>
                         )}
-                        {ready && instance.remoteOpenchamber?.mode !== 'external' ? (
+                        {ready && instance.remoteYuri?.mode !== 'external' ? (
                           <Button
                             type="button"
                             variant="ghost"
@@ -2679,8 +2679,8 @@ export const RemoteInstancesPage: React.FC = () => {
             {addDevicePhase === 'configure' ? <ol className="grid grid-cols-3 gap-3 py-4 text-center">
               <li className="flex min-w-0 flex-col items-center gap-2">
                 <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--surface-muted)] typography-micro text-muted-foreground" aria-hidden="true">1</span>
-                <a href="https://github.com/yee94/openchambery/releases" target="_blank" rel="noopener noreferrer"
-                  onClick={(event) => { event.preventDefault(); void openExternalUrl('https://github.com/yee94/openchambery/releases'); }}
+                <a href="https://github.com/yee94/yuri/releases" target="_blank" rel="noopener noreferrer"
+                  onClick={(event) => { event.preventDefault(); void openExternalUrl('https://github.com/yee94/yuri/releases'); }}
                   className="inline-flex items-center justify-center gap-1 whitespace-nowrap typography-meta text-foreground underline decoration-[var(--interactive-border)] underline-offset-4 hover:decoration-current">
                   {t('settings.remoteInstances.pairing.downloadStep')}
                   <Icon name="external-link" className="size-3 shrink-0" />
@@ -2877,10 +2877,10 @@ export const RemoteInstancesPage: React.FC = () => {
                   </div>
                 ) : null}
                 <a
-                  href="https://github.com/yee94/openchambery/releases"
+                  href="https://github.com/yee94/yuri/releases"
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={(event) => { event.preventDefault(); void openExternalUrl('https://github.com/yee94/openchambery/releases'); }}
+                  onClick={(event) => { event.preventDefault(); void openExternalUrl('https://github.com/yee94/yuri/releases'); }}
                   className="flex items-center justify-center gap-1.5 typography-meta text-muted-foreground hover:text-foreground"
                 >
                   <Icon name="download" className="size-3.5" />
@@ -2983,12 +2983,12 @@ export const RemoteInstancesPage: React.FC = () => {
     );
   }
 
-  const isManagedMode = draft.remoteOpenchamber.mode === 'managed';
+  const isManagedMode = draft.remoteYuri.mode === 'managed';
   const instanceTitle = draft.nickname?.trim() || draft.sshParsed?.destination || draft.id;
 
   return (
     <Dialog open={Boolean(draft)} onOpenChange={(open) => { if (!open) setSelectedId(null); }}>
-      <DialogContent className="oc-settings-workspace oc-settings-workspace-desktop oc-settings-section-stack sm:max-w-4xl max-h-[90vh] overflow-auto">
+      <DialogContent className="yuri-settings-workspace yuri-settings-workspace-desktop yuri-settings-section-stack sm:max-w-4xl max-h-[90vh] overflow-auto">
       <DialogHeader className="gap-1 pr-8">
         <DialogTitle className="truncate">{instanceTitle}</DialogTitle>
         <DialogDescription className="flex flex-wrap items-center gap-2">
@@ -3003,7 +3003,7 @@ export const RemoteInstancesPage: React.FC = () => {
       ) : null}
 
       <SettingsGroup label={t('settings.remoteInstances.page.section.actions')}>
-          <div className="oc-settings-group-row flex flex-wrap items-center gap-2">
+          <div className="yuri-settings-group-row flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant={canDisconnect ? 'outline' : 'default'}
@@ -3070,7 +3070,7 @@ export const RemoteInstancesPage: React.FC = () => {
       </SettingsGroup>
 
       <SettingsGroup label={t('settings.remoteInstances.page.section.instance')}>
-          <SettingsRow label={t('settings.remoteInstances.page.field.sshCommand')} className="oc-settings-ssh-command-row">
+          <SettingsRow label={t('settings.remoteInstances.page.field.sshCommand')} className="yuri-settings-ssh-command-row">
             <Input
               value={draft.sshCommand}
               onChange={(event) =>
@@ -3114,12 +3114,12 @@ export const RemoteInstancesPage: React.FC = () => {
       <SettingsGroup label={t('settings.remoteInstances.page.section.remoteServer')}>
           <SettingsRow label={t('settings.remoteInstances.page.field.mode')}>
             <Select
-              value={draft.remoteOpenchamber.mode}
+              value={draft.remoteYuri.mode}
               onValueChange={(value) =>
                 updateDraft((current) => ({
                   ...current,
-                  remoteOpenchamber: {
-                    ...current.remoteOpenchamber,
+                  remoteYuri: {
+                    ...current.remoteYuri,
                     mode: value === 'external' ? 'external' : 'managed',
                   },
                 }))
@@ -3141,12 +3141,12 @@ export const RemoteInstancesPage: React.FC = () => {
               max={65535}
               step={1}
               className="tabular-nums"
-              value={draft.remoteOpenchamber.preferredPort}
+              value={draft.remoteYuri.preferredPort}
               onValueChange={(next) => {
                 updateDraft((current) => ({
                   ...current,
-                  remoteOpenchamber: {
-                    ...current.remoteOpenchamber,
+                  remoteYuri: {
+                    ...current.remoteYuri,
                     preferredPort: Number.isFinite(next) && next > 0 ? next : undefined,
                   },
                 }));
@@ -3154,8 +3154,8 @@ export const RemoteInstancesPage: React.FC = () => {
               onClear={() => {
                 updateDraft((current) => ({
                   ...current,
-                  remoteOpenchamber: {
-                    ...current.remoteOpenchamber,
+                  remoteYuri: {
+                    ...current.remoteYuri,
                     preferredPort: undefined,
                   },
                 }));
@@ -3167,12 +3167,12 @@ export const RemoteInstancesPage: React.FC = () => {
           {isManagedMode ? (
             <SettingsRow label={t('settings.remoteInstances.page.field.installMethod')}>
               <Select
-                value={draft.remoteOpenchamber.installMethod}
+                value={draft.remoteYuri.installMethod}
                 onValueChange={(value) =>
                   updateDraft((current) => ({
                     ...current,
-                    remoteOpenchamber: {
-                      ...current.remoteOpenchamber,
+                    remoteYuri: {
+                      ...current.remoteYuri,
                       installMethod:
                         value === 'npm' || value === 'download_release' || value === 'upload_bundle'
                           ? value
@@ -3196,12 +3196,12 @@ export const RemoteInstancesPage: React.FC = () => {
 
           {isManagedMode ? (
             <SettingsToggleRow
-              checked={draft.remoteOpenchamber.keepRunning}
+              checked={draft.remoteYuri.keepRunning}
               onChange={(checked) =>
                 updateDraft((current) => ({
                   ...current,
-                  remoteOpenchamber: {
-                    ...current.remoteOpenchamber,
+                  remoteYuri: {
+                    ...current.remoteYuri,
                     keepRunning: checked,
                   },
                 }))
@@ -3315,16 +3315,16 @@ export const RemoteInstancesPage: React.FC = () => {
           <SettingsRow label={t('settings.remoteInstances.page.field.uiPasswordOptional')}>
             <Input
               type="password"
-              value={draft.auth.openchamberPassword?.value || ''}
+              value={draft.auth.yuriPassword?.value || ''}
               onChange={(event) =>
                 updateDraft((current) => ({
                   ...current,
                   auth: {
                     ...current.auth,
-                    openchamberPassword: {
+                    yuriPassword: {
                       enabled: event.target.value.trim().length > 0,
                       value: event.target.value,
-                      store: current.auth.openchamberPassword?.store || 'never',
+                      store: current.auth.yuriPassword?.store || 'never',
                     },
                   },
                 }))
@@ -3337,12 +3337,12 @@ export const RemoteInstancesPage: React.FC = () => {
       {isManagedMode ? (
         <SettingsGroup label={t('settings.remoteInstances.page.sync.runs.title')}>
           {syncRuns.length === 0 ? (
-            <div className="oc-settings-group-row typography-meta text-muted-foreground">
+            <div className="yuri-settings-group-row typography-meta text-muted-foreground">
               {t('settings.remoteInstances.page.sync.runs.empty')}
             </div>
           ) : (
             syncRuns.map((run) => (
-              <div key={run.syncRunId} className="oc-settings-group-row flex items-center gap-2 typography-meta">
+              <div key={run.syncRunId} className="yuri-settings-group-row flex items-center gap-2 typography-meta">
                 <span className={cn(
                   'shrink-0',
                   run.result === 'success' ? 'text-[var(--status-success)]' : 'text-[var(--status-error)]',
@@ -3365,7 +3365,7 @@ export const RemoteInstancesPage: React.FC = () => {
 
       <SettingsGroup label={t('settings.remoteInstances.page.section.portForwards')}>
           {draft.portForwards.length === 0 ? (
-            <div className="oc-settings-group-row typography-meta text-muted-foreground">{t('settings.remoteInstances.page.empty.noExtraForwards')}</div>
+            <div className="yuri-settings-group-row typography-meta text-muted-foreground">{t('settings.remoteInstances.page.empty.noExtraForwards')}</div>
           ) : null}
 
           {draft.portForwards.map((forward, index) => {
@@ -3407,7 +3407,7 @@ export const RemoteInstancesPage: React.FC = () => {
                     [forward.id]: open,
                   }));
                 }}
-                className="oc-settings-group-row"
+                className="yuri-settings-group-row"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex items-center gap-2">
@@ -3461,7 +3461,7 @@ export const RemoteInstancesPage: React.FC = () => {
                       </Select>
                     </SettingsRow>
 
-                    <SettingsRow label={localLabel} className="oc-settings-ssh-endpoint-row">
+                    <SettingsRow label={localLabel} className="yuri-settings-ssh-endpoint-row">
                       <div className="flex min-w-0 items-center gap-1.5">
                         <Input
                           className="min-w-0"
@@ -3499,7 +3499,7 @@ export const RemoteInstancesPage: React.FC = () => {
                     </SettingsRow>
 
                     {forward.type !== 'dynamic' ? (
-                      <SettingsRow label={remoteLabel} className="oc-settings-ssh-endpoint-row">
+                      <SettingsRow label={remoteLabel} className="yuri-settings-ssh-endpoint-row">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <Input
                             className="min-w-0"
@@ -3593,7 +3593,7 @@ export const RemoteInstancesPage: React.FC = () => {
             );
           })}
 
-          <div className="oc-settings-group-row">
+          <div className="yuri-settings-group-row">
             <Button
               type="button"
               variant="outline"

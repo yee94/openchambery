@@ -1,33 +1,35 @@
-import { afterAll, describe, expect, mock, test } from 'bun:test';
+import { afterAll, describe, expect, vi, test } from 'vitest';
 import fs from 'node:fs';
 
-const settingsHome = `/tmp/openchamber-vscode-settings-${process.pid}-${Date.now()}`;
+const settingsHome = vi.hoisted(() => `/tmp/yuri-vscode-settings-${process.pid}-${Date.now()}`);
 
 let providerListImpl = async () => ({ data: [] });
 let modelListImpl = async () => ({ data: [] });
 let modelDefaultImpl = async () => ({ data: null });
-const providerList = mock(async (...args) => providerListImpl(...args));
-const modelList = mock(async (...args) => modelListImpl(...args));
-const modelDefault = mock(async (...args) => modelDefaultImpl(...args));
-const skillList = mock(async () => ({ data: [{ id: 'release', name: 'Git Release', path: '/repo/.opencode/skills/release/SKILL.md', description: 'Release notes' }] }));
-const make = mock(() => ({
+const { providerList, modelList, modelDefault, skillList, make } = vi.hoisted(() => {
+const providerList = vi.fn(async (...args) => providerListImpl(...args));
+const modelList = vi.fn(async (...args) => modelListImpl(...args));
+const modelDefault = vi.fn(async (...args) => modelDefaultImpl(...args));
+const skillList = vi.fn(async () => ({ data: [{ id: 'release', name: 'Git Release', path: '/repo/.opencode/skills/release/SKILL.md', description: 'Release notes' }] }));
+const make = vi.fn(() => ({
   provider: { list: providerList },
   model: { list: modelList, default: modelDefault },
   command: { list: async () => ({ data: [] }) },
   skill: { list: skillList },
 }));
+return { providerList, modelList, modelDefault, skillList, make };
+});
 
-mock.module('vscode', () => ({
+vi.mock('vscode', () => ({
   workspace: { workspaceFolders: [] },
   window: { activeColorTheme: { kind: 1 }, ColorThemeKind: { Light: 1, HighContrastLight: 4 } },
   ColorThemeKind: { Light: 1, HighContrastLight: 4 },
 }));
 // Bun aliases `os` ↔ `node:os`. Real @opencode/client uses
 // `import { homedir } from "node:os"`; opencodeConfig uses `import os from 'node:os'`.
-const osMock = { homedir: () => settingsHome };
-mock.module('os', () => ({ ...osMock, default: osMock }));
-mock.module('node:os', () => ({ ...osMock, default: osMock }));
-mock.module('@opencode/client', () => ({ OpenCode: { make } }));
+vi.mock('os', () => ({ homedir: () => settingsHome, default: { homedir: () => settingsHome } }));
+vi.mock('node:os', () => ({ homedir: () => settingsHome, default: { homedir: () => settingsHome } }));
+vi.mock('@opencode/client', () => ({ OpenCode: { make } }));
 
 const { fetchProviderCatalogFromApi, fetchOpenCodeSkillsFromApi, readSettings } = await import('./bridge-settings-runtime.ts');
 

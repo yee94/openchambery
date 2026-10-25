@@ -81,7 +81,7 @@ export const createSessionDirectoryRuntime = ({
 
   // v2 directory filters are lexical SQL equality. Query the owning project
   // instead, then retain only the same physical directory (not other worktrees).
-  // This also finds old aliases absent from OpenChamber's bounded index.
+  // This also finds old aliases absent from Yuri's bounded index.
   const fetchSessionList = async (input, init) => {
     const url = new URL(input);
     if (!['/api/session', '/session'].includes(url.pathname) || (init?.method && init.method !== 'GET')) return fetchFn(input, init);

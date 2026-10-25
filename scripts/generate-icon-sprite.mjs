@@ -3,7 +3,7 @@
  *
  * Usage: bun run scripts/generate-icon-sprite.mjs
  *
- * Scans packages/ui/src for Icon name="..." / IconName usages, maps OpenChamber
+ * Scans packages/ui/src for Icon name="..." / IconName usages, maps Yuri
  * kebab names → Lucide glyphs via scripts/icon-name-map.mjs, and writes
  * packages/ui/src/components/icon/sprite.ts.
  *
@@ -43,7 +43,7 @@ function readLucideInner(lucideName) {
     .trim()
 }
 
-/** Bake solid fill onto Lucide stroke paths for *-fill OpenChamber names. */
+/** Bake solid fill onto Lucide stroke paths for *-fill Yuri names. */
 function applyFillVariant(inner) {
   return inner
     .replace(/<path\b([^>]*?)(\/?)>/g, (full, attrs, selfClose) => {

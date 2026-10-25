@@ -5,8 +5,8 @@ import type {
   PushAPI,
   PushSubscribePayload,
   PushUnsubscribePayload,
-} from '@openchamber/ui/lib/api/types';
-import { runtimeFetch } from '@openchamber/ui/lib/runtime-fetch';
+} from '@yuri/ui/lib/api/types';
+import { runtimeFetch } from '@yuri/ui/lib/runtime-fetch';
 
 const fetchJson = async <T>(input: string | URL | Request, init?: RequestInit): Promise<T | null> => {
   try {

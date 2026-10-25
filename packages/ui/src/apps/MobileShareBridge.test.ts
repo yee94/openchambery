@@ -164,7 +164,7 @@ describe('MobileShareBridge contract', () => {
       readFile(join(directory, 'nativeAssistantShortcut.ts'), 'utf8'),
       readFile(join(directory, 'MobileApp.tsx'), 'utf8'),
     ]);
-    const pending = shortcut.indexOf('const pending = await OpenChamberShare.pendingAssistantOpen()');
+    const pending = shortcut.indexOf('const pending = await YuriShare.pendingAssistantOpen()');
     const connect = shortcut.indexOf('await connectMobileShareConnection(request.connectionKey)', pending);
     const snapshot = shortcut.indexOf('forceRefreshAssistantSnapshot()', connect);
     const open = shortcut.indexOf('openNativeAssistantConversation(request.assistantID)', snapshot);

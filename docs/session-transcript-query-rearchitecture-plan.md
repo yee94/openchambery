@@ -129,7 +129,7 @@ flowchart TD
         SSE["★变更 SSE reducer → setQueryData"]:::change
     end
 
-    subgraph HOST ["OpenChamberY Host：权威读取"]
+    subgraph HOST ["Yuri Host：权威读取"]
         TURN["保留 turn-page API"]:::same
         REC["★新增 anchor reconcile API"]:::new
         STREAM["★变更 replay → ready barrier"]:::change
@@ -159,7 +159,7 @@ sequenceDiagram
     participant UI as Chat / Context Panel
     participant IQ as Session InfiniteQuery
     participant PQ as Transport Page Query
-    participant Host as OpenChamberY Host
+    participant Host as Yuri Host
     participant Merge as Sync Merge
     participant Cache as QueryCache
 
@@ -350,7 +350,7 @@ active observer 持有完整已加载 pages。页面加载历史后保持稳定�
 sequenceDiagram
     participant Browser as Browser / Electron Renderer
     participant Pipeline as Event Pipeline
-    participant Host as OpenChamberY Host
+    participant Host as Yuri Host
     participant Replay as Host Replay Buffer
     participant Tasks as Query Recovery Tasks
     participant API as Anchor Reconcile API
@@ -430,7 +430,7 @@ anchor 扫描到历史起点仍未命中时执行同一重建流程。
 ### 11.1 请求
 
 ```http
-GET /api/openchamber/sessions/:sessionID/messages/reconcile
+GET /api/yuri/sessions/:sessionID/messages/reconcile
   ?directory=<workspace>
   &anchor=<messageID>
   &continuation=<opaque-token>

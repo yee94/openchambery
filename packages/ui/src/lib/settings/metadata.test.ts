@@ -102,8 +102,8 @@ describe('settings navigation metadata', () => {
     expect(phoneShell).not.toContain('instances: (');
     // Secondary instances page must carry Settings workspace tokens so
     // SettingsGroup cards keep their chrome outside the Settings tab.
-    expect(mobileApp).toContain('oc-settings-workspace oc-settings-workspace-mobile');
-    expect(mobileApp).toContain('MobileFloatingSurface className="oc-mobile-settings-detail-card"');
+    expect(mobileApp).toContain('yuri-settings-workspace yuri-settings-workspace-mobile');
+    expect(mobileApp).toContain('MobileFloatingSurface className="yuri-mobile-settings-detail-card"');
     // Home-menu scan is a global Capacitor capability — never routed through
     // the instances secondary page via a pending-scan mount effect.
     expect(mobileApp).toContain('scanConnectionFromHome');

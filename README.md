@@ -1,7 +1,7 @@
-# <picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/openchamber-logo-dark.svg"><img src="docs/references/badges/openchamber-logo-light.svg" width="32" height="32" align="absmiddle" /></picture> OpenChamberY
+# <picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/yuri-logo-dark.svg"><img src="docs/references/badges/yuri-logo-light.svg" width="32" height="32" align="absmiddle" /></picture> Yuri
 
-[![GitHub stars](https://img.shields.io/github/stars/yee94/openchamber?style=flat&labelColor=100F0F&color=66800B)](https://github.com/yee94/openchamber/stargazers)
-[![GitHub release](https://img.shields.io/github/v/release/yee94/openchamber?style=flat&labelColor=100F0F&color=205EA6)](https://github.com/yee94/openchamber/releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/yee94/yuri?style=flat&labelColor=100F0F&color=66800B)](https://github.com/yee94/yuri/stargazers)
+[![GitHub release](https://img.shields.io/github/v/release/yee94/yuri?style=flat&labelColor=100F0F&color=205EA6)](https://github.com/yee94/yuri/releases/latest)
 [![Created with OpenCode](docs/references/badges/created-with-opencode.svg)](https://opencode.ai)
 
 **The full-surface GUI and mission control for [OpenCode](https://opencode.ai).**
@@ -11,30 +11,16 @@ Desktop · Mobile · Browser · VS Code
 [中文说明](./README_ZH.md)
 
 <p align="center">
-  <img src="docs/references/chat_example.png" alt="OpenChamberY Desktop UI" width="100%" />
+  <img src="docs/references/badges/yuri-logo-light.svg" alt="Yuri" width="160" />
 </p>
-
-<table align="center" border="0" cellspacing="0" cellpadding="4">
-  <tr>
-    <td width="33.3%" valign="top">
-      <img src="docs/references/mobile_projects.png" alt="Mobile project and session branches" width="100%" />
-    </td>
-    <td width="33.3%" valign="top">
-      <img src="docs/references/mobile_chat.png" alt="Mobile live diff and execution state" width="100%" />
-    </td>
-    <td width="33.3%" valign="top">
-      <img src="docs/references/mobile_schedules.png" alt="Scheduled tasks and automations" width="100%" />
-    </td>
-  </tr>
-</table>
 
 ---
 
-## About OpenChamberY
+## About Yuri
 
-**OpenChamberY** is maintained by [@yee94](https://github.com/yee94), forked from the upstream open-source project [fedaykindev/openchamber](https://github.com/fedaykindev/openchamber) by Bohdan Triapitsyn.
+**Yuri** is maintained by [@yee94](https://github.com/yee94). Copyright and licensing notices are preserved in [LICENSE](LICENSE).
 
-Building upon the upstream cross-surface architecture and [OpenCode](https://opencode.ai) runtime engine, OpenChamberY focuses on:
+Building upon the upstream cross-surface architecture and [OpenCode](https://opencode.ai) runtime engine, Yuri focuses on:
 - **Codex-grade desktop flow**: `Ctrl+X` leader shortcuts, double-`Esc` abort, `/fork` session branching, and keyboard-first operations.
 - **Deep native mobile experience**: iOS Live Activities & Dynamic Island, refined haptics, native composer, and system share integration.
 - **Scheduled automations & Goal mode**: Built-in Cron scheduler for recurring codebase health audits, standup digests, and autonomous tasks.
@@ -65,7 +51,7 @@ Building upon the upstream cross-surface architecture and [OpenCode](https://ope
 ### 4. Native Mobile Experience (iOS / Android / PWA)
 - **iOS Live Activities & Dynamic Island**: Track active tasks, runtime, and attention prompts without keeping the app open.
 - **Refined touch & native composer**: Elastic press feedback, light haptics, and a mobile-optimized input experience.
-- **System share integration**: Share links, text snippets, and images from any mobile app directly into OpenChamberY assistants.
+- **System share integration**: Share links, text snippets, and images from any mobile app directly into Yuri assistants.
 - **Push alerts**: Remote notifications supported via APNs and self-hosted Push Relay.
 
 ### 5. Scheduled Tasks & Automations
@@ -88,13 +74,15 @@ Building upon the upstream cross-surface architecture and [OpenCode](https://ope
 
 ## Downloads
 
+Release blocked pending ownership and signing verification. The repository and publisher below are candidate identities, not a claim that installers are available. See [migration status](docs/YURI_MIGRATION.md).
+
 | Platform | Installation |
 |---|---|
-| **Desktop** (macOS / Windows / Linux) | [GitHub Releases](https://github.com/yee94/openchamber/releases) |
-| **iOS** (TestFlight) | [Join Public Beta](https://testflight.apple.com/join/ZCENBHtm) (requires TestFlight on device) |
-| **Android** | [GitHub Releases](https://github.com/yee94/openchamber/releases/latest) (`app-release.apk`) |
-| **VS Code** | Search `OpenChamber` in Extensions or install from [Marketplace](https://marketplace.visualstudio.com/items?itemName=fedaykindev.openchamber) |
-| **Web / CLI** | Install via `openchambery` script (see below) |
+| **Desktop** (macOS / Windows / Linux) | [GitHub Releases](https://github.com/yee94/yuri/releases) |
+| **iOS** (TestFlight) | New Yuri TestFlight identity pending verification; see [migration status](docs/YURI_MIGRATION.md) |
+| **Android** | [GitHub Releases](https://github.com/yee94/yuri/releases/latest) (`app-release.apk`) |
+| **VS Code** | Search `Yuri` in Extensions or install from [Marketplace](https://marketplace.visualstudio.com/items?itemName=yee94.yuri) |
+| **Web / CLI** | Install via `yuri` script (see below) |
 
 ---
 
@@ -107,23 +95,23 @@ Building upon the upstream cross-surface architecture and [OpenCode](https://ope
 Requires Node.js 22+:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yee94/openchamber/main/scripts/install.sh | bash
-openchambery --ui-password your-secure-password
+curl -fsSL https://raw.githubusercontent.com/yee94/yuri/main/scripts/install.sh | bash
+yuri --ui-password your-secure-password
 ```
 
 Open `http://localhost:3000`. Under Settings → Remote Instances, generate a QR code to pair your mobile app.
 
 <details>
-<summary>Common openchambery CLI commands</summary>
+<summary>Common yuri CLI commands</summary>
 
 ```bash
-openchambery --port 8080              # Custom port
-openchambery --lan --port 3000        # Listen on LAN (0.0.0.0)
-openchambery --ui-password secret     # Require UI password
-openchambery startup enable           # Enable auto-start service on boot
-openchambery connect-url --port 3000 --qr # Print pairing QR in terminal
-openchambery stop                     # Stop background service
-openchambery update                   # Update to latest version
+yuri --port 8080              # Custom port
+yuri --lan --port 3000        # Listen on LAN (0.0.0.0)
+yuri --ui-password secret     # Require UI password
+yuri startup enable           # Enable auto-start service on boot
+yuri connect-url --port 3000 --qr # Print pairing QR in terminal
+yuri stop                     # Stop background service
+yuri update                   # Update to latest version
 ```
 
 </details>
@@ -146,7 +134,6 @@ Available at `http://localhost:3000`. Set `UI_PASSWORD` in your environment.
 | Role | Details |
 |---|---|
 | **This fork** | Maintained by [yee94](https://github.com/yee94) (Yee) — Codex interaction parity, mobile UX, session reliability, and multi-surface polish |
-| **Upstream OpenChamber** | [Bohdan Triapitsyn / fedaykindev](https://github.com/fedaykindev/openchamber) — original architecture & foundational product |
 | **Runtime Engine** | [OpenCode](https://opencode.ai) — open-source AI agent runtime & SDK |
 
 Independent community project; not affiliated with the OpenCode team.

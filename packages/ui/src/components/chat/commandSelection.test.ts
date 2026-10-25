@@ -9,14 +9,14 @@ import {
 describe('shouldSubmitCommandOnSelection', () => {
   test('auto-submits only the immediate local whitelist on Enter/tap', () => {
     for (const name of AUTO_SUBMIT_SLASH_COMMANDS) {
-      expect(shouldSubmitCommandOnSelection({ name, source: 'openchamber' }, true)).toBe(true);
+      expect(shouldSubmitCommandOnSelection({ name, source: 'yuri' }, true)).toBe(true);
       expect(shouldSubmitCommandOnSelection({ name, source: 'opencode', isBuiltIn: true }, true)).toBe(true);
     }
   });
 
   test('/reload runs on Enter like /compact', () => {
-    expect(shouldSubmitCommandOnSelection({ name: 'reload', source: 'openchamber', isBuiltIn: true }, true)).toBe(true);
-    expect(shouldSubmitCommandOnSelection({ name: 'reload', source: 'openchamber', isBuiltIn: true }, false)).toBe(false);
+    expect(shouldSubmitCommandOnSelection({ name: 'reload', source: 'yuri', isBuiltIn: true }, true)).toBe(true);
+    expect(shouldSubmitCommandOnSelection({ name: 'reload', source: 'yuri', isBuiltIn: true }, false)).toBe(false);
   });
 
   test('inserts draft-style and confirm-first commands instead of auto-sending', () => {
@@ -26,7 +26,7 @@ describe('shouldSubmitCommandOnSelection', () => {
       // Local UI that still wants a deliberate second Enter
       'timeline',
     ]) {
-      expect(shouldSubmitCommandOnSelection({ name, source: 'openchamber' }, true)).toBe(false);
+      expect(shouldSubmitCommandOnSelection({ name, source: 'yuri' }, true)).toBe(false);
       expect(shouldSubmitCommandOnSelection({ name, source: 'opencode', isBuiltIn: true }, true)).toBe(false);
     }
   });
@@ -34,8 +34,8 @@ describe('shouldSubmitCommandOnSelection', () => {
   test('keeps durable references and insert-only interactions in the composer', () => {
     expect(shouldSubmitCommandOnSelection({ name: 'compact', source: 'skill', isSkill: true }, true)).toBe(false);
     expect(shouldSubmitCommandOnSelection({ name: 'loop', source: 'opencode', isBuiltIn: false }, true)).toBe(false);
-    expect(shouldSubmitCommandOnSelection({ name: 'compact', source: 'openchamber' }, false)).toBe(false);
-    expect(shouldSubmitCommandOnSelection({ source: 'openchamber' }, true)).toBe(false);
+    expect(shouldSubmitCommandOnSelection({ name: 'compact', source: 'yuri' }, false)).toBe(false);
+    expect(shouldSubmitCommandOnSelection({ source: 'yuri' }, true)).toBe(false);
   });
 });
 

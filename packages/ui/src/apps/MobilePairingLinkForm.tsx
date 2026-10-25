@@ -26,7 +26,7 @@ export type MobilePairingLinkFormProps = {
 };
 
 /**
- * Shared "paste openchamber://connect" form used by the welcome connect screen
+ * Shared "paste yuri://connect" form used by the welcome connect screen
  * and Settings → Switch instance. Submitting redeems the pairing payload and
  * connects immediately — there is no separate save step.
  */

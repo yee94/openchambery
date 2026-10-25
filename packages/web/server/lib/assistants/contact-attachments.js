@@ -205,21 +205,21 @@ export async function putContactAttachment({
   const existing = getContactAttachmentByUploadID(db, assistantID, upload);
   const expectedSize = Number(
     headerValue(headers['x-content-size'])
-    ?? headerValue(headers['x-openchamber-content-length'])
+    ?? headerValue(headers['x-yuri-content-length'])
     ?? headerValue(headers['content-length']),
   );
   const expectedSha256 = (
     headerValue(headers['x-content-sha256'])
-    || headerValue(headers['x-openchamber-sha256'])
+    || headerValue(headers['x-yuri-sha256'])
     || ''
   ).toLowerCase();
   const mimeRaw = headerValue(headers['content-type'])
-    || headerValue(headers['x-openchamber-mime'])
+    || headerValue(headers['x-yuri-mime'])
     || 'application/octet-stream';
   const mime = mimeRaw.split(';', 1)[0].trim();
   const filename = parseAttachmentFilenameHeader(
     headerValue(headers['x-attachment-filename'])
-    || headerValue(headers['x-openchamber-filename']),
+    || headerValue(headers['x-yuri-filename']),
   );
 
   if (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || expectedSize > CONTACT_ATTACHMENT_MAX_BYTES) {

@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 /** iPhone 1× baseline: 1pt = 1/163 inch. */
 export const DESIGN_PT_PER_INCH = 163;
 export const DESIGN_PT_SCALE_MIN = 0.85;
@@ -17,7 +18,7 @@ export const ANDROID_DESIGN_PT_SCALE_MAX = 0.98;
 export const ANDROID_DESIGN_PT_READABILITY_BUMP =
   ANDROID_DESIGN_PT_SCALE_MAX / ANDROID_DESIGN_PT_PREVIOUS_CAP;
 /** v8 invalidates v7 (0.95 cap) so the 0.98 lift is not masked. */
-export const DESIGN_PT_STORAGE_KEY = 'openchamber.designPtScale.v8';
+export const DESIGN_PT_STORAGE_KEY = 'yuri.designPtScale.v8';
 
 export interface PhysicalScaleMetrics {
   xdpi: number;
@@ -97,14 +98,14 @@ export async function applyDesignPtScaleFromNative(): Promise<number> {
     applyDesignPtScaleToRoot(1);
     return 1;
   }
-  if (!Capacitor.isPluginAvailable('OpenChamberPhysicalScale')) {
+  if (!Capacitor.isPluginAvailable('YuriPhysicalScale')) {
     applyDesignPtScaleToRoot(ANDROID_DESIGN_PT_SCALE_MAX);
     writeCachedDesignPtScale(ANDROID_DESIGN_PT_SCALE_MAX);
     return ANDROID_DESIGN_PT_SCALE_MAX;
   }
   try {
     const PhysicalScale = registerPlugin<{ getMetrics: () => Promise<PhysicalScaleMetrics> }>(
-      'OpenChamberPhysicalScale',
+      'YuriPhysicalScale',
     );
     const metrics = await PhysicalScale.getMetrics();
     const scale = computeDesignPtScale(metrics);

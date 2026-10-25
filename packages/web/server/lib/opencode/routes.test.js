@@ -213,11 +213,11 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
     const { app } = createUpgradeApp({
       getOpenCodeResolutionSnapshot: vi.fn(async () => ({
         source: 'installed',
-        resolved: '/tmp/openchamber/opencode-cli/2.0.12/opencode',
+        resolved: '/tmp/yuri/opencode-cli/2.0.12/opencode',
       })),
       getResolvedOpenCodeBinarySource: vi.fn(() => 'installed'),
-      getResolvedOpenCodeBinary: vi.fn(() => '/tmp/openchamber/opencode-cli/2.0.12/opencode'),
-      openchamberDataDir: '/tmp/openchamber',
+      getResolvedOpenCodeBinary: vi.fn(() => '/tmp/yuri/opencode-cli/2.0.12/opencode'),
+      yuriDataDir: '/tmp/yuri',
     });
 
     const response = await request(app)
@@ -292,7 +292,7 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
       forceResolvedOpenCodeBinary: (value) => { resolvedBinary = value; },
       restartOpenCode,
       waitForOpenCodeReady: vi.fn(),
-      openchamberDataDir: '/cache',
+      yuriDataDir: '/cache',
     });
 
     const response = await request(app).post('/api/opencode/upgrade').send({ target: '2.0.23' }).expect(200);
@@ -319,7 +319,7 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
       forceResolvedOpenCodeBinary: (value) => { binary = value; },
       restartOpenCode,
       waitForOpenCodeReady: vi.fn(),
-      openchamberDataDir: '/cache',
+      yuriDataDir: '/cache',
     });
     const before = await request(app).get('/api/opencode/upgrade-status').expect(200);
     expect(before.body).toMatchObject({ available: true, serveVersion: '2.0.16', targetVersion: '2.0.23', canManage: true });

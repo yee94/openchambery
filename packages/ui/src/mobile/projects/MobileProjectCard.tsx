@@ -130,14 +130,14 @@ export function MobileProjectCard({
         data-mobile-press-surface="soft"
         data-pressed={pressed ? 'true' : undefined}
         className={cn(
-          'oc-mobile-project-card relative flex items-stretch overflow-hidden rounded-[var(--oc-mobile-surface-radius)]',
+          'yuri-mobile-project-card relative flex items-stretch overflow-hidden rounded-[var(--yuri-mobile-surface-radius)]',
           className,
         )}
       >
         <button
           type="button"
           data-mobile-press-surface-trigger
-          className="oc-mobile-project-trigger flex min-w-0 flex-1 items-center text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
+          className="yuri-mobile-project-trigger flex min-w-0 flex-1 items-center text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
           aria-expanded={expanded}
           onClick={handleToggle}
           onPointerDown={handlePointerDown}
@@ -149,17 +149,17 @@ export function MobileProjectCard({
         >
           <span
             className={cn(
-              'oc-mobile-project-icon oc-mobile-glass-control flex shrink-0 items-center justify-center rounded-full text-muted-foreground',
+              'yuri-mobile-project-icon yuri-mobile-glass-control flex shrink-0 items-center justify-center rounded-full text-muted-foreground',
             )}
             style={TONE_STYLES[project.tone ?? 'neutral']}
             aria-hidden
           >
-            <Icon name={project.icon ?? 'code-box'} className="oc-mobile-project-icon-glyph" />
+            <Icon name={project.icon ?? 'code-box'} className="yuri-mobile-project-icon-glyph" />
           </span>
 
           <span className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="flex min-w-0 items-center gap-2">
-               <span className="oc-mobile-project-title oc-mobile-entity-title truncate font-semibold text-foreground">
+               <span className="yuri-mobile-project-title yuri-mobile-entity-title truncate font-semibold text-foreground">
                  {highlightQuery ? renderHighlightedText(project.name, highlightQuery) : project.name}
                </span>
               {project.active ? (
@@ -169,7 +169,7 @@ export function MobileProjectCard({
                 />
               ) : null}
             </span>
-            <span className="oc-mobile-project-meta oc-mobile-entity-meta flex min-w-0 items-center text-muted-foreground">
+            <span className="yuri-mobile-project-meta yuri-mobile-entity-meta flex min-w-0 items-center text-muted-foreground">
               <span className="shrink-0 tabular-nums">{countLabel}</span>
               {project.activityLabel ? (
                 <>
@@ -189,7 +189,7 @@ export function MobileProjectCard({
           <Icon
             name="arrow-down-s"
             className={cn(
-              'oc-mobile-project-chevron shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
+              'yuri-mobile-project-chevron shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
               expanded ? 'rotate-0' : '-rotate-90',
             )}
           />
@@ -200,7 +200,7 @@ export function MobileProjectCard({
             type="button"
             variant="ghost"
             size="icon"
-            className="oc-mobile-project-action self-center rounded-full text-muted-foreground"
+            className="yuri-mobile-project-action self-center rounded-full text-muted-foreground"
             aria-label={t('sessions.sidebar.project.actions.projectMenu')}
             onClick={handleOpenActions}
           >

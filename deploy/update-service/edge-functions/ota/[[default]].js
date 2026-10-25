@@ -5,6 +5,6 @@ import { handleOtaProxyRequest } from '../../lib/ota-proxy.js';
 // this route cannot match it. Static assets shadow functions on EdgeOne, so
 // the EdgeOne build must NOT copy the `ota/` seed tree into its output
 // directory (see scripts/build.mjs).
-export async function onRequest({ request }) {
-  return handleOtaProxyRequest(request);
+export async function onRequest({ request, env }) {
+  return handleOtaProxyRequest(request, { upstreamOrigin: env?.YURI_OTA_UPSTREAM_ORIGIN });
 }

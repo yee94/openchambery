@@ -60,7 +60,7 @@ describe('convertHeicToJpegViaNative', () => {
       Capacitor: {
         isNativePlatform: () => true,
         Plugins: {
-          OpenChamberMedia: {
+          YuriMedia: {
             transcode: async (options: { data: string; mime: string; quality?: number }) => {
               calls.push(options);
               return { data: JPEG_BASE64, mime: 'image/jpeg' };
@@ -88,7 +88,7 @@ describe('convertHeicToJpegViaNative', () => {
       Capacitor: {
         isNativePlatform: () => true,
         Plugins: {
-          OpenChamberMedia: {
+          YuriMedia: {
             transcode: async () => {
               throw new Error('Could not decode HEIC/HEIF image');
             },

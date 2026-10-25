@@ -14,7 +14,7 @@ import {
 const temporaryDirectories = [];
 
 const makeAuthFile = (entries) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-xai-auth-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-xai-auth-'));
   temporaryDirectories.push(dir);
   const authPath = path.join(dir, 'auth.json');
   fs.writeFileSync(authPath, JSON.stringify(entries), 'utf8');
@@ -36,11 +36,11 @@ afterEach(() => {
   for (const dir of temporaryDirectories.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
-  delete process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN;
-  delete process.env.OPENCHAMBER_GROK_AUTH_PATH;
+  delete process.env.YURI_GROK_CLI_PROXY_ORIGIN;
+  delete process.env.YURI_GROK_AUTH_PATH;
   delete process.env.GROK_AUTH_PATH;
   delete process.env.GROK_HOME;
-  delete process.env.OPENCHAMBER_GROK_CLI_PATH;
+  delete process.env.YURI_GROK_CLI_PATH;
   delete process.env.GROK_CLI_PATH;
 });
 
@@ -75,14 +75,14 @@ describe('readGrokBuildAuth', () => {
   });
 
   it('returns null when auth file is missing', () => {
-    expect(readGrokBuildAuth(path.join(os.tmpdir(), 'openchamber-xai-missing-auth.json'))).toBeNull();
-    expect(isConfigured(path.join(os.tmpdir(), 'openchamber-xai-missing-auth.json'))).toBe(false);
+    expect(readGrokBuildAuth(path.join(os.tmpdir(), 'yuri-xai-missing-auth.json'))).toBeNull();
+    expect(isConfigured(path.join(os.tmpdir(), 'yuri-xai-missing-auth.json'))).toBe(false);
   });
 });
 
 describe('resolveGrokCliPath', () => {
   it('resolves grok from ~/.local/bin when PATH has no match', () => {
-    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-xai-home-'));
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-xai-home-'));
     temporaryDirectories.push(homeDir);
     const binDir = path.join(homeDir, '.local', 'bin');
     const cliPath = path.join(binDir, 'grok');
@@ -172,7 +172,7 @@ describe('buildXaiUsageWindows', () => {
 describe('fetchQuota', () => {
   it('returns configured false when auth is missing', async () => {
     const result = await fetchQuota({
-      authPath: path.join(os.tmpdir(), 'openchamber-xai-no-auth.json')
+      authPath: path.join(os.tmpdir(), 'yuri-xai-no-auth.json')
     });
     expect(result.ok).toBe(false);
     expect(result.configured).toBe(false);
@@ -188,7 +188,7 @@ describe('fetchQuota', () => {
         expires_at: '2099-01-01T00:00:00.000Z'
       }
     });
-    process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN = 'https://proxy.test';
+    process.env.YURI_GROK_CLI_PROXY_ORIGIN = 'https://proxy.test';
 
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
@@ -217,7 +217,7 @@ describe('fetchQuota', () => {
       Authorization: 'Bearer secret-token',
       'x-xai-token-auth': 'xai-grok-cli',
       accept: 'application/json',
-      'user-agent': 'OpenChamber/xai-quota',
+      'user-agent': 'Yuri/xai-quota',
       'x-userid': 'uid-123',
       'x-grok-client-version': '1.0.0'
     });
@@ -359,7 +359,7 @@ describe('fetchQuota', () => {
         expires_at: '2099-01-01T00:00:00.000Z'
       }
     });
-    process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN = 'https://proxy.test';
+    process.env.YURI_GROK_CLI_PROXY_ORIGIN = 'https://proxy.test';
 
     const requestedUrls = [];
     const fetchImpl = vi.fn(async (url) => {
@@ -414,7 +414,7 @@ describe('fetchQuota', () => {
         expires_at: '2099-01-01T00:00:00.000Z'
       }
     });
-    process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN = 'https://proxy.test';
+    process.env.YURI_GROK_CLI_PROXY_ORIGIN = 'https://proxy.test';
 
     const requestedUrls = [];
     const fetchImpl = vi.fn(async (url) => {

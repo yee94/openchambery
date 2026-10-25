@@ -1,16 +1,16 @@
 # Router agent browser E2E (CDP / opencli)
 
-Path-mode navigation acceptance for OpenChamber web. **No Playwright** — drive Chrome via CDP (`--remote-debugging-port`) or opencli bridge.
+Path-mode navigation acceptance for Yuri web. **No Playwright** — drive Chrome via CDP (`--remote-debugging-port`) or opencli bridge.
 
 ## Prerequisites
 
-1. OpenChamber web dev/server reachable (example: `bun run dev` → loopback UI).
+1. Yuri web dev/server reachable (example: `bun run dev` → loopback UI).
 2. Chrome with remote debugging:
 
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/openchamber-router-e2e \
+  --user-data-dir=/tmp/yuri-router-e2e \
   "http://127.0.0.1:4096/"
 ```
 

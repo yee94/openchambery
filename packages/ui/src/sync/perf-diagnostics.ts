@@ -215,7 +215,7 @@ function readVisibilityFlags(): { visible?: boolean; foreground?: boolean } {
   }
   try {
     if (typeof document !== "undefined" && document.documentElement) {
-      flags.foreground = document.documentElement.classList.contains("oc-native-app-active")
+      flags.foreground = document.documentElement.classList.contains("yuri-native-app-active")
     }
   } catch {
     // omit when DOM is unavailable

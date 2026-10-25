@@ -8,7 +8,7 @@ import type { Message, Part } from '@/lib/opencode/v2-types';
 import type { TranscriptDurableStore } from './transcript-durable-store';
 import { isTranscriptSettled, transcriptDurableGenerationKey, transcriptPartCompleteness, type TranscriptDurableScope } from './transcript-durable-store';
 
-const SEARCH_DATABASE = 'openchamber-transcript-search';
+const SEARCH_DATABASE = 'yuri-transcript-search';
 
 const searchableText = (info: Message, parts: readonly Part[]) => {
   const role = info.clientRole ?? info.role;

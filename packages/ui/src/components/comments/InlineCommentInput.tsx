@@ -127,7 +127,7 @@ export function InlineCommentInput({
   return (
     <div
       className={cn(
-        "rounded-lg border shadow-none w-full max-w-[min(100%,calc(var(--oc-context-panel-width,100vw)-var(--oc-editor-gutter-width,0px)))] overflow-hidden animate-in fade-in zoom-in-95 duration-200",
+        "rounded-lg border shadow-none w-full max-w-[min(100%,calc(var(--yuri-context-panel-width,100vw)-var(--yuri-editor-gutter-width,0px)))] overflow-hidden animate-in fade-in zoom-in-95 duration-200",
         className
       )}
       style={{

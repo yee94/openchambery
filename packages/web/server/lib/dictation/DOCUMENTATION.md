@@ -25,7 +25,7 @@ same status/download/delete routes.
 - `runtime.js` — registers `GET /api/dictation/status`,
   `POST /api/dictation/models/:modelId/download`, and the
   `/api/dictation/ws` WebSocket endpoint (auth-gated the same way as the
-  terminal WS: UI session token or `oc_url_token`, plus origin check).
+  terminal WS: UI session token or `yuri_url_token`, plus origin check).
   Created from the startup pipeline (`startup-pipeline-runtime.js`) before
   the generic OpenCode proxy so routes are not shadowed.
 - `stream-manager.js` — `DictationStreamManager`, one per WS connection.
@@ -104,7 +104,7 @@ close, and credentials are never logged.
   expected to retain unacked segments for retry/replay.
 - Silence-only segments (peak < 300) are cleared, never committed, so
   Whisper-style providers do not hallucinate on silence.
-- Model files live under `~/.config/openchamber/speech-models`.
+- Model files live under `~/.config/yuri/speech-models`.
 
 ## Relay streaming verification
 

@@ -3,7 +3,7 @@ import React from 'react';
 /**
  * Strip at the top of the desktop left sidebar that reserves room for the
  * persistent {@link TitlebarLeftControls} overlay. Its height tracks the
- * header via `--oc-header-height`.
+ * header via `--yuri-header-height`.
  *
  * Split into three regions so the strip stays a window drag area while the
  * overlay buttons remain clickable: a `no-drag` carve matching the overlay
@@ -15,19 +15,19 @@ export const SidebarTopBar: React.FC = () => {
   return (
     <div
       className="flex shrink-0"
-      style={{ height: 'var(--oc-header-height, 3rem)' }}
+      style={{ height: 'var(--yuri-header-height, 3rem)' }}
     >
       {/* Drag region for the window-controls inset (traffic lights). */}
       <div
         aria-hidden
         className="app-region-drag shrink-0"
-        style={{ width: 'var(--oc-titlebar-left-inset, 0.75rem)' }}
+        style={{ width: 'var(--yuri-titlebar-left-inset, 0.75rem)' }}
       />
       {/* No-drag carve under the overlay buttons so they stay clickable. */}
       <div
         aria-hidden
         className="app-region-no-drag shrink-0"
-        style={{ width: 'calc(var(--oc-titlebar-controls-width, 5.5rem) + 0.5rem)' }}
+        style={{ width: 'calc(var(--yuri-titlebar-controls-width, 5.5rem) + 0.5rem)' }}
       />
       {/* Draggable remainder of the strip. */}
       <div aria-hidden className="app-region-drag flex-1" />

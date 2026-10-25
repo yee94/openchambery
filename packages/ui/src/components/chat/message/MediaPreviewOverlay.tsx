@@ -15,8 +15,8 @@ export function PreviewCloseButton({ onClose, isMobile, size }: {
 }) {
     const { t } = useI18n();
     return <div className="absolute right-3 z-20" style={isMobile ? {
-        top: 'calc(var(--oc-safe-area-top, 0px) + 0.5rem)',
-        right: 'calc(var(--oc-safe-area-right, 0px) + 0.75rem)',
+        top: 'calc(var(--yuri-safe-area-top, 0px) + 0.5rem)',
+        right: 'calc(var(--yuri-safe-area-right, 0px) + 0.75rem)',
     } : {
         top: size ? `calc(50% - ${size.height / 2}px + 0.5rem)` : '0.5rem',
         right: size ? `calc(50% - ${size.width / 2}px + 0.5rem)` : '0.5rem',
@@ -30,11 +30,11 @@ export function PreviewCloseButton({ onClose, isMobile, size }: {
 export function MediaPreviewToolbar({ children, isMobile }: { children: React.ReactNode; isMobile: boolean }) {
     return <div className="pointer-events-none absolute z-20"
         style={isMobile ? {
-            bottom: 'calc(var(--oc-safe-area-bottom, 0px) + 0.75rem)',
-            right: 'calc(var(--oc-safe-area-right, 0px) + 0.75rem)',
+            bottom: 'calc(var(--yuri-safe-area-bottom, 0px) + 0.75rem)',
+            right: 'calc(var(--yuri-safe-area-right, 0px) + 0.75rem)',
         } : { bottom: '1rem', left: '1rem' }}>
         <div data-media-preview-toolbar={isMobile ? 'mobile' : 'desktop'}
-            className={`pointer-events-auto flex items-center text-[var(--oc-media-preview-foreground)] ${isMobile ? 'gap-1.5' : 'gap-2'}`}
+            className={`pointer-events-auto flex items-center text-[var(--yuri-media-preview-foreground)] ${isMobile ? 'gap-1.5' : 'gap-2'}`}
             onPointerDown={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}>
             {children}
@@ -93,8 +93,8 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
         data-media-preview={kind} data-page-scroll-lock="true" tabIndex={-1}
         className="fixed inset-0 z-[80] overflow-hidden select-none [-webkit-touch-callout:none]"
         style={{
-            backgroundColor: isMobile ? 'var(--oc-media-preview-background)' : `color-mix(in srgb, var(--oc-media-preview-background) ${kind === 'mermaid' ? 90 : 70}%, transparent)`,
-            color: 'var(--oc-media-preview-foreground)',
+            backgroundColor: isMobile ? 'var(--yuri-media-preview-background)' : `color-mix(in srgb, var(--yuri-media-preview-background) ${kind === 'mermaid' ? 90 : 70}%, transparent)`,
+            color: 'var(--yuri-media-preview-foreground)',
         }}
         onClick={(event) => { event.stopPropagation(); }}
         onKeyDown={(event) => {

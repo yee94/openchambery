@@ -3,7 +3,7 @@ import type { SessionIndexSnapshot } from '@/lib/session-index-api';
 export type SessionIndexStartupStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
 const CACHE_VERSION = 1;
-const STORAGE_KEY = 'oc.sessionIndexStartupCache';
+const STORAGE_KEY = 'yuri.sessionIndexStartupCache';
 const MAX_RUNTIME_ENTRIES = 8;
 const MAX_CACHE_BYTES = 1_000_000;
 

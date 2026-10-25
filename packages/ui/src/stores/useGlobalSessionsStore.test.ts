@@ -5,30 +5,30 @@ import type { SessionIndexSnapshot } from '@/lib/session-index-api';
 // Clear sticky mocks from other suites before installing this file's doubles.
 mock.restore();
 
-type OpenChamberEvent = {
+type YuriEvent = {
   type: string;
   revision?: number;
   occurredAt?: number;
   sync?: { active: boolean; enriching: boolean };
 };
-const tipListeners = new Set<(event: OpenChamberEvent) => void>();
+const tipListeners = new Set<(event: YuriEvent) => void>();
 let latestIndexRevision: number | undefined;
-/** Deliver a tip (or ready) event to every active OpenChamber tip subscriber. */
-const emitOpenchamberTip = (event: OpenChamberEvent) => {
+/** Deliver a tip (or ready) event to every active Yuri tip subscriber. */
+const emitYuriTip = (event: YuriEvent) => {
   if (event.type === 'session-index-changed' && event.revision !== undefined) {
     latestIndexRevision = Math.max(latestIndexRevision ?? 0, event.revision);
   }
   for (const listener of [...tipListeners]) listener(event);
 };
-const realOpenchamberEvents = await import('@/lib/openchamberEvents');
-mock.module('@/lib/openchamberEvents', () => ({
-  getLatestOpenchamberEventRevision: () => latestIndexRevision,
-  subscribeOpenchamberEvents: (listener: (event: OpenChamberEvent) => void) => {
+const realYuriEvents = await import('@/lib/yuriEvents');
+mock.module('@/lib/yuriEvents', () => ({
+  getLatestYuriEventRevision: () => latestIndexRevision,
+  subscribeYuriEvents: (listener: (event: YuriEvent) => void) => {
     tipListeners.add(listener);
     return () => { tipListeners.delete(listener); };
   },
   // Keep the real parser so sibling suites can still assert envelope contracts.
-  parseOpenchamberEventEnvelope: realOpenchamberEvents.parseOpenchamberEventEnvelope,
+  parseYuriEventEnvelope: realYuriEvents.parseYuriEventEnvelope,
 }));
 
 // Load after the tip mock so waitForSessionIndexInvalidation binds the double.
@@ -458,13 +458,13 @@ describe('useGlobalSessionsStore', () => {
       globalThis.fetch = async (input, init) => {
         const url = input instanceof Request ? input.url : String(input);
         const pathname = new URL(url, 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index') {
+        if (pathname === '/api/yuri/session-index') {
           return new Response(JSON.stringify({ available: true, ...snapshot }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { directories?: string[] } : {};
           syncBodies.push([...(body.directories ?? [])].sort());
           return new Response(JSON.stringify(snapshot), {
@@ -543,14 +543,14 @@ describe('useGlobalSessionsStore', () => {
       globalThis.fetch = async (input, init) => {
         const url = input instanceof Request ? input.url : String(input);
         const pathname = new URL(url, 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index') {
+        if (pathname === '/api/yuri/session-index') {
           const payload = syncActive ? emptySnapshot : completedSnapshot;
           return new Response(JSON.stringify({ available: true, ...payload, revision }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { directories?: string[] } : {};
           syncBodies.push([...(body.directories ?? [])].sort());
           return new Response(JSON.stringify(emptySnapshot), {
@@ -577,7 +577,7 @@ describe('useGlobalSessionsStore', () => {
 
       syncActive = false;
       revision = 2;
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       await startup;
       expect(finished).toBe(true);
       // No deferred second sync when cache miss forces full immediate set.
@@ -627,7 +627,7 @@ describe('useGlobalSessionsStore', () => {
         const url = input instanceof Request ? input.url : String(input);
         const pathname = new URL(url, 'http://localhost').pathname;
         requests.push(pathname);
-        if (pathname === '/api/openchamber/session-index') {
+        if (pathname === '/api/yuri/session-index') {
           return Promise.resolve(new Response(JSON.stringify({ available: true, ...snapshot }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
@@ -648,8 +648,8 @@ describe('useGlobalSessionsStore', () => {
 
       expect(sdkListCalls).toBe(0);
       expect(requests).toEqual([
-        '/api/openchamber/session-index',
-        '/api/openchamber/session-index/sync',
+        '/api/yuri/session-index',
+        '/api/yuri/session-index/sync',
       ]);
       expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/server')).toEqual([cached]);
     } finally {
@@ -702,7 +702,7 @@ describe('useGlobalSessionsStore', () => {
         sessions: [{
           ...older,
           metadata: {
-            openchamber: {
+            yuri: {
               titleRefresh: { activityUpdatedAt: 30 },
             },
           },
@@ -718,13 +718,13 @@ describe('useGlobalSessionsStore', () => {
       globalThis.fetch = (input) => {
         requestCount += 1;
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index' && requestCount === 1) {
+        if (pathname === '/api/yuri/session-index' && requestCount === 1) {
           return Promise.resolve(new Response(JSON.stringify({ available: true, ...initialSnapshot }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           }));
         }
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return Promise.resolve(new Response(JSON.stringify(initialSnapshot), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
@@ -738,7 +738,7 @@ describe('useGlobalSessionsStore', () => {
 
       const startup = useGlobalSessionsStore.getState().startSessionIndexStartup(['/repo/activity']);
       for (let i = 0; i < 50 && tipListeners.size === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       await startup;
       while (useGlobalSessionsStore.getState().activeSessions[0]?.id !== 'ses_older') {
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -835,13 +835,13 @@ describe('useGlobalSessionsStore', () => {
       let phase: 'initial' | 'recovered' | 'later' = 'initial';
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return new Response(JSON.stringify(initialSnapshot), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (pathname === '/api/openchamber/session-index') {
+        if (pathname === '/api/yuri/session-index') {
           requestCount += 1;
           concurrentGets += 1;
           maxConcurrentGets = Math.max(maxConcurrentGets, concurrentGets);
@@ -889,7 +889,7 @@ describe('useGlobalSessionsStore', () => {
       const cachedDirsBeforeFailure = [...useGlobalSessionsStore.getState().cachedDirectories];
       failNextSessionIndexGet = true;
       phase = 'recovered';
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       while (!failSeen) await new Promise((resolve) => setTimeout(resolve, 10));
       expect(useGlobalSessionsStore.getState().sessionsByDirectory.get(dir)).toEqual(sessionsBeforeFailure);
       expect([...useGlobalSessionsStore.getState().cachedDirectories]).toEqual(cachedDirsBeforeFailure);
@@ -901,7 +901,7 @@ describe('useGlobalSessionsStore', () => {
         .toEqual(['ses_recovered', 'ses_older', 'ses_newer']);
 
       phase = 'later';
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 3, occurredAt: 2 });
+      emitYuriTip({ type: 'session-index-changed', revision: 3, occurredAt: 2 });
       while (useGlobalSessionsStore.getState().activeSessions[0]?.id !== 'ses_later') {
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
@@ -960,7 +960,7 @@ describe('useGlobalSessionsStore', () => {
       const appliedRevisions: number[] = [];
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return new Response(JSON.stringify(snapshotAt()), { status: 202, headers: { 'Content-Type': 'application/json' } });
         }
         snapshotGets += 1;
@@ -986,14 +986,14 @@ describe('useGlobalSessionsStore', () => {
       for (let burst = 0; burst < 8; burst += 1) {
         for (let i = 0; i < 32; i += 1) {
           latestRevision += 1;
-          emitOpenchamberTip({ type: 'session-index-changed', revision: latestRevision, occurredAt: latestRevision, sync: { active: true, enriching: false } });
+          emitYuriTip({ type: 'session-index-changed', revision: latestRevision, occurredAt: latestRevision, sync: { active: true, enriching: false } });
         }
         await new Promise((resolve) => setTimeout(resolve, 150));
       }
       busy = false;
       latestRevision += 1;
       const finalRevision = latestRevision;
-      emitOpenchamberTip({ type: 'session-index-changed', revision: finalRevision, occurredAt: finalRevision, sync: { active: false, enriching: false } });
+      emitYuriTip({ type: 'session-index-changed', revision: finalRevision, occurredAt: finalRevision, sync: { active: false, enriching: false } });
       for (let i = 0; i < 100 && appliedRevisions.at(-1) !== finalRevision; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
@@ -1073,13 +1073,13 @@ describe('useGlobalSessionsStore', () => {
       let armTips = false;
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return new Response(JSON.stringify(initialSnapshot), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (pathname === '/api/openchamber/session-index') {
+        if (pathname === '/api/yuri/session-index') {
           if (!armTips) {
             return new Response(JSON.stringify({ available: true, ...initialSnapshot }), {
               status: 200,
@@ -1104,7 +1104,7 @@ describe('useGlobalSessionsStore', () => {
       await startup;
 
       armTips = true;
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       while (hungGet.resolve === null) await new Promise((resolve) => setTimeout(resolve, 10));
 
       const attemptsAtSwitch = tipDrivenAttempts;
@@ -1179,7 +1179,7 @@ describe('useGlobalSessionsStore', () => {
       await useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/manual-sync']);
 
       expect(sdkListCalls).toBe(0);
-      expect(requests).toEqual(['/api/openchamber/session-index/sync']);
+      expect(requests).toEqual(['/api/yuri/session-index/sync']);
       expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/manual-sync')).toEqual([synced]);
     } finally {
       opencodeClient.getSdkClient = originalGetSdkClient;
@@ -1289,7 +1289,7 @@ describe('useGlobalSessionsStore', () => {
       });
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return new Response(JSON.stringify(pending), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
@@ -1303,7 +1303,7 @@ describe('useGlobalSessionsStore', () => {
 
       const sync = useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/empty-lock']);
       while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       await sync;
 
       expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/empty-lock')?.map((session) => session.id))
@@ -1365,7 +1365,7 @@ describe('useGlobalSessionsStore', () => {
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
         requests.push(pathname);
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return new Response(JSON.stringify(pending), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
@@ -1380,8 +1380,8 @@ describe('useGlobalSessionsStore', () => {
 
       await useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/missed-tip']);
 
-      expect(requests[0]).toBe('/api/openchamber/session-index/sync');
-      expect(requests).toContain('/api/openchamber/session-index');
+      expect(requests[0]).toBe('/api/yuri/session-index/sync');
+      expect(requests).toContain('/api/yuri/session-index');
       expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/missed-tip')).toEqual([completedSession]);
     } finally {
       Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
@@ -1425,7 +1425,7 @@ describe('useGlobalSessionsStore', () => {
       });
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return new Response(JSON.stringify(p0Pending), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
@@ -1445,7 +1445,7 @@ describe('useGlobalSessionsStore', () => {
       expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/a')).toBe(true);
       expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/b')).toBe(false);
 
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       while (
         useGlobalSessionsStore.getState().loadingDirectories.has('/repo/a')
         || !useGlobalSessionsStore.getState().loadingDirectories.has('/repo/b')
@@ -1489,7 +1489,7 @@ describe('useGlobalSessionsStore', () => {
       });
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return new Response(JSON.stringify(pending), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
@@ -1500,7 +1500,7 @@ describe('useGlobalSessionsStore', () => {
 
       const sync = useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/revalidation-failure']);
       while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       await sync;
 
       expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/revalidation-failure')).toBe(false);
@@ -1538,13 +1538,13 @@ describe('useGlobalSessionsStore', () => {
       });
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return new Response(JSON.stringify(pending), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (pathname === '/api/openchamber/session-index/directory') {
+        if (pathname === '/api/yuri/session-index/directory') {
           return new Response(null, { status: 204 });
         }
         throw new Error('session index revalidation failed');
@@ -1555,7 +1555,7 @@ describe('useGlobalSessionsStore', () => {
       while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
       const refresh = useGlobalSessionsStore.getState().refreshSessionsForDirectories(['/repo/overlap']);
       await new Promise((resolve) => setTimeout(resolve, 0));
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       await sync;
 
       expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/overlap')).toBe(true);
@@ -1689,7 +1689,7 @@ describe('useGlobalSessionsStore', () => {
       let snapshotLoads = 0;
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index/sync') {
+        if (pathname === '/api/yuri/session-index/sync') {
           return new Response(JSON.stringify(initialSync), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
@@ -1717,7 +1717,7 @@ describe('useGlobalSessionsStore', () => {
       const startup = useGlobalSessionsStore.getState().startSessionIndexStartup(['/repo/a', '/repo/b'])
         .then(() => { finished = true; });
       while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       while (!useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/a')) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
@@ -1726,7 +1726,7 @@ describe('useGlobalSessionsStore', () => {
       expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/a')).toEqual([firstSession]);
       expect(finished).toBe(false);
 
-      emitOpenchamberTip({ type: 'session-index-changed', revision: 3, occurredAt: 2 });
+      emitYuriTip({ type: 'session-index-changed', revision: 3, occurredAt: 2 });
       await startup;
       expect(finished).toBe(true);
     } finally {
@@ -2495,7 +2495,7 @@ describe('session-index client SWR + cold startup seed', () => {
       writeSessionIndexSnapshotQuery(seedSnapshot as SessionIndexSnapshot);
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
-        if (pathname === '/api/openchamber/session-index') {
+        if (pathname === '/api/yuri/session-index') {
           return new Response(JSON.stringify({ available: true, ...liveSnapshot }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },

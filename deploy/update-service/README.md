@@ -1,9 +1,22 @@
-# OpenChamber Update Service
+# Yuri Update Service
 
-This Vercel project serves the public OpenChamber update-check API at
+This Vercel project serves the public Yuri update-check API at
 `POST /v1/update/check`.
 
 ## Contract
+
+Yuri OTA requires the installed shell request and selected platform artifact to
+carry the same native identity: mobile `com.yee94.yuri`, desktop `dev.yuri.desktop`.
+Mobile metadata lives on `activeBundle`; desktop identity and `minShellApiVersion`
+live independently on `activeBundle.desktop`. Capgo requests supply native `app_id`.
+Missing or mismatched client identity returns `install_native_required` without
+a bundle; historical manifests without this identity cannot serve Yuri OTA.
+Both platforms' request epochs and bundle `minShellApiVersion` must be at least 2.
+Capgo automatic checks infer epoch 2 only for the exact new native `app_id`;
+desktop never inherits mobile identity/epoch, and retains its independent shell
+fingerprint and release-version gate. Preview identities are not release clients.
+The release remains blocked on external identity verification; see
+[`docs/YURI_MIGRATION.md`](../../docs/YURI_MIGRATION.md).
 
 The endpoint accepts the existing client payload. It derives its decision from
 `currentVersion` and returns `latestVersion`, `updateAvailable`,
@@ -41,7 +54,7 @@ repository `contents: write` permission for this manifest commit.
 
 | Setting | Value |
 | --- | --- |
-| Project name | `openchamber-update` |
+| Project name | `yuri-update` |
 | Root directory | `deploy/update-service` |
 | Build command | `node scripts/build.mjs` |
 | Install command | none (no package dependencies) |
@@ -51,25 +64,24 @@ repository `contents: write` permission for this manifest commit.
 Connect the repository so pushes to `main` create production deployments, or
 deploy with the Vercel CLI from `deploy/update-service`.
 
-OpenChamber Web, CLI, and VS Code use
-`https://openchamber-update.vercel.app/v1/update/check` through the connected
-OpenChamber Server (with optional `OPENCHAMBER_UPDATE_API_URL` override). Capacitor
+Yuri Web, CLI, and VS Code use
+the explicitly configured update API through the connected
+Yuri Server (with optional `YURI_UPDATE_API_URL` override). Capacitor
 mobile clients call the public update API **directly** from the app process,
-preferring EdgeOne (`https://openchamber.xiaobe.top/v1/update/check`), then
-this Vercel endpoint, then GitHub Releases. Packaged Desktop builds on macOS,
+using verified deployment endpoints. Packaged Desktop builds on macOS,
 Windows, and Linux use the shared OTA decision endpoint below. `/desktop/`
 remains the legacy electron-updater feed: `latest.yml`, `latest-mac.yml`,
 `latest-linux.yml`, and `latest-linux-arm64.yml` are served from the stable
 GitHub Latest `full*.yml` counterparts. New release CI does not upload
 `latest*.yml`.
 
-`OPENCHAMBER_UPDATE_API_URL` remains available as a compatible JSON API
+`YURI_UPDATE_API_URL` remains available as a compatible JSON API
 override for Web, VS Code, and server-side package update checks.
 
 ## Tests
 
 ```sh
-bunx vitest run --project @openchamber/update-service
+bunx vitest run --project @yuri/update-service
 ```
 
 Or `bun run test` from this directory.
@@ -77,7 +89,7 @@ Or `bun run test` from this directory.
 ## EdgeOne transition compatibility
 
 `edgeone.json` and `edge-functions/` keep the retired
-`openchamber-update.edgeone.dev` feed available for already-installed clients.
+previously configured feed available for already-installed clients.
 Its build command writes `dist/`, while Vercel continues to build `public/`.
 The EdgeOne project must permit public requests to its project domain; this
 transition feed uses the same stable release manifest and GitHub release assets
@@ -91,7 +103,7 @@ Self-hosted Capgo-style OTA for Capacitor mobile clients.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/v1/mobile/update/check` | OpenChamber decision JSON |
+| `POST` | `/v1/mobile/update/check` | Yuri decision JSON |
 | `POST` | `/v1/ota/check` | Capgo self-hosted protocol response |
 
 Both accept CORS preflight (`OPTIONS`) and return `cache-control: no-store`.
@@ -99,6 +111,8 @@ Both accept CORS preflight (`OPTIONS`) and return `cache-control: no-store`.
 ### Request body (`/v1/mobile/update/check`)
 
 Required JSON fields:
+
+- `applicationId`: `com.yee94.yuri` for mobile, `dev.yuri.desktop` for desktop, read from the installed native shell
 
 - `channel`: `beta` \| `stable`
 - `platform`: `ios` \| `android` \| `desktop`
@@ -175,11 +189,12 @@ Schema summary (`schemaVersion: 1`):
 
 - `channel`, `generation`
 - `activeBundle`: full bundle metadata, or `null` when OTA is enabled but nothing is published yet
+  - `applicationId`: `com.yee94.yuri`; historical records may parse without it but are never offered as Yuri OTA
   - `minShellReleaseVersion` (optional): semver `X.Y.Z` / `X.Y.Z-beta.N`；原生壳能力下限，低于此版本 → `install_native_required`。同 core stripped stable 高于 prerelease 门；verifier old-shell 使用真实低于 gate 的版本身份
   - `platforms.ios|android.minNativeBuild` (**deprecated**): 存量 manifest 兼容读取；判定已不使用
 - `nativeTargets.ios|android`: optional `{ version, build, status?, installUrl? }`
 - `rollbackBundleIds`: 0–2 hex bundle ids
-- `activeBundle.desktop` (optional for legacy manifests): `{ bundleId, url, size, checksum, shellFingerprint, minShellReleaseVersion }`. The desktop ZIP has the desktop `index.html` and `desktop-ota.json`; mobile's existing bundle may remain Capgo-encrypted. Both artifacts share the parent release version, channel, rollout and generation. A legacy manifest without this field offers no desktop OTA.
+- `activeBundle.desktop` (optional for legacy manifests): `{ applicationId: "dev.yuri.desktop", minShellApiVersion: 2, bundleId, url, size, checksum, shellFingerprint, minShellReleaseVersion }`. The desktop ZIP has the desktop `index.html` and `desktop-ota.json` (`applicationId: "dev.yuri.desktop"`, `shellApiVersion: 2`); mobile's existing bundle may remain Capgo-encrypted. Both artifacts share the parent release version, channel, rollout and generation. A legacy manifest without this field offers no desktop OTA. A desktop record missing its identity or epoch requires a new native install; it never inherits the mobile record's fields.
 - `nativeTargets.desktop`: installer release target when the desktop shell, dependencies or shell-shared backend modules are incompatible. Ordinary backend source updates ship with the desktop UI ZIP. The desktop gate compares `nativeVersion`, not `currentBundleId`; current UI identity still controls upgrade/rollback and major isolation.
 - `rollbackBundles`: up to two full prior bundle records keyed by `rollbackBundleIds`. Snapshot/rollout mirrors their desktop ZIPs as well as mobile ZIPs. New rollbacks restore original versions, checksums, encryption metadata and shell floors; legacy rollback entries without desktop metadata cannot be used to reconstruct a desktop bundle.
 - `majorReleases` (optional): map of other major numbers to complete schema-v1 channel manifests, with no nested `majorReleases`. The root remains the most recently published/modified lane for existing publishing consumers; the resolver selects by client major, never by the root's recency. Root and archived lanes must have distinct majors, the same channel, and same-major native targets/shell floors. Legacy manifests without the map remain readable. An empty legacy seed belongs to major 1.
@@ -201,13 +216,13 @@ Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne)
 
 ### Deploying bundles and channels
 
-CI publishes a static snapshot: place zip artifacts under `ota/bundles/<bundleId>.zip` and update the matching `ota/channels/<channel>.json`. The Vercel origin (`openchamber-update.vercel.app`) is authoritative — CI deploys snapshots there via `vercel deploy --prebuilt`.
+CI publishes a static snapshot: place zip artifacts under `ota/bundles/<bundleId>.zip` and update the matching `ota/channels/<channel>.json`. The Vercel origin (`updates.example.com`) is authoritative — CI deploys snapshots there via `vercel deploy --prebuilt`.
 
-The EdgeOne host (`openchamber.xiaobe.top`) deploys from git and therefore only carries git-time seeds. To keep it current, EdgeOne reverse-proxies allowlisted paths to the Vercel origin:
+The EdgeOne host (`updates-mirror.example.com`) deploys from git and therefore only carries git-time seeds. To keep it current, EdgeOne reverse-proxies allowlisted paths to the Vercel origin:
 
 - `edge-functions/ota/[[default]].js` → `/ota/channels/*.json` and `/ota/bundles/*.zip`
 - `edge-functions/CHANGELOG.md.js` → exact `/CHANGELOG.md` (so mobile `releaseNotes` on EdgeOne match Vercel)
 
 Cache headers: channels and CHANGELOG use `s-maxage=60` + stale-while-revalidate; full bundles use `immutable`. For bundle paths only, the proxy forwards client `Range` and passes through `content-range` / `accept-ranges` so Capgo native resume works; channel and CHANGELOG paths never forward `Range`. Partial responses use `cache-control: no-store` so an edge never caches a byte-range body that would poison later full GETs. The proxy is path-allowlisted and surfaces upstream failures as `502` — it never fabricates an authoritative empty body.
 
-**Static assets shadow edge functions on EdgeOne**, so the EdgeOne build (`edgeone.json`) sets `OPENCHAMBER_UPDATE_SKIP_OTA_COPY=1` and `OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY=1` — the `dist/` output must not contain `ota/` or `CHANGELOG.md`, or the proxies never run. Vercel still emits both as real static files (authoritative origin).
+**Static assets shadow edge functions on EdgeOne**, so the EdgeOne build (`edgeone.json`) sets `YURI_UPDATE_SKIP_OTA_COPY=1` and `YURI_UPDATE_SKIP_CHANGELOG_COPY=1` — the `dist/` output must not contain `ota/` or `CHANGELOG.md`, or the proxies never run. Vercel still emits both as real static files (authoritative origin).

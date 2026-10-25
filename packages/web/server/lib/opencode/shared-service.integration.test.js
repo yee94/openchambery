@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createSharedOpenCodeService, isProcessAlive } from './shared-service.js';
 
 // Opt-in real service, with isolated registration, config and database. No model calls.
-test.skipIf(!process.env.OPENCHAMBER_TEST_OPENCODE_BINARY)('shared service survives its launcher, is reused, and can be replaced explicitly', async () => {
+test.skipIf(!process.env.YURI_TEST_OPENCODE_BINARY)('shared service survives its launcher, is reused, and can be replaced explicitly', async () => {
   const temporary = path.join(os.tmpdir(), 'opencode');
   await fs.mkdir(temporary, { recursive: true });
   const root = await fs.mkdtemp(path.join(temporary, 'shared-service-'));
@@ -30,7 +30,7 @@ test.skipIf(!process.env.OPENCHAMBER_TEST_OPENCODE_BINARY)('shared service survi
     OPENCODE_CONFIG_DIR: config,
     OPENCODE_DISABLE_MODELS_FETCH: '1',
   };
-  const binary = process.env.OPENCHAMBER_TEST_OPENCODE_BINARY;
+  const binary = process.env.YURI_TEST_OPENCODE_BINARY;
   const service = createSharedOpenCodeService({
     envLike: env,
     spawnImpl: (command, args, options) => spawn(command, args, { ...options, cwd: root }),

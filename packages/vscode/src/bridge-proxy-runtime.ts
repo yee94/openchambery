@@ -68,7 +68,7 @@ const collectProxyResponseHeaders = (headers: Headers, deps: Pick<ProxyRuntimeDe
 
 /**
  * Restore the v2 `/api` prefix for OpenCode upstream paths. Webview local
- * OpenChamber routes already ran first; bare root paths are treated as legacy
+ * Yuri routes already ran first; bare root paths are treated as legacy
  * 1.x forms and rewritten so the sidecar origin never loses `/api`.
  */
 export const ensureOpenCodeApiUpstreamPath = (requestPath: string): string => {
@@ -76,7 +76,7 @@ export const ensureOpenCodeApiUpstreamPath = (requestPath: string): string => {
   if (!trimmed) return '/api';
   const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   try {
-    const parsed = new URL(withSlash, 'https://openchamber.invalid');
+    const parsed = new URL(withSlash, 'https://yuri.invalid');
     const pathname = parsed.pathname || '/';
     if (pathname === '/api' || pathname.startsWith('/api/')) {
       return `${pathname}${parsed.search}${parsed.hash}`;
@@ -113,7 +113,7 @@ export const isBridgeExecutionWritePath = (method: string, requestPath: string):
 
 const isSseProxyPath = (requestPath: string): boolean => {
   try {
-    const parsed = new URL(requestPath, 'https://openchamber.invalid');
+    const parsed = new URL(requestPath, 'https://yuri.invalid');
     const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
     return pathname === '/api/event'
       || pathname === '/api/global/event'
@@ -137,7 +137,7 @@ const isExactSessionMessagePath = (requestPath: string): boolean =>
  */
 const isSessionMessagesListPath = (requestPath: string): boolean => {
   try {
-    const parsed = new URL(requestPath, 'https://openchamber.invalid');
+    const parsed = new URL(requestPath, 'https://yuri.invalid');
     return /^\/(?:api\/)?session\/[^/]+\/(?:message|context)\/?$/.test(parsed.pathname);
   } catch {
     return /^\/(?:api\/)?session\/[^/]+\/(?:message|context)(?:\?.*)?$/.test(requestPath)
@@ -269,7 +269,7 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data: localFsResponse };
       }
 
-      // OpenChamber-owned question auto-delegate + precise /question/:id/reply|reject
+      // Yuri-owned question auto-delegate + precise /question/:id/reply|reject
       // claim gate. Handled on the Extension Host so timers stay authoritative
       // without forwarding these Host routes to OpenCode (or re-entering claim).
       const questionAutoDelegateResponse = await tryHandleQuestionAutoDelegateProxy(
@@ -282,7 +282,7 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data: questionAutoDelegateResponse };
       }
 
-      // OpenChamber-owned session metadata + Host archive (shared store core).
+      // Yuri-owned session metadata + Host archive (shared store core).
       const sessionMetadataResponse = await tryHandleSessionMetadataProxy(
         normalizedMethod,
         normalizedPath,
@@ -299,7 +299,7 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data };
       }
 
-      // OpenChamber projection control — never forwarded to OpenCode.
+      // Yuri projection control — never forwarded to OpenCode.
       const includeReasoning = readIncludeReasoningFromUrl(normalizedPath);
       const upstreamPath = ensureOpenCodeApiUpstreamPath(stripIncludeReasoningParam(normalizedPath));
 

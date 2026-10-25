@@ -56,7 +56,7 @@ const registerListRoute = ({ projects, listScheduledTasks, settings = { projects
     sanitizeProjects: vi.fn((value) => value),
     projectConfigRuntime: { listScheduledTasks },
   });
-  return getRoute('GET', '/api/openchamber/scheduled-tasks');
+  return getRoute('GET', '/api/yuri/scheduled-tasks');
 };
 
 const registerMutationRoutes = ({
@@ -170,7 +170,7 @@ describe('scheduled task run history route', () => {
       scheduledTasksRuntime: { syncProject: vi.fn(), runNow: vi.fn() },
       runHistoryStore,
     });
-    return getRoute('GET', '/api/openchamber/scheduled-task-runs');
+    return getRoute('GET', '/api/yuri/scheduled-task-runs');
   };
 
   it('returns paginated runs from the history store', async () => {

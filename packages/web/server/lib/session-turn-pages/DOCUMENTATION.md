@@ -10,16 +10,16 @@ are opaque and preserved; upstream objects are never mutated. Web proxy and VS
 Code bridge share this helper. Reasoning text and token totals remain governed
 by the existing reasoning projection. SSE events retain their existing payloads.
 
-OpenChamber-owned turn-window pagination and anchor reconcile for session messages.
+Yuri-owned turn-window pagination and anchor reconcile for session messages.
 
 1. **Turn pages** — clients request the last N **authored user turns** (default 3) rather than a raw message count. The host loops OpenCode v2 `message.list` pages (first page `limit` + `order=desc`; continuation `limit` + `cursor` from the previous body `cursor.next` — upstream rejects `order` together with `cursor` with 400) until the turn budget is met or history is exhausted.
 2. **Anchor reconcile** — after SSE reconnect, clients request the gap from a stable turn-boundary anchor to the current head. The host scans newest→older, returns chronological gap records (including the anchor's overlap turn), and paginates via host-owned continuation tokens with page/byte/total budgets.
 
 Exposed as:
 
-- `GET /api/openchamber/sessions/:sessionID/messages`
-- `GET /api/openchamber/sessions/:sessionID/messages/reconcile`
-- `GET /api/openchamber/sessions/:sessionID/changes` (L2 file list / L3 single-file patch)
+- `GET /api/yuri/sessions/:sessionID/messages`
+- `GET /api/yuri/sessions/:sessionID/messages/reconcile`
+- `GET /api/yuri/sessions/:sessionID/changes` (L2 file list / L3 single-file patch)
 - `GET /api/session/:sessionID/message/:messageID` (exact message with L1 summary projection; registered before the generic OpenCode proxy)
 
 ## Why this exists
@@ -28,7 +28,7 @@ Official OpenCode pagination is message-count based and uses **opaque** cursors 
 
 ## Scope
 
-- OpenChamber feature logic, separate from the generic OpenCode proxy.
+- Yuri feature logic, separate from the generic OpenCode proxy.
 - Registered in `feature-routes-runtime.js` **before** the generic proxy.
 - Global `/api/*` auth is enforced by `core-routes.js` (`requireApiAuth`); this module does not add redundant auth middleware.
 - No secrets, bearer tokens, pairing credentials, paths, or upstream response bodies are logged.
@@ -42,7 +42,7 @@ Official OpenCode pagination is message-count based and uses **opaque** cursors 
 | `scanLimit` | **omitted** | `10..200` when present | Optional override only. Host→OpenCode local page size; when omitted it resolves to `_inner_scanLimit`. Clients should omit this. |
 | `before` | omitted | opaque string ≤ 8192 chars | Resume older history: host cursor (`oc1.…`), raw OpenCode SDK cursor, or durable `msg_*` anchor on first page |
 | `directory` | omitted | path string | Forwarded to directory-scoped OpenCode client |
-| `includeReasoning` | omitted (include) | strict `'false'` only disables | OpenChamber projection control. When `'false'`, drop `type=reasoning` parts from turn-page / reconcile / exact responses. Host order is **normalize native SessionMessageInfo → slim/L1 bounds → reasoning strip** so `content`/`text` carriers cannot rebuild filtered parts or leak through `info` expansion. Missing or any other value keeps existing behavior (slim reasoning identity on turn pages; full parts on reconcile/exact). **Never forwarded to OpenCode.** Same contract on transcript-cache reads, official `session.messages` list proxy, and event SSE/WS send boundaries — see `event-stream/reasoning-projection.js`. |
+| `includeReasoning` | omitted (include) | strict `'false'` only disables | Yuri projection control. When `'false'`, drop `type=reasoning` parts from turn-page / reconcile / exact responses. Host order is **normalize native SessionMessageInfo → slim/L1 bounds → reasoning strip** so `content`/`text` carriers cannot rebuild filtered parts or leak through `info` expansion. Missing or any other value keeps existing behavior (slim reasoning identity on turn pages; full parts on reconcile/exact). **Never forwarded to OpenCode.** Same contract on transcript-cache reads, official `session.messages` list proxy, and event SSE/WS send boundaries — see `event-stream/reasoning-projection.js`. |
 
 Invalid `turns`, explicit invalid `scanLimit`, or `before` (malformed/stale host token, oversize) → HTTP 400.
 
@@ -52,7 +52,7 @@ Durable message anchors are encoded before upstream fetch as base64url JSON `{ i
 
 ### Upstream page width policy
 
-Width resolves in priority order: **explicit client `scanLimit` → env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT` → `100`**. The same width applies to every path.
+Width resolves in priority order: **explicit client `scanLimit` → env `YURI_SESSION_TURN_SCAN_LIMIT` → `100`**. The same width applies to every path.
 
 **Do not narrow the width per path to speed up a first paint — it was tried and measured, and it does not work.** What the client receives is the turn-trimmed window, whose size is set by `turns`, not by the page width; width only changes how the Host chunks its loopback reads. On a real tool-heavy session (817 messages, assistant:user ≈ 17:1) the 6th authored-user boundary sat at newest-position 56, so a width of 100 satisfied a 6-turn budget in **one** upstream request while a derived width of 24 needed **three** sequential ones for a byte-identical response.
 
@@ -91,7 +91,7 @@ Every turn-page response summarizes `tool`, `reasoning`, and `file` parts plus m
 | Layer | Surface | Payload |
 |---|---|---|
 | **L1** | Turn pages, reconcile response pages, message/session SSE fan-out, exact `GET /api/session/:sessionID/message/:messageID` | Any `info.summary.diffs` **array** is projected to a **slim file list** `[{ file, status?, additions, deletions }]` plus additive markers `summary.diffCount: number` and `summary.hasDiffs: boolean`. Patch/before/after/from/to and other heavy bodies are stripped. Other lightweight summary fields are preserved. `diffCount` equals the slim array length; `hasDiffs === diffCount > 0`. Consumers may use either the slim array or the markers. |
-| **L2** | `GET /api/openchamber/sessions/:sessionID/changes?messageID=` (no `file`) | Host reads official `session.message` locally, returns only `{ files: [{ file, status?, additions, deletions }] }`. Never returns patch/before/after/from/to or the full message envelope. |
+| **L2** | `GET /api/yuri/sessions/:sessionID/changes?messageID=` (no `file`) | Host reads official `session.message` locally, returns only `{ files: [{ file, status?, additions, deletions }] }`. Never returns patch/before/after/from/to or the full message envelope. |
 | **L3** | Same route with `file=` | Host currently still reads `info.summary.diffs` from the exact message payload when present. **v2 `SessionMessageInfo` has no `summary.diffs`**, so L3 fails closed with upstream 502 until a parent follow-up lands an authoritative per-message diff source. Do **not** substitute working-tree / `vcs.diff` here. When diffs are available, returns `{ diff: SnapshotFileDiff }` for the exact `file` string match. No match → HTTP 404 `{ error: 'change file not found', code: 'change_not_found' }`. Older hosts may ignore `file=` and answer 200 `{ files }` (L2 only). |
 
 Exact message GET keeps the official `{ info, parts }` response shape and only applies L1 summary projection so materialize/recovery never relays raw multi-megabyte patch bodies through the generic proxy. Abort/45s timeout semantics match the turn-page routes. Global `/api` auth still applies.
@@ -148,7 +148,7 @@ Malformed host tokens, missing/stale `boundaryID`, or `before` longer than 8192 
 A message is an authored user turn boundary when:
 
 1. `(clientRole ?? role) === 'user'`
-2. Not a hosted session divider (`info.id` starts with `oc_asst_session_divider:`)
+2. Not a hosted session divider (`info.id` starts with `yuri_asst_session_divider:`)
 3. Not a message whose parts include `subtask` or `compaction`
 4. Not fully synthetic (every part has `synthetic: true`) — loop / plan / shell injections
 5. Empty `parts` on a user message **does** count as a boundary
@@ -172,7 +172,7 @@ A message is an authored user turn boundary when:
 ### Request
 
 ```http
-GET /api/openchamber/sessions/:sessionID/messages/reconcile
+GET /api/yuri/sessions/:sessionID/messages/reconcile
   ?directory=<workspace>
   &anchor=<messageID>
   &continuation=<opaque-token>
@@ -226,7 +226,7 @@ Payload (never message content or parts):
 ```ts
 {
   v: 2,
-  runtime: string,          // host runtime key (OPENCHAMBER_RUNTIME or inject)
+  runtime: string,          // host runtime key (YURI_RUNTIME or inject)
   directory: string | null,
   sessionID: string,
   anchor: string,
@@ -253,10 +253,10 @@ Security / lifecycle:
 
 | Budget | Default | Env override |
 |---|---|---|
-| Per-page records | 100 | `OPENCHAMBER_SESSION_RECONCILE_PAGE_RECORDS` (1..500) |
-| Per-page JSON bytes | 512 KiB | `OPENCHAMBER_SESSION_RECONCILE_PAGE_BYTES` |
-| Total pages / round | 20 | `OPENCHAMBER_SESSION_RECONCILE_TOTAL_PAGES` (1..100) |
-| Total scanned bytes / round | 5 MiB | `OPENCHAMBER_SESSION_RECONCILE_TOTAL_BYTES` |
+| Per-page records | 100 | `YURI_SESSION_RECONCILE_PAGE_RECORDS` (1..500) |
+| Per-page JSON bytes | 512 KiB | `YURI_SESSION_RECONCILE_PAGE_BYTES` |
+| Total pages / round | 20 | `YURI_SESSION_RECONCILE_TOTAL_PAGES` (1..100) |
+| Total scanned bytes / round | 5 MiB | `YURI_SESSION_RECONCILE_TOTAL_BYTES` |
 
 When the per-page budget fills before the gap is complete, the host returns `continuation` and HTTP 200. When the **total** round budget hits without completing the gap, the host returns `resetRequired: true` and HTTP 200.
 

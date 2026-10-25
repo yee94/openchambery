@@ -204,7 +204,7 @@ export type DesktopSettings = {
   // Message limit — controls fetch, trim, and Load More chunk size (default: 200)
   messageLimit?: number;
 
-  // User-added skills catalogs (persisted to ~/.config/openchamber/settings.json)
+  // User-added skills catalogs (persisted to ~/.config/yuri/settings.json)
   skillCatalogs?: SkillCatalogConfig[];
   // Opt-in to send anonymous usage reports for update checks (default: false)
   reportUsage?: boolean;
@@ -247,12 +247,12 @@ type ElectronRuntimeGlobal = {
 
 const getElectronRuntime = (): ElectronRuntimeGlobal | null => {
   if (typeof window === 'undefined') return null;
-  return (window as unknown as { __OPENCHAMBER_ELECTRON__?: ElectronRuntimeGlobal }).__OPENCHAMBER_ELECTRON__ ?? null;
+  return (window as unknown as { __YURI_ELECTRON__?: ElectronRuntimeGlobal }).__YURI_ELECTRON__ ?? null;
 };
 
 const getDesktopBridge = (): DesktopBridgeGlobal | null => {
   if (typeof window === 'undefined') return null;
-  return (window as unknown as { __OPENCHAMBER_DESKTOP__?: DesktopBridgeGlobal }).__OPENCHAMBER_DESKTOP__ ?? null;
+  return (window as unknown as { __YURI_DESKTOP__?: DesktopBridgeGlobal }).__YURI_DESKTOP__ ?? null;
 };
 
 export const isElectronShell = (): boolean => getElectronRuntime()?.runtime === 'electron';
@@ -269,7 +269,7 @@ export const getElectronPathForFile = (file: File): string | null => {
 
 export const getElectronPlatform = (): string | null => {
   if (typeof window === 'undefined') return null;
-  const platform = (window as unknown as { __OPENCHAMBER_PLATFORM__?: string }).__OPENCHAMBER_PLATFORM__;
+  const platform = (window as unknown as { __YURI_PLATFORM__?: string }).__YURI_PLATFORM__;
   return typeof platform === 'string' ? platform : null;
 };
 
@@ -478,7 +478,7 @@ export const isDesktopLocalOriginActive = (): boolean => {
     return true;
   }
 
-  const local = typeof window.__OPENCHAMBER_LOCAL_ORIGIN__ === 'string' ? window.__OPENCHAMBER_LOCAL_ORIGIN__ : '';
+  const local = typeof window.__YURI_LOCAL_ORIGIN__ === 'string' ? window.__YURI_LOCAL_ORIGIN__ : '';
   const localUrl = parseUrl(local);
   const runtimeApiUrl = parseUrl(getRuntimeApiBaseUrl());
 
@@ -567,7 +567,7 @@ export const isWebRuntime = (): boolean => {
 
 export const getDesktopHomeDirectory = async (): Promise<string | null> => {
   if (typeof window !== 'undefined') {
-    const embedded = window.__OPENCHAMBER_HOME__;
+    const embedded = window.__YURI_HOME__;
     if (embedded && embedded.length > 0) {
       return embedded;
     }
@@ -713,7 +713,7 @@ export const listenDesktopUpdateProgress = async (
   const bridge = getDesktopBridge();
   if (typeof bridge?.listen !== 'function') return null;
 
-  return bridge.listen('openchamber:update-progress', (evt) => {
+  return bridge.listen('yuri:update-progress', (evt) => {
     const payload = evt?.payload;
     if (!payload || typeof payload !== 'object') return;
     const data = payload as { event?: unknown; data?: unknown };
@@ -731,7 +731,7 @@ export const listenDesktopUpdateReady = async (
   const bridge = getDesktopBridge();
   if (typeof bridge?.listen !== 'function') return null;
 
-  return bridge.listen('openchamber:update-ready', (evt) => {
+  return bridge.listen('yuri:update-ready', (evt) => {
     const payload = evt?.payload;
     if (!payload || typeof payload !== 'object') return;
     const data = payload as { version?: unknown; downloaded?: unknown };
@@ -756,7 +756,7 @@ export const downloadDesktopUpdate = async (
 
   try {
     if (typeof onProgress === 'function' && bridge?.listen) {
-      unlisten = await bridge.listen('openchamber:update-progress', (evt) => {
+      unlisten = await bridge.listen('yuri:update-progress', (evt) => {
         const payload = evt?.payload;
         if (!payload || typeof payload !== 'object') return;
         const data = payload as { event?: unknown; data?: unknown };

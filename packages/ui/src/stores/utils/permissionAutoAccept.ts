@@ -45,6 +45,6 @@ export const autoRespondsPermission = (input: {
     return autoAccept[id] === true;
   }
 
-  // No explicit deny in the lineage: OpenChamber defaults to allow.
+  // No explicit deny in the lineage: Yuri defaults to allow.
   return true;
 };

@@ -1,9 +1,10 @@
+import '@/lib/brand-storage-bootstrap';
 import { isDurableURL } from "@/sync/input-draft-types"
 import { parseDraftComposerDocument, parseDraftMentions, type DraftComposerDocument, type DraftMention } from "@/sync/input-draft-types"
 import { serializeComposerDocument } from "@/composer/document"
 import { describeComposerDocumentResources } from "@/composer/extensions"
 
-export const MESSAGE_QUEUE_LEDGER_KEY = "openchamber_message_queue_ledger_v4"
+export const MESSAGE_QUEUE_LEDGER_KEY = "yuri_message_queue_ledger_v4"
 export const LEGACY_MESSAGE_QUEUE_KEY = "message-queue-store"
 export type QueueLedgerScope = { state: "bound"; transportIdentity: string; directory: string; sessionID: string } | { state: "unbound-legacy"; sessionID: string }
 type QueueAttachmentSourceDTO = { source: "local" | "vscode" | "server"; serverPath?: string; vscodePath?: string; vscodeSource?: "file" | "selection" }

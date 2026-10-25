@@ -1,12 +1,12 @@
 # Conversations Module
 
 ## Purpose
-Server-owned conversation orchestration for OpenChamber. Provides an idempotent create-session-and-first-prompt workflow using `session.create` + `session.prompt` (`delivery=steer`) through `@opencode-ai/sdk/v2` directory-scoped client, exposed as `POST /api/openchamber/conversations`. Host does not cache message body.
+Server-owned conversation orchestration for Yuri. Provides an idempotent create-session-and-first-prompt workflow using `session.create` + `session.prompt` (`delivery=steer`) through `@opencode-ai/sdk/v2` directory-scoped client, exposed as `POST /api/yuri/conversations`. Host does not cache message body.
 
 ## Scope
-- This module is OpenChamber feature logic, intentionally separate from OpenCode proxy/runtime internals.
+- This module is Yuri feature logic, intentionally separate from OpenCode proxy/runtime internals.
 - Registered in `feature-routes-runtime.js` before the generic OpenCode proxy.
-- JSON request bodies are parsed by the explicit OpenChamber route allowlist in `core-routes.js`; conversation payloads allow up to 50 MB so data-URL attachments reach validation and the OpenCode SDK.
+- JSON request bodies are parsed by the explicit Yuri route allowlist in `core-routes.js`; conversation payloads allow up to 50 MB so data-URL attachments reach validation and the OpenCode SDK.
 - Only accepts `input.type === 'prompt'`; shell/slash commands use the existing SDK sequence.
 - `prompt` + `delivery=steer` returns an inbox item immediately (does not wait for model completion).
 
@@ -57,7 +57,7 @@ The service calls `waitForOpenCodeReady(6000, 75)` (6s, matching proxy gate `REA
   - Returns discriminated result (see Result Union below)
 
 - `packages/web/server/lib/conversations/routes.js`
-  - `POST /api/openchamber/conversations` Express route
+  - `POST /api/yuri/conversations` Express route
   - Validates → fingerprints → registry.run → sends result
   - HTTP statuses:
     - 201 — success
@@ -103,7 +103,7 @@ The service calls `waitForOpenCodeReady(6000, 75)` (6s, matching proxy gate `REA
 ## Request contract
 
 ```json
-POST /api/openchamber/conversations
+POST /api/yuri/conversations
 {
   "input": { "type": "prompt" },
   "directory": "/path/to/repo",

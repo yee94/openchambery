@@ -1,20 +1,20 @@
 # Session Goal
 
 Server-side control loop that keeps a session working toward a user-defined
-objective. On OpenCode 2.x the goal record lives in the OpenChamber session
+objective. On OpenCode 2.x the goal record lives in the Yuri session
 metadata store (`packages/web/server/lib/session-metadata/`), folded back onto
 `session.metadata` by the proxy. Capability is **open** (`supported: true`):
 manual UI, goal routes, and scheduled-task goal create all write the same
 store. The small model is an independent progress auditor. Built on
-OpenChamber's backend-driven architecture: the loop lives in the web server
+Yuri's backend-driven architecture: the loop lives in the web server
 and survives UI disconnects.
 
-## v2 storage (OpenChamber session metadata store)
+## v2 storage (Yuri session metadata store)
 
 OpenCode 2.x accepts session `metadata` only at create time — there is no
 PATCH. Goal progress therefore belongs in the Host
 `packages/web/server/lib/session-metadata/` store (merge-patched under
-`openchamber.goal`), not an OpenCode `PATCH /session/:id`.
+`yuri.goal`), not an OpenCode `PATCH /session/:id`.
 
 `createSessionGoalRuntime` accepts optional seams:
 
@@ -29,7 +29,7 @@ When `mutateSessionMetadata` is present, runtime goal commits use it exclusively
 present, the runtime falls back to read-then-persist. When neither store path is
 wired, the legacy OpenCode PATCH path remains (tests / unwired servers).
 
-Those seams, the proxy overlay, and `PUT /api/openchamber/sessions/:id/metadata`
+Those seams, the proxy overlay, and `PUT /api/yuri/sessions/:id/metadata`
 are wired in `server/index.js`. A UI metadata write notifies the runtime with
 a synthetic `session.updated` so create/resume can arm the loop. Metadata PUT
 normalizes `executionGeneration` for goal patches inside the store mutate lock.
@@ -39,7 +39,7 @@ normalizes `executionGeneration` for goal patches inside the store mutate lock.
 manual UI metadata writes; after first persist they notify the runtime with a
 synthetic `session.updated` so the loop can arm.
 
-## Goal payload (`metadata.openchamber.goal`)
+## Goal payload (`metadata.yuri.goal`)
 
 ```
 {
@@ -156,7 +156,7 @@ Public seams for tests / controlled async: `runTick`, `pauseGoal`,
 ## File-backed objectives
 
 The objective TEXT lives in `<data-dir>/goals/<sessionId>.md` (data dir =
-`OPENCHAMBER_DATA_DIR` or `~/.config/openchamber`), keyed by the SESSION ID:
+`YURI_DATA_DIR` or `~/.config/yuri`), keyed by the SESSION ID:
 sessions are globally unique and carry one goal at a time, so the mapping is
 deterministic and a new goal simply overwrites the file. Metadata carries
 only `objectiveFile: true` — never a path — so user-writable metadata cannot
@@ -168,7 +168,7 @@ before touching the filesystem). Rationale: metadata rides every
 - `capability.js` — `getSessionGoalCapability()` / `assertSessionGoalSupported()`
   (single source; currently `{ supported: true }`).
 - `routes.js` — `GET /api/goals/capability`, create/resume endpoints,
-  `PUT/GET/DELETE /api/goals/objective/:sessionId` (OpenChamber-owned,
+  `PUT/GET/DELETE /api/goals/objective/:sessionId` (Yuri-owned,
   registered before the generic proxy; JSON parsing via the `/api/goals`
   family in core-routes). Create / resume require an injected
   `persistSessionGoal` (503 when missing); objective PUT writes the file when
@@ -192,7 +192,7 @@ accounting. The SDK and HTTP fallback use the same ordering contract; `asc`
 without a cursor would read the oldest page and strand long sessions after
 compaction. Message IDs are not used to reorder the fetched page.
 
-UI goal removal sends the Merge Patch tombstone `openchamber.goal: null`.
+UI goal removal sends the Merge Patch tombstone `yuri.goal: null`.
 Omitting the key preserves the stored goal. Objective-file cleanup and stopping
 the active turn follow a successful metadata write; failed writes retain the
 goal and its objective for retry.
@@ -331,7 +331,7 @@ sees only that final turn, so the report is its evidence.
 getSessionGoalCapability() → { supported: true }
 ```
 
-Goal records live in the OpenChamber session-metadata store (not OpenCode
+Goal records live in the Yuri session-metadata store (not OpenCode
 SessionInfo). Routes, scheduled tasks, and the proxy overlay share that store.
 
 | Surface | While supported |
@@ -358,7 +358,7 @@ create/distill/prompt side effects).
 - TODO(watch): Assistant contact assign skipped a watch tool this slice.
   Goal settle already notifies. Do not invent a second scheduler. A later
   thin contact tool can post a read-only session status card when
-  `metadata.openchamber.goal` settles.
+  `metadata.yuri.goal` settles.
 - Web-server feature: VS Code (extension-only) renders goal state via
   `session.updated` but does not run the loop.
 - A goal on a session with no assistant reply yet starts after the first

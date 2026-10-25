@@ -404,7 +404,7 @@ const bufferToBlobUrl = async (
 
 /**
  * Materialize an already-verified Blob as a displayable URL.
- * Desktop/mobile: openchamber-asset:// via the native bridge (full write then end).
+ * Desktop/mobile: yuri-asset:// via the native bridge (full write then end).
  * Web/VS Code: object URL. Callers must release via releaseRelayImageDisplayUrl.
  */
 export const streamVerifiedBlobDisplayUrl = async (

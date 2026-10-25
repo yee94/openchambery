@@ -42,7 +42,7 @@ export const MorphOrb: React.FC<{
 
   return (
     <span
-      className={cn('oc-morph-orb-glyph shrink-0', className)}
+      className={cn('yuri-morph-orb-glyph shrink-0', className)}
       style={{
         width: resolvedSize,
         height: resolvedSize,
@@ -50,11 +50,11 @@ export const MorphOrb: React.FC<{
       } as MorphGlyphStyle}
       aria-hidden="true"
     >
-      <span className="oc-morph-orb-stage">
+      <span className="yuri-morph-orb-stage">
         {MORPH_SHAPES[0].map((_, index) => (
           <span
             key={index}
-            className="oc-morph-orb-dot"
+            className="yuri-morph-orb-dot"
             style={{
               '--m-1': formatPoint(MORPH_SHAPES[0][index]),
               '--m-2': formatPoint(MORPH_SHAPES[1][index]),

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# OpenChamber Install Script
-# Usage: curl -fsSL https://raw.githubusercontent.com/yee94/openchamber/main/scripts/install.sh | bash
+# Yuri Install Script
+# Usage: curl -fsSL https://raw.githubusercontent.com/yee94/yuri/main/scripts/install.sh | bash
 
 set -euo pipefail
 
-PACKAGE_NAME="@openchambery/web"
-BIN_NAME="openchambery"
+PACKAGE_NAME="@yuri/web"
+BIN_NAME="yuri"
 MIN_NODE_VERSION=22
 
 # Colors
@@ -156,7 +156,7 @@ main() {
   echo ""
   echo "  ╭───────────────────────────────────╮"
   echo "  │                                   │"
-  echo "  │   OpenChamber Installer           │"
+  echo "  │   Yuri Installer           │"
   echo "  │   Web interface for OpenCode      │"
   echo "  │                                   │"
   echo "  ╰───────────────────────────────────╯"
@@ -176,16 +176,16 @@ main() {
   fi
   success "Node.js v$NODE_VERSION found"
 
-  # If OpenChamber is already installed, hand off to its own updater instead
-  # of guessing a package manager. `openchamber update` detects which manager
+  # If Yuri is already installed, hand off to its own updater instead
+  # of guessing a package manager. `yuri update` detects which manager
   # actually owns the existing global install and reinstalls with that one —
   # reinstalling with a different manager here would orphan files and break PATH.
-  if command_exists "$BIN_NAME" || command_exists "openchamber"; then
-    info "OpenChamberY is already installed — updating via '$BIN_NAME update'..."
+  if command_exists "$BIN_NAME"; then
+    info "Yuri is already installed — updating via '$BIN_NAME update'..."
     echo ""
-    if "$BIN_NAME" update 2>/dev/null || openchamber update; then
+    if "$BIN_NAME" update; then
       echo ""
-      success "OpenChamberY is up to date!"
+      success "Yuri is up to date!"
       exit 0
     fi
     echo ""
@@ -216,7 +216,7 @@ main() {
 
   # Install
   echo ""
-  info "Installing OpenChamber..."
+  info "Installing Yuri..."
   echo "  Running: $INSTALL_CMD"
   echo ""
   
@@ -234,7 +234,7 @@ main() {
   ░▀▀▀░▀░▀░▀░▀░▀░▀░▀▀░░▀▀▀░▀░▀
 EOF
     printf '%b\n' "$NC"
-    success "OpenChamber installed successfully!"
+    success "Yuri installed successfully!"
     echo ""
 
     # Verify the binary is actually reachable. Global installs frequently
@@ -242,8 +242,8 @@ EOF
     # letting the user hit a confusing "command not found".
     if command_exists "$BIN_NAME"; then
       echo "  Get started:"
-      echo "    openchambery             # Start server on port 3000"
-      echo "    openchambery --help      # Show all options"
+      echo "    yuri             # Start server on port 3000"
+      echo "    yuri --help      # Show all options"
     else
       warn "'$BIN_NAME' was installed but isn't on your PATH yet."
       echo ""
@@ -259,7 +259,7 @@ EOF
         echo "    export PATH=\"$bin_dir:\$PATH\""
       else
         echo "  Add your package manager's global bin directory to PATH,"
-        echo "  then restart your terminal and run: openchambery"
+        echo "  then restart your terminal and run: yuri"
       fi
     fi
     echo ""

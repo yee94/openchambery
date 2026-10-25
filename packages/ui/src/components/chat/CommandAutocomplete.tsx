@@ -23,7 +23,7 @@ import {
 } from './composerAutocompleteChrome';
 import { highlightAutocompleteQuery } from './autocompleteQueryHighlight';
 
-type CommandSource = 'openchamber' | 'opencode' | 'skill';
+type CommandSource = 'yuri' | 'opencode' | 'skill';
 
 export interface CommandInfo {
   id: string;
@@ -33,7 +33,7 @@ export interface CommandInfo {
   agent?: string;
   model?: string;
   isBuiltIn?: boolean;
-  isOpenChamber?: boolean;
+  isYuri?: boolean;
   isSkill?: boolean;
   scope?: string;
   reference?: string;
@@ -202,60 +202,60 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
         });
 
         const builtInCommands: CommandInfo[] = [
-          { id: 'openchamber:new', name: 'new', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.newDescription'), isBuiltIn: true },
+          { id: 'yuri:new', name: 'new', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.newDescription'), isBuiltIn: true },
           ...(hasSession && !hasMessagesInCurrentSession
-            ? [{ id: 'openchamber:init', name: 'init', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.initDescription'), isBuiltIn: true }]
+            ? [{ id: 'yuri:init', name: 'init', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.initDescription'), isBuiltIn: true }]
             : []
           ),
           ...(hasSession  // Show when session exists, not when hasMessages
             ? [
-                { id: 'openchamber:btw', name: 'btw', source: 'openchamber' as const, description: t('chat.btw.description'), isBuiltIn: true },
-                { id: 'openchamber:undo', name: 'undo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
-                { id: 'openchamber:redo', name: 'redo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
-                { id: 'openchamber:fork', name: 'fork', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.forkDescription'), isBuiltIn: true },
-                { id: 'openchamber:timeline', name: 'timeline', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.timelineDescription'), isBuiltIn: true },
+                { id: 'yuri:btw', name: 'btw', source: 'yuri' as const, description: t('chat.btw.description'), isBuiltIn: true },
+                { id: 'yuri:undo', name: 'undo', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
+                { id: 'yuri:redo', name: 'redo', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
+                { id: 'yuri:fork', name: 'fork', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.forkDescription'), isBuiltIn: true },
+                { id: 'yuri:timeline', name: 'timeline', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.timelineDescription'), isBuiltIn: true },
               ]
             : []
           ),
-          { id: 'openchamber:model', name: 'model', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.modelDescription'), isBuiltIn: true },
-          { id: 'openchamber:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
+          { id: 'yuri:model', name: 'model', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.modelDescription'), isBuiltIn: true },
+          { id: 'yuri:compact', name: 'compact', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
           ...(isVSCodeRuntime()
-            ? [{ id: 'openchamber:reload', name: 'reload', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true }]
+            ? [{ id: 'yuri:reload', name: 'reload', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true }]
             : []),
           ...(hasSession
-            ? [{ id: 'openchamber:summary', name: 'summary', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:summary', name: 'summary', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:workspace-review', name: 'workspace-review', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.workspaceReviewDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:workspace-review', name: 'workspace-review', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.workspaceReviewDescription'), isYuri: true }]
             : []
           ),
           ...(canUseReviewHandoffFlow
-            ? [{ id: 'openchamber:handoff-review', name: 'handoff-review', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.handoffReviewDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:handoff-review', name: 'handoff-review', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.handoffReviewDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:craft-goal', name: 'craft-goal', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.craftGoalDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:craft-goal', name: 'craft-goal', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.craftGoalDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:goal', name: 'goal', source: 'openchamber' as const, description: t('chat.goal.button.armAria'), isBuiltIn: true }]
+            ? [{ id: 'yuri:goal', name: 'goal', source: 'yuri' as const, description: t('chat.goal.button.armAria'), isBuiltIn: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:catch-up', name: 'catch-up', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.catchUpDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:catch-up', name: 'catch-up', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.catchUpDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:debug', name: 'debug', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.debugDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:debug', name: 'debug', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.debugDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:weigh', name: 'weigh', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.weighDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:weigh', name: 'weigh', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.weighDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:explore', name: 'explore', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.exploreDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:explore', name: 'explore', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.exploreDescription'), isYuri: true }]
             : []
           ),
         ];
@@ -271,60 +271,60 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
 
         const allowInitCommand = !hasMessagesInCurrentSession;
         const builtInCommands: CommandInfo[] = [
-          { id: 'openchamber:new', name: 'new', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.newDescription'), isBuiltIn: true },
+          { id: 'yuri:new', name: 'new', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.newDescription'), isBuiltIn: true },
           ...(hasSession && !hasMessagesInCurrentSession
-            ? [{ id: 'openchamber:init', name: 'init', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.initDescription'), isBuiltIn: true }]
+            ? [{ id: 'yuri:init', name: 'init', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.initDescription'), isBuiltIn: true }]
             : []
           ),
           ...(hasSession  // Show when session exists, not when hasMessages
             ? [
-                { id: 'openchamber:btw', name: 'btw', source: 'openchamber' as const, description: t('chat.btw.description'), isBuiltIn: true },
-                { id: 'openchamber:undo', name: 'undo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
-                { id: 'openchamber:redo', name: 'redo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
-                { id: 'openchamber:fork', name: 'fork', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.forkDescription'), isBuiltIn: true },
-                { id: 'openchamber:timeline', name: 'timeline', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.timelineDescription'), isBuiltIn: true },
+                { id: 'yuri:btw', name: 'btw', source: 'yuri' as const, description: t('chat.btw.description'), isBuiltIn: true },
+                { id: 'yuri:undo', name: 'undo', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
+                { id: 'yuri:redo', name: 'redo', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
+                { id: 'yuri:fork', name: 'fork', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.forkDescription'), isBuiltIn: true },
+                { id: 'yuri:timeline', name: 'timeline', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.timelineDescription'), isBuiltIn: true },
               ]
             : []
           ),
-          { id: 'openchamber:model', name: 'model', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.modelDescription'), isBuiltIn: true },
-          { id: 'openchamber:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
+          { id: 'yuri:model', name: 'model', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.modelDescription'), isBuiltIn: true },
+          { id: 'yuri:compact', name: 'compact', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
           ...(isVSCodeRuntime()
-            ? [{ id: 'openchamber:reload', name: 'reload', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true }]
+            ? [{ id: 'yuri:reload', name: 'reload', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true }]
             : []),
           ...(hasSession
-            ? [{ id: 'openchamber:summary', name: 'summary', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:summary', name: 'summary', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:workspace-review', name: 'workspace-review', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.workspaceReviewDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:workspace-review', name: 'workspace-review', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.workspaceReviewDescription'), isYuri: true }]
             : []
           ),
           ...(canUseReviewHandoffFlow
-            ? [{ id: 'openchamber:handoff-review', name: 'handoff-review', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.handoffReviewDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:handoff-review', name: 'handoff-review', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.handoffReviewDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:craft-goal', name: 'craft-goal', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.craftGoalDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:craft-goal', name: 'craft-goal', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.craftGoalDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:goal', name: 'goal', source: 'openchamber' as const, description: t('chat.goal.button.armAria'), isBuiltIn: true }]
+            ? [{ id: 'yuri:goal', name: 'goal', source: 'yuri' as const, description: t('chat.goal.button.armAria'), isBuiltIn: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:catch-up', name: 'catch-up', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.catchUpDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:catch-up', name: 'catch-up', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.catchUpDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:debug', name: 'debug', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.debugDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:debug', name: 'debug', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.debugDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:weigh', name: 'weigh', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.weighDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:weigh', name: 'weigh', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.weighDescription'), isYuri: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'openchamber:explore', name: 'explore', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.exploreDescription'), isOpenChamber: true }]
+            ? [{ id: 'yuri:explore', name: 'explore', source: 'yuri' as const, description: t('chat.commandAutocomplete.command.exploreDescription'), isYuri: true }]
             : []
           ),
         ];
@@ -465,7 +465,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           <div>
             {commands.map((command, index) => {
               const isSystem = command.isBuiltIn;
-              const isOpenChamberBadge = command.isOpenChamber;
+              const isYuriBadge = command.isYuri;
               return (
                 <div
                   key={command.id}
@@ -544,9 +544,9 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                           {t('chat.commandAutocomplete.badge.command')}
                         </span>
                       )}
-                      {isOpenChamberBadge ? (
+                      {isYuriBadge ? (
                         <span className={NEUTRAL_BADGE_CLASS}>
-                          OpenChamber
+                          Yuri
                         </span>
                       ) : isSystem ? (
                         <span className={NEUTRAL_BADGE_CLASS}>

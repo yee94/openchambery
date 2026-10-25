@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils"
 import { iconSpriteData } from "./sprite"
 import type { IconName } from "./icons"
 
-const SPRITE_ID = "openchamber-icon-sprite-v2"
+const SPRITE_ID = "yuri-icon-sprite-v2"
 
 /** Codex/Lucide-style stroke weight (Lucide default is 2; thinner reads more refined). */
 export const ICON_STROKE_WIDTH = 1.5
@@ -40,10 +40,10 @@ function ensureSpriteOnce(requiredName: IconName) {
   if (existing) {
     // 旧 sprite 写死 stroke-width，换成 CSS var 后需重建才能让 weight 生效
     const existingIconNames = new Set(
-      Array.from(existing.querySelectorAll('symbol[id^="oc-"]'), (symbol) => symbol.id.slice(3)),
+      Array.from(existing.querySelectorAll('symbol[id^="yuri-"]'), (symbol) => symbol.id.slice(3)),
     )
     if (
-      !existing.innerHTML.includes('--oc-icon-stroke')
+      !existing.innerHTML.includes('--yuri-icon-stroke')
       || existing.dataset.spriteSignature !== ICON_SPRITE_SIGNATURE
       || !existingIconNames.has(requiredName)
     ) {
@@ -66,7 +66,7 @@ function ensureSpriteOnce(requiredName: IconName) {
   svg.innerHTML = Object.entries(iconSpriteData)
     .map(
       ([name, content]) =>
-        `<symbol id="oc-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="var(--oc-icon-stroke, ${ICON_STROKE_WIDTH})" stroke-linecap="round" stroke-linejoin="round">${content}</symbol>`
+        `<symbol id="yuri-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="var(--yuri-icon-stroke, ${ICON_STROKE_WIDTH})" stroke-linecap="round" stroke-linejoin="round">${content}</symbol>`
     )
     .join("")
   body.insertBefore(svg, body.firstChild)
@@ -83,7 +83,7 @@ export interface IconProps extends React.ComponentPropsWithoutRef<"svg"> {
 
 export const Icon = React.memo(({ name, className, weight = "regular", style, ...rest }: IconProps) => {
   // Inline sprite injection during render – must run before <use> tries
-  // to resolve the #oc-* reference during the same commit.
+  // to resolve the #yuri-* reference during the same commit.
   if (typeof document !== "undefined") {
     ensureSpriteOnce(name)
   }
@@ -92,7 +92,7 @@ export const Icon = React.memo(({ name, className, weight = "regular", style, ..
 
   return (
     <svg
-      className={cn("oc-icon", className)}
+      className={cn("yuri-icon", className)}
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
       fill="none"
@@ -102,13 +102,13 @@ export const Icon = React.memo(({ name, className, weight = "regular", style, ..
       strokeLinejoin="round"
       aria-hidden="true"
       style={{
-        // 让 <use> 克隆继承实例描边粗细（symbol 用 var(--oc-icon-stroke)）
-        ["--oc-icon-stroke" as string]: strokeWidth,
+        // 让 <use> 克隆继承实例描边粗细（symbol 用 var(--yuri-icon-stroke)）
+        ["--yuri-icon-stroke" as string]: strokeWidth,
         ...style,
       }}
       {...rest}
     >
-      <use href={`#oc-${name}`} />
+      <use href={`#yuri-${name}`} />
     </svg>
   )
 })

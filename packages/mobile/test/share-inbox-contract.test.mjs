@@ -11,8 +11,8 @@ async function source(path) {
 test('share inbox persists relative paths and enforces decoded image upload limits', async () => {
   const [readme, ios, android] = await Promise.all([
     source('README.md'),
-    source('ios/App/App/OpenChamberShareStore.swift'),
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
+    source('ios/App/App/YuriShareStore.swift'),
+    source('android/app/src/main/java/com/yuri/app/YuriShareStore.java'),
   ]);
   for (const content of [ios, android]) {
     assert.match(content, /consumedAt/);
@@ -33,13 +33,13 @@ test('Android sharing shortcut contract declares its target and category', async
   const [xml, manifest, store, receiver] = await Promise.all([
     source('android/app/src/main/res/xml/share_shortcuts.xml'),
     source('android/app/src/main/AndroidManifest.xml'),
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
-    source('android/app/src/main/java/com/openchamber/app/ShareReceiverActivity.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriShareStore.java'),
+    source('android/app/src/main/java/com/yuri/app/ShareReceiverActivity.java'),
   ]);
-  assert.match(xml, /share-target android:targetClass="com\.openchamber\.app\.ShareReceiverActivity"/);
+  assert.match(xml, /share-target android:targetClass="com\.yuri\.app\.ShareReceiverActivity"/);
   assert.match(xml, /android:mimeType="text\/plain"/);
   assert.match(xml, /android:mimeType="image\/\*"/);
-  assert.match(xml, /com\.openchamber\.app\.SHARE_ASSISTANT/);
+  assert.match(xml, /com\.yuri\.app\.SHARE_ASSISTANT/);
   assert.match(manifest, /<activity android:name="\.ShareReceiverActivity"[\s\S]*android\.app\.shortcuts/);
   assert.match(store, /setCategories\(java\.util\.Collections\.singleton\(ShareReceiverActivity\.SHARE_TARGET_CATEGORY\)\)/);
   assert.match(store, /if \(firstEnabled == null\) firstEnabled = entry/);
@@ -47,7 +47,7 @@ test('Android sharing shortcut contract declares its target and category', async
   assert.match(store, /stageAssistantOpen\(Context context, JSONObject target\)/);
   assert.match(store, /pendingAssistantOpen\(Context context\)/);
   assert.match(receiver, /Intent\.EXTRA_SHORTCUT_ID/);
-  assert.match(receiver, /OpenChamberShareStore\.stageAssistantOpen\(this, selectedTarget\)/);
+  assert.match(receiver, /YuriShareStore\.stageAssistantOpen\(this, selectedTarget\)/);
   assert.match(receiver, /setAction\(MainActivity\.ACTION_ASSISTANT_OPEN_READY\)/);
   const destroy = receiver.match(/protected void onDestroy\(\)[\s\S]*?(?=\n    @Override)/)?.[0];
   assert.ok(destroy);
@@ -57,10 +57,10 @@ test('Android sharing shortcut contract declares its target and category', async
 test('native Assistant shortcuts use the shared display name and avatar presentation', async () => {
   const [bridge, android, iosStore, iosPlugin, shareExtension] = await Promise.all([
     source('../ui/src/apps/MobileShareBridge.tsx'),
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
-    source('ios/App/App/OpenChamberShareStore.swift'),
-    source('ios/App/App/OpenChamberSharePlugin.swift'),
-    source('ios/App/OpenChamberShareExtension/ShareViewController.swift'),
+    source('android/app/src/main/java/com/yuri/app/YuriShareStore.java'),
+    source('ios/App/App/YuriShareStore.swift'),
+    source('ios/App/App/YuriSharePlugin.swift'),
+    source('ios/App/YuriShareExtension/ShareViewController.swift'),
   ]);
 
   assert.match(bridge, /getAssistantPresentation\(entry\.name\)/);
@@ -80,9 +80,9 @@ test('native Assistant shortcuts use the shared display name and avatar presenta
 
 test('Android Assistant shortcut delivery is durable and acknowledged only by the WebView', async () => {
   const [store, plugin, activity, bridge] = await Promise.all([
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberSharePlugin.java'),
-    source('android/app/src/main/java/com/openchamber/app/MainActivity.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriShareStore.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriSharePlugin.java'),
+    source('android/app/src/main/java/com/yuri/app/MainActivity.java'),
     source('../ui/src/apps/nativeAssistantShortcut.ts'),
   ]);
   assert.match(store, /putString\(PENDING_ASSISTANT_OPEN, request\.toString\(\)\)\.commit\(\)/);
@@ -98,11 +98,11 @@ test('Android Assistant shortcut delivery is durable and acknowledged only by th
 
 test('native navigation exposes iOS edge progress and Android predictive back', async () => {
   const [ios, android, animationSupport, invokeSupport, activity, manifest, readme] = await Promise.all([
-    source('ios/App/App/OpenChamberBridgeViewController.swift'),
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberNavigationPlugin.java'),
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberBackAnimationSupport.java'),
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberBackInvokeSupport.java'),
-    source('android/app/src/main/java/com/openchamber/app/MainActivity.java'),
+    source('ios/App/App/YuriBridgeViewController.swift'),
+    source('android/app/src/main/java/com/yuri/app/YuriNavigationPlugin.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriBackAnimationSupport.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriBackInvokeSupport.java'),
+    source('android/app/src/main/java/com/yuri/app/MainActivity.java'),
     source('android/app/src/main/AndroidManifest.xml'),
     source('README.md'),
   ]);
@@ -116,18 +116,18 @@ test('native navigation exposes iOS edge progress and Android predictive back', 
   assert.match(ios, /maximumFramesPerSecond = UIScreen\.main\.maximumFramesPerSecond/);
   assert.match(ios, /preferredFrameRateRange = CAFrameRateRange\(/);
   assert.match(ios, /progressPending = true/);
-  assert.match(ios, /registerPluginInstance\(OpenChamberNavigationPlugin\(\)\)/);
+  assert.match(ios, /registerPluginInstance\(YuriNavigationPlugin\(\)\)/);
 
   // Framework back APIs stay in support classes so Android 12 never class-loads them
-  // while registering OpenChamberNavigationPlugin at startup.
+  // while registering YuriNavigationPlugin at startup.
   assert.doesNotMatch(android, /import android\.window\./);
-  assert.match(android, /OpenChamberBackAnimationSupport\.create/);
-  assert.match(android, /OpenChamberBackInvokeSupport\.create/);
+  assert.match(android, /YuriBackAnimationSupport\.create/);
+  assert.match(android, /YuriBackInvokeSupport\.create/);
   assert.match(android, /Build\.VERSION\.SDK_INT < Build\.VERSION_CODES\.TIRAMISU/);
   assert.match(animationSupport, /OnBackAnimationCallback/);
   assert.match(animationSupport, /backEvent\.getProgress\(\)/);
   assert.match(invokeSupport, /registerOnBackInvokedCallback/);
-  assert.match(activity, /registerPlugin\(OpenChamberNavigationPlugin\.class\)/);
+  assert.match(activity, /registerPlugin\(YuriNavigationPlugin\.class\)/);
   assert.match(manifest, /android:enableOnBackInvokedCallback="true"/);
   assert.match(readme, /Predictive Back/);
   assert.match(readme, /hosted H5/i);
@@ -135,13 +135,13 @@ test('native navigation exposes iOS edge progress and Android predictive back', 
 
 test('Android share drafts commit only after confirmation and release only after acknowledgement', async () => {
   const [store, plugin, activity] = await Promise.all([
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberSharePlugin.java'),
-    source('android/app/src/main/java/com/openchamber/app/MainActivity.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriShareStore.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriSharePlugin.java'),
+    source('android/app/src/main/java/com/yuri/app/MainActivity.java'),
   ]);
   assert.match(store, /static JSONObject prepareDraft\(Context context, String draftID, JSONObject target, String text, java\.util\.List<Uri> images\)/);
   assert.match(store, /static String confirmDraft\(Context context, String draftID, String text\)/);
-  assert.match(store, /new File\(context\.getFilesDir\(\), "openchamber-share-drafts"\)/);
+  assert.match(store, /new File\(context\.getFilesDir\(\), "yuri-share-drafts"\)/);
   assert.match(store, /new JSONObject\(\)\.put\("version", 1\)\.put\("operationID", draftID\)/);
   assert.match(store, /\.put\("source", "android-share"\)/);
   assert.match(store, /static void markDraftCancelled\(Context context, String draftID\)/);
@@ -163,15 +163,15 @@ test('Android share drafts commit only after confirmation and release only after
   assert.doesNotMatch(store, /CANCELLED_DRAFTS/);
   assert.match(store, /releaseAcknowledged[\s\S]*\.has\("consumedAt"\)/);
   assert.match(store, /readJSON\(committedDraft\)\.put\("committed", true\)/);
-  assert.match(plugin, /OpenChamberShareStore\.releaseAcknowledged\(getContext\(\), id\)/);
+  assert.match(plugin, /YuriShareStore\.releaseAcknowledged\(getContext\(\), id\)/);
   assert.match(activity, /intent\.setAction\(null\);\s*intent\.removeExtra\("operationID"\);/);
 });
 
 test('Android draft delivery exposes complete draft copies and clears draft-ready intents', async () => {
   const [store, plugin, activity] = await Promise.all([
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberSharePlugin.java'),
-    source('android/app/src/main/java/com/openchamber/app/MainActivity.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriShareStore.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriSharePlugin.java'),
+    source('android/app/src/main/java/com/yuri/app/MainActivity.java'),
   ]);
   assert.match(store, /static JSONArray pendingDrafts\(Context context\)/);
   assert.match(store, /synchronized \(LOCK\)[\s\S]*pruneLocked\(context\)/);
@@ -183,21 +183,21 @@ test('Android draft delivery exposes complete draft copies and clears draft-read
   assert.match(store, /private static boolean isDraftCancelled\(Context context, String draftID\)/);
   assert.match(store, /if \(isDraftCancelled\(context, dir\.getName\(\)\)\) \{\s*delete\(dir\);\s*continue;/);
   assert.match(store, /Collections\.sort\(draftsByCreatedAt/);
-  assert.match(plugin, /@PluginMethod public void listDrafts\(PluginCall call\)[\s\S]*put\("drafts", OpenChamberShareStore\.pendingDrafts\(getContext\(\)\)\)/);
-  assert.match(plugin, /@PluginMethod public void cancelDraft\(PluginCall call\)[\s\S]*OpenChamberShareStore\.cancelDraft\(getContext\(\), id\)/);
+  assert.match(plugin, /@PluginMethod public void listDrafts\(PluginCall call\)[\s\S]*put\("drafts", YuriShareStore\.pendingDrafts\(getContext\(\)\)\)/);
+  assert.match(plugin, /@PluginMethod public void cancelDraft\(PluginCall call\)[\s\S]*YuriShareStore\.cancelDraft\(getContext\(\), id\)/);
   assert.match(plugin, /void emitDraftReceived\(String draftID\)[\s\S]*notifyListeners\("shareDraftReceived", event\)/);
-  assert.match(activity, /ACTION_SHARE_DRAFT_READY = "com\.openchamber\.app\.SHARE_DRAFT_READY"/);
+  assert.match(activity, /ACTION_SHARE_DRAFT_READY = "com\.yuri\.app\.SHARE_DRAFT_READY"/);
   assert.match(activity, /getStringExtra\("draftID"\)[\s\S]*emitDraftReceived\(id\)[\s\S]*intent\.setAction\(null\);\s*intent\.removeExtra\("draftID"\);/);
 });
 
 test('Android share ingress opens the WebView composer and the delivery bridge accepts the native image limit', async () => {
   const [receiver, bridge] = await Promise.all([
-    source('android/app/src/main/java/com/openchamber/app/ShareReceiverActivity.java'),
+    source('android/app/src/main/java/com/yuri/app/ShareReceiverActivity.java'),
     source('../ui/src/apps/MobileShareBridge.tsx'),
   ]);
-  assert.match(receiver, /OpenChamberShareStore\.prepareDraft\(context, id, selectedTarget, text, images\)/);
+  assert.match(receiver, /YuriShareStore\.prepareDraft\(context, id, selectedTarget, text, images\)/);
   assert.match(receiver, /target = null;\s*if \(shortcut != null\)/);
-  assert.doesNotMatch(receiver, /target = OpenChamberShareStore\.defaultTarget\(this, serverID, assistantID\)/);
+  assert.doesNotMatch(receiver, /target = YuriShareStore\.defaultTarget\(this, serverID, assistantID\)/);
   assert.match(receiver, /setAction\(MainActivity\.ACTION_SHARE_DRAFT_READY\)[\s\S]*putExtra\("draftID", draftID\)/);
   assert.doesNotMatch(receiver, /EditText|previewRow|sendButton/);
   assert.match(receiver, /destroyed \|\| terminalNavigation/);
@@ -206,8 +206,8 @@ test('Android share ingress opens the WebView composer and the delivery bridge a
 
 test('iOS sharing resolves public.image files to concrete, signature-verified MIME types', async () => {
   const [controller, store] = await Promise.all([
-    source('ios/App/OpenChamberShareExtension/ShareViewController.swift'),
-    source('ios/App/App/OpenChamberShareStore.swift'),
+    source('ios/App/YuriShareExtension/ShareViewController.swift'),
+    source('ios/App/App/YuriShareStore.swift'),
   ]);
   assert.doesNotMatch(controller, /"image\/\*"/);
   assert.match(controller, /imageMIME\(for: temporary\)/);
@@ -227,7 +227,7 @@ test('iOS sharing resolves public.image files to concrete, signature-verified MI
 });
 
 test('iOS sharing collects compose text, attributed content, URLs, and plain text before writing', async () => {
-  const controller = await source('ios/App/OpenChamberShareExtension/ShareViewController.swift');
+  const controller = await source('ios/App/YuriShareExtension/ShareViewController.swift');
   assert.match(controller, /extensionItems\.compactMap \{ \$0\.attributedContentText\?\.string \}/);
   assert.match(controller, /hasItemConformingToTypeIdentifier\(UTType\.url\.identifier\)/);
   assert.match(controller, /loadItem\(forTypeIdentifier: UTType\.url\.identifier, options: nil\)/);
@@ -235,7 +235,7 @@ test('iOS sharing collects compose text, attributed content, URLs, and plain tex
   assert.match(controller, /hasItemConformingToTypeIdentifier\(UTType\.plainText\.identifier\)/);
   assert.match(controller, /loadItem\(forTypeIdentifier: UTType\.plainText\.identifier, options: nil\)/);
   assert.match(controller, /\[self\.contentText\] \+ attributedText \+ loadedText/);
-  assert.match(controller, /OpenChamberShareStore\.write\(target: target, text: text, items: items\)/);
+  assert.match(controller, /YuriShareStore\.write\(target: target, text: text, items: items\)/);
   assert.match(controller, /if let value = item as\? URL \{ return value\.absoluteString \}/);
   assert.match(controller, /if let value = item as\? NSAttributedString \{ return value\.string \}/);
   assert.match(controller, /if let value = item as\? Data \{ return String\(data: value, encoding: \.utf8\) \}/);
@@ -244,10 +244,10 @@ test('iOS sharing collects compose text, attributed content, URLs, and plain tex
 test('iOS share suggestions donate and resolve exact Assistant conversations', async () => {
   const [appInfo, extensionInfo, controller, store, plugin, bridge, assistantView] = await Promise.all([
     source('ios/App/App/Info.plist'),
-    source('ios/App/OpenChamberShareExtension/Info.plist'),
-    source('ios/App/OpenChamberShareExtension/ShareViewController.swift'),
-    source('ios/App/App/OpenChamberShareStore.swift'),
-    source('ios/App/App/OpenChamberSharePlugin.swift'),
+    source('ios/App/YuriShareExtension/Info.plist'),
+    source('ios/App/YuriShareExtension/ShareViewController.swift'),
+    source('ios/App/App/YuriShareStore.swift'),
+    source('ios/App/App/YuriSharePlugin.swift'),
     source('../ui/src/apps/MobileShareBridge.tsx'),
     source('../ui/src/components/assistants/AssistantConversationSurface.tsx'),
   ]);

@@ -118,7 +118,7 @@ describe('relay config sync', () => {
 
   it('probes over the tunnel with bearer auth and skips provider credentials by default', async () => {
     tunnelFetch.mockImplementation(async (path: string) => {
-      expect(path).toBe('/api/openchamber/config-sync/probe');
+      expect(path).toBe('/api/yuri/config-sync/probe');
       return {
         ok: true,
         json: async () => ({

@@ -302,7 +302,7 @@ const describeScrolledElements = (doc: Document, limit = 8): ScrolledElementInfo
   return found;
 };
 
-const FIXED_PIN_ATTR = 'data-oc-fixed-pin';
+const FIXED_PIN_ATTR = 'data-yuri-fixed-pin';
 
 // snapDOM repositions `position: sticky` (freezeSticky) but leaves `position: fixed`
 // alone. In the full-document SVG foreignObject a fixed element resolves against the
@@ -354,7 +354,7 @@ const tagFixedElementsForClonePinning = (doc: Document, scrollX: number, scrollY
 // live DOM. snapDOM's own scroll-translate wrapper on the clone is preserved, so the
 // sidebar's internal scroll position stays baked in.
 const snapdomFixedPinPlugin = {
-  name: 'oc-fixed-pin',
+  name: 'yuri-fixed-pin',
   afterClone(context: { clone?: Element | null }): void {
     const clone = context?.clone;
     if (!clone || typeof (clone as Element).querySelectorAll !== 'function') return;
@@ -373,7 +373,7 @@ const snapdomFixedPinPlugin = {
   },
 };
 
-const NESTED_SCROLL_ATTR = 'data-oc-scroll-pin';
+const NESTED_SCROLL_ATTR = 'data-yuri-scroll-pin';
 
 // Preparing the capture (asset inlining, layout reflows) resets the scrollTop of
 // overflow containers like the fixed Starlight `.sidebar-pane`. snapDOM bakes nested
@@ -423,7 +423,7 @@ const captureNestedScrollState = (doc: Document): { reapply: () => void; cleanup
 // when present, or create the wrapper ourselves if snapDOM saw scrollTop 0 at clone
 // time. Runs after the fixed-pin pass so sidebar gets both correct box and scroll.
 const snapdomNestedScrollPlugin = {
-  name: 'oc-nested-scroll',
+  name: 'yuri-nested-scroll',
   afterClone(context: { clone?: Element | null }): void {
     const clone = context?.clone;
     if (!clone || typeof (clone as Element).querySelectorAll !== 'function') return;

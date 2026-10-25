@@ -40,7 +40,7 @@ describe('ChatContainer source contracts', () => {
 
     test('native mobile load-older visibility uses the mounted mobile surface state', () => {
         // Capacitor launches MobileApp directly and does not set the hosted-page
-        // __OPENCHAMBER_SURFACE__ global. Width/pointer probing can vary while
+        // __YURI_SURFACE__ global. Width/pointer probing can vary while
         // the WebView viewport changes, whereas isMobile is set before mount.
         expect(source).toContain('const showLoadOlderButton = resolveMobileLoadOlderVisibility({');
         expect(source).toContain('isMobile,');
@@ -116,7 +116,7 @@ describe('ChatContainer source contracts', () => {
         // flight is unresolved. The label is the accessible name, not painted text.
         expect(source).toContain('resolveDesktopLoadOlderStatusVisibility');
         expect(source).toContain("aria-label={t('chat.history.loadingMore')}");
-        expect(source).toContain('oc-mobile-glass-control');
+        expect(source).toContain('yuri-mobile-glass-control');
         expect(source).not.toContain("typography-meta text-[var(--surface-mutedForeground)]\">{t('chat.history.loadingMore')}");
         expect(source).toContain('showDesktopLoadOlderStatus');
     });

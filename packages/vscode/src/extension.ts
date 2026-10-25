@@ -19,6 +19,7 @@ import {
 } from './session-metadata-runtime';
 import { setWorktreeBootstrapStatusNotifier } from './gitService';
 import { resolveWorkspaceFolders } from './workspaceResolver';
+import { importLegacyConfiguration, LEGACY_CONFIGURATION_SECTION } from './brand-migration';
 
 let chatViewProvider: ChatViewProvider | undefined;
 let agentManagerProvider: AgentManagerPanelProvider | undefined;
@@ -31,7 +32,7 @@ let activeSessionTitle: string | null = null;
 
 const t = vscode.l10n.t;
 
-const SETTINGS_KEY = 'openchamber.settings';
+const SETTINGS_KEY = 'yuri.settings';
 const CHAT_VIEW_BOOTSTRAP_DELAY_MS = 80;
 
 const waitForChatViewBootstrap = () => new Promise<void>((resolve) => setTimeout(resolve, CHAT_VIEW_BOOTSTRAP_DELAY_MS));
@@ -52,7 +53,27 @@ const formatDurationMs = (value: number | null | undefined) => {
 };
 
 export async function activate(context: vscode.ExtensionContext) {
-  outputChannel = vscode.window.createOutputChannel('OpenChamberY');
+  outputChannel = vscode.window.createOutputChannel('Yuri');
+
+  context.subscriptions.push(vscode.commands.registerCommand('yuri.importLegacyConfiguration', async () => {
+    const confirm = t('Import configuration');
+    const choice = await vscode.window.showWarningMessage(
+      t('Import legacy API URL and OpenCode binary settings? Existing Yuri settings win. Credentials and private extension state cannot be imported. Reload the window after importing.'),
+      { modal: true }, confirm,
+    );
+    if (choice !== confirm) return;
+    const result = await importLegacyConfiguration(
+      vscode.workspace.getConfiguration(LEGACY_CONFIGURATION_SECTION),
+      vscode.workspace.getConfiguration('yuri'),
+      [
+        { field: 'globalValue', target: vscode.ConfigurationTarget.Global },
+        { field: 'workspaceValue', target: vscode.ConfigurationTarget.Workspace },
+      ],
+    );
+    const message = t('Configuration import: {0} copied, {1} preserved, {2} failed. Failed items remain available in the legacy settings; review and retry. Reload the window to apply changes.', result.imported, result.skipped, result.failed);
+    if (result.failed) await vscode.window.showWarningMessage(message);
+    else await vscode.window.showInformationMessage(message);
+  }));
 
   let moveToRightSidebarScheduled = false;
 
@@ -94,12 +115,12 @@ export async function activate(context: vscode.ExtensionContext) {
     if (!moveCommandId) return 'unsupported';
 
     try {
-      await vscode.commands.executeCommand('openchamber.chatView.focus');
+      await vscode.commands.executeCommand('yuri.chatView.focus');
       await vscode.commands.executeCommand(moveCommandId);
       return 'moved';
     } catch (error) {
       outputChannel?.appendLine(
-        `[OpenChamberY] Failed moving chat view to right sidebar (command=${moveCommandId}): ${error instanceof Error ? error.message : String(error)}`
+        `[Yuri] Failed moving chat view to right sidebar (command=${moveCommandId}): ${error instanceof Error ? error.message : String(error)}`
       );
       return 'failed';
     }
@@ -108,9 +129,9 @@ export async function activate(context: vscode.ExtensionContext) {
   const maybeMoveChatToRightSidebarOnStartup = async () => {
     if (isCursorLikeHost()) return;
 
-    const attempted = context.globalState.get<boolean>('openchamber.sidebarAutoMoveAttempted') || false;
+    const attempted = context.globalState.get<boolean>('yuri.sidebarAutoMoveAttempted') || false;
     if (attempted) return;
-    await context.globalState.update('openchamber.sidebarAutoMoveAttempted', true);
+    await context.globalState.update('yuri.sidebarAutoMoveAttempted', true);
 
     if (moveToRightSidebarScheduled) return;
     moveToRightSidebarScheduled = true;
@@ -127,13 +148,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }, 800);
   };
 
-
-  // Migration: clear legacy auto-set API URLs (ports 47680-47689 were auto-assigned by older extension versions)
-  const config = vscode.workspace.getConfiguration('openchamber');
-  const legacyApiUrl = config.get<string>('apiUrl') || '';
-  if (/^https?:\/\/localhost:4768\d\/?$/.test(legacyApiUrl.trim())) {
-    await config.update('apiUrl', '', vscode.ConfigurationTarget.Global);
-  }
 
   // Host session metadata / archive store lives under extension globalStorage,
   // scoped further by OpenCode runtime identity inside the runtime module.
@@ -163,25 +177,25 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register sidebar/focus commands AFTER the webview view provider is registered
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.openSidebar', async () => {
+    vscode.commands.registerCommand('yuri.openSidebar', async () => {
       // Best-effort: open the container (if available), then focus the chat view.
       try {
-        await vscode.commands.executeCommand('workbench.view.extension.openchamber');
+        await vscode.commands.executeCommand('workbench.view.extension.yuri');
       } catch (e) {
-        outputChannel?.appendLine(`[OpenChamberY] workbench.view.extension.openchamber failed: ${e}`);
+        outputChannel?.appendLine(`[Yuri] workbench.view.extension.yuri failed: ${e}`);
       }
 
       try {
-        await vscode.commands.executeCommand('openchamber.chatView.focus');
+        await vscode.commands.executeCommand('yuri.chatView.focus');
       } catch (e) {
-        outputChannel?.appendLine(`[OpenChamberY] openchamber.chatView.focus failed: ${e}`);
-        vscode.window.showErrorMessage(t('OpenChamberY: Failed to open sidebar - {0}', String(e)));
+        outputChannel?.appendLine(`[Yuri] yuri.chatView.focus failed: ${e}`);
+        vscode.window.showErrorMessage(t('Yuri: Failed to open sidebar - {0}', String(e)));
         return false;
       }
 
       if (!chatViewProvider?.hasResolvedView()) {
-        outputChannel?.appendLine('[OpenChamberY] Chat sidebar focus completed before the webview was resolved');
-        vscode.window.showWarningMessage(t('OpenChamberY: Chat sidebar is not ready'));
+        outputChannel?.appendLine('[Yuri] Chat sidebar focus completed before the webview was resolved');
+        vscode.window.showWarningMessage(t('Yuri: Chat sidebar is not ready'));
         return false;
       }
 
@@ -190,15 +204,15 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   const revealChatViewForPayload = async () => {
-    const opened = await vscode.commands.executeCommand<boolean>('openchamber.openSidebar');
+    const opened = await vscode.commands.executeCommand<boolean>('yuri.openSidebar');
     if (!opened) {
       return false;
     }
 
     await waitForChatViewBootstrap();
     if (!chatViewProvider?.hasResolvedView()) {
-      outputChannel?.appendLine('[OpenChamberY] Chat sidebar webview was disposed before payload delivery');
-      vscode.window.showWarningMessage(t('OpenChamberY: Chat sidebar is not ready'));
+      outputChannel?.appendLine('[Yuri] Chat sidebar webview was disposed before payload delivery');
+      vscode.window.showWarningMessage(t('Yuri: Chat sidebar is not ready'));
       return false;
     }
 
@@ -206,8 +220,8 @@ export async function activate(context: vscode.ExtensionContext) {
   };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.focusChat', async () => {
-      await vscode.commands.executeCommand('openchamber.chatView.focus');
+    vscode.commands.registerCommand('yuri.focusChat', async () => {
+      await vscode.commands.executeCommand('yuri.chatView.focus');
     })
   );
 
@@ -218,7 +232,7 @@ export async function activate(context: vscode.ExtensionContext) {
   sessionEditorProvider = new SessionEditorPanelProvider(context, context.extensionUri, openCodeManager);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.internal.settingsSynced', (settings: unknown) => {
+    vscode.commands.registerCommand('yuri.internal.settingsSynced', (settings: unknown) => {
       chatViewProvider?.notifySettingsSynced(settings);
       sessionEditorProvider?.notifySettingsSynced(settings);
       agentManagerProvider?.notifySettingsSynced(settings);
@@ -234,13 +248,13 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.openAgentManager', () => {
+    vscode.commands.registerCommand('yuri.openAgentManager', () => {
       agentManagerProvider?.createOrShow();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.setActiveSession', (sessionId: unknown, title?: unknown) => {
+    vscode.commands.registerCommand('yuri.setActiveSession', (sessionId: unknown, title?: unknown) => {
       if (typeof sessionId === 'string' && sessionId.trim().length > 0) {
         activeSessionId = sessionId.trim();
         activeSessionTitle = typeof title === 'string' && title.trim().length > 0 ? title.trim() : null;
@@ -253,9 +267,9 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.openActiveSessionInEditor', () => {
+    vscode.commands.registerCommand('yuri.openActiveSessionInEditor', () => {
       if (!activeSessionId) {
-        vscode.window.showInformationMessage(t('OpenChamberY: No active session'));
+        vscode.window.showInformationMessage(t('Yuri: No active session'));
         return;
       }
       sessionEditorProvider?.createOrShow(activeSessionId, activeSessionTitle ?? undefined);
@@ -263,7 +277,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.openSessionInEditor', (sessionId: string, title?: string) => {
+    vscode.commands.registerCommand('yuri.openSessionInEditor', (sessionId: string, title?: string) => {
       if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
         return;
       }
@@ -272,13 +286,13 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.openNewSessionInEditor', () => {
+    vscode.commands.registerCommand('yuri.openNewSessionInEditor', () => {
       sessionEditorProvider?.createOrShowNewSession();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.openCurrentOrNewSessionInEditor', () => {
+    vscode.commands.registerCommand('yuri.openCurrentOrNewSessionInEditor', () => {
       if (activeSessionId) {
         sessionEditorProvider?.createOrShow(activeSessionId, activeSessionTitle ?? undefined);
       } else {
@@ -288,7 +302,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.restartApi', async () => {
+    vscode.commands.registerCommand('yuri.restartApi', async () => {
       try {
         // Prefer the full in-app reload flow (overlay + managed restart via the
         // bridge + config/data refresh) driven by the webview — same as after an
@@ -298,18 +312,18 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
         await openCodeManager?.restart();
-        vscode.window.showInformationMessage(t('OpenChamberY: API connection restarted'));
+        vscode.window.showInformationMessage(t('Yuri: API connection restarted'));
       } catch (e) {
-        vscode.window.showErrorMessage(t('OpenChamberY: Failed to restart API - {0}', String(e)));
+        vscode.window.showErrorMessage(t('Yuri: Failed to restart API - {0}', String(e)));
       }
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.addToContext', async () => {
+    vscode.commands.registerCommand('yuri.addToContext', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        vscode.window.showWarningMessage(t('OpenChamberY [Add to Context]: No active editor'));
+        vscode.window.showWarningMessage(t('Yuri [Add to Context]: No active editor'));
         return;
       }
 
@@ -317,7 +331,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const selectedText = editor.document.getText(selection);
 
       if (!selectedText) {
-        vscode.window.showWarningMessage(t('OpenChamberY [Add to Context]: No text selected'));
+        vscode.window.showWarningMessage(t('Yuri [Add to Context]: No text selected'));
         return;
       }
 
@@ -346,7 +360,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.attachExplorerToChat', async (resource?: vscode.Uri, resources?: vscode.Uri[]) => {
+    vscode.commands.registerCommand('yuri.attachExplorerToChat', async (resource?: vscode.Uri, resources?: vscode.Uri[]) => {
       const uriCandidates: vscode.Uri[] = [];
       if (Array.isArray(resources)) {
         uriCandidates.push(...resources.filter((entry): entry is vscode.Uri => entry instanceof vscode.Uri));
@@ -399,7 +413,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       if (attachedFiles.length === 0) {
-        vscode.window.showWarningMessage(t('OpenChamberY: No file selected to mention'));
+        vscode.window.showWarningMessage(t('Yuri: No file selected to mention'));
         return;
       }
 
@@ -411,16 +425,16 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       if (skippedEntries.length > 0) {
-        vscode.window.showInformationMessage(t('OpenChamberY: Some selected entries were skipped (folders or unsupported resources)'));
+        vscode.window.showInformationMessage(t('Yuri: Some selected entries were skipped (folders or unsupported resources)'));
       }
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.explain', async () => {
+    vscode.commands.registerCommand('yuri.explain', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        vscode.window.showWarningMessage(t('OpenChamberY [Explain]: No active editor'));
+        vscode.window.showWarningMessage(t('Yuri [Explain]: No active editor'));
         return;
       }
 
@@ -452,10 +466,10 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.improveCode', async () => {
+    vscode.commands.registerCommand('yuri.improveCode', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        vscode.window.showWarningMessage(t('OpenChamberY [Improve Code]: No active editor'));
+        vscode.window.showWarningMessage(t('Yuri [Improve Code]: No active editor'));
         return;
       }
 
@@ -463,7 +477,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const selectedText = editor.document.getText(selection);
 
       if (!selectedText) {
-        vscode.window.showWarningMessage(t('OpenChamberY [Improve Code]: No text selected'));
+        vscode.window.showWarningMessage(t('Yuri [Improve Code]: No text selected'));
         return;
       }
 
@@ -485,12 +499,12 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.newSession', async (directory?: unknown) => {
+    vscode.commands.registerCommand('yuri.newSession', async (directory?: unknown) => {
       const candidates = resolveWorkspaceFolders(vscode.workspace.workspaceFolders ?? []);
       let folderPath: string | undefined = typeof directory === 'string' ? directory : undefined;
 
       if (!folderPath && candidates.length === 0) {
-        vscode.window.showInformationMessage('OpenChamberY: No folder is open. Open a folder to start a new session.');
+        vscode.window.showInformationMessage('Yuri: No folder is open. Open a folder to start a new session.');
         return;
       }
 
@@ -510,7 +524,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (openCodeManager) {
         const result = await openCodeManager.setWorkingDirectory(folderPath);
         if (!result.success) {
-          vscode.window.showErrorMessage(`OpenChamberY: ${result.error}`);
+          vscode.window.showErrorMessage(`Yuri: ${result.error}`);
           return;
         }
       }
@@ -534,14 +548,14 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.showSettings', () => {
+    vscode.commands.registerCommand('yuri.showSettings', () => {
       chatViewProvider?.showSettings();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('openchamber.showOpenCodeStatus', async () => {
-      const config = vscode.workspace.getConfiguration('openchamber');
+    vscode.commands.registerCommand('yuri.showOpenCodeStatus', async () => {
+      const config = vscode.workspace.getConfiguration('yuri');
       const configuredApiUrl = (config.get<string>('apiUrl') || '').trim();
 
       const extensionVersion = String(context.extension?.packageJSON?.version || '');
@@ -651,7 +665,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const lines = [
         `Time: ${new Date().toISOString()}`,
-        `OpenChamberY version: ${extensionVersion || '(unknown)'}`,
+        `Yuri version: ${extensionVersion || '(unknown)'}`,
         `OpenCode Version: ${debug?.version ?? '(unknown)'}`,
         `VS Code version: ${vscode.version}`,
         `Platform: ${process.platform} ${process.arch}`,
@@ -660,7 +674,7 @@ export async function activate(context: vscode.ExtensionContext) {
         `Working directory: ${workingDirectory}`,
         `Working dir matches workspace: ${workingDirectoryMatchesWorkspace ? 'yes' : 'no'}`,
         `API URL (configured): ${configuredApiUrl || '(none)'}`,
-        `OpenCode binary (configured): ${(vscode.workspace.getConfiguration('openchamber').get<string>('opencodeBinary') || '').trim() || '(none)'}`,
+        `OpenCode binary (configured): ${(vscode.workspace.getConfiguration('yuri').get<string>('opencodeBinary') || '').trim() || '(none)'}`,
         `API URL (resolved): ${openCodeManager?.getApiUrl() ?? '(none)'}`,
         `API URL path: ${resolvedApiPath || '(none)'}`,
         debug
@@ -786,7 +800,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   setWorktreeBootstrapStatusNotifier((event) => {
     const message = {
-      type: 'openchamber:worktree-bootstrap-status',
+      type: 'yuri:worktree-bootstrap-status',
       properties: event,
     };
     chatViewProvider?.postMessage(message);

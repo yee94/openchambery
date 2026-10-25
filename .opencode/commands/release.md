@@ -1,9 +1,11 @@
 ---
-description: Publish an OpenChamber GitHub Release; usage: /release [version] [dry-run]
+description: Publish an Yuri GitHub Release; usage: /release [version] [dry-run]
 agent: build
 ---
 
-You are releasing OpenChamber from this repository. Follow @docs/RELEASING.md. Treat @.github/workflows/release.yml as the native-release contract and @.github/workflows/mobile-beta-ota.yml as the shared desktop/mobile OTA contract. Beta / prerelease rules in @docs/RELEASING.md section `Beta / prerelease` are mandatory.
+先阅读 `docs/YURI_MIGRATION.md` 并取得外部所有权、签名和真实安装产物的验证证据。候选身份尚未验证时保持发布阻塞；只有满足该文档退出条件才可设置 `YURI_RELEASE_IDENTITIES_VERIFIED=true`。首次品牌迁移走完整原生发布，显式配置更新权威源与镜像，随后执行既有发布步骤。
+
+You are releasing Yuri from this repository. Follow @docs/RELEASING.md. Treat @.github/workflows/release.yml as the native-release contract and @.github/workflows/mobile-beta-ota.yml as the shared desktop/mobile OTA contract. Beta / prerelease rules in @docs/RELEASING.md section `Beta / prerelease` are mandatory.
 
 Arguments: `$ARGUMENTS.opencode/commands/release.md`
 
@@ -30,7 +32,7 @@ Workflow:
 8. When `dry-run` was requested, dispatch the workflow manually instead of creating or pushing a tag:
 
    ```bash
-   gh workflow run release.yml --repo yee94/openchamber --ref main -f version="$VERSION" -f dry_run=true
+   gh workflow run release.yml --repo yee94/yuri --ref main -f version="$VERSION" -f dry_run=true
    ```
 
 8. Do not monitor the Release workflow after triggering it.
@@ -55,4 +57,4 @@ Constraints:
 - Never expose, print, or modify repository secrets or signing credentials.
 - Execute the release flow without asking for confirmation during the command.
 - Report the version, commit, tag, push result, workflow dispatch result, and whether the release is stable or prerelease.
-- If a previous attempt for the same version left a Draft Release, read @docs/RELEASING.md section `finalize-release` / asset inventory before re-dispatching. Prefer `gh run rerun <run-id> --failed` over starting a second same-version Release; stale `OpenChamber-$VERSION-$RUN_NUMBER-android.*` assets will block publish.
+- If a previous attempt for the same version left a Draft Release, read @docs/RELEASING.md section `finalize-release` / asset inventory before re-dispatching. Prefer `gh run rerun <run-id> --failed` over starting a second same-version Release; stale `Yuri-$VERSION-$RUN_NUMBER-android.*` assets will block publish.

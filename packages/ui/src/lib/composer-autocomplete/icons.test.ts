@@ -79,10 +79,10 @@ describe('composer autocomplete icons and rows', () => {
 
   test('builds slash, skill, and mention rows in keyboard order', () => {
     expect(buildSlashCommandRows(
-      [{ id: 'openchamber:undo', name: 'undo', description: 'restore', isBuiltIn: true }],
+      [{ id: 'yuri:undo', name: 'undo', description: 'restore', isBuiltIn: true }],
       { skill: 'Skill', command: 'Command', system: 'System' },
     )).toEqual([{
-      id: 'openchamber:undo',
+      id: 'yuri:undo',
       title: '/undo',
       subtitle: 'restore',
       badge: 'System',

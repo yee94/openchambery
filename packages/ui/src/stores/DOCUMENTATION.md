@@ -169,7 +169,7 @@ route, drafts, raw asset auth, and mutations locally.
 `DiagramView` keeps initial diagram reads in the content Query while retaining XML editing and its serial save queue locally.
 
 `agentQueries.ts` and `commandQueries.ts` own their official SDK catalogs, then
-resolve OpenChamber-owned scope metadata with one bounded batched runtime request.
+resolve Yuri-owned scope metadata with one bounded batched runtime request.
 Keep this batch boundary to prevent catalog-sized metadata request fanout during cold
 startup. `useAgentsStore` and `useCommandsStore` own selection, drafts, and mutation
 actions.
@@ -226,11 +226,11 @@ These stores coordinate visible app state, navigation, selected tabs, dialogs, a
 `useFeatureFlagsStore` owns lightweight localStorage A/B flags. TanStack Virtual
 with StaticHistoryList and auto-follow is the only production chat list path on
 every platform and in the context panel. The Legend flag, reader, and setter
-have been removed; old `oc:legend-timeline` values are ignored. TimelineList and
+have been removed; old `yuri:legend-timeline` values are ignored. TimelineList and
 its algorithms are retained without a production entry.
 On this experiment branch, assistant Markdown defaults to
 `markstream-react` (`markstreamReactEnabled` is false only when
-`localStorage.oc:markstream-react === '0'`). Set that key to `0` to fall back
+`localStorage.yuri:markstream-react === '0'`). Set that key to `0` to fall back
 to marked + Shiki + morphdom. User, tool, and other `SimpleMarkdownRenderer`
 surfaces stay on the current path. Markstream in-bubble node virtualization
 is off (`maxLiveNodes=0` plus batch/smooth/defer off) so TanStack remains the
@@ -279,9 +279,9 @@ and outside-file grants remain authoritative.
 catalog by transport identity and normalized actual directory. Different
 worktrees/instances must not share one cache; every official request carries
 that directory (`listAgents(directory)`). New
-OpenChamber hosts always use the safe
+Yuri hosts always use the safe
 projection from `GET /api/config/catalog/providers` via `runtimeFetch`, with directory and AbortSignal
-propagation. Older OpenChamber hosts that answer 404 or 501 use one compatibility read through the
+propagation. Older Yuri hosts that answer 404 or 501 use one compatibility read through the
 official SDK's `provider.list` / `model.list` / optional `config.get`; its raw response is parsed immediately into the
 safe DTO. The Provider DTO admits only provider/model display and capability fields;
 the parser constructs each field, drops unknown keys, bounds collections, and accepts
@@ -305,7 +305,7 @@ only by case stay distinct. It applies the Provider DTO allowlist
 again when projecting Query results into the store. TanStack Query remains the
 Provider/Agent network SWR owner. `config-store` version 5 persists selections only
 under transport-scoped storage keys; it never persists providers, agents, catalog
-defaults or OpenCode/OpenChamber default-config snapshots. Legacy envelopes are
+defaults or OpenCode/Yuri default-config snapshots. Legacy envelopes are
 allowlist-migrated without seeding Query; valid model/agent/variant intent survives.
 Known foreign-transport envelopes cannot supply selections. Runtime reset suppresses
 the empty reset write before rehydrating the destination bucket.
@@ -430,9 +430,9 @@ The leaf `BtwPanel` subscribes to one entry. `useUIStore` accepts the transient
 resolving a surviving active tab or closing an otherwise empty persisted panel.
 
 `useProjectsStore.ts` caches the project registry, active project, and manual
-drag order in instance-scoped localStorage (`oc.inst.{runtimeKey}.*` via
+drag order in instance-scoped localStorage (`yuri.inst.{runtimeKey}.*` via
 `instanceScopedStorage.ts`). `runtimeKey` is the stable paired-device /
-OpenChamber-host id, so two mobile relay instances that share the UI origin
+Yuri-host id, so two mobile relay instances that share the UI origin
 keep independent project lists and order. LAN⇄relay for the same device
 reuses the same bucket. Relay instances never fall back to the old
 API-URL or unscoped `projects` keys. `resetForRuntimeSwitch` reloads the
@@ -451,7 +451,7 @@ clear it. Local manual order is startup continuity, not a per-device override.
 
 `useSessionDisplayStore` (`projectSortOrder`) and `useMobileSessionTreeStore`
 use the same instance-scoped persist helper and rehydrate when `runtimeKey`
-changes. Directory last/home caches, sidebar chrome (`oc.sessions.*`),
+changes. Directory last/home caches, sidebar chrome (`yuri.sessions.*`),
 session folders, and settings mirrors in `persistence.ts` follow the
 same instance key. Theme/brand remain transport-scoped
 (`runtimeScopedStorage.ts`) because packaged multi-window shares an origin
@@ -501,8 +501,8 @@ List labels are a fetch hint, not the archive contract; this does not add
   reducers) excludes SmartFetch temporary titles, any session with a non-empty
   `parentID` (subagents never belong in the root catalog; they load only on
   parent expand), and system-owned sessions whose metadata carries a non-empty
-  `openchamber.assistant.assistantID`, `openchamber.scheduledTask.taskID`,
-  `openchamber.smallModel.purpose`, or `openchamber.llm.purpose`;
+  `yuri.assistant.assistantID`, `yuri.scheduledTask.taskID`,
+  `yuri.smallModel.purpose`, or `yuri.llm.purpose`;
   title prefixes are not ownership signals.
   The sidebar tree explicitly opts into `includeChildren` for already-loaded live
   identities. This skips only the parent-ID exclusion, retaining title/system
@@ -555,7 +555,7 @@ the existing runtime gates. Concurrent hydrate callers share one in-flight GET;
 a transport failure leaves `hasHydratedSessionIndex` false so startup can retry
 (and must keep the seed projection), while a definitive unsupported (`null`)
 marks hydrated without writing storage as an empty success. Progress is observed
-through OpenChamber SSE revision tips (`openchamber:session-index-changed`)
+through Yuri SSE revision tips (`yuri:session-index-changed`)
 followed by an authoritative GET via the Query helper; it must not issue
 per-directory OpenCode requests from the renderer. Tip waits include a short
 safety timeout so a completed server job whose tip arrived before the consumer
@@ -659,7 +659,7 @@ These rules are important. Breaking them tends to reintroduce idle CPU churn, st
 ## Message queue ledger
 
 `message-queue-ledger.ts` owns the JSON-safe v4 durable queue contract under
-`openchamber_message_queue_ledger_v4`. Its parser accepts only plain DTOs,
+`yuri_message_queue_ledger_v4`. Its parser accepts only plain DTOs,
 bounded strings and collections, durable URL locators, and blob IDs; runtime
 `File`, `Blob`, bytes, `data:` and `blob:` values remain outside metadata.
 Attachment references and recovery issues carry complete display metadata.

@@ -295,10 +295,10 @@ describe('MobileTabsRoot secondary enter', () => {
   test('uses shared page-canvas background token', async () => {
     const source = await readFile(join(here, 'MobileTabsRoot.tsx'), 'utf8');
     const styles = await readFile(join(here, '../styles/mobile.css'), 'utf8');
-    expect(source).toContain('bg-[var(--oc-mobile-page-background)]');
-    expect(styles).toContain('--oc-mobile-page-background: color-mix(');
-    expect(styles).toContain('.oc-mobile-floating-shell.overflow-hidden');
-    expect(styles).toContain('background-color: var(--oc-mobile-page-background)');
+    expect(source).toContain('bg-[var(--yuri-mobile-page-background)]');
+    expect(styles).toContain('--yuri-mobile-page-background: color-mix(');
+    expect(styles).toContain('.yuri-mobile-floating-shell.overflow-hidden');
+    expect(styles).toContain('background-color: var(--yuri-mobile-page-background)');
   });
 
   test('adopts the native iOS liquid-glass dock and keeps the web bar as fallback', async () => {

@@ -57,9 +57,9 @@ import { installSkillsFromRepository } from '../skills-catalog/install.js';
 import { scanClawdHubPage } from '../skills-catalog/clawdhub/scan.js';
 import { installSkillsFromClawdHub } from '../skills-catalog/clawdhub/install.js';
 
-/** Fan-out an OpenChamber product SSE tip to every /api/openchamber/events client. */
-export const createOpenChamberEventBroadcaster = ({ getOpenChamberEventClients, writeSseEvent }) => (event) => {
-  const clients = getOpenChamberEventClients();
+/** Fan-out an Yuri product SSE tip to every /api/yuri/events client. */
+export const createYuriEventBroadcaster = ({ getYuriEventClients, writeSseEvent }) => (event) => {
+  const clients = getYuriEventClients();
   for (const client of clients) {
     try {
       writeSseEvent(client, event);
@@ -70,7 +70,7 @@ export const createOpenChamberEventBroadcaster = ({ getOpenChamberEventClients, 
 };
 
 // Topology routes historically imported this name; same broadcaster.
-export const createWorktreeTopologyBroadcaster = createOpenChamberEventBroadcaster;
+export const createWorktreeTopologyBroadcaster = createYuriEventBroadcaster;
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -99,8 +99,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       spawn,
       resolveGitBinaryForSpawn,
       createFsSearchRuntime,
-      openchamberDataDir,
-      openchamberUserConfigRoot,
+      yuriDataDir,
+      yuriUserConfigRoot,
       normalizeDirectoryPath,
       resolveProjectDirectory,
       resolveOptionalProjectDirectory,
@@ -138,7 +138,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       runHistoryStore,
       markUserMessageSent,
       waitForOpenCodeReady,
-      getOpenChamberEventClients,
+      getYuriEventClients,
       writeSseEvent,
       permissionAutoAcceptRuntime,
       questionAutoDelegateRuntime,
@@ -200,7 +200,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getResolvedOpenCodeBinary,
       getResolvedOpenCodeBinarySource,
       getActiveSessionCount,
-      openchamberDataDir,
+      yuriDataDir,
       onSettingsPersisted: (updated, changes) => {
         if (!questionAutoDelegateRuntime) return;
         if (!Object.prototype.hasOwnProperty.call(changes ?? {}, 'questionAutoDelegateEnabled')) return;
@@ -220,7 +220,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       fsPromises,
       path,
       crypto,
-      openchamberDataDir,
+      yuriDataDir,
       sanitizeProjects,
       readSettingsFromDiskMigrated,
       persistSettings,
@@ -236,14 +236,14 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       projectConfigRuntime,
       scheduledTasksRuntime,
       runHistoryStore,
-      getOpenChamberEventClients,
+      getYuriEventClients,
       writeSseEvent,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
     });
 
     registerScheduledTaskSessionSkill(app, {
-      express, openchamberDataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders,
+      express, yuriDataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders,
       getIsSharedOpenCodeService, waitForOpenCodeReady, getRuntimeContract,
       readSettingsFromDiskMigrated, sanitizeProjects, validateDirectoryPath,
       scheduledTaskRouter,
@@ -269,7 +269,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       waitForOpenCodeReady,
     });
 
-    // OpenChamber-owned turn-window messages API — must register before generic proxy.
+    // Yuri-owned turn-window messages API — must register before generic proxy.
     registerSessionTurnPageRoutes(app, {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
@@ -283,13 +283,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         .filter((value) => typeof value === 'string'));
     };
     await refreshAssistantAllowedRoots();
-    const broadcastAssistantRevisionTip = createOpenChamberEventBroadcaster({
-      getOpenChamberEventClients,
+    const broadcastAssistantRevisionTip = createYuriEventBroadcaster({
+      getYuriEventClients,
       writeSseEvent,
     });
     // Contact turn lifecycle / bubble deltas — same SSE bus, not revision watermark.
-    const broadcastContactTurnEvent = createOpenChamberEventBroadcaster({
-      getOpenChamberEventClients,
+    const broadcastContactTurnEvent = createYuriEventBroadcaster({
+      getYuriEventClients,
       writeSseEvent,
     });
     registerLlmRoutes(app, {
@@ -299,8 +299,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       onSystemSessionPersisted,
     });
     assistantRoutesRuntime = registerAssistantRoutes(app, {
-      openchamberDataDir,
-      dbPath: path.join(openchamberDataDir, 'assistants.sqlite'),
+      yuriDataDir,
+      dbPath: path.join(yuriDataDir, 'assistants.sqlite'),
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       getServerId,
@@ -341,7 +341,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       refreshAllowedRoots: refreshAssistantAllowedRoots,
       globalEventHub: globalMessageStreamHub,
       onRevisionTip: (tip) => broadcastAssistantRevisionTip({
-        type: 'openchamber:assistants-changed',
+        type: 'yuri:assistants-changed',
         properties: tip,
       }),
       onContactTurnEvent: (event) => broadcastContactTurnEvent(event),
@@ -453,7 +453,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         : (sessionMetadataStore
           ? async (sessionId, _directory, goal) => {
             const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, {
-              openchamber: { goal },
+              yuri: { goal },
             });
             return metadata;
           }
@@ -463,7 +463,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         : (sessionMetadataStore
           ? (sessionId) => sessionMetadataStore.get(sessionId)
           : null),
-      // Same arm path as PUT /api/openchamber/sessions/:id/metadata.
+      // Same arm path as PUT /api/yuri/sessions/:id/metadata.
       onGoalPersisted: typeof onSessionMetadataWritten === 'function'
         ? onSessionMetadataWritten
         : null,
@@ -477,19 +477,19 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       });
     }
     registerGitHubRoutes(app);
-    const broadcastOpenChamberEvent = createOpenChamberEventBroadcaster({
-      getOpenChamberEventClients,
+    const broadcastYuriEvent = createYuriEventBroadcaster({
+      getYuriEventClients,
       writeSseEvent,
     });
-    app.on('openchamber:speech-settings-changed', () => {
-      broadcastOpenChamberEvent({ type: 'openchamber:speech-settings-changed', properties: { occurredAt: Date.now() } });
+    app.on('yuri:speech-settings-changed', () => {
+      broadcastYuriEvent({ type: 'yuri:speech-settings-changed', properties: { occurredAt: Date.now() } });
     });
     const broadcastWorktreeTopologyChanged = createWorktreeTopologyBroadcaster({
-      getOpenChamberEventClients,
+      getYuriEventClients,
       writeSseEvent,
     });
     const broadcastWorktreeBootstrapStatus = (event) => {
-      broadcastOpenChamberEvent(event);
+      broadcastYuriEvent(event);
       if (typeof broadcastGlobalUiEvent === 'function') {
         const directory = typeof event?.properties?.directory === 'string' ? event.properties.directory : '';
         broadcastGlobalUiEvent(event, directory ? { directory } : undefined);
@@ -516,13 +516,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerMagicPromptRoutes(app, {
       fsPromises,
       path,
-      openchamberDataDir,
+      yuriDataDir,
     });
     registerSessionFoldersRoutes(app, {
       fsPromises,
       path,
-      openchamberDataDir,
-      broadcastOpenChamberEvent,
+      yuriDataDir,
+      broadcastYuriEvent,
     });
     registerFsRoutes(app, {
       os,
@@ -534,13 +534,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveProjectDirectory,
       buildAugmentedPath,
       resolveGitBinaryForSpawn,
-      openchamberUserConfigRoot,
-      openchamberDataDir,
+      yuriUserConfigRoot,
+      yuriDataDir,
     });
     const browserProviderHost = getBrowserProviderHost();
-    if (typeof openchamberDataDir === 'string' && openchamberDataDir) {
+    if (typeof yuriDataDir === 'string' && yuriDataDir) {
       browserProviderHost.attachSelectionStore(createBrowserProviderSelectionStore(
-        path.join(openchamberDataDir, 'browser-provider-selection.json'),
+        path.join(yuriDataDir, 'browser-provider-selection.json'),
       ));
     }
     registerBrowserProviderRoutes(app, { host: browserProviderHost });

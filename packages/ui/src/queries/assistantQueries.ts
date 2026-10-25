@@ -2,7 +2,7 @@ import React from 'react';
 import { parseAssistantReadPosition, parseAssistantReadResponse, type AssistantReadPosition } from './assistantDTO';
 import { useInfiniteQuery, useQuery, type InfiniteData, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryRuntime';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeYuriEvents } from '@/lib/yuriEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
@@ -109,7 +109,7 @@ const foregroundReconcileIntervalMs = (
 };
 export const assistantSnapshotQueryOptions = (transport = getRuntimeTransportIdentity()) => ({
   queryKey: key.snapshot(transport),
-  queryFn: async ({ signal }: { signal: AbortSignal }) => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal })),
+  queryFn: async ({ signal }: { signal: AbortSignal }) => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/yuri/assistants/snapshot', { signal })),
   staleTime: 0,
   retry: 2,
   refetchInterval: (query: { state: { data: AssistantSnapshot | undefined } }) => (
@@ -125,7 +125,7 @@ const retainAssistantSnapshotEvents = (transport: string) => {
   if (existing) {
     existing.count += 1;
   } else {
-    const dispose = subscribeOpenchamberEvents((event) => {
+    const dispose = subscribeYuriEvents((event) => {
       if (getRuntimeTransportIdentity() !== transport) return;
       const snapshot = queryClient.getQueryData<AssistantSnapshot>(key.snapshot(transport));
       if (event.type === 'event-stream-ready' || event.type === 'contact-turn-start' || event.type === 'contact-turn-end'
@@ -180,7 +180,7 @@ export const assistantHistoryInfiniteQueryOptions = (
     assertCurrent(transport, runtimeGeneration);
     const query = new URLSearchParams({ limit: String(ASSISTANT_HISTORY_PAGE_SIZE) });
     if (pageParam) query.set('before', pageParam);
-    const page = parseAssistantHistoryPage(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages?${query}`, { signal }));
+    const page = parseAssistantHistoryPage(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/messages?${query}`, { signal }));
     assertCurrent(transport, runtimeGeneration);
     return page;
   },
@@ -232,7 +232,7 @@ const contactMessagesUrl = (
   params.set('limit', String(query.limit ?? CONTACT_MESSAGES_PAGE_DEFAULT));
   if (query.before) params.set('before', query.before);
   if (query.messageID) params.set('messageID', query.messageID);
-  return `/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/messages?${params}`;
+  return `/api/yuri/assistants/${encodeURIComponent(assistantID)}/contact/messages?${params}`;
 };
 
 const fetchContactPage = async (
@@ -469,7 +469,7 @@ export const useAssistantContactMessagesQuery = (assistantID: string, enabled = 
     );
   }, [assistantID, enabled, runtimeGeneration, transport]);
 
-  React.useEffect(() => subscribeOpenchamberEvents((event) => {
+  React.useEffect(() => subscribeYuriEvents((event) => {
     if (getRuntimeTransportIdentity() !== transport) return;
     if (
       event.type !== 'assistants-changed'
@@ -660,7 +660,7 @@ export const assistantScheduledTasksQueryOptions = (
   queryKey: key.scheduledTasks(assistantID, transport, runtimeGeneration),
   queryFn: async ({ signal }: { signal: AbortSignal }) => {
     assertCurrent(transport, runtimeGeneration);
-    const page = parseAssistantScheduledTasksPage(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/scheduled-tasks`, { signal }));
+    const page = parseAssistantScheduledTasksPage(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/scheduled-tasks`, { signal }));
     assertCurrent(transport, runtimeGeneration);
     return page;
   },
@@ -699,7 +699,7 @@ export const useScheduledNavigationWorking = () => {
     ),
     refetchIntervalInBackground: false,
   });
-  React.useEffect(() => subscribeOpenchamberEvents((event) => {
+  React.useEffect(() => subscribeYuriEvents((event) => {
     if (getRuntimeTransportIdentity() !== transport) return;
     if (event.type === 'scheduled-task-ran' || event.type === 'event-stream-ready') {
       void queryClient.invalidateQueries({ queryKey: globalScheduledTasksQueryOptions(transport).queryKey, exact: true });
@@ -712,7 +712,7 @@ const invalidateContact = (assistantID: string, transport = getRuntimeTransportI
     queryKey: [transport, getRuntimeGeneration(), 'assistants', 'contact', assistantID],
   });
 };
-export const fetchAssistantSnapshot = async (signal: AbortSignal): Promise<AssistantSnapshot> => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal }));
+export const fetchAssistantSnapshot = async (signal: AbortSignal): Promise<AssistantSnapshot> => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/yuri/assistants/snapshot', { signal }));
 export const assistantCapabilityQueryOptions = (transport = getRuntimeTransportIdentity()) => ({ queryKey: key.capability(transport), queryFn: () => fetchAssistantCapability(), retry: false });
 export const useAssistantCapabilityQuery = () => useQuery(assistantCapabilityQueryOptions());
 export const readAssistantSnapshot = (client: Pick<QueryClient, 'getQueryData'> = queryClient, transport = getRuntimeTransportIdentity()): AssistantSnapshot | undefined => client.getQueryData<AssistantSnapshot>(key.snapshot(transport));
@@ -725,15 +725,15 @@ export const ensureAssistantSession = async (assistantID: string): Promise<Sessi
   const generation = getRuntimeGeneration();
   await waitForSessionStartupBarrier();
   assertCurrent(transport, generation);
-  const binding = parseSessionBinding(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/ensure`, jsonInit('POST')));
+  const binding = parseSessionBinding(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/session/ensure`, jsonInit('POST')));
   assertCurrent(transport, generation);
   applyBinding(assistantID, binding, transport);
   return binding;
 };
-export const newAssistantSession = async (assistantID: string): Promise<SessionBinding> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const binding = parseSessionBinding(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/new`, jsonInit('POST'))); assertCurrent(transport, generation); applyBinding(assistantID, binding, transport); return binding; };
-export const compactAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<CompactResponse> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseCompactResponse(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/compact`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); return result; };
-export const abortAssistantSession = async (assistantID: string, binding: Pick<SessionBinding, 'sessionID' | 'sessionGeneration'>): Promise<void> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/abort`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration })); assertCurrent(transport, generation); void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true }); };
-export const sendAssistantMessage = async (assistantID: string, binding: SessionBinding, messageID: string, parts: AssistantPart[], source: AssistantSource = 'composer'): Promise<MessageAdmission> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source, language: useI18nStore.getState().locale }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); invalidateContact(assistantID, transport); return result; };
+export const newAssistantSession = async (assistantID: string): Promise<SessionBinding> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const binding = parseSessionBinding(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/session/new`, jsonInit('POST'))); assertCurrent(transport, generation); applyBinding(assistantID, binding, transport); return binding; };
+export const compactAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<CompactResponse> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseCompactResponse(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/session/compact`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); return result; };
+export const abortAssistantSession = async (assistantID: string, binding: Pick<SessionBinding, 'sessionID' | 'sessionGeneration'>): Promise<void> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/session/abort`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration })); assertCurrent(transport, generation); void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true }); };
+export const sendAssistantMessage = async (assistantID: string, binding: SessionBinding, messageID: string, parts: AssistantPart[], source: AssistantSource = 'composer'): Promise<MessageAdmission> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseMessageAdmission(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source, language: useI18nStore.getState().locale }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); invalidateContact(assistantID, transport); return result; };
 /** Contact composer send parts: text or full file union (inline url or attachment descriptor). */
 export type AssistantContactSendPart =
   | { type: 'text'; text: string }
@@ -759,7 +759,7 @@ export const sendAssistantContactMessage = async (
       : [{ type: 'text' as const, text: input.text ?? '' }];
   const signal = AbortSignal.timeout(CONTACT_SEND_TIMEOUT_MS);
   try {
-    const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, { ...jsonInit('POST', { messageID, parts, language: useI18nStore.getState().locale }), signal }));
+    const result = parseMessageAdmission(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/messages`, { ...jsonInit('POST', { messageID, parts, language: useI18nStore.getState().locale }), signal }));
     assertCurrent(transport, generation);
     applyBinding(assistantID, result.binding, transport);
     invalidateContact(assistantID, transport);
@@ -774,7 +774,7 @@ export const appendAssistantContactCard = async (
 ): Promise<AssistantContactCardPart> => {
   const transport = getRuntimeTransportIdentity();
   const generation = getRuntimeGeneration();
-  const result = parseAssistantContactCardAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/cards`, jsonInit('POST', { cardType: 'session', ...card })));
+  const result = parseAssistantContactCardAdmission(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/contact/cards`, jsonInit('POST', { cardType: 'session', ...card })));
   assertCurrent(transport, generation);
   invalidateContact(assistantID, transport);
   return result.card;
@@ -785,26 +785,26 @@ export const deliverAssistantContactDm = async (
 ): Promise<AssistantContactPeerAdmission> => {
   const transport = getRuntimeTransportIdentity();
   const generation = getRuntimeGeneration();
-  const result = parseAssistantContactPeerAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(fromAssistantID)}/contact/dm`, jsonInit('POST', input)));
+  const result = parseAssistantContactPeerAdmission(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(fromAssistantID)}/contact/dm`, jsonInit('POST', input)));
   assertCurrent(transport, generation);
   invalidateContact(result.toAssistantID, transport);
   return result;
 };
-export const sendAssistantShare = async (assistantID: string, operationID: string, messageID: string, parts: AssistantPart[], source: Exclude<AssistantSource, 'composer'>): Promise<ShareOperation> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const operation = parseShareOperation(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/share`, jsonInit('POST', { operationID, payload: { messageID, parts, source } }))); assertCurrent(transport, generation); return operation; };
-export const fetchAssistantShareOperation = async (operationID: string, transport = getRuntimeTransportIdentity(), generation = getRuntimeGeneration()): Promise<ShareOperation> => { assertCurrent(transport, generation); const operation = parseShareOperation(await requestJSON<unknown>(`/api/openchamber/assistants/share-operations/${encodeURIComponent(operationID)}`)); assertCurrent(transport, generation); return operation; };
+export const sendAssistantShare = async (assistantID: string, operationID: string, messageID: string, parts: AssistantPart[], source: Exclude<AssistantSource, 'composer'>): Promise<ShareOperation> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const operation = parseShareOperation(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistantID)}/share`, jsonInit('POST', { operationID, payload: { messageID, parts, source } }))); assertCurrent(transport, generation); return operation; };
+export const fetchAssistantShareOperation = async (operationID: string, transport = getRuntimeTransportIdentity(), generation = getRuntimeGeneration()): Promise<ShareOperation> => { assertCurrent(transport, generation); const operation = parseShareOperation(await requestJSON<unknown>(`/api/yuri/assistants/share-operations/${encodeURIComponent(operationID)}`)); assertCurrent(transport, generation); return operation; };
 export const waitForAssistantShare = async (operation: ShareOperation, transport = getRuntimeTransportIdentity(), generation = getRuntimeGeneration()): Promise<ShareOperation> => { let current = operation; for (let attempt = 0; attempt < 60 && (current.state === 'running' || current.state === 'submitting'); attempt += 1) { assertCurrent(transport, generation); await new Promise((resolve) => setTimeout(resolve, 750)); current = await fetchAssistantShareOperation(current.operationID, transport, generation); } assertCurrent(transport, generation); if (current.state === 'completed') return current; if (current.state === 'failed') throw new AssistantShareOperationError(current.errorCode ?? 'share_failed', 400, current); throw new AssistantShareOperationError('share_unresolved', 408, current); };
 export const setAssistantsEnabled = async (enabled: boolean, expectedRevision: number): Promise<void> => {
-  await requestJSON('/api/openchamber/assistants/settings', jsonInit('PUT', { enabled, expectedRevision }));
+  await requestJSON('/api/yuri/assistants/settings', jsonInit('PUT', { enabled, expectedRevision }));
   const transport = getRuntimeTransportIdentity();
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true }),
     queryClient.invalidateQueries({ queryKey: key.capability(transport), exact: true }),
   ]);
 };
-export const createAssistant = async (draft: AssistantDraft): Promise<AssistantDTO> => { const transport = getRuntimeTransportIdentity(); const result = parseAssistantDTO(await requestJSON<unknown>('/api/openchamber/assistants', jsonInit('POST', draft))); applyAssistant(result, transport); return result; };
-export const updateAssistant = async (assistant: AssistantDTO, draft: AssistantDraft): Promise<AssistantDTO> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseAssistantDTO(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistant.id)}`, jsonInit('PATCH', { ...draft, expectedRevision: assistant.revision }))); assertCurrent(transport, generation); applyAssistant(result, transport); return result; };
-export const deleteAssistant = async (assistant: AssistantDTO): Promise<void> => { await requestJSON(`/api/openchamber/assistants/${encodeURIComponent(assistant.id)}`, jsonInit('DELETE', { expectedRevision: assistant.revision })); await queryClient.invalidateQueries({ queryKey: key.snapshot(getRuntimeTransportIdentity()) }); };
-export const fetchAssistantCapability = async (): Promise<AssistantCapability> => parseAssistantCapabilityDTO(await requestJSON<unknown>('/api/openchamber/assistants/capability'));
+export const createAssistant = async (draft: AssistantDraft): Promise<AssistantDTO> => { const transport = getRuntimeTransportIdentity(); const result = parseAssistantDTO(await requestJSON<unknown>('/api/yuri/assistants', jsonInit('POST', draft))); applyAssistant(result, transport); return result; };
+export const updateAssistant = async (assistant: AssistantDTO, draft: AssistantDraft): Promise<AssistantDTO> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseAssistantDTO(await requestJSON<unknown>(`/api/yuri/assistants/${encodeURIComponent(assistant.id)}`, jsonInit('PATCH', { ...draft, expectedRevision: assistant.revision }))); assertCurrent(transport, generation); applyAssistant(result, transport); return result; };
+export const deleteAssistant = async (assistant: AssistantDTO): Promise<void> => { await requestJSON(`/api/yuri/assistants/${encodeURIComponent(assistant.id)}`, jsonInit('DELETE', { expectedRevision: assistant.revision })); await queryClient.invalidateQueries({ queryKey: key.snapshot(getRuntimeTransportIdentity()) }); };
+export const fetchAssistantCapability = async (): Promise<AssistantCapability> => parseAssistantCapabilityDTO(await requestJSON<unknown>('/api/yuri/assistants/capability'));
 export const assistantQueryKeys = key;
 
 export const markAssistantContactRead = async (assistantID: string, position: AssistantReadPosition) => {
@@ -813,7 +813,7 @@ export const markAssistantContactRead = async (assistantID: string, position: As
   const captured = parseAssistantReadPosition(position);
   try {
     const result = parseAssistantReadResponse(await requestJSON<unknown>(
-      `/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/read`,
+      `/api/yuri/assistants/${encodeURIComponent(assistantID)}/contact/read`,
       { ...jsonInit('POST', captured), signal: AbortSignal.timeout(15_000) },
     ));
     assertCurrent(transport, generation);

@@ -1,5 +1,5 @@
 // Session goal: a persisted, self-continuing objective attached to a session
-// (metadata.openchamber.goal). While the goal is active, the server keeps the
+// (metadata.yuri.goal). While the goal is active, the server keeps the
 // session working toward it: after each busy→idle transition it accounts token
 // usage, asks the small model to audit progress (continue / complete /
 // blocked), and either re-prompts the session's own model with a continuation
@@ -22,16 +22,16 @@ import { extractSessionStatusUpdate } from '../opencode/session-runtime.js';
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { GOAL_OBJECTIVE_CHAR_LIMIT, readObjective } from './objectives.js';
 
-const OPENCHAMBER_SETTINGS_FILE = path.join(
-  process.env.OPENCHAMBER_DATA_DIR
-    ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-    : path.join(os.homedir(), '.config', 'openchamber'),
+const YURI_SETTINGS_FILE = path.join(
+  process.env.YURI_DATA_DIR
+    ? path.resolve(process.env.YURI_DATA_DIR)
+    : path.join(os.homedir(), '.config', 'yuri'),
   'settings.json',
 );
 
 const isSessionGoalEnabled = () => {
   try {
-    const raw = fs.readFileSync(OPENCHAMBER_SETTINGS_FILE, 'utf8');
+    const raw = fs.readFileSync(YURI_SETTINGS_FILE, 'utf8');
     const settings = JSON.parse(raw);
     return settings?.sessionGoalEnabled !== false;
   } catch {
@@ -254,7 +254,7 @@ const extractSessionUpdate = (payload) => {
 const parseGoalMetadata = (session) => {
   const metadata = session?.metadata;
   if (!metadata || typeof metadata !== 'object') return null;
-  const namespace = metadata.openchamber;
+  const namespace = metadata.yuri;
   if (!namespace || typeof namespace !== 'object') return null;
   const goal = namespace.goal;
   if (!goal || typeof goal !== 'object') return null;
@@ -576,7 +576,7 @@ export const createSessionGoalRuntime = ({
    */
   onGoalPaused,
   /**
-   * OpenChamber session-metadata store seams. When both are functions, goal
+   * Yuri session-metadata store seams. When both are functions, goal
    * state is read/written only through the Host store (OpenCode 2.x has no
    * session-metadata PATCH). When either is missing, keep the legacy OpenCode
    * PATCH path so existing tests and unwired servers still work.
@@ -916,7 +916,7 @@ export const createSessionGoalRuntime = ({
         if (!nextGoal) {
           return { ok: false, reason: 'goal_precondition_failed' };
         }
-        return { ok: true, patch: { openchamber: { goal: nextGoal } } };
+        return { ok: true, patch: { yuri: { goal: nextGoal } } };
       });
       if (!result?.committed) return null;
       return parseGoalMetadata({ metadata: result.metadata });
@@ -935,8 +935,8 @@ export const createSessionGoalRuntime = ({
     const nextGoal = buildNextGoal(currentGoal);
     if (!nextGoal) return null;
     const currentMetadata = session?.metadata && typeof session.metadata === 'object' ? session.metadata : {};
-    const currentNamespace = currentMetadata.openchamber && typeof currentMetadata.openchamber === 'object'
-      ? currentMetadata.openchamber
+    const currentNamespace = currentMetadata.yuri && typeof currentMetadata.yuri === 'object'
+      ? currentMetadata.yuri
       : {};
     await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, {
       directory,
@@ -944,7 +944,7 @@ export const createSessionGoalRuntime = ({
       body: {
         metadata: {
           ...currentMetadata,
-          openchamber: { ...currentNamespace, goal: nextGoal },
+          yuri: { ...currentNamespace, goal: nextGoal },
         },
       },
     });
@@ -1170,7 +1170,7 @@ export const createSessionGoalRuntime = ({
       text: promptText,
       delivery: 'steer',
       metadata: {
-        openchamber: {
+        yuri: {
           goalContinuation: true,
           // User-boundary prompt (raw type remains user); synthetic is metadata only.
           synthetic: true,
@@ -1662,7 +1662,7 @@ export const createSessionGoalRuntime = ({
     });
 
     // File-backed objectives: the metadata carries only a flag; the objective
-    // TEXT lives under the OpenChamber data dir keyed by session id and is
+    // TEXT lives under the Yuri data dir keyed by session id and is
     // read fresh on every tick (live-editable). A missing file falls back to
     // whatever inline objective the metadata still has — the goal must never
     // die just because a file went away.

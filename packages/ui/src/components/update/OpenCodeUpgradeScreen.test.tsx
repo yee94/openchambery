@@ -24,8 +24,8 @@ vi.mock('@/lib/runtime-fetch', () => ({
 vi.mock('@/lib/runtime-switch', () => ({
   subscribeRuntimeEndpointChanged: () => () => {},
 }));
-vi.mock('@/components/ui/OpenChamberLogo', () => ({
-  OpenChamberLogo: () => <div data-logo="true" />,
+vi.mock('@/components/ui/YuriLogo', () => ({
+  YuriLogo: () => <div data-logo="true" />,
 }));
 vi.mock('@/components/desktop/DesktopHostSwitcher', () => ({
   DesktopHostSwitcherInline: () => <div data-host-switcher="true" />,

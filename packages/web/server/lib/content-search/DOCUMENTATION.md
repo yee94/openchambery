@@ -74,7 +74,7 @@ any UI session being opened. Runtime identity is owned by the Host session index
 in-flight results are rejected if it changes. Stop aborts reads and drains the
 active pass before closing SQLite.
 
-`GET /api/openchamber/content-search?q=...&limit=30` returns `{hits,index}`.
+`GET /api/yuri/content-search?q=...&limit=30` returns `{hits,index}`.
 Each hit includes authoritative session title and directory plus message identity,
 role, created time and a plain snippet. Each session contributes only its newest
 matching message (created time descending, message ID descending for ties).

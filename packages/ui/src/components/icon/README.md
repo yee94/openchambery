@@ -1,6 +1,6 @@
 # Icon System
 
-OpenChamber uses an SVG sprite-based icon system for performance. All icons are rendered via a single hidden SVG sprite injected into the DOM, referenced by `<use href="#oc-icon-name"/>`.
+Yuri uses an SVG sprite-based icon system for performance. All icons are rendered via a single hidden SVG sprite injected into the DOM, referenced by `<use href="#yuri-icon-name"/>`.
 
 ## Usage
 
@@ -68,7 +68,7 @@ outlines and closes small cutouts such as the “i” in notification icons.
 - `Icon.tsx` — The `<Icon>` component, injects sprite on first mount
 - `icons.ts` — TypeScript type `IconName`
 
-The sprite is injected as a hidden `<svg id="openchamber-icon-sprite">` element containing `<symbol>` elements. Each `<Icon>` renders `<svg><use href="#oc-{name}"/></svg>`.
+The sprite is injected as a hidden `<svg id="yuri-icon-sprite">` element containing `<symbol>` elements. Each `<Icon>` renders `<svg><use href="#yuri-{name}"/></svg>`.
 
 ## Migration from @remixicon/react
 

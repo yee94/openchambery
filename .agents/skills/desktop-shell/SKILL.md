@@ -11,7 +11,7 @@ Read `packages/electron/README.md` and nearby `packages/electron` code before ed
 
 ## Runtime Boundary
 
-- Electron boots `@openchambery/web` in the same Node process and loads the UI over loopback. Do not introduce a sidecar server process.
+- Electron boots `@yuri/web` in the same Node process and loads the UI over loopback. Do not introduce a sidecar server process.
 - Keep OpenCode feature backends and shared domain logic in web/server or runtime APIs.
 - Keep Electron focused on inherently native behavior: windows, menus, dialogs, notifications, updater, deep links, runtime host switching, privileged IPC, and SSH.
 - Shared renderer-facing contracts belong in `packages/ui`; shared server behavior belongs in `packages/web`.
@@ -48,4 +48,4 @@ Non-user-visible child processes must never flash a console window.
 
 ## Validation
 
-Run the Electron package lint command from `package.json` and focused Vitest files: `bunx vitest run --project @openchamber/electron <file>` or `bun run --cwd packages/electron test`. IndexedDB evidence tests spawn a real Electron window (`test:input-draft-indexeddb` / `test:transcript-durable-indexeddb`); run them only when that surface changed. For startup, preload, routing, or packaging changes, test both HMR development and bundled UI mode. For Windows process work, inspect the complete process tree and verify no console flash; a successful command alone is insufficient.
+Run the Electron package lint command from `package.json` and focused Vitest files: `bunx vitest run --project @yuri/electron <file>` or `bun run --cwd packages/electron test`. IndexedDB evidence tests spawn a real Electron window (`test:input-draft-indexeddb` / `test:transcript-durable-indexeddb`); run them only when that surface changed. For startup, preload, routing, or packaging changes, test both HMR development and bundled UI mode. For Windows process work, inspect the complete process tree and verify no console flash; a successful command alone is insufficient.

@@ -127,15 +127,15 @@ describe('Btw side conversation panel', () => {
     await act(async () => root.render(<BtwPanel scope={scope} foot="page" />));
     const form = host.querySelector<HTMLElement>('[data-btw-composer]');
     expect(form?.getAttribute('data-btw-composer-foot')).toBe('page');
-    expect(form?.className).toContain('oc-mobile-composer');
+    expect(form?.className).toContain('yuri-mobile-composer');
     expect(form?.className).toContain('bottom-safe-area');
-    expect(host.querySelector('[data-btw-composer] .oc-mobile-composer-surface')).toBeTruthy();
+    expect(host.querySelector('[data-btw-composer] .yuri-mobile-composer-surface')).toBeTruthy();
   });
 
   test('sheet foot follows the primary composer without a second safe pad', async () => {
     await act(async () => root.render(<BtwPanel scope={scope} foot="sheet" />));
     const form = host.querySelector<HTMLElement>('[data-btw-composer]');
-    expect(form?.className).toContain('oc-mobile-composer');
+    expect(form?.className).toContain('yuri-mobile-composer');
     expect(form?.className).not.toContain('bottom-safe-area');
   });
 

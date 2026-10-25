@@ -2,8 +2,8 @@ import { OpenCode } from '@opencode/client';
 import { buildLlmSessionMetadata } from '../session-metadata/system-session.js';
 import { ensureLlmTempDirectory } from './temp-directory.js';
 
-const LLM_AGENT_NAME = 'openchamber-llm';
-const TEXT_AGENT_NAME = 'openchamber-text';
+const LLM_AGENT_NAME = 'yuri-llm';
+const TEXT_AGENT_NAME = 'yuri-text';
 const GENERATE_TIMEOUT_MS = 90_000;
 const AGENT_READY_WAIT_MS = 5_000;
 const AGENT_READY_POLL_MS = 250;
@@ -30,7 +30,7 @@ permissions:
 ---
 
 You generate responses for an application-owned assistant. Follow the supplied system instructions and response format.
-The application executes its registered tools, including openchamber-tool JSON fences in your response, and supplies their results on the next request.
+The application executes its registered tools, including yuri-tool JSON fences in your response, and supplies their results on the next request.
 Emit the requested application tool call when an action requires one. Your native tool permissions describe this generator process; the application's supplied tool catalog describes the assistant's capabilities.
 Report execution and failures from supplied tool results only.
 Do not call native OpenCode tools, MCP tools, or skill tools. Native permissions are denied for this generator session.
@@ -430,7 +430,7 @@ async function withThrowawaySession({
     const isolationMetadata = buildLlmSessionMetadata();
     try {
       created = await client.session.create({
-        title: '[openchamber-llm] generate',
+        title: '[yuri-llm] generate',
         agent: agentName,
         model: modelRef(providerID, modelID, variant),
         location,

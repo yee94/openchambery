@@ -3,7 +3,7 @@ import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog';
-import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
+import { YuriLogo } from '@/components/ui/YuriLogo';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { getDesktopAppVersion } from '@/lib/desktopNative';
@@ -30,8 +30,8 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
         const response = await runtimeFetch('/api/system/info');
         if (response.ok) {
           const data = await response.json();
-          if (typeof data.openchamberVersion === 'string' && data.openchamberVersion.trim()) {
-            setVersion(data.openchamberVersion);
+          if (typeof data.yuriVersion === 'string' && data.yuriVersion.trim()) {
+            setVersion(data.yuriVersion);
             return;
           }
         }
@@ -77,13 +77,13 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xs p-5">
         <div className="flex flex-col items-center gap-3 text-center">
-          <OpenChamberLogo width={48} height={48} />
+          <YuriLogo width={48} height={48} />
 
           <div className="space-y-1">
-            <h2 className="text-lg font-semibold">OpenChamberY</h2>
+            <h2 className="text-lg font-semibold">Yuri</h2>
             <div className="space-y-0.5 typography-meta text-muted-foreground">
               {displayVersion && (
-                <p>{t('aboutDialog.openChamberVersionLabel', { version: displayVersion })}</p>
+                <p>{t('aboutDialog.yuriVersionLabel', { version: displayVersion })}</p>
               )}
               {openCodeVersion && (
                 <p>{t('aboutDialog.openCodeVersionLabel', { version: openCodeVersion })}</p>
@@ -93,7 +93,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
 
           <div className="flex items-center justify-center">
             <a
-              href="https://github.com/yee94/openchamber"
+              href="https://github.com/yee94/yuri"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 typography-meta text-muted-foreground hover:text-foreground transition-colors"

@@ -227,34 +227,34 @@ describe('session-title helpers', () => {
 
   it('detects system-owned sessions from metadata only', () => {
     expect(isSystemOwnedSession({
-      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
+      metadata: { yuri: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
     })).toBe(true);
     expect(isSystemOwnedSession({
-      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+      metadata: { yuri: { scheduledTask: { taskID: 'task_1' } } },
     })).toBe(true);
     expect(isSystemOwnedSession({
-      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+      metadata: { yuri: { smallModel: { purpose: 'session-title' } } },
     })).toBe(true);
     expect(isSystemOwnedSession({
-      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+      metadata: { yuri: { llm: { purpose: 'chat-completions' } } },
     })).toBe(true);
     expect(isSystemOwnedSession({
       title: '[Assistant] Looks system',
-      metadata: { openchamber: { assistant: { name: 'no-id' } } },
+      metadata: { yuri: { assistant: { name: 'no-id' } } },
     })).toBe(false);
     expect(isSystemOwnedSession({
-      metadata: { openchamber: { smallModel: { purpose: '' } } },
+      metadata: { yuri: { smallModel: { purpose: '' } } },
     })).toBe(false);
     expect(isSystemOwnedSession({
-      metadata: { openchamber: { llm: { purpose: '' } } },
+      metadata: { yuri: { llm: { purpose: '' } } },
     })).toBe(false);
     expect(isSystemOwnedSession({ title: 'Ordinary' })).toBe(false);
     expect(isSystemOwnedSession({
-      metadata: { openchamber: { assigned: { from: 'contact', assistantID: 'assistant_1' } } },
+      metadata: { yuri: { assigned: { from: 'contact', assistantID: 'assistant_1' } } },
     })).toBe(false);
     expect(isSystemOwnedSession({
       metadata: {
-        openchamber: {
+        yuri: {
           assistant: { assistantID: 'assistant_1' },
           assigned: { from: 'contact' },
         },
@@ -269,7 +269,7 @@ describe('session-title helpers', () => {
     const systemSession = {
       id: 'ses-assistant',
       title: '[Assistant] Ops Bot',
-      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'Ops Bot' } } },
+      metadata: { yuri: { assistant: { assistantID: 'assistant_1', name: 'Ops Bot' } } },
     };
 
     globalThis.fetch = async (input, init = {}) => {
@@ -327,7 +327,7 @@ describe('session-title helpers', () => {
           info: {
             id: 'ses-assistant',
             metadata: {
-              openchamber: {
+              yuri: {
                 assistant: { assistantID: 'assistant_1', name: 'Ops Bot' },
                 titleRefresh: { requestedAt: 1_000 },
               },
@@ -350,7 +350,7 @@ describe('session-title helpers', () => {
       id: 'ses-fork',
       title: 'Original work (fork #1)',
       metadata: {
-        openchamber: {
+        yuri: {
           titleRefresh: {
             lastAutoTitle: 'Original work',
             generatedAt: 900,
@@ -435,7 +435,7 @@ describe('session-title helpers', () => {
       title: 'Original work (fork #1)',
       time: { created: forkCreated },
       metadata: {
-        openchamber: {
+        yuri: {
           titleRefresh: {
             // Inherited from the parent: activity predates the fork.
             activityUpdatedAt: 50,
@@ -510,7 +510,7 @@ describe('session-title helpers', () => {
       title: 'Original work (fork #1)',
       time: { created: forkCreated },
       metadata: {
-        openchamber: {
+        yuri: {
           titleRefresh: {
             // A fork message already advanced activity past the fork time.
             activityUpdatedAt: 300,
@@ -663,7 +663,7 @@ describe('session-title helpers', () => {
       id: 'ses-forced',
       title: 'Rate limiting',
       metadata: {
-        openchamber: {
+        yuri: {
           titleRefresh: {
             lastAutoTitle: 'Rate limiting',
             generatedAt: 500,
@@ -720,9 +720,9 @@ describe('session-title helpers', () => {
             id: 'ses-forced',
             title: session.title,
             metadata: {
-              openchamber: {
+              yuri: {
                 titleRefresh: {
-                  ...session.metadata.openchamber.titleRefresh,
+                  ...session.metadata.yuri.titleRefresh,
                   requestedAt: 1_000,
                 },
               },

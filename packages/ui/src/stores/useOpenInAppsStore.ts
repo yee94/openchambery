@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { create } from 'zustand';
 
 import { fetchDesktopInstalledApps, isDesktopShell, type DesktopSettings, type InstalledDesktopAppInfo } from '@/lib/desktop';
@@ -192,11 +193,11 @@ export const useOpenInAppsStore = create<OpenInAppsState>()((set, get) => ({
       applyInstalledApps(detail);
     };
 
-    window.addEventListener('openchamber:settings-synced', settingsHandler);
-    window.addEventListener('openchamber:app-ready', appReadyHandler);
-    window.addEventListener('openchamber:installed-apps-updated', updateHandler);
+    window.addEventListener('yuri:settings-synced', settingsHandler);
+    window.addEventListener('yuri:app-ready', appReadyHandler);
+    window.addEventListener('yuri:installed-apps-updated', updateHandler);
 
-    const appReady = (window as unknown as { __openchamberAppReady?: boolean }).__openchamberAppReady;
+    const appReady = (window as unknown as { __yuriAppReady?: boolean }).__yuriAppReady;
     if (appReady) {
       void loadInstalledApps();
     }

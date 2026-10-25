@@ -218,7 +218,7 @@ export const AssistantSessionComposer = ({ active, working = false, onChange, on
   })))?.map((part, index) => <span key={`${index}-${part.text.length}`} className={part.className}>
     {part.visual ? <ComposerTriggerIconMark visual={part.visual} text={part.text} /> : part.text}
   </span>), [document]);
-  return <div ref={containerRef} className="oc-hold-to-talk-container"
+  return <div ref={containerRef} className="yuri-hold-to-talk-container"
     data-hold-to-talk-empty={holdToTalkEnabled && document.text.length === 0 ? 'true' : undefined}>
     {holdToTalkEnabled && <MemoHoldToTalkComposer containerRef={containerRef} disabled={Boolean(props.pending || props.disabled)}
       onInsert={insertDictation} onSend={sendDictation} onRelease={ignoreDictationRelease}

@@ -45,7 +45,7 @@ const enums = {
 const ranges = { speechRate: [0.5, 2], speechPitch: [0.5, 2], speechVolume: [0, 1], localTtsVoiceId: [0, 10000], summarizeCharacterThreshold: [50, 2000], summarizeMaxLength: [50, 2000] };
 const requiredStrings = new Set(['voice', 'resourceId', 'asrResourceId']);
 const settingsPath = () => path.join(
-  process.env.OPENCHAMBER_DATA_DIR || path.join(os.homedir(), '.config', 'openchamber'),
+  process.env.YURI_DATA_DIR || path.join(os.homedir(), '.config', 'yuri'),
   'speech', 'settings.json',
 );
 
@@ -118,7 +118,7 @@ export function registerSpeechSettingsRoutes(app) {
     try {
       const saved = saveSettings(req.body);
       res.json(saved);
-      app.emit('openchamber:speech-settings-changed');
+      app.emit('yuri:speech-settings-changed');
     } catch (error) {
       res.status(error instanceof TypeError ? 400 : 500).json({
         error: error instanceof TypeError ? 'Invalid speech settings' : 'Unable to save speech settings',

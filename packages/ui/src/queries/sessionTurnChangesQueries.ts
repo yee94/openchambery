@@ -34,7 +34,7 @@ export type SessionTurnChangeFileResponse = {
 };
 
 const CHANGES_PATH = (sessionID: string) =>
-  `/api/openchamber/sessions/${encodeURIComponent(sessionID)}/changes`;
+  `/api/yuri/sessions/${encodeURIComponent(sessionID)}/changes`;
 
 const normalizeDirectory = (directory: string): string => directory.trim();
 
@@ -63,7 +63,7 @@ const findLegacyFileDiff = (
   return null;
 };
 
-const fetchOpenChamberChanges = async (
+const fetchYuriChanges = async (
   input: SessionTurnChangeRequest & { file?: string },
   signal: AbortSignal,
 ): Promise<Response> => {
@@ -121,7 +121,7 @@ export const sessionTurnChangeFileQueryOptions = (
 ) => ({
   queryKey: sessionTurnChangeFileQueryKey(input, transport),
   queryFn: async ({ signal }: { signal: AbortSignal }): Promise<SessionTurnChangeFileResponse> => {
-    const response = await fetchOpenChamberChanges(input, signal);
+    const response = await fetchYuriChanges(input, signal);
     if (response.ok) {
       const payload = await response.json().catch(() => null);
       if (isSessionTurnChangeFileResponse(payload)) {

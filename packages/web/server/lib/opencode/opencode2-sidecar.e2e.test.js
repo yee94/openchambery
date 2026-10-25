@@ -15,7 +15,7 @@ import {
 } from './opencode2-pin.js';
 import { fetchV1MigrationGate } from './v1-migration-gate.js';
 
-const E2E_PASSWORD = 'openchamber-opencode2-e2e';
+const E2E_PASSWORD = 'yuri-opencode2-e2e';
 const basicAuth = `Basic ${Buffer.from(`opencode:${E2E_PASSWORD}`, 'utf8').toString('base64')}`;
 const OPENCODE2_HEALTH_VERSION = /^(?:v)?(?:0\.0\.0-(?:next|beta)(?:-\d+)?|2(?:\.\d+)*)/i;
 const OPENCODE_1X_VERSION = /^v?1(?:\.|$)/;
@@ -31,8 +31,8 @@ const ISOLATION_ENV_KEYS = [
   'OPENCODE_CONFIG',
   'OPENCODE_CONFIG_DIR',
   'OPENCODE_CONFIG_CONTENT',
-  'OPENCHAMBER_DATA_DIR',
-  'OPENCHAMBER_MANAGED_PROCESS_REGISTRY',
+  'YURI_DATA_DIR',
+  'YURI_MANAGED_PROCESS_REGISTRY',
 ];
 
 const freePort = () => new Promise((resolve, reject) => {
@@ -84,19 +84,19 @@ const restoreEnv = (snap) => {
 };
 
 /**
- * Point HOME + XDG + OpenChamber data at a fresh temp tree so managed opencode2
+ * Point HOME + XDG + Yuri data at a fresh temp tree so managed opencode2
  * never reads/writes the developer's real ~/.config/opencode or
  * ~/.local/share/opencode (migration/auth/session DB).
  * Does not seed from the user install — empty isolation only.
  */
 const installIsolatedOpenCodeHome = async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-opencode2-e2e-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-opencode2-e2e-'));
   const home = path.join(root, 'home');
   const xdgData = path.join(root, 'xdg-data');
   const xdgConfig = path.join(root, 'xdg-config');
   const xdgCache = path.join(root, 'xdg-cache');
   const xdgState = path.join(root, 'xdg-state');
-  const openchamberData = path.join(root, 'openchamber-data');
+  const yuriData = path.join(root, 'yuri-data');
   const opencodeConfig = path.join(xdgConfig, 'opencode');
   await Promise.all([
     fs.mkdir(home, { recursive: true }),
@@ -104,7 +104,7 @@ const installIsolatedOpenCodeHome = async () => {
     fs.mkdir(xdgConfig, { recursive: true }),
     fs.mkdir(xdgCache, { recursive: true }),
     fs.mkdir(xdgState, { recursive: true }),
-    fs.mkdir(openchamberData, { recursive: true }),
+    fs.mkdir(yuriData, { recursive: true }),
     fs.mkdir(opencodeConfig, { recursive: true }),
   ]);
 
@@ -117,8 +117,8 @@ const installIsolatedOpenCodeHome = async () => {
   process.env.OPENCODE_CONFIG_DIR = opencodeConfig;
   delete process.env.OPENCODE_CONFIG;
   delete process.env.OPENCODE_CONFIG_CONTENT;
-  process.env.OPENCHAMBER_DATA_DIR = openchamberData;
-  process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY = path.join(openchamberData, 'managed-opencode');
+  process.env.YURI_DATA_DIR = yuriData;
+  process.env.YURI_MANAGED_PROCESS_REGISTRY = path.join(yuriData, 'managed-opencode');
 
   return root;
 };
@@ -163,8 +163,8 @@ describe('opencode2 sidecar e2e', () => {
     // Isolation mutates HOME/XDG and would hide ~/.bun/bin and similar fallbacks.
     delete process.env.OPENCODE_BINARY;
     delete process.env.OPENCODE_PATH;
-    delete process.env.OPENCHAMBER_OPENCODE_PATH;
-    delete process.env.OPENCHAMBER_OPENCODE_BIN;
+    delete process.env.YURI_OPENCODE_PATH;
+    delete process.env.YURI_OPENCODE_BIN;
 
     const envRuntime = createOpenCodeEnvRuntime({
       state: {
@@ -191,7 +191,7 @@ describe('opencode2 sidecar e2e', () => {
     expect(isAcceptableOpenCode2HealthVersion(binaryVersion)).toBe(true);
     expect(isOpenCode1xVersion(binaryVersion)).toBe(false);
 
-    // Isolate HOME/XDG/OpenChamber data BEFORE spawn so migration/auth never
+    // Isolate HOME/XDG/Yuri data BEFORE spawn so migration/auth never
     // touch the developer's real OpenCode store. Absolute OPENCODE_BINARY keeps
     // the resolved CLI after HOME changes.
     isolationRoot = await installIsolatedOpenCodeHome();
@@ -268,8 +268,8 @@ describe('opencode2 sidecar e2e', () => {
         XDG_CACHE_HOME: process.env.XDG_CACHE_HOME,
         XDG_STATE_HOME: process.env.XDG_STATE_HOME,
         OPENCODE_CONFIG_DIR: process.env.OPENCODE_CONFIG_DIR,
-        OPENCHAMBER_DATA_DIR: process.env.OPENCHAMBER_DATA_DIR,
-        OPENCHAMBER_MANAGED_PROCESS_REGISTRY: process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY,
+        YURI_DATA_DIR: process.env.YURI_DATA_DIR,
+        YURI_MANAGED_PROCESS_REGISTRY: process.env.YURI_MANAGED_PROCESS_REGISTRY,
         OPENCODE_PASSWORD: E2E_PASSWORD,
         OPENCODE_SERVER_PASSWORD: E2E_PASSWORD,
       }),

@@ -498,7 +498,7 @@ describe('global raw configuration routes', () => {
   it('reads and validates the configured OpenCode and oh-my-opencode files', async () => {
     const app = express();
     app.use(express.json());
-    const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-global-config-'));
+    const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-global-config-'));
     await fs.writeFile(path.join(configDirectory, 'opencode.jsonc'), `{
   "$schema": "https://opencode.ai/config.json",
   "model": "imate/deepseek-v4-pro",
@@ -542,7 +542,7 @@ describe('global raw configuration routes', () => {
   it('discovers only existing targets and edits the winning global JSONC document', async () => {
     const app = express();
     app.use(express.json());
-    const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-global-config-'));
+    const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-global-config-'));
     await fs.writeFile(path.join(configDirectory, 'opencode.json'), '{ "model": "json-model" }', 'utf8');
     await fs.writeFile(path.join(configDirectory, 'opencode.jsonc'), '{ "model": "jsonc-model" }', 'utf8');
     await fs.writeFile(path.join(configDirectory, 'oh-my-openagent.jsonc'), '{\n  // JSONC configuration\n}', 'utf8');

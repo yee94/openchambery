@@ -8,13 +8,12 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PACKAGE_NAME = '@openchambery/web';
+const PACKAGE_NAME = '@yuri/web';
 const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
-const CHANGELOG_URL = 'https://raw.githubusercontent.com/yee94/openchamber/main/CHANGELOG.md';
-const GITHUB_RELEASES_URL = 'https://github.com/yee94/openchamber/releases';
-const IOS_TESTFLIGHT_PUBLIC_URL = 'https://testflight.apple.com/join/ZCENBHtm';
-const VERCEL_UPDATE_CHECK_URL = 'https://openchamber-update.vercel.app/v1/update/check';
+const CHANGELOG_URL = 'https://raw.githubusercontent.com/yee94/yuri/main/CHANGELOG.md';
+const GITHUB_RELEASES_URL = 'https://github.com/yee94/yuri/releases';
+const IOS_TESTFLIGHT_PUBLIC_URL = process.env.YURI_TESTFLIGHT_PUBLIC_URL?.trim() || GITHUB_RELEASES_URL;
 const GITHUB_LATEST_RELEASE_URL = `${GITHUB_RELEASES_URL}/latest`;
 let cachedDetectedPm = null;
 
@@ -22,17 +21,18 @@ function getSpawnSyncBaseOptions() {
   return process.platform === 'win32' ? { windowsHide: true } : {};
 }
 function getUpdateCheckUrls() {
-  const configuredUrl = process.env.OPENCHAMBER_UPDATE_API_URL?.trim();
-  return [...new Set([configuredUrl, VERCEL_UPDATE_CHECK_URL].filter(Boolean))];
+  const configuredUrl = process.env.YURI_UPDATE_API_URL?.trim();
+  return configuredUrl ? [configuredUrl] : [];
 }
 
-function getOpenChamberConfigDir() {
+function getYuriConfigDir() {
+  if (process.env.YURI_DATA_DIR?.trim()) return path.resolve(process.env.YURI_DATA_DIR.trim());
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA;
-    if (appData) return path.join(appData, 'openchamber');
+    if (appData) return path.join(appData, 'yuri');
   }
 
-  return path.join(os.homedir(), '.config', 'openchamber');
+  return path.join(os.homedir(), '.config', 'yuri');
 }
 
 function sanitizeInstallScope(scope) {
@@ -41,7 +41,7 @@ function sanitizeInstallScope(scope) {
 }
 
 function getOrCreateInstallId(scope = 'web') {
-  const configDir = getOpenChamberConfigDir();
+  const configDir = getYuriConfigDir();
   const normalizedScope = sanitizeInstallScope(scope);
   const idPath = path.join(configDir, `install-id-${normalizedScope}`);
 
@@ -349,7 +349,7 @@ function getGlobalNodeModulesRoots(pm) {
 function getOwnedPackagePathsFromGlobalBins(pm) {
   const packagePaths = [];
   for (const binDir of getGlobalBinDirs(pm)) {
-    const binaryName = process.platform === 'win32' ? 'openchamber.cmd' : 'openchamber';
+    const binaryName = process.platform === 'win32' ? 'yuri.cmd' : 'yuri';
     const binaryPath = path.join(binDir, binaryName);
     if (!fs.existsSync(binaryPath)) continue;
 
@@ -391,7 +391,7 @@ export function detectPackageManagerDetails() {
   // dozen spawnSync(pm, ['bin', '-g']) calls with 10s timeouts each; under
   // the in-process server every one blocks the Electron main event loop and
   // manifests as a multi-second UI freeze. Short-circuit here.
-  if (process.env.OPENCHAMBER_RUNTIME === 'desktop') {
+  if (process.env.YURI_RUNTIME === 'desktop') {
     return {
       packageManager: 'electron',
       reason: 'desktop-runtime',
@@ -411,7 +411,7 @@ export function detectPackageManagerDetails() {
       };
   }
 
-  const forcedPm = process.env.OPENCHAMBER_PACKAGE_MANAGER?.trim();
+  const forcedPm = process.env.YURI_PACKAGE_MANAGER?.trim();
   if (forcedPm && ['npm', 'pnpm', 'yarn', 'bun'].includes(forcedPm)) {
     const forcedPmCommand = resolvePackageManagerCommand(forcedPm);
     if (isCommandAvailable(forcedPmCommand)) {
@@ -650,7 +650,7 @@ function isPackageInstalledWith(pm) {
     });
 
     if (result.status !== 0) return false;
-    return result.stdout.includes(PACKAGE_NAME) || result.stdout.includes('openchamber');
+    return result.stdout.includes(PACKAGE_NAME) || result.stdout.includes('yuri');
   } catch {
     return false;
   }
@@ -786,7 +786,7 @@ export async function checkForUpdates(options = {}) {
       return {
         ...remote,
         packageManager: pm,
-        updateCommand: 'openchamber update',
+        updateCommand: 'yuri update',
       };
     }
     return {
@@ -808,7 +808,7 @@ export async function checkForUpdates(options = {}) {
       return {
         ...remote,
         packageManager: pm,
-        updateCommand: 'openchamber update',
+        updateCommand: 'yuri update',
       };
     }
   }
@@ -847,7 +847,7 @@ export async function checkForUpdates(options = {}) {
     downloadUrl: appType === 'mobile-capacitor' && platform === 'android' ? `${GITHUB_RELEASES_URL}/tag/v${latestVersion}` : undefined,
     packageManager: pm,
     // Show our CLI command, not raw package manager command
-    updateCommand: 'openchamber update',
+    updateCommand: 'yuri update',
   };
 }
 

@@ -35,7 +35,7 @@ const response = () => ({
   },
 });
 
-const ROUTE = '/api/openchamber/sessions/:sessionID/messages';
+const ROUTE = '/api/yuri/sessions/:sessionID/messages';
 
 describe('projectSessionMessageRecord (host SessionMessage → {info, parts})', () => {
   it('drops idle control and projects two-turn wire without duplicate text', () => {
@@ -117,7 +117,7 @@ describe('projectSessionMessageRecord (host SessionMessage → {info, parts})', 
 });
 
 describe('registerSessionTurnPageRoutes', () => {
-  it('registers GET /api/openchamber/sessions/:sessionID/messages', () => {
+  it('registers GET /api/yuri/sessions/:sessionID/messages', () => {
     const { app, route } = registry();
     registerSessionTurnPageRoutes(app, {
       sessionTurnPageService: { loadPage: vi.fn() },
@@ -1058,7 +1058,7 @@ describe('registerSessionTurnPageRoutes', () => {
 });
 
 const EXACT_MESSAGE_ROUTE = '/api/session/:sessionID/message/:messageID';
-const CHANGES_ROUTE = '/api/openchamber/sessions/:sessionID/changes';
+const CHANGES_ROUTE = '/api/yuri/sessions/:sessionID/changes';
 
 describe('registerSessionTurnPageRoutes — exact message GET', () => {
   it('removes message/content native fields at the exact serialization boundary', async () => {
@@ -1339,7 +1339,7 @@ describe('registerSessionTurnPageRoutes — real OpenCode.make + fake HTTP', () 
 });
 
 describe('registerSessionTurnPageRoutes — changes API', () => {
-  it('registers GET /api/openchamber/sessions/:sessionID/changes', () => {
+  it('registers GET /api/yuri/sessions/:sessionID/changes', () => {
     const { app, route } = registry();
     registerSessionTurnPageRoutes(app, {
       sessionTurnPageService: { loadPage: vi.fn() },

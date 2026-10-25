@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { bunTestShim, sharedExclude } from '../../vitest.shared.ts';
 export default defineConfig({
   test: {
-    name: '@openchamber/relay-server',
+    name: '@yuri/relay-server',
     environment: 'node',
     isolate: true,
     fileParallelism: false,

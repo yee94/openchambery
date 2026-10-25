@@ -51,7 +51,7 @@ const readOptionalFileContent = async (files: FilesAPI, path: string): Promise<{
     throw new Error((errorPayload as { error?: string }).error || 'Failed to read file');
   }
 
-  const existsHeader = response.headers.get('x-openchamber-file-exists');
+  const existsHeader = response.headers.get('x-yuri-file-exists');
   if (existsHeader !== 'true' && existsHeader !== 'false') {
     throw new Error('Optional file read requires an existence response header');
   }

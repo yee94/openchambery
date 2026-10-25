@@ -1,3 +1,4 @@
+import './lib/brand-migration-bootstrap.js';
 import 'reflect-metadata';
 import express from 'express';
 import { configureOpenCodeCredentials, openCodeCredentialSource } from './lib/opencode/auth.js';
@@ -52,7 +53,7 @@ import {
   registerCommonRequestMiddleware,
   registerServerStatusRoutes,
 } from './lib/opencode/core-routes.js';
-import { registerOpenChamberRoutes } from './lib/opencode/openchamber-routes.js';
+import { registerYuriRoutes } from './lib/opencode/yuri-routes.js';
 import { createServerUtilsRuntime } from './lib/opencode/server-utils-runtime.js';
 import {
   configureServerOpenCodeFetchGate,
@@ -77,7 +78,7 @@ import { createTranscriptCacheService } from './lib/transcript-cache/service.js'
 import { resolveTranscriptCacheDbPath } from './lib/transcript-cache/resolve-db-path.js';
 import { createMessageQueueRuntime } from './lib/message-queue/runtime.js';
 import { resolveMessageQueueDbPath } from './lib/message-queue/resolve-db-path.js';
-import { createOpenChamberEventBroadcaster } from './lib/opencode/feature-routes-runtime.js';
+import { createYuriEventBroadcaster } from './lib/opencode/feature-routes-runtime.js';
 import {
   createSessionGoalRuntime,
   withGoalExecutionGeneration,
@@ -131,10 +132,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DEFAULT_PORT = 3000;
-const DESKTOP_NOTIFY_PREFIX = '[OpenChamberDesktopNotify] ';
+const DESKTOP_NOTIFY_PREFIX = '[YuriDesktopNotify] ';
 const uiNotificationClients = new Set();
 const uiNotificationWsClients = new Set();
-const uiOpenChamberEventClients = new Set();
+const uiYuriEventClients = new Set();
 const HEALTH_CHECK_INTERVAL = 15000;
 const SHUTDOWN_TIMEOUT = 10000;
 const CLIENT_RELOAD_DELAY_MS = 800;
@@ -169,12 +170,12 @@ const SSE_PATH_PREFIXES = [
   '/api/event',
   '/api/global/event',
   '/api/notifications/stream',
-  '/api/openchamber/events',
-  '/api/openchamber/realtime-proxy/sse',
+  '/api/yuri/events',
+  '/api/yuri/realtime-proxy/sse',
 ];
 
 function shouldSkipCompression(req, res) {
-  if (process.env.OPENCHAMBER_RUNTIME === 'desktop') {
+  if (process.env.YURI_RUNTIME === 'desktop') {
     return true;
   }
 
@@ -199,7 +200,7 @@ function shouldSkipCompression(req, res) {
   return headerIncludesEventStream(res.getHeader('Content-Type'));
 }
 
-const OPENCHAMBER_VERSION = (() => {
+const YURI_VERSION = (() => {
   try {
     const packagePath = path.resolve(__dirname, '..', 'package.json');
     const raw = fs.readFileSync(packagePath, 'utf8');
@@ -227,13 +228,13 @@ const isEnvFlagDisabled = (value) => {
 };
 
 const shouldSkipApiCompression = () => {
-  if (isEnvFlagEnabled(process.env.OPENCHAMBER_SKIP_API_COMPRESSION)) return true;
-  if (isEnvFlagEnabled(process.env.OPENCHAMBER_COMPRESS_API)) return false;
-  if (isEnvFlagDisabled(process.env.OPENCHAMBER_COMPRESS_API)) return true;
-  return process.env.OPENCHAMBER_RUNTIME === 'desktop';
+  if (isEnvFlagEnabled(process.env.YURI_SKIP_API_COMPRESSION)) return true;
+  if (isEnvFlagEnabled(process.env.YURI_COMPRESS_API)) return false;
+  if (isEnvFlagDisabled(process.env.YURI_COMPRESS_API)) return true;
+  return process.env.YURI_RUNTIME === 'desktop';
 };
 
-const OPENCHAMBER_VERBOSE_REQUEST_LOGS = isEnvFlagEnabled(process.env.OPENCHAMBER_VERBOSE_REQUEST_LOGS);
+const YURI_VERBOSE_REQUEST_LOGS = isEnvFlagEnabled(process.env.YURI_VERBOSE_REQUEST_LOGS);
 
 const fsPromises = fs.promises;
 
@@ -259,9 +260,11 @@ const sanitizeModelRefs = (...args) => settingsNormalizationRuntime.sanitizeMode
 const sanitizeSkillCatalogs = (...args) => settingsNormalizationRuntime.sanitizeSkillCatalogs(...args);
 const sanitizeProjects = (...args) => settingsNormalizationRuntime.sanitizeProjects(...args);
 
-const OPENCHAMBER_USER_CONFIG_ROOT = path.join(os.homedir(), '.config', 'openchamber');
-const OPENCHAMBER_USER_THEMES_DIR = path.join(OPENCHAMBER_USER_CONFIG_ROOT, 'themes');
-const OPENCHAMBER_PROJECTS_CONFIG_DIR = path.join(OPENCHAMBER_USER_CONFIG_ROOT, 'projects');
+const YURI_USER_CONFIG_ROOT = process.env.YURI_DATA_DIR
+  ? path.resolve(process.env.YURI_DATA_DIR)
+  : path.join(os.homedir(), '.config', 'yuri');
+const YURI_USER_THEMES_DIR = path.join(YURI_USER_CONFIG_ROOT, 'themes');
+const YURI_PROJECTS_CONFIG_DIR = path.join(YURI_USER_CONFIG_ROOT, 'projects');
 
 const MAX_THEME_JSON_BYTES = 512 * 1024;
 
@@ -269,7 +272,7 @@ const MAX_THEME_JSON_BYTES = 512 * 1024;
 const themeRuntime = createThemeRuntime({
   fsPromises,
   path,
-  themesDir: OPENCHAMBER_USER_THEMES_DIR,
+  themesDir: YURI_USER_THEMES_DIR,
   maxThemeJsonBytes: MAX_THEME_JSON_BYTES,
   logger: console,
 });
@@ -290,14 +293,14 @@ const maybeCacheSessionInfoFromEvent = (...args) => notificationTemplateRuntime.
 const buildTemplateVariables = (...args) => notificationTemplateRuntime.buildTemplateVariables(...args);
 const getCachedZenModels = (...args) => notificationTemplateRuntime.getCachedZenModels(...args);
 
-const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
-  ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-  : path.join(os.homedir(), '.config', 'openchamber');
-const SETTINGS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'settings.json');
-const PUSH_SUBSCRIPTIONS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'push-subscriptions.json');
-const APNS_TOKENS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'apns-tokens.json');
-const REMOTE_CLIENTS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'remote-clients.json');
-const CLIENT_PAIRING_SESSIONS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'client-pairing-sessions.json');
+const YURI_DATA_DIR = process.env.YURI_DATA_DIR
+  ? path.resolve(process.env.YURI_DATA_DIR)
+  : path.join(os.homedir(), '.config', 'yuri');
+const SETTINGS_FILE_PATH = path.join(YURI_DATA_DIR, 'settings.json');
+const PUSH_SUBSCRIPTIONS_FILE_PATH = path.join(YURI_DATA_DIR, 'push-subscriptions.json');
+const APNS_TOKENS_FILE_PATH = path.join(YURI_DATA_DIR, 'apns-tokens.json');
+const REMOTE_CLIENTS_FILE_PATH = path.join(YURI_DATA_DIR, 'remote-clients.json');
+const CLIENT_PAIRING_SESSIONS_FILE_PATH = path.join(YURI_DATA_DIR, 'client-pairing-sessions.json');
 
 const settingsHelpers = createSettingsHelpers({
   normalizePathForPersistence,
@@ -340,10 +343,10 @@ const settingsRuntime = createSettingsRuntime({
   normalizeStringArray,
   formatSettingsResponse,
   resolveDirectoryCandidate,
-  onProjectOrderChanged: () => createOpenChamberEventBroadcaster({
-    getOpenChamberEventClients: () => uiOpenChamberEventClients,
+  onProjectOrderChanged: () => createYuriEventBroadcaster({
+    getYuriEventClients: () => uiYuriEventClients,
     writeSseEvent,
-  })({ type: 'openchamber:project-order-changed', properties: { occurredAt: Date.now() } }),
+  })({ type: 'yuri:project-order-changed', properties: { occurredAt: Date.now() } }),
 });
 
 const readSettingsFromDiskMigrated = (...args) => settingsRuntime.readSettingsFromDiskMigrated(...args);
@@ -452,7 +455,7 @@ const getUpstreamStallTimeoutMs = () => (
 const projectConfigRuntime = createProjectConfigRuntime({
   fsPromises,
   path,
-  projectsDirPath: OPENCHAMBER_PROJECTS_CONFIG_DIR,
+  projectsDirPath: YURI_PROJECTS_CONFIG_DIR,
 });
 
 // HMR-persistent state via globalThis
@@ -461,7 +464,7 @@ const hmrStateRuntime = createHmrStateRuntime({
   globalThisLike: globalThis,
   os,
   processLike: process,
-  stateKey: '__openchamberHmrState',
+  stateKey: '__yuriHmrState',
 });
 const hmrState = hmrStateRuntime.getOrCreateHmrState();
 hmrStateRuntime.ensureUserProvidedOpenCodePassword(hmrState);
@@ -556,19 +559,19 @@ const {
 });
 
 const ENV_SKIP_OPENCODE_START = process.env.OPENCODE_SKIP_START === 'true' ||
-                                    process.env.OPENCHAMBER_SKIP_OPENCODE_START === 'true';
+                                    process.env.YURI_SKIP_OPENCODE_START === 'true';
 const ENV_DESKTOP_NOTIFY = (() => {
-  if (process.env.OPENCHAMBER_DESKTOP_NOTIFY === 'true') {
+  if (process.env.YURI_DESKTOP_NOTIFY === 'true') {
     return true;
   }
 
-  if (process.env.OPENCHAMBER_RUNTIME === 'desktop') {
+  if (process.env.YURI_RUNTIME === 'desktop') {
     return true;
   }
 
   const argv0 = typeof process.argv?.[0] === 'string' ? process.argv[0] : '';
   const argv1 = typeof process.argv?.[1] === 'string' ? process.argv[1] : '';
-  return /openchamber-server/i.test(argv0) || /openchamber-server/i.test(argv1);
+  return /yuri-server/i.test(argv0) || /yuri-server/i.test(argv1);
 })();
 const openCodeAuthStateRuntime = createOpenCodeAuthStateRuntime({
   crypto,
@@ -623,7 +626,7 @@ const serverOpenCodeFetch = createServerOpenCodeFetch({
 });
 
 const ENV_CONFIGURED_API_PREFIX = normalizeApiPrefix(
-  process.env.OPENCODE_API_PREFIX || process.env.OPENCHAMBER_API_PREFIX || ''
+  process.env.OPENCODE_API_PREFIX || process.env.YURI_API_PREFIX || ''
 );
 
   if (ENV_CONFIGURED_API_PREFIX && ENV_CONFIGURED_API_PREFIX !== '') {
@@ -792,7 +795,7 @@ const sessionRecordClient = createHttpSessionRecordClient({
   fetchFn: wrapFetchWithRuntimeContractGate(fetch),
 });
 const sessionMetadataStore = createSessionMetadataStore({
-  dataDir: OPENCHAMBER_DATA_DIR,
+  dataDir: YURI_DATA_DIR,
   recordReader: (sessionID, directory) => sessionRecordClient.read(sessionID, directory),
   recordWriter: (sessionID, metadata, directory) => sessionRecordClient.write({
     sessionID,
@@ -838,11 +841,11 @@ void ensureSessionMetadataReady().then((ok) => {
  */
 const persistSessionGoalToStore = async (sessionId, _directory, goal) => {
   const result = await sessionMetadataStore.mutateSessionMetadata(sessionId, (current) => {
-    const previousGoal = current?.openchamber?.goal && typeof current.openchamber.goal === 'object'
-      ? current.openchamber.goal
+    const previousGoal = current?.yuri?.goal && typeof current.yuri.goal === 'object'
+      ? current.yuri.goal
       : null;
     const nextGoal = withGoalExecutionGeneration(previousGoal, goal);
-    return { ok: true, patch: { openchamber: { goal: nextGoal } } };
+    return { ok: true, patch: { yuri: { goal: nextGoal } } };
   });
   if (!result?.committed) {
     throw new Error(result?.reason || 'session goal persist was rejected');
@@ -850,7 +853,7 @@ const persistSessionGoalToStore = async (sessionId, _directory, goal) => {
   const metadata = result.metadata;
   try {
     broadcastGlobalUiEvent({
-      type: 'openchamber:session-metadata',
+      type: 'yuri:session-metadata',
       properties: { sessionID: sessionId, metadata },
     });
   } catch (error) {
@@ -867,7 +870,7 @@ const persistSessionMetadataToStore = async (sessionId, patch) => {
   const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, patch);
   try {
     broadcastGlobalUiEvent({
-      type: 'openchamber:session-metadata',
+      type: 'yuri:session-metadata',
       properties: { sessionID: sessionId, metadata },
     });
   } catch (error) {
@@ -937,7 +940,7 @@ const sessionGoalRuntime = createSessionGoalRuntime({
     if (result?.committed) {
       try {
         broadcastGlobalUiEvent({
-          type: 'openchamber:session-metadata',
+          type: 'yuri:session-metadata',
           properties: { sessionID: sessionId, metadata: result.metadata },
         });
       } catch (error) {
@@ -948,7 +951,7 @@ const sessionGoalRuntime = createSessionGoalRuntime({
   },
   persistSessionGoal: async (sessionId, directory, goal) => {
     const metadata = await persistSessionGoalToStore(sessionId, directory, goal);
-    return metadata?.openchamber?.goal ?? goal;
+    return metadata?.yuri?.goal ?? goal;
   },
   emitGoalNotification: async ({ sessionId, directory, status, goal }) => {
     // The goal settle notification replaces the per-turn ready notifications
@@ -1007,8 +1010,8 @@ notificationTriggerRuntime.setGetIsSessionAutoAccepting(
   (sessionId, directory) => permissionAutoAcceptRuntime.isSessionAutoAccepting(sessionId, directory),
 );
 
-const broadcastQuestionAutoDelegateTip = createOpenChamberEventBroadcaster({
-  getOpenChamberEventClients: () => uiOpenChamberEventClients,
+const broadcastQuestionAutoDelegateTip = createYuriEventBroadcaster({
+  getYuriEventClients: () => uiYuriEventClients,
   writeSseEvent,
 });
 questionAutoDelegateRuntime = createQuestionAutoDelegateRuntime({
@@ -1029,7 +1032,7 @@ questionAutoDelegateRuntime = createQuestionAutoDelegateRuntime({
     }
   },
   broadcastGlobalUiEvent,
-  broadcastOpenChamberEvent: broadcastQuestionAutoDelegateTip,
+  broadcastYuriEvent: broadcastQuestionAutoDelegateTip,
   onUserTakeover: ({ sessionID, directory }) => {
     // User pause / manual claim / feature disable → goal pause on root owner.
     void sessionGoalRuntime.pauseForQuestion?.(sessionID, directory)?.catch((error) => {
@@ -1082,7 +1085,7 @@ const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
   const { sessionId, type: status } = update;
 
   emitSyntheticEvent({
-    type: 'openchamber:session-status',
+    type: 'yuri:session-status',
     properties: {
       sessionID: sessionId,
       status,
@@ -1097,7 +1100,7 @@ const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
   });
 
   emitSyntheticEvent({
-    type: 'openchamber:session-activity',
+    type: 'yuri:session-activity',
     properties: {
       sessionId,
       phase: status === 'busy' || status === 'retry' ? 'busy' : 'idle',
@@ -1200,7 +1203,7 @@ const bootstrapRuntime = createBootstrapRuntime({
   registerAuthAndAccessRoutes,
   registerTtsRoutes,
   registerNotificationRoutes,
-  registerOpenChamberRoutes,
+  registerYuriRoutes,
   express,
 });
 const tunnelWiringRuntime = createTunnelWiringRuntime();
@@ -1246,8 +1249,8 @@ Object.defineProperties(openCodeLifecycleState, {
 });
 
 const managedCapabilitiesRuntime = createManagedCapabilitiesRuntime({
-  dataDir: OPENCHAMBER_DATA_DIR,
-  version: OPENCHAMBER_VERSION,
+  dataDir: YURI_DATA_DIR,
+  version: YURI_VERSION,
   getManagedChildPid: () => openCodeProcess?.pid ?? null,
   isManagedChildAlive: (pid) => {
     if (isExternalOpenCode || openCodeProcess?.pid !== pid || !Number.isInteger(pid) || pid <= 0) return false;
@@ -1301,7 +1304,7 @@ const refreshOpenCodeAfterConfigChange = (...args) => openCodeLifecycleRuntime.r
 const startHealthMonitoring = () => openCodeLifecycleRuntime.startHealthMonitoring(HEALTH_CHECK_INTERVAL);
 const triggerHealthCheck = () => openCodeLifecycleRuntime.triggerHealthCheck();
 const scheduledTaskRunHistoryStore = createScheduledTaskRunHistoryStore({
-  dbPath: path.join(OPENCHAMBER_DATA_DIR, 'scheduled-task-runs.sqlite'),
+  dbPath: path.join(YURI_DATA_DIR, 'scheduled-task-runs.sqlite'),
 });
 const scheduledTasksRuntime = createScheduledTasksRuntime({
   projectConfigRuntime,
@@ -1334,10 +1337,10 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
     }, directory || '');
   },
   emitTaskRunEvent: (event) => {
-    for (const client of uiOpenChamberEventClients) {
+    for (const client of uiYuriEventClients) {
       try {
         writeSseEvent(client, {
-          type: 'openchamber:scheduled-task-ran',
+          type: 'yuri:scheduled-task-ran',
           properties: {
             projectId: event.projectID,
             taskId: event.taskID,
@@ -1347,7 +1350,7 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
           },
         });
       } catch {
-        uiOpenChamberEventClients.delete(client);
+        uiYuriEventClients.delete(client);
       }
     }
   },
@@ -1470,8 +1473,8 @@ async function main(options = {}) {
   const port = Number.isFinite(options.port) && options.port >= 0 ? Math.trunc(options.port) : DEFAULT_PORT;
   const host = typeof options.host === 'string' && options.host.length > 0 ? options.host : undefined;
   const effectiveBindHost = host
-    || (typeof process.env.OPENCHAMBER_HOST === 'string' && process.env.OPENCHAMBER_HOST.trim().length > 0
-      ? process.env.OPENCHAMBER_HOST.trim()
+    || (typeof process.env.YURI_HOST === 'string' && process.env.YURI_HOST.trim().length > 0
+      ? process.env.YURI_HOST.trim()
       : '127.0.0.1');
 
   // Pairing transports advertised to the create-device dialog. LAN reachability is
@@ -1555,7 +1558,7 @@ async function main(options = {}) {
   };
   const uiPassword = typeof options.uiPassword === 'string'
     ? options.uiPassword
-    : (typeof process.env.OPENCHAMBER_UI_PASSWORD === 'string' ? process.env.OPENCHAMBER_UI_PASSWORD : null);
+    : (typeof process.env.YURI_UI_PASSWORD === 'string' ? process.env.YURI_UI_PASSWORD : null);
   if (
     isNetworkExposedBindHost(effectiveBindHost)
     && !(typeof uiPassword === 'string' && uiPassword.trim().length > 0)
@@ -1563,7 +1566,7 @@ async function main(options = {}) {
   ) {
     throw new Error(getUnauthenticatedLanErrorMessage(effectiveBindHost));
   }
-  const apiOnly = options.apiOnly === true || isEnvFlagEnabled(process.env.OPENCHAMBER_API_ONLY);
+  const apiOnly = options.apiOnly === true || isEnvFlagEnabled(process.env.YURI_API_ONLY);
   const attachSignals = options.attachSignals !== false;
   if (typeof options.exitOnShutdown === 'boolean') {
     exitOnShutdown = options.exitOnShutdown;
@@ -1584,18 +1587,18 @@ async function main(options = {}) {
     : null;
   const sessionIndexDbPath = options.sessionIndexDbPath !== undefined
     ? options.sessionIndexDbPath
-    : process.env.OPENCHAMBER_SESSION_INDEX_DB_PATH;
+    : process.env.YURI_SESSION_INDEX_DB_PATH;
   const indexSessionDirectories = createSessionDirectoryRuntime({
     getRuntimeUrl: () => getDesktopRuntimeConfig?.()?.apiBaseUrl ?? buildOpenCodeUrl('/', ''),
   });
   const sessionIndexService = createSessionIndexService({
-    dbPath: resolveSessionIndexDbPath({ sessionIndexDbPath }, OPENCHAMBER_DATA_DIR),
+    dbPath: resolveSessionIndexDbPath({ sessionIndexDbPath }, YURI_DATA_DIR),
     getRuntimeConfig: () => getDesktopRuntimeConfig?.() ?? null,
     resolveDirectory: indexSessionDirectories.resolveDirectory,
   });
   sessionIndexServiceRef = sessionIndexService;
   const contentSearch = createGlobalContentSearch({
-    dataDir: path.dirname(resolveSessionIndexDbPath({ sessionIndexDbPath }, OPENCHAMBER_DATA_DIR)),
+    dataDir: path.dirname(resolveSessionIndexDbPath({ sessionIndexDbPath }, YURI_DATA_DIR)),
     getRuntimeKey: () => sessionIndexService.getRuntimeKey(),
     buildOpenCodeUrl, getOpenCodeAuthHeaders, waitForReady: waitForOpenCodeReady,
   });
@@ -1605,13 +1608,13 @@ async function main(options = {}) {
   });
   const messageQueueDbPath = options.messageQueueDbPath !== undefined
     ? options.messageQueueDbPath
-    : process.env.OPENCHAMBER_MESSAGE_QUEUE_DB_PATH;
-  const broadcastOpenChamberEvent = createOpenChamberEventBroadcaster({
-    getOpenChamberEventClients: () => uiOpenChamberEventClients,
+    : process.env.YURI_MESSAGE_QUEUE_DB_PATH;
+  const broadcastYuriEvent = createYuriEventBroadcaster({
+    getYuriEventClients: () => uiYuriEventClients,
     writeSseEvent,
   });
   const messageQueueRuntime = createMessageQueueRuntime({
-    dbPath: resolveMessageQueueDbPath({ messageQueueDbPath }, OPENCHAMBER_DATA_DIR),
+    dbPath: resolveMessageQueueDbPath({ messageQueueDbPath }, YURI_DATA_DIR),
     attachmentRoot: options.messageQueueAttachmentRoot,
     getRuntimeConfig: () => getDesktopRuntimeConfig?.() ?? null,
     getOpenCodeRuntimeConfig: () => ({ apiBaseUrl: buildOpenCodeUrl('/', '') }),
@@ -1619,8 +1622,8 @@ async function main(options = {}) {
     getOpenCodeAuthHeaders,
     waitForReady: waitForOpenCodeReady,
     onRevisionTip: (tip) => {
-      broadcastOpenChamberEvent({
-        type: 'openchamber:message-queue-changed',
+      broadcastYuriEvent({
+        type: 'yuri:message-queue-changed',
         properties: tip,
       });
     },
@@ -1650,8 +1653,8 @@ async function main(options = {}) {
       return retainOpenCodeSessions(sessions, snap).map(indexSessionDirectories.projectSession);
     },
     onRevisionTip: (tip) => {
-      broadcastOpenChamberEvent({
-        type: 'openchamber:session-index-changed',
+      broadcastYuriEvent({
+        type: 'yuri:session-index-changed',
         properties: tip,
       });
     },
@@ -1672,9 +1675,9 @@ async function main(options = {}) {
         console.warn('[session-archive] global UI broadcast failed:', error?.message ?? error);
       }
       try {
-        broadcastOpenChamberEvent(payload);
+        broadcastYuriEvent(payload);
       } catch (error) {
-        console.warn('[session-archive] openchamber event broadcast failed:', error?.message ?? error);
+        console.warn('[session-archive] yuri event broadcast failed:', error?.message ?? error);
       }
     },
     onIndexChanged: () => {
@@ -1706,14 +1709,14 @@ async function main(options = {}) {
     scheduledTasksRuntime.observeSessionEvent?.(event);
   });
 
-  console.log(`Starting OpenChamber on port ${port === 0 ? 'auto' : port}`);
+  console.log(`Starting Yuri on port ${port === 0 ? 'auto' : port}`);
 
   const sayTTSCapability = await detectSayTtsCapability(process);
 
   const app = express();
   const serverStartedAt = new Date().toISOString();
   const packagedClientOrigins = new Set([
-    'openchamber-ui://app',
+    'yuri-ui://app',
     'capacitor://localhost',
     'http://localhost',
     'https://localhost',
@@ -1739,7 +1742,7 @@ async function main(options = {}) {
         setHeader: (name, value) => res.setHeader(name, value),
       });
       if (req.method === 'OPTIONS') {
-        if (OPENCHAMBER_VERBOSE_REQUEST_LOGS) {
+        if (YURI_VERBOSE_REQUEST_LOGS) {
           console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
         }
         res.status(204).end();
@@ -1769,8 +1772,8 @@ async function main(options = {}) {
 
   const bootstrapResult = bootstrapRuntime.setupBaseRoutes(app, {
     process,
-    openchamberVersion: OPENCHAMBER_VERSION,
-    runtimeName: process.env.OPENCHAMBER_RUNTIME || 'web',
+    yuriVersion: YURI_VERSION,
+    runtimeName: process.env.YURI_RUNTIME || 'web',
     serverStartedAt,
     gracefulShutdown,
     getHealthSnapshot: () => {
@@ -1807,7 +1810,7 @@ async function main(options = {}) {
         apiOnly,
       };
     },
-    verboseRequestLogs: OPENCHAMBER_VERBOSE_REQUEST_LOGS,
+    verboseRequestLogs: YURI_VERBOSE_REQUEST_LOGS,
     uiPassword,
     tunnelAuthController,
     remoteClientAuthRuntime,
@@ -1851,7 +1854,7 @@ async function main(options = {}) {
     // Fallback display name a paired device shows for THIS server when the
     // pairing payload did not carry an operator-typed instance name. Hostname
     // is not an instance identity — one machine can run several servers.
-    getServerLabel: () => 'OpenChamber',
+    getServerLabel: () => 'Yuri',
     readSettingsFromDiskMigrated,
     persistSettings,
     normalizeTunnelSessionTtlMs,
@@ -1883,7 +1886,7 @@ async function main(options = {}) {
     path,
     server,
     __dirname,
-    openchamberDataDir: OPENCHAMBER_DATA_DIR,
+    yuriDataDir: YURI_DATA_DIR,
     fetchFreeZenModels,
     getCachedZenModels,
     setAutoAcceptSession,
@@ -1933,7 +1936,7 @@ async function main(options = {}) {
     // the relay identity (serverId), so concurrent hosts evict each other at
     // the relay worker and devices land on a random local instance.
     hostLock: createRelayHostLock({
-      lockFilePath: path.join(OPENCHAMBER_DATA_DIR, 'relay-host.lock'),
+      lockFilePath: path.join(YURI_DATA_DIR, 'relay-host.lock'),
       fs,
       process,
     }),
@@ -1979,8 +1982,8 @@ async function main(options = {}) {
     spawn,
     resolveGitBinaryForSpawn,
     createFsSearchRuntime: createFsSearchRuntimeFactory,
-    openchamberDataDir: OPENCHAMBER_DATA_DIR,
-    openchamberUserConfigRoot: OPENCHAMBER_USER_CONFIG_ROOT,
+    yuriDataDir: YURI_DATA_DIR,
+    yuriUserConfigRoot: YURI_USER_CONFIG_ROOT,
     normalizeDirectoryPath,
     resolveProjectDirectory,
     resolveOptionalProjectDirectory,
@@ -2037,7 +2040,7 @@ async function main(options = {}) {
     persistSessionGoal: persistSessionGoalToStore,
     onSessionMetadataWritten: ({ sessionID, directory, metadata }) => {
       sessionTitleRuntime.processPayload({
-        type: 'openchamber:session-metadata',
+        type: 'yuri:session-metadata',
         properties: { sessionID, directory, metadata },
       }, directory || '');
       sessionGoalRuntime.processPayload({
@@ -2059,7 +2062,7 @@ async function main(options = {}) {
     runHistoryStore: scheduledTaskRunHistoryStore,
     markUserMessageSent: (sessionID) => sessionRuntime.markUserMessageSent(sessionID),
     waitForOpenCodeReady,
-    getOpenChamberEventClients: () => uiOpenChamberEventClients,
+    getYuriEventClients: () => uiYuriEventClients,
     broadcastGlobalUiEvent,
     writeSseEvent,
     permissionAutoAcceptRuntime,
@@ -2132,7 +2135,7 @@ async function main(options = {}) {
     tunnelRuntimeContext,
     attachSignals,
     apiOnly,
-    dictationModelsDir: path.join(OPENCHAMBER_USER_CONFIG_ROOT, 'speech-models'),
+    dictationModelsDir: path.join(YURI_USER_CONFIG_ROOT, 'speech-models'),
   });
   terminalRuntime = startupPipelineResult.terminalRuntime;
   dictationRuntime = startupPipelineResult.dictationRuntime;
@@ -2146,7 +2149,7 @@ async function main(options = {}) {
 
   liveActivityRefreshRuntime.start();
 
-  // Only desktop / SSH-managed remotes (OPENCHAMBER_RUNTIME=desktop|ssh-remote)
+  // Only desktop / SSH-managed remotes (YURI_RUNTIME=desktop|ssh-remote)
   // open a relay host-control socket or poll relay demand. Local `dev` / `web`
   // never reconcile, so they cannot inherit a leftover desktop env and start
   // probing the relay.

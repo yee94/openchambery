@@ -39,7 +39,7 @@ const click = (
 };
 
 afterEach(() => {
-  delete window.__OPENCHAMBER_SURFACE__;
+  delete window.__YURI_SURFACE__;
   openExternalUrl.mockClear();
   openFileReferenceFromElement.mockClear();
 });
@@ -69,7 +69,7 @@ describe('handleMarkstreamPointerEvent', () => {
     if (!href.startsWith('https:')) expect(event.defaultPrevented).toBe(false);
   });
   test('opens mobile http links in the browser instead of the desktop context panel', () => {
-    window.__OPENCHAMBER_SURFACE__ = 'mobile';
+    window.__YURI_SURFACE__ = 'mobile';
     const openInAppBrowser = vi.fn();
     const root = document.createElement('div');
     const anchor = document.createElement('a');
@@ -114,8 +114,8 @@ describe('handleMarkstreamPointerEvent', () => {
   test('opens a resolved file link without navigating the document', () => {
     const root = document.createElement('div');
     const token = document.createElement('span');
-    token.setAttribute('data-openchamber-file-link', 'true');
-    token.setAttribute('data-openchamber-file-ref', 'docs/report.md');
+    token.setAttribute('data-yuri-file-link', 'true');
+    token.setAttribute('data-yuri-file-ref', 'docs/report.md');
     const anchor = document.createElement('a');
     anchor.href = 'docs/report.md';
     token.append(anchor);
@@ -249,9 +249,9 @@ describe('handleMarkstreamPointerEvent', () => {
     const root = document.createElement('div');
     const token = document.createElement('span');
     token.textContent = '/tmp/report.html';
-    token.setAttribute('data-openchamber-file-link', 'true');
-    token.setAttribute('data-openchamber-file-ref', '/tmp/report.html');
-    token.setAttribute('data-openchamber-file-path', '/tmp/report.html');
+    token.setAttribute('data-yuri-file-link', 'true');
+    token.setAttribute('data-yuri-file-ref', '/tmp/report.html');
+    token.setAttribute('data-yuri-file-path', '/tmp/report.html');
     root.append(token);
 
     handleMarkstreamPointerEvent(click(token, root), { fileReference, openInAppBrowser });
@@ -266,7 +266,7 @@ describe('handleMarkstreamPointerEvent', () => {
       effectiveDirectory: '/tmp',
     };
     const token = document.createElement('span');
-    token.setAttribute('data-openchamber-file-link', 'true');
+    token.setAttribute('data-yuri-file-link', 'true');
     const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
     Object.defineProperty(event, 'target', { value: token });
 

@@ -37,7 +37,7 @@ const firstNonEmptyString = (...values) => {
 export const resolveGrokAuthPath = () => {
   return (
     firstNonEmptyString(
-      process.env.OPENCHAMBER_GROK_AUTH_PATH,
+      process.env.YURI_GROK_AUTH_PATH,
       process.env.GROK_AUTH_PATH
     ) ||
     path.join(
@@ -142,7 +142,7 @@ export const isConfigured = (authPath) => {
 };
 
 const resolveGrokCliProxyOrigin = () =>
-  firstNonEmptyString(process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN) ||
+  firstNonEmptyString(process.env.YURI_GROK_CLI_PROXY_ORIGIN) ||
   DEFAULT_GROK_CLI_PROXY_ORIGIN;
 
 export const resolveGrokCliPath = (environment = process.env) => {
@@ -152,7 +152,7 @@ export const resolveGrokCliPath = (environment = process.env) => {
     .filter(Boolean)
     .map((directory) => path.join(directory, 'grok'));
   const candidates = [
-    environment.OPENCHAMBER_GROK_CLI_PATH,
+    environment.YURI_GROK_CLI_PATH,
     environment.AI_USAGE_TRACKER_GROK_CLI_PATH,
     environment.GROK_CLI_PATH,
     ...pathCandidates,
@@ -192,7 +192,7 @@ const runGrokBuildAuthRenewal = async ({
   if (!cliPath) {
     return {
       ok: false,
-      message: 'Grok Build CLI not found — install `grok` or set OPENCHAMBER_GROK_CLI_PATH'
+      message: 'Grok Build CLI not found — install `grok` or set YURI_GROK_CLI_PATH'
     };
   }
 
@@ -260,10 +260,10 @@ const buildGrokCliHeaders = (grokAuth) => ({
   Authorization: `Bearer ${grokAuth.key}`,
   'x-xai-token-auth': 'xai-grok-cli',
   accept: 'application/json',
-  'user-agent': 'OpenChamber/xai-quota',
+  'user-agent': 'Yuri/xai-quota',
   'x-userid': String(grokAuth.userId),
   'x-grok-client-version':
-    firstNonEmptyString(process.env.OPENCHAMBER_GROK_CLIENT_VERSION) ||
+    firstNonEmptyString(process.env.YURI_GROK_CLIENT_VERSION) ||
     DEFAULT_GROK_CLIENT_VERSION
 });
 

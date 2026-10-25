@@ -26,7 +26,7 @@ test('real Electron relaunch loads downloaded resources through the packaged pro
     const assets = path.join(root, 'assets');
     await mkdir(assets);
     await writeFile(path.join(assets, 'index.html'), '<!doctype html><body>OTA 2.1.1-beta.2</body>');
-    await writeFile(path.join(assets, 'desktop-ota.json'), JSON.stringify({ releaseVersion: '2.1.1-beta.2', backendVersion: '2.1.1-beta.2' }));
+    await writeFile(path.join(assets, 'desktop-ota.json'), JSON.stringify({ applicationId: 'dev.yuri.desktop', shellApiVersion: 2, releaseVersion: '2.1.1-beta.2', backendVersion: '2.1.1-beta.2' }));
     await mkdir(path.join(assets, 'desktop-backend/server/lib/fs'), { recursive: true });
     await writeFile(path.join(assets, 'desktop-backend/package.json'), JSON.stringify({ type: 'module', version: '2.1.1-beta.2' }));
     await writeFile(path.join(assets, 'desktop-backend/server/lib/fs/routes.js'), 'export const mintOutsideFileGrant = () => "new-backend";');
@@ -35,7 +35,7 @@ test('real Electron relaunch loads downloaded resources through the packaged pro
       import AdmZip from 'adm-zip';
       export async function startWebUiServer() {
         if (typeof AdmZip !== 'function') throw Error('installed dependency unavailable');
-        const server = createServer((req, res) => res.end(JSON.stringify({ openchamberVersion: '2.1.1-beta.2' })));
+        const server = createServer((req, res) => res.end(JSON.stringify({ yuriVersion: '2.1.1-beta.2' })));
         await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
         return { getPort: () => server.address().port, stop: () => new Promise(resolve => server.close(resolve)) };
       }
@@ -46,8 +46,8 @@ test('real Electron relaunch loads downloaded resources through the packaged pro
     const bundleId = checksum.slice(0, 16);
     await writeFile(path.join(root, 'decision.json'), JSON.stringify({ status: 'ok', primaryAction: 'apply_ota',
       native: { state: 'current' }, nextCheckInSec: 3600, ota: { state: 'available', bundle: {
-        bundleId, releaseVersion: '2.1.1-beta.2', url: `https://openchamber-update.vercel.app/ota/bundles/${bundleId}.zip`,
-        size: bytes.length, checksum, minShellApiVersion: 1, minShellReleaseVersion: '2.1.0',
+        bundleId, releaseVersion: '2.1.1-beta.2', url: `https://updates.example.com/ota/bundles/${bundleId}.zip`,
+        size: bytes.length, checksum, minShellApiVersion: 2, minShellReleaseVersion: '2.1.0',
       } } }));
     const require = createRequire(import.meta.url);
     const env = { ...process.env };

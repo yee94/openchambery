@@ -1,6 +1,6 @@
 // Native tray/menu bar controller.
 //
-// Surfaces a glanceable, always-visible view of OpenChamber's live state:
+// Surfaces a glanceable, always-visible view of Yuri's live state:
 //  1. an aggregate activity indicator (idle / busy / error+retry) in the icon
 //     title, rendered as a monochrome template image plus a text counter so it
 //     adapts to light/dark menu bars (colour can't be shown in template mode);
@@ -204,7 +204,7 @@ export const createTrayController = ({
     const approvals = Array.isArray(snapshot.approvals) ? snapshot.approvals : [];
     const header = typeof snapshot.instanceName === 'string' && snapshot.instanceName.trim()
       ? snapshot.instanceName.trim()
-      : 'OpenChamberY';
+      : 'Yuri';
 
     const template = [
       { label: header, enabled: false },
@@ -301,7 +301,7 @@ export const createTrayController = ({
       { type: 'separator' },
       { label: labels.newSession, click: () => onAction({ type: 'new-session' }) },
       { label: labels.newMiniChat, click: () => onAction({ type: 'new-mini-chat' }) },
-      { label: labels.trayShowOpenChamber, click: () => onAction({ type: 'show-main-window' }) },
+      { label: labels.trayShowYuri, click: () => onAction({ type: 'show-main-window' }) },
       { type: 'separator' },
       { label: labels.quit, click: () => onAction({ type: 'quit' }) },
     );

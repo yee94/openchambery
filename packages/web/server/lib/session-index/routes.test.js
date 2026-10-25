@@ -29,19 +29,19 @@ describe('session index routes', () => {
     registerSessionIndexRoutes(app, { sessionIndexService: null });
     const res = response();
 
-    await route('GET', '/api/openchamber/session-index')({}, res);
+    await route('GET', '/api/yuri/session-index')({}, res);
 
     expect(res.statusCode).toBe(501);
     expect(res.body).toMatchObject({ error: expect.stringContaining('unavailable') });
   });
 
-  it('returns an Electron snapshot through the OpenChamber route', async () => {
+  it('returns an Electron snapshot through the Yuri route', async () => {
     const { app, route } = registry();
     const sessionIndexService = { snapshot: () => ({ directories: [{ directory: '/repo', sessions: [] }] }) };
     registerSessionIndexRoutes(app, { sessionIndexService });
     const res = response();
 
-    await route('GET', '/api/openchamber/session-index')({}, res);
+    await route('GET', '/api/yuri/session-index')({}, res);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ available: true, directories: [{ directory: '/repo', sessions: [] }] });
@@ -59,7 +59,7 @@ describe('session index routes', () => {
     const res = response();
     const directories = [{ directory: '/repo', sessions: [], cursor: null, hasMore: false }];
 
-    route('PUT', '/api/openchamber/session-index/snapshot')({ body: { directories } }, res);
+    route('PUT', '/api/yuri/session-index/snapshot')({ body: { directories } }, res);
 
     expect(res.statusCode).toBe(204);
     expect(replaceDirectories).toHaveBeenCalledWith(directories);
@@ -74,7 +74,7 @@ describe('session index routes', () => {
     });
     const res = response();
 
-    route('POST', '/api/openchamber/session-index/sync')({ body: { directories: ['/repo/a', '/repo/b'] } }, res);
+    route('POST', '/api/yuri/session-index/sync')({ body: { directories: ['/repo/a', '/repo/b'] } }, res);
 
     expect(res.statusCode).toBe(202);
     expect(enqueue).toHaveBeenCalledWith(['/repo/a', '/repo/b']);
@@ -88,7 +88,7 @@ describe('session index routes', () => {
       sessionIndexSyncRuntime: { snapshot: () => ({ revision: 2, directories: [] }) },
     });
 
-    expect(route('GET', '/api/openchamber/session-index/changes')).toBeUndefined();
+    expect(route('GET', '/api/yuri/session-index/changes')).toBeUndefined();
   });
 
   it('looks up a session by id for deep links', async () => {
@@ -106,7 +106,7 @@ describe('session index routes', () => {
     });
     const res = response();
 
-    await route('GET', '/api/openchamber/session-index/session/:sessionId')(
+    await route('GET', '/api/yuri/session-index/session/:sessionId')(
       { params: { sessionId: 'ses_abc' } },
       res,
     );
@@ -129,7 +129,7 @@ describe('session index routes', () => {
     });
     const res = response();
 
-    await route('GET', '/api/openchamber/session-index/session/:sessionId')(
+    await route('GET', '/api/yuri/session-index/session/:sessionId')(
       { params: { sessionId: 'ses_missing' } },
       res,
     );
@@ -151,7 +151,7 @@ describe('session index routes', () => {
     });
     const res = response();
 
-    route('POST', '/api/openchamber/session-index/session/:id/pin')(
+    route('POST', '/api/yuri/session-index/session/:id/pin')(
       { params: { id: 'ses_abc' } },
       res,
     );
@@ -174,7 +174,7 @@ describe('session index routes', () => {
     });
     const res = response();
 
-    route('DELETE', '/api/openchamber/session-index/session/:id/pin')(
+    route('DELETE', '/api/yuri/session-index/session/:id/pin')(
       { params: { id: 'ses_abc' } },
       res,
     );
@@ -197,7 +197,7 @@ describe('session index routes', () => {
     });
 
     const pinRes = response();
-    route('POST', '/api/openchamber/session-index/session/:id/pin')(
+    route('POST', '/api/yuri/session-index/session/:id/pin')(
       { params: { id: 'ses_missing' } },
       pinRes,
     );
@@ -205,7 +205,7 @@ describe('session index routes', () => {
     expect(pinRes.body).toMatchObject({ error: 'session_not_found' });
 
     const unpinRes = response();
-    route('DELETE', '/api/openchamber/session-index/session/:id/pin')(
+    route('DELETE', '/api/yuri/session-index/session/:id/pin')(
       { params: { id: 'ses_missing' } },
       unpinRes,
     );

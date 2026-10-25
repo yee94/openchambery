@@ -1,5 +1,5 @@
 /**
- * Compare OpenChamber release versions: `X.Y.Z` or `X.Y.Z-beta.N`.
+ * Compare Yuri release versions: `X.Y.Z` or `X.Y.Z-beta.N`.
  * Optional `v` prefix is ignored. Stable of the same core is newer than any beta.
  */
 

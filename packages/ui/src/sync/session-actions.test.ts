@@ -2068,7 +2068,7 @@ describe("updateSessionTitle live state", () => {
     expect(updateCall?.params.sessionID).toBe("session-a")
     expect(updateCall?.params.title).toBe("New Title")
     const intentCall = replyCalls.find((call) => call.method === "session.update" && call.params.metadata)
-    expect(intentCall?.params.metadata).toMatchObject({ openchamber: { titleAuthority: {
+    expect(intentCall?.params.metadata).toMatchObject({ yuri: { titleAuthority: {
       sessionID: "session-a", title: "New Title", source: "manual", revision: expect.any(String),
     }, titleRefresh: { isGenerating: null, requestedAt: null, lastError: null, failedAt: null } } })
     expect(updateCall?.params.directory).toBe("/test/project")
@@ -2091,7 +2091,7 @@ describe("requestSessionSmartTitle", () => {
       title: "Old Title",
       time: { created: 1, updated: 1 },
       metadata: {
-        openchamber: {
+        yuri: {
           titleRefresh: { lastAutoTitle: "prior", isGenerating: true, requestedAt: 1 },
         },
       },
@@ -2100,7 +2100,7 @@ describe("requestSessionSmartTitle", () => {
       ...oldSession,
       time: { created: 1, updated: 2 },
       metadata: {
-        openchamber: {
+        yuri: {
           titleRefresh: {
             lastAutoTitle: "Old Title",
             requestedAt: 123,
@@ -2124,14 +2124,14 @@ describe("requestSessionSmartTitle", () => {
     expect(updateCall?.params.sessionID).toBe("session-a")
     expect(updateCall?.params.directory).toBe("/test/project")
     expect(updateCall?.params.title).toBe(undefined)
-    expect(updateCall?.params.metadata).toMatchObject({ openchamber: { titleRefresh: {
+    expect(updateCall?.params.metadata).toMatchObject({ yuri: { titleRefresh: {
       isGenerating: null, lastError: null, failedAt: null,
     } } })
     const titleRefresh = (
       updateCall?.params.metadata as {
-        openchamber?: { titleRefresh?: { lastAutoTitle?: string; requestedAt?: number } }
+        yuri?: { titleRefresh?: { lastAutoTitle?: string; requestedAt?: number } }
       }
-    )?.openchamber?.titleRefresh
+    )?.yuri?.titleRefresh
     expect(titleRefresh?.lastAutoTitle).toBe("Old Title")
     expect(typeof titleRefresh?.requestedAt).toBe("number")
     expect(titleRefresh!.requestedAt!).toBeGreaterThanOrEqual(before)

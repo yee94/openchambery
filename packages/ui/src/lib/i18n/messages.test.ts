@@ -41,7 +41,7 @@ describe('i18n dictionaries', () => {
   });
 
   test('uses the organized display label in Chinese settings', () => {
-    const key = 'settings.openchamber.visual.option.chatRenderMode.sorted.label';
+    const key = 'settings.yuri.visual.option.chatRenderMode.sorted.label';
     expect(zhCnDict[key]).toBe('整理后显示');
     expect(zhTwDict[key]).toBe('整理後顯示');
   });

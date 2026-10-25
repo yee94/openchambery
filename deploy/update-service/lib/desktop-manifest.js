@@ -1,4 +1,4 @@
-const GITHUB_RELEASE_DOWNLOAD_BASE = 'https://github.com/yee94/openchamber/releases/latest/download/';
+const GITHUB_RELEASE_DOWNLOAD_BASE = 'https://github.com/yee94/yuri/releases/latest/download/';
 
 /** electron-updater 6 generic feed names used by 2.0.0 and earlier packaged clients. */
 const LEGACY_FEED_UPSTREAM = {

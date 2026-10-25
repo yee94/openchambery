@@ -104,7 +104,7 @@ export const MessageReferenceChip: React.FC<MessageReferenceChipProps> = ({
                 className="inline hover:underline"
                 target="_blank"
                 rel="noopener noreferrer"
-                data-openchamber-agent-mention="true"
+                data-yuri-agent-mention="true"
                 onClick={(event) => event.stopPropagation()}
             >
                 {content}

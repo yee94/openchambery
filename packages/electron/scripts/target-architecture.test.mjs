@@ -27,7 +27,7 @@ test('rejects conflicting architecture inputs', () => {
     () => resolveTargetArchitecture({
       platform: 'linux',
       hostArchitecture: 'x64',
-      environment: { OPENCHAMBER_TARGET_ARCH: 'x64', ELECTRON_BUILDER_ARCH: 'arm64' },
+      environment: { YURI_TARGET_ARCH: 'x64', ELECTRON_BUILDER_ARCH: 'arm64' },
     }),
     /Conflicting target architectures/,
   );
@@ -38,7 +38,7 @@ test('rejects cross-architecture Linux packaging', () => {
     () => resolveTargetArchitecture({
       platform: 'linux',
       hostArchitecture: 'x86_64',
-      environment: { OPENCHAMBER_TARGET_ARCH: 'aarch64' },
+      environment: { YURI_TARGET_ARCH: 'aarch64' },
     }),
     /must be built natively.*host is x64, target is arm64/,
   );
@@ -48,6 +48,6 @@ test('accepts matching native Linux architecture aliases', () => {
   assert.equal(resolveTargetArchitecture({
     platform: 'linux',
     hostArchitecture: 'x64',
-    environment: { OPENCHAMBER_TARGET_ARCH: 'amd64' },
+    environment: { YURI_TARGET_ARCH: 'amd64' },
   }).node, 'x64');
 });

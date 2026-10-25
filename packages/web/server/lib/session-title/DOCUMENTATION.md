@@ -2,7 +2,7 @@
 
 Server-side watcher that regenerates a session's sidebar title from the
 conversation's **main subject** (overall feature / goal) with the small model
-(`lib/small-model`), then PATCHes `title` plus `metadata.openchamber.titleRefresh`.
+(`lib/small-model`), then PATCHes `title` plus `metadata.yuri.titleRefresh`.
 
 OpenCode starts its own initial title through `SessionTitle.generate`.
 This module auto-refreshes sparsely (first user
@@ -15,7 +15,7 @@ throttle (`TITLE_THROTTLE_MS`) when a refresh is armed.
 
 ### OpenCode 2 smart-title boundary
 
-Manual requests arrive as Host `openchamber:session-metadata` writes. The
+Manual requests arrive as Host `yuri:session-metadata` writes. The
 metadata route's committed-write callback explicitly notifies the title runtime;
 it must not rely on OpenCode echoing Host metadata as `session.updated`.
 `session-access.js` owns the production boundary: official client session reads
@@ -92,8 +92,8 @@ extension-only VS Code retains the limitation below.
   3. On fire:
     - Skip when Settings → Chat → session title refresh is off.
     - Skip system-owned sessions whose metadata carries a non-empty
-      `openchamber.assistant.assistantID`, `openchamber.scheduledTask.taskID`,
-      `openchamber.smallModel.purpose`, or `openchamber.llm.purpose`
+      `yuri.assistant.assistantID`, `yuri.scheduledTask.taskID`,
+      `yuri.smallModel.purpose`, or `yuri.llm.purpose`
       (fixed Assistant / scheduled / small-model / LLM gateway titles must not be
       rewritten). Early
       `session.created` and smart-title request extraction skip the same
@@ -107,7 +107,7 @@ extension-only VS Code retains the limitation below.
      placeholder) so OpenCode's first-message title can land first.
    - Skip when `forMessageID` still matches the latest assistant message
      (no new content since the last refresh).
-   - Set `metadata.openchamber.titleRefresh.isGenerating` while the small
+   - Set `metadata.yuri.titleRefresh.isGenerating` while the small
      model call is active so connected clients animate the existing sidebar
      title as a loading state.
     - Call `generateSmallModelText` with a **bounded** transcript — never the
@@ -131,7 +131,7 @@ extension-only VS Code retains the limitation below.
         Restricted to the session's own provider unless the user explicitly
         configured a small model.
 4. Clean the model output to a single short line, then PATCH `title` and
-   `metadata.openchamber.titleRefresh` (`lastAutoTitle`, `forMessageID`,
+   `metadata.yuri.titleRefresh` (`lastAutoTitle`, `forMessageID`,
    `generatedAt`) from a fresh session read so concurrent metadata writes
    are preserved. Transient `requestedAt` and `isGenerating` flags clear
    after the model call finishes.
@@ -139,13 +139,13 @@ extension-only VS Code retains the limitation below.
 ## Sidebar ordering
 
 `message.updated` events for real user messages persist their creation time as
-`metadata.openchamber.titleRefresh.activityUpdatedAt`. Sidebar/global ordering
+`metadata.yuri.titleRefresh.activityUpdatedAt`. Sidebar/global ordering
 uses this user-activity timestamp. Assistant output, tool events, title writes,
 and other session updates keep the existing ordering timestamp unchanged.
 
 ## Settings gate
 
-`sessionTitleRefreshEnabled` in OpenChamber settings (Settings → Chat,
+`sessionTitleRefreshEnabled` in Yuri settings (Settings → Chat,
 default on) controls background title refreshes. Explicit smart-title actions
 still run when background refresh is disabled.
 The gate controls model generation. Title display always follows OpenCode.
@@ -157,9 +157,9 @@ title transcript only after the user explicitly selects that source.
 ## Manual rename contract
 
 OpenCode's `session.title` is the sole display authority, including renames made
-by other clients. OpenChamber writes generated and manual titles through the
+by other clients. Yuri writes generated and manual titles through the
 official `session.update`, then publishes the authoritative fetched session.
-`metadata.openchamber.titleAuthority` stores `{ sessionID, title, revision,
+`metadata.yuri.titleAuthority` stores `{ sessionID, title, revision,
 source }` as a generation revision fence only. Existing records remain readable
 but never override list/detail/event titles or cause background write-back.
 `sessionID` prevents forks inheriting a parent's generation fence.
@@ -193,5 +193,5 @@ same file descriptors. This does not perform image recognition or file parsing.
 - Lives in the web server, so VS Code (extension-only) does not generate
   refreshes; it still receives `session.updated` title changes produced by a
   web/desktop instance of the same OpenCode server.
-- OpenChamber's initial title is an ordinary OpenCode write; a later native
+- Yuri's initial title is an ordinary OpenCode write; a later native
   rename takes precedence rather than being repaired back to the summary.

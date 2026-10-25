@@ -26,7 +26,7 @@ describe.skip('TimelineList new-turn anchor contracts', () => {
 
     test('occupancy is a fixed-size list item after the turn, not a minHeight on it', () => {
         expect(source).toContain('resolveReplyReserveUpdate({');
-        expect(source).toContain('data-oc-reply-reserve="true"');
+        expect(source).toContain('data-yuri-reply-reserve="true"');
         expect(source).toContain("kind: TIMELINE_REPLY_RESERVE_KIND");
         expect(source).toContain('getFixedItemSize={getReplyReserveFixedSize}');
         expect(source).toContain('viewportHeight: viewportHeightRef.current');
@@ -129,8 +129,8 @@ describe.skip('TimelineList new-turn anchor contracts', () => {
     test('the parked edge is the chrome-aware middle window', () => {
         expect(source).toContain('endInsetHeight: footerHeight');
         expect(source).toContain('resolveParkAnchorOffset(headerHeight)');
-        expect(source).toContain('data-oc-timeline-header');
-        expect(source).toContain('data-oc-timeline-footer');
+        expect(source).toContain('data-yuri-timeline-header');
+        expect(source).toContain('data-yuri-timeline-footer');
         expect(source).toContain('writeTimelineParkEndOffset');
         expect(source).toContain('resolveTimelineDistanceFromParkedEnd');
     });

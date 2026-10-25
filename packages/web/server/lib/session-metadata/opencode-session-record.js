@@ -1,9 +1,9 @@
 /**
- * OpenCode session-record ownership for OpenChamber metadata.
+ * OpenCode session-record ownership for Yuri metadata.
  *
  * OpenCode 2.0.15 `PATCH /api/session/:id` (`session.update`) replaces
  * `metadata` wholesale and can set `title`. Archive stays in
- * `metadata.openchamber.archive` on that same record, then projects onto
+ * `metadata.yuri.archive` on that same record, then projects onto
  * `time.archived`. This module is the only place that knows that call.
  *
  * A client whose types do not yet expose `session.update` metadata still goes

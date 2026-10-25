@@ -38,7 +38,7 @@ const catalogError = (res, error) => {
     return;
   }
   res.status(503).json({
-    error: 'OpenChamber could not read the browser provider catalog.',
+    error: 'Yuri could not read the browser provider catalog.',
     code: 'CATALOG_UNAVAILABLE',
   });
 };

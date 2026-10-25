@@ -231,7 +231,7 @@ function toTranscriptData(
 function hasUnconfirmedOptimisticPart(parts: readonly Part[] | undefined): boolean {
   return Boolean(
     parts?.some(
-      (part) => (part as { __openchamberOptimistic?: unknown }).__openchamberOptimistic === true,
+      (part) => (part as { __yuriOptimistic?: unknown }).__yuriOptimistic === true,
     ),
   )
 }

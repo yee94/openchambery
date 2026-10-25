@@ -273,7 +273,7 @@ describe("materializeSessionSnapshots", () => {
       sessionID: "ses_1",
       type: "text",
       text: "我刚发的消息",
-      __openchamberOptimistic: true,
+      __yuriOptimistic: true,
     } as Part
     const slimServer = {
       id: "prt_server",
@@ -307,7 +307,7 @@ describe("materializeSessionSnapshots", () => {
       sessionID: "ses_1",
       type: "text",
       text: "我刚发的消息",
-      __openchamberOptimistic: true,
+      __yuriOptimistic: true,
     } as Part
     const fullServer = part("prt_server", "msg_user", "text", "我刚发的消息")
     const state = {
@@ -333,7 +333,7 @@ describe("materializeSessionSnapshots", () => {
       sessionID: "ses_1",
       type: "text",
       text: "我刚发的消息",
-      __openchamberOptimistic: true,
+      __yuriOptimistic: true,
     } as Part
     const slimServer = {
       id: "prt_server",

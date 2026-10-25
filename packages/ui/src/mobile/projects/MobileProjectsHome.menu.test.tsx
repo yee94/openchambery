@@ -17,8 +17,8 @@ const noop = () => undefined;
 
 const projects: MobileProjectHomeItem[] = [{
   id: 'project-1',
-  name: 'OpenChamber',
-  path: '/code/openchamber',
+  name: 'Yuri',
+  path: '/code/yuri',
   sessionCount: 0,
   expanded: false,
   worktrees: [],
@@ -98,7 +98,7 @@ describe('MobileProjectsHome header menu', () => {
 
     const newProjectItem = findMenuItem('New project');
     expect(newProjectItem).not.toBeNull();
-    expect(newProjectItem!.querySelector('use')?.getAttribute('href')).toBe('#oc-folder');
+    expect(newProjectItem!.querySelector('use')?.getAttribute('href')).toBe('#yuri-folder');
     expect(newProjectItem!.getAttribute('role')).toBe('menuitem');
 
     const newChatItem = findMenuItem('New chat');

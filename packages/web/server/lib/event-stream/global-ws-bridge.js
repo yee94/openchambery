@@ -195,7 +195,7 @@ export function createGlobalMessageStreamWsBridge({
         return;
       }
 
-      sendMessageStreamWsEvent(socket, { type: 'openchamber:heartbeat', timestamp: Date.now() }, {
+      sendMessageStreamWsEvent(socket, { type: 'yuri:heartbeat', timestamp: Date.now() }, {
         directory: 'global',
         reasoningFilter: clientReasoningFilters.get(socket),
       });

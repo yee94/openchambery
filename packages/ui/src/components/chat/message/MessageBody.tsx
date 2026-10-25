@@ -112,7 +112,7 @@ const AssistantAbsoluteTime = ({ messageId, label, focusReveal }: { messageId: s
                 'whitespace-nowrap',
                 focusReveal
                     ? (focused ? 'inline-flex' : 'hidden')
-                    : 'hidden oc-message-hover-time',
+                    : 'hidden yuri-message-hover-time',
             )}
             data-message-time=""
             data-message-time-visible={focusReveal ? (focused ? 'true' : 'false') : undefined}
@@ -890,7 +890,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
         return formatted.length > 0 ? formatted : null;
     }, [locale, messageCreatedAt, timeFormatPreference]);
     const actionsRowClass = cn(
-        'oc-user-actions-hover-scope',
+        'yuri-user-actions-hover-scope',
         isMobile
             ? userActionsMode === 'inline'
                 ? 'flex items-center justify-end pt-2 pb-3'
@@ -971,7 +971,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
                     !isMobile && userActionsMode === 'inline' && 'translate-x-5',
                     alwaysShowActions
                         ? 'pointer-events-auto opacity-100'
-                        : 'pointer-events-none opacity-0 transition-opacity duration-150 oc-message-hover-actions'
+                        : 'pointer-events-none opacity-0 transition-opacity duration-150 yuri-message-hover-actions'
                 )}
                 data-message-action-group="true"
             >
@@ -1104,7 +1104,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
 
     return (
         <div
-            className="relative w-full oc-message-hover-scope"
+            className="relative w-full yuri-message-hover-scope"
             {...messageHoverHandlers}
             data-user-message-body="true"
             style={CONTAIN_LAYOUT_STYLE}
@@ -2441,7 +2441,7 @@ const AssistantMessageBody = React.memo(({
               data-message-text-export-root="true"
               {...messageHoverHandlers}
               className={cn(
-                 'relative w-full oc-message-hover-scope'
+                 'relative w-full yuri-message-hover-scope'
              )}
               style={CONTAIN_LAYOUT_STYLE}
           >

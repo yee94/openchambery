@@ -146,7 +146,7 @@ test('placeholder follows gestures and the global switch removes ASR and restore
     expect(input().placeholder).toBe('chat.dictation.releaseSend');
     await act(async () => { runtime.dictationEnabled = false; render(); });
     expect(input().placeholder).toBe('normal input');
-    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(document.querySelector('.yuri-speech-overlay')).toBeNull();
     expect(host.querySelector('[data-hold-to-talk-empty="true"]')).toBeNull();
     speech.start.mockClear(); speech.renders.mockClear();
     await act(async () => { pointer('pointerdown', 200); vi.advanceTimersByTime(300); });

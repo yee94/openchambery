@@ -84,8 +84,8 @@ test('loaded children reach the sidebar tree and survive live metadata updates w
   expect(aggregateLiveSessions([state]).map((session) => session.id)).toEqual([parent.id]);
   applyDirectoryEvent(state, { type: 'session.created', properties: { info: { ...loadedChild, id: 'ses_unloaded_child' } } });
   expect(roots()[0].children).toHaveLength(10);
-  applyDirectoryEvent(state, { type: 'openchamber:session-metadata', properties: {
-    sessionID: loadedChild.id, metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+  applyDirectoryEvent(state, { type: 'yuri:session-metadata', properties: {
+    sessionID: loadedChild.id, metadata: { yuri: { scheduledTask: { taskID: 'task_1' } } },
   } });
   expect(roots()[0].children).toHaveLength(9);
   expect(roots()[0].children.some((node) => node.session.id === loadedChild.id)).toBe(false);

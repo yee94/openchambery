@@ -1,11 +1,11 @@
-# OpenChamber LLM Gateway
+# Yuri LLM Gateway
 
 OpenAI-shaped Chat Completions for the in-app Assistant contact. This is the
 only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
 
 ## Contract
 
-- `GET /api/openchamber/llm/models` — available `{providerID, modelID}` catalog
+- `GET /api/yuri/llm/models` — available `{providerID, modelID}` catalog
   from official `@opencode/client` `provider.list` + `model.list`
   (`{ location, data }`). `ModelInfo.id` is the external modelID used in
   generate/session refs (`ModelInfo.modelID` is a separate internal field).
@@ -13,7 +13,7 @@ only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
   v2 list `capabilities.input` containing `"image"`, then legacy
   modalities/input/attachment. Catalog loads use a bounded AbortSignal
   (default 8s) so a pending provider call cannot stall a contact lane.
-- `POST /api/openchamber/llm/chat/completions` — `{ model, messages, stream?,
+- `POST /api/yuri/llm/chat/completions` — `{ model, messages, stream?,
   providerID?, modelID?, variant? }` → OpenAI `chat.completion` JSON.
   This **public** gateway is **non-streaming**. `stream: true` is rejected with
   `validation_error` (HTTP 400). Do not emit fake SSE after the fact on this
@@ -36,12 +36,12 @@ call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.
 ### Text path (no vision image bytes)
 
 `session.generate` inside a throwaway session owned by the hidden deny-all
-`openchamber-text` agent (same temp root, same deny-all verification and
+`yuri-text` agent (same temp root, same deny-all verification and
 `session.create` / `session.remove` lifecycle as the attachment path below):
 
-1. Ensure `.opencode/agent/openchamber-text.md` and verify its last catch-all
+1. Ensure `.opencode/agent/yuri-text.md` and verify its last catch-all
    permission rule is deny-all, with only deny rules after it, before creating the session.
-2. `session.create({ location, agent: 'openchamber-text', model, metadata })`.
+2. `session.create({ location, agent: 'yuri-text', model, metadata })`.
 3. `session.generate({ sessionID, prompt })` → `{ text }`. One model call with
    the session's provider context, no tool loop, no messages written. System
    text is prepended into `prompt`.
@@ -60,15 +60,15 @@ bounded window (5s) before failing.
 When the catalog marks the model vision-capable and the request includes image
 data-URL file parts:
 
-1. Ensure the throwaway temp directory agent markdown (`openchamber-llm`,
+1. Ensure the throwaway temp directory agent markdown (`yuri-llm`,
    permissions array ending in `action:* resource:* effect:deny`).
-2. `agent.get({ agentID: 'openchamber-llm', location })` and require the **last catch-all**
+2. `agent.get({ agentID: 'yuri-llm', location })` and require the **last catch-all**
    permissions rule to be deny-all, with only deny rules after it. This accepts
    OpenCode's appended `browser` deny while rejecting trailing allow/ask rules.
    Failure → `llm_attachment_generation_unavailable`
    **before** any `session.prompt`. Title is never treated as permission isolation.
 3. `session.create({ location, agent, model: { id, providerID, variant? },
-   metadata: { openchamber: { llm: { purpose: 'chat-completions' } } } })`
+   metadata: { yuri: { llm: { purpose: 'chat-completions' } } } })`
    (bare session id). Host `persistSessionMetadata` then commits the same
    isolation patch; `onSystemSessionPersisted` drops the throwaway session
    from the sidebar index. Create-time `metadata` is a hint only.
@@ -86,7 +86,7 @@ image bytes. Data URLs are strictly validated; a single attachment is capped at
 20 MiB (plus existing inline text-file limits). An external/temp workspace that
 OpenCode cannot see fails explicitly (`llm_attachment_generation_unavailable`).
 
-`ensureLlmTempDirectory` keeps one process-wide throwaway root (`openchamber-llm-…`).
+`ensureLlmTempDirectory` keeps one process-wide throwaway root (`yuri-llm-…`).
 Concurrent first callers share a single `mkdtemp` inflight; every caller still
 writes/refreshes `.opencode/agent/<name>.md` after settle so a mid-flight ensure
 cannot skip a newer agent body. Concurrent warm refreshes serialize through one
@@ -112,13 +112,13 @@ an empty success. The 502 body includes `{ error, message }`.
 ## Ownership
 
 The hidden generator agent explicitly describes application-owned tool calls:
-it emits `openchamber-tool` JSON for the contact harness to execute and receives
+it emits `yuri-tool` JSON for the contact harness to execute and receives
 the results on subsequent requests. Native OpenCode tool permissions remain
 denied. Capability statements and execution errors must follow the supplied
 application tool catalog and actual results.
 
-The Assistant contact harness owns system prompt, OpenChamber transcript,
-bubble splitting, and OpenChamber API tools (`assign_session`). Those tools
+The Assistant contact harness owns system prompt, Yuri transcript,
+bubble splitting, and Yuri API tools (`assign_session`). Those tools
 deliver through contact **cards**, not this completions payload. The gateway
 stays a text generator: OpenCode coding tools stay denied on both paths via the
 verified agent permissions ruleset.

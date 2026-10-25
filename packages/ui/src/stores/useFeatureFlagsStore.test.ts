@@ -14,12 +14,12 @@ const memoryStorage = (
 
 describe('retired timeline flag', () => {
     test('ignores a persisted Legend opt-in at store initialization', async () => {
-        const getItem = vi.fn((key: string) => key === 'oc:legend-timeline' ? '1' : null);
+        const getItem = vi.fn((key: string) => key === 'yuri:legend-timeline' ? '1' : null);
         vi.stubGlobal('localStorage', { getItem });
         vi.resetModules();
         try {
             const { useFeatureFlagsStore } = await import('./useFeatureFlagsStore');
-            expect(getItem).not.toHaveBeenCalledWith('oc:legend-timeline');
+            expect(getItem).not.toHaveBeenCalledWith('yuri:legend-timeline');
             expect(useFeatureFlagsStore.getState()).not.toHaveProperty('legendTimelineEnabled');
             expect(useFeatureFlagsStore.getState()).not.toHaveProperty('setLegendTimelineEnabled');
             expect(useFeatureFlagsStore.getState().markstreamReactEnabled).toBe(true);
@@ -31,7 +31,7 @@ describe('retired timeline flag', () => {
 });
 
 describe('readMarkstreamReactEnabled', () => {
-    test('Markstream is the default unless oc:markstream-react is exactly 0', () => {
+    test('Markstream is the default unless yuri:markstream-react is exactly 0', () => {
         expect(readMarkstreamReactEnabled(null)).toBe(true);
         expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, null))).toBe(true);
         expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, ''))).toBe(true);

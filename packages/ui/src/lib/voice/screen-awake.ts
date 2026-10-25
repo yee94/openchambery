@@ -2,7 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 
 const screenAwake = registerPlugin<{
     setEnabled(options: { enabled: boolean }): Promise<void>;
-}>('OpenChamberScreenAwake');
+}>('YuriScreenAwake');
 
 let nativeOperations: Promise<void> = Promise.resolve();
 let nativeLeases = 0;
@@ -14,7 +14,7 @@ function setNativeEnabled(enabled: boolean): Promise<void> {
 
 /** Release is idempotent; callers must release even if acquisition completes after unmount. */
 export async function acquireScreenAwake(): Promise<() => Promise<void>> {
-    if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('OpenChamberScreenAwake')) {
+    if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('YuriScreenAwake')) {
         nativeLeases += 1;
         try { await setNativeEnabled(true); }
         catch (error) { nativeLeases -= 1; throw error; }

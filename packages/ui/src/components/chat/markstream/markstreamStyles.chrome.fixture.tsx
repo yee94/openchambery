@@ -41,7 +41,7 @@ const measure = (id: string) => {
     wrap: buttonStyle('toggle-code-wrap'),
     text: card.querySelector('pre code')?.textContent,
     libraryHeaderCount: host.querySelectorAll('.code-block-header, .code-block').length,
-    codeId: host.querySelector('[data-oc-markstream-code-id]')?.getAttribute('data-oc-markstream-code-id'),
+    codeId: host.querySelector('[data-yuri-markstream-code-id]')?.getAttribute('data-yuri-markstream-code-id'),
     width: card.getBoundingClientRect().width,
   };
 };

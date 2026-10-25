@@ -1,7 +1,7 @@
 import { getCatalogProvider } from './catalog.js';
 
 // Mirrors OpenCode's getSmallModel fallback chain over the connected OpenCode
-// catalog, with OpenChamber's own keyword + cheapest-first default when no
+// catalog, with Yuri's own keyword + cheapest-first default when no
 // session/family match applies:
 // 1. `small_model` from the merged config layers ("provider/model").
 // 2. Family-priority / keyword scan of connected providers' catalog models.
@@ -124,7 +124,7 @@ const pickKeywordDefault = (catalog, providerIDs) => {
  * }} input
  */
 export function resolveSmallModel({ catalog, settingsSmallModel, configSmallModel, preferredProviderID, preferredModelID }) {
-  // OpenChamber's own setting (Settings → Sessions → Small Model override)
+  // Yuri's own setting (Settings → Sessions → Small Model override)
   // outranks everything, including the OpenCode config.
   const fromSettings = parseModelRef(settingsSmallModel);
   if (fromSettings) {

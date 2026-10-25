@@ -33,7 +33,7 @@ interface UpdateDialogProps {
   runtimeType?: 'desktop' | 'web' | 'vscode' | 'mobile' | null;
 }
 
-const GITHUB_RELEASES_URL = 'https://github.com/yee94/openchamber/releases';
+const GITHUB_RELEASES_URL = 'https://github.com/yee94/yuri/releases';
 
 type ChangelogSection = {
   version: string;
@@ -124,7 +124,7 @@ const WEB_UPDATE_MAX_WAIT_MS = 10 * 60 * 1000;
 
 async function installWebUpdate(): Promise<InstallWebUpdateResult> {
   try {
-    const response = await runtimeFetch('/api/openchamber/update-install', {
+    const response = await runtimeFetch('/api/yuri/update-install', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -163,7 +163,7 @@ async function waitForUpdateApplied(
 ): Promise<boolean> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await runtimeFetch('/api/openchamber/update-check', {
+      const response = await runtimeFetch('/api/yuri/update-check', {
         method: 'GET',
         headers: { Accept: 'application/json' },
       });
@@ -223,7 +223,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   const showProtocolExternalLink = isMobileRuntime && info?.manualUpdate === true && Boolean(protocolExternalUrl);
   const isInAppMobileOta = isMobileRuntime && info?.inAppApply === true;
   const isManualDesktopUpdate = runtimeType === 'desktop' && info?.manualUpdate === true;
-  const updateCommand = info?.updateCommand || 'openchamber update';
+  const updateCommand = info?.updateCommand || 'yuri update';
 
   const handleDialogOpenChange = useEvent((nextOpen: boolean) => {
     if (!nextOpen && isInAppMobileOta && downloaded) {

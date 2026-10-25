@@ -7,7 +7,7 @@ Owning module for global CSS under `packages/ui/src/styles/`, including touch-mo
 `settings.css` keeps ordinary Settings labels and values side by side, including
 cards at or below 32rem. Selects, numbers, short option groups, and checkboxes
 use a content-sized right column capped at `min(60cqw, 20rem)`; long labels wrap.
-Only explicit `oc-settings-split-row-stacked` editors and collections occupy a
+Only explicit `yuri-settings-split-row-stacked` editors and collections occupy a
 separate full-width line. The card container query must not stack all rows.
 The minimum supported mobile viewport for this layout is 350px. Compact numeric
 controls shrink around adjacent units/reset actions while retaining touch targets.
@@ -17,7 +17,7 @@ See `components/sections/shared/SETTINGS_DESIGN_SPEC.md` for the form contract.
 
 ## Voice color calibration
 
-`design-system.css` owns `.oc-dictation-caret` and its trailing glow, including
+`design-system.css` owns `.yuri-dictation-caret` and its trailing glow, including
 geometry, gradient, keyframes and reduced-motion handling. ChatInput mounts the
 trail only for a current provisional transcript and keys it by text to restart the
 animation on recognition updates; entering recording alone does not animate it.
@@ -35,7 +35,7 @@ The first-prompt establishing draft joins the main chat and hydrating overlay-fo
 
 ## `isMobile` vs `mobile-pointer` (do not confuse)
 
-OpenChamber has **two independent mobile signals**. Layout bugs that "look fine in DevTools inspect but wrong on device" almost always come from mixing them.
+Yuri has **two independent mobile signals**. Layout bugs that "look fine in DevTools inspect but wrong on device" almost always come from mixing them.
 
 | Signal | Source | What it controls |
 |---|---|---|
@@ -94,14 +94,14 @@ Dense UI that intentionally uses sub-36px controls **must opt out**. Tailwind `h
 
 | Surface | Selector | File |
 |---|---|---|
-| Tool expandable rows | `.oc-tool-row[role="button"]` | `mobile.css` |
-| Composer pending changes summary | `button.oc-pending-changes-trigger` (28px minimum height) | `mobile.css` |
-| Tool move-to-background action | `.oc-tool-row button[data-component="session-background-move"]` (content-height, no extra row height) | `mobile.css` |
+| Tool expandable rows | `.yuri-tool-row[role="button"]` | `mobile.css` |
+| Composer pending changes summary | `button.yuri-pending-changes-trigger` (28px minimum height) | `mobile.css` |
+| Tool move-to-background action | `.yuri-tool-row button[data-component="session-background-move"]` (content-height, no extra row height) | `mobile.css` |
 | Composer footer mobile actions | `.composer-mobile-actions button` | `mobile.css` |
 | Composer send + stop controls | `button[data-composer-send="true"]` / `button[data-composer-stop="true"]` | `mobile.css` |
 | Composer agent + model chips | `.composer-mobile-model-controls button` (locked to 26px so the revealed agent name stays vertically centered with the model chip) | `mobile.css` |
 | Message action / footer icons | `[data-message-action-group="true"] button` | `mobile.css` |
-| Composer queued-message chips | `.oc-composer-queue button` / `[role="button"]` | `mobile.css` |
+| Composer queued-message chips | `.yuri-composer-queue button` / `[role="button"]` | `mobile.css` |
 | Conversation quote chips | `[data-composer-quote-list] button` (1.25rem close control) | `mobile.css` |
 | Mobile load-older hint | `button[data-chat-load-older="true"]` | `mobile.css` |
 | Composer attachment thumbs | `[data-attachment-preview="true"] button` | `mobile.css` |
@@ -124,14 +124,14 @@ Then let the component own the real compact size via Tailwind (`h-7 w-3`, etc.).
 
 ### When adding a new dense control cluster
 
-1. Prefer a stable surface class or `data-*` marker on the cluster root (for example `oc-composer-queue`).
+1. Prefer a stable surface class or `data-*` marker on the cluster root (for example `yuri-composer-queue`).
 2. Add an opt-out next to the other exceptions in `mobile.css` — do not only shrink utility classes on the button.
 3. Validate with **`mobile-pointer` present** (real phone or DevTools coarse pointer). Inspect-only desktop pointer is not sufficient.
 4. Do not remove the global 36px rule for ordinary primary actions; only exempt intentional dense clusters.
 
 ## Floating glass (mobile)
 
-Shared classes (`.oc-mobile-floating-surface`, `.oc-mobile-glass-control`, dock, `.oc-composer-autocomplete-surface`, etc.) use translucent fills plus `backdrop-filter` on **all** mobile shells, including Capacitor Android. Do **not** reintroduce an Android-only “opaque fill + no blur” blanket; that is a full-platform downgrade, not progressive enhancement. Composer `/` `@` `#` catalogs on web/Android mobile reuse overlay glass blur inside a body-portaled `fixed inset-0` host (`ComposerAutocompleteLayer`). CSS `bottom` is measured from the layout viewport (`window.innerHeight`), not the visual-viewport bottom — when the IME shrinks `visualViewport`, the latter parks the panel under the keyboard on small Android screens. `.oc-composer-autocomplete-surface` drops the fill to a 22% elevated mix so the frost can read through. iOS WebKit cannot backdrop-filter the transcript from an `absolute` child of the composer card. Rows still use `.oc-composer-autocomplete-row:active` press fill — not a persisted selected slab.
+Shared classes (`.yuri-mobile-floating-surface`, `.yuri-mobile-glass-control`, dock, `.yuri-composer-autocomplete-surface`, etc.) use translucent fills plus `backdrop-filter` on **all** mobile shells, including Capacitor Android. Do **not** reintroduce an Android-only “opaque fill + no blur” blanket; that is a full-platform downgrade, not progressive enhancement. Composer `/` `@` `#` catalogs on web/Android mobile reuse overlay glass blur inside a body-portaled `fixed inset-0` host (`ComposerAutocompleteLayer`). CSS `bottom` is measured from the layout viewport (`window.innerHeight`), not the visual-viewport bottom — when the IME shrinks `visualViewport`, the latter parks the panel under the keyboard on small Android screens. `.yuri-composer-autocomplete-surface` drops the fill to a 22% elevated mix so the frost can read through. iOS WebKit cannot backdrop-filter the transcript from an `absolute` child of the composer card. Rows still use `.yuri-composer-autocomplete-row:active` press fill — not a persisted selected slab.
 
 Legitimate glass fallbacks:
 
@@ -139,15 +139,15 @@ Legitimate glass fallbacks:
 |---|---|
 | `@media (prefers-reduced-transparency: reduce)` | Opaque elevated fill, `backdrop-filter: none` |
 | Unsupported WebView / no filter | Browser ignores `backdrop-filter`; translucent fill + shadow still read as elevation |
-| Settings detail canvas | `.oc-mobile-settings-detail-card` stays transparent (group cards own material) |
+| Settings detail canvas | `.yuri-mobile-settings-detail-card` stays transparent (group cards own material) |
 
 Android System WebView should be Chromium **111+** for `color-mix()` and reliable translucency (`packages/mobile/HANDOFF.md`).
 
-Phone conversation headers (session chat and Assistant) share `--oc-mobile-header-fade` for the overlay/collapsing gradient (`color-mix` of `--surface-background` at 85%). Change that token when the fade strength should shift; do not restyle one surface with a local mix.
+Phone conversation headers (session chat and Assistant) share `--yuri-mobile-header-fade` for the overlay/collapsing gradient (`color-mix` of `--surface-background` at 85%). Change that token when the fade strength should shift; do not restyle one surface with a local mix.
 
 ## Mobile notifications
 
-`sonner.tsx` keeps the desktop toast recipe as its fallback. Mobile-capable web, hosted-mobile, Capacitor, and tablet roots override `--oc-toast-background` / `--oc-toast-shadow` in `mobile.css`; desktop runtimes remain on the desktop recipe. Mobile toasts — including custom/unstyled undo toasts (`data-styled=false`) — use the shared glass-control recipe: `--oc-mobile-glass-fill`, `--oc-mobile-glass-blur`, `--oc-mobile-glass-saturate`, and `--oc-mobile-glass-shadow`. `--oc-toast-shadow` points at that glass shadow because `sonner.tsx` pins `box-shadow` from the token; a separate contact shadow is replaced by the pin. Do not gate the fill or `backdrop-filter` on `[data-styled="true"]`. WebKit will not backdrop-filter through a transformed ancestor or a transformed element, so the toaster is centered with `left` / negative margin instead of Sonner's `translateX(-50%)`, and a mounted front toast rests at `transform: none`. Swipe and removal keep Sonner's transforms. Collapsed rear cards keep the glass fill and a shorter contact shadow; Sonner's native 5% scale / `0.5rem` offset separates the stack. Linear sprite status icons and text-style actions keep the existing 36px touch floor. The undo countdown is an SVG inside `Button`; `index.css` excludes `.oc-undo-countdown-svg` from the button SVG `translateZ(0)` workaround and locks the ring to `--oc-undo-countdown-size`. `.session-mutation-undo-action` opts out of the 36px touch floor. Reduced-transparency mode uses the opaque elevated surface for every toast, not only styled ones.
+`sonner.tsx` keeps the desktop toast recipe as its fallback. Mobile-capable web, hosted-mobile, Capacitor, and tablet roots override `--yuri-toast-background` / `--yuri-toast-shadow` in `mobile.css`; desktop runtimes remain on the desktop recipe. Mobile toasts — including custom/unstyled undo toasts (`data-styled=false`) — use the shared glass-control recipe: `--yuri-mobile-glass-fill`, `--yuri-mobile-glass-blur`, `--yuri-mobile-glass-saturate`, and `--yuri-mobile-glass-shadow`. `--yuri-toast-shadow` points at that glass shadow because `sonner.tsx` pins `box-shadow` from the token; a separate contact shadow is replaced by the pin. Do not gate the fill or `backdrop-filter` on `[data-styled="true"]`. WebKit will not backdrop-filter through a transformed ancestor or a transformed element, so the toaster is centered with `left` / negative margin instead of Sonner's `translateX(-50%)`, and a mounted front toast rests at `transform: none`. Swipe and removal keep Sonner's transforms. Collapsed rear cards keep the glass fill and a shorter contact shadow; Sonner's native 5% scale / `0.5rem` offset separates the stack. Linear sprite status icons and text-style actions keep the existing 36px touch floor. The undo countdown is an SVG inside `Button`; `index.css` excludes `.yuri-undo-countdown-svg` from the button SVG `translateZ(0)` workaround and locks the ring to `--yuri-undo-countdown-size`. `.session-mutation-undo-action` opts out of the 36px touch floor. Reduced-transparency mode uses the opaque elevated surface for every toast, not only styled ones.
 
 ## macOS sidebar and embedded browser
 
@@ -156,14 +156,14 @@ visible: compositing a `<webview>` alongside the translucent vibrancy surface
 can cause sidebar flicker and ghosting. `ContextPanel` derives
 `data-native-browser-visible` from its open state, active browser tab, and native
 browser implementation. The single MainLayout-owned ContextPanel mirrors that
-boolean to `html[data-oc-native-browser-visible]` in a layout effect, changing
+boolean to `html[data-yuri-native-browser-visible]` in a layout effect, changing
 the root only on visibility transitions and removing it on cleanup. CSS uses
 the explicit root marker, never `html:has(descendant)`: that selector caused
 each controlled input edit to invalidate the entire retained DOM (21k elements
 in the typing regression fixture). Closing the panel, switching away from the
 browser tab, or unmounting it restores the usual vibrancy background. Retained hidden browser
 tabs and Relay iframe browsers do not activate this fallback. The rule is gated
-by `data-oc-vibrancy`, so other runtimes keep their existing appearance.
+by `data-yuri-vibrancy`, so other runtimes keep their existing appearance.
 
 `desktopTyping.chrome.test.ts` compiles production CSS and replays controlled
 textarea edits in Chromium, asserting bounded style invalidation and preserved
@@ -178,30 +178,30 @@ Desktop shell edges (left/right sidebars, header/content split, context panel) u
 |---|---|
 | `--layout-chrome-divider-width` | Hairline width (`0.5px`) |
 | `--layout-chrome-divider` | `color-mix` of `--border` at 30% |
-| `.oc-layout-divider-{t,r,b,l}` | Side-specific border using those tokens |
+| `.yuri-layout-divider-{t,r,b,l}` | Side-specific border using those tokens |
 
 Do not reintroduce ad-hoc `border-border/40` / `border-border/50` on layout chrome; change the tokens when the whole family should shift.
 
 ## Segmented selected pill
 
-Shared class `.oc-segmented-selected-pill` in `design-system.css` owns light/dark chrome for selected segments on muted tracks (scheduled Tasks/History, filter chips, `SortableTabsStrip` active-pill). Do not reintroduce `bg-[var(--surface-elevated)] shadow-sm dark:shadow-none` for that pattern — dark themes often collapse elevated into muted, so selection tokens carry contrast.
+Shared class `.yuri-segmented-selected-pill` in `design-system.css` owns light/dark chrome for selected segments on muted tracks (scheduled Tasks/History, filter chips, `SortableTabsStrip` active-pill). Do not reintroduce `bg-[var(--surface-elevated)] shadow-sm dark:shadow-none` for that pattern — dark themes often collapse elevated into muted, so selection tokens carry contrast.
 
 Mobile phone tracks also share:
 
 | Class | Role |
 |---|---|
-| `.oc-mobile-segmented-track` | Outer floating track — shared CSS vars for pad `0.25rem`, gap `0.25rem`, item height `2.5rem` |
-| `.oc-mobile-segmented-group` | Flex group of items (filters) that shares track gap |
-| `.oc-mobile-segmented-item` | Hit target — fixed item height, concentric radius, centered label, press scale |
-| `.oc-mobile-segmented-action` | Trailing control (create +) sized to the same item height / radius |
-| `.oc-segmented-selected-pill` | Selected fill + soft shadow (no border ring) |
+| `.yuri-mobile-segmented-track` | Outer floating track — shared CSS vars for pad `0.25rem`, gap `0.25rem`, item height `2.5rem` |
+| `.yuri-mobile-segmented-group` | Flex group of items (filters) that shares track gap |
+| `.yuri-mobile-segmented-item` | Hit target — fixed item height, concentric radius, centered label, press scale |
+| `.yuri-mobile-segmented-action` | Trailing control (create +) sized to the same item height / radius |
+| `.yuri-segmented-selected-pill` | Selected fill + soft shadow (no border ring) |
 
 Radius family (one source of truth):
 
-- `--oc-mobile-segmented-track-radius` → `var(--oc-mobile-surface-radius)`
-- `--oc-mobile-segmented-item-radius` → `track-radius − pad` (concentric inner corners)
+- `--yuri-mobile-segmented-track-radius` → `var(--yuri-mobile-surface-radius)`
+- `--yuri-mobile-segmented-item-radius` → `track-radius − pad` (concentric inner corners)
 
-Do not hardcode `rounded-[var(--oc-mobile-inset-radius)]` on segmented pills in TSX; let the track CSS vars own both outer and inner radii.
+Do not hardcode `rounded-[var(--yuri-mobile-inset-radius)]` on segmented pills in TSX; let the track CSS vars own both outer and inner radii.
 
 Track total height may differ when a trailing action is present; pad/gap/item height stay identical so selected pills center the same way.
 
@@ -218,15 +218,15 @@ Under `mobile-pointer`, `mobile.css` rewrites generic `.overflow-hidden` to `ove
 | `[data-user-message-bubble="true"]` | Mobile-only radius clip; desktop inline actions use `translate-x-5` and must not be clipped |
 | `[data-user-message-clamp="true"]` | Truncated long user text wrapper; hides sibling file thumbs so they cannot sit under the clamp |
 | `[data-user-message-collapse="true"]` | `line-clamp-10` box with a 10-line max-height so WebKit cannot grow past the clamp |
-| `[data-agent-avatar]` / `[data-assistant-working-avatar] .overflow-hidden` / `.oc-mobile-assistant-avatar .overflow-hidden` | Assistant/agent faces stay clippers; the generic rewrite painted a scrollbar thumb on the 40px circle |
+| `[data-agent-avatar]` / `[data-assistant-working-avatar] .overflow-hidden` / `.yuri-mobile-assistant-avatar .overflow-hidden` | Assistant/agent faces stay clippers; the generic rewrite painted a scrollbar thumb on the 40px circle |
 
 Transcript code/result cards use `overflow-clip`. The compatibility opt-out targets only `[data-component="markdown-code"].overflow-hidden` and `[data-component="generated-json-result"].overflow-hidden`, with both axes set to `clip`. Descendant scroll surfaces retain their own overflow contract. `[data-md-code-body]` uses `overflow-y: hidden`; its wrap-state utility owns X (`auto` for unwrapped code, `hidden` for wrapped code). Legacy `[data-markdown="code-block-body"]` retains `auto/hidden`, and table scroll surfaces remain independent. Markdown loading overlays and the bounded subagent-notification preview also use `overflow-clip`.
 
 The iOS Safari CSS/gesture evidence and its application-level limits are recorded in [ios-overflow-validation.md](./ios-overflow-validation.md).
 
-If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` uses `min-height: min-content`. Its motion viewport and reveal keep popup overflow available. New in-transcript clip shells should prefer Tailwind `overflow-clip` (see LatticeOrb / ProgressiveGroup / decorate code cards) so they never match the rewrite.
+If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.yuri-mobile-composer-surface` uses `min-height: min-content`. Its motion viewport and reveal keep popup overflow available. New in-transcript clip shells should prefer Tailwind `overflow-clip` (see LatticeOrb / ProgressiveGroup / decorate code cards) so they never match the rewrite.
 
-The main chat and hydrating branches attach `.oc-chat-composer-swap-scope` and an overlay Composer foot only while React `isMobile` is true. Draft, empty, history-error, desktop, and disabled surfaces keep the in-flow expanded Composer. In-flow feet pin `--oc-mobile-composer-swap: 0` and hide `.oc-mobile-composer-compact-layer`, because opening a new chat from a session reuses ChatContainer's root node and can leak the session's inline compact swap onto the draft page — the pill then paints "Tap to type" with `pointer-events: none` and the real textarea is gone. Native iOS in-flow feet add `padding-bottom: calc(var(--oc-native-composer-height) - 8px)` so project / branch stay above the pill (overlay pages already reserve that hole via absolute docking). The hook also `clearComposerSwap`s the previous scope when it unmounts or detaches. The Hook publishes `--oc-mobile-composer-swap` plus phase and rest attributes: upward scroll starts tracking immediately (~40px → follow half that only exits the expanded card); finishing ≥0.5 auto-snaps so the compact pill rises, otherwise idle snaps back over 240ms. A brief post-compact settle suppresses return-follow for momentum only; it is not a permanent latch, and snaps are interruptible so repeat cycles keep working. The complete card and queue / changes / todos descend as one expanded layer while an independent 80% glass preview rises from below; the real textarea remains in the expanded layer. Layers are staggered so progress 0.5 never paints both at once. The fixed `--oc-chat-foot-inset: calc(8rem + safe-area)` preserves transcript geometry, and motion uses transforms and opacity without JavaScript measurement or padding mutation. Capacitor iOS primary chat can replace the web textarea/pill with `OpenChamberComposer` (process-owned: conceal immediately on leave, teardown after the remount window, do not rebuild across phone-page remounts); `:root.oc-native-ios-composer` hides those layers and the web scroll-to-bottom controls, keeps swap tracking for fade-only motion, and retargets `--oc-chat-foot-inset` at collapsed `--oc-native-composer-height` plus `--oc-native-composer-accessory` without writing `--oc-chat-foot-inset` from JS. **Both foot-inset declarations live on the root and differ only by `.oc-native-ios-composer`.** The web default used to be scope-qualified (`:root.mobile-pointer:not(.desktop-runtime) .oc-chat-composer-swap-scope`, 0-4-0) while the native override is a plain root-class selector (0-3-0), so the default out-specified it and native iOS silently kept the 8rem web reservation — the transcript reserved less than the pill plus its queued-message accessory actually occupied, and the newest message sat under the queue card. A root declaration also means no consumer resolves an undefined inset when React `isMobile` disagrees with `mobile-pointer`. `mobileComposerOverflow.test.ts` resolves the property through `getComputedStyle` on both class shapes rather than asserting selector text, so a re-qualified selector fails on the value it produces. Changes / TODO / queue stay absolutely docked to the overlay just above the pill (8px settle toward the pill) and fade with `--oc-native-composer-dock` (distance from the live edge; default hidden until published; approaching stays hidden until the true bottom). The queue card hides `data-oc-queue-composer-overlap` and uses matching vertical padding because the native pill no longer covers that tail. Swap rest is not the fade source: a downward reveal can expand the composer hundreds of px from the bottom, and those rows have no background veil. Native scroll-to-bottom stays on the overlay, appears after ~80px of upward travel, and is excluded from published occupancy. Native height is the collapsed pill occupancy (not the keyboard-raised frame) so CSS must not add safe-area again. Keyboard hide still clears leftover `--oc-kb-layout` / `oc-keyboard-open` even while composer FLIP is skipped. A tap on the compact preview restores expansion and focuses the textarea. The compact layer reuses the mobile glass control recipe (`--oc-mobile-glass-fill`, `--oc-mobile-glass-shadow` with its top inset highlight, and glass blur/saturate) shared with the bottom Tab dock and settings search field. Focus, dictation, and native keyboard pin expansion; reduced motion makes snapping immediate, and reduced transparency keeps an opaque elevated fill while preserving the glass shadow.
+The main chat and hydrating branches attach `.yuri-chat-composer-swap-scope` and an overlay Composer foot only while React `isMobile` is true. Draft, empty, history-error, desktop, and disabled surfaces keep the in-flow expanded Composer. In-flow feet pin `--yuri-mobile-composer-swap: 0` and hide `.yuri-mobile-composer-compact-layer`, because opening a new chat from a session reuses ChatContainer's root node and can leak the session's inline compact swap onto the draft page — the pill then paints "Tap to type" with `pointer-events: none` and the real textarea is gone. Native iOS in-flow feet add `padding-bottom: calc(var(--yuri-native-composer-height) - 8px)` so project / branch stay above the pill (overlay pages already reserve that hole via absolute docking). The hook also `clearComposerSwap`s the previous scope when it unmounts or detaches. The Hook publishes `--yuri-mobile-composer-swap` plus phase and rest attributes: upward scroll starts tracking immediately (~40px → follow half that only exits the expanded card); finishing ≥0.5 auto-snaps so the compact pill rises, otherwise idle snaps back over 240ms. A brief post-compact settle suppresses return-follow for momentum only; it is not a permanent latch, and snaps are interruptible so repeat cycles keep working. The complete card and queue / changes / todos descend as one expanded layer while an independent 80% glass preview rises from below; the real textarea remains in the expanded layer. Layers are staggered so progress 0.5 never paints both at once. The fixed `--yuri-chat-foot-inset: calc(8rem + safe-area)` preserves transcript geometry, and motion uses transforms and opacity without JavaScript measurement or padding mutation. Capacitor iOS primary chat can replace the web textarea/pill with `YuriComposer` (process-owned: conceal immediately on leave, teardown after the remount window, do not rebuild across phone-page remounts); `:root.yuri-native-ios-composer` hides those layers and the web scroll-to-bottom controls, keeps swap tracking for fade-only motion, and retargets `--yuri-chat-foot-inset` at collapsed `--yuri-native-composer-height` plus `--yuri-native-composer-accessory` without writing `--yuri-chat-foot-inset` from JS. **Both foot-inset declarations live on the root and differ only by `.yuri-native-ios-composer`.** The web default used to be scope-qualified (`:root.mobile-pointer:not(.desktop-runtime) .yuri-chat-composer-swap-scope`, 0-4-0) while the native override is a plain root-class selector (0-3-0), so the default out-specified it and native iOS silently kept the 8rem web reservation — the transcript reserved less than the pill plus its queued-message accessory actually occupied, and the newest message sat under the queue card. A root declaration also means no consumer resolves an undefined inset when React `isMobile` disagrees with `mobile-pointer`. `mobileComposerOverflow.test.ts` resolves the property through `getComputedStyle` on both class shapes rather than asserting selector text, so a re-qualified selector fails on the value it produces. Changes / TODO / queue stay absolutely docked to the overlay just above the pill (8px settle toward the pill) and fade with `--yuri-native-composer-dock` (distance from the live edge; default hidden until published; approaching stays hidden until the true bottom). The queue card hides `data-yuri-queue-composer-overlap` and uses matching vertical padding because the native pill no longer covers that tail. Swap rest is not the fade source: a downward reveal can expand the composer hundreds of px from the bottom, and those rows have no background veil. Native scroll-to-bottom stays on the overlay, appears after ~80px of upward travel, and is excluded from published occupancy. Native height is the collapsed pill occupancy (not the keyboard-raised frame) so CSS must not add safe-area again. Keyboard hide still clears leftover `--yuri-kb-layout` / `yuri-keyboard-open` even while composer FLIP is skipped. A tap on the compact preview restores expansion and focuses the textarea. The compact layer reuses the mobile glass control recipe (`--yuri-mobile-glass-fill`, `--yuri-mobile-glass-shadow` with its top inset highlight, and glass blur/saturate) shared with the bottom Tab dock and settings search field. Focus, dictation, and native keyboard pin expansion; reduced motion makes snapping immediate, and reduced transparency keeps an opaque elevated fill while preserving the glass shadow.
 
 ## Design pt (`--dpt`)
 
@@ -244,7 +244,7 @@ the preview, and resumes following when the reader scrolls back to the end.
   change stays 0.9; the multiply is what actually moves those phones.
   This lifts Android sizing by about 3.2% from the previous 0.95 cap.
 
-Cache key `openchamber.designPtScale.v8` drops v7 (`0.95` cap).
+Cache key `yuri.designPtScale.v8` drops v7 (`0.95` cap).
 
 `scripts/postcss-dpt-font-size.mjs` rewrites compiled `font-size`,
 `line-height`, and `--text-*` px/rem values to `calc(N * var(--dpt))`.
@@ -268,7 +268,7 @@ Sheet surfaces reserve bottom safe padding by default (`MobileWindowMotionRecipe
 
 | Marker | Owner | Effect |
 |---|---|---|
-| `data-mobile-html-preview="true"` | `MobileFilesSurface` sheet HTML viewer (preview mode only) | Active non-inert `[data-oc-motion-id]:has(...)` zeros `padding-bottom` |
+| `data-mobile-html-preview="true"` | `MobileFilesSurface` sheet HTML viewer (preview mode only) | Active non-inert `[data-yuri-motion-id]:has(...)` zeros `padding-bottom` |
 | `data-mobile-html-fullscreen="true"` | Fullscreen HTML preview portal | Hides home-indicator `body::after` via `:has` |
 
 `body::after` opacity uses structural `:has([data-mobile-overlay-active="true"]:not([inert]) [data-mobile-html-preview="true"])` and `:has([data-mobile-html-fullscreen="true"])` — not a root class toggle — so mode switches and multi-instance close restore automatically. Source mode keeps the default safe pad.
@@ -278,7 +278,7 @@ Sheet surfaces reserve bottom safe padding by default (`MobileWindowMotionRecipe
 - Detection / root classes: `packages/ui/src/lib/device.ts`
 - Design pt scale: `packages/ui/src/lib/designPtScale.ts`
 - Touch CSS: `packages/ui/src/styles/mobile.css`
-- Design-system components: `packages/ui/src/styles/design-system.css` (`.oc-segmented-selected-pill`)
-- Queued message chip layout: `packages/ui/src/components/chat/QueuedMessageChips.tsx` (root class `oc-composer-queue`)
+- Design-system components: `packages/ui/src/styles/design-system.css` (`.yuri-segmented-selected-pill`)
+- Queued message chip layout: `packages/ui/src/components/chat/QueuedMessageChips.tsx` (root class `yuri-composer-queue`)
 - Mobile shell early `isMobile`: `packages/ui/src/apps/renderMobileApp.tsx`
 - HTML preview markers / sheet overscroll: `packages/ui/src/apps/MobileFilesSurface.tsx`, `packages/ui/src/components/ui/iframeSheetOverscroll.ts`

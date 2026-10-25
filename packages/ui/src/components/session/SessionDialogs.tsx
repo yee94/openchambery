@@ -397,7 +397,7 @@ export const SessionDialogs: React.FC = () => {
                         sessionIds: [target.id],
                         message: t('sessions.sidebar.session.archive.success'),
                         undoLabel: t('sessions.sidebar.undo'),
-                        settingsLabel: t('settings.openchamber.archivedSessions.actions.view'),
+                        settingsLabel: t('settings.yuri.archivedSessions.actions.view'),
                         undoFailedMessage: t('sessions.sidebar.session.archive.undoFailed'),
                     });
                 } else {
@@ -446,7 +446,7 @@ export const SessionDialogs: React.FC = () => {
                             ? t('sessions.sidebar.bulkActions.archivedSingle', { count: deletedIds.length })
                             : t('sessions.sidebar.bulkActions.archivedPlural', { count: deletedIds.length }),
                         undoLabel: t('sessions.sidebar.undo'),
-                        settingsLabel: t('settings.openchamber.archivedSessions.actions.view'),
+                        settingsLabel: t('settings.yuri.archivedSessions.actions.view'),
                         undoFailedMessage: deletedIds.length === 1
                             ? t('sessions.sidebar.session.archive.undoFailed')
                             : t('sessions.sidebar.bulkActions.archiveUndoFailed', { count: deletedIds.length }),

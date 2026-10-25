@@ -36,13 +36,13 @@
 /* Keep hover invalidation on chrome leaves. A nested group-hover selector with
    a universal descendant restyles the entire rich transcript on scroll. */
 @media (hover: hover) {
-  .oc-message-hover-scope[data-message-hovered] .oc-message-hover-time {
+  .yuri-message-hover-scope[data-message-hovered] .yuri-message-hover-time {
     display: inline-flex;
   }
 
-  .oc-message-hover-scope[data-message-hovered] .oc-message-hover-actions,
-  .oc-user-actions-hover-scope[data-message-hovered] .oc-message-hover-actions,
-  .oc-user-shell-hover-scope[data-message-hovered] .oc-message-hover-actions {
+  .yuri-message-hover-scope[data-message-hovered] .yuri-message-hover-actions,
+  .yuri-user-actions-hover-scope[data-message-hovered] .yuri-message-hover-actions,
+  .yuri-user-shell-hover-scope[data-message-hovered] .yuri-message-hover-actions {
     pointer-events: auto;
     opacity: 1;
   }
@@ -55,9 +55,9 @@ button,
   -webkit-user-select: none !important;
 }
 
-:root.oc-theme-switching *,
-:root.oc-theme-switching *::before,
-:root.oc-theme-switching *::after {
+:root.yuri-theme-switching *,
+:root.yuri-theme-switching *::before,
+:root.yuri-theme-switching *::after {
   transition: none !important;
   animation: none !important;
 }
@@ -72,58 +72,58 @@ button,
    The window is created transparent with a native 'sidebar' NSVisualEffectView
    behind it. We keep the whole app opaque (bg-background covers the window)
    EXCEPT the left sidebar, which is the only translucent surface that lets the
-   native vibrancy show through. `data-oc-vibrancy` = vibrancy active;
-   `data-oc-vibrancy-ready` = native layer has settled (set from the main
+   native vibrancy show through. `data-yuri-vibrancy` = vibrancy active;
+   `data-yuri-vibrancy-ready` = native layer has settled (set from the main
    process after show/restore) — until then the sidebar stays solid to avoid a
    flash of raw transparency. */
-html[data-oc-vibrancy] body,
-html[data-oc-vibrancy] #root {
+html[data-yuri-vibrancy] body,
+html[data-yuri-vibrancy] #root {
   background: transparent !important;
   background-color: transparent !important;
 }
 
-html[data-oc-vibrancy] .main-content-safe-area {
+html[data-yuri-vibrancy] .main-content-safe-area {
   background: transparent !important;
   background-color: transparent !important;
 }
 
 /* Left sidebar: solid until the native layer is ready, then a translucent
    overlay so the vibrancy frosts through. */
-html[data-oc-vibrancy] .oc-vibrancy-surface {
+html[data-yuri-vibrancy] .yuri-vibrancy-surface {
   background: var(--sidebar) !important;
 }
 
-html[data-oc-vibrancy][data-oc-vibrancy-ready] .oc-vibrancy-surface {
+html[data-yuri-vibrancy][data-yuri-vibrancy-ready] .yuri-vibrancy-surface {
   background: var(--sidebar-vibrancy-overlay) !important;
 }
 
 /* Multi-window native appearance is app-wide; keep each window's own theme opaque. */
-html[data-oc-vibrancy-suppressed] body,
-html[data-oc-vibrancy-suppressed] #root,
-html[data-oc-vibrancy-suppressed] .main-content-safe-area {
+html[data-yuri-vibrancy-suppressed] body,
+html[data-yuri-vibrancy-suppressed] #root,
+html[data-yuri-vibrancy-suppressed] .main-content-safe-area {
   background: var(--surface-background) !important;
 }
 
-html[data-oc-vibrancy][data-oc-vibrancy-suppressed] .oc-vibrancy-surface {
+html[data-yuri-vibrancy][data-yuri-vibrancy-suppressed] .yuri-vibrancy-surface {
   background: var(--sidebar) !important;
 }
 
 /* A visible Electron webview can corrupt the translucent sidebar's native
    composition on macOS. Restore vibrancy when the native browser is hidden. */
-html[data-oc-vibrancy][data-oc-native-browser-visible] .oc-vibrancy-surface {
+html[data-yuri-vibrancy][data-yuri-native-browser-visible] .yuri-vibrancy-surface {
   background: var(--sidebar) !important;
 }
 
 /* Inner bg-sidebar elements inside the vibrant surface must not re-paint an
    opaque fill, or they'd cover the frosted effect. */
-html[data-oc-vibrancy] .oc-vibrancy-surface .bg-sidebar {
+html[data-yuri-vibrancy] .yuri-vibrancy-surface .bg-sidebar {
   background: transparent !important;
   background-color: transparent !important;
 }
 
 /* Project-actions pill over the open sidebar: drop its opaque surface so it
    frosts to the exact same level as the sidebar (border keeps its outline). */
-html[data-oc-vibrancy] .oc-vibrancy-pill {
+html[data-yuri-vibrancy] .yuri-vibrancy-pill {
   background: transparent !important;
   background-color: transparent !important;
 }
@@ -132,7 +132,7 @@ html[data-oc-vibrancy] .oc-vibrancy-pill {
    charcoal / vibrancy surface. Mix toward white from inherited sidebar
    tokens so custom themes keep their hue; do not read --foreground /
    --muted-foreground here (redefining them from themselves would cycle). */
-.dark .oc-session-sidebar {
+.dark .yuri-session-sidebar {
   --foreground: color-mix(in oklch, var(--sidebar-accent-foreground) 42%, white);
   --muted-foreground: color-mix(in oklch, var(--surface-muted-foreground, var(--sidebar-foreground)) 70%, white);
   --surface-foreground: var(--foreground);
@@ -140,14 +140,14 @@ html[data-oc-vibrancy] .oc-vibrancy-pill {
 
 /* Accessibility: drop translucency when the OS asks for reduced transparency. */
 @media (prefers-reduced-transparency: reduce) {
-  html[data-oc-vibrancy] body,
-  html[data-oc-vibrancy] #root,
-  html[data-oc-vibrancy] .main-content-safe-area {
+  html[data-yuri-vibrancy] body,
+  html[data-yuri-vibrancy] #root,
+  html[data-yuri-vibrancy] .main-content-safe-area {
     background: var(--surface-background) !important;
   }
 
-  html[data-oc-vibrancy] .oc-vibrancy-surface,
-  html[data-oc-vibrancy][data-oc-vibrancy-ready] .oc-vibrancy-surface {
+  html[data-yuri-vibrancy] .yuri-vibrancy-surface,
+  html[data-yuri-vibrancy][data-yuri-vibrancy-ready] .yuri-vibrancy-surface {
     background: var(--sidebar) !important;
   }
 }
@@ -193,7 +193,7 @@ textarea[data-chat-input="true"]:focus-visible {
   color: var(--surface-foreground);
 }
 
-.oc-cm-selected-line {
+.yuri-cm-selected-line {
   background: color-mix(in srgb, var(--primary-base) 22%, transparent);
 }
 
@@ -451,7 +451,7 @@ textarea[data-chat-input="true"]:focus-visible {
   }
 }
 
-@keyframes oc-migrate-up {
+@keyframes yuri-migrate-up {
   0% {
     opacity: 1;
     transform: translateY(0);
@@ -483,7 +483,7 @@ textarea[data-chat-input="true"]:focus-visible {
   }
 }
 
-@keyframes oc-file-mention-marquee {
+@keyframes yuri-file-mention-marquee {
   0% {
     transform: translateX(0%);
   }
@@ -510,7 +510,7 @@ textarea[data-chat-input="true"]:focus-visible {
 }
 
 .file-mention-marquee {
-  animation: oc-file-mention-marquee var(--file-mention-marquee-duration, 4s)
+  animation: yuri-file-mention-marquee var(--file-mention-marquee-duration, 4s)
     linear 0.2s 1 both;
   will-change: transform;
 }
@@ -519,8 +519,8 @@ textarea[data-chat-input="true"]:focus-visible {
 /* Remixicon puts fill="currentColor" on root SVG which WebKit renders as background */
 /* Only stroke-sprite roots need fill:none — do NOT blanket all button svg
    (that hides filled custom glyphs like brand marks). */
-button svg.oc-icon,
-[role="button"] svg.oc-icon,
+button svg.yuri-icon,
+[role="button"] svg.yuri-icon,
 button svg.remixicon,
 [role="button"] svg.remixicon {
   background: none !important;
@@ -541,7 +541,7 @@ button svg,
 /* Codex/Lucide thin stroke defaults (matches Icon.tsx ICON_STROKE_WIDTH).
    Pale look comes from text-muted-foreground / currentColor — not SVG opacity
    (folder glyphs must stay fully opaque like Codex). */
-svg.oc-icon {
+svg.yuri-icon {
   stroke: currentColor;
   stroke-width: 1.5;
   stroke-linecap: round;
@@ -550,8 +550,8 @@ svg.oc-icon {
 
 /* GPU acceleration for non-spinning SVGs. Countdown rings own their
    rotation; this rule must not replace it with translateZ(0). */
-button svg:not(.animate-spin):not(.oc-undo-countdown-svg),
-[role="button"] svg:not(.animate-spin):not(.oc-undo-countdown-svg) {
+button svg:not(.animate-spin):not(.yuri-undo-countdown-svg),
+[role="button"] svg:not(.animate-spin):not(.yuri-undo-countdown-svg) {
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
 }
@@ -559,23 +559,23 @@ button svg:not(.animate-spin):not(.oc-undo-countdown-svg),
 /* Undo countdown is an SVG inside Button. Button's size-4 descendant
    rule and the translateZ workaround above otherwise stretch the ring
    out of the toast. The box is locked to the component's size token. */
-.oc-undo-countdown {
-  --oc-undo-countdown-size: 15px;
+.yuri-undo-countdown {
+  --yuri-undo-countdown-size: 15px;
   position: relative;
   display: inline-flex;
-  flex: 0 0 var(--oc-undo-countdown-size) !important;
-  width: var(--oc-undo-countdown-size) !important;
-  height: var(--oc-undo-countdown-size) !important;
-  min-width: var(--oc-undo-countdown-size) !important;
-  min-height: var(--oc-undo-countdown-size) !important;
-  max-width: var(--oc-undo-countdown-size) !important;
-  max-height: var(--oc-undo-countdown-size) !important;
+  flex: 0 0 var(--yuri-undo-countdown-size) !important;
+  width: var(--yuri-undo-countdown-size) !important;
+  height: var(--yuri-undo-countdown-size) !important;
+  min-width: var(--yuri-undo-countdown-size) !important;
+  min-height: var(--yuri-undo-countdown-size) !important;
+  max-width: var(--yuri-undo-countdown-size) !important;
+  max-height: var(--yuri-undo-countdown-size) !important;
   overflow: hidden;
 }
 
-button svg.oc-undo-countdown-svg,
-[role="button"] svg.oc-undo-countdown-svg,
-.oc-undo-countdown-svg {
+button svg.yuri-undo-countdown-svg,
+[role="button"] svg.yuri-undo-countdown-svg,
+.yuri-undo-countdown-svg {
   display: block;
   flex: none !important;
   width: 100% !important;
@@ -588,7 +588,7 @@ button svg.oc-undo-countdown-svg,
   -webkit-transform: rotate(-90deg) !important;
 }
 
-.oc-undo-countdown-digit {
+.yuri-undo-countdown-digit {
   position: absolute;
   inset: 0;
   display: flex;
@@ -603,20 +603,20 @@ button svg.oc-undo-countdown-svg,
 /* Fix SVG elements inside buttons - remove any rect/circle backgrounds */
 /* Stroke icons: only clear decorative rects. Do not force path/circle fills —
    Lucide geometry is stroke-based; solid *-fill glyphs bake their own fill. */
-button svg:not(.oc-agent-avatar) rect,
-[role="button"] svg:not(.oc-agent-avatar) rect {
+button svg:not(.yuri-agent-avatar) rect,
+[role="button"] svg:not(.yuri-agent-avatar) rect {
   fill: none !important;
 }
 
 /* AgentAvatar identicon is rect-based — keep currentColor fills under role=button. */
-button svg.oc-agent-avatar rect,
-[role="button"] svg.oc-agent-avatar rect {
+button svg.yuri-agent-avatar rect,
+[role="button"] svg.yuri-agent-avatar rect {
   fill: currentColor !important;
 }
 
 /* Ensure SVG paths/shapes inherit color properly */
 /* Legacy remixicon-only: keep fill inheritance for any remaining .remixicon roots.
-   oc-icon paths must NOT get fill:currentColor or thin strokes become solid blobs. */
+   yuri-icon paths must NOT get fill:currentColor or thin strokes become solid blobs. */
 button svg.remixicon path,
 button svg.remixicon circle[fill],
 [role="button"] svg.remixicon path,
@@ -626,10 +626,10 @@ button svg.remixicon circle[fill],
 
 /* Solid / brand glyphs bake fill="currentColor" on shapes; restore it under the
    root fill:none !important WebKit workaround above. */
-button svg.oc-icon path[fill],
-button svg.oc-icon circle[fill],
-[role="button"] svg.oc-icon path[fill],
-[role="button"] svg.oc-icon circle[fill] {
+button svg.yuri-icon path[fill],
+button svg.yuri-icon circle[fill],
+[role="button"] svg.yuri-icon path[fill],
+[role="button"] svg.yuri-icon circle[fill] {
   fill: currentColor !important;
 }
 
@@ -708,21 +708,21 @@ svg.animate-spin {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: var(--oc-scrollbar-thumb);
+  background: var(--yuri-scrollbar-thumb);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: var(--oc-scrollbar-thumb-hover);
+  background: var(--yuri-scrollbar-thumb-hover);
   background-clip: padding-box;
 }
 
 .dark {
   color-scheme: dark;
-  --oc-scrollbar-thumb: oklch(0.6 0.02 80 / 0.3);
-  --oc-scrollbar-thumb-hover: oklch(0.6 0.02 80 / 0.5);
+  --yuri-scrollbar-thumb: oklch(0.6 0.02 80 / 0.3);
+  --yuri-scrollbar-thumb-hover: oklch(0.6 0.02 80 / 0.5);
 }
 
 [data-scrollbar="chat"]::-webkit-scrollbar-thumb {
@@ -742,18 +742,18 @@ svg.animate-spin {
 /* Work-status column overlays the transcript. Keep message and composer
    columns clear of it without shrinking the scroller, so the chat scrollbar
    stays on the viewport's right edge. */
-.oc-chat-work-status-inline .chat-column,
-.oc-chat-work-status-inline .chat-message-column,
-.oc-chat-work-status-inline .chat-input-column {
-  max-width: calc(100% - var(--oc-work-status-reserve));
-  margin-left: max(0px, calc((100% - var(--oc-work-status-reserve) - var(--oc-chat-column-max)) / 2));
+.yuri-chat-work-status-inline .chat-column,
+.yuri-chat-work-status-inline .chat-message-column,
+.yuri-chat-work-status-inline .chat-input-column {
+  max-width: calc(100% - var(--yuri-work-status-reserve));
+  margin-left: max(0px, calc((100% - var(--yuri-work-status-reserve) - var(--yuri-chat-column-max)) / 2));
   margin-right: auto;
 }
 
-.wide-chat-layout .oc-chat-work-status-inline .chat-column,
-.wide-chat-layout .oc-chat-work-status-inline .chat-message-column,
-.wide-chat-layout .oc-chat-work-status-inline .chat-input-column {
-  margin-left: max(0px, calc((100% - var(--oc-work-status-reserve) - var(--oc-chat-column-max-wide)) / 2));
+.wide-chat-layout .yuri-chat-work-status-inline .chat-column,
+.wide-chat-layout .yuri-chat-work-status-inline .chat-message-column,
+.wide-chat-layout .yuri-chat-work-status-inline .chat-input-column {
+  margin-left: max(0px, calc((100% - var(--yuri-work-status-reserve) - var(--yuri-chat-column-max-wide)) / 2));
 }
 
 html:not(.dark) .chat-scroll {
@@ -783,7 +783,7 @@ html:not(.dark) .chat-scroll {
 }
 
 [data-scrollbar="chat"]::-webkit-scrollbar-thumb {
-  background: var(--oc-scrollbar-thumb) !important;
+  background: var(--yuri-scrollbar-thumb) !important;
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: padding-box;
@@ -791,20 +791,20 @@ html:not(.dark) .chat-scroll {
 
 [data-scrollbar="chat"].chat-scroll::-webkit-scrollbar-thumb,
 .chat-scroll::-webkit-scrollbar-thumb {
-  background: var(--oc-scrollbar-thumb) !important;
+  background: var(--yuri-scrollbar-thumb) !important;
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 [data-scrollbar="chat"]::-webkit-scrollbar-thumb:hover {
-  background: var(--oc-scrollbar-thumb-hover) !important;
+  background: var(--yuri-scrollbar-thumb-hover) !important;
   background-clip: padding-box;
 }
 
 [data-scrollbar="chat"].chat-scroll::-webkit-scrollbar-thumb:hover,
 .chat-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--oc-scrollbar-thumb-hover) !important;
+  background: var(--yuri-scrollbar-thumb-hover) !important;
   background-clip: padding-box;
 }
 
@@ -832,7 +832,7 @@ html:not(.dark) .chat-scroll {
 /* Firefox scrollbar support */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--oc-scrollbar-thumb) transparent;
+  scrollbar-color: var(--yuri-scrollbar-thumb) transparent;
 }
 
 .scrollbar-hidden {
@@ -868,7 +868,7 @@ html:not(.dark) .chat-scroll {
   pointer-events: auto;
   position: absolute;
   width: 6px;
-  background: var(--oc-scrollbar-thumb);
+  background: var(--yuri-scrollbar-thumb);
   border-radius: 9999px;
   opacity: 0.8;
   transition:
@@ -879,7 +879,7 @@ html:not(.dark) .chat-scroll {
 
 .overlay-scrollbar__thumb:hover,
 .overlay-scrollbar__thumb:active {
-  background: var(--oc-scrollbar-thumb-hover);
+  background: var(--yuri-scrollbar-thumb-hover);
   opacity: 1;
 }
 
@@ -1133,9 +1133,9 @@ html:not(.dark) .chat-scroll {
 /* Markstream wraps blocks in .node-slot, not [data-md-block]. Without this,
    the last paragraph keeps --markdown-paragraph-spacing and the process fold
    / thinking row sit in a false extra gap. */
-.markdown-content.oc-markstream-host .markstream-react > .node-slot:last-of-type p,
-.markdown-content.oc-markstream-host .markstream-react > .node-slot:last-of-type ul,
-.markdown-content.oc-markstream-host .markstream-react > .node-slot:last-of-type ol {
+.markdown-content.yuri-markstream-host .markstream-react > .node-slot:last-of-type p,
+.markdown-content.yuri-markstream-host .markstream-react > .node-slot:last-of-type ul,
+.markdown-content.yuri-markstream-host .markstream-react > .node-slot:last-of-type ol {
   margin-bottom: 0;
 }
 
@@ -1187,12 +1187,12 @@ html:not(.dark) .chat-scroll {
 }
 
 .markdown-content.markdown-reasoning a,
-.markdown-content.markdown-reasoning [data-openchamber-file-link="true"] {
+.markdown-content.markdown-reasoning [data-yuri-file-link="true"] {
   color: var(--surface-muted-foreground) !important;
 }
 
 .markdown-content.markdown-reasoning a:hover,
-.markdown-content.markdown-reasoning [data-openchamber-file-link="true"]:hover {
+.markdown-content.markdown-reasoning [data-yuri-file-link="true"]:hover {
   color: var(--surface-foreground) !important;
 }
 
@@ -1384,7 +1384,7 @@ html:not(.dark) .chat-scroll {
   color: var(--markdown-link-hover, var(--primary));
 }
 
-.markdown-content [data-openchamber-file-link="true"] {
+.markdown-content [data-yuri-file-link="true"] {
   color: var(--markdown-link, var(--primary));
   cursor: pointer;
   text-decoration: underline;
@@ -1393,17 +1393,17 @@ html:not(.dark) .chat-scroll {
   -webkit-user-select: text !important;
 }
 
-.markdown-content [data-openchamber-file-link="true"]:hover {
+.markdown-content [data-yuri-file-link="true"]:hover {
   color: var(--markdown-link-hover, var(--primary));
 }
 
 /* Agent/skill mentions use the primary accent, not the markdown link color */
-.markdown-content a[data-openchamber-agent-mention="true"],
+.markdown-content a[data-yuri-agent-mention="true"],
 .markdown-content a[data-skill-name] {
   color: var(--primary);
 }
 
-.markdown-content a[data-openchamber-agent-mention="true"]:hover,
+.markdown-content a[data-yuri-agent-mention="true"]:hover,
 .markdown-content a[data-skill-name]:hover {
   color: var(--primary);
 }
@@ -1847,7 +1847,7 @@ input[aria-label="Terminal input"] {
     "Courier New", monospace;
 }
 
-@keyframes oc-busy-pulse {
+@keyframes yuri-busy-pulse {
   0%,
   100% {
     opacity: 0.2;
@@ -1858,10 +1858,10 @@ input[aria-label="Terminal input"] {
 }
 
 .animate-busy-pulse {
-  animation: oc-busy-pulse 1.2s ease-in-out infinite;
+  animation: yuri-busy-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes oc-lattice-orb-swell {
+@keyframes yuri-lattice-orb-swell {
   0%,
   100% {
     opacity: 0.16;
@@ -1871,12 +1871,12 @@ input[aria-label="Terminal input"] {
   }
 }
 
-.oc-lattice-orb-dot {
+.yuri-lattice-orb-dot {
   opacity: 0.16;
-  animation: oc-lattice-orb-swell 2.4s ease-in-out infinite;
+  animation: yuri-lattice-orb-swell 2.4s ease-in-out infinite;
 }
 
-@keyframes oc-morph-orb-unfolding {
+@keyframes yuri-morph-orb-unfolding {
   0%,
   5% {
     transform: translate(var(--m-1));
@@ -1898,20 +1898,20 @@ input[aria-label="Terminal input"] {
   }
 }
 
-.oc-morph-orb-glyph {
+.yuri-morph-orb-glyph {
   display: block;
   position: relative;
   overflow: hidden;
   contain: strict;
 }
 
-.oc-morph-orb-stage {
+.yuri-morph-orb-stage {
   position: absolute;
   inset: 0;
   transform: scale(var(--orb-k, 1));
 }
 
-.oc-morph-orb-dot {
+.yuri-morph-orb-dot {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -1921,17 +1921,17 @@ input[aria-label="Terminal input"] {
   border-radius: 50%;
   background: currentColor;
   transform: translate(var(--m-1));
-  animation: oc-morph-orb-unfolding 4.8s cubic-bezier(0.4, 0, 0.2, 1) infinite both;
+  animation: yuri-morph-orb-unfolding 4.8s cubic-bezier(0.4, 0, 0.2, 1) infinite both;
 }
 
-@keyframes oc-summary-flip-out {
+@keyframes yuri-summary-flip-out {
   to {
     transform: translateY(-100%);
     opacity: 0;
   }
 }
 
-@keyframes oc-summary-flip-in {
+@keyframes yuri-summary-flip-in {
   from {
     transform: translateY(100%);
     opacity: 0;
@@ -1942,8 +1942,8 @@ input[aria-label="Terminal input"] {
   }
 }
 
-.oc-summary-flip-viewport,
-.oc-summary-flip-stage {
+.yuri-summary-flip-viewport,
+.yuri-summary-flip-stage {
   /* clip does not create a scroll container; hidden does, and Android paints a thumb. */
   overflow: clip;
   scrollbar-width: none;
@@ -1956,20 +1956,20 @@ input[aria-label="Terminal input"] {
   mask-image: linear-gradient(#000 0 100%);
 }
 
-.oc-summary-flip-out {
-  animation: oc-summary-flip-out 280ms ease-out forwards;
+.yuri-summary-flip-out {
+  animation: yuri-summary-flip-out 280ms ease-out forwards;
 }
 
-.oc-summary-flip-in {
-  animation: oc-summary-flip-in 280ms ease-out forwards;
+.yuri-summary-flip-in {
+  animation: yuri-summary-flip-in 280ms ease-out forwards;
 }
 
 /* Highlight sweep across live status / thinking labels (Delegating…, Thinking…).
    Base stays muted so the sweep is visible; highlight is a plain foreground
-   token. Do not put color-mix in --oc-text-shimmer-base — some Android
+   token. Do not put color-mix in --yuri-text-shimmer-base — some Android
    WebViews drop it, then color:transparent + background-clip:text paints
    nothing. Callers may still override the custom prop. */
-@keyframes oc-text-shimmer {
+@keyframes yuri-text-shimmer {
   0% {
     background-position: 100% 50%;
   }
@@ -1979,20 +1979,20 @@ input[aria-label="Terminal input"] {
 }
 
 .animate-text-shimmer {
-  --oc-text-shimmer-base: var(--surface-muted-foreground);
+  --yuri-text-shimmer-base: var(--surface-muted-foreground);
   background-image: linear-gradient(
     90deg,
-    var(--oc-text-shimmer-base) 0%,
-    var(--oc-text-shimmer-base) 38%,
+    var(--yuri-text-shimmer-base) 0%,
+    var(--yuri-text-shimmer-base) 38%,
     var(--surface-foreground) 50%,
-    var(--oc-text-shimmer-base) 62%,
-    var(--oc-text-shimmer-base) 100%
+    var(--yuri-text-shimmer-base) 62%,
+    var(--yuri-text-shimmer-base) 100%
   );
   background-size: 220% 100%;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent !important;
-  animation: oc-text-shimmer 1.7s linear infinite;
+  animation: yuri-text-shimmer 1.7s linear infinite;
 }
 
 @keyframes navrail-dot-wave {
@@ -2138,28 +2138,28 @@ input[aria-label="Terminal input"] {
 
   .animate-text-shimmer {
     animation: none;
-    color: var(--oc-text-shimmer-base, var(--surface-muted-foreground)) !important;
+    color: var(--yuri-text-shimmer-base, var(--surface-muted-foreground)) !important;
     background-image: none;
   }
 
   .animate-busy-pulse,
-  .oc-lattice-orb-dot,
-  .oc-morph-orb-dot,
-  .oc-summary-flip-out,
-  .oc-summary-flip-in {
+  .yuri-lattice-orb-dot,
+  .yuri-morph-orb-dot,
+  .yuri-summary-flip-out,
+  .yuri-summary-flip-in {
     animation: none;
   }
 
-  .oc-summary-flip-out {
+  .yuri-summary-flip-out {
     display: none;
   }
 
-  .oc-summary-flip-in {
+  .yuri-summary-flip-in {
     transform: none;
     opacity: 1;
   }
 
-  .oc-lattice-orb-dot[data-center="true"] {
+  .yuri-lattice-orb-dot[data-center="true"] {
     opacity: 1;
   }
 
@@ -2202,14 +2202,14 @@ html.desktop-runtime [class*="cursor-pointer"] {
   cursor: default !important;
 }
 /* Chat tool / reasoning rows: keep hand cursor so hover affordance is visible. */
-html.desktop-runtime .oc-tool-row,
-html.desktop-runtime .oc-tool-row[class*="cursor-pointer"] {
+html.desktop-runtime .yuri-tool-row,
+html.desktop-runtime .yuri-tool-row[class*="cursor-pointer"] {
   cursor: pointer !important;
 }
 /* Work-status copy and changes controls stay a hand; static rows stay the arrow. */
-html.desktop-runtime .oc-work-status-action {
+html.desktop-runtime .yuri-work-status-action {
   cursor: pointer !important;
 }
-html.desktop-runtime .markdown-content [data-openchamber-file-link="true"] {
+html.desktop-runtime .markdown-content [data-yuri-file-link="true"] {
   cursor: default;
 }

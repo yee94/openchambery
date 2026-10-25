@@ -59,10 +59,7 @@ import { parseOtaManifest, selectOtaMajor } from '../../deploy/update-service/li
 import { parseReleaseVersion } from '../../deploy/update-service/lib/semver.js'
 import { createHash } from 'node:crypto'
 
-const DEFAULT_BASES = [
-  'https://openchamber-update.vercel.app',
-  'https://openchamber.xiaobe.top',
-]
+const DEFAULT_BASES = []
 
 function parseArgs(argv) {
   const out = {
@@ -95,6 +92,7 @@ function parseArgs(argv) {
       .map((item) => item.trim())
       .filter(Boolean)
     out.bases = fromEnv.length > 0 ? fromEnv : DEFAULT_BASES
+    if (!out.fixturesOnly && out.bases.length < 2) throw new Error('Release blocked: configure both verified Yuri update origins via --base or OTA_DETECTABILITY_BASES')
   }
   return out
 }
@@ -146,7 +144,10 @@ async function probe(base, body) {
   const response = await fetch(`${base}/v1/mobile/update/check`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      applicationId: body.platform === 'desktop' ? 'dev.yuri.desktop' : 'com.yee94.yuri',
+      ...body,
+    }),
   })
   if (!response.ok) throw new Error(`check endpoint failed: ${response.status}`)
   return response.json()
@@ -163,7 +164,7 @@ function buildProfiles(manifest, expectedVersion = version) {
   if (active.releaseVersion !== expectedVersion) {
     throw new Error(`activeBundle.releaseVersion is ${active.releaseVersion}, expected ${expectedVersion}`)
   }
-  const shellApi = Number.isInteger(active.minShellApiVersion) ? active.minShellApiVersion : 1
+  const shellApi = Number.isInteger(active.minShellApiVersion) ? active.minShellApiVersion : 2
   const gate = typeof active.minShellReleaseVersion === 'string' && active.minShellReleaseVersion !== ''
     ? active.minShellReleaseVersion
     : null
@@ -268,7 +269,7 @@ function fixtureAManifest() {
       checksum: '0'.repeat(64),
       rolloutPercent: 100,
       rolloutSalt: 'fixture-a',
-      minShellApiVersion: 1,
+      minShellApiVersion: 2,
       minShellReleaseVersion: '1.18.3-beta.1',
       platforms: {
         ios: { minNativeBuild: 1 },
@@ -288,7 +289,7 @@ function fixtureBManifest() {
       checksum: '0'.repeat(64),
       rolloutPercent: 100,
       rolloutSalt: 'fixture-b',
-      minShellApiVersion: 1,
+      minShellApiVersion: 2,
       // no minShellReleaseVersion — legacy ungated
       platforms: {
         ios: { minNativeBuild: 999 },
@@ -299,7 +300,7 @@ function fixtureBManifest() {
 }
 
 function buildFixtureAProfiles() {
-  const shellApi = 1
+  const shellApi = 2
   const activeVersion = '1.18.3-beta.2'
   return [
     {
@@ -387,7 +388,7 @@ function buildFixtureBProfiles() {
         deviceId: 'fixture-b-old',
         nativeVersion: '1.18.2',
         nativeBuild: 21,
-        shellApiVersion: 1,
+        shellApiVersion: 2,
         currentBundleId: '1.18.2-beta.50',
       },
       expect: 'apply_ota',
@@ -406,7 +407,7 @@ function fixtureCManifest() {
       checksum: '0'.repeat(64),
       rolloutPercent: 100,
       rolloutSalt: 'fixture-c',
-      minShellApiVersion: 1,
+      minShellApiVersion: 2,
       platforms: {
         ios: { minNativeBuild: 1 },
         android: { minNativeBuild: 1 },
@@ -425,7 +426,7 @@ function buildFixtureCProfiles() {
         deviceId: 'fixture-c-rollback',
         nativeVersion: '1.18.4-beta.7',
         nativeBuild: 21,
-        shellApiVersion: 1,
+        shellApiVersion: 2,
         currentBundleId: '1.18.4-beta.7',
       },
       expect: 'apply_ota',
@@ -520,7 +521,7 @@ function assertFixtureTables() {
       checksum: '0'.repeat(64),
       rolloutPercent: 100,
       rolloutSalt: 'fixture-native-stable',
-      minShellApiVersion: 1,
+      minShellApiVersion: 2,
       minShellReleaseVersion: '1.19.14',
       platforms: {
         ios: { minNativeBuild: 1 },
@@ -544,7 +545,7 @@ function assertFixtureTables() {
       checksum: '0'.repeat(64),
       rolloutPercent: 100,
       rolloutSalt: 'fixture-native-beta',
-      minShellApiVersion: 1,
+      minShellApiVersion: 2,
       minShellReleaseVersion: '1.19.13-beta.9',
       platforms: {
         ios: { minNativeBuild: 1 },
@@ -581,9 +582,15 @@ for (const delay of RETRY_DELAYS_MS) {
       const major = parseReleaseVersion(version)?.major
       const manifest = selectOtaMajor(catalog, major)
       if (!manifest) throw new Error(`No release lane for major ${major}`)
+      if (manifest.activeBundle?.applicationId !== 'com.yee94.yuri' || manifest.activeBundle.minShellApiVersion < 2) {
+        throw new Error('Mobile manifest must identify com.yee94.yuri with bridge epoch >= 2')
+      }
       const profiles = buildProfiles(manifest)
       const desktop = manifest.activeBundle?.desktop
       if (!desktop) throw new Error('Shared OTA manifest is missing desktop resources')
+      if (desktop.applicationId !== 'dev.yuri.desktop' || desktop.minShellApiVersion !== 2) {
+        throw new Error('Desktop manifest must identify dev.yuri.desktop with bridge epoch 2')
+      }
       const desktopResponse = await fetch(new URL(desktop.url, base))
       if (!desktopResponse.ok) throw new Error(`Desktop bundle unavailable: ${desktopResponse.status}`)
       const desktopBytes = Buffer.from(await desktopResponse.arrayBuffer())
@@ -591,13 +598,19 @@ for (const delay of RETRY_DELAYS_MS) {
         throw new Error('Desktop bundle checksum/size mismatch')
       }
       const desktopBody = {
-        channel, platform: 'desktop', deviceId: 'ci-desktop-ota', nativeBuild: 1, shellApiVersion: 1,
+        channel, platform: 'desktop', applicationId: 'dev.yuri.desktop', deviceId: 'ci-desktop-ota', nativeBuild: 1, shellApiVersion: 2,
         releaseMajor: major, nativeVersion: desktop.minShellReleaseVersion, currentBundleId: version,
       }
       profiles.push({ name: 'desktop current', body: desktopBody, expect: 'none' })
       profiles.push({ name: 'desktop compatible shell', body: { ...desktopBody, currentBundleId: `${major}.0.0-beta.0` }, expect: 'apply_ota' })
       profiles.push({ name: 'desktop old shell cannot use new web identity to bypass gate',
         body: { ...desktopBody, nativeVersion: versionBelow(desktop.minShellReleaseVersion) }, expect: 'install_native_required' })
+      for (const applicationId of [undefined, 'com.yee94.yuri', 'dev.yuri.desktop.preview']) {
+        profiles.push({ name: `desktop incompatible identity ${applicationId ?? 'missing'}`,
+          body: { ...desktopBody, applicationId }, expect: 'install_native_required' })
+      }
+      profiles.push({ name: 'desktop bridge epoch 1 rejected',
+        body: { ...desktopBody, shellApiVersion: 1 }, expect: 'install_native_required' })
       if (channel === 'stable') {
         const parsedVersion = parseReleaseVersion(version)
         profiles.push({ name: 'desktop beta to stable rollback', body: { ...desktopBody,
@@ -610,7 +623,7 @@ for (const delay of RETRY_DELAYS_MS) {
           body: {
             channel, platform: 'ios', deviceId: 'ci-major-isolation',
             nativeVersion: `${otherMajor}.0.0`, nativeBuild: 21,
-            shellApiVersion: 1, currentBundleId: 'builtin',
+            shellApiVersion: 2, currentBundleId: 'builtin',
           },
         })
       }
@@ -637,6 +650,9 @@ for (const delay of RETRY_DELAYS_MS) {
             lastFailures.push(`${label} ${profile.name}: missing channel rollback flag`)
           } else if (profile.body.platform === 'desktop' && actual === 'apply_ota' && decision.ota?.bundle?.bundleId !== desktop.bundleId) {
             lastFailures.push(`${label} ${profile.name}: incorrect desktop artifact`)
+          } else if (actual === 'apply_ota' && (decision.ota?.bundle?.applicationId !== (profile.body.platform === 'desktop' ? 'dev.yuri.desktop' : 'com.yee94.yuri')
+            || decision.ota.bundle.minShellApiVersion < 2)) {
+            lastFailures.push(`${label} ${profile.name}: incorrect platform identity or bridge epoch`)
           } else if (profile.expect === 'apply_ota' && decision.ota?.bundle?.releaseVersion !== version) {
             lastFailures.push(`${label} ${profile.name}: apply_ota offers ${decision.ota?.bundle?.releaseVersion ?? 'none'}, expected ${version}`)
           } else {

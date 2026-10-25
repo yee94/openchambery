@@ -2,7 +2,7 @@ import type { DeepLinkIntent } from '@/apps/deepLinks';
 import type { NavigationIntent } from './navigationIntent';
 
 /**
- * Map `openchamber://` deep-link intents that have a browser path counterpart
+ * Map `yuri://` deep-link intents that have a browser path counterpart
  * into NavigationIntent for createAppNavigation().applyIntent.
  *
  * Intents that are shell-only (sessions sheet, status panel, open-project draft,

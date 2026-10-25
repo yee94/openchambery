@@ -41,13 +41,13 @@ type TouchGesturePoint = {
 
 const isKeyboardPinned = (): boolean => {
     const root = document.documentElement;
-    return root.classList.contains('oc-keyboard-open')
-        || root.classList.contains('oc-kb-animating');
+    return root.classList.contains('yuri-keyboard-open')
+        || root.classList.contains('yuri-kb-animating');
 };
 
 const isComposerPinned = (scope: HTMLElement): boolean => {
     if (isKeyboardPinned()) return true;
-    if (scope.querySelector('[data-oc-composer-dictation-active="true"]')) return true;
+    if (scope.querySelector('[data-yuri-composer-dictation-active="true"]')) return true;
     if (scope.querySelector('[data-composer-height-snap="full"], [data-mobile-composer-resizing="true"]')) return true;
     const active = document.activeElement;
     return active instanceof HTMLElement
@@ -405,10 +405,10 @@ export const useMobileComposerSwap = (args: {
         if (!enabledRef.current) return;
         const target = event.target;
         if (!(target instanceof Element)) return;
-        const compact = target.closest('[data-oc-composer-compact-surface="true"]');
+        const compact = target.closest('[data-yuri-composer-compact-surface="true"]');
         if (!compact) return;
         if (target.closest('[data-composer-action="true"]')) return;
-        const preview = target.closest('.oc-mobile-composer-compact-preview');
+        const preview = target.closest('.yuri-mobile-composer-compact-preview');
         if (event.type === 'pointerdown' && preview) return;
         if (event.type === 'click' && !preview) return;
         if ('preventDefault' in event) event.preventDefault();
@@ -472,9 +472,9 @@ export const useMobileComposerSwap = (args: {
     useEventListener('click', handleCompactActivate, scopeTarget);
     useEventListener('focusin', syncPin, scopeTarget);
     useEventListener('focusout', syncPin, scopeTarget);
-    useEventListener('oc:keyboard-intent', syncPin, windowTarget);
-    useEventListener('oc:keyboard-anim', syncPin, windowTarget);
-    useEventListener('oc:keyboard-settled', syncPin, windowTarget);
+    useEventListener('yuri:keyboard-intent', syncPin, windowTarget);
+    useEventListener('yuri:keyboard-anim', syncPin, windowTarget);
+    useEventListener('yuri:keyboard-settled', syncPin, windowTarget);
 
     React.useEffect(() => {
         if (!args.enabled) {

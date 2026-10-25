@@ -44,13 +44,13 @@ afterEach(() => {
 describe("downloadDiagnosticsReport", () => {
   test("uses the native save picker on Capacitor and does not copy", async () => {
     const { downloadDiagnosticsReport } = await import("./transcript-diagnostics-runtime")
-    const outcome = await downloadDiagnosticsReport('{"eventCount":1}', "openchamber-diagnostics.json")
+    const outcome = await downloadDiagnosticsReport('{"eventCount":1}', "yuri-diagnostics.json")
     expect(outcome).toBe("saved")
     expect(saveFileCalls).toHaveLength(1)
     expect(saveFileCalls[0]).toEqual({
       dataBase64: btoa('{"eventCount":1}'),
       mimeType: "application/json",
-      filename: "openchamber-diagnostics.json",
+      filename: "yuri-diagnostics.json",
     })
   })
 
@@ -63,7 +63,7 @@ describe("downloadDiagnosticsReport", () => {
   test("sends a large diagnostics payload to the native saver", async () => {
     const content = `{"eventCount":1,"pad":"${"x".repeat(200_000)}"}`
     const { downloadDiagnosticsReport } = await import("./transcript-diagnostics-runtime")
-    expect(await downloadDiagnosticsReport(content, "openchamber-diagnostics.json")).toBe("saved")
+    expect(await downloadDiagnosticsReport(content, "yuri-diagnostics.json")).toBe("saved")
     const payload = saveFileCalls[0] as { dataBase64: string }
     expect(payload.dataBase64.length).toBeGreaterThan(200_000)
   })

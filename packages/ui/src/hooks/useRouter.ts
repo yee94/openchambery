@@ -32,7 +32,7 @@ function isVSCodeContext(): boolean {
 }
 
 /**
- * Hook that provides bidirectional URL routing for OpenChamber.
+ * Hook that provides bidirectional URL routing for Yuri.
  *
  * On mount:
  * - Parses URL parameters and applies them to app state
@@ -43,10 +43,10 @@ function isVSCodeContext(): boolean {
  * - Web: Full bidirectional sync
  * - Desktop: Full bidirectional sync
  * - VS Code: State-only (no URL updates, reads initial params)
- * - Embedded session-chat iframe (`?ocPanel=session-chat`): No URL updates.
+ * - Embedded session-chat iframe (`?yuriPanel=session-chat`): No URL updates.
  *   The iframe's session identity is fixed at mount (the parent builds the
  *   src with `sessionId`); in-place subtask navigation must NOT rewrite the
- *   URL, otherwise `ocPanel` (and `directory`/`readOnly`) get stripped and
+ *   URL, otherwise `yuriPanel` (and `directory`/`readOnly`) get stripped and
  *   `isEmbeddedSessionChat()` starts returning false, breaking subsequent
  *   "Open subtask" clicks.
  */

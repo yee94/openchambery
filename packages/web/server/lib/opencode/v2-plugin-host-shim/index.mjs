@@ -137,7 +137,7 @@ const catalogFor = (ctx) => ({
 })
 
 export default {
-  id: "openchamber-v2-plugin-host-shim",
+  id: "yuri-v2-plugin-host-shim",
   setup: async (ctx) => {
     if (typeof ctx?.catalog?.transform === "function") return
     const patched = { ...ctx, catalog: catalogFor(ctx) }
@@ -148,7 +148,7 @@ export default {
         const mod = await import(pathToFileURL(resolved.entry).href)
         if (typeof mod.default?.setup === "function") await mod.default.setup(patched)
       } catch (error) {
-        console.error(`[openchamber] v2 plugin host shim skipped ${spec}: ${error instanceof Error ? error.message : String(error)}`)
+        console.error(`[yuri] v2 plugin host shim skipped ${spec}: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
   },

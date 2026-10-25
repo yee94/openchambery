@@ -1,4 +1,4 @@
-import { getLatestOpenchamberEventRevision, subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { getLatestYuriEventRevision, subscribeYuriEvents } from '@/lib/yuriEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 
@@ -138,7 +138,7 @@ export class MessageQueueServerError extends Error {
   }
 }
 
-const ROUTE = '/api/openchamber/message-queue';
+const ROUTE = '/api/yuri/message-queue';
 const errorCodes = new Set<MessageQueueServerErrorCode>(['validation_error', 'revision_conflict', 'row_version_conflict', 'idempotency_conflict', 'generation_conflict', 'authority_conflict', 'not_found', 'scope_locked', 'scope_limit', 'reserved', 'internal_error', 'unavailable']);
 const mutationKeys = new Set(['revision', 'scopeID', 'queueItemID', 'rowVersion', 'removedQueueItemID', 'projectDirectory', 'token', 'state', 'scopeCount', 'statusCounts']);
 const scopeDescriptorKeys = new Set(['scopeID', 'revision', 'directory', 'sessionID', 'worktreeState', 'itemCount']);
@@ -348,7 +348,7 @@ export const fetchMessageQueueScope = async (scopeID: string, options: { offset?
 const MESSAGE_QUEUE_SAFETY_TIMEOUT_MS = 15_000;
 /**
  * Wait until a message-queue tip arrives with revision > afterRevision, or the
- * OpenChamber event stream becomes ready, or the signal aborts.
+ * Yuri event stream becomes ready, or the signal aborts.
  *
  * Subscribe first, then read the module-level tip watermark so a tip that
  * landed while no message-queue waiter was attached still resolves as `'tip'`.
@@ -378,8 +378,8 @@ export const waitForMessageQueueInvalidation = (
   };
   const onAbort = () => finish('aborted');
   // Listener first: events after this line reach the waiter; pre-subscribe tips
-  // are recovered via getLatestOpenchamberEventRevision immediately below.
-  const unsubscribe = subscribeOpenchamberEvents((event) => {
+  // are recovered via getLatestYuriEventRevision immediately below.
+  const unsubscribe = subscribeYuriEvents((event) => {
     if (event.type === 'event-stream-ready') {
       finish('ready');
       return;
@@ -389,7 +389,7 @@ export const waitForMessageQueueInvalidation = (
     }
   });
   const safetyTimer = setTimeout(() => finish('timeout'), safetyTimeoutMs);
-  const latest = getLatestOpenchamberEventRevision('message-queue-changed');
+  const latest = getLatestYuriEventRevision('message-queue-changed');
   if (latest !== undefined && latest > afterRevision) {
     finish('tip');
     return;

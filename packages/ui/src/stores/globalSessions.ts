@@ -12,13 +12,13 @@ export type GlobalSessionRecord = Session & {
 };
 
 const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
-const BACKGROUND_SESSION_TITLE = /^\[(?:Scheduled|Assistant|openchamber-llm)\]/;
+const BACKGROUND_SESSION_TITLE = /^\[(?:Scheduled|Assistant|yuri-llm)\]/;
 
 const nonEmptySystemID = (value: unknown): value is string =>
     typeof value === 'string' && value.length > 0;
 
 /**
- * System sessions are isolated by authoritative OpenChamber metadata only.
+ * System sessions are isolated by authoritative Yuri metadata only.
  * Title prefixes are human-facing labels and never participate in this check.
  */
 export const isSystemOwnedSession = (
@@ -26,9 +26,9 @@ export const isSystemOwnedSession = (
 ): boolean => {
     const metadata = session.metadata;
     if (!metadata || typeof metadata !== 'object') return false;
-    const openchamber = (metadata as { openchamber?: unknown }).openchamber;
-    if (!openchamber || typeof openchamber !== 'object') return false;
-    const record = openchamber as {
+    const yuri = (metadata as { yuri?: unknown }).yuri;
+    if (!yuri || typeof yuri !== 'object') return false;
+    const record = yuri as {
         assistant?: { assistantID?: unknown };
         assigned?: { from?: unknown };
         scheduledTask?: { taskID?: unknown };

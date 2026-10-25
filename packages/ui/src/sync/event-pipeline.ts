@@ -151,7 +151,7 @@ type MessageStreamWsFrame = {
   scope?: "global" | "directory"
 }
 
-const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
+const normalizeYuriSessionStatus = (payload: Event): Event | null => {
   const record = payload as unknown as {
     id?: unknown
     type?: unknown
@@ -167,7 +167,7 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
     }
   }
 
-  if (record.type !== "openchamber:session-status") return null
+  if (record.type !== "yuri:session-status") return null
 
   const sessionID = typeof record.properties?.sessionID === "string" && record.properties.sessionID.length > 0
     ? record.properties.sessionID
@@ -200,7 +200,7 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
   return {
     id: typeof record.id === "string" && record.id.length > 0
       ? record.id
-      : `openchamber-status-${sessionID}-${Date.now()}`,
+      : `yuri-status-${sessionID}-${Date.now()}`,
     type: "session.status",
     properties: {
       sessionID,
@@ -214,7 +214,7 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
  * live metadata on session.updated; the server broadcasts the full merged
  * object after a Host write. Pass through as a typed event for reducers.
  */
-const normalizeOpenChamberSessionMetadata = (payload: Event): Event | null => {
+const normalizeYuriSessionMetadata = (payload: Event): Event | null => {
   const record = payload as unknown as {
     id?: unknown
     type?: unknown
@@ -223,7 +223,7 @@ const normalizeOpenChamberSessionMetadata = (payload: Event): Event | null => {
       metadata?: unknown
     }
   }
-  if (record.type !== "openchamber:session-metadata") return null
+  if (record.type !== "yuri:session-metadata") return null
   const sessionID = typeof record.properties?.sessionID === "string" && record.properties.sessionID.length > 0
     ? record.properties.sessionID
     : ""
@@ -232,8 +232,8 @@ const normalizeOpenChamberSessionMetadata = (payload: Event): Event | null => {
   return {
     id: typeof record.id === "string" && record.id.length > 0
       ? record.id
-      : `openchamber-metadata-${sessionID}-${Date.now()}`,
-    type: "openchamber:session-metadata",
+      : `yuri-metadata-${sessionID}-${Date.now()}`,
+    type: "yuri:session-metadata",
     properties: {
       sessionID,
       metadata: metadata as Record<string, unknown>,
@@ -242,7 +242,7 @@ const normalizeOpenChamberSessionMetadata = (payload: Event): Event | null => {
 }
 
 /**
- * Ingress normalization: openchamber synthetic status, then pure OpenCode
+ * Ingress normalization: yuri synthetic status, then pure OpenCode
  * envelope normalizer (legacy properties / current data / durable sync filter /
  * versioned type strip), producing the legacy Event shape for reducers.
  */
@@ -265,31 +265,31 @@ type IngressResult =
 const normalizeIngressEvent = (payload: unknown): IngressResult => {
   if (!payload || typeof payload !== "object") return { status: "unusable" }
 
-  // openchamber:session-status → canonical session.status before general path
-  const openChamber = normalizeOpenChamberSessionStatus(payload as Event)
-  if (openChamber) {
-    const props = openChamber.properties as Record<string, unknown>
+  // yuri:session-status → canonical session.status before general path
+  const yuri = normalizeYuriSessionStatus(payload as Event)
+  if (yuri) {
+    const props = yuri.properties as Record<string, unknown>
     return {
       status: "event",
-      event: openChamber,
+      event: yuri,
       normalized: {
-        id: typeof openChamber.id === "string" ? openChamber.id : undefined,
+        id: typeof yuri.id === "string" ? yuri.id : undefined,
         type: "session.status",
         properties: props,
       },
     }
   }
 
-  // openchamber:session-metadata → Host store full-replace of session.metadata
-  const openChamberMetadata = normalizeOpenChamberSessionMetadata(payload as Event)
-  if (openChamberMetadata) {
-    const props = openChamberMetadata.properties as Record<string, unknown>
+  // yuri:session-metadata → Host store full-replace of session.metadata
+  const yuriMetadata = normalizeYuriSessionMetadata(payload as Event)
+  if (yuriMetadata) {
+    const props = yuriMetadata.properties as Record<string, unknown>
     return {
       status: "event",
-      event: openChamberMetadata,
+      event: yuriMetadata,
       normalized: {
-        id: typeof openChamberMetadata.id === "string" ? openChamberMetadata.id : undefined,
-        type: "openchamber:session-metadata",
+        id: typeof yuriMetadata.id === "string" ? yuriMetadata.id : undefined,
+        type: "yuri:session-metadata",
         properties: props,
       },
     }
@@ -403,7 +403,7 @@ function buildGlobalEventWsUrl(lastEventId?: string): string {
 
 // In relay mode the global-event WebSocket rides the E2EE tunnel instead of a
 // native network socket. The resolver still builds the authenticated URL (it
-// carries the oc_url_token the host replays to the loopback origin); we hand
+// carries the yuri_url_token the host replays to the loopback origin); we hand
 // its path+query to the tunnel, which returns a socket-like with the exact
 // on* handler surface this pipeline uses. Direct-URL runtimes keep the native
 // WebSocket path, wrapped to the same shape so the caller holds one type.
@@ -609,7 +609,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
    * Wait between reconnect attempts. Resolves early when:
    *   - the browser fires `online` (network came back — probe immediately),
    *   - the tab becomes visible (user came back — probe immediately),
-   *   - the OS wakes from sleep (`openchamber:system-resume` — the dead
+   *   - the OS wakes from sleep (`yuri:system-resume` — the dead
    *     connection was already torn down, so probe immediately),
    *   - the pipeline is being torn down (cleanup aborts).
    * Otherwise resolves after `ms` like a plain timer.
@@ -627,7 +627,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       }
       if (typeof globalThis.window !== "undefined") {
         globalThis.window.removeEventListener("online", onInterrupt)
-        globalThis.window.removeEventListener("openchamber:system-resume", onInterrupt)
+        globalThis.window.removeEventListener("yuri:system-resume", onInterrupt)
       }
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibilityInterrupt)
@@ -647,7 +647,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     let timer: ReturnType<typeof setTimeout> | undefined = setTimeout(onInterrupt, ms)
     if (typeof globalThis.window !== "undefined") {
       globalThis.window.addEventListener("online", onInterrupt, { once: true })
-      globalThis.window.addEventListener("openchamber:system-resume", onInterrupt, { once: true })
+      globalThis.window.addEventListener("yuri:system-resume", onInterrupt, { once: true })
     }
     if (typeof document !== "undefined") {
       document.addEventListener("visibilitychange", onVisibilityInterrupt)
@@ -912,7 +912,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
 
   const runWsAttempt = async (signal: AbortSignal) => {
     // A WebSocket upgrade can't carry an Authorization header, so it
-    // authenticates purely via the oc_url_token query param. The sync token
+    // authenticates purely via the yuri_url_token query param. The sync token
     // getter returns "" while the token is unminted or inside its expiry skew
     // window, which would open the socket WITHOUT credentials — the server then
     // rejects it ("HTTP Authentication failed; no valid credentials available")
@@ -1121,7 +1121,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
           : "ws_closed_before_ready"
 
         // Closed before the socket ever opened → the server rejected the
-        // upgrade, typically an auth failure on the oc_url_token. Drop the
+        // upgrade, typically an auth failure on the yuri_url_token. Drop the
         // cached token so the next attempt mints a fresh one instead of
         // replaying a token the server won't accept (which would loop).
         if (!opened) {
@@ -1321,7 +1321,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   // Use globalThis (not window) for the system-resume listener so that
   // test environments can replace globalThis.window with a stub.
   if (typeof globalThis.window !== "undefined") {
-    globalThis.window.addEventListener("openchamber:system-resume", onSystemResume)
+    globalThis.window.addEventListener("yuri:system-resume", onSystemResume)
     globalThis.window.addEventListener("online", onOnline)
     globalThis.window.addEventListener("offline", onOffline)
   }
@@ -1332,7 +1332,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       window.removeEventListener("pageshow", onPageShow)
     }
     if (typeof globalThis.window !== "undefined") {
-      globalThis.window.removeEventListener("openchamber:system-resume", onSystemResume)
+      globalThis.window.removeEventListener("yuri:system-resume", onSystemResume)
       globalThis.window.removeEventListener("online", onOnline)
       globalThis.window.removeEventListener("offline", onOffline)
     }

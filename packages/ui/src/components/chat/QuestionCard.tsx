@@ -62,12 +62,12 @@ export const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
       ? viewport.offsetTop + viewport.height
       : document.documentElement.clientHeight;
     const keyboardInset = Number.parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--oc-kb-scroll-inset'),
+      getComputedStyle(document.documentElement).getPropertyValue('--yuri-kb-scroll-inset'),
     ) || 0;
     const visibleTop = Math.max(scrollerRect.top, viewportTop);
     // Capacitor IME uses resize:none, so visualViewport often stays full-height.
     // Subtract the published IME inset from that viewport. Native chat-scroll
-    // also grows padding-bottom by --oc-kb-scroll-inset on the non-composer
+    // also grows padding-bottom by --yuri-kb-scroll-inset on the non-composer
     // path so there is scroll range to land the field above the keyboard.
     const visibleBottom = Math.min(scrollerRect.bottom, viewportBottom - keyboardInset);
     const availableHeight = Math.max(0, visibleBottom - visibleTop);
@@ -91,12 +91,12 @@ export const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
   React.useEffect(() => {
     const reveal = () => requestAnimationFrame(scrollIntoKeyboardViewport);
     reveal();
-    window.addEventListener('oc:keyboard-settled', reveal);
+    window.addEventListener('yuri:keyboard-settled', reveal);
     window.addEventListener('resize', reveal);
     window.visualViewport?.addEventListener('resize', reveal);
     window.visualViewport?.addEventListener('scroll', reveal);
     return () => {
-      window.removeEventListener('oc:keyboard-settled', reveal);
+      window.removeEventListener('yuri:keyboard-settled', reveal);
       window.removeEventListener('resize', reveal);
       window.visualViewport?.removeEventListener('resize', reveal);
       window.visualViewport?.removeEventListener('scroll', reveal);

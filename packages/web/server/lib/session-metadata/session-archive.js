@@ -1,7 +1,7 @@
 /**
  * Host-owned session archive domain operations.
  *
- * Persists `metadata.openchamber.archive.archivedAt` in the session-metadata
+ * Persists `metadata.yuri.archive.archivedAt` in the session-metadata
  * store, projects full Session records for HTTP/SSE consumers, and schedules
  * bounded index repair after durable metadata commit when SQLite apply fails.
  */
@@ -450,7 +450,7 @@ export const createSessionArchiveService = (deps = {}) => {
 
     const metadata = await sessionMetadataStore.setSessionMetadata(
       sessionID,
-      { openchamber: { archive: { archivedAt } } },
+      { yuri: { archive: { archivedAt } } },
       { allowArchive: true, directory: upstreamDirectory || directoryHint },
     );
 

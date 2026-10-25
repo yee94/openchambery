@@ -32,7 +32,7 @@ test.each([false, true])('btw discovery and Enter/tap open the side conversation
     commandContext={{ sessionID: 'session-a', hasMessages: true, hasNewDraft: false }} />));
   expect(document.body.textContent).toContain('/btw');
   await act(async () => ref.current!.handleKeyDown('Enter'));
-  expect(select).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'btw', source: 'openchamber' }), true);
+  expect(select).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'btw', source: 'yuri' }), true);
   await act(async () => ref.current!.acceptIndex(0, true));
   expect(select).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'btw' }), true);
 });

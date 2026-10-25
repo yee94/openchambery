@@ -354,7 +354,7 @@ describe('new conversation assistant header continuity', () => {
     await renderMessages([userMessage(), interrupted, restart], false);
     expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(1);
     expect(container.querySelector('[data-restart-notice]')?.textContent).toBe('chat.response.continuingAfterRestart');
-    expect(container.querySelector('[data-restart-notice] use')?.getAttribute('href')).toBe('#oc-restart');
+    expect(container.querySelector('[data-restart-notice] use')?.getAttribute('href')).toBe('#yuri-restart');
     expect(container.querySelector('[data-restart-notice] svg')?.getAttribute('class')).not.toContain('--status-');
     expect(container.textContent).not.toContain('Continue from where you left off');
     expect(container.querySelector('[role="alert"]')).not.toBeNull();

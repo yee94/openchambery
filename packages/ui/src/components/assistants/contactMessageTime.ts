@@ -14,7 +14,7 @@ export function getContactTimeSeparators(messages: readonly AssistantContactMess
   for (const message of messages) {
     const visible = message.status === 'error' || message.status === 'failed'
       || message.parts.some((part) => part.type !== 'text'
-        || (part.text.trim() && !part.text.trim().startsWith('oc.settle.')))
+        || (part.text.trim() && !part.text.trim().startsWith('yuri.settle.') && !part.text.trim().startsWith('oc.settle.')))
     if (!visible) continue
     const date = new Date(message.createdAt)
     if (!Number.isFinite(date.getTime())) continue

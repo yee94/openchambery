@@ -31,12 +31,12 @@ describe('feature routes runtime composition', () => {
     expect(source).toMatch(/label: project\.label\.trim\(\)/);
   });
 
-  it('fans contact turn events out on the OpenChamber SSE bus separately from revision tips', async () => {
+  it('fans contact turn events out on the Yuri SSE bus separately from revision tips', async () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
-    expect(source).toMatch(/const broadcastContactTurnEvent = createOpenChamberEventBroadcaster\(/);
+    expect(source).toMatch(/const broadcastContactTurnEvent = createYuriEventBroadcaster\(/);
     expect(source).toMatch(/onContactTurnEvent: \(event\) => broadcastContactTurnEvent\(event\)/);
     expect(source).toMatch(/onContactTurnComplete: \(event\) => notifyContactTurnComplete\?\.\(event\)/);
-    expect(source).toMatch(/onRevisionTip: \(tip\) => broadcastAssistantRevisionTip\(\{\s*type: 'openchamber:assistants-changed'/);
+    expect(source).toMatch(/onRevisionTip: \(tip\) => broadcastAssistantRevisionTip\(\{\s*type: 'yuri:assistants-changed'/);
     // Contact turn envelopes stay off the assistants-changed revision watermark path.
     expect(source).not.toMatch(/onRevisionTip:[\s\S]*contact-turn/);
   });
@@ -83,17 +83,17 @@ describe('feature routes runtime composition', () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toContain("import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';");
     expect(source).toMatch(/registerSessionTurnPageRoutes\(app, \{[\s\S]*buildOpenCodeUrl,[\s\S]*getOpenCodeAuthHeaders,/);
-    // OpenChamber-owned turn-page/reconcile/changes/exact-message registration stays before end of feature composition.
-    expect(source).toContain('// OpenChamber-owned turn-window messages API — must register before generic proxy.');
+    // Yuri-owned turn-page/reconcile/changes/exact-message registration stays before end of feature composition.
+    expect(source).toContain('// Yuri-owned turn-window messages API — must register before generic proxy.');
     const turnIdx = source.indexOf('registerSessionTurnPageRoutes(app,');
     expect(turnIdx).toBeGreaterThan(-1);
     // Exact message + Changes live inside registerSessionTurnPageRoutes (same Host composition Electron reuses).
     const routesSource = await fs.readFile(new URL('../session-turn-pages/routes.js', import.meta.url), 'utf8');
     expect(routesSource).toContain("app.get('/api/session/:sessionID/message/:messageID'");
-    expect(routesSource).toContain("app.get('/api/openchamber/sessions/:sessionID/changes'");
+    expect(routesSource).toContain("app.get('/api/yuri/sessions/:sessionID/changes'");
     const exactIdx = routesSource.indexOf("app.get('/api/session/:sessionID/message/:messageID'");
-    const changesIdx = routesSource.indexOf("app.get('/api/openchamber/sessions/:sessionID/changes'");
-    const messagesIdx = routesSource.indexOf("app.get('/api/openchamber/sessions/:sessionID/messages'");
+    const changesIdx = routesSource.indexOf("app.get('/api/yuri/sessions/:sessionID/changes'");
+    const messagesIdx = routesSource.indexOf("app.get('/api/yuri/sessions/:sessionID/messages'");
     expect(exactIdx).toBeGreaterThan(messagesIdx);
     expect(changesIdx).toBeGreaterThan(exactIdx);
   });
@@ -106,11 +106,11 @@ describe('feature routes runtime composition', () => {
       if (client === brokenClient) throw new Error('closed stream');
     });
     const broadcast = createWorktreeTopologyBroadcaster({
-      getOpenChamberEventClients: () => clients,
+      getYuriEventClients: () => clients,
       writeSseEvent,
     });
 
-    broadcast({ type: 'openchamber:worktree-topology-changed', properties: {} });
+    broadcast({ type: 'yuri:worktree-topology-changed', properties: {} });
 
     expect(clients).toEqual(new Set([healthyClient]));
     expect(writeSseEvent).toHaveBeenCalledTimes(2);

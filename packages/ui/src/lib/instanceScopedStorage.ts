@@ -1,10 +1,11 @@
+import '@/lib/brand-storage-bootstrap';
 import type { PersistStorage, StateStorage, StorageValue } from 'zustand/middleware';
 import { getRuntimeApiBaseUrl, getRuntimeKey } from '@/lib/runtime-switch';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 
 /**
  * Instance-scoped localStorage for data that belongs to one paired device /
- * OpenChamber host, not to a transport.
+ * Yuri host, not to a transport.
  *
  * `runtimeKey` is stable across LAN⇄relay for the same device. Mobile relay
  * instances share `window.location.origin` as the API base URL, so URL-keyed
@@ -17,7 +18,7 @@ import { getSafeStorage } from '@/stores/utils/safeStorage';
  * buckets.
  */
 
-const SCOPE_PREFIX = 'oc.inst.';
+const SCOPE_PREFIX = 'yuri.inst.';
 
 const encodeInstance = (identity: string): string => {
   try {
@@ -37,7 +38,7 @@ const resolveInstanceKey = (runtimeKey?: string): string => {
 
 const readLocalOrigin = (): string => {
   if (typeof window === 'undefined') return '';
-  const value = (window as typeof window & { __OPENCHAMBER_LOCAL_ORIGIN__?: string }).__OPENCHAMBER_LOCAL_ORIGIN__;
+  const value = (window as typeof window & { __YURI_LOCAL_ORIGIN__?: string }).__YURI_LOCAL_ORIGIN__;
   return typeof value === 'string' ? value.trim().replace(/\/+$/, '') : '';
 };
 

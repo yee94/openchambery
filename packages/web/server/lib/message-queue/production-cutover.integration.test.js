@@ -11,7 +11,7 @@ import { createMessageQueueRuntime } from './runtime.js';
 
 const uiRequire = createRequire(new URL('../../../../ui/package.json', import.meta.url));
 const { QueryClient } = uiRequire('@tanstack/react-query');
-const prefix = '/api/openchamber/message-queue';
+const prefix = '/api/yuri/message-queue';
 const fixtures = new Set();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const eventually = async (check, timeout = 2_000) => {

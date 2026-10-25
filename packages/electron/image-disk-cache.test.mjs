@@ -7,7 +7,7 @@ import { createImageDiskCache } from './image-disk-cache.mjs';
 const dirs = [];
 afterEach(async () => { for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true }); });
 async function setup(options = {}) {
-  const directory = await mkdtemp(join(tmpdir(), 'oc-image-cache-'));
+  const directory = await mkdtemp(join(tmpdir(), 'yuri-image-cache-'));
   dirs.push(directory);
   return { directory, cache: createImageDiskCache({ directory, ...options }) };
 }

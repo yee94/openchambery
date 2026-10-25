@@ -62,7 +62,7 @@ describe('contact tool protocol', () => {
   })
 
   it('parses watch_session and stop_session fences', () => {
-    const watchText = '```openchamber-tool\n{"name":"watch_session","arguments":{"sessionID":"ses_w"}}\n```';
+    const watchText = '```yuri-tool\n{"name":"watch_session","arguments":{"sessionID":"ses_w"}}\n```';
     expect(parseContactToolCalls(watchText, [WATCH_SESSION_TOOL_NAME, STOP_SESSION_TOOL_NAME]).toolCalls).toEqual([
       { name: WATCH_SESSION_TOOL_NAME, arguments: { sessionID: 'ses_w' } },
     ]);
@@ -73,7 +73,7 @@ describe('contact tool protocol', () => {
   });
 
   it('parses an assign_session fence and strips it from chat text', () => {
-    const text = 'On it.\n\n```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login","projectPath":"/repo"}}\n```';
+    const text = 'On it.\n\n```yuri-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login","projectPath":"/repo"}}\n```';
     const parsed = parseContactToolCalls(text, [ASSIGN_SESSION_TOOL_NAME]);
     expect(parsed.chatText).toBe('On it.');
     expect(parsed.toolCalls[0]).toEqual({
@@ -85,7 +85,7 @@ describe('contact tool protocol', () => {
 
   it('parses create_assistant and schedule_task fences from natural-language replies', () => {
     const create = parseContactToolCalls(
-      '好。\n\n```openchamber-tool\n{"name":"create_assistant","arguments":{"name":"FlowQA","model":"opencode-go/deepseek-v4-flash"}}\n```',
+      '好。\n\n```yuri-tool\n{"name":"create_assistant","arguments":{"name":"FlowQA","model":"opencode-go/deepseek-v4-flash"}}\n```',
       [CREATE_ASSISTANT_TOOL_NAME, SCHEDULE_TASK_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME],
     );
     expect(create.chatText).toBe('好。');
@@ -94,11 +94,11 @@ describe('contact tool protocol', () => {
       arguments: { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' },
     });
     const schedule = parseContactToolCalls(
-      '```openchamber-tool\n{"name":"schedule_task","arguments":{"name":"Daily ping","prompt":"ping","time":"18:00","timezone":"Asia/Shanghai"}}\n```',
+      '```yuri-tool\n{"name":"schedule_task","arguments":{"name":"Daily ping","prompt":"ping","time":"18:00","timezone":"Asia/Shanghai"}}\n```',
       [CREATE_ASSISTANT_TOOL_NAME, SCHEDULE_TASK_TOOL_NAME],
     );
     const peer = parseContactToolCalls(
-      '```openchamber-tool\n{"name":"message_assistant","arguments":{"to":"PeerQA","text":"hello-from-assistant 写好了"}}\n```',
+      '```yuri-tool\n{"name":"message_assistant","arguments":{"to":"PeerQA","text":"hello-from-assistant 写好了"}}\n```',
       [MESSAGE_ASSISTANT_TOOL_NAME],
     );
     expect(peer.toolCalls[0]).toEqual({
@@ -125,12 +125,12 @@ describe('contact tool protocol', () => {
   });
 
   it('accepts the existing single-call fence without a newline', () => {
-    expect(parseContactToolCalls('```openchamber-tool {"name":"read","arguments":{"path":"sample.md"}}```', ['read']).toolCalls)
+    expect(parseContactToolCalls('```yuri-tool {"name":"read","arguments":{"path":"sample.md"}}```', ['read']).toolCalls)
       .toEqual([{ name: 'read', arguments: { path: 'sample.md' } }]);
   });
 
   it('does not execute tool-shaped JSON inside other protocol or example fences', () => {
-    const text = '```openchamber-final\n{"status":"complete","text":"done","example":{"name":"bash","arguments":{"command":"pwd"}}}\n```';
+    const text = '```yuri-final\n{"status":"complete","text":"done","example":{"name":"bash","arguments":{"command":"pwd"}}}\n```';
     expect(parseContactToolCalls(text, ['bash'])).toEqual({ chatText: text, toolCalls: [] });
   });
 
@@ -154,7 +154,7 @@ describe('contact tool protocol', () => {
       { name: 'bash', arguments: { command: 'date +%F' } },
       { name: 'write', arguments: { path: 'result.md', content: 'done' } },
     ];
-    const text = `Before ${JSON.stringify(calls[0])}\n\n\`\`\`openchamber-tool\n${JSON.stringify(calls[1])}\n\`\`\`\nAfter ${JSON.stringify(calls[2])}`;
+    const text = `Before ${JSON.stringify(calls[0])}\n\n\`\`\`yuri-tool\n${JSON.stringify(calls[1])}\n\`\`\`\nAfter ${JSON.stringify(calls[2])}`;
     const result = parseContactToolCalls(text, ['read', 'bash', 'write']);
     expect(result.toolCalls).toEqual(calls);
     expect(result.chatText).toContain('Before');
@@ -168,7 +168,7 @@ describe('contact tool protocol', () => {
       { name: 'write', arguments: { path: 'note.md', content: '```json\n{"quoted": "value"}\n```' } },
       { name: 'read', arguments: { path: 'note.md' } },
     ];
-    const text = calls.map((call) => `\`\`\`openchamber-tool\n${JSON.stringify(call)}\n\`\`\``).join('\n');
+    const text = calls.map((call) => `\`\`\`yuri-tool\n${JSON.stringify(call)}\n\`\`\``).join('\n');
     expect(parseContactToolCalls(text, ['read', 'write'])).toEqual({ chatText: '', toolCalls: calls });
   });
 
@@ -177,7 +177,7 @@ describe('contact tool protocol', () => {
       { name: 'read', arguments: { path: 'notes/sample.md' } },
       { name: 'bash', arguments: { command: 'date +%F' } },
     ];
-    const text = calls.map((call) => `\`\`\`openchamber-tool\n${JSON.stringify(call)}\n\`\`\``).join('\n\n');
+    const text = calls.map((call) => `\`\`\`yuri-tool\n${JSON.stringify(call)}\n\`\`\``).join('\n\n');
     expect(parseContactToolCalls(text, ['read', 'bash'])).toEqual({ chatText: '', toolCalls: calls });
   });
 
@@ -187,14 +187,14 @@ describe('contact tool protocol', () => {
     '{"name":"read","arguments":[]}',
     '',
   ])('rejects the complete batch when an explicit tool fence is invalid: %s', (invalid) => {
-    const valid = '\`\`\`openchamber-tool\n{"name":"read","arguments":{"path":"sample.md"}}\n\`\`\`';
-    const result = parseContactToolCalls(`${valid}\n\`\`\`openchamber-tool\n${invalid}\n\`\`\``, ['read']);
+    const valid = '\`\`\`yuri-tool\n{"name":"read","arguments":{"path":"sample.md"}}\n\`\`\`';
+    const result = parseContactToolCalls(`${valid}\n\`\`\`yuri-tool\n${invalid}\n\`\`\``, ['read']);
     expect(result.toolCalls).toEqual([]);
     expect(result.protocolError).toEqual(expect.any(String));
   });
 
   it('rejects a truncated explicit tool fence without executing an earlier call', () => {
-    const result = parseContactToolCalls('{"name":"read","arguments":{"path":"sample.md"}}\n\`\`\`openchamber-tool\n{"name":"read"', ['read']);
+    const result = parseContactToolCalls('{"name":"read","arguments":{"path":"sample.md"}}\n\`\`\`yuri-tool\n{"name":"read"', ['read']);
     expect(result.toolCalls).toEqual([]);
     expect(result.protocolError).toEqual(expect.any(String));
   });
@@ -256,7 +256,7 @@ describe('contact tool protocol', () => {
     expect(detectRequestedContactTools('delete chat history', tools)).toEqual([CLEAR_CHAT_HISTORY_TOOL_NAME]);
     expect(detectRequestedContactTools('不要清除聊天记录', tools)).toEqual([]);
     expect(detectRequestedContactTools('do not clear chat history', tools)).toEqual([]);
-    expect(detectRequestedContactTools('找项目 openchamber yee', tools)).toEqual([LIST_PROJECTS_TOOL_NAME]);
+    expect(detectRequestedContactTools('找项目 yuri yee', tools)).toEqual([LIST_PROJECTS_TOOL_NAME]);
     expect(detectRequestedContactTools('看看现有对话', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
     expect(detectRequestedContactTools('list sessions in that project', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
     expect(detectRequestedContactTools('看看我的默认提示词', tools)).toEqual([GET_ASSISTANT_SETTINGS_TOOL_NAME]);
@@ -275,13 +275,13 @@ describe('contact tool protocol', () => {
   });
 
   it('parses bash fences when the pi coding tools are allowed', () => {
-    const text = '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```';
+    const text = '```yuri-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```';
     expect(parseContactToolCalls(text, ['bash', ASSIGN_SESSION_TOOL_NAME]).toolCalls[0]).toEqual({
       name: 'bash',
       arguments: { command: 'pwd' },
     });
     expect(parseContactToolCalls(
-      '```openchamber-tool\n{"name":"glob","arguments":{"pattern":"*"}}\n```',
+      '```yuri-tool\n{"name":"glob","arguments":{"pattern":"*"}}\n```',
       ['glob', 'bash'],
     ).toolCalls).toEqual([]);
   });
@@ -323,7 +323,7 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('已创建');
     expect(prompt).toContain('Never claim you cannot see projects');
     expect(prompt).toContain('One successful assign ends this turn');
-    expect(prompt).toContain('application-owned OpenChamber contact tools');
+    expect(prompt).toContain('application-owned Yuri contact tools');
     expect(prompt).toContain('arguments schema:');
     expect(prompt).toContain('"prompt"');
     expect(prompt).toContain('"projectPath"');
@@ -361,15 +361,15 @@ describe('contact tool protocol', () => {
     );
   });
 
-  it('fuzzy-matches project labels like openchamber yee / openchamer yee', () => {
-    const project = { id: 'p1', path: '/Users/me/Code/sample-app', label: 'OpenChamber Yee' };
-    expect(matchesProjectQuery(project, 'openchamber yee')).toBe(true);
-    expect(matchesProjectQuery(project, 'openchamer yee')).toBe(true);
+  it('fuzzy-matches project labels like yuri yee / yurii yee', () => {
+    const project = { id: 'p1', path: '/Users/me/Code/sample-app', label: 'Yuri Yee' };
+    expect(matchesProjectQuery(project, 'yuri yee')).toBe(true);
+    expect(matchesProjectQuery(project, 'yurii yee')).toBe(true);
     expect(matchesProjectQuery(project, 'missing')).toBe(false);
-    expect(filterRegisteredProjects([project, { id: 'p2', path: '/other' }], 'openchamber')).toEqual([
-      { id: 'p1', path: '/Users/me/Code/sample-app', label: 'OpenChamber Yee' },
+    expect(filterRegisteredProjects([project, { id: 'p2', path: '/other' }], 'yuri')).toEqual([
+      { id: 'p1', path: '/Users/me/Code/sample-app', label: 'Yuri Yee' },
     ]);
-    expect(formatRegisteredProjectsPrompt([project])).toContain('OpenChamber Yee');
+    expect(formatRegisteredProjectsPrompt([project])).toContain('Yuri Yee');
     expect(formatRegisteredProjectsPrompt([project])).toContain('never say you cannot see registered projects');
     expect(formatRegisteredProjectsPrompt([])).toContain('none');
   });
@@ -755,7 +755,7 @@ describe('createContactTools', () => {
   it('lists projects and sessions and surfaces list_sessions failure', async () => {
     const tools = createContactTools({
       listProjects: async () => [
-        { id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' },
+        { id: 'proj_yee', path: '/repo/sample-app', label: 'Yuri Yee' },
         { id: 'proj_other', path: '/repo/other', label: 'Other' },
       ],
       listSessions: async () => ({
@@ -766,10 +766,10 @@ describe('createContactTools', () => {
       }),
     });
     const listed = await tools.find((tool) => tool.name === LIST_PROJECTS_TOOL_NAME).execute('call_p', {
-      query: 'openchamer yee',
+      query: 'yurii yee',
     });
     expect(listed.details.projects).toEqual([
-      { id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' },
+      { id: 'proj_yee', path: '/repo/sample-app', label: 'Yuri Yee' },
     ]);
     const sessions = await tools.find((tool) => tool.name === LIST_SESSIONS_TOOL_NAME).execute('call_s', {
       projectPath: '/repo/sample-app',

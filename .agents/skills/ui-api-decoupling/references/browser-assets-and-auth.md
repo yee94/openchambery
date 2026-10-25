@@ -20,9 +20,9 @@ Do not prebuild a browser URL and then immediately call `runtimeFetch` with it. 
 
 ## URL Tokens
 
-Browser-owned URLs cannot attach the normal `Authorization` header. Use short-lived scoped `oc_url_token` minted through runtime auth helpers.
+Browser-owned URLs cannot attach the normal `Authorization` header. Use short-lived scoped `yuri_url_token` minted through runtime auth helpers.
 
-- Never manually append `oc_url_token`.
+- Never manually append `yuri_url_token`.
 - Never place a long-lived client bearer token in a URL.
 - Treat `oc_client_token` query use as legacy stripping/rejection only.
 - Add browser-readable GET or realtime paths to the narrow allowlist in `packages/web/server/lib/ui-auth/ui-auth.js`.

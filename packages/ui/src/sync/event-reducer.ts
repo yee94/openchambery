@@ -440,7 +440,7 @@ export function applyDirectoryEvent(
     // Do not create rows when the session is absent. A later isolation patch
     // (scheduled-task / assistant / llm) must hide the row the same way
     // session.updated does — otherwise a create-before-persist race stays visible.
-    case "openchamber:session-metadata": {
+    case "yuri:session-metadata": {
       const props = event.properties as { sessionID?: string; metadata?: Session["metadata"] }
       const sessionID = typeof props.sessionID === "string" ? props.sessionID : ""
       if (!sessionID || props.metadata === undefined) return false

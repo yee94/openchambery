@@ -15,8 +15,8 @@ vi.mock('@/lib/runtime-switch', () => ({
 }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: state.fetch }));
 vi.mock('@/lib/queryRuntime', () => ({ get queryClient() { return state.client; } }));
-vi.mock('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: (listener: (event: { type: string }) => void) => {
+vi.mock('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: (listener: (event: { type: string }) => void) => {
     state.listeners.add(listener);
     return () => state.listeners.delete(listener);
   },

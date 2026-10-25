@@ -4,7 +4,7 @@ export type HostedSurface = 'desktop' | 'mobile';
 
 declare global {
   interface Window {
-    __OPENCHAMBER_SURFACE__?: HostedSurface;
+    __YURI_SURFACE__?: HostedSurface;
   }
 }
 
@@ -23,7 +23,7 @@ const isTouchOrCoarsePointer = (): boolean => {
 const detectHostedSurface = (): HostedSurface => {
   if (typeof window === 'undefined') return 'desktop';
 
-  const explicitSurface = window.__OPENCHAMBER_SURFACE__;
+  const explicitSurface = window.__YURI_SURFACE__;
   if (explicitSurface === 'mobile' || explicitSurface === 'desktop') {
     return explicitSurface;
   }

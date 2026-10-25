@@ -56,7 +56,7 @@ export function createMagpieSync({
   const home = () => homedir();
   const configDir = () => path.join(env.XDG_CONFIG_HOME && path.isAbsolute(env.XDG_CONFIG_HOME)
     ? env.XDG_CONFIG_HOME : path.join(home(), '.config'), 'magpie');
-  const managedBinary = () => path.join(env.OPENCHAMBER_DATA_DIR || path.join(home(), '.config', 'openchamber'),
+  const managedBinary = () => path.join(env.YURI_DATA_DIR || path.join(home(), '.config', 'yuri'),
     'tools', 'magpie', platform === 'win32' ? 'magpie.exe' : 'magpie');
   const hasConfig = async (dir) => {
     for (const file of CONFIG_FILES) if ((await exists(path.join(dir, file)))?.isFile()) return true;
@@ -188,7 +188,7 @@ export function createMagpieSync({
     try { return await work(); } finally { busy = false; }
   };
   const withTemp = async (work) => {
-    const dir = await fs.mkdtemp(path.join(tempdir(), 'openchamber-magpie-'));
+    const dir = await fs.mkdtemp(path.join(tempdir(), 'yuri-magpie-'));
     try { return await work(path.join(dir, 'setup.magpie-backup')); }
     finally { await fs.rm(dir, { recursive: true, force: true }); }
   };

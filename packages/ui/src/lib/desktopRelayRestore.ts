@@ -31,7 +31,7 @@ let candidateRefreshInFlight = false;
 
 const readShellLocalOrigin = (): string => {
   if (typeof window === 'undefined') return '';
-  const injected = window.__OPENCHAMBER_LOCAL_ORIGIN__;
+  const injected = window.__YURI_LOCAL_ORIGIN__;
   return typeof injected === 'string' ? injected.trim() : '';
 };
 
@@ -47,7 +47,7 @@ const isHttpOrigin = (value: string): boolean => {
 
 /**
  * Virtual API base for a desktop relay client.
- * Packaged UI (`openchamber-ui://`) reports `location.origin` as `"null"`,
+ * Packaged UI (`yuri-ui://`) reports `location.origin` as `"null"`,
  * which makes the URL resolver throw and leaves SDK calls on the injected
  * loopback — those then miss the tunnel and 404 against local OpenCode.
  * Prefer a real HTTP origin (window, else the shell loopback). runtimeFetch

@@ -907,7 +907,7 @@ describe("createQueryTranscriptRepository", () => {
         sessionID: SESSION,
         type: "text",
         text: "我刚发的消息",
-        __openchamberOptimistic: true,
+        __yuriOptimistic: true,
       } as unknown as Part],
     })
     const refreshed = await repo.refreshFromAuthority(scope)

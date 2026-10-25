@@ -11,7 +11,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 test('saving an already displayed iOS one-use image uses its original bytes, not a second scheme read', async () => {
   vi.stubGlobal(NATIVE_RELAY_ASSET_BRIDGE_KEY, {
-    openAsset: async ({ assetId }: { assetId: string }) => ({ assetId, url: `openchamber-asset://v/${assetId}` }),
+    openAsset: async ({ assetId }: { assetId: string }) => ({ assetId, url: `yuri-asset://v/${assetId}` }),
     writeChunk: async () => {}, endAsset: async () => {}, abortAsset: async () => {}, releaseAsset: async () => {},
   });
   const blob = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' });

@@ -26,14 +26,14 @@ registered them — so a leaked device token alone can't be used to push.
     data:{sessionId|assistantID}, publicKeyJwk, ts, sig }` to `POST /v1/push/send`
     (`apns-runtime.js` → `sendViaRelay`). It does **not** gate on UI visibility (see below).
     Legacy tokens without a locale fall back to English.
-4. The **Push Relay** (`packages/relay-server/src/push/`, process `openchamber-push-relay`)
+4. The **Push Relay** (`packages/relay-server/src/push/`, process `yuri-push-relay`)
    verifies the signature + `ts` freshness, derives `serverId`, and only delivers to tokens bound
    to that server. It holds the project APNs `.p8` key, signs an ES256 JWT with Node crypto, and
    sends each token to APNs over HTTP/2, returning per-token results; the server drops tokens
    flagged `drop` (410 / BadDeviceToken). The Push database stores `token → serverId` bindings,
-   not application plaintext. Layer 1 (`openchamber-relay`) never sees these secrets.
+   not application plaintext. Layer 1 (`yuri-relay`) never sees these secrets.
 5. Tapping a session push deep-links via the forwarded `sessionId`. Tapping a contact push
-   opens that assistant via `assistantID` / `openchamber://assistant/<id>`.
+   opens that assistant via `assistantID` / `yuri://assistant/<id>`.
 
 ## Live Activity (update / end)
 
@@ -64,7 +64,7 @@ Direct mode uses HTTP/2 token auth, `apns-topic: ${bundleId}.push-type.liveactiv
 
 While sessions are still working, a periodic refresh
 (`live-activity-refresh-runtime.js`, default every 30s,
-`OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS`, `0` disables) recomputes each
+`YURI_LIVE_ACTIVITY_REFRESH_INTERVAL_MS`, `0` disables) recomputes each
 persisted Live Activity snapshot from the authoritative server-side session
 states and pushes an **update** only when something changed — a busy→retry
 transition, a newly visible top-level session, a missed idle completion, or a
@@ -125,23 +125,23 @@ is server-global, so every device token of a server sees the same badge.
 
 ## Modes
 
-- **Relay (default):** Host has no Apple key. Unless `OPENCHAMBER_PUSH_RELAY_URL` is set, the
+- **Relay (default):** Host has no Apple key. Unless `YURI_PUSH_RELAY_URL` is set, the
   Host maps the effective Relay `wss://`/`ws://` URL to the same host as `https://`/`http://`
   `/v1/push/send` (register URL is `/v1/push/register-token`). A Relay switch re-registers
   persisted tokens and binds them again before the first send.
-- **Direct (fallback):** set `OPENCHAMBER_PUSH_RELAY_DISABLED=true` + `OPENCHAMBER_APNS_KEY_ID/
+- **Direct (fallback):** set `YURI_PUSH_RELAY_DISABLED=true` + `YURI_APNS_KEY_ID/
   TEAM_ID/P8` to sign+send from the server itself (HTTP/2 + ES256 JWT); no relay binding needed.
 
 ## Config
 
 Host (`apns-runtime.js`):
-- `OPENCHAMBER_PUSH_RELAY_URL` (explicit send-URL override), `OPENCHAMBER_APNS_ENVIRONMENT`
+- `YURI_PUSH_RELAY_URL` (explicit send-URL override), `YURI_APNS_ENVIRONMENT`
   (`production` default for TestFlight/App Store builds; set `sandbox` for Xcode development
   builds). The signing keypair is auto-generated — nothing to set.
-- Direct fallback: `OPENCHAMBER_APNS_KEY_ID`, `OPENCHAMBER_APNS_TEAM_ID`, `OPENCHAMBER_APNS_P8`
-  (or `_P8_PATH`), `OPENCHAMBER_APNS_BUNDLE_ID`, `OPENCHAMBER_PUSH_RELAY_DISABLED=true`.
+- Direct fallback: `YURI_APNS_KEY_ID`, `YURI_APNS_TEAM_ID`, `YURI_APNS_P8`
+  (or `_P8_PATH`), `YURI_APNS_BUNDLE_ID`, `YURI_PUSH_RELAY_DISABLED=true`.
 
-Push process (`packages/relay-server/src/push/`, env prefix `OPENCHAMBER_PUSH_RELAY_`):
+Push process (`packages/relay-server/src/push/`, env prefix `YURI_PUSH_RELAY_`):
 `HOST` (default `127.0.0.1`), `PORT` (default `8788`), `TRUST_PROXY`, `DATABASE_PATH`,
 timestamp/replay/rate-limit/token/`MAX_IN_FLIGHT` limits, plus APNs `APNS_KEY_ID`,
 `APNS_TEAM_ID`, `APNS_BUNDLE_ID`, and `APNS_P8` or `APNS_P8_PATH`. See
@@ -152,12 +152,12 @@ device tokens, or signatures.
 
 1. Apple **Keys** (not Certificates) → create an **APNs Auth Key** (`.p8`) → Key ID + Team ID;
    enable **Push Notifications** on the App ID. TestFlight / App Store builds of this product
-   use bundle ID `com.yee94.openchamber`.
+   use bundle ID `com.yee94.yuri`.
 2. Give those values only to the Push process (environment or Docker secret). Do not put the
-   `.p8` on Layer 1 or on each OpenChamber Host when using Relay mode.
+   `.p8` on Layer 1 or on each Yuri Host when using Relay mode.
 3. Xcode: confirm the Push Notifications capability; Clean Build Folder; run on device.
    Hosts default to APNs `production` (TestFlight/App Store tokens). Xcode development
-   builds (sandbox tokens) need `OPENCHAMBER_APNS_ENVIRONMENT=sandbox`.
+   builds (sandbox tokens) need `YURI_APNS_ENVIRONMENT=sandbox`.
 
 ## Security posture
 
@@ -199,7 +199,7 @@ on-device with a key never sent to the relay) — not implemented.
 
 ## Android notification delivery
 
-FCM delivery is not implemented. Current Android shells use `OpenChamberNotificationService`,
+FCM delivery is not implemented. Current Android shells use `YuriNotificationService`,
 a native foreground service subscribing to the Host's authenticated notification-only SSE
 over direct HTTP or the existing E2EE relay. It emits local Android notifications without
 Firebase or manufacturer push accounts. See `packages/mobile/README.md` → Native Android

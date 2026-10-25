@@ -17,11 +17,11 @@ import type { RelayTunnelWebSocket } from '@/lib/relay/tunnel-client';
 import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 
-const REQUEST_EVENT = 'openchamber:preview-gateway-request';
-const ABORT_EVENT = 'openchamber:preview-gateway-abort';
-const WS_OPEN_EVENT = 'openchamber:preview-gateway-ws-open';
-const WS_MESSAGE_EVENT = 'openchamber:preview-gateway-ws-message';
-const WS_CLOSE_EVENT = 'openchamber:preview-gateway-ws-close';
+const REQUEST_EVENT = 'yuri:preview-gateway-request';
+const ABORT_EVENT = 'yuri:preview-gateway-abort';
+const WS_OPEN_EVENT = 'yuri:preview-gateway-ws-open';
+const WS_MESSAGE_EVENT = 'yuri:preview-gateway-ws-message';
+const WS_CLOSE_EVENT = 'yuri:preview-gateway-ws-close';
 
 type PreviewGatewayApi = {
   ensure: () => Promise<{ origin: string }>;
@@ -52,8 +52,8 @@ const isFunction = (value: unknown): value is (...args: never[]) => unknown =>
 
 const readPreviewGatewayApi = (): PreviewGatewayApi | null => {
   if (typeof window === 'undefined') return null;
-  const desktop = (window as unknown as { __OPENCHAMBER_DESKTOP__?: DesktopBridge })
-    .__OPENCHAMBER_DESKTOP__;
+  const desktop = (window as unknown as { __YURI_DESKTOP__?: DesktopBridge })
+    .__YURI_DESKTOP__;
   const api = desktop?.previewGateway;
   if (
     !api
@@ -70,8 +70,8 @@ const readPreviewGatewayApi = (): PreviewGatewayApi | null => {
 
 const readDesktopListen = (): DesktopBridge['listen'] | null => {
   if (typeof window === 'undefined') return null;
-  const desktop = (window as unknown as { __OPENCHAMBER_DESKTOP__?: DesktopBridge })
-    .__OPENCHAMBER_DESKTOP__;
+  const desktop = (window as unknown as { __YURI_DESKTOP__?: DesktopBridge })
+    .__YURI_DESKTOP__;
   return isFunction(desktop?.listen) ? desktop.listen : null;
 };
 
@@ -207,8 +207,8 @@ const detachListeners = () => {
 };
 
 /**
- * Build a runtime WS URL for the gateway path: mint a fresh oc_url_token while
- * preserving oc_preview_token (and any other query) from the iframe request.
+ * Build a runtime WS URL for the gateway path: mint a fresh yuri_url_token while
+ * preserving yuri_preview_token (and any other query) from the iframe request.
  */
 const buildPreviewProxyWebSocketUrl = (pathWithQuery: string): string => {
   let pathname = pathWithQuery;
@@ -220,7 +220,7 @@ const buildPreviewProxyWebSocketUrl = (pathWithQuery: string): string => {
   }
   const params = new URLSearchParams(search);
   // Drop stale URL auth; resolver re-appends the minted token.
-  params.delete('oc_url_token');
+  params.delete('yuri_url_token');
   const queryRecord: Record<string, string> = {};
   params.forEach((value, key) => {
     queryRecord[key] = value;
@@ -250,7 +250,7 @@ const handleGatewayRequest = async (detail: GatewayRequestDetail): Promise<void>
   inflightControllers.set(detail.requestId, controller);
 
   try {
-    // Path includes query tokens (oc_preview_token / oc_url_token). runtimeFetch
+    // Path includes query tokens (yuri_preview_token / yuri_url_token). runtimeFetch
     // attaches bearer/tunnel auth; do not forward iframe Cookie/Authorization.
     const response = await runtimeFetch(detail.path, {
       method: detail.method || 'GET',

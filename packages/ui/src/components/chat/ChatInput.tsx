@@ -482,7 +482,7 @@ const hasDraggedFiles = (dataTransfer: DataTransfer | null | undefined): boolean
         if (lowerTypes.includes('files')) return true;
         if (lowerTypes.includes('text/uri-list')) return true;
         if (lowerTypes.includes('codefiles')) return true;
-        if (lowerTypes.includes('application/x-openchamber-file-path')) return true;
+        if (lowerTypes.includes('application/x-yuri-file-path')) return true;
         if (lowerTypes.some((type) => type.includes('vnd.code.tree'))) return true;
     }
 
@@ -535,7 +535,7 @@ const renderProjectLabelWithIcon = (project: {
 
 const MemoModelControls = React.memo(ModelControls);
 const MemoComposerDictation = React.memo(ComposerDictation);
-const mobileDictationAccessory = <span data-oc-composer-dictation-active="true" className="hidden" aria-hidden="true" />;
+const mobileDictationAccessory = <span data-yuri-composer-dictation-active="true" className="hidden" aria-hidden="true" />;
 const MemoDesktopDictationButton = React.memo(DesktopDictationButton);
 const MemoMobileAgentButton = React.memo(MobileAgentButton);
 const MemoMobileModelButton = React.memo(MobileModelButton);
@@ -814,7 +814,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
                         <TooltipTrigger asChild>
                             {attachButton}
                         </TooltipTrigger>
-                        <TooltipContent side="top" sideOffset={8} className="oc-composer-tooltip">
+                        <TooltipContent side="top" sideOffset={8} className="yuri-composer-tooltip">
                             {attachLabel}
                         </TooltipContent>
                     </Tooltip>
@@ -953,7 +953,7 @@ const PermissionAutoAcceptButton = React.memo(function PermissionAutoAcceptButto
                     <Icon name={props.enabled ? 'shield-check' : 'shield'} className={cn(props.iconSizeClass, 'text-current')} />
                 </button>
             </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={8} className="oc-composer-tooltip">{actionLabel}</TooltipContent>
+            <TooltipContent side="top" sideOffset={8} className="yuri-composer-tooltip">{actionLabel}</TooltipContent>
         </Tooltip>
     );
 });
@@ -2677,7 +2677,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             : undefined;
         if (requestedCommandName && !isCommandAllowedForSubmission(requestedCommandName, (command) => isChatInputCommandAllowed(surface, {
             name: command.name,
-            source: 'openchamber',
+            source: 'yuri',
         }))) return;
         if (submissionBlocked) return;
         if (!inputSnapshot.hasContent || !currentSessionId) return;
@@ -3089,7 +3089,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 inputMode,
                 scope: currentSessionId && currentDirectory ? { sessionId: currentSessionId, directory: currentDirectory } : null,
                 hasReferences: Boolean(snapshot?.document.references.length || composerMentions.length),
-                allowed: surface.kind === 'primary' && isChatInputCommandAllowed(surface, { name: 'btw', source: 'openchamber' }),
+                allowed: surface.kind === 'primary' && isChatInputCommandAllowed(surface, { name: 'btw', source: 'yuri' }),
                 ask: useSessionBtwStore.getState().ask,
                 clearText: () => { replacePlainDocument(''); setShowCommandAutocomplete(false); setCommandQuery(''); },
                 open: () => {
@@ -3143,7 +3143,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // resource-consuming local command. Rejection retains the full draft.
         if (requestedCommandName && !isCommandAllowedForSubmission(requestedCommandName, (command) => isChatInputCommandAllowed(surface, {
             name: command.name,
-            source: 'openchamber',
+            source: 'yuri',
         }))) {
             return;
         }
@@ -3824,7 +3824,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
             if (!isCommandAllowedForSubmission(commandName, (command) => isChatInputCommandAllowed(surface, {
                 name: command.name,
-                source: 'openchamber',
+                source: 'yuri',
             }))) {
                 return;
             }
@@ -5766,7 +5766,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         }
 
         // Plain inserts still reserve the icon em-space so overlay metrics match
-        // the durable chip path above (OpenChamber draft commands, failed insert).
+        // the durable chip path above (Yuri draft commands, failed insert).
         const plainInsert = command.isSkill ? `   ${commandText} ` : `${commandText} `;
         const promotedInsert = promoteTypedSlashChipSlots(
             plainInsert,
@@ -5864,7 +5864,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         e.preventDefault();
         e.stopPropagation();
         dragEnterCountRef.current++;
-        const isInternal = e.dataTransfer.types?.includes('application/x-openchamber-file-path') ?? false;
+        const isInternal = e.dataTransfer.types?.includes('application/x-yuri-file-path') ?? false;
         if (isInternal !== isInternalDrag) {
             setIsInternalDrag(isInternal);
         }
@@ -5918,7 +5918,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (!currentSessionId && !newSessionDraftOpen) return;
 
         // Internal drag: file tree → chat input (relative path as @mention)
-        const internalPath = e.dataTransfer.getData('application/x-openchamber-file-path');
+        const internalPath = e.dataTransfer.getData('application/x-yuri-file-path');
         if (internalPath && internalPath !== '.') {
             const mention = `@${internalPath}`;
             const textarea = textareaRef.current;
@@ -6126,7 +6126,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const footerGapClass = 'gap-x-1.5 gap-y-0';
     const isVSCode = isVSCodeRuntime();
     // Establishing reuses ChatInput under an `invisible` foot for geometry only.
-    // `.oc-mobile-composer-reveal { visibility: visible }` would otherwise punch
+    // `.yuri-mobile-composer-reveal { visibility: visible }` would otherwise punch
     // project/branch chips through that hide — drop the selectors until claim.
     const showDraftTargetSelectors = surface.kind === 'primary'
         && surfaceHasNewDraft
@@ -6619,7 +6619,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // Installed PWA (standalone): a focus() from a bare timeout is outside the
     // user gesture and iOS refuses to raise the keyboard for it (Safari
     // in-browser is lenient). MobileOverlayPanel dispatches
-    // 'oc:mobile-overlay-closed' synchronously from the same React flush as
+    // 'yuri:mobile-overlay-closed' synchronously from the same React flush as
     // the click that closed it — refocus right there, while the gesture is
     // still live. Chained flows (attach menu → GitHub picker) set the skip ref
     // so the keyboard doesn't flash open under the next overlay.
@@ -6732,8 +6732,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 reveal();
             }, 650);
         };
-        window.addEventListener('oc:mobile-overlay-opened', handleOverlayOpened);
-        window.addEventListener('oc:mobile-overlay-closed', handleOverlayClosed);
+        window.addEventListener('yuri:mobile-overlay-opened', handleOverlayOpened);
+        window.addEventListener('yuri:mobile-overlay-closed', handleOverlayClosed);
         return () => {
             if (mobileOverlayRevealEarlyTimerRef.current !== null) {
                 window.clearTimeout(mobileOverlayRevealEarlyTimerRef.current);
@@ -6743,8 +6743,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 window.clearTimeout(mobileOverlayRevealLateTimerRef.current);
                 mobileOverlayRevealLateTimerRef.current = null;
             }
-            window.removeEventListener('oc:mobile-overlay-opened', handleOverlayOpened);
-            window.removeEventListener('oc:mobile-overlay-closed', handleOverlayClosed);
+            window.removeEventListener('yuri:mobile-overlay-opened', handleOverlayOpened);
+            window.removeEventListener('yuri:mobile-overlay-closed', handleOverlayClosed);
         };
     }, [isMobile]);
     React.useEffect(() => {
@@ -6866,7 +6866,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     ) : null;
 
     const composerAttachmentContent = (
-        <div className="oc-mobile-composer-attachment-content relative z-10 flex flex-wrap items-center gap-1 px-3 pt-1">
+        <div className="yuri-mobile-composer-attachment-content relative z-10 flex flex-wrap items-center gap-1 px-3 pt-1">
             <AttachedVSCodeFileChips attachments={attachedFiles} onShowPopup={handleShowAttachmentPopup} onRemoveAttachedFile={handleAttachedFileRemove} />
             {surface.kind === 'primary' ? (
                 <ActiveEditorFileSuggestion
@@ -6892,9 +6892,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     ));
     const composerHighlightedContent = !isMobile && desktopDictationActive ? <>
         {composerHighlightedParts ?? message}
-        <span aria-hidden="true" className="oc-dictation-caret">
+        <span aria-hidden="true" className="yuri-dictation-caret">
             {desktopDictationPreview?.draftID === primaryDraftKeyID && desktopDictationPreview.text === message && (
-                <span key={message} className="oc-dictation-caret-trail" />
+                <span key={message} className="yuri-dictation-caret-trail" />
             )}
         </span>
     </> : composerHighlightedParts;
@@ -6908,7 +6908,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             aria-label={t(desktopRecording ? 'settings.voice.volcengine.finishRecording' : 'chat.dictation.start')}
             aria-pressed={desktopRecording}
             disabled={!desktopRecording && (resolvedDraftBusy || mobileDictationActive || dictationHint !== null || (!currentSessionId && !newSessionDraftOpen))}
-            onClick={() => window.dispatchEvent(new Event('openchamber:mobile-dictation-toggle'))}
+            onClick={() => window.dispatchEvent(new Event('yuri:mobile-dictation-toggle'))}
         >
             <Icon name="mic" className={cn(iconSizeClass, desktopRecording && 'text-[var(--voice-active-fill)]')} />
         </Button>
@@ -6917,10 +6917,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const mobileCompactComposerChrome = isMobile ? (
             <div
                 className={cn(
-                    'oc-mobile-composer-compact-chrome',
-                    canAbort && 'oc-mobile-composer-compact-chrome--aborting',
-                    canSend && !canAbort && 'oc-mobile-composer-compact-chrome--sending',
-                    showScrollToBottom && onScrollToBottom && 'oc-mobile-composer-compact-chrome--with-scroll',
+                    'yuri-mobile-composer-compact-chrome',
+                    canAbort && 'yuri-mobile-composer-compact-chrome--aborting',
+                    canSend && !canAbort && 'yuri-mobile-composer-compact-chrome--sending',
+                    showScrollToBottom && onScrollToBottom && 'yuri-mobile-composer-compact-chrome--with-scroll',
                 )}
             >
                 <div
@@ -6992,7 +6992,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const composerFooterContent = isMobile ? (
         <>
             <div
-                className="oc-mobile-composer-full-chrome flex w-full min-w-0 items-center gap-x-1.5"
+                className="yuri-mobile-composer-full-chrome flex w-full min-w-0 items-center gap-x-1.5"
                 data-composer-action="true"
             >
                 <div className="composer-mobile-actions flex shrink-0 items-center gap-x-2 pl-1">
@@ -7283,7 +7283,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 "relative w-full pt-0 pb-4",
                 isDesktopExpanded && 'flex h-full min-h-0 flex-col pt-4',
                 isMobileExpanded && 'flex h-full min-h-0 flex-col pt-1',
-                isMobile && 'bottom-safe-area oc-mobile-composer'
+                isMobile && 'bottom-safe-area yuri-mobile-composer'
             )}
             data-native-ios-composer={nativeIosComposerActive ? 'true' : undefined}
             data-hold-to-talk={holdToTalkEnabled ? 'true' : undefined}
@@ -7499,9 +7499,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     sessionId={currentSessionId}
                     directory={currentSessionDirectoryForSync ?? currentDirectory}
                 />
-                <div className={isMobile ? 'relative oc-mobile-composer-stack' : 'contents'}>
-                <div className={isMobile ? 'oc-mobile-composer-expanded-layer' : 'contents'}>
-                <div className={isMobile ? 'oc-mobile-composer-reveal' : 'contents'}>
+                <div className={isMobile ? 'relative yuri-mobile-composer-stack' : 'contents'}>
+                <div className={isMobile ? 'yuri-mobile-composer-expanded-layer' : 'contents'}>
+                <div className={isMobile ? 'yuri-mobile-composer-reveal' : 'contents'}>
                 <div
                     ref={nativeAccessoryRef}
                     data-native-composer-accessories="true"
@@ -7607,7 +7607,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     </div>
                 ) : null}
                 {isMobile && showDraftTargetSelectors ? (
-                    <div className="oc-mobile-draft-target-selectors mb-1.5 flex min-w-0 items-center gap-1.5 px-0.5">
+                    <div className="yuri-mobile-draft-target-selectors mb-1.5 flex min-w-0 items-center gap-1.5 px-0.5">
                         {selectedDraftProject ? (
                             <button
                                 type="button"
@@ -7662,7 +7662,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     )}
                 >
                 <div
-                    className={isMobile ? 'oc-mobile-composer-motion-viewport' : 'contents'}
+                    className={isMobile ? 'yuri-mobile-composer-motion-viewport' : 'contents'}
                 >
                 <ChatPromptComposer
                     value={message}
@@ -7683,7 +7683,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         isDragging && "ring-2 ring-primary ring-offset-2",
                         // Ctrl+X leader pending: subtle selection ring while waiting for M/A/N/C.
                         isLeaderKeyPending && "ring-1 ring-[var(--interactive-selection)] border-[var(--interactive-selection)]",
-                        isMobile && 'oc-mobile-composer-surface',
+                        isMobile && 'yuri-mobile-composer-surface',
                     )}
                     style={{
                         borderRadius: chatInputRadius,
@@ -7718,12 +7718,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         flex: isComposerExpanded ? '1 1 auto' : 'none',
                         height: !isComposerExpanded && textareaSize ? `${textareaSize.height}px` : undefined,
                         maxHeight: !isComposerExpanded && textareaSize ? `${textareaSize.maxHeight}px` : undefined,
-                        '--oc-composer-textarea-resting-height': isComposerExpanded
+                        '--yuri-composer-textarea-resting-height': isComposerExpanded
                             ? '100%'
                             : textareaSize
                                 ? `${textareaSize.height}px`
                                 : 'auto',
-                        '--oc-composer-textarea-resting-max-height': !isComposerExpanded && textareaSize ? `${textareaSize.maxHeight}px` : 'none',
+                        '--yuri-composer-textarea-resting-max-height': !isComposerExpanded && textareaSize ? `${textareaSize.maxHeight}px` : 'none',
                         borderTopLeftRadius: chatInputRadius,
                         borderTopRightRadius: chatInputRadius,
                     } as React.CSSProperties}
@@ -7961,8 +7961,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 </div>
                 {isMobile ? (
                     <div
-                        className="oc-mobile-composer-compact-layer"
-                        data-oc-composer-compact-surface="true"
+                        className="yuri-mobile-composer-compact-layer"
+                        data-yuri-composer-compact-surface="true"
                     >
                         {mobileCompactComposerChrome}
                         <div
@@ -7973,8 +7973,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                                 compactPreviewFollowRef.current = preview.scrollWidth - preview.clientWidth - preview.scrollLeft <= 2;
                             }}
                             className={cn(
-                                'oc-mobile-composer-compact-preview',
-                                !message.trim() && 'oc-mobile-composer-compact-preview--placeholder',
+                                'yuri-mobile-composer-compact-preview',
+                                !message.trim() && 'yuri-mobile-composer-compact-preview--placeholder',
                             )}
                             style={mobileDictationTrigger ? {
                                 right: `${0.625 + 2.5 * (1 + Number(Boolean(showScrollToBottom && onScrollToBottom)) + Number(Boolean(canAbort || canSend || abortPending)))}rem`,

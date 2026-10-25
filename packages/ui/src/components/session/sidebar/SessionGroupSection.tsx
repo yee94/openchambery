@@ -1235,11 +1235,11 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
   const groupHeaderPadLeft = getSidebarRowPaddingLeft(groupHeaderDepth);
 
   if (hideGroupLabel) {
-    return <div className="oc-group"><div className={cn('oc-group-body', groupBodyPaddingClass)}>{body}</div></div>;
+    return <div className="yuri-group"><div className={cn('yuri-group-body', groupBodyPaddingClass)}>{body}</div></div>;
   }
 
   return (
-    <Collapsible open={!isCollapsed} className="oc-group">
+    <Collapsible open={!isCollapsed} className="yuri-group">
       <div
         data-mobile-press-feedback={dragHandleProps ? 'none' : undefined}
         className={cn(
@@ -1489,7 +1489,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
          ) : null}
       </div>
       <CollapsibleContent data-sidebar-collapse className="h-[var(--collapsible-panel-height)] transition-[height] duration-200 ease-out data-[starting-style]:h-0 data-[ending-style]:h-0 data-[open]:animate-none data-[closed]:animate-none motion-reduce:transition-none" inert={isCollapsed || undefined}>
-        <div className={cn('oc-group-body', groupBodyPaddingClass)}>{body}</div>
+        <div className={cn('yuri-group-body', groupBodyPaddingClass)}>{body}</div>
       </CollapsibleContent>
     </Collapsible>
   );

@@ -22,7 +22,7 @@ type Props = {
 
 const rowClassName = 'flex w-full min-w-0 items-center justify-start gap-2 text-left text-[13px] font-normal leading-5 tracking-normal text-muted-foreground';
 const iconClassName = 'size-3.5 shrink-0';
-const revealCopyClassName = 'oc-work-status-action pointer-events-none shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/copy:pointer-events-auto group-hover/copy:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100';
+const revealCopyClassName = 'yuri-work-status-action pointer-events-none shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/copy:pointer-events-auto group-hover/copy:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100';
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() || path;
 
 export const WorkStatusCompact: React.FC<Props> = ({ sessionId, directory }) => {
@@ -157,7 +157,7 @@ export const WorkStatusCompact: React.FC<Props> = ({ sessionId, directory }) => 
         <Button
           variant="ghost"
           size="sm"
-          className={`oc-work-status-action ${rowClassName}`}
+          className={`yuri-work-status-action ${rowClassName}`}
           title={t(changed === 1 ? 'chat.workStatus.git.changedFileSingle' : 'chat.workStatus.git.changedFilePlural', { count: changed })}
           aria-label={t('chat.workStatus.action.openGit')}
           onClick={openGit}
@@ -179,7 +179,7 @@ export const WorkStatusCompact: React.FC<Props> = ({ sessionId, directory }) => 
             type="button"
             variant="ghost"
             size="sm"
-             className={`oc-work-status-action ${rowClassName} gap-1.5`}
+             className={`yuri-work-status-action ${rowClassName} gap-1.5`}
             aria-expanded={subagentsExpanded}
             aria-controls={subagentsListId}
             onClick={() => setSubagentsExpanded((expanded) => !expanded)}
@@ -225,7 +225,7 @@ export const WorkStatusCompact: React.FC<Props> = ({ sessionId, directory }) => 
                     variant="ghost"
                     size="sm"
                     disabled={!subagent.sessionID || !directory}
-                    className="oc-work-status-action flex w-full min-w-0 items-center justify-start gap-2 text-left text-[12px] font-normal leading-5 text-muted-foreground"
+                    className="yuri-work-status-action flex w-full min-w-0 items-center justify-start gap-2 text-left text-[12px] font-normal leading-5 text-muted-foreground"
                     onClick={() => {
                       if (!subagent.sessionID || !directory) return;
                       openContextPanelTab(directory, {

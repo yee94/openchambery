@@ -2,15 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCliEntryIfMain } from './cli-entry-runtime.js';
 
 describe('cli-entry-runtime', () => {
-  const previousRuntime = process.env.OPENCHAMBER_RUNTIME;
+  const previousRuntime = process.env.YURI_RUNTIME;
 
   afterEach(() => {
-    if (previousRuntime === undefined) delete process.env.OPENCHAMBER_RUNTIME;
-    else process.env.OPENCHAMBER_RUNTIME = previousRuntime;
+    if (previousRuntime === undefined) delete process.env.YURI_RUNTIME;
+    else process.env.YURI_RUNTIME = previousRuntime;
   });
 
-  it('forces OPENCHAMBER_RUNTIME=web on the direct node server path even if the parent shell leaked desktop', () => {
-    process.env.OPENCHAMBER_RUNTIME = 'desktop';
+  it('forces YURI_RUNTIME=web on the direct node server path even if the parent shell leaked desktop', () => {
+    process.env.YURI_RUNTIME = 'desktop';
     const startServer = vi.fn(async () => {});
 
     runCliEntryIfMain({
@@ -22,12 +22,12 @@ describe('cli-entry-runtime', () => {
       startServer,
     });
 
-    expect(process.env.OPENCHAMBER_RUNTIME).toBe('web');
+    expect(process.env.YURI_RUNTIME).toBe('web');
     expect(startServer).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves OPENCHAMBER_RUNTIME=ssh-remote on the direct node server path', () => {
-    process.env.OPENCHAMBER_RUNTIME = 'ssh-remote';
+  it('preserves YURI_RUNTIME=ssh-remote on the direct node server path', () => {
+    process.env.YURI_RUNTIME = 'ssh-remote';
     const startServer = vi.fn(async () => {});
 
     runCliEntryIfMain({
@@ -39,12 +39,12 @@ describe('cli-entry-runtime', () => {
       startServer,
     });
 
-    expect(process.env.OPENCHAMBER_RUNTIME).toBe('ssh-remote');
+    expect(process.env.YURI_RUNTIME).toBe('ssh-remote');
     expect(startServer).toHaveBeenCalledTimes(1);
   });
 
-  it('does not rewrite OPENCHAMBER_RUNTIME when imported as a library (Electron in-process)', () => {
-    process.env.OPENCHAMBER_RUNTIME = 'desktop';
+  it('does not rewrite YURI_RUNTIME when imported as a library (Electron in-process)', () => {
+    process.env.YURI_RUNTIME = 'desktop';
 
     runCliEntryIfMain({
       process: { argv: ['electron', '/tmp/electron/main.mjs'], env: process.env, exit: vi.fn() },
@@ -55,6 +55,6 @@ describe('cli-entry-runtime', () => {
       startServer: vi.fn(),
     });
 
-    expect(process.env.OPENCHAMBER_RUNTIME).toBe('desktop');
+    expect(process.env.YURI_RUNTIME).toBe('desktop');
   });
 });

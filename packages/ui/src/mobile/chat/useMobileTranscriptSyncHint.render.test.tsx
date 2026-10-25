@@ -55,7 +55,7 @@ describe('mobile title transcript synchronization', () => {
   const advance = async (milliseconds: number) => {
     await act(async () => vi.advanceTimersByTime(milliseconds));
   };
-  const subtitle = () => host.querySelector('.oc-mobile-detail-subtitle');
+  const subtitle = () => host.querySelector('.yuri-mobile-detail-subtitle');
 
   test('metadata-first loading shows below the title until content is renderable', async () => {
     await render();
@@ -69,7 +69,7 @@ describe('mobile title transcript synchronization', () => {
     await render();
     await advance(1000);
     expect(subtitle()).toBeNull();
-    expect(host.querySelector('.oc-mobile-detail-title')?.textContent).toBe('ses_a');
+    expect(host.querySelector('.yuri-mobile-detail-title')?.textContent).toBe('ses_a');
   });
 
   test('settled failure stops syncing and a retry starts it again', async () => {

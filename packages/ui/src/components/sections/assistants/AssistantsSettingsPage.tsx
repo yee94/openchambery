@@ -421,7 +421,7 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
         )}
       >
         {snapshotQuery.isPending || capabilityQuery.isPending ? (
-          <div className="oc-settings-group-row flex items-center justify-center text-muted-foreground"><Icon name="loader-4" className="mr-2 size-4 animate-spin" />{t('common.loading')}</div>
+          <div className="yuri-settings-group-row flex items-center justify-center text-muted-foreground"><Icon name="loader-4" className="mr-2 size-4 animate-spin" />{t('common.loading')}</div>
         ) : snapshot?.assistants.length ? snapshot.assistants.map((assistant) => {
           const presentation = getAssistantPresentation(assistant.name);
           return (
@@ -437,7 +437,7 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
             />
           );
         }) : (
-          <div className="oc-settings-group-row text-muted-foreground">
+          <div className="yuri-settings-group-row text-muted-foreground">
             {t('assistants.settings.empty')}
           </div>
         )}
@@ -595,7 +595,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="yuri-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
         {snapshotQuery.isError && snapshot ? <p className="mb-4 px-2 typography-meta text-[var(--status-warning)]">{t('assistants.state.staleSnapshot')}</p> : null}
 
         {selectedID ? (
@@ -604,7 +604,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               <div className="group/avatar relative shrink-0">
                 <AgentAvatar kind="assistant" name={draft.avatarSeed ?? selected?.id ?? 'new'} size={40} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} shape="rounded" className="rounded-[0.5rem]" />
                 <Button variant="link" size="icon" disabled={saving} className="absolute inset-0 h-full w-full p-0 text-muted-foreground opacity-0 transition-opacity hover:no-underline group-hover/avatar:opacity-100 group-focus-within/avatar:opacity-100 [@media(hover:none)]:opacity-100" aria-label={t('assistants.settings.randomAvatar')} title={t('assistants.settings.randomAvatar')} onClick={() => patchDraft('avatarSeed', crypto.randomUUID())}>
-                  <span className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-[var(--oc-settings-avatar-action-background)] text-[var(--oc-settings-avatar-action-foreground)] shadow-sm">
+                  <span className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-[var(--yuri-settings-avatar-action-background)] text-[var(--yuri-settings-avatar-action-foreground)] shadow-sm">
                     <Icon name="refresh" className="size-3.5" />
                   </span>
                 </Button>
@@ -635,7 +635,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
             <SettingsField
               itemId="assistants.prompt"
               label={t('assistants.settings.defaultPrompt')}
-              className="oc-settings-split-row-stacked"
+              className="yuri-settings-split-row-stacked"
             >
               <Textarea
                 embedded
@@ -652,7 +652,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               label={t('assistants.settings.runtime')}
             >
                 <SettingsRow itemId="assistants.model" label={t('assistants.settings.model')}>
-                  <ModelSelector providerId={draft.providerID} modelId={draft.modelID} variant={draft.variant ?? ''} providers={catalogProviders} onChange={(providerID, modelID, variant) => setDraft((current) => ({ ...current, providerID, modelID, variant: variant || null }))} className="oc-settings-inline-value" />
+                  <ModelSelector providerId={draft.providerID} modelId={draft.modelID} variant={draft.variant ?? ''} providers={catalogProviders} onChange={(providerID, modelID, variant) => setDraft((current) => ({ ...current, providerID, modelID, variant: variant || null }))} className="yuri-settings-inline-value" />
                 </SettingsRow>
             </SettingsGroup>
 

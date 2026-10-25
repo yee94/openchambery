@@ -14,10 +14,10 @@ import { FileMentionAutocomplete, type FileMentionHandle } from '@/components/ch
 import { insertTokenWithReferenceBoundaries } from '@/components/chat/insertionBoundaries';
 import { Icon } from "@/components/icon/Icon";
 import { isIMECompositionEvent } from '@/lib/ime';
-import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
+import { getWorktreeSetupCommands } from '@/lib/yuriConfig';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
-import type { ProjectRef } from '@/lib/openchamberConfig';
+import type { ProjectRef } from '@/lib/yuriConfig';
 import type { CreateMultiRunParams, MultiRunFileAttachment } from '@/types/multirun';
 import { useI18n } from '@/lib/i18n';
 

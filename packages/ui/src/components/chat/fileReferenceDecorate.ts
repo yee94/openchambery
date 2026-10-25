@@ -5,22 +5,22 @@ import {
   parseFileReference,
 } from './fileReferenceParser';
 
-export const BLOCK_PATH_TOKEN_ATTR = 'data-openchamber-block-path-token';
+export const BLOCK_PATH_TOKEN_ATTR = 'data-yuri-block-path-token';
 export const BLOCK_PATH_TOKEN_SELECTOR = `[${BLOCK_PATH_TOKEN_ATTR}]`;
-export const FILE_LINK_ATTR = 'data-openchamber-file-link';
+export const FILE_LINK_ATTR = 'data-yuri-file-link';
 export const FILE_LINK_SELECTOR = `[${FILE_LINK_ATTR}="true"]`;
 export const FILE_LINK_PRESERVE_ATTRS = [
   FILE_LINK_ATTR,
-  'data-openchamber-file-ref',
-  'data-openchamber-file-path',
-  'data-openchamber-file-binary',
+  'data-yuri-file-ref',
+  'data-yuri-file-path',
+  'data-yuri-file-binary',
   'title',
   'role',
   'tabindex',
 ] as const;
 
-const CODE_BLOCK_PATH_SCANNED_ATTR = 'data-openchamber-block-paths-scanned';
-const PARAGRAPH_BLOCK_PATH_SCANNED_ATTR = 'data-openchamber-paragraph-paths-scanned';
+const CODE_BLOCK_PATH_SCANNED_ATTR = 'data-yuri-block-paths-scanned';
+const PARAGRAPH_BLOCK_PATH_SCANNED_ATTR = 'data-yuri-paragraph-paths-scanned';
 const PARAGRAPH_SCAN_EXCLUDE_SELECTOR = `pre, code, a, script, style, button, [${FILE_LINK_ATTR}], ${BLOCK_PATH_TOKEN_SELECTOR}`;
 const MAX_BLOCK_CODE_SCAN_LENGTH = 200_000;
 
@@ -233,7 +233,7 @@ export const copyPreservedFileLinkAttributes = (fromEl: Element, toEl: Element):
   if (fromEl.getAttribute(FILE_LINK_ATTR) !== 'true') {
     return;
   }
-  const fromRef = (fromEl.getAttribute('data-openchamber-file-ref') || fromEl.textContent || '').trim();
+  const fromRef = (fromEl.getAttribute('data-yuri-file-ref') || fromEl.textContent || '').trim();
   const toRef = (toEl.textContent || '').trim();
   if (!fromRef || fromRef !== toRef) {
     return;

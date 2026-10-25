@@ -54,8 +54,8 @@ export function MobileDetailNavigation({
   return (
     <header
       className={cn(
-        'oc-mobile-detail-navigation relative shrink-0 pt-[max(0.25rem,var(--oc-safe-area-top,0px))]',
-        sticky && 'oc-mobile-detail-navigation-sticky',
+        'yuri-mobile-detail-navigation relative shrink-0 pt-[max(0.25rem,var(--yuri-safe-area-top,0px))]',
+        sticky && 'yuri-mobile-detail-navigation-sticky',
         overlay && 'absolute inset-x-0 top-0',
         // Single z-index: elevated menus must sit above the z-50 overflow
         // backdrop so a second tap on the same control can toggle closed.
@@ -64,7 +64,7 @@ export function MobileDetailNavigation({
     >
       <div
         className={cn(
-          'oc-mobile-detail-navigation-content grid items-center gap-1 px-4',
+          'yuri-mobile-detail-navigation-content grid items-center gap-1 px-4',
           actions.length + trailingCount > 1
             ? 'grid-cols-[2.75rem_minmax(0,1fr)_auto]'
             : 'grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]',
@@ -85,11 +85,11 @@ export function MobileDetailNavigation({
         ) : <span aria-hidden="true" />}
 
         <div className="flex w-full max-w-72 min-w-0 flex-col items-center justify-center justify-self-center px-1">
-          <div className="oc-mobile-detail-title w-full truncate typography-ui-label font-medium text-foreground">
+          <div className="yuri-mobile-detail-title w-full truncate typography-ui-label font-medium text-foreground">
             {title}
           </div>
           {subtitle ? (
-            <div className="oc-mobile-detail-subtitle w-full truncate text-muted-foreground" aria-live="polite">
+            <div className="yuri-mobile-detail-subtitle w-full truncate text-muted-foreground" aria-live="polite">
               {subtitle}
             </div>
           ) : null}

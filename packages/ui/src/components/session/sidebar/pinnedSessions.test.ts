@@ -133,64 +133,64 @@ describe('resolveTopSectionSecondaryMeta', () => {
 
   test('uses worktree catalog branch for a worktree-owned session', () => {
     expect(resolveTopSectionSecondaryMeta({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       owner: worktreeOwner,
       sessionWorktree: null,
       worktrees: [{ path: '/repo/.worktrees/feat', branch: 'feat/home' }],
       projectRootBranch: 'main',
       isVSCode: false,
     })).toEqual({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       branchLabel: 'feat/home',
     });
   });
 
   test('uses project root branch for a project-owned session', () => {
     expect(resolveTopSectionSecondaryMeta({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       owner: projectOwner,
       sessionWorktree: null,
       worktrees: [{ path: '/repo/.worktrees/feat', branch: 'feat/home' }],
       projectRootBranch: 'main',
       isVSCode: false,
     })).toEqual({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       branchLabel: 'main',
     });
   });
 
   test('drops HEAD and project-name-equal branches, and VS Code omits branch', () => {
     expect(resolveTopSectionSecondaryMeta({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       owner: projectOwner,
       sessionWorktree: null,
       worktrees: [],
       projectRootBranch: 'HEAD',
       isVSCode: false,
     })).toEqual({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       branchLabel: null,
     });
     expect(resolveTopSectionSecondaryMeta({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       owner: worktreeOwner,
       sessionWorktree: null,
-      worktrees: [{ path: '/repo/.worktrees/feat', branch: 'openchamber' }],
+      worktrees: [{ path: '/repo/.worktrees/feat', branch: 'yuri' }],
       projectRootBranch: null,
       isVSCode: false,
     })).toEqual({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       branchLabel: null,
     });
     expect(resolveTopSectionSecondaryMeta({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       owner: worktreeOwner,
       sessionWorktree: null,
       worktrees: [{ path: '/repo/.worktrees/feat', branch: 'feat/home' }],
       projectRootBranch: 'main',
       isVSCode: true,
     })).toEqual({
-      projectLabel: 'openchamber',
+      projectLabel: 'yuri',
       branchLabel: null,
     });
   });

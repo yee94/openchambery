@@ -12,7 +12,7 @@ let app;
 const jwt = (claims = { aud: ['test-app'], exp: Math.floor(Date.now() / 1000) + 300 }) => `header.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`;
 beforeEach(async () => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), 'direct-speech-'));
-  vi.stubEnv('OPENCHAMBER_DATA_DIR', directory);
+  vi.stubEnv('YURI_DATA_DIR', directory);
   app = express(); app.use(express.json()); registerTtsRoutes(app, { sayTTSCapability: null });
   await request(app).put('/api/voice/settings').send({ apiKey: 'fixture-key', voiceProvider: 'volcengine', sttProvider: 'volcengine' });
 });

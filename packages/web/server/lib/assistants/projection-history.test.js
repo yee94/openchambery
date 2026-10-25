@@ -170,7 +170,7 @@ describe('ticket 11 assistants read from OpenCode projections', () => {
       assistant.id,
       first.sessionID,
       'msg_mirror',
-      JSON.stringify({ id: 'msg_mirror', sessionID: first.sessionID, role: 'user', time: { created: 99 }, openchamberAssistantAdmission: true }),
+      JSON.stringify({ id: 'msg_mirror', sessionID: first.sessionID, role: 'user', time: { created: 99 }, yuriAssistantAdmission: true }),
       99,
       1,
       1,

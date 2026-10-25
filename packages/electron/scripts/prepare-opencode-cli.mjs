@@ -33,7 +33,7 @@ const run = (command, args, options = {}) => {
 };
 
 const readPinnedOpenCode2Version = () => {
-  const version = process.env.OPENCHAMBER_OPENCODE2_VERSION || process.env.OPENCHAMBER_OPENCODE_CLI_VERSION || PINNED_OPENCODE2_VERSION;
+  const version = process.env.YURI_OPENCODE2_VERSION || process.env.YURI_OPENCODE_CLI_VERSION || PINNED_OPENCODE2_VERSION;
   const trimmed = typeof version === 'string' ? version.trim() : '';
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(trimmed)) {
     throw new Error(`opencode2 must be pinned to an exact version for desktop CLI bundling, got: ${trimmed || '(missing)'}`);

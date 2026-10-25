@@ -3,7 +3,7 @@ import { hasUserDisplayableParts } from '@/components/chat/message/normalizeUser
 import type { ChatMessageEntry } from '@/components/chat/lib/turns/types';
 import type { AssistantHistoryEntry, AssistantHistoryPage } from '@/queries/assistantQueries';
 
-export const ASSISTANT_SESSION_DIVIDER_PREFIX = 'oc_asst_session_divider:';
+export const ASSISTANT_SESSION_DIVIDER_PREFIX = 'yuri_asst_session_divider:';
 
 const EMPTY_PREFIX: ChatMessageEntry[] = [];
 const EMPTY_PARTS: Part[] = [];
@@ -64,7 +64,7 @@ export const flattenAssistantHistoryPages = (
 
 /** Leftover Assistant SQLite admission/body mirrors must not paint on the live session. */
 export const isLegacyAssistantMirrorEntry = (entry: AssistantHistoryEntry | null | undefined): boolean => (
-  Boolean(entry?.info && typeof entry.info === 'object' && (entry.info as { openchamberAssistantAdmission?: unknown }).openchamberAssistantAdmission)
+  Boolean(entry?.info && typeof entry.info === 'object' && (entry.info as { yuriAssistantAdmission?: unknown }).yuriAssistantAdmission)
 );
 
 export const stitchHostedSessionHistory = (

@@ -42,7 +42,7 @@ const removeWorktree = (directory: string, options: { directory: string; deleteL
   return Promise.resolve({ success: true });
 };
 
-mock.module('@/lib/openchamberConfig', () => ({
+mock.module('@/lib/yuriConfig', () => ({
   substituteCommandVariables: (command: string) => command,
 }));
 

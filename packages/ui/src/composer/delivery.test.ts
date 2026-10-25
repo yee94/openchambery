@@ -44,7 +44,7 @@ test('delivery keeps the session instruction within budget while truncating mess
 });
 
 test('delivery recovers session reference metadata from instructions', () => {
-    const contexts = [{ id: 's1', title: 'OpenChamber status', directory: '/p', messages: [{ role: 'user', text: 'hello' }] }];
+    const contexts = [{ id: 's1', title: 'Yuri status', directory: '/p', messages: [{ role: 'user', text: 'hello' }] }];
     const instruction = buildSessionMentionInstruction(contexts);
     expect(parseSessionMentionInstruction(instruction ?? '')).toEqual(contexts);
     expect(parseSessionMentionInstruction('ordinary text')).toEqual([]);

@@ -10,7 +10,7 @@ import {
   type FileMentionSearchHit,
 } from './fileMentionSearch';
 
-const loadOpenChamberCatalog = (): FileMentionSearchHit[] => {
+const loadYuriCatalog = (): FileMentionSearchHit[] => {
   const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
   const files = execFileSync('git', ['ls-files'], { cwd: repoRoot, encoding: 'utf8' })
     .split('\n')
@@ -40,7 +40,7 @@ const loadOpenChamberCatalog = (): FileMentionSearchHit[] => {
   ];
 };
 
-const catalog = loadOpenChamberCatalog();
+const catalog = loadYuriCatalog();
 
 const rank = (query: string, limit = 12): string[] => (
   rankFileMentionSearch(catalog, query, { limit }).map((hit) => hit.relativePath)
@@ -48,7 +48,7 @@ const rank = (query: string, limit = 12): string[] => (
 
 const rankedHits = (query: string, limit = 12) => rankFileMentionSearch(catalog, query, { limit });
 
-describe('file mention search — OpenChamber catalog', () => {
+describe('file mention search — Yuri catalog', () => {
   test('indexes the current repository tree', () => {
     expect(catalog.length).toBeGreaterThan(1000);
     expect(catalog.some((hit) => hit.relativePath === 'packages/ui/src/components/chat/ChatInput.tsx')).toBe(true);

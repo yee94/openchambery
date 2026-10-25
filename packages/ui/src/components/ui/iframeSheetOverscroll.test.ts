@@ -412,7 +412,7 @@ describe('iframeSheetOverscroll', () => {
     );
     // Pre-existing foreign style must survive detach of our binding.
     const foreign = doc.createElement('style');
-    foreign.setAttribute('data-oc-sheet-overscroll', 'true');
+    foreign.setAttribute('data-yuri-sheet-overscroll', 'true');
     foreign.textContent = '/* foreign */';
     doc.head!.appendChild(foreign);
 
@@ -421,7 +421,7 @@ describe('iframeSheetOverscroll', () => {
     // We did not create a style because foreign already matched attr — createdStyle null.
     // Or if we only create when missing realm-safe style element — foreign is a style element
     // so no second inject. Detach must not remove foreign.
-    expect(doc.querySelectorAll('style[data-oc-sheet-overscroll]').length).toBe(1);
+    expect(doc.querySelectorAll('style[data-yuri-sheet-overscroll]').length).toBe(1);
 
     const field = doc.getElementById('field')!;
     dispatchIframeTouch(doc, 'touchstart', {
@@ -440,7 +440,7 @@ describe('iframeSheetOverscroll', () => {
     expect(begins).toEqual([]);
 
     detach();
-    expect(doc.querySelector('style[data-oc-sheet-overscroll]')).toBe(foreign);
+    expect(doc.querySelector('style[data-yuri-sheet-overscroll]')).toBe(foreign);
   });
 
   test('fullscreen iframe without owning sheet leaves document styles untouched', () => {
@@ -451,7 +451,7 @@ describe('iframeSheetOverscroll', () => {
     const doc = iframe.contentDocument!;
     const before = doc.documentElement.outerHTML;
     const detach = attachIframeSheetOverscroll(iframe);
-    expect(doc.querySelector('style[data-oc-sheet-overscroll]')).toBeNull();
+    expect(doc.querySelector('style[data-yuri-sheet-overscroll]')).toBeNull();
     expect(doc.documentElement.outerHTML).toBe(before);
     detach();
     iframe.remove();

@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { createDeferredSafeJSONStorage } from './utils/safeStorage';

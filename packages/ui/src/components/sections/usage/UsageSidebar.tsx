@@ -85,7 +85,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect, childr
   }, [persistUsageSettings, setShowPredValues]);
 
   return (
-    <div className={cn('oc-settings-page-content h-full min-w-0 overflow-y-auto bg-background p-3', children ? 'oc-settings-usage-workspace' : 'oc-settings-usage-sidebar')}>
+    <div className={cn('yuri-settings-page-content h-full min-w-0 overflow-y-auto bg-background p-3', children ? 'yuri-settings-usage-workspace' : 'yuri-settings-usage-sidebar')}>
       <SettingsGroup>
         <SettingsRow label={t('settings.usage.sidebar.title')}>
           <Button
@@ -154,7 +154,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect, childr
       </SettingsGroup>
 
       <MagpieConnection />
-      <div className={children ? 'oc-settings-usage-results' : undefined}>
+      <div className={children ? 'yuri-settings-usage-results' : undefined}>
       <SettingsGroup>
         {quotaProviders(results).map((provider) => {
           const result = results.find((entry) => entry?.providerId === provider.id);
@@ -175,7 +175,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect, childr
             <div
               key={provider.id}
               className={cn(
-                'oc-settings-group-row group relative flex items-center transition-colors duration-150',
+                'yuri-settings-group-row group relative flex items-center transition-colors duration-150',
                 isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
               )}
             >
@@ -200,7 +200,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect, childr
           );
         })}
       </SettingsGroup>
-      {children && <div className="oc-settings-usage-detail min-w-0">{children}</div>}
+      {children && <div className="yuri-settings-usage-detail min-w-0">{children}</div>}
       </div>
     </div>
   );

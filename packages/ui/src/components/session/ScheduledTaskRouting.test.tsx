@@ -9,7 +9,7 @@ vi.mock('@/lib/queryRuntime', () => ({
   get queryClient() { return state.client; },
   queryKeys: { runtime: () => ['test'] },
 }));
-vi.mock('@/lib/openchamberEvents', () => ({ subscribeOpenchamberEvents: () => () => {} }));
+vi.mock('@/lib/yuriEvents', () => ({ subscribeYuriEvents: () => () => {} }));
 vi.mock('@/components/ui', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock('@/mobile/mobileBackNavigation', () => ({ useMobileBackRoute: vi.fn() }));
 vi.mock('@/sync/openSessionWithFeedback', () => ({ openSessionWithFeedback: vi.fn() }));

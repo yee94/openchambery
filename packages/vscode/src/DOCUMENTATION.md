@@ -1,5 +1,7 @@
 # VS Code Backend Modules
 
+Yuri identity migration is explicit through `yuri.importLegacyConfiguration`; `brand-migration.ts` owns the two-key, non-destructive public configuration import. Private extension storage and credentials are not accessible across identities. See `../MIGRATION.md` for scope, retries, legacy-name exceptions and release blockers.
+
 This document describes backend runtime modules used by the VS Code extension bridge (`packages/vscode/src/bridge.ts`).
 
 ## Purpose
@@ -26,7 +28,7 @@ adapter, using the manager's current directory and credential resolver. It share
 account projection and refresh/failure behavior with Web and mobile hosts. The optional manual URL
 comes from shared settings; the gateway key remains host-owned. See `web/server/lib/quota/DOCUMENTATION.md`.
 
-Question auto-delegation uses the Web-owned `pause-store` as well as the shared core/form IO. User interaction holds are shared with co-located desktop/Web hosts and checked again before automatic answer dispatch. `OPENCHAMBER_QUESTION_PAUSE_DIR` must match across participating hosts; failed reads prevent auto-answering and failed writes remain retryable. See `packages/web/server/lib/question-auto-delegate/DOCUMENTATION.md` for lifetime and deployment scope.
+Question auto-delegation uses the Web-owned `pause-store` as well as the shared core/form IO. User interaction holds are shared with co-located desktop/Web hosts and checked again before automatic answer dispatch. `YURI_QUESTION_PAUSE_DIR` must match across participating hosts; failed reads prevent auto-answering and failed writes remain retryable. See `packages/web/server/lib/question-auto-delegate/DOCUMENTATION.md` for lifetime and deployment scope.
 
 - OpenCode configuration persistence: `opencodeConfig.ts` and the raw editor in `bridge-config-runtime.ts` share `packages/web/server/lib/opencode/config-files.js`. Both global JSON/JSONC documents participate; entity edits target their physical source. Custom file and `OPENCODE_CONFIG_DIR`/XDG resolution happen at read time. Structured writes preserve unrelated JSONC comments, validate before writing, retain backups, and atomically replace; parse/IO failures propagate. Raw editor selects custom or highest-precedence global JSONC/JSON, never a merged snapshot. See the owning OpenCode backend document's **Storage and configuration** contract.
   - Plugin mutations persist native V2 `plugins` strings/`{ package, options }` objects. Legacy `plugin` tuples remain readable and migrate on mutation of their source document. Native arrays (including empty arrays) take precedence; saves remove the shadowed legacy key and preserve unrelated settings through the shared atomic writer.
@@ -74,10 +76,10 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
 
 - `bridge-localfs-proxy-runtime.ts`
   - Local `/api/fs/read` and `/api/fs/raw` proxy helpers and shared proxy utility helpers.
-  - Optional file reads signal existence through `x-openchamber-file-exists` while preserving plain-text bodies.
+  - Optional file reads signal existence through `x-yuri-file-exists` while preserving plain-text bodies.
 
 - `reasoning-projection.ts`
-  - OpenChamber outbound reasoning projection (`includeReasoning=false`, strict
+  - Yuri outbound reasoning projection (`includeReasoning=false`, strict
     string only). HTTP snapshot helpers + per-connection stateful SSE filter.
   - Drops `type=reasoning` parts, reasoning deltas, unknown part deltas, and
     `session.next.reasoning.*` (dispatch strips terminal `.N` version suffixes;
@@ -119,7 +121,7 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
     permit immediately before upstream fetch; interrupt/abort and reads keep the
     waited URL path. Status leaving `connected` after wait must not forward writes.
   - `ensureOpenCodeApiUpstreamPath` restores the v2 `/api` prefix for bare root
-    paths; webview local OpenChamber routes still win before this generic proxy.
+    paths; webview local Yuri routes still win before this generic proxy.
   - Exact `GET /api/session/:sessionID/message/:messageID` responses are L1-projected
     (`summary.diffs` → thin `{ file, status?, additions, deletions }[]` plus
     additive `diffCount` / `hasDiffs`) on the Extension Host before the payload
@@ -128,12 +130,12 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
   - Official `GET /api/session/:sessionID/message` list responses apply the same
     reasoning strip when `includeReasoning=false`. The param is stripped before
     OpenCode upstream.
-  - OpenChamber-owned question auto-delegate routes and precise
+  - Yuri-owned question auto-delegate routes and precise
     `/question/:id/reply|reject` claim intercepts are handled here via
     `tryHandleQuestionAutoDelegateProxy` **before** OpenCode upstream, so the
     shared UI can keep using `runtimeFetch` without new `RuntimeAPIs` fields.
-  - OpenChamber-owned session metadata + Host archive routes
-    (`PUT /openchamber/sessions/:id/metadata|archive`) and GET session list/detail
+  - Yuri-owned session metadata + Host archive routes
+    (`PUT /yuri/sessions/:id/metadata|archive`) and GET session list/detail
     Host overlay run via `tryHandleSessionMetadataProxy` /
     `overlaySessionProxyBodyText` before or after upstream as appropriate.
 
@@ -144,8 +146,8 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
     empty catalog when its read fails.
   - Imports shared core from `packages/web/server/lib/session-metadata/`
     (store, archive service, projection, `opencode-session-record.js`) — do not vendor copies.
-  - Durable file under extension `globalStorage` (or `OPENCHAMBER_DATA_DIR` /
-    `~/.config/openchamber`), scoped by OpenCode runtime identity
+  - Durable file under extension `globalStorage` (or `YURI_DATA_DIR` /
+    `~/.config/yuri`), scoped by OpenCode runtime identity
     (`loopback:` vs external `host:port`) so multi-webview clients share one store
     while runtime switches isolate data (generation bumps drop late IO/broadcast).
   - Upstream archive `session.get` builds
@@ -153,7 +155,7 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
     `getApiUrl()` never hits bare `/session/:id`). Base ending in `/api` is
     normalized once.
   - `PUT .../archive` body `{ archivedAt: number, directory? }` → `{ session, index? }`
-    with Host `metadata.openchamber.archive.archivedAt` projected onto
+    with Host `metadata.yuri.archive.archivedAt` projected onto
     `time.archived` (positive = archive, `0` = explicit unarchive, missing =
     fall back to upstream). Successful archive broadcasts full `session.updated`
     via sinks + active SSE inject.
@@ -181,7 +183,7 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
     30s fixed reply). Imports the single source-of-truth core from
     `packages/web/server/lib/question-auto-delegate/core.js` (+ sibling `core.d.ts`).
   - IO talks to OpenCode **directly** (never loops Host `/question/*`).
-  - Snapshot tip: `openchamber:question-auto-delegate-changed` with
+  - Snapshot tip: `yuri:question-auto-delegate-changed` with
     `{ epoch, revision }` only — webviews invalidate `GET /api/question-auto-delegate`.
   - Settings field `questionAutoDelegateEnabled` (boolean, default true/absent⇒on):
     persist via existing settings save; `applyEnabled` only after successful write.
@@ -317,7 +319,7 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.
   - Includes session activity snapshot bridge handler used by webview parity routes (`/api/session-activity`).
-  - `api:opencode/compatibility` and `api:opencode/install-required` back the startup upgrade screen. Install uses the web owned-cache installer, writes `openchamber.opencodeBinary`, and restarts the existing manager. A failed install returns the error and `upgraded: false`.
+  - `api:opencode/compatibility` and `api:opencode/install-required` back the startup upgrade screen. Install uses the web owned-cache installer, writes `yuri.opencodeBinary`, and restarts the existing manager. A failed install returns the error and `upgraded: false`.
 
 - `opencode-upgrade-screen.ts`
   - Extension-host adapter for the shared upgrade-screen module. It does not own sidecar lifecycle. External mode cannot install.
@@ -327,13 +329,13 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
 ## Webview local notification gate
 
 Ordinary VS Code native notifications are decided in the webview
-(`webview/main.tsx` listening for `openchamber:vscode-notification-event`), not
+(`webview/main.tsx` listening for `yuri:vscode-notification-event`), not
 on the Extension Host. Session eligibility is pure logic in
 `webview/notificationSessionFilter.ts` (`shouldSkipVSCodeNotificationSession`):
 
 - Skip missing sessions and any session with a non-empty `parentID` (child /
   subagent).
-- Skip system-owned sessions by authoritative OpenChamber metadata only:
+- Skip system-owned sessions by authoritative Yuri metadata only:
   non-empty `smallModel.purpose`, non-empty `llm.purpose` (LLM gateway
   throwaways), non-empty `scheduledTask.taskID`, and non-empty
   `assistant.assistantID` unless `assigned.from === 'contact'`.
@@ -348,8 +350,8 @@ The VS Code webview returns `501 { code: 'unavailable' }` for the message-queue
 server route family. This explicit response precedes the generic OpenCode proxy,
 so shared UI worktree-order synchronization exits cleanly in this runtime.
 
-Session turn-page (`GET /api/openchamber/sessions/:sessionID/messages`) is an
-OpenChamber-owned webview route (`webview/sessionTurnPageRoute.ts`). It is
+Session turn-page (`GET /api/yuri/sessions/:sessionID/messages`) is an
+Yuri-owned webview route (`webview/sessionTurnPageRoute.ts`). It is
 matched ahead of the generic OpenCode proxy, validates `turns` (1..10) and
 `scanLimit` (10..200), forwards optional `includeReasoning` query to the bridge,
 dispatches `api:session-turn-page` to the Extension Host, and returns the same
@@ -363,8 +365,8 @@ stream on the Extension Host send boundary (parity with web Host
 VS Code does not implement transcript-cache read or messages/reconcile routes;
 those remain Host-only when present.
 
-Session turn-changes (`GET /api/openchamber/sessions/:sessionID/changes`) is an
-OpenChamber-owned webview route (`webview/sessionTurnChangesRoute.ts`). It is
+Session turn-changes (`GET /api/yuri/sessions/:sessionID/changes`) is an
+Yuri-owned webview route (`webview/sessionTurnChangesRoute.ts`). It is
 matched ahead of the generic OpenCode proxy, requires `messageID`, optionally
 accepts `file` and `directory`, dispatches `api:session-turn-changes`, and
 returns `{ files }` (L2) or `{ diff }` (L3). Non-GET → 405; illegal query → 400.
@@ -381,8 +383,8 @@ Contract source of truth (do not vendor/copy):
 
 | Path (after webview strips `/api`) | Behavior |
 |---|---|
-| `PUT /openchamber/sessions/:id/metadata` | RFC 7386 merge patch → `{ metadata }` |
-| `PUT /openchamber/sessions/:id/archive` | `{ archivedAt, directory? }` → `{ session, index? }` |
+| `PUT /yuri/sessions/:id/metadata` | RFC 7386 merge patch → `{ metadata }` |
+| `PUT /yuri/sessions/:id/archive` | `{ archivedAt, directory? }` → `{ session, index? }` |
 | GET `/session` / `/experimental/session` | Overlay committed Host map; 503 retryable if unavailable |
 | GET `/session/:id` | Same overlay / 503 contract |
 | `DELETE /session/:id` | On upstream 2xx → idempotent Host forget |

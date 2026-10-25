@@ -2,7 +2,7 @@
 export function isSensitiveCredentialResponse(method, requestPath) {
   let pathname;
   try {
-    pathname = decodeURIComponent(new URL(requestPath, 'http://openchamber.invalid').pathname).replace(/\/+$/, '').toLowerCase();
+    pathname = decodeURIComponent(new URL(requestPath, 'http://yuri.invalid').pathname).replace(/\/+$/, '').toLowerCase();
   } catch {
     return true;
   }

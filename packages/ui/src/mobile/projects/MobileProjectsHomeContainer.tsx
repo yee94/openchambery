@@ -193,7 +193,7 @@ export function MobileProjectsHomeContainer({
           ? t('sessions.sidebar.session.archive.success')
           : t('sessions.sidebar.bulkActions.archivedPlural', { count: archivedIds.length }),
         undoLabel: t('sessions.sidebar.undo'),
-        settingsLabel: t('settings.openchamber.archivedSessions.actions.view'),
+        settingsLabel: t('settings.yuri.archivedSessions.actions.view'),
         undoFailedMessage: archivedIds.length === 1
           ? t('sessions.sidebar.session.archive.undoFailed')
           : t('sessions.sidebar.bulkActions.archiveUndoFailed', { count: archivedIds.length }),

@@ -34,7 +34,7 @@ type TextNodeShape = {
  * the same key as the paragraph `text` node. Without a dispatcher, ```text
  * fences render through MarkstreamTextNode (reads `node.content`) and paint
  * blank — ASCII trees / plaintext dumps disappear. Route code_block nodes to
- * the OpenChamber fence adapter; keep true text nodes on the file-ref path.
+ * the Yuri fence adapter; keep true text nodes on the file-ref path.
  */
 function MarkstreamTextMapEntry(
   props: NodeComponentProps<TextNodeShape | CodeBlockNodeShape> & {
@@ -60,7 +60,7 @@ function MarkstreamTextMapEntry(
 }
 
 /**
- * Registers every OpenChamber Markstream node override once.
+ * Registers every Yuri Markstream node override once.
  * A single `setCustomComponents({...})` replaces the global map — never call
  * it from multiple modules with partial maps or later registrations wipe earlier ones.
  */
@@ -76,7 +76,7 @@ export const ensureMarkstreamCustomComponents = (): void => {
     image: MarkstreamImageNode,
     code_block: withMarkstreamComponentDisplay(MarkstreamCodeBlockNode, 'block'),
     // Language keys, not AST types. Resolved before code_block. mermaid is drawn
-    // by MarkdownRendererImpl; d2 / infographic have no OpenChamber renderer and
+    // by MarkdownRendererImpl; d2 / infographic have no Yuri renderer and
     // must not fall through to the library peer shells.
     mermaid: withMarkstreamComponentDisplay(MarkstreamInterceptedFenceNode, 'block'),
     d2: withMarkstreamComponentDisplay(MarkstreamInterceptedFenceNode, 'block'),

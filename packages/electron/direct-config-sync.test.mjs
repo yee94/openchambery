@@ -4,7 +4,7 @@ import {
   buildDirectHostAuthHeaders,
   createDirectTargetExecutor,
 } from './direct-config-sync.mjs';
-import { createDirectHostSyncTarget } from '@openchambery/web/server/lib/config-sync/index.js';
+import { createDirectHostSyncTarget } from '@yuri/web/server/lib/config-sync/index.js';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
 
 describe('direct config sync helpers', () => {
@@ -54,7 +54,7 @@ describe('direct config sync helpers', () => {
       fetchImpl,
     });
     const probe = await executor.probe({ files: [], directories: [], deletes: [] });
-    expect(urls[0]).toBe('http://127.0.0.1:3999/api/openchamber/config-sync/probe');
+    expect(urls[0]).toBe('http://127.0.0.1:3999/api/yuri/config-sync/probe');
     expect(probe.remoteExisting).toEqual(['opencode.jsonc']);
   });
 

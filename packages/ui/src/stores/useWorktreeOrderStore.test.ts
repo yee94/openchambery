@@ -34,7 +34,7 @@ test('first activity preserves legacy desktop peers and persists in the runtime 
   reset();
   const paths = ['/trees/a', '/trees/b', '/trees/c'];
   const catalog = paths.map((path) => ({ path, projectDirectory: '/project', branch: path, label: path }));
-  writeInstanceScopedItem('oc.sessions.groupOrder', JSON.stringify({ project: ['main', `worktree:${paths[2]}`, `worktree:${paths[1]}`, `worktree:${paths[0]}`, 'archived'] }));
+  writeInstanceScopedItem('yuri.sessions.groupOrder', JSON.stringify({ project: ['main', `worktree:${paths[2]}`, `worktree:${paths[1]}`, `worktree:${paths[0]}`, 'archived'] }));
   try {
     useWorktreeOrderStore.getState().promoteWorktree('project', '/project', paths[0], catalog);
     expect(useWorktreeOrderStore.getState().orderByProject.project).toEqual([paths[0], paths[2], paths[1]]);
@@ -42,7 +42,7 @@ test('first activity preserves legacy desktop peers and persists in the runtime 
     expect(useWorktreeOrderStore.getState().orderByProject.project).toEqual([paths[0], paths[2], paths[1]]);
     useWorktreeOrderStore.getState().activateWorktreeOrderRuntime('other-runtime');
     expect(useWorktreeOrderStore.getState().orderByProject).toEqual({});
-  } finally { removeInstanceScopedItem('oc.sessions.groupOrder'); }
+  } finally { removeInstanceScopedItem('yuri.sessions.groupOrder'); }
 });
 
 test('applies settled remote worktree order and preserves references for equal values', () => {

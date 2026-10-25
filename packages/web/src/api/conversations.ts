@@ -1,9 +1,9 @@
-import { runtimeFetch } from '@openchamber/ui/lib/runtime-fetch';
+import { runtimeFetch } from '@yuri/ui/lib/runtime-fetch';
 import type {
   ConversationsAPI,
   ConversationCreateWithPromptInput,
   ConversationCreateWithPromptResult,
-} from '@openchamber/ui/lib/api/types';
+} from '@yuri/ui/lib/api/types';
 
 // --- runtime parser: validate result shape without blind `as` ---
 
@@ -71,7 +71,7 @@ export const createWebConversationsAPI = (): ConversationsAPI => ({
   ): Promise<ConversationCreateWithPromptResult> {
     let response: Response;
     try {
-      response = await runtimeFetch('/api/openchamber/conversations', {
+      response = await runtimeFetch('/api/yuri/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),

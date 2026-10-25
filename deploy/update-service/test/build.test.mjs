@@ -16,7 +16,7 @@ test('build emits an update manifest from the published release manifest and cha
   try {
     execFileSync(process.execPath, ['scripts/build.mjs'], {
       cwd: projectRoot,
-      env: { ...process.env, OPENCHAMBER_UPDATE_OUTPUT_DIR: outputDirectory },
+      env: { ...process.env, YURI_UPDATE_OUTPUT_DIR: outputDirectory },
       stdio: 'pipe',
     });
 
@@ -25,7 +25,7 @@ test('build emits an update manifest from the published release manifest and cha
     const health = JSON.parse(readFileSync(path.join(outputPath, 'health.json'), 'utf8'));
 
     assert.deepEqual(manifest, sourceManifest);
-    assert.deepEqual(health, { service: 'openchamber-update', latestVersion: sourceManifest.latestVersion });
+    assert.deepEqual(health, { service: 'yuri-update', latestVersion: sourceManifest.latestVersion });
     assert.equal(existsSync(path.join(outputPath, 'CHANGELOG.md')), true);
 
     const betaChannel = JSON.parse(readFileSync(path.join(outputPath, 'ota', 'channels', 'beta.json'), 'utf8'));
@@ -51,9 +51,9 @@ test('EdgeOne build skips OTA seed tree and CHANGELOG so edge proxies are not sh
       cwd: projectRoot,
       env: {
         ...process.env,
-        OPENCHAMBER_UPDATE_OUTPUT_DIR: outputDirectory,
-        OPENCHAMBER_UPDATE_SKIP_OTA_COPY: '1',
-        OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY: '1',
+        YURI_UPDATE_OUTPUT_DIR: outputDirectory,
+        YURI_UPDATE_SKIP_OTA_COPY: '1',
+        YURI_UPDATE_SKIP_CHANGELOG_COPY: '1',
       },
       stdio: 'pipe',
     });

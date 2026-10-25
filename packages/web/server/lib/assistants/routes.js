@@ -25,7 +25,7 @@ export const registerAssistantRoutes = (app, dependencies) => {
   });
   const service = createAssistantsService({
     dbPath: dependencies.dbPath,
-    dataDir: dependencies.openchamberDataDir,
+    dataDir: dependencies.yuriDataDir,
     buildOpenCodeUrl: dependencies.buildOpenCodeUrl,
     getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders,
     getServerId: dependencies.getServerId,
@@ -48,20 +48,20 @@ export const registerAssistantRoutes = (app, dependencies) => {
   });
   setAssignedSessionSettleHandler(({ sessionId, status }) => service.reportAssignedSessionSettle(sessionId, status));
   const unsubscribeTaskResults = dependencies.setTaskResultHandler?.((run) => service.reportScheduledTaskResult(run));
-  app.use('/api/openchamber/assistants', (req, res, next) => Promise.resolve(dependencies.refreshAllowedRoots?.()).then(next).catch((error) => respond(res, () => { throw error; })));
-  app.get('/api/openchamber/assistants/capability', (_req, res) => respond(res, () => service.capability()));
-  app.get('/api/openchamber/assistants', (_req, res) => respond(res, () => service.snapshot())); app.get('/api/openchamber/assistants/snapshot', (_req, res) => respond(res, () => service.snapshot())); app.put('/api/openchamber/assistants/settings', (req, res) => respond(res, () => service.setEnabled(req.body)));
-  app.post('/api/openchamber/assistants', (req, res) => respond(res, () => service.createAssistant(req.body), 201)); app.patch('/api/openchamber/assistants/:assistantID', (req, res) => respond(res, () => service.updateAssistant(req.params.assistantID, req.body))); app.delete('/api/openchamber/assistants/:assistantID', (req, res) => respond(res, () => service.removeAssistant(req.params.assistantID, req.body?.expectedRevision)));
-  app.post('/api/openchamber/assistants/:assistantID/session/ensure', (req, res) => respond(res, () => service.ensure(req.params.assistantID))); app.post('/api/openchamber/assistants/:assistantID/session/new', (req, res) => respond(res, () => service.createNew(req.params.assistantID))); app.post('/api/openchamber/assistants/:assistantID/session/compact', (req, res) => respond(res, () => service.compact(req.params.assistantID, req.body))); app.post('/api/openchamber/assistants/:assistantID/session/abort', (req, res) => respond(res, () => service.abort(req.params.assistantID, req.body)));
-  app.get('/api/openchamber/assistants/:assistantID/messages', (req, res) => respond(res, () => service.historicalMessages(req.params.assistantID, req.query)));
-  app.get('/api/openchamber/assistants/:assistantID/contact/messages', (req, res) => respond(res, () => service.contactMessages(req.params.assistantID, req.query)));
-  app.post('/api/openchamber/assistants/:assistantID/contact/reset', (req, res) => respond(res, () => service.resetContact(req.params.assistantID)));
+  app.use('/api/yuri/assistants', (req, res, next) => Promise.resolve(dependencies.refreshAllowedRoots?.()).then(next).catch((error) => respond(res, () => { throw error; })));
+  app.get('/api/yuri/assistants/capability', (_req, res) => respond(res, () => service.capability()));
+  app.get('/api/yuri/assistants', (_req, res) => respond(res, () => service.snapshot())); app.get('/api/yuri/assistants/snapshot', (_req, res) => respond(res, () => service.snapshot())); app.put('/api/yuri/assistants/settings', (req, res) => respond(res, () => service.setEnabled(req.body)));
+  app.post('/api/yuri/assistants', (req, res) => respond(res, () => service.createAssistant(req.body), 201)); app.patch('/api/yuri/assistants/:assistantID', (req, res) => respond(res, () => service.updateAssistant(req.params.assistantID, req.body))); app.delete('/api/yuri/assistants/:assistantID', (req, res) => respond(res, () => service.removeAssistant(req.params.assistantID, req.body?.expectedRevision)));
+  app.post('/api/yuri/assistants/:assistantID/session/ensure', (req, res) => respond(res, () => service.ensure(req.params.assistantID))); app.post('/api/yuri/assistants/:assistantID/session/new', (req, res) => respond(res, () => service.createNew(req.params.assistantID))); app.post('/api/yuri/assistants/:assistantID/session/compact', (req, res) => respond(res, () => service.compact(req.params.assistantID, req.body))); app.post('/api/yuri/assistants/:assistantID/session/abort', (req, res) => respond(res, () => service.abort(req.params.assistantID, req.body)));
+  app.get('/api/yuri/assistants/:assistantID/messages', (req, res) => respond(res, () => service.historicalMessages(req.params.assistantID, req.query)));
+  app.get('/api/yuri/assistants/:assistantID/contact/messages', (req, res) => respond(res, () => service.contactMessages(req.params.assistantID, req.query)));
+  app.post('/api/yuri/assistants/:assistantID/contact/reset', (req, res) => respond(res, () => service.resetContact(req.params.assistantID)));
   // Shared multi-client contact read watermark (monotonic; generation-fenced).
-  app.post('/api/openchamber/assistants/:assistantID/contact/read', (req, res) => respond(res, () => service.markContactRead(req.params.assistantID, req.body)));
-  app.post('/api/openchamber/assistants/:assistantID/contact/cards', (req, res) => respond(res, () => service.appendContactCard(req.params.assistantID, req.body), 201));
-  app.post('/api/openchamber/assistants/:assistantID/contact/dm', (req, res) => respond(res, () => service.deliverPeerMessage(req.params.assistantID, req.body), 201));
+  app.post('/api/yuri/assistants/:assistantID/contact/read', (req, res) => respond(res, () => service.markContactRead(req.params.assistantID, req.body)));
+  app.post('/api/yuri/assistants/:assistantID/contact/cards', (req, res) => respond(res, () => service.appendContactCard(req.params.assistantID, req.body), 201));
+  app.post('/api/yuri/assistants/:assistantID/contact/dm', (req, res) => respond(res, () => service.deliverPeerMessage(req.params.assistantID, req.body), 201));
   // Contact attachments: raw-byte PUT + opaque GET (content-addressed under dataDir).
-  app.put('/api/openchamber/assistants/:assistantID/contact/attachments/:uploadID', (req, res) => {
+  app.put('/api/yuri/assistants/:assistantID/contact/attachments/:uploadID', (req, res) => {
     const controller = new AbortController();
     req.once?.('aborted', () => controller.abort());
     respond(res, () => service.putAssistantContactAttachment(req.params.assistantID, req.params.uploadID, {
@@ -70,7 +70,7 @@ export const registerAssistantRoutes = (app, dependencies) => {
       signal: controller.signal,
     }), 201);
   });
-  app.get('/api/openchamber/assistants/:assistantID/contact/attachments/:attachmentID', (req, res) => {
+  app.get('/api/yuri/assistants/:assistantID/contact/attachments/:attachmentID', (req, res) => {
     Promise.resolve()
       .then(() => service.getAssistantContactAttachment(req.params.assistantID, req.params.attachmentID))
       .then((file) => {
@@ -104,9 +104,9 @@ export const registerAssistantRoutes = (app, dependencies) => {
         });
       });
   });
-  app.get('/api/openchamber/assistants/:assistantID/scheduled-tasks', (req, res) => respond(res, () => service.listAssistantScheduledTasks(req.params.assistantID)));
+  app.get('/api/yuri/assistants/:assistantID/scheduled-tasks', (req, res) => respond(res, () => service.listAssistantScheduledTasks(req.params.assistantID)));
   // Contact send admits the user message at 202; assistant bubbles stream on SSE.
-  app.post('/api/openchamber/assistants/:assistantID/messages', (req, res) => respond(res, () => service.send(req.params.assistantID, req.body), 202)); app.post('/api/openchamber/assistants/:assistantID/share', (req, res) => respond(res, () => service.share(req.params.assistantID, req.body), 202)); app.get('/api/openchamber/assistants/share-operations/:operationID', (req, res) => respond(res, () => { const operation = service.shareOperation(req.params.operationID); if (!operation) throw new AssistantError('not_found'); return operation; }));
-  app.use('/api/openchamber/assistants/topics', gone); app.use('/api/openchamber/assistants/:assistantID/topics', gone);
+  app.post('/api/yuri/assistants/:assistantID/messages', (req, res) => respond(res, () => service.send(req.params.assistantID, req.body), 202)); app.post('/api/yuri/assistants/:assistantID/share', (req, res) => respond(res, () => service.share(req.params.assistantID, req.body), 202)); app.get('/api/yuri/assistants/share-operations/:operationID', (req, res) => respond(res, () => { const operation = service.shareOperation(req.params.operationID); if (!operation) throw new AssistantError('not_found'); return operation; }));
+  app.use('/api/yuri/assistants/topics', gone); app.use('/api/yuri/assistants/:assistantID/topics', gone);
   return { service, close: () => { unsubscribeTaskResults?.(); setAssignedSessionSettleHandler(null); service.close(); } };
 };

@@ -28,21 +28,21 @@ const noop = () => undefined;
 
 const projects: MobileProjectHomeItem[] = [{
   id: 'project-1',
-  name: 'OpenChamber',
-  path: '/code/openchamber',
+  name: 'Yuri',
+  path: '/code/yuri',
   sessionCount: 2,
   expanded: true,
   worktrees: [{
     id: 'main',
     name: 'Main workspace',
-    path: '/code/openchamber',
+    path: '/code/yuri',
     kind: 'main',
     sessionCount: 1,
     sessions: [{ id: 'main-session', kind: 'pagination', title: 'Main session' }],
   }, {
     id: 'feature',
     name: 'Feature branch',
-    path: '/code/openchamber-feature',
+    path: '/code/yuri-feature',
     kind: 'worktree',
     sessionCount: 1,
     expanded: true,
@@ -56,7 +56,7 @@ const props: MobileProjectsHomeProps = {
     id: 'global-pinned-session',
     kind: 'pagination',
     title: 'Global pinned session',
-    subtitle: 'OpenChamber',
+    subtitle: 'Yuri',
     pinned: true,
   }],
   onAddProject: noop,
@@ -90,11 +90,11 @@ describe('MobileProjectsHome workspace groups', () => {
     );
 
     expect(html).toContain('Global pinned session');
-    expect(html).toContain('OpenChamber');
-    expect(html).toContain('oc-mobile-project-shell');
+    expect(html).toContain('Yuri');
+    expect(html).toContain('yuri-mobile-project-shell');
     expect(html.indexOf('Global pinned session')).toBeLessThan(html.indexOf('Main session'));
     expect(html.match(/aria-label="Pinned \/ In progress"/g)).toHaveLength(1);
-    expect(html).toContain('oc-mobile-project-card');
+    expect(html).toContain('yuri-mobile-project-card');
   });
 
   test('groups pinned sessions above in-progress sessions without extra labels', () => {
@@ -106,7 +106,7 @@ describe('MobileProjectsHome workspace groups', () => {
             id: 'running-session',
             kind: 'pagination',
             title: 'Running session',
-            subtitle: 'OpenChamber',
+            subtitle: 'Yuri',
           }]}
         />
       </I18nProvider>,
@@ -154,8 +154,8 @@ describe('MobileProjectsHome workspace groups', () => {
     expect(html).toContain('aria-label="Pinned / In progress"');
     expect(html.match(/data-session-status="completed-unread"/g)).toHaveLength(2);
     expect(html.match(/bg-\[var\(--status-info\)\]/g)).toHaveLength(2);
-    expect(html).toMatch(/data-session-status="completed-unread"[\s\S]*oc-mobile-session-title truncate font-semibold[^>]*>Unread session/);
-    expect(html).toMatch(/data-session-status="completed-unread"[\s\S]*oc-mobile-session-title truncate font-semibold[^>]*>Ordinary unread session/);
+    expect(html).toMatch(/data-session-status="completed-unread"[\s\S]*yuri-mobile-session-title truncate font-semibold[^>]*>Unread session/);
+    expect(html).toMatch(/data-session-status="completed-unread"[\s\S]*yuri-mobile-session-title truncate font-semibold[^>]*>Ordinary unread session/);
   });
 
   test('renders main sessions directly and keeps linked worktree headers', () => {
@@ -171,7 +171,7 @@ describe('MobileProjectsHome workspace groups', () => {
     expect(html).toContain('Feature session');
     // Worktree name is secondary to the project title — not the same
     // semibold ui-label treatment, or it visually outranks the project.
-    expect(html).toMatch(/oc-mobile-entity-title[^"]*font-semibold[^"]*text-foreground[^>]*>Feature branch/);
+    expect(html).toMatch(/yuri-mobile-entity-title[^"]*font-semibold[^"]*text-foreground[^>]*>Feature branch/);
   });
 
   test('wires worktree action affordances on linked worktree headers', () => {
@@ -182,9 +182,9 @@ describe('MobileProjectsHome workspace groups', () => {
     );
 
     // Swipe rail + trailing overflow menu (session-row parity; no always-on +).
-    expect(html).toContain('oc-mobile-worktree-actions');
-    expect(html).toContain('oc-mobile-worktree-more');
-    expect(html).toContain('oc-mobile-worktree-label-trigger');
-    expect(html).not.toContain('oc-mobile-worktree-new-session');
+    expect(html).toContain('yuri-mobile-worktree-actions');
+    expect(html).toContain('yuri-mobile-worktree-more');
+    expect(html).toContain('yuri-mobile-worktree-label-trigger');
+    expect(html).not.toContain('yuri-mobile-worktree-new-session');
   });
 });

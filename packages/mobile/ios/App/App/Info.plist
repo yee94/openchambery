@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>OpenChamber</string>
+	<string>Yuri</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -34,13 +34,13 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>OpenChamber connects to OpenChamber servers on your local network.</string>
+	<string>Yuri connects to Yuri servers on your local network.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>OpenChamber uses the camera to scan a server's pairing QR code.</string>
+	<string>Yuri uses the camera to scan a server's pairing QR code.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>OpenChamber uses the microphone for voice dictation in the chat composer.</string>
+	<string>Yuri uses the microphone for voice dictation in the chat composer.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>OpenChamber saves images from chat into your photo library when you choose Save to Photos.</string>
+	<string>Yuri saves images from chat into your photo library when you choose Save to Photos.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>INSendMessageIntent</string>
@@ -53,10 +53,12 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.yee94.openchamber.deeplink</string>
+			<string>com.yee94.yuri.deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>yuri</string>
 				<string>openchamber</string>
+				<string>openchambery</string>
 			</array>
 		</dict>
 	</array>

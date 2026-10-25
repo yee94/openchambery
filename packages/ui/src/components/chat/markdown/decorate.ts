@@ -50,9 +50,9 @@ export type DecorateContext = {
 
 // Reference the app's icon sprite (injected into <body> by the shared Icon
 // component) so DOM-built controls use the same themed icons as the rest of
-// the app. Sprite symbols are registered under `#oc-<name>`.
+// the app. Sprite symbols are registered under `#yuri-<name>`.
 const spriteIcon = (name: IconName, className = 'size-3.5'): string =>
-  `<svg class="oc-icon ${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#oc-${name}"></use></svg>`;
+  `<svg class="yuri-icon ${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#yuri-${name}"></use></svg>`;
 
 const ICONS = {
   copy: spriteIcon('file-copy'),
@@ -464,7 +464,7 @@ const decorateMermaid = (root: HTMLElement, ctx: DecorateContext): void => {
       for (const [selector, attribute] of [['title[id]', 'aria-labelledby'], ['desc[id]', 'aria-describedby']]) {
         const label = svg?.querySelector(selector);
         if (label) {
-          label.id = `oc-mermaid-${instance}-${label.localName}`;
+          label.id = `yuri-mermaid-${instance}-${label.localName}`;
           svg?.setAttribute(attribute, label.id);
         }
       }
@@ -515,7 +515,7 @@ const decorateLinks = (root: HTMLElement, ctx: DecorateContext): void => {
   const anchors = root.querySelectorAll<HTMLAnchorElement>('a[href]');
   for (const anchor of Array.from(anchors)) {
     if (anchor.getAttribute('data-md-link-decorated') === 'true') continue;
-    if (anchor.getAttribute('data-openchamber-file-link') === 'true') continue;
+    if (anchor.getAttribute('data-yuri-file-link') === 'true') continue;
     const href = anchor.getAttribute('href') ?? '';
     if (!isExternalHttpUrl(href)) continue;
     anchor.setAttribute('data-md-link-decorated', 'true');
@@ -585,7 +585,7 @@ const ensureMarkdownImagePresentation = (image: HTMLImageElement): HTMLElement =
   visual.setAttribute('data-md-image-placeholder-visual', 'true');
   visual.setAttribute('aria-hidden', 'true');
   visual.className = 'pointer-events-none absolute inset-0 flex items-center justify-center text-muted-foreground';
-  visual.classList.add('oc-image-loading');
+  visual.classList.add('yuri-image-loading');
   if (isMobileSurfaceRuntime()) {
     presentation.setAttribute('data-mobile-image', 'true');
   }

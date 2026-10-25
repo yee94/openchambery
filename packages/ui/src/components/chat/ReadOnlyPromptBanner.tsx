@@ -18,7 +18,7 @@ type ReadOnlyPromptBannerProps = {
 const BANNER_TEXT_CLASS = 'text-[13px] leading-4 sm:text-[length:var(--text-micro)] sm:leading-5';
 
 /** Matches ChatInput's solid mobile foot: no elevation, Capacitor safe-area cover. */
-const MOBILE_FOOT_CLASS = 'relative bottom-safe-area oc-mobile-readonly-prompt-foot';
+const MOBILE_FOOT_CLASS = 'relative bottom-safe-area yuri-mobile-readonly-prompt-foot';
 
 const ExecutionModelIcon: React.FC<{
     providerId?: string;
@@ -72,7 +72,7 @@ export const ReadOnlyPromptBanner: React.FC<ReadOnlyPromptBannerProps> = (props)
             <div
                 className={cn(
                     'rounded-2xl border border-border/70 bg-[var(--surface-elevated)] px-3 py-2.5 sm:px-4 sm:py-3',
-                    isMobile && 'oc-mobile-readonly-prompt-surface',
+                    isMobile && 'yuri-mobile-readonly-prompt-surface',
                 )}
             >
                 <div className={`text-muted-foreground ${BANNER_TEXT_CLASS}`}>

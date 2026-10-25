@@ -9,17 +9,17 @@ async function source(path) {
 }
 
 test('native tab bar uses UITabBar liquid glass and keeps web as the fallback', async () => {
-  const plugin = await source('ios/App/App/OpenChamberTabBarPlugin.swift');
-  const view = await source('ios/App/App/OpenChamberTabBarView.swift');
-  const contract = await source('contracts/openchamber-tab-bar.mjs');
-  const bridge = await source('ios/App/App/OpenChamberBridgeViewController.swift');
+  const plugin = await source('ios/App/App/YuriTabBarPlugin.swift');
+  const view = await source('ios/App/App/YuriTabBarView.swift');
+  const contract = await source('contracts/yuri-tab-bar.mjs');
+  const bridge = await source('ios/App/App/YuriBridgeViewController.swift');
 
-  assert.match(contract, /OpenChamberTabBar/);
+  assert.match(contract, /YuriTabBar/);
   assert.match(contract, /tabSelected/);
-  assert.match(bridge, /OpenChamberTabBarPlugin\(\)/);
+  assert.match(bridge, /YuriTabBarPlugin\(\)/);
   assert.match(view, /supportsLiquidGlass/);
-  assert.match(view, /let chromeController = OpenChamberTabBarChromeController\(\)/);
-  assert.match(view, /class OpenChamberTabBarChromeController: UITabBarController/);
+  assert.match(view, /let chromeController = YuriTabBarChromeController\(\)/);
+  assert.match(view, /class YuriTabBarChromeController: UITabBarController/);
   assert.match(view, /UITabBarControllerDelegate/);
   assert.match(view, /overrideUserInterfaceStyle = style/);
   assert.match(view, /appearance == "light" \? \.light : \.dark/);
@@ -57,8 +57,8 @@ test('native tab bar uses UITabBar liquid glass and keeps web as the fallback', 
 });
 
 test('native tab bar reads UI badge strings and drives UITabBarItem.badgeValue', async () => {
-  const plugin = await source('ios/App/App/OpenChamberTabBarPlugin.swift');
-  const view = await source('ios/App/App/OpenChamberTabBarView.swift');
+  const plugin = await source('ios/App/App/YuriTabBarPlugin.swift');
+  const view = await source('ios/App/App/YuriTabBarView.swift');
 
   // Bridge: parseTabs reads the UI-owned display string (or null → clear).
   assert.match(plugin, /badge: parseBadge\(object\["badge"\]\)/);
@@ -85,8 +85,8 @@ test('native tab bar reads UI badge strings and drives UITabBarItem.badgeValue',
 });
 
 test('native tab bar switching stays on the overlay and does not own the React page stack', async () => {
-  const plugin = await source('ios/App/App/OpenChamberTabBarPlugin.swift');
-  const view = await source('ios/App/App/OpenChamberTabBarView.swift');
+  const plugin = await source('ios/App/App/YuriTabBarPlugin.swift');
+  const view = await source('ios/App/App/YuriTabBarView.swift');
   assert.match(view, /tabBarView\(self, didSelectTab: id\)/);
   assert.match(plugin, /didSelectTab id: String/);
   assert.match(plugin, /notifyListeners\("tabSelected"/);

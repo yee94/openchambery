@@ -16,7 +16,7 @@ import {
 } from '@/lib/session-index-api';
 import { normalizePath } from '@/lib/pathNormalization';
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
-import { getLatestOpenchamberEventRevision } from '@/lib/openchamberEvents';
+import { getLatestYuriEventRevision } from '@/lib/yuriEvents';
 import {
   ensureSessionIndexRevisionQuery,
   refreshSessionIndexSnapshotQuery,
@@ -353,16 +353,16 @@ export const mergeSessionDirectoryMetadata = (incoming: Session, existing?: Sess
     const incomingMetadata = incomingRecord.metadata && typeof incomingRecord.metadata === 'object'
       ? incomingRecord.metadata as Record<string, unknown>
       : {};
-    const incomingOpenChamber = incomingMetadata.openchamber && typeof incomingMetadata.openchamber === 'object'
-      ? incomingMetadata.openchamber as Record<string, unknown>
+    const incomingYuri = incomingMetadata.yuri && typeof incomingMetadata.yuri === 'object'
+      ? incomingMetadata.yuri as Record<string, unknown>
       : {};
-    const incomingTitleRefresh = incomingOpenChamber.titleRefresh && typeof incomingOpenChamber.titleRefresh === 'object'
-      ? incomingOpenChamber.titleRefresh as Record<string, unknown>
+    const incomingTitleRefresh = incomingYuri.titleRefresh && typeof incomingYuri.titleRefresh === 'object'
+      ? incomingYuri.titleRefresh as Record<string, unknown>
       : {};
     next.metadata = {
       ...incomingMetadata,
-      openchamber: {
-        ...incomingOpenChamber,
+      yuri: {
+        ...incomingYuri,
         titleRefresh: {
           ...incomingTitleRefresh,
           activityUpdatedAt: existingActivityUpdatedAt,
@@ -1458,7 +1458,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         while (!controller.signal.aborted && isCurrentSessionIndexRuntime(runtime)) {
           const loadRuntime = captureSessionIndexRuntime();
           try {
-            const revision = reason === 'tip' ? getLatestOpenchamberEventRevision('session-index-changed') : undefined;
+            const revision = reason === 'tip' ? getLatestYuriEventRevision('session-index-changed') : undefined;
             loaded = revision !== undefined && revision > current.revision
               ? await ensureSessionIndexRevisionQuery(revision)
               : await refreshSessionIndexSnapshotQuery();
@@ -1803,7 +1803,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         const loadRuntime = captureSessionIndexRuntime();
         let next: SessionIndexSnapshot | null;
         try {
-          const revision = reason === 'tip' ? getLatestOpenchamberEventRevision('session-index-changed') : undefined;
+          const revision = reason === 'tip' ? getLatestYuriEventRevision('session-index-changed') : undefined;
           next = revision !== undefined && revision > current.revision
             ? await ensureSessionIndexRevisionQuery(revision)
             : await refreshSessionIndexSnapshotQuery();

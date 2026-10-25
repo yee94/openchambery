@@ -1,7 +1,7 @@
 import { hasPreviewProxyCredential } from '../opencode/core-routes.js';
 
 export function registerContentSearchRoutes(app, { contentSearch } = {}) {
-  app.get('/api/openchamber/content-search', (req, res) => {
+  app.get('/api/yuri/content-search', (req, res) => {
     if (hasPreviewProxyCredential(req)) return res.status(403).json({ error: 'Forbidden' });
     if (!contentSearch) return res.status(503).json({ error: 'Global content index unavailable' });
     const query = req.query.q ?? '';

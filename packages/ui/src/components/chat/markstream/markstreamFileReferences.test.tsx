@@ -16,7 +16,7 @@ beforeEach(() => {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
-  window.__OPENCHAMBER_SURFACE__ = 'mobile';
+  window.__YURI_SURFACE__ = 'mobile';
   runtimeFetch.mockRejectedValue(new Error('Relay disconnected'));
 });
 afterEach(async () => {
@@ -24,7 +24,7 @@ afterEach(async () => {
   host.remove();
   vi.clearAllMocks();
   resetFileReferenceStatCacheForTests();
-  delete window.__OPENCHAMBER_SURFACE__;
+  delete window.__YURI_SURFACE__;
 });
 
 async function renderLink(path: string, onShowPopup = vi.fn()) {
@@ -47,7 +47,7 @@ test('a failed relay probe does not block mobile markdown preview navigation', a
 });
 
 test.each(['mobile', 'desktop'] as const)('directory anchors cannot reload the %s application', async (surface) => {
-  window.__OPENCHAMBER_SURFACE__ = surface;
+  window.__YURI_SURFACE__ = surface;
   for (const path of ['/repo/src/', '/repo/src', './src/', 'packages/ui', '/']) {
     const link = await renderLink(path);
     const event = new MouseEvent('click', { bubbles: true, cancelable: true });

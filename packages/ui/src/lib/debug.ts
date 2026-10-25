@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -229,7 +230,7 @@ export const debugUtils = {
     })();
 
     const runtimeApis = getRegisteredRuntimeAPIs();
-    const isDesktopRuntime = typeof window !== 'undefined' && Boolean((window as { __OPENCHAMBER_ELECTRON__?: unknown }).__OPENCHAMBER_ELECTRON__);
+    const isDesktopRuntime = typeof window !== 'undefined' && Boolean((window as { __YURI_ELECTRON__?: unknown }).__YURI_ELECTRON__);
 
     const safeJson = async (resp: Response) => {
       try {
@@ -378,7 +379,7 @@ export const debugUtils = {
         projectInfo,
         health: opencodeHealth,
       },
-      openchamber: {
+      yuri: {
         settingsInfo,
       },
     };

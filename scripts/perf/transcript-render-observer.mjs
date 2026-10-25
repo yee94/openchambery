@@ -12,7 +12,7 @@ export function installTranscriptRenderObserver(target = globalThis) {
   const sample = () => {
     const scroll = target.document.querySelector('.chat-scroll');
     const messages = [...(scroll?.querySelectorAll('[data-message-id]') ?? [])];
-    const userNodes = messages.filter((node) => node.matches('.oc-user-shell-hover-scope') || node.querySelector('.oc-user-shell-hover-scope'));
+    const userNodes = messages.filter((node) => node.matches('.yuri-user-shell-hover-scope') || node.querySelector('.yuri-user-shell-hover-scope'));
     const rows = scroll?.querySelectorAll('[data-turn-entry]').length ?? 0;
     const virtualRows = scroll?.querySelectorAll('[data-turn-entry][data-index]').length ?? 0;
     if (active) {

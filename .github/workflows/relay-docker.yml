@@ -37,13 +37,22 @@ permissions:
   contents: read
 
 env:
-  RELAY_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/openchamber-relay
+  RELAY_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/yuri-relay
 
 jobs:
   validate:
     name: Validate Relay image inputs
     runs-on: ubuntu-latest
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -97,6 +106,15 @@ jobs:
             runner: ubuntu-24.04-arm
             platform_pair: linux-arm64
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -116,8 +134,8 @@ jobs:
         with:
           images: ${{ env.RELAY_IMAGE }}
           labels: |
-            org.opencontainers.image.title=OpenChamber Relay Server
-            org.opencontainers.image.description=Self-hosted private relay server for OpenChamber
+            org.opencontainers.image.title=Yuri Relay Server
+            org.opencontainers.image.description=Self-hosted private relay server for Yuri
             org.opencontainers.image.version=${{ inputs.version }}
 
       - name: Build platform image (no push)
@@ -129,8 +147,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.relay_meta.outputs.labels }}
           push: false
-          cache-from: type=gha,scope=openchamber-relay-${{ matrix.platform_pair }}
-          cache-to: type=gha,mode=max,scope=openchamber-relay-${{ matrix.platform_pair }}
+          cache-from: type=gha,scope=yuri-relay-${{ matrix.platform_pair }}
+          cache-to: type=gha,mode=max,scope=yuri-relay-${{ matrix.platform_pair }}
 
       - name: Build and push by digest
         id: build
@@ -142,8 +160,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.relay_meta.outputs.labels }}
           outputs: type=image,name=${{ env.RELAY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=openchamber-relay-${{ matrix.platform_pair }}
-          cache-to: type=gha,mode=max,scope=openchamber-relay-${{ matrix.platform_pair }}
+          cache-from: type=gha,scope=yuri-relay-${{ matrix.platform_pair }}
+          cache-to: type=gha,mode=max,scope=yuri-relay-${{ matrix.platform_pair }}
 
       - name: Export digest
         if: inputs.push
@@ -174,6 +192,15 @@ jobs:
     if: inputs.push
     runs-on: ubuntu-latest
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - name: Download digests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:

@@ -3,8 +3,8 @@ import type {
   FileSearchQuery,
   FileSearchResult,
   FilesAPI,
-} from '@openchamber/ui/lib/api/types';
-import { runtimeFetch } from '@openchamber/ui/lib/runtime-fetch';
+} from '@yuri/ui/lib/api/types';
+import { runtimeFetch } from '@yuri/ui/lib/runtime-fetch';
 
 const normalizePath = (path: string): string => path.replace(/\\/g, '/');
 
@@ -186,7 +186,7 @@ export const createWebFilesAPI = ({ getDirectory }: WebFilesAPIOptions): FilesAP
 
     const content = await response.text();
     if (options?.optional) {
-      const exists = response.headers.get('x-openchamber-file-exists');
+      const exists = response.headers.get('x-yuri-file-exists');
       if (exists !== 'true' && exists !== 'false') {
         throw new Error('Optional file read requires an existence response header');
       }

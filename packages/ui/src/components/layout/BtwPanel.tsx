@@ -117,7 +117,7 @@ function BtwComposer({
   return <form
     data-btw-composer
     data-btw-composer-foot={foot}
-    className={['shrink-0 px-3 pt-1', mobileFoot ? 'oc-mobile-composer' : 'pb-3', foot === 'page' ? 'bottom-safe-area' : ''].filter(Boolean).join(' ')}
+    className={['shrink-0 px-3 pt-1', mobileFoot ? 'yuri-mobile-composer' : 'pb-3', foot === 'page' ? 'bottom-safe-area' : ''].filter(Boolean).join(' ')}
     onSubmit={(event) => { event.preventDefault(); send(); }}
   >
     <ChatPromptComposer
@@ -134,7 +134,7 @@ function BtwComposer({
       inputRef={textareaRef}
       textareaProps={{ autoFocus: true }}
       leftControls={modelControl}
-      className={mobileFoot ? 'relative z-10 oc-mobile-composer-surface' : 'relative z-10'}
+      className={mobileFoot ? 'relative z-10 yuri-mobile-composer-surface' : 'relative z-10'}
       style={{ borderRadius: BTW_COMPOSER_RADIUS }}
       textLayoutClassName={mobileFoot ? BTW_MOBILE_TEXT_CLASS : BTW_COMPOSER_TEXT_CLASS}
       inputStyle={{ borderTopLeftRadius: BTW_COMPOSER_RADIUS, borderTopRightRadius: BTW_COMPOSER_RADIUS }}

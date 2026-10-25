@@ -212,22 +212,22 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
   );
 
   return (
-    <div className="oc-settings-page-content h-full overflow-y-auto bg-background p-3">
+    <div className="yuri-settings-page-content h-full overflow-y-auto bg-background p-3">
       <SettingsGroup>
-        <div className="oc-settings-group-row"><SettingsProjectSelector /></div>
+        <div className="yuri-settings-group-row"><SettingsProjectSelector /></div>
       </SettingsGroup>
 
       {/* List */}
       <>
         {configsQuery.isError && !configsQuery.data ? (
           <SettingsGroup label={userServersLabel}>
-            <div className="oc-settings-group-row py-12 text-center typography-meta text-[var(--status-error)]">
+            <div className="yuri-settings-group-row py-12 text-center typography-meta text-[var(--status-error)]">
               {configsQuery.error.message}
             </div>
           </SettingsGroup>
         ) : mcpServers.length === 0 ? (
           <SettingsGroup label={userServersLabel}>
-            <div className="oc-settings-group-row py-12 text-center text-muted-foreground">
+            <div className="yuri-settings-group-row py-12 text-center text-muted-foreground">
               <Icon name="plug" className="mx-auto mb-3 h-10 w-10 opacity-50" />
               <p className="typography-ui-label font-medium">{t('settings.mcp.sidebar.empty.title')}</p>
               <p className="typography-meta mt-1 opacity-75">{t('settings.mcp.sidebar.empty.description')}</p>
@@ -249,7 +249,7 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
 
                   return (
                     <ContextMenu key={server.name} open={rightClickMenuMcp === server.name} onOpenChange={(open) => setRightClickMenuMcp(open ? server.name : null)}>
-                      <ContextMenuTrigger render={<div className={cn('oc-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setRightClickMenuMcp(server.name); } : undefined} />}>
+                      <ContextMenuTrigger render={<div className={cn('yuri-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setRightClickMenuMcp(server.name); } : undefined} />}>
                       <button
                         onClick={() => {
                           setSelectedMcp(server.name);
@@ -313,7 +313,7 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
 
                   return (
                     <ContextMenu key={server.name} open={rightClickMenuMcp === server.name} onOpenChange={(open) => setRightClickMenuMcp(open ? server.name : null)}>
-                      <ContextMenuTrigger render={<div className={cn('oc-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setRightClickMenuMcp(server.name); } : undefined} />}>
+                      <ContextMenuTrigger render={<div className={cn('yuri-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setRightClickMenuMcp(server.name); } : undefined} />}>
                       <button
                         onClick={() => {
                           setSelectedMcp(server.name);

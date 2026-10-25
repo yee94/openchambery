@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 const makeDir = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-index-host-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-index-host-'));
   tempDirs.push(dir);
   return dir;
 };
@@ -65,7 +65,7 @@ describe('session-index routes + Host archive (production path)', () => {
     index.setPinned('ses_live', 51);
 
     await store.setSessionMetadata('ses_arch', {
-      openchamber: { archive: { archivedAt: 99 } },
+      yuri: { archive: { archivedAt: 99 } },
     }, { allowArchive: true });
 
     const { app, route } = registry();
@@ -75,20 +75,20 @@ describe('session-index routes + Host archive (production path)', () => {
     });
 
     const snapRes = response();
-    await route('GET', '/api/openchamber/session-index')({}, snapRes);
+    await route('GET', '/api/yuri/session-index')({}, snapRes);
     expect(snapRes.statusCode).toBe(200);
     expect(snapRes.body.directories[0].sessions.map((s) => s.id)).toEqual(['ses_live']);
     expect(snapRes.body.pinnedSessionIds).toEqual(['ses_live']);
 
     const lookupArch = response();
-    await route('GET', '/api/openchamber/session-index/session/:sessionId')(
+    await route('GET', '/api/yuri/session-index/session/:sessionId')(
       { params: { sessionId: 'ses_arch' } },
       lookupArch,
     );
     expect(lookupArch.statusCode).toBe(404);
 
     const lookupLive = response();
-    await route('GET', '/api/openchamber/session-index/session/:sessionId')(
+    await route('GET', '/api/yuri/session-index/session/:sessionId')(
       { params: { sessionId: 'ses_live' } },
       lookupLive,
     );
@@ -104,7 +104,7 @@ describe('session-index routes + Host archive (production path)', () => {
       },
     });
     const failRes = response();
-    await route2('GET', '/api/openchamber/session-index')({}, failRes);
+    await route2('GET', '/api/yuri/session-index')({}, failRes);
     expect(failRes.statusCode).toBe(503);
     expect(failRes.body).toMatchObject({ retryable: true, code: 'session_metadata_unavailable' });
 
@@ -147,7 +147,7 @@ describe('session-index routes + Host archive (production path)', () => {
     const result = await archive.setArchive({ sessionID: 'ses_1', archivedAt: 77 });
     expect(result.index).toMatchObject({ ok: false, retryable: true });
     await expect(store.get('ses_1')).resolves.toMatchObject({
-      openchamber: { archive: { archivedAt: 77 } },
+      yuri: { archive: { archivedAt: 77 } },
     });
     expect(archive.getIndexRepairStatus('ses_1')).toMatchObject({ pending: true, retryable: true });
     expect(timers).toHaveLength(1);
@@ -168,7 +168,7 @@ describe('session-index routes + Host archive (production path)', () => {
     const dataDir = makeDir();
     const store1 = createSessionMetadataStore({ dataDir });
     await store1.setSessionMetadata('ses_x', {
-      openchamber: { archive: { archivedAt: 5 } },
+      yuri: { archive: { archivedAt: 5 } },
     }, { allowArchive: true });
 
     // Simulate crash after metadata commit: index still has the row.
@@ -194,7 +194,7 @@ describe('session-index routes + Host archive (production path)', () => {
       getCommittedHostMetadata: () => store2.getAll(),
     });
     const res = response();
-    await route('GET', '/api/openchamber/session-index')({}, res);
+    await route('GET', '/api/yuri/session-index')({}, res);
     expect(res.body.directories[0].sessions.map((s) => s.id)).toEqual(['ses_y']);
     index.close();
   });
@@ -213,7 +213,7 @@ describe('session-index routes + Host archive (production path)', () => {
       hasMore: false,
     });
     await store.setSessionMetadata('ses_a', {
-      openchamber: {
+      yuri: {
         titleAuthority: { sessionID: 'ses_a', title: 'A', revision: 'rev-1', source: 'manual' },
         scheduledTaskSkill: { hostOrigin: 'http://127.0.0.1:1' },
         scheduledTask: { taskID: 'task-1' },
@@ -239,8 +239,8 @@ describe('session-index routes + Host archive (production path)', () => {
     });
 
     const snapRes = response();
-    await route('GET', '/api/openchamber/session-index')({}, snapRes);
-    const listed = snapRes.body.directories[0].sessions[0].metadata.openchamber;
+    await route('GET', '/api/yuri/session-index')({}, snapRes);
+    const listed = snapRes.body.directories[0].sessions[0].metadata.yuri;
     expect(listed.titleAuthority).toBeUndefined();
     expect(listed.scheduledTaskSkill).toBeUndefined();
     expect(listed.scheduledTask).toEqual({ taskID: 'task-1' });
@@ -256,12 +256,12 @@ describe('session-index routes + Host archive (production path)', () => {
     expect(listed.sessionStatus).toMatchObject({ type: 'idle' });
 
     const lookupRes = response();
-    await route('GET', '/api/openchamber/session-index/session/:sessionId')(
+    await route('GET', '/api/yuri/session-index/session/:sessionId')(
       { params: { sessionId: 'ses_a' } },
       lookupRes,
     );
-    expect(lookupRes.body.session.metadata.openchamber.titleAuthority).toMatchObject({ revision: 'rev-1' });
-    expect(lookupRes.body.session.metadata.openchamber.titleRefresh.forMessageID).toBe('msg_1');
+    expect(lookupRes.body.session.metadata.yuri.titleAuthority).toMatchObject({ revision: 'rev-1' });
+    expect(lookupRes.body.session.metadata.yuri.titleRefresh.forMessageID).toBe('msg_1');
     index.close();
   });
 
@@ -283,7 +283,7 @@ describe('session-index routes + Host archive (production path)', () => {
     });
     index.setPinned('ses_arch', 50);
     await store.setSessionMetadata('ses_arch', {
-      openchamber: { archive: { archivedAt: 99 } },
+      yuri: { archive: { archivedAt: 99 } },
     }, { allowArchive: true });
     const enqueue = vi.fn(() => ({ revision: 3, sync: { active: true }, ...index.snapshot() }));
     const syncRuntime = { enqueue, snapshot: () => ({ revision: 3, ...index.snapshot() }) };
@@ -295,7 +295,7 @@ describe('session-index routes + Host archive (production path)', () => {
       getCommittedHostMetadata: () => store.getAll(),
     });
     const res = response();
-    await route('POST', '/api/openchamber/session-index/sync')({ body: { directories: ['/repo'] } }, res);
+    await route('POST', '/api/yuri/session-index/sync')({ body: { directories: ['/repo'] } }, res);
     expect(res.statusCode).toBe(202);
     expect(enqueue).toHaveBeenCalledWith(['/repo']);
     expect(res.body).toMatchObject({ revision: 3, sync: { active: true } });
@@ -311,7 +311,7 @@ describe('session-index routes + Host archive (production path)', () => {
       },
     });
     const failRes = response();
-    await route2('POST', '/api/openchamber/session-index/sync')({ body: { directories: ['/repo'] } }, failRes);
+    await route2('POST', '/api/yuri/session-index/sync')({ body: { directories: ['/repo'] } }, failRes);
     expect(failRes.statusCode).toBe(503);
     expect(failRes.body).toMatchObject({ retryable: true, code: 'session_metadata_unavailable' });
     index.close();

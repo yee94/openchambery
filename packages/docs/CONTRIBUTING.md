@@ -1,6 +1,6 @@
 # Docs Authoring Guide
 
-This package is docs content source-of-truth for OpenChamber.
+This package is docs content source-of-truth for Yuri.
 
 ## Voice & style
 
@@ -14,17 +14,17 @@ stays the same no matter who is writing.
 ### Who you're writing for
 
 - Assume curiosity, not expertise. The reader knows what they want to do, not
-  how OpenChamber works inside.
+  how Yuri works inside.
 - One page = one job. If a page is answering two unrelated questions, split it.
 
 ### Keep it short
 
 - Lead with the task, not background. The first line should say what the page is
-  for ("Pair another device with your OpenChamber server using a one-time QR code.").
+  for ("Pair another device with your Yuri server using a one-time QR code.").
 - Cut anything that doesn't change what the reader does next.
 - A basic page should fit in a screen or two. Long, dense reference pages (like
   Reverse Proxy) are the exception — and they say so in their first line ("Use
-  this page if you run OpenChamber behind...").
+  this page if you run Yuri behind...").
 
 ### Steps
 
@@ -34,10 +34,10 @@ stays the same no matter who is writing.
   they did it right.
 
 ```mdx
-3. Run `openchamber --ui-password be-creative-here`.
+3. Run `yuri --ui-password be-creative-here`.
 4. Open the printed URL (usually `http://localhost:3000`).
 
-You should land on the OpenChamber session list. If you see it, the server is
+You should land on the Yuri session list. If you see it, the server is
 running.
 ```
 
@@ -90,7 +90,7 @@ running.
    ```mdx
    ---
    title: Remote Access
-   description: Access OpenChamber from outside your local network.
+   description: Access Yuri from outside your local network.
    ---
    ```
 
@@ -158,7 +158,7 @@ folder (e.g. `uk/images/...`) and point the translated page at it.
 ### Light / dark variants
 
 To show a different screenshot per theme, add a `-light` / `-dark` pair and tag
-each with `oc-light-only` / `oc-dark-only`. The website ships CSS for these
+each with `yuri-light-only` / `yuri-dark-only`. The website must ship CSS for these
 classes (keyed on Starlight's `data-theme`), so the right one shows and follows
 the in-page theme toggle.
 
@@ -175,8 +175,8 @@ import { Image } from "astro:assets";
 import desktopLight from "./images/desktop-light.png";
 import desktopDark from "./images/desktop-dark.png";
 
-<Image src={desktopLight} alt="Desktop app" class="oc-light-only" />
-<Image src={desktopDark} alt="Desktop app" class="oc-dark-only" />
+<Image src={desktopLight} alt="Desktop app" class="yuri-light-only" />
+<Image src={desktopDark} alt="Desktop app" class="yuri-dark-only" />
 ```
 
 Notes:
@@ -187,7 +187,7 @@ Notes:
 
 ## Localization
 
-The docs are translated into the same languages the OpenChamber app ships in.
+The docs are translated into the same languages the Yuri app ships in.
 English is the source of truth and lives at the root of `content/docs/`. Every
 other language mirrors the English files under a locale folder.
 
@@ -213,7 +213,7 @@ other language mirrors the English files under a locale folder.
 > in both columns.
 
 This locale set is mirrored in the website at
-`openchamber-website/apps/docs/astro.config.mjs` (`locales`). If a language is
+`yuri-website/apps/docs/astro.config.mjs` (`locales`). If a language is
 added or removed, update both places.
 
 ### Translate a page
@@ -243,7 +243,7 @@ Each translated file needs its **own translated frontmatter** (`title` and
 ```mdx
 ---
 title: Встановлення
-description: Встановіть OpenChamber для десктопа, вебу або VS Code.
+description: Встановіть Yuri для десктопа, вебу або VS Code.
 ---
 ```
 
@@ -295,7 +295,7 @@ A label with no translation for the active locale falls back to the English
 
 ### What not to translate
 
-- brand and product nouns: OpenChamber, OpenCode, VS Code, PWA, GitHub, Discord,
+- brand and product nouns: Yuri, OpenCode, VS Code, PWA, GitHub, Discord,
   macOS, SSH
 - code blocks, shell commands, file paths, flags, and config keys
 - the page filename and the sidebar `link` (these stay identical across locales)
@@ -307,16 +307,16 @@ translations** — and fails if any page is missing `title` or `description`
 frontmatter, or if a sidebar `link` does not resolve to an English page. Run it
 after adding or translating pages.
 
-## Sync into openchamber-website
+## Sync into yuri-website
 
-`openchamber-website` renders/deploys docs via Starlight in `apps/docs`.
+`yuri-website` renders/deploys docs via Starlight in `apps/docs`.
 
 After docs content updates here:
 
-1. copy `packages/docs/content/docs/*` -> `openchamber-website/apps/docs/src/content/docs/*`
+1. copy `packages/docs/content/docs/*` -> `yuri-website/apps/docs/src/content/docs/*`
    (this is recursive, so locale folders like `uk/` and `zh-cn/` carry over with
    no extra steps)
-2. map `packages/docs/sidebar.config.json` into `openchamber-website/apps/docs/astro.config.mjs` sidebar
+2. map `packages/docs/sidebar.config.json` into `yuri-website/apps/docs/astro.config.mjs` sidebar
    (the `translations` maps carry over as-is)
 3. run docs checks/build in website repo
 

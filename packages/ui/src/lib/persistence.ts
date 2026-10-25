@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import type { DesktopSettings } from '@/lib/desktop';
 import { createProjectIdFromPath } from '@/lib/projectId';
 import { useUIStore } from '@/stores/useUIStore';
@@ -20,12 +21,12 @@ export const applyPersistedHomeDirectoryToWindow = (homeDirectory: string): void
   if (typeof window === 'undefined') {
     return;
   }
-  if (typeof window.__OPENCHAMBER_HOME__ === 'string' && window.__OPENCHAMBER_HOME__.length > 0) {
+  if (typeof window.__YURI_HOME__ === 'string' && window.__YURI_HOME__.length > 0) {
     return;
   }
 
   try {
-    window.__OPENCHAMBER_HOME__ = homeDirectory;
+    window.__YURI_HOME__ = homeDirectory;
   } catch {
     /* read-only contextBridge property — leave preload-seeded value */
   }
@@ -91,9 +92,9 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
       .map((project) => project.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
     if (collapsed.length > 0) {
-      writeInstanceScopedItem('oc.sessions.projectCollapse', JSON.stringify(collapsed));
+      writeInstanceScopedItem('yuri.sessions.projectCollapse', JSON.stringify(collapsed));
     } else {
-      removeInstanceScopedItem('oc.sessions.projectCollapse');
+      removeInstanceScopedItem('yuri.sessions.projectCollapse');
     }
   }
   if (typeof settings.gitmojiEnabled === 'boolean') {
@@ -113,9 +114,9 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof settings.pwaAppName === 'string') {
     const normalized = settings.pwaAppName.trim().replace(/\s+/g, ' ').slice(0, 64);
     if (normalized.length > 0) {
-      localStorage.setItem('openchamber.pwaName', normalized);
+      localStorage.setItem('yuri.pwaName', normalized);
     } else {
-      localStorage.removeItem('openchamber.pwaName');
+      localStorage.removeItem('yuri.pwaName');
     }
   }
   if (typeof settings.mobileKeyboardMode === 'string') {
@@ -135,7 +136,7 @@ const dispatchSettingsSynced = (settings: DesktopSettings): void => {
   if (typeof window === 'undefined') {
     return;
   }
-  window.dispatchEvent(new CustomEvent<DesktopSettings>('openchamber:settings-synced', { detail: settings }));
+  window.dispatchEvent(new CustomEvent<DesktopSettings>('yuri:settings-synced', { detail: settings }));
 };
 
 type PersistApi = {

@@ -145,13 +145,13 @@ describe('native iOS composer contract', () => {
     applyNativeComposerHeightVar(root, 84);
     expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(true);
     expect(root.style.getPropertyValue(NATIVE_IOS_COMPOSER_HEIGHT_VAR)).toBe('84px');
-    expect(root.style.getPropertyValue('--oc-chat-foot-inset')).toBe('');
+    expect(root.style.getPropertyValue('--yuri-chat-foot-inset')).toBe('');
     applyNativeComposerAccessoryVar(root, 24);
-    expect(root.style.getPropertyValue('--oc-native-composer-accessory')).toBe('24px');
+    expect(root.style.getPropertyValue('--yuri-native-composer-accessory')).toBe('24px');
     setNativeComposerDocumentClass(root, false);
     expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(false);
     expect(root.style.getPropertyValue(NATIVE_IOS_COMPOSER_HEIGHT_VAR)).toBe('');
-    expect(root.style.getPropertyValue('--oc-native-composer-accessory')).toBe('');
+    expect(root.style.getPropertyValue('--yuri-native-composer-accessory')).toBe('');
   });
 
   test('reads appearance from the root dark class', () => {
@@ -452,14 +452,14 @@ describe('native iOS composer contract', () => {
   });
 
   test('caches a CSS variable hex so a second lookup does not create a probe', async () => {
-    document.documentElement.style.setProperty('--oc-composer-cache-hit', 'rgb(16, 185, 129)');
+    document.documentElement.style.setProperty('--yuri-composer-cache-hit', 'rgb(16, 185, 129)');
     await Promise.resolve();
-    const first = resolveCssVarToHex('--oc-composer-cache-hit');
+    const first = resolveCssVarToHex('--yuri-composer-cache-hit');
     expect(first).toBe('#10b981');
     const createElement = vi.spyOn(document, 'createElement');
     const getComputedStyleSpy = vi.spyOn(window, 'getComputedStyle');
     try {
-      expect(resolveCssVarToHex('--oc-composer-cache-hit')).toBe(first);
+      expect(resolveCssVarToHex('--yuri-composer-cache-hit')).toBe(first);
       expect(createElement).not.toHaveBeenCalled();
       expect(getComputedStyleSpy).not.toHaveBeenCalled();
     } finally {
@@ -470,18 +470,18 @@ describe('native iOS composer contract', () => {
 
   test('invalidates the CSS variable hex cache when the root class or style changes', async () => {
     const previousClassName = document.documentElement.className;
-    document.documentElement.style.setProperty('--oc-composer-cache-invalidate', 'rgb(16, 185, 129)');
+    document.documentElement.style.setProperty('--yuri-composer-cache-invalidate', 'rgb(16, 185, 129)');
     await Promise.resolve();
-    expect(resolveCssVarToHex('--oc-composer-cache-invalidate')).toBe('#10b981');
-    document.documentElement.style.setProperty('--oc-composer-cache-invalidate', 'rgb(59, 130, 246)');
+    expect(resolveCssVarToHex('--yuri-composer-cache-invalidate')).toBe('#10b981');
+    document.documentElement.style.setProperty('--yuri-composer-cache-invalidate', 'rgb(59, 130, 246)');
     document.documentElement.className = previousClassName ? `${previousClassName} dark` : 'dark';
     try {
       await vi.waitFor(() => {
-        expect(resolveCssVarToHex('--oc-composer-cache-invalidate')).toBe('#3b82f6');
+        expect(resolveCssVarToHex('--yuri-composer-cache-invalidate')).toBe('#3b82f6');
       });
     } finally {
       document.documentElement.className = previousClassName;
-      document.documentElement.style.removeProperty('--oc-composer-cache-invalidate');
+      document.documentElement.style.removeProperty('--yuri-composer-cache-invalidate');
     }
   });
 });

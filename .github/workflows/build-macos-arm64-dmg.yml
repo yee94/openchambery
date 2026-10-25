@@ -27,8 +27,17 @@ on:
 jobs:
   build-macos-dmg-arm64-electron:
     name: Build Electron DMG (arm64, ${{ inputs.runner }})
-    runs-on: ${{ inputs.runner == 'github-hosted' && 'macos-26' || fromJSON('["self-hosted","macOS","ARM64","openchamber-macos"]') }}
+    runs-on: ${{ inputs.runner == 'github-hosted' && 'macos-26' || fromJSON('["self-hosted","macOS","ARM64","yuri-macos"]') }}
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -108,7 +117,7 @@ jobs:
           DMG_PATH="packages/electron/dist/*.dmg"
           if ls $DMG_PATH 1> /dev/null 2>&1; then
             DMG_FILE=$(ls $DMG_PATH | head -n 1)
-            DMG_NAME="OpenChamber_Electron_${{ inputs.macos_version }}_arm64.dmg"
+            DMG_NAME="Yuri_Electron_${{ inputs.macos_version }}_arm64.dmg"
             cp "$DMG_FILE" "artifacts/$DMG_NAME"
           else
             echo "Error: DMG file not found at $DMG_PATH"

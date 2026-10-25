@@ -12,7 +12,7 @@ describe('Electron managed OpenCode quit cleanup contract', () => {
   it('does not keep a pre-stop numeric-pid detached killer fallback', () => {
     expect(mainSource).not.toMatch(/launchDetachedOpenCodeKiller/);
     expect(mainSource).not.toMatch(/OPENCODE_SHUTDOWN_GRACE_MS/);
-    expect(mainSource).not.toMatch(/openchamber-opencode-killer/);
+    expect(mainSource).not.toMatch(/yuri-opencode-killer/);
 
     const start = mainSource.indexOf('const shutdownInProcessServer');
     expect(start).toBeGreaterThan(0);

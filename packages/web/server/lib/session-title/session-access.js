@@ -39,9 +39,9 @@ export function createTitleSessionAccess({
         const result = await mutateSessionMetadata(sessionID, (metadata) => {
           const current = readSessionTitleAuthority(sessionID, metadata);
           if ((current?.revision ?? null) !== (patch.expectedTitleRevision ?? null)) return { ok: false };
-          return { ok: true, patch: { openchamber: {
+          return { ok: true, patch: { yuri: {
             titleAuthority: { sessionID, title: patch.title, revision: randomUUID(), source: 'summary' },
-            titleRefresh: patch.metadata?.openchamber?.titleRefresh ?? {},
+            titleRefresh: patch.metadata?.yuri?.titleRefresh ?? {},
           } } };
         });
         if (!result.committed || stopped) return;
@@ -49,9 +49,9 @@ export function createTitleSessionAccess({
       }
       // Never write the complete metadata snapshot back: goal/archive/ownership
       // may have changed while the title model was running.
-      const refresh = patch.metadata?.openchamber?.titleRefresh;
+      const refresh = patch.metadata?.yuri?.titleRefresh;
       if (refresh && typeof patch.title !== 'string') {
-        await persistSessionMetadata(sessionID, { openchamber: { titleRefresh: refresh } });
+        await persistSessionMetadata(sessionID, { yuri: { titleRefresh: refresh } });
       }
       if (typeof patch.title === 'string' || (refresh && Object.hasOwn(refresh, 'isGenerating'))) {
         const session = await get(sessionID);

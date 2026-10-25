@@ -1,11 +1,11 @@
 import type { UpdateInfo } from '@/lib/desktop';
 import { isCapacitorApp } from '@/lib/platform';
 
-export const MOBILE_EDGEONE_UPDATE_CHECK_URL = 'https://openchamber.xiaobe.top/v1/update/check';
-export const MOBILE_VERCEL_UPDATE_CHECK_URL = 'https://openchamber-update.vercel.app/v1/update/check';
-export const MOBILE_GITHUB_LATEST_RELEASE_URL = 'https://github.com/yee94/openchamber/releases/latest';
-export const MOBILE_GITHUB_RELEASES_URL = 'https://github.com/yee94/openchamber/releases';
-export const MOBILE_IOS_TESTFLIGHT_URL = 'https://testflight.apple.com/join/ZCENBHtm';
+export const MOBILE_EDGEONE_UPDATE_CHECK_URL = import.meta.env.VITE_YURI_EDGEONE_UPDATE_CHECK_URL || 'https://updates-edgeone.example.invalid/v1/update/check';
+export const MOBILE_VERCEL_UPDATE_CHECK_URL = import.meta.env.VITE_YURI_VERCEL_UPDATE_CHECK_URL || 'https://updates-vercel.example.invalid/v1/update/check';
+export const MOBILE_GITHUB_LATEST_RELEASE_URL = 'https://github.com/yee94/yuri/releases/latest';
+export const MOBILE_GITHUB_RELEASES_URL = 'https://github.com/yee94/yuri/releases';
+export const MOBILE_IOS_TESTFLIGHT_URL = import.meta.env.VITE_YURI_IOS_TESTFLIGHT_URL || MOBILE_GITHUB_RELEASES_URL;
 export const MOBILE_UPDATE_CHECK_TIMEOUT_MS = 10_000;
 
 export type MobileClientUpdateCheckOptions = {

@@ -58,14 +58,14 @@ const getCookieValue = (req, name) => {
 };
 
 export const hasPreviewProxyCredential = (req) => (
-  Boolean(getQueryParam(req, 'oc_preview_token') || getCookieValue(req, 'oc_preview_token'))
+  Boolean(getQueryParam(req, 'yuri_preview_token') || getCookieValue(req, 'yuri_preview_token'))
 );
 
 export const registerServerStatusRoutes = (app, dependencies) => {
   const {
     express,
     process,
-    openchamberVersion,
+    yuriVersion,
     runtimeName,
     serverStartedAt,
     gracefulShutdown,
@@ -117,6 +117,8 @@ export const registerServerStatusRoutes = (app, dependencies) => {
   };
 
   const compatibility = {
+    productIdentity: 'yuri',
+    brandProtocolVersion: 1,
     apiVersion: 1,
     minClientApiVersion: 1,
     capabilities: [
@@ -132,7 +134,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
   const isDevShutdownAllowed = () => {
     // Dev-only escape hatch: allow terminating the whole dev process group.
     // This should never be enabled in production runtimes.
-    return process.env.OPENCHAMBER_DEV_SHUTDOWN === 'true';
+    return process.env.YURI_DEV_SHUTDOWN === 'true';
   };
 
   const isSameOriginRequest = (req) => {
@@ -235,12 +237,17 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     }
   };
 
+  // Yuri 2.x upgrade gate: never proxy a retired product route to OpenCode/SPA.
+  app.use('/api/openchamber', (_req, res) => {
+    res.status(426).json({ error: 'YURI_CLIENT_UPGRADE_REQUIRED', productIdentity: 'yuri', message: 'Install Yuri to connect to this Host.' });
+  });
+
   app.get('/health', async (_req, res) => {
     const serverId = await resolveServerId();
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      openchamberVersion,
+      yuriVersion,
       runtime: runtimeName,
       compatibility,
       ...(serverId ? { serverId } : {}),
@@ -252,7 +259,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     const serverId = await resolveServerId();
     res.json({
       status: 'ok',
-      openchamberVersion,
+      yuriVersion,
       runtime: runtimeName,
       startedAt: serverStartedAt,
       compatibility,
@@ -355,7 +362,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
 
   app.get('/api/system/info', (_req, res) => {
     res.json({
-      openchamberVersion,
+      yuriVersion,
       runtime: runtimeName,
       pid: process.pid,
       startedAt: serverStartedAt,
@@ -414,7 +421,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     getServerId = async () => null,
     // Fallback display name a paired device shows for THIS server when the
     // pairing payload did not carry an operator-typed instance name.
-    getServerLabel = () => 'OpenChamber',
+    getServerLabel = () => 'Yuri',
     authorizeManagedOpenCodeBridgeRequest = () => false,
     getScheduledTaskSkillAuthHeaders = () => ({}),
   } = dependencies;
@@ -1180,22 +1187,22 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       }
       express.json({ limit: '1mb' })(req, res, next);
     } else if (
-      (req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/message-queue\/attachments\/uploads\/[^/]+\/?$/))
+      (req.method === 'PUT' && req.path.match(/^\/api\/yuri\/message-queue\/attachments\/uploads\/[^/]+\/?$/))
       || (req.method === 'PUT' && req.path.match(/^\/api\/fs\/prompt-attachments\/[^/]+\/?$/))
-      || (req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/assistants\/[^/]+\/contact\/attachments\/[^/]+\/?$/))
-      || (req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/config-sync\/put\/[^/]+\/?$/))
+      || (req.method === 'PUT' && req.path.match(/^\/api\/yuri\/assistants\/[^/]+\/contact\/attachments\/[^/]+\/?$/))
+      || (req.method === 'PUT' && req.path.match(/^\/api\/yuri\/config-sync\/put\/[^/]+\/?$/))
     ) {
       // Binary attachment uploads stream as the request body. Parsing JSON here
       // would buffer the entire payload and block the relay tunnel / corrupt bytes.
       next();
-    } else if (req.path.startsWith('/api/openchamber/message-queue')) {
-      express.json({ limit: req.method === 'POST' && req.path === '/api/openchamber/message-queue/items' ? MESSAGE_QUEUE_ADMISSION_HTTP_MAX_BYTES : '1mb' })(req, res, next);
+    } else if (req.path.startsWith('/api/yuri/message-queue')) {
+      express.json({ limit: req.method === 'POST' && req.path === '/api/yuri/message-queue/items' ? MESSAGE_QUEUE_ADMISSION_HTTP_MAX_BYTES : '1mb' })(req, res, next);
     } else if (
-      req.path.startsWith('/api/openchamber/session-index') ||
-      req.path.startsWith('/api/openchamber/conversations') ||
-      req.path.startsWith('/api/openchamber/assistants')
+      req.path.startsWith('/api/yuri/session-index') ||
+      req.path.startsWith('/api/yuri/conversations') ||
+      req.path.startsWith('/api/yuri/assistants')
     ) {
-      // These OpenChamber-owned routes need parsed JSON before their handlers;
+      // These Yuri-owned routes need parsed JSON before their handlers;
       // Conversation and Assistant file parts can contain data URLs, so they share
       // the 72 MiB HTTP envelope limit around the 70 MiB validated parts payload. The generic OpenCode proxy owns remaining paths.
       express.json({ limit: '72mb' })(req, res, next);

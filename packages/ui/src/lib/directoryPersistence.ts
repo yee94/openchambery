@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { readInstanceScopedItem } from '@/lib/instanceScopedStorage';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';

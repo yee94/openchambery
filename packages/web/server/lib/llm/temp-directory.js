@@ -30,7 +30,7 @@ export async function ensureLlmTempDirectory({ agentName, agentMarkdown }) {
   if (!tempDirectory) {
     if (!inflight) {
       inflight = (async () => {
-        const root = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-llm-'));
+        const root = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-llm-'));
         tempDirectory = root;
         return root;
       })().finally(() => {

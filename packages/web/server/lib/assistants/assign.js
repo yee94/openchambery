@@ -714,9 +714,9 @@ export async function assignSession(input = {}) {
     variant: input.variant,
   });
   // Subscriber identity lives on `assigned`, not `assistant`.
-  // `openchamber.assistant.assistantID` marks a hidden system binding.
+  // `yuri.assistant.assistantID` marks a hidden system binding.
   const metadata = {
-    openchamber: {
+    yuri: {
       assigned: {
         from: 'contact',
         assistantID: assistant.id || assistant.assistantID || null,

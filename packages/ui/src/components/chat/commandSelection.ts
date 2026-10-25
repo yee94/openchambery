@@ -27,7 +27,7 @@ export const AUTO_SUBMIT_SLASH_COMMANDS = new Set([
 export const shouldSubmitCommandOnSelection = (
   command: {
     name?: string;
-    source?: 'openchamber' | 'opencode' | 'skill';
+    source?: 'yuri' | 'opencode' | 'skill';
     isBuiltIn?: boolean;
     isSkill?: boolean;
   },

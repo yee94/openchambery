@@ -48,9 +48,9 @@ and unknown sessions are no-ops. Partial rename payloads never fabricate rows.
 
 Native `session.moved` uses `data.location.directory`, not the old event-envelope directory. The transactional `move` operation retains summary activity/status and independent pin membership, maintains the newest-20 destination bound, and installs a runtime-scoped event-clock fence against delayed source-directory upserts/pages. Duplicate/older moves are no-ops. Unknown sessions are not fabricated from the partial move payload.
 
-Every OpenChamber Web Server enables `session-index.sqlite` in its data
+Every Yuri Web Server enables `session-index.sqlite` in its data
 directory by default. Electron injects its user-data path explicitly.
-`sessionIndexDbPath` and `OPENCHAMBER_SESSION_INDEX_DB_PATH` override that
+`sessionIndexDbPath` and `YURI_SESSION_INDEX_DB_PATH` override that
 default; the HMR startup script uses the environment override to isolate its
 development index without changing settings or authentication storage.
 Rows are partitioned by a runtime key derived from the desktop
@@ -62,23 +62,23 @@ messages, attachments, permissions, provider data, or model metadata.
 Sessions titled `smartfetch-secondary` are temporary SmartFetch model calls;
 the index excludes them from every snapshot and clears prior summaries when a
   matching session update arrives. Reserved leading tags `[Scheduled]`,
-  `[Assistant]`, and `[openchamber-llm]` also exclude background sessions,
+  `[Assistant]`, and `[yuri-llm]` also exclude background sessions,
   including legacy rows without metadata. Ordinary bracketed titles are unaffected.
   The same visibility predicate is used before the sync runtime's active-20 budget,
   on index writes, and on native rename. Opening the index transactionally prunes
   previously admitted tagged summaries, their pins and child memberships across
   runtime partitions without advancing directory recency. Normal refresh refills
   the bounded window. System-owned sessions are additionally excluded by a non-empty
-  `metadata.openchamber.assistant.assistantID` (unless
-  `metadata.openchamber.assigned.from === 'contact'` — those are visible
+  `metadata.yuri.assistant.assistantID` (unless
+  `metadata.yuri.assigned.from === 'contact'` — those are visible
   coding workers the Assistant subscribed to),
-  `metadata.openchamber.scheduledTask.taskID`,
-  `metadata.openchamber.smallModel.purpose`, or
-  `metadata.openchamber.llm.purpose`. Metadata remains the ownership/isolation signal;
+  `metadata.yuri.scheduledTask.taskID`,
+  `metadata.yuri.smallModel.purpose`, or
+  `metadata.yuri.llm.purpose`. Metadata remains the ownership/isolation signal;
   reserved title tags are a separate background-list exclusion rule.
 `time.archived` is archive state (Host authority via
-  `metadata.openchamber.archive.archivedAt` when present — see
-  `session-metadata/`); `time.pinned` is OpenChamber-owned pin state
+  `metadata.yuri.archive.archivedAt` when present — see
+  `session-metadata/`); `time.pinned` is Yuri-owned pin state
 overlaid from the independent `session_pin` table (also mirrored onto in-window
 `session_summary.pinned_at` for older readers). Pins are not subject to the
 newest-20 summary bound: evicting or rebuilding a directory keeps pin
@@ -90,15 +90,15 @@ ordinary sidebar lists. System session creators persist isolation through the
 Host metadata store, then `onSystemSessionPersisted` upserts the projected
 session so a create-before-persist race cannot leave a visible summary.
 Pin and unpin use `POST` / `DELETE`
-`/api/openchamber/session-index/session/:id/pin`, write `session_pin`, then
-`publishChange()` so revision tips broadcast `openchamber:session-index-changed`.
+`/api/yuri/session-index/session/:id/pin`, write `session_pin`, then
+`publishChange()` so revision tips broadcast `yuri:session-index-changed`.
 Snapshots include `pinnedSessionIds` plus `time.pinned` on any matching
 summary row.
 
-List snapshots (`GET /api/openchamber/session-index` and the `POST /sync`
+List snapshots (`GET /api/yuri/session-index` and the `POST /sync`
 response body) share one Host projection: committed Host metadata is merged,
 Host-archived rows and pins are dropped, and metadata no list consumer reads is
-omitted (`openchamber.titleAuthority`, `openchamber.scheduledTaskSkill`,
+omitted (`yuri.titleAuthority`, `yuri.scheduledTaskSkill`,
 `titleRefresh.forMessageID` / `generatedAt` / `forkFirstSendSessionID`). Unknown
 keys pass through. Writers and the title runtime read the omitted keys from the
 session record, never from the index list. The deep-link lookup keeps the full
@@ -119,7 +119,7 @@ is unchanged leave directory recency and the public revision unchanged. Root
 events that remain outside the newest-20 bound follow the same no-op path.
 
 `sync-runtime.js` owns cold-start synchronization. The renderer submits all
-known project directories once to `POST /api/openchamber/session-index/sync`.
+known project directories once to `POST /api/yuri/session-index/sync`.
 The runtime processes them sequentially. OpenCode 2.x list is cursor-only (no
 `start` incremental); each directory fetches active-only pages (`limit=20`)
 after optional Host `projectSessions` overlay. Consecutive archived rows may
@@ -136,10 +136,10 @@ the snapshot so another client can use it as a worktree-topology recovery hint.
 Stopping the runtime marks queued and in-flight directories as failed in the
 published progress snapshot so clients can retire their matching loading state.
 
-The renderer observes revisions through OpenChamber SSE tip events
-(`openchamber:session-index-changed`). Each tip carries the new revision and
+The renderer observes revisions through Yuri SSE tip events
+(`yuri:session-index-changed`). Each tip carries the new revision and
 optional sync progress flags; the renderer then GETs
-`/api/openchamber/session-index` for the authoritative snapshot. Reconnecting
+`/api/yuri/session-index` for the authoritative snapshot. Reconnecting
 never needs an event replay log because the next tip or `event-stream-ready`
 triggers a fresh snapshot load. Tip waits also use a short safety timeout and
 re-GET when a completion tip can race ahead of the consumer subscription (for

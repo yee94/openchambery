@@ -82,7 +82,7 @@ export const useWorktreeOrderStore = create<WorktreeOrderStore>()(persist(
       let preferred = get().orderByProject[projectID];
       if (!preferred) {
         try {
-          const legacy = JSON.parse(readInstanceScopedItem('oc.sessions.groupOrder') ?? '{}')?.[projectID];
+          const legacy = JSON.parse(readInstanceScopedItem('yuri.sessions.groupOrder') ?? '{}')?.[projectID];
           if (Array.isArray(legacy)) preferred = legacy
             .filter((id): id is string => typeof id === 'string' && id.startsWith('worktree:'))
             .map((id) => id.slice('worktree:'.length));

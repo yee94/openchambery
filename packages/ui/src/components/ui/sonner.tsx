@@ -5,37 +5,37 @@ import { Toaster as Sonner } from "sonner"
 import type { ToasterProps } from "sonner"
 import { Icon } from "@/components/icon/Icon"
 
-// Mobile sets --oc-toast-shadow to the shared glass shadow. The pin must
+// Mobile sets --yuri-toast-shadow to the shared glass shadow. The pin must
 // read that token; a hardcoded shadow here would flatten custom toasts.
 const SHADOW_DARK =
-  "var(--oc-toast-shadow, inset 0 1px 0 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.36), 0 1px 1px -0.5px rgba(0,0,0,0.22), 0 3px 3px -1.5px rgba(0,0,0,0.20), 0 6px 6px -3px rgba(0,0,0,0.16))"
+  "var(--yuri-toast-shadow, inset 0 1px 0 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.36), 0 1px 1px -0.5px rgba(0,0,0,0.22), 0 3px 3px -1.5px rgba(0,0,0,0.20), 0 6px 6px -3px rgba(0,0,0,0.16))"
 
 const SHADOW_LIGHT =
-  "var(--oc-toast-shadow, inset 0 1px 0 0 rgba(255,255,255,0.8), inset 0 0 0 1px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.10), 0 1px 2px -0.5px rgba(0,0,0,0.08), 0 4px 8px -2px rgba(0,0,0,0.08), 0 12px 20px -4px rgba(0,0,0,0.08))"
+  "var(--yuri-toast-shadow, inset 0 1px 0 0 rgba(255,255,255,0.8), inset 0 0 0 1px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.10), 0 1px 2px -0.5px rgba(0,0,0,0.08), 0 4px 8px -2px rgba(0,0,0,0.08), 0 12px 20px -4px rgba(0,0,0,0.08))"
 
 const TOAST_ICONS = {
   success: (
     <>
-      <Icon name="checkbox-circle-fill" className="oc-toast-status-icon-desktop size-5" />
-      <Icon name="check" className="oc-toast-status-icon-mobile hidden size-[18px]" />
+      <Icon name="checkbox-circle-fill" className="yuri-toast-status-icon-desktop size-5" />
+      <Icon name="check" className="yuri-toast-status-icon-mobile hidden size-[18px]" />
     </>
   ),
   info: (
     <>
-      <Icon name="information-fill" className="oc-toast-status-icon-desktop size-5" />
-      <Icon name="information" className="oc-toast-status-icon-mobile hidden size-[18px]" />
+      <Icon name="information-fill" className="yuri-toast-status-icon-desktop size-5" />
+      <Icon name="information" className="yuri-toast-status-icon-mobile hidden size-[18px]" />
     </>
   ),
   warning: (
     <>
-      <Icon name="alert-fill" className="oc-toast-status-icon-desktop size-5" />
-      <Icon name="error-warning" className="oc-toast-status-icon-mobile hidden size-[18px]" />
+      <Icon name="alert-fill" className="yuri-toast-status-icon-desktop size-5" />
+      <Icon name="error-warning" className="yuri-toast-status-icon-mobile hidden size-[18px]" />
     </>
   ),
   error: (
     <>
-      <Icon name="error-warning-fill" className="oc-toast-status-icon-desktop size-5" />
-      <Icon name="alert" className="oc-toast-status-icon-mobile hidden size-[18px]" />
+      <Icon name="error-warning-fill" className="yuri-toast-status-icon-desktop size-5" />
+      <Icon name="alert" className="yuri-toast-status-icon-mobile hidden size-[18px]" />
     </>
   ),
 }
@@ -136,9 +136,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
           title: "typography-ui-label !font-medium !text-foreground",
           description: "typography-meta !text-muted-foreground !mt-0.5",
           actionButton:
-            "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--oc-toast-action-background,var(--primary-base))] !text-[var(--oc-toast-action-foreground,var(--primary-foreground))] hover:!opacity-85 !px-2 !py-1 typography-meta !font-medium transition-opacity",
+            "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--yuri-toast-action-background,var(--primary-base))] !text-[var(--yuri-toast-action-foreground,var(--primary-foreground))] hover:!opacity-85 !px-2 !py-1 typography-meta !font-medium transition-opacity",
           cancelButton:
-            "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--oc-toast-cancel-background,var(--interactive-hover))] !text-[var(--oc-toast-cancel-foreground,var(--foreground))] hover:!bg-[var(--interactive-active)] !px-2 !py-1 typography-meta !font-medium transition-colors",
+            "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--yuri-toast-cancel-background,var(--interactive-hover))] !text-[var(--yuri-toast-cancel-foreground,var(--foreground))] hover:!bg-[var(--interactive-active)] !px-2 !py-1 typography-meta !font-medium transition-colors",
           closeButton:
             "!rounded-[var(--radius-md)] !bg-[var(--interactive-hover)] !text-foreground hover:!bg-[var(--interactive-active)]",
           icon: "!shrink-0 !text-muted-foreground",
@@ -149,24 +149,24 @@ const Toaster = ({ ...props }: ToasterProps) => {
         },
         style: {
           borderRadius: "var(--radius-xl)",
-          backgroundColor: "var(--oc-toast-background, var(--surface-elevated))",
+          backgroundColor: "var(--yuri-toast-background, var(--surface-elevated))",
         },
       }}
       style={
         {
-          "--normal-bg": "var(--oc-toast-background, var(--surface-elevated))",
+          "--normal-bg": "var(--yuri-toast-background, var(--surface-elevated))",
           "--normal-text": "var(--foreground)",
           "--normal-border": "transparent",
-          "--error-bg": "var(--oc-toast-background, var(--surface-elevated))",
+          "--error-bg": "var(--yuri-toast-background, var(--surface-elevated))",
           "--error-text": "var(--foreground)",
           "--error-border": "transparent",
-          "--success-bg": "var(--oc-toast-background, var(--surface-elevated))",
+          "--success-bg": "var(--yuri-toast-background, var(--surface-elevated))",
           "--success-text": "var(--foreground)",
           "--success-border": "transparent",
-          "--warning-bg": "var(--oc-toast-background, var(--surface-elevated))",
+          "--warning-bg": "var(--yuri-toast-background, var(--surface-elevated))",
           "--warning-text": "var(--foreground)",
           "--warning-border": "transparent",
-          "--info-bg": "var(--oc-toast-background, var(--surface-elevated))",
+          "--info-bg": "var(--yuri-toast-background, var(--surface-elevated))",
           "--info-text": "var(--foreground)",
           "--info-border": "transparent",
         } as React.CSSProperties

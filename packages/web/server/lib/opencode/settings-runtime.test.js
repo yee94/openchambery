@@ -8,7 +8,7 @@ import { createSettingsRuntime } from './settings-runtime.js';
 import { createSettingsNormalizationRuntime } from './settings-normalization-runtime.js';
 
 const createRuntime = async (overrides = {}) => {
-  const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-settings-runtime-'));
+  const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'yuri-settings-runtime-'));
   const settingsFilePath = path.join(tempRoot, 'settings.json');
   const runtime = createSettingsRuntime({
     fsPromises,
@@ -340,7 +340,7 @@ describe('settings runtime', () => {
   });
 
   it.skipIf(process.platform !== 'win32')('falls back when Windows blocks atomic settings replacement', async () => {
-    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-settings-runtime-'));
+    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'yuri-settings-runtime-'));
     const settingsFilePath = path.join(tempRoot, 'settings.json');
     const wrappedFs = {
       ...fsPromises,

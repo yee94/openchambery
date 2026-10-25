@@ -79,8 +79,8 @@ vi.mock('@/lib/queryRuntime', () => ({
   },
 }));
 
-vi.mock('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: () => () => undefined,
+vi.mock('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: () => () => undefined,
 }));
 
 vi.mock('@/lib/runtime-fetch', () => ({
@@ -149,7 +149,7 @@ describe('AssistantsSettingsPage draft → save payload', () => {
 
     await updateAssistant(assistant, updateDraft);
 
-    expect(lastFetchPath).toContain(`/api/openchamber/assistants/${encodeURIComponent(assistant.id)}`);
+    expect(lastFetchPath).toContain(`/api/yuri/assistants/${encodeURIComponent(assistant.id)}`);
     expect(lastFetchInit?.method).toBe('PATCH');
     const payload = JSON.parse(String(lastFetchInit?.body)) as Record<string, unknown>;
     expect(Object.hasOwn(payload, 'agent')).toBe(false);
@@ -179,7 +179,7 @@ describe('AssistantsSettingsPage draft → save payload', () => {
 
     await createAssistant(createDraft);
 
-    expect(lastFetchPath).toBe('/api/openchamber/assistants');
+    expect(lastFetchPath).toBe('/api/yuri/assistants');
     expect(lastFetchInit?.method).toBe('POST');
     const payload = JSON.parse(String(lastFetchInit?.body)) as Record<string, unknown>;
     expect(payload).toMatchObject({

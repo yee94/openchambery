@@ -25,7 +25,7 @@ describe('connection payload helpers', () => {
 
     const encoded = encodePairingConnectionPayload(payload);
 
-    expect(encoded.startsWith('openchamber://connect?v=2&p=')).toBe(true);
+    expect(encoded.startsWith('yuri://connect?v=2&p=')).toBe(true);
     expect(parsePairingConnectionPayload(encoded)).toEqual({
       ...payload,
       candidates: [
@@ -57,11 +57,11 @@ describe('connection payload helpers', () => {
       Buffer.from(JSON.stringify({ v: 2, pairingId: 'pair_1', secret: 's', candidates: [candidate] })).toString('base64url');
 
     // https relay URL is not a WebSocket endpoint → candidate dropped → no candidates → null.
-    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withBadRelay({ type: 'relay', relayUrl: 'https://relay.example/ws', serverId: 'srv', hostEncPubJwk })}`)).toBeNull();
+    expect(parsePairingConnectionPayload(`yuri://connect?v=2&p=${withBadRelay({ type: 'relay', relayUrl: 'https://relay.example/ws', serverId: 'srv', hostEncPubJwk })}`)).toBeNull();
     // Missing serverId.
-    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withBadRelay({ type: 'relay', relayUrl: 'wss://relay.example/ws', hostEncPubJwk })}`)).toBeNull();
+    expect(parsePairingConnectionPayload(`yuri://connect?v=2&p=${withBadRelay({ type: 'relay', relayUrl: 'wss://relay.example/ws', hostEncPubJwk })}`)).toBeNull();
     // Non-P-256 key.
-    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withBadRelay({ type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'srv', hostEncPubJwk: { kty: 'EC', crv: 'P-384', x: 'a', y: 'b' } })}`)).toBeNull();
+    expect(parsePairingConnectionPayload(`yuri://connect?v=2&p=${withBadRelay({ type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'srv', hostEncPubJwk: { kty: 'EC', crv: 'P-384', x: 'a', y: 'b' } })}`)).toBeNull();
   });
 
   test('relay candidate strips query/fragment and rejects userinfo credentials', () => {
@@ -76,7 +76,7 @@ describe('connection payload helpers', () => {
         hostEncPubJwk,
       },
     ]);
-    const parsed = parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withQueryAndFragment}`);
+    const parsed = parsePairingConnectionPayload(`yuri://connect?v=2&p=${withQueryAndFragment}`);
     expect(parsed?.candidates).toEqual([
       { type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'srv', hostEncPubJwk },
     ]);
@@ -85,12 +85,12 @@ describe('connection payload helpers', () => {
     const withUserPass = encodeCandidates([
       { type: 'relay', relayUrl: 'wss://user:pass@relay.example/ws', serverId: 'srv', hostEncPubJwk },
     ]);
-    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withUserPass}`)).toBeNull();
+    expect(parsePairingConnectionPayload(`yuri://connect?v=2&p=${withUserPass}`)).toBeNull();
 
     const withUserOnly = encodeCandidates([
       { type: 'relay', relayUrl: 'ws://user@127.0.0.1:8787/ws', serverId: 'srv', hostEncPubJwk },
     ]);
-    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withUserOnly}`)).toBeNull();
+    expect(parsePairingConnectionPayload(`yuri://connect?v=2&p=${withUserOnly}`)).toBeNull();
   });
 
   test('drops a private-key member from a relay JWK (keeps only public coordinates)', () => {
@@ -100,20 +100,20 @@ describe('connection payload helpers', () => {
       secret: 's',
       candidates: [{ type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'srv', hostEncPubJwk: { ...hostEncPubJwk, d: 'PRIVATE' } }],
     })).toString('base64url');
-    const parsed = parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withKey}`);
+    const parsed = parsePairingConnectionPayload(`yuri://connect?v=2&p=${withKey}`);
     expect(parsed?.candidates[0]).toEqual({ type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'srv', hostEncPubJwk });
   });
 
   test('rejects invalid v2 pairing payloads', () => {
-    expect(parsePairingConnectionPayload('openchamber://connect?v=1&server=https://runtime.example&token=t')).toBeNull();
-    expect(parsePairingConnectionPayload('openchamber://connect?v=2&p=not-json')).toBeNull();
+    expect(parsePairingConnectionPayload('yuri://connect?v=1&server=https://runtime.example&token=t')).toBeNull();
+    expect(parsePairingConnectionPayload('yuri://connect?v=2&p=not-json')).toBeNull();
 
     const missingSecret = Buffer.from(JSON.stringify({
       v: 2,
       pairingId: 'pair_123',
       candidates: [{ type: 'lan', url: 'http://runtime.example' }],
     })).toString('base64url');
-    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${missingSecret}`)).toBeNull();
+    expect(parsePairingConnectionPayload(`yuri://connect?v=2&p=${missingSecret}`)).toBeNull();
 
     const invalidCandidate = Buffer.from(JSON.stringify({
       v: 2,
@@ -121,7 +121,7 @@ describe('connection payload helpers', () => {
       secret: 'secret',
       candidates: [{ type: 'lan', url: 'file:///tmp/socket' }],
     })).toString('base64url');
-    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${invalidCandidate}`)).toBeNull();
+    expect(parsePairingConnectionPayload(`yuri://connect?v=2&p=${invalidCandidate}`)).toBeNull();
 
     const expired = Buffer.from(JSON.stringify({
       v: 2,
@@ -130,7 +130,7 @@ describe('connection payload helpers', () => {
       expiresAt: '2000-01-01T00:00:00.000Z',
       candidates: [{ type: 'lan', url: 'http://runtime.example' }],
     })).toString('base64url');
-    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${expired}`)).toBeNull();
+    expect(parsePairingConnectionPayload(`yuri://connect?v=2&p=${expired}`)).toBeNull();
   });
 
   test('string parser reads a v2 pairing link without the URL API', () => {
@@ -145,8 +145,8 @@ describe('connection payload helpers', () => {
       ...payload,
       candidates: [{ type: 'lan', url: 'http://192.168.1.20:4096', priority: 10 }],
     });
-    expect(parsePairingConnectionPayloadString('openchamber://connect?v=1&p=abc')).toBeNull();
-    expect(parsePairingConnectionPayloadString('openchamber://session/abc?v=2&p=abc')).toBeNull();
-    expect(parsePairingConnectionPayloadString('openchamber://connect')).toBeNull();
+    expect(parsePairingConnectionPayloadString('yuri://connect?v=1&p=abc')).toBeNull();
+    expect(parsePairingConnectionPayloadString('yuri://session/abc?v=2&p=abc')).toBeNull();
+    expect(parsePairingConnectionPayloadString('yuri://connect')).toBeNull();
   });
 });

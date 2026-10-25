@@ -9,7 +9,7 @@
 export type NotificationSessionLike = {
   parentID?: string | null;
   metadata?: {
-    openchamber?: {
+    yuri?: {
       assistant?: { assistantID?: string };
       assigned?: { from?: string };
       scheduledTask?: { taskID?: string };
@@ -29,17 +29,17 @@ export const shouldSkipVSCodeNotificationSession = (
   if (!session) return true;
   if (session.parentID) return true;
 
-  const openchamber = session.metadata?.openchamber;
-  if (!openchamber || typeof openchamber !== 'object') return false;
+  const yuri = session.metadata?.yuri;
+  if (!yuri || typeof yuri !== 'object') return false;
 
   // Truthy non-empty purpose only — empty string keeps ordinary-session semantics
   // (parity with Host notifications + globalSessions isSystemOwnedSession).
-  if (openchamber.smallModel?.purpose) return true;
-  if (openchamber.llm?.purpose) return true;
-  if (openchamber.scheduledTask?.taskID) return true;
+  if (yuri.smallModel?.purpose) return true;
+  if (yuri.llm?.purpose) return true;
+  if (yuri.scheduledTask?.taskID) return true;
   if (
-    openchamber.assistant?.assistantID
-    && openchamber.assigned?.from !== 'contact'
+    yuri.assistant?.assistantID
+    && yuri.assigned?.from !== 'contact'
   ) {
     return true;
   }

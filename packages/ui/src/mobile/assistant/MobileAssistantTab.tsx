@@ -74,16 +74,16 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
   const { t } = useI18n();
 
   return (
-    <article className="oc-mobile-assistant-guide">
-      <div className="oc-mobile-assistant-guide-hero" aria-hidden="true">
+    <article className="yuri-mobile-assistant-guide">
+      <div className="yuri-mobile-assistant-guide-hero" aria-hidden="true">
         <img src={assistantGuideHero} alt="" />
       </div>
 
-      <div className="oc-mobile-assistant-guide-body">
-        <h2 className="oc-mobile-assistant-guide-title">
+      <div className="yuri-mobile-assistant-guide-body">
+        <h2 className="yuri-mobile-assistant-guide-title">
           {t('assistants.guide.disabledTitle')}
         </h2>
-        <p className="oc-mobile-assistant-guide-description">
+        <p className="yuri-mobile-assistant-guide-description">
           {t('assistants.guide.disabledDescription')}
         </p>
         <Button type="button" size="lg" onClick={onEnable}>
@@ -91,20 +91,20 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
         </Button>
       </div>
 
-      <section className="oc-mobile-assistant-guide-share">
-        <h3 className="oc-mobile-assistant-guide-share-title">
+      <section className="yuri-mobile-assistant-guide-share">
+        <h3 className="yuri-mobile-assistant-guide-share-title">
           {t('assistants.guide.shareTitle')}
         </h3>
         <div
-          className="oc-mobile-assistant-guide-steps"
+          className="yuri-mobile-assistant-guide-steps"
           aria-label={t('assistants.guide.shareAria')}
         >
           {assistantGuideShareSteps.map((step) => (
-            <article key={step.titleKey} className="oc-mobile-assistant-guide-step">
-              <div className="oc-mobile-assistant-guide-step-image">
+            <article key={step.titleKey} className="yuri-mobile-assistant-guide-step">
+              <div className="yuri-mobile-assistant-guide-step-image">
                 <img src={step.image} alt="" />
               </div>
-              <div className="oc-mobile-assistant-guide-step-copy">
+              <div className="yuri-mobile-assistant-guide-step-copy">
                 <h4>{t(step.titleKey)}</h4>
                 <p>{t(step.descriptionKey)}</p>
               </div>
@@ -151,7 +151,7 @@ function MobileAssistantCard({
   const swipe = useMobileSwipeActions(`assistant:${assistantID}`, onOpen);
 
   return (
-      <MobileFloatingSurface className="oc-mobile-assistant-card-shell relative isolate overflow-hidden">
+      <MobileFloatingSurface className="yuri-mobile-assistant-card-shell relative isolate overflow-hidden">
         <MobileSwipeActionRail swipe={swipe} actions={[
           { label: editLabel, icon: 'edit', onClick: onEdit },
           { label: deleteLabel, icon: 'delete-bin', destructive: true, onClick: onDelete },
@@ -161,7 +161,7 @@ function MobileAssistantCard({
               role="option"
               aria-selected="false"
               data-mobile-press-feedback="soft"
-              className={cn('oc-mobile-assistant-card relative z-10 motion-reduce:transition-none',
+              className={cn('yuri-mobile-assistant-card relative z-10 motion-reduce:transition-none',
                 swipe.dragging ? 'transition-none' : 'transition-transform duration-150 ease-out', !enabled && 'opacity-65')}
               onClick={swipe.handleSelect}
               onPointerDown={swipe.handlePointerDown}
@@ -171,7 +171,7 @@ function MobileAssistantCard({
               onContextMenu={swipe.handleContextMenu}
               style={{ touchAction: 'pan-y', transform: `translate3d(${swipe.offset}px, 0, 0)`, willChange: swipe.offset === 0 ? undefined : 'transform' }}
             >
-          <span className="oc-mobile-assistant-avatar">
+          <span className="yuri-mobile-assistant-avatar">
             <AssistantWorkingAvatar
               name={assistantID}
               avatarSeed={avatarSeed}
@@ -180,11 +180,11 @@ function MobileAssistantCard({
               working={working}
             />
           </span>
-          <span className="oc-mobile-assistant-card-content min-w-0 flex-1">
-            <span className="oc-mobile-entity-title oc-mobile-assistant-name block min-w-0 truncate font-semibold text-foreground">
+          <span className="yuri-mobile-assistant-card-content min-w-0 flex-1">
+            <span className="yuri-mobile-entity-title yuri-mobile-assistant-name block min-w-0 truncate font-semibold text-foreground">
               {displayName}
             </span>
-            <span className={cn('oc-mobile-assistant-summary', ASSISTANT_MESSAGE_PREVIEW_CLASS)}>
+            <span className={cn('yuri-mobile-assistant-summary', ASSISTANT_MESSAGE_PREVIEW_CLASS)}>
               {summary}
             </span>
           </span>
@@ -227,7 +227,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
   if (capability.isPending || (capability.data?.supported && capability.data.enabled && snapshot.isPending)) {
     return (
       <MobileTabPageScaffold title={pageTitle} className={className} surface={false}>
-        <MobileFloatingSurface className="oc-mobile-assistant-loading">
+        <MobileFloatingSurface className="yuri-mobile-assistant-loading">
           <MobileAssistantSkeleton />
         </MobileFloatingSurface>
       </MobileTabPageScaffold>
@@ -255,7 +255,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
       >
         <AssistantMarkAllReadButton snapshot={snapshot.data} rowClassName="flex justify-end pb-2" />
         <div
-          className="oc-mobile-assistant-catalog"
+          className="yuri-mobile-assistant-catalog"
           role="listbox"
           aria-label={t('assistants.listAria')}
         >
@@ -304,10 +304,10 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
         title={pageTitle}
         className={className}
         surface={false}
-        surfaceClassName="oc-mobile-assistant-state"
+        surfaceClassName="yuri-mobile-assistant-state"
       >
-        <MobileFloatingSurface className="oc-mobile-assistant-onboarding">
-          <span className="oc-mobile-assistant-onboarding-icon">
+        <MobileFloatingSurface className="yuri-mobile-assistant-onboarding">
+          <span className="yuri-mobile-assistant-onboarding-icon">
             <Icon name="ai-agent" className="size-5" />
           </span>
           <h2>{t('assistants.onboarding.title')}</h2>
@@ -338,7 +338,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
         title={pageTitle}
         className={className}
         surface={false}
-        surfaceClassName="oc-mobile-assistant-guide-host"
+        surfaceClassName="yuri-mobile-assistant-guide-host"
       >
         <MobileAssistantDisabledGuide onEnable={handleEnable} />
       </MobileTabPageScaffold>
@@ -350,11 +350,11 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
       title={pageTitle}
       className={className}
       surface={false}
-      surfaceClassName="oc-mobile-assistant-state"
+      surfaceClassName="yuri-mobile-assistant-state"
     >
       <MobileLabeledSurfaceGroup
-        label={<span className="oc-mobile-page-section-label">{pageTitle}</span>}
-        cardClassName="oc-mobile-assistant-state-card"
+        label={<span className="yuri-mobile-page-section-label">{pageTitle}</span>}
+        cardClassName="yuri-mobile-assistant-state-card"
       >
         <section className="w-full max-w-md py-2">
           <div className="flex size-12 items-center justify-center rounded-xl bg-interactive-selection text-interactive-selection-foreground">

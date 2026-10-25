@@ -7,25 +7,25 @@ import {
 } from './url-identity.mjs';
 
 describe('urlIdentityKey / packaged UI navigation', () => {
-  test('openchamber-ui URL.origin is the string null but identity is stable', () => {
-    const href = 'openchamber-ui://app/index.html';
+  test('yuri-ui URL.origin is the string null but identity is stable', () => {
+    const href = 'yuri-ui://app/index.html';
     expect(new URL(href).origin).toBe('null');
-    expect(urlIdentityKey(href)).toBe('openchamber-ui://app');
+    expect(urlIdentityKey(href)).toBe('yuri-ui://app');
     expect(urlIdentityKey(href)).toBe(packagedUiOrigin());
   });
 
   test('isPackagedUiUrl accepts reloads of the packaged app', () => {
-    expect(isPackagedUiUrl('openchamber-ui://app/index.html')).toBe(true);
-    expect(isPackagedUiUrl('openchamber-ui://app/')).toBe(true);
+    expect(isPackagedUiUrl('yuri-ui://app/index.html')).toBe(true);
+    expect(isPackagedUiUrl('yuri-ui://app/')).toBe(true);
     expect(isPackagedUiUrl('https://example.com')).toBe(false);
-    expect(isPackagedUiUrl('openchamber-ui://other/path')).toBe(false);
+    expect(isPackagedUiUrl('yuri-ui://other/path')).toBe(false);
   });
 
   test('sameUrlIdentity matches reload target to packaged origin without using URL.origin', () => {
-    expect(sameUrlIdentity('openchamber-ui://app/index.html', packagedUiOrigin())).toBe(true);
-    expect(sameUrlIdentity('openchamber-ui://app/index.html', 'openchamber-ui://app')).toBe(true);
+    expect(sameUrlIdentity('yuri-ui://app/index.html', packagedUiOrigin())).toBe(true);
+    expect(sameUrlIdentity('yuri-ui://app/index.html', 'yuri-ui://app')).toBe(true);
     // The historical broken comparison:
-    expect(new URL('openchamber-ui://app/index.html').origin === packagedUiOrigin()).toBe(false);
+    expect(new URL('yuri-ui://app/index.html').origin === packagedUiOrigin()).toBe(false);
   });
 
   test('http(s) origins still compare normally', () => {

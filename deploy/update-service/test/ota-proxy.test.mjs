@@ -5,6 +5,15 @@ import { handleOtaProxyRequest } from '../lib/ota-proxy.js';
 
 const ORIGIN = 'https://upstream.example.com';
 
+test('missing update origin fails closed without contacting an inferred domain', async () => {
+  let calls = 0;
+  const response = await handleOtaProxyRequest(otaRequest('/ota/channels/beta.json'), {
+    fetchImpl: async () => { calls += 1; throw new Error('unexpected network'); },
+  });
+  assert.equal(response.status, 502);
+  assert.equal(calls, 0);
+});
+
 let restoreFetch = null;
 
 afterEach(() => {

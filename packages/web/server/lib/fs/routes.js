@@ -69,7 +69,7 @@ export const mintOutsideFileGrant = async (targetPath, {
 };
 
 const createCommandTimeoutMs = () => {
-  const raw = Number(process.env.OPENCHAMBER_FS_EXEC_TIMEOUT_MS);
+  const raw = Number(process.env.YURI_FS_EXEC_TIMEOUT_MS);
   if (Number.isFinite(raw) && raw > 0) return raw;
   return 5 * 60 * 1000;
 };
@@ -79,13 +79,13 @@ const createCommandTimeoutMs = () => {
 // absorbs the burst of identical lookups a fresh client (e.g. right after a
 // page reload) fires for every project. Set to 0 to disable caching.
 const createGitReadCacheTtlMs = () => {
-  const raw = Number(process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS);
+  const raw = Number(process.env.YURI_GIT_READ_CACHE_TTL_MS);
   if (Number.isFinite(raw) && raw >= 0) return raw;
   return 30 * 1000;
 };
 
 const createGitCheckIgnoreTimeoutMs = () => {
-  const raw = Number(process.env.OPENCHAMBER_GIT_CHECK_IGNORE_TIMEOUT_MS);
+  const raw = Number(process.env.YURI_GIT_CHECK_IGNORE_TIMEOUT_MS);
   if (Number.isFinite(raw) && raw >= 0) return raw;
   return 2500;
 };
@@ -176,7 +176,7 @@ const isPathWithinRoot = (resolvedPath, rootPath, path, os) => {
   return true;
 };
 
-const resolveWorkspacePath = ({ targetPath, baseDirectory, path, os, normalizeDirectoryPath, openchamberUserConfigRoot }) => {
+const resolveWorkspacePath = ({ targetPath, baseDirectory, path, os, normalizeDirectoryPath, yuriUserConfigRoot }) => {
   const normalized = normalizeDirectoryPath(targetPath);
   if (!normalized || typeof normalized !== 'string') {
     return { ok: false, error: 'Path is required' };
@@ -189,8 +189,8 @@ const resolveWorkspacePath = ({ targetPath, baseDirectory, path, os, normalizeDi
     return { ok: true, base: resolvedBase, resolved };
   }
 
-  if (isPathWithinRoot(resolved, openchamberUserConfigRoot, path, os)) {
-    return { ok: true, base: path.resolve(openchamberUserConfigRoot), resolved };
+  if (isPathWithinRoot(resolved, yuriUserConfigRoot, path, os)) {
+    return { ok: true, base: path.resolve(yuriUserConfigRoot), resolved };
   }
 
   return { ok: false, error: 'Path is outside of active workspace' };
@@ -229,7 +229,7 @@ const resolveWorkspacePathFromWorktrees = async ({ targetPath, baseDirectory, pa
   return { ok: false, error: 'Path is outside of active workspace' };
 };
 
-const resolveWorkspacePathFromContext = async ({ req, targetPath, resolveProjectDirectory, path, os, normalizeDirectoryPath, openchamberUserConfigRoot }) => {
+const resolveWorkspacePathFromContext = async ({ req, targetPath, resolveProjectDirectory, path, os, normalizeDirectoryPath, yuriUserConfigRoot }) => {
   const resolvedProject = await resolveProjectDirectory(req);
   if (!resolvedProject.directory) {
     return { ok: false, error: resolvedProject.error || 'Active workspace is required' };
@@ -241,7 +241,7 @@ const resolveWorkspacePathFromContext = async ({ req, targetPath, resolveProject
     path,
     os,
     normalizeDirectoryPath,
-    openchamberUserConfigRoot,
+    yuriUserConfigRoot,
   });
   if (resolved.ok || resolved.error !== 'Path is outside of active workspace') {
     return resolved;
@@ -393,8 +393,8 @@ export const registerFsRoutes = (app, dependencies) => {
     resolveProjectDirectory,
     buildAugmentedPath,
     resolveGitBinaryForSpawn,
-    openchamberUserConfigRoot,
-    openchamberDataDir,
+    yuriUserConfigRoot,
+    yuriDataDir,
   } = dependencies;
   const realpathCache = createRealpathCache({
     realpath: fsPromises.realpath.bind(fsPromises),
@@ -579,7 +579,7 @@ export const registerFsRoutes = (app, dependencies) => {
           path,
           os,
           normalizeDirectoryPath,
-          openchamberUserConfigRoot,
+          yuriUserConfigRoot,
         });
         if (!resolved.ok) {
           return res.status(400).json({ error: resolved.error });
@@ -721,7 +721,7 @@ export const registerFsRoutes = (app, dependencies) => {
         os,
         fsPromises,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        yuriUserConfigRoot,
       });
       if (!resolved.ok) {
         if (req.query?.allowOutsideWorkspace === 'true') {
@@ -779,7 +779,7 @@ export const registerFsRoutes = (app, dependencies) => {
         os,
         fsPromises,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        yuriUserConfigRoot,
       });
       if (!resolved.ok) {
         if (req.query?.allowOutsideWorkspace === 'true') {
@@ -818,14 +818,14 @@ export const registerFsRoutes = (app, dependencies) => {
         }
       }
       if (optional) {
-        res.setHeader('x-openchamber-file-exists', 'true');
+        res.setHeader('x-yuri-file-exists', 'true');
       }
       return res.type('text/plain').send(content);
     } catch (error) {
       const err = error;
       if (err && typeof err === 'object' && err.code === 'ENOENT') {
         if (optional) {
-          res.setHeader('x-openchamber-file-exists', 'false');
+          res.setHeader('x-yuri-file-exists', 'false');
           return res.type('text/plain').send('');
         }
         return res.status(404).json({ error: 'File not found' });
@@ -854,7 +854,7 @@ export const registerFsRoutes = (app, dependencies) => {
         os,
         fsPromises,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        yuriUserConfigRoot,
       });
       if (!resolved.ok) {
         if (req.query?.allowOutsideWorkspace === 'true') {
@@ -952,7 +952,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        yuriUserConfigRoot,
       });
       if (!resolved.ok) {
         return res.status(400).json({ error: resolved.error });
@@ -1011,7 +1011,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        yuriUserConfigRoot,
       });
       if (!resolved.ok) {
         return res.status(400).json({ error: resolved.error });
@@ -1063,26 +1063,26 @@ export const registerFsRoutes = (app, dependencies) => {
     if (!PROMPT_ATTACHMENT_ID.test(attachmentID)) {
       return res.status(400).json({ error: 'Attachment id is required' });
     }
-    const dataDir = typeof openchamberDataDir === 'string' ? openchamberDataDir.trim() : '';
+    const dataDir = typeof yuriDataDir === 'string' ? yuriDataDir.trim() : '';
     if (!dataDir) {
       return res.status(503).json({ error: 'Prompt attachment storage is unavailable' });
     }
 
-    const expectedSize = Number(headerValue(req.headers['x-openchamber-content-length']) ?? headerValue(req.headers['content-length']));
+    const expectedSize = Number(headerValue(req.headers['x-yuri-content-length']) ?? headerValue(req.headers['content-length']));
     const temporary = req.query?.storage === 'temporary';
     if (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || (!temporary && expectedSize > MAX_PROMPT_ATTACHMENT_BYTES)) {
       return res.status(400).json({ error: 'Attachment size is required' });
     }
-    const expectedSha256 = headerValue(req.headers['x-openchamber-sha256']);
+    const expectedSha256 = headerValue(req.headers['x-yuri-sha256']);
     if (typeof expectedSha256 !== 'string' || !PROMPT_ATTACHMENT_SHA256.test(expectedSha256)) {
       return res.status(400).json({ error: 'Attachment digest is required' });
     }
-    const mime = headerValue(req.headers['x-openchamber-mime']) || headerValue(req.headers['content-type']) || 'application/octet-stream';
+    const mime = headerValue(req.headers['x-yuri-mime']) || headerValue(req.headers['content-type']) || 'application/octet-stream';
     const mimeType = mime.split(';', 1)[0]?.trim() || 'application/octet-stream';
     if (!PROMPT_ATTACHMENT_MIME.test(mimeType)) {
       return res.status(400).json({ error: 'Attachment MIME type is invalid' });
     }
-    const filename = headerValue(req.headers['x-openchamber-filename']) || '';
+    const filename = headerValue(req.headers['x-yuri-filename']) || '';
 
     const controller = new AbortController();
     req.once?.('aborted', () => controller.abort());
@@ -1148,7 +1148,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        yuriUserConfigRoot,
       });
       if (!resolved.ok) {
         return res.status(400).json({ error: resolved.error });
@@ -1186,7 +1186,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        yuriUserConfigRoot,
       });
       if (!resolvedOld.ok) {
         return res.status(400).json({ error: resolvedOld.error });
@@ -1199,7 +1199,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        yuriUserConfigRoot,
       });
       if (!resolvedNew.ok) {
         return res.status(400).json({ error: resolvedNew.error });
@@ -1303,7 +1303,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        yuriUserConfigRoot,
       });
       if (!resolvedForWorkspace.ok) {
         console.warn(`Rejected /api/fs/exec outside workspace: ${resolvedForWorkspace.error}`);

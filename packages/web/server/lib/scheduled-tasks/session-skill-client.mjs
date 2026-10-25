@@ -36,7 +36,7 @@ async function main() {
       input = JSON.parse(text);
       taskID = randomUUID();
     }
-    const response = await fetch(new URL('/api/openchamber/session-skills/scheduled-task', origin), {
+    const response = await fetch(new URL('/api/yuri/session-skills/scheduled-task', origin), {
       method: 'POST',
       redirect: 'error',
       signal: AbortSignal.timeout(30_000),

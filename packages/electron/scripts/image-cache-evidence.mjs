@@ -6,16 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { createImageDiskCache } from '../image-disk-cache.mjs';
 import { createVirtualAssetRegistry, ASSET_SCHEME_PRIVILEGES } from '../virtual-asset-protocol.mjs';
 
-const work = process.env.OC_IMAGE_EVIDENCE_DIR;
+const work = process.env.YURI_IMAGE_EVIDENCE_DIR;
 app.setPath('userData', join(work, 'profile'));
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'openchamber-asset', privileges: ASSET_SCHEME_PRIVILEGES },
-  { scheme: 'openchamber-ui', privileges: ASSET_SCHEME_PRIVILEGES },
+  { scheme: 'yuri-asset', privileges: ASSET_SCHEME_PRIVILEGES },
+  { scheme: 'yuri-ui', privileges: ASSET_SCHEME_PRIVILEGES },
 ]);
 app.whenReady().then(async () => {
 const cache = createImageDiskCache({ directory: join(work, 'images') });
 const streams = createVirtualAssetRegistry();
-protocol.handle('openchamber-asset', (request) => new URL(request.url).hostname === 'cache' ? cache.handleRequest(request) : streams.handleRequest(request));
+protocol.handle('yuri-asset', (request) => new URL(request.url).hostname === 'cache' ? cache.handleRequest(request) : streams.handleRequest(request));
 ipcMain.handle('cache:acquire', (event, input) => cache.acquire(event.sender.id, input));
 ipcMain.handle('cache:append', (event, id, bytes) => cache.append(event.sender.id, id, bytes));
 ipcMain.handle('cache:commit', (event, id, mime) => cache.commit(event.sender.id, id, mime));
@@ -48,7 +48,7 @@ const server = createServer(async (request, response) => {
   response.end('<!doctype html><html><body><div id="root"></div><script>window.process={env:{NODE_ENV:"production"}}</script><script src="/fixture.js"></script></body></html>');
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-protocol.handle('openchamber-ui', (request) => net.fetch(`http://127.0.0.1:${server.address().port}${new URL(request.url).pathname}`));
+protocol.handle('yuri-ui', (request) => net.fetch(`http://127.0.0.1:${server.address().port}${new URL(request.url).pathname}`));
 const window = new BrowserWindow({ show: true, width: 800, height: 600, webPreferences: {
   preload: join(dirname(fileURLToPath(import.meta.url)), 'image-cache-evidence.preload.cjs'),
   contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
@@ -63,7 +63,7 @@ try {
   }
   results.disk = await cache.stats();
   downloads = 0; bytes = 0; stats = 0;
-  await window.loadURL('openchamber-ui://app/index.html');
+  await window.loadURL('yuri-ui://app/index.html');
   results.packaged = { ...await window.webContents.executeJavaScript('window.runImageBenchmark(true)'), downloads, bytes, stats };
   await writeFile(join(work, 'result.json'), JSON.stringify(results, null, 2));
 } finally { window.destroy(); server.close(); app.quit(); }

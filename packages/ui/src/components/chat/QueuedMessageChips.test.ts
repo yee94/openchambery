@@ -474,7 +474,7 @@ describe('QueuedMessageChips preview decoration', () => {
     });
 
     test('keeps uploaded image paths compact without attachment metadata', () => {
-        const parts = buildQueuedMessagePreviewParts('[/tmp/openchamber-prompt-test/image-1.png] review');
+        const parts = buildQueuedMessagePreviewParts('[/tmp/yuri-prompt-test/image-1.png] review');
         expect(parts?.[0]).toMatchObject({
             type: 'reference',
             decoration: { kind: 'image', label: 'image-1.png', icon: 'file-image' },
@@ -482,15 +482,15 @@ describe('QueuedMessageChips preview decoration', () => {
     });
 
     test('decorates reserved-slot document citations with the attachment icon', () => {
-        const text = `[${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}openchamber-diagnostics.json] 你看一下日志`;
+        const text = `[${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}yuri-diagnostics.json] 你看一下日志`;
         const parts = buildQueuedMessagePreviewParts(text, {
-            attachments: [{ filename: 'openchamber-diagnostics.json', mimeType: 'application/json', source: 'local' }],
+            attachments: [{ filename: 'yuri-diagnostics.json', mimeType: 'application/json', source: 'local' }],
         });
         expect(parts?.[0]?.type).toBe('reference');
         if (parts?.[0]?.type !== 'reference') throw new Error('expected attachment reference');
         expect([parts[0].decoration.kind, parts[0].decoration.label, parts[0].decoration.icon]).toEqual([
             'attachment',
-            'openchamber-diagnostics.json',
+            'yuri-diagnostics.json',
             'attachment-2',
         ]);
         expect(parts?.[1]).toEqual({ type: 'text', text: ' 你看一下日志' });

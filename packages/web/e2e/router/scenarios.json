@@ -1,5 +1,5 @@
 {
-  "name": "openchamber-router-path-e2e",
+  "name": "yuri-router-path-e2e",
   "legacyQueryParamsForbidden": [
     "session",
     "tab",

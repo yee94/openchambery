@@ -8,14 +8,14 @@ let bootstrapStatusResult: { status: 'pending' | 'ready' | 'failed'; error: stri
 };
 let bootstrapStatusHandler: ((directory: string) => Promise<typeof bootstrapStatusResult>) | null = null;
 const toastErrors: Array<{ title: string; description?: string }> = [];
-type OpenChamberListener = (event: {
+type YuriListener = (event: {
   type: string;
   directory?: string;
   status?: 'pending' | 'ready' | 'failed';
   error?: string | null;
   updatedAt?: number;
 }) => void;
-const openchamberListeners = new Set<OpenChamberListener>();
+const yuriListeners = new Set<YuriListener>();
 
 mock.module('@/components/ui', () => ({
   toast: {
@@ -54,11 +54,11 @@ mock.module('@/lib/gitApiHttp', () => ({
   getGitWorktreeBootstrapStatus: (directory: string) => resolveBootstrapStatus(directory),
 }));
 
-mock.module('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: (listener: OpenChamberListener) => {
-    openchamberListeners.add(listener);
+mock.module('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: (listener: YuriListener) => {
+    yuriListeners.add(listener);
     return () => {
-      openchamberListeners.delete(listener);
+      yuriListeners.delete(listener);
     };
   },
 }));
@@ -93,7 +93,7 @@ const emitBootstrapStatus = (
     error,
     updatedAt,
   };
-  for (const listener of openchamberListeners) listener(event);
+  for (const listener of yuriListeners) listener(event);
 };
 
 describe('worktreeBootstrap.waitForWorktreeBootstrap', () => {

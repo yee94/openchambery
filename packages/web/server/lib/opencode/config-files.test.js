@@ -12,7 +12,7 @@ const put = (file, text) => {
   return file;
 };
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-config-files-'));
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-config-files-'));
   globalDir = path.join(root, 'xdg', 'opencode');
   vi.stubEnv('XDG_CONFIG_HOME', path.dirname(globalDir));
   vi.stubEnv('OPENCODE_CONFIG', '');
@@ -78,7 +78,7 @@ describe('physical configuration layers', () => {
     expect(() => writeConfig({ model: 'new' }, file)).toThrow('Invalid JSONC');
     expect(() => writeConfigText('{}', file)).toThrow('Invalid JSONC');
     expect(fs.readFileSync(file, 'utf8')).toBe(text);
-    expect(fs.existsSync(`${file}.openchamber.backup`)).toBe(false);
+    expect(fs.existsSync(`${file}.yuri.backup`)).toBe(false);
   });
 
   it('propagates read failures instead of returning empty success', () => {
@@ -107,15 +107,15 @@ describe('structural JSONC writes', () => {
     expect(readConfigFile(target)).toEqual({ model: 'new' });
     expect(fs.readFileSync(target, 'utf8')).toContain('// dotfiles comment');
     expect(fs.statSync(target).mode & 0o777).toBe(0o664);
-    expect(fs.readFileSync(`${file}.openchamber.backup`, 'utf8')).toBe(original);
-    expect(fs.existsSync(`${target}.openchamber.backup`)).toBe(false);
+    expect(fs.readFileSync(`${file}.yuri.backup`, 'utf8')).toBe(original);
+    expect(fs.existsSync(`${target}.yuri.backup`)).toBe(false);
 
     const structured = fs.readFileSync(target, 'utf8');
     writeConfigText('{"model":"raw"}', file);
     expect(fs.readlinkSync(file)).toBe(link);
     expect(readConfigFile(target)).toEqual({ model: 'raw' });
     expect(fs.statSync(target).mode & 0o777).toBe(0o664);
-    expect(fs.readFileSync(`${file}.openchamber.backup`, 'utf8')).toBe(structured);
+    expect(fs.readFileSync(`${file}.yuri.backup`, 'utf8')).toBe(structured);
   });
 
   it.each(['writeFileSync', 'chmodSync', 'copyFileSync', 'renameSync'])('preserves a symlink and its original target when %s fails', (method) => {
@@ -162,10 +162,10 @@ describe('structural JSONC writes', () => {
     for (const comment of ['// model comment', '/* owned */', '/* trailing */', '// unrelated field', '// leave alone']) expect(saved).toContain(comment);
     expect(saved).toContain('\t"unrelated" : [ 1, 2 ], // leave alone\r\n');
     expect(saved.startsWith('\uFEFF')).toBe(true);
-    expect(fs.readFileSync(`${file}.openchamber.backup`, 'utf8')).toBe(original);
+    expect(fs.readFileSync(`${file}.yuri.backup`, 'utf8')).toBe(original);
     writeConfig(config, file);
     expect(fs.readFileSync(file, 'utf8')).toBe(saved);
-    expect(fs.readFileSync(`${file}.openchamber.backup`, 'utf8')).toBe(original);
+    expect(fs.readFileSync(`${file}.yuri.backup`, 'utf8')).toBe(original);
   });
 
   it.each([

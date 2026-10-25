@@ -229,14 +229,14 @@ const sessionListRecords = (payload) => {
 
 export const isInteractiveSessionRequest = (method, requestUrl) => {
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false;
-  const pathname = new URL(requestUrl || '/', 'http://openchamber.local').pathname;
+  const pathname = new URL(requestUrl || '/', 'http://yuri.local').pathname;
   return /^\/api\/session\/[^/]+(?:\/(?:message|children|todo|diff))?$/.test(pathname);
 };
 
 export const resolveSessionTurnAdmissionRequest = (req) => {
   if (req?.method !== 'POST') return null;
   const requestUrl = typeof req.originalUrl === 'string' && req.originalUrl ? req.originalUrl : req.url;
-  const pathname = new URL(requestUrl || '/', 'http://openchamber.local').pathname;
+  const pathname = new URL(requestUrl || '/', 'http://yuri.local').pathname;
   const match = pathname.match(/\/session\/([^/]+)\/(?:message|prompt_async|command|shell)\/?$/i);
   if (!match) return null;
   const directory = extractDirectoryFromRequest(req);
@@ -352,7 +352,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   };
 
   /**
-   * OpenChamber's stored metadata deep-merges onto upstream create-time
+   * Yuri's stored metadata deep-merges onto upstream create-time
    * metadata, and Host archive authority projects onto `time.archived`.
    */
   const overlaySession = (session, stored) => {
@@ -540,7 +540,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   const resolveSseTimeout = (value, fallback) => Number.isFinite(value) && value > 0 ? value : fallback;
   const SSE_UPSTREAM_CONNECT_TIMEOUT = resolveSseTimeout(SSE_UPSTREAM_CONNECT_TIMEOUT_MS, 15_000);
   const SSE_UPSTREAM_STALL_TIMEOUT = resolveSseTimeout(SSE_UPSTREAM_STALL_TIMEOUT_MS, 20_000);
-  const PROXY_TIMEOUT_MARKER = Symbol('openchamberProxyTimedOut');
+  const PROXY_TIMEOUT_MARKER = Symbol('yuriProxyTimedOut');
 
   const isProxyTimeoutError = (error) => {
     const code = typeof error?.code === 'string' ? error.code : '';
@@ -599,7 +599,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     const requestUrl = typeof req.originalUrl === 'string' && req.originalUrl.length > 0
       ? req.originalUrl
       : (typeof req.url === 'string' ? req.url : '');
-    // OpenChamber projection control — never forwarded to OpenCode.
+    // Yuri projection control — never forwarded to OpenCode.
     const includeReasoning = readIncludeReasoningQuery(req.query)
       && readIncludeReasoningFromUrl(requestUrl);
     const reasoningFilter = includeReasoning ? null : createReasoningOutboundFilter();
@@ -1088,7 +1088,7 @@ export const registerOpenCodeProxy = (app, deps) => {
           return null;
         });
 
-        const settingsPath = path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
+        const settingsPath = path.join(os.homedir(), '.config', 'yuri', 'settings.json');
         let projectDirs = [];
         try {
           const settingsRaw = fs.readFileSync(settingsPath, 'utf8');

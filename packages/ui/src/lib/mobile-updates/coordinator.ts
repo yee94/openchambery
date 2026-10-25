@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { Capacitor } from '@capacitor/core';
 
 import { isCapacitorApp, getClientPlatform } from '@/lib/platform';
@@ -13,21 +14,22 @@ import type {
 } from './types';
 import { MobileUpdatesUnsupportedError } from './types';
 
-export const MOBILE_OTA_EDGEONE_CHECK_URL = 'https://openchamber.xiaobe.top/v1/mobile/update/check';
-export const MOBILE_OTA_VERCEL_CHECK_URL = 'https://openchamber-update.vercel.app/v1/mobile/update/check';
+export const MOBILE_OTA_EDGEONE_CHECK_URL = import.meta.env.VITE_YURI_EDGEONE_OTA_CHECK_URL || 'https://updates-edgeone.example.invalid/v1/mobile/update/check';
+export const MOBILE_OTA_VERCEL_CHECK_URL = import.meta.env.VITE_YURI_VERCEL_OTA_CHECK_URL || 'https://updates-vercel.example.invalid/v1/mobile/update/check';
 const MOBILE_OTA_CHECK_TIMEOUT_MS = 10_000;
+const YURI_NATIVE_APPLICATION_ID = 'com.yee94.yuri';
 
-const DEVICE_ID_STORAGE_KEY = 'openchamber.mobile-ota.device-id.v1';
+const DEVICE_ID_STORAGE_KEY = 'yuri.mobile-ota.device-id.v1';
 
 declare const __APP_VERSION__: string | undefined;
 
-type OpenChamberOtaConfig = {
+type YuriOtaConfig = {
   shellApiVersion?: number;
   channel?: MobileUpdateChannel;
 };
 
 type CapacitorConfigWithOta = {
-  OpenChamberOTA?: OpenChamberOtaConfig;
+  YuriOTA?: YuriOtaConfig;
 };
 
 type HttpResponseLike = {
@@ -42,7 +44,7 @@ export type CheckMobileOtaUpdateOptions = {
   updater?: CapgoUpdater | null;
   /**
    * Runtime channel preference. When set, wins over the build-time baked
-   * `OpenChamberOTA.channel` (`override ?? baked`). Lib layer must not import
+   * `YuriOTA.channel` (`override ?? baked`). Lib layer must not import
    * the Zustand UI store — callers pass the override explicitly.
    */
   channelOverride?: MobileUpdateChannel;
@@ -57,14 +59,14 @@ type CapacitorWithOptionalConfig = typeof Capacitor & {
   config?: CapacitorConfigWithOta;
 };
 
-const readOtaConfig = (): OpenChamberOtaConfig => {
+const readOtaConfig = (): YuriOtaConfig => {
   try {
     const cap = Capacitor as CapacitorWithOptionalConfig;
-    // packages/mobile injects OpenChamberOTA into capacitor.config; Capgo builds
+    // packages/mobile injects YuriOTA into capacitor.config; Capgo builds
     // expose it via getConfig() (newer) or the static `config` field.
     const config = (typeof cap.getConfig === 'function' ? cap.getConfig() : undefined)
       ?? cap.config;
-    return config?.OpenChamberOTA ?? {};
+    return config?.YuriOTA ?? {};
   } catch {
     return {};
   }
@@ -134,7 +136,7 @@ const resolveDeviceId = async (updater: CapgoUpdater | null): Promise<string> =>
   return generated;
 };
 
-const resolveNativeInfo = async (): Promise<{ version: string; build: number }> => {
+const resolveNativeInfo = async (): Promise<{ version: string; build: number; applicationId?: string }> => {
   const bundled = typeof __APP_VERSION__ !== 'undefined' ? nonEmptyString(__APP_VERSION__) : null;
   if (isCapacitorApp()) {
     try {
@@ -144,6 +146,7 @@ const resolveNativeInfo = async (): Promise<{ version: string; build: number }> 
       const buildRaw = nonEmptyString(info.build);
       const build = buildRaw ? Number.parseInt(buildRaw, 10) : 0;
       return {
+        applicationId: nonEmptyString(info.id) ?? undefined,
         version,
         build: Number.isFinite(build) ? build : 0,
       };
@@ -346,6 +349,9 @@ async function postUpdateCheck(
   }
 
   if (!isMobileUpdateDecision(data)) return null;
+  if (data.primaryAction === 'apply_ota' && body.applicationId !== YURI_NATIVE_APPLICATION_ID) {
+    throw new Error('Yuri OTA requires the Yuri native application');
+  }
   if (data.primaryAction === 'apply_ota'
     && (body.releaseMajor === undefined || releaseMajorOf(data.ota.bundle?.releaseVersion) !== body.releaseMajor)) {
     throw new Error('OTA release major mismatch');
@@ -378,6 +384,7 @@ export async function checkMobileOtaUpdate(
   const body: MobileUpdateCheckRequest = {
     channel,
     platform: resolvePlatform(),
+    applicationId: nativeInfo.applicationId,
     deviceId,
     nativeVersion: nativeInfo.version,
     nativeBuild: nativeInfo.build,
@@ -418,6 +425,7 @@ export async function findDownloadedOtaBundle(bundle: MobileOtaBundleInfo): Prom
   if (!updater) return null;
 
   const request = await assembleMobileOtaCheckRequest({ updater });
+  if (request.applicationId !== YURI_NATIVE_APPLICATION_ID) throw new Error('Yuri OTA requires the Yuri native application');
   if (request.releaseMajor === undefined || releaseMajorOf(bundle.releaseVersion) !== request.releaseMajor) {
     throw new Error('OTA release major mismatch');
   }
@@ -440,6 +448,7 @@ export async function downloadOtaBundle(bundle: MobileOtaBundleInfo): Promise<st
   if (!updater) throw new MobileUpdatesUnsupportedError();
 
   const request = await assembleMobileOtaCheckRequest({ updater });
+  if (request.applicationId !== YURI_NATIVE_APPLICATION_ID) throw new Error('Yuri OTA requires the Yuri native application');
   if (request.releaseMajor === undefined || releaseMajorOf(bundle.releaseVersion) !== request.releaseMajor) {
     throw new Error('OTA release major mismatch');
   }
@@ -479,6 +488,7 @@ export async function assembleMobileOtaCheckRequest(
   return {
     channel,
     platform: resolvePlatform(),
+    applicationId: nativeInfo.applicationId,
     deviceId,
     nativeVersion: nativeInfo.version,
     nativeBuild: nativeInfo.build,

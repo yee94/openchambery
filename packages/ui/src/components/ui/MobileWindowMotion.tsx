@@ -238,8 +238,8 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
 
   React.useEffect(() => {
     if (!active || isPreview) return;
-    window.dispatchEvent(new Event('oc:mobile-overlay-opened'));
-    return () => { window.dispatchEvent(new Event('oc:mobile-overlay-closed')); };
+    window.dispatchEvent(new Event('yuri:mobile-overlay-opened'));
+    return () => { window.dispatchEvent(new Event('yuri:mobile-overlay-closed')); };
   }, [active, isPreview]);
   React.useEffect(() => {
     if (!active || isPreview) return;
@@ -379,7 +379,7 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
   const content = (
     <div
       ref={scrimRef}
-      className={cn('oc-mobile-window-motion oc-keyboard-inset-surface fixed inset-0 z-[60] flex flex-col bg-[rgb(0_0_0_/_0.45)]', motionActive && 'oc-mobile-window-motion-active', !active && !isPreview && 'pointer-events-none invisible', scrimClassName, className)}
+      className={cn('yuri-mobile-window-motion yuri-keyboard-inset-surface fixed inset-0 z-[60] flex flex-col bg-[rgb(0_0_0_/_0.45)]', motionActive && 'yuri-mobile-window-motion-active', !active && !isPreview && 'pointer-events-none invisible', scrimClassName, className)}
       data-mobile-overlay-active={String(active)}
       role={isPreview ? undefined : 'dialog'} aria-label={isPreview ? undefined : ariaLabel}
       aria-modal={active && isTop ? 'true' : undefined} aria-hidden={isPreview || !active || !isTop || undefined} inert={isPreview || !active || !isTop || undefined}
@@ -390,7 +390,7 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
         onOpenChangeRef.current(false);
       }}
     >
-      <div ref={setSurfaceRef} tabIndex={-1} className={cn('oc-mobile-floating-shell', getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} data-oc-motion-id={id} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
+      <div ref={setSurfaceRef} tabIndex={-1} className={cn('yuri-mobile-floating-shell', getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} data-yuri-motion-id={id} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
         {children}
       </div>
     </div>

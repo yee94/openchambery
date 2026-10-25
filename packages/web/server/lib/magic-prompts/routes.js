@@ -4,13 +4,13 @@ export const registerMagicPromptRoutes = (app, dependencies) => {
   const {
     fsPromises,
     path,
-    openchamberDataDir,
+    yuriDataDir,
   } = dependencies;
 
   const runtime = createMagicPromptRuntime({
     fsPromises,
     path,
-    filePath: path.join(openchamberDataDir, 'magic-prompts.json'),
+    filePath: path.join(yuriDataDir, 'magic-prompts.json'),
   });
 
   app.get('/api/magic-prompts', async (_req, res) => {

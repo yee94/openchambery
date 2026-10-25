@@ -4,8 +4,7 @@ import { handleCapgoOtaCheck } from '../../../lib/ota-check.js';
 // relative to this host would loop back into the edge runtime. Read the
 // authoritative Vercel origin instead (bundle URLs in the response stay
 // relative to the client-facing request origin).
-const MANIFEST_BASE_URL = 'https://openchamber-update.vercel.app';
-
-export async function onRequest({ request }) {
-  return handleCapgoOtaCheck(request, { manifestBaseUrl: MANIFEST_BASE_URL });
+export async function onRequest({ request, env }) {
+  if (!env?.YURI_OTA_UPSTREAM_ORIGIN) return new Response('Yuri update origin is not configured', { status: 503 });
+  return handleCapgoOtaCheck(request, { manifestBaseUrl: env.YURI_OTA_UPSTREAM_ORIGIN });
 }

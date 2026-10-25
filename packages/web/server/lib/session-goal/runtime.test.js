@@ -80,7 +80,7 @@ const buildSession = (status = 'active') => ({
   id: 'ses-goal',
   directory: '/repo',
   metadata: {
-    openchamber: {
+    yuri: {
       goal: {
         id: 'goal-1',
         status,
@@ -307,7 +307,7 @@ describe('session-goal continuation delivery', () => {
       },
     ];
     const session = buildSession();
-    session.metadata.openchamber.goal.createdAt = 1;
+    session.metadata.yuri.goal.createdAt = 1;
     const fetchImpl = async (input, init = {}) => {
       const url = String(input);
       const reqPath = url.split('?')[0];
@@ -358,9 +358,9 @@ describe('session-goal continuation delivery', () => {
       const SessionMessage = await loadInstalledSessionMessageSchema();
       expect(SessionMessage.ID.make(body.id)).toBe(body.id);
       expect(String(body.text)).toContain('Continue working toward the active session goal.');
-      expect(body.metadata?.openchamber?.goalContinuation).toBe(true);
+      expect(body.metadata?.yuri?.goalContinuation).toBe(true);
       // User-boundary prompt: synthetic lives in metadata only (not type: synthetic).
-      expect(body.metadata?.openchamber?.synthetic).toBe(true);
+      expect(body.metadata?.yuri?.synthetic).toBe(true);
       expect(body.type).not.toBe('synthetic');
       expect(runtime.getDispatchedContinuation('ses-goal')).toMatchObject({
         goalId: 'goal-1',
@@ -578,8 +578,8 @@ describe('session-goal runtime — pause for question', () => {
       runtime.processPayload(native ? { type: 'form.created', data: { form: { sessionID: 'ses-goal', metadata: { kind: 'question' } } } } : questionAskedPayload(), '/repo');
       await flushQuestionPause();
       expect(patches.length).toBe(1);
-      expect(patches[0].metadata.openchamber.goal.status).toBe('paused');
-      expect(patches[0].metadata.openchamber.goal.statusReason).toBe('paused for question');
+      expect(patches[0].metadata.yuri.goal.status).toBe('paused');
+      expect(patches[0].metadata.yuri.goal.statusReason).toBe('paused for question');
       expect(calls.promptAsync).toBe(0);
       expect(calls.abort).toBe(0);
       runtime.stop();
@@ -622,7 +622,7 @@ describe('session-goal runtime — pause for question', () => {
       runtime.processPayload(questionAskedPayload(), '/repo');
       await flushQuestionPause();
       expect(patches.length).toBe(0);
-      expect(session.metadata.openchamber.goal.status).toBe('paused');
+      expect(session.metadata.yuri.goal.status).toBe('paused');
       runtime.stop();
     });
   });
@@ -652,8 +652,8 @@ describe('session-goal runtime — pause for question', () => {
       runtime.processPayload(questionAskedPayload('ses-child'), '/repo');
       await flushQuestionPause();
       expect(patches.length).toBe(1);
-      expect(patches[0].metadata.openchamber.goal.status).toBe('paused');
-      expect(patches[0].metadata.openchamber.goal.statusReason).toBe('paused for question');
+      expect(patches[0].metadata.yuri.goal.status).toBe('paused');
+      expect(patches[0].metadata.yuri.goal.statusReason).toBe('paused for question');
       runtime.stop();
     });
   });
@@ -683,7 +683,7 @@ describe('session-goal runtime — pause for question', () => {
       runtime.processPayload(questionAskedPayload(), '/repo');
       await flushQuestionPause();
       expect(patches.length).toBe(0);
-      expect(session.metadata.openchamber.goal.status).toBe('active');
+      expect(session.metadata.yuri.goal.status).toBe('active');
       runtime.stop();
     });
   });
@@ -718,7 +718,7 @@ describe('session-goal runtime — pause for question', () => {
       runtime.processPayload(questionAskedPayload('ses-grand'), '/repo/wt');
       await flushQuestionPause();
       expect(patches.length).toBe(1);
-      expect(patches[0].metadata.openchamber.goal.status).toBe('paused');
+      expect(patches[0].metadata.yuri.goal.status).toBe('paused');
       runtime.stop();
     });
   });
@@ -759,7 +759,7 @@ describe('session-goal runtime — pause for question', () => {
         },
       }, '/repo');
       await flushQuestionPause();
-      expect(session.metadata.openchamber.goal.status).toBe('paused');
+      expect(session.metadata.yuri.goal.status).toBe('paused');
       expect(paused).toEqual([{ sessionId: 'ses-goal', directory: '/repo' }]);
       runtime.stop();
     });
@@ -768,7 +768,7 @@ describe('session-goal runtime — pause for question', () => {
   it('notifies onGoalPaused when metadata lands paused before abort (UI race)', async () => {
     const paused = [];
     const session = buildSession('paused');
-    session.metadata.openchamber.goal.statusReason = 'paused by user';
+    session.metadata.yuri.goal.statusReason = 'paused by user';
     const fetchImpl = async () => new Response(JSON.stringify(session), { status: 200 });
 
     await withFetch(fetchImpl, async () => {
@@ -804,9 +804,9 @@ describe('session-goal runtime — pause for question', () => {
   it('session.updated paused-by-user notifies onGoalPaused; question pause does not', async () => {
     const paused = [];
     const userPaused = buildSession('paused');
-    userPaused.metadata.openchamber.goal.statusReason = 'paused by user';
+    userPaused.metadata.yuri.goal.statusReason = 'paused by user';
     const questionPaused = buildSession('paused');
-    questionPaused.metadata.openchamber.goal.statusReason = 'paused for question';
+    questionPaused.metadata.yuri.goal.statusReason = 'paused for question';
 
     const makeRuntime = (session) => createSessionGoalRuntime({
       buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
@@ -817,7 +817,7 @@ describe('session-goal runtime — pause for question', () => {
       idleQuietMs: 1_000_000,
       kickoffQuietMs: 1,
       onGoalPaused: (sessionId, directory) => {
-        paused.push({ sessionId, directory, reason: session.metadata.openchamber.goal.statusReason });
+        paused.push({ sessionId, directory, reason: session.metadata.yuri.goal.statusReason });
       },
     });
 
@@ -876,9 +876,9 @@ describe('session-goal execution generation helpers', () => {
 describe('session-goal runtime — Host metadata store seams', () => {
   it('writes through mutateSessionMetadata and never PATCHes OpenCode metadata when seams are injected', async () => {
     const active = buildSession('active');
-    const goal = active.metadata.openchamber.goal;
+    const goal = active.metadata.yuri.goal;
     const metadata = {
-      openchamber: {
+      yuri: {
         goal: { ...goal, executionGeneration: 0 },
         assist: { recap: 'keep-me' },
       },
@@ -887,12 +887,12 @@ describe('session-goal runtime — Host metadata store seams', () => {
     const mutateSessionMetadata = vi.fn(async (_sessionId, decide) => {
       const decision = decide(metadata);
       if (!decision?.ok) return { committed: false, reason: decision?.reason, metadata };
-      metadata.openchamber = {
-        ...metadata.openchamber,
-        ...(decision.patch.openchamber || {}),
+      metadata.yuri = {
+        ...metadata.yuri,
+        ...(decision.patch.yuri || {}),
         goal: {
-          ...metadata.openchamber.goal,
-          ...(decision.patch.openchamber?.goal || {}),
+          ...metadata.yuri.goal,
+          ...(decision.patch.yuri?.goal || {}),
         },
       };
       return { committed: true, metadata };
@@ -931,14 +931,14 @@ describe('session-goal runtime — Host metadata store seams', () => {
 
       expect(readSessionMetadata).toHaveBeenCalledWith('ses-goal');
       expect(mutateSessionMetadata).toHaveBeenCalledTimes(1);
-      expect(metadata.openchamber.goal).toMatchObject({
+      expect(metadata.yuri.goal).toMatchObject({
         id: goal.id,
         status: 'paused',
         statusReason: 'paused for question',
         executionGeneration: 1,
       });
       // Neighbouring Host namespaces must survive the goal write.
-      expect(metadata.openchamber.assist).toEqual({ recap: 'keep-me' });
+      expect(metadata.yuri.assist).toEqual({ recap: 'keep-me' });
       expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
       runtime.stop();
     });
@@ -947,7 +947,7 @@ describe('session-goal runtime — Host metadata store seams', () => {
 
 describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   const makeTempStore = async () => {
-    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-goal-race-'));
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-goal-race-'));
     const store = createSessionMetadataStore({ dataDir });
     await store.load();
     return {
@@ -1062,13 +1062,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('audit start → user pause → late continue does not dispatch or raise turnsUsed', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 3,
     };
     await store.setSessionMetadata('ses-goal', {
-      openchamber: { goal, assist: { recap: 'keep' }, archive: { archivedAt: 9 } },
+      yuri: { goal, assist: { recap: 'keep' }, archive: { archivedAt: 9 } },
     }, { allowArchive: true });
 
     let releaseAudit;
@@ -1121,20 +1121,20 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
 
         // Readers only see committed pause (store already published).
         const mid = await store.get('ses-goal');
-        expect(mid.openchamber.goal.status).toBe('paused');
-        expect(mid.openchamber.assist).toEqual({ recap: 'keep' });
-        expect(mid.openchamber.archive).toEqual({ archivedAt: 9 });
+        expect(mid.yuri.goal.status).toBe('paused');
+        expect(mid.yuri.assist).toEqual({ recap: 'keep' });
+        expect(mid.yuri.archive).toEqual({ archivedAt: 9 });
 
         releaseAudit();
         await tickPromise;
 
         expect(promptBodies).toEqual([]);
         const finalMeta = await store.get('ses-goal');
-        expect(finalMeta.openchamber.goal.status).toBe('paused');
-        expect(finalMeta.openchamber.goal.turnsUsed).toBe(3);
-        expect(finalMeta.openchamber.goal.executionGeneration).toBe(1);
-        expect(finalMeta.openchamber.assist).toEqual({ recap: 'keep' });
-        expect(finalMeta.openchamber.archive).toEqual({ archivedAt: 9 });
+        expect(finalMeta.yuri.goal.status).toBe('paused');
+        expect(finalMeta.yuri.goal.turnsUsed).toBe(3);
+        expect(finalMeta.yuri.goal.executionGeneration).toBe(1);
+        expect(finalMeta.yuri.assist).toEqual({ recap: 'keep' });
+        expect(finalMeta.yuri.archive).toEqual({ archivedAt: 9 });
         runtime.stop();
       } finally {
         globalThis.fetch = originalFetch;
@@ -1146,12 +1146,12 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('late audit complete after pause cannot settle the goal', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 4,
       createdAt: 1,
       turnsUsed: 1,
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
 
     let releaseAudit;
     const auditGate = new Promise((resolve) => { releaseAudit = resolve; });
@@ -1179,8 +1179,8 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
       await tickPromise;
 
       const finalMeta = await store.get('ses-goal');
-      expect(finalMeta.openchamber.goal.status).toBe('paused');
-      expect(finalMeta.openchamber.goal.executionGeneration).toBe(5);
+      expect(finalMeta.yuri.goal.status).toBe('paused');
+      expect(finalMeta.yuri.goal.executionGeneration).toBe(5);
       runtime.stop();
       cleanup();
     });
@@ -1189,12 +1189,12 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('resume advances generation so a prior-period continue cannot commit', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 1,
       createdAt: 1,
       turnsUsed: 2,
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
 
     let releaseAudit;
     const auditGate = new Promise((resolve) => { releaseAudit = resolve; });
@@ -1234,11 +1234,11 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         // Simulate pause then resume while audit is in flight (new generation).
         await runtime.pauseGoal('ses-goal', '/repo', 'paused by user');
         await store.mutateSessionMetadata('ses-goal', (current) => {
-          const g = current.openchamber.goal;
+          const g = current.yuri.goal;
           return {
             ok: true,
             patch: {
-              openchamber: {
+              yuri: {
                 goal: {
                   ...g,
                   status: 'active',
@@ -1254,9 +1254,9 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         await tickPromise;
         expect(promptBodies).toEqual([]);
         const finalMeta = await store.get('ses-goal');
-        expect(finalMeta.openchamber.goal.status).toBe('active');
-        expect(finalMeta.openchamber.goal.turnsUsed).toBe(2);
-        expect(finalMeta.openchamber.goal.executionGeneration).toBe(3);
+        expect(finalMeta.yuri.goal.status).toBe('active');
+        expect(finalMeta.yuri.goal.turnsUsed).toBe(2);
+        expect(finalMeta.yuri.goal.executionGeneration).toBe(3);
         runtime.stop();
       } finally {
         globalThis.fetch = originalFetch;
@@ -1268,13 +1268,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('successful continue commits turnsUsed and records dispatch identity', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
     const promptBodies = [];
 
     await withFetch(makeOpenCodeFetch(), async () => {
@@ -1309,8 +1309,8 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
           turnsUsed: 1,
         }));
         const finalMeta = await store.get('ses-goal');
-        expect(finalMeta.openchamber.goal.turnsUsed).toBe(1);
-        expect(finalMeta.openchamber.goal.pendingContinuation == null).toBe(true);
+        expect(finalMeta.yuri.goal.turnsUsed).toBe(1);
+        expect(finalMeta.yuri.goal.pendingContinuation == null).toBe(true);
         expect(runtime.getDispatchedContinuation('ses-goal')).toMatchObject({
           goalId: goal.id,
           generation: 0,
@@ -1329,13 +1329,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('raw v2 projection payload + duplicate continuation id skips second dispatch', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
 
     // Official raw SessionMessageInfo (no info/parts wrapper).
     const rawProjection = {
@@ -1391,16 +1391,16 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         await store.mutateSessionMetadata('ses-goal', (current) => ({
           ok: true,
           patch: {
-            openchamber: {
-              goal: { ...current.openchamber.goal, turnsUsed: 0 },
+            yuri: {
+              goal: { ...current.yuri.goal, turnsUsed: 0 },
             },
           },
         }));
         await runtime.runTick('ses-goal', '/repo');
         expect(promptBodies.length).toBe(1);
         const finalMeta = await store.get('ses-goal');
-        expect(finalMeta.openchamber.goal.turnsUsed).toBe(1);
-        expect(finalMeta.openchamber.goal.pendingContinuation == null).toBe(true);
+        expect(finalMeta.yuri.goal.turnsUsed).toBe(1);
+        expect(finalMeta.yuri.goal.pendingContinuation == null).toBe(true);
         runtime.stop();
       } finally {
         globalThis.fetch = originalFetch;
@@ -1412,13 +1412,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('shutdown interrupt blocks auto-continue until authoritative idle', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
     const promptBodies = [];
 
     await withFetch(makeOpenCodeFetch(), async () => {
@@ -1469,13 +1469,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('pause during switchAgent drops before prompt with zero transport identity', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
 
     let releaseAgent;
     const agentGate = new Promise((resolve) => { releaseAgent = resolve; });
@@ -1532,10 +1532,10 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         expect(promptBodies).toEqual([]);
         expect(runtime.getDispatchedContinuation('ses-goal')).toBeNull();
         const finalMeta = await store.get('ses-goal');
-        expect(finalMeta.openchamber.goal.status).toBe('paused');
+        expect(finalMeta.yuri.goal.status).toBe('paused');
         // Before selection/prompt: turnsUsed must stay 0 and reserved pending cleared.
-        expect(finalMeta.openchamber.goal.turnsUsed).toBe(0);
-        expect(finalMeta.openchamber.goal.pendingContinuation == null).toBe(true);
+        expect(finalMeta.yuri.goal.turnsUsed).toBe(0);
+        expect(finalMeta.yuri.goal.pendingContinuation == null).toBe(true);
         runtime.stop();
       } finally {
         globalThis.fetch = originalFetch;
@@ -1547,13 +1547,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('pause during switchModel drops before prompt with zero transport identity', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
 
     let releaseModel;
     const modelGate = new Promise((resolve) => { releaseModel = resolve; });
@@ -1616,13 +1616,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('shutdown during switchAgent drops before prompt without uncertain phase', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
 
     let releaseAgent;
     const agentGate = new Promise((resolve) => { releaseAgent = resolve; });
@@ -1688,13 +1688,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('switchAgent selection failure is not reported as prompt-uncertain', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
     const promptBodies = [];
 
     await withFetch(makeOpenCodeFetch(), async () => {
@@ -1744,10 +1744,10 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('persist failure during pause keeps prior committed active state', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 2,
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
 
     let failNext = false;
     const gated = {
@@ -1778,8 +1778,8 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
       await expect(runtime.pauseGoal('ses-goal', '/repo', 'paused by user')).rejects.toThrow('disk full');
       // Local epoch still bumped (pause requested) but durable state unchanged.
       const mid = await store.get('ses-goal');
-      expect(mid.openchamber.goal.status).toBe('active');
-      expect(mid.openchamber.goal.executionGeneration).toBe(2);
+      expect(mid.yuri.goal.status).toBe('active');
+      expect(mid.yuri.goal.executionGeneration).toBe(2);
       runtime.stop();
       cleanup();
     });
@@ -1788,13 +1788,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('before-selection pause keeps turnsUsed at 0 and clears reserved pending', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
 
     let releaseAgent;
     const agentGate = new Promise((resolve) => { releaseAgent = resolve; });
@@ -1836,8 +1836,8 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         }
         // Reserved pending should exist before selection completes.
         const mid = await store.get('ses-goal');
-        expect(mid.openchamber.goal.turnsUsed).toBe(0);
-        expect(parsePendingContinuation(mid.openchamber.goal.pendingContinuation)?.phase).toBe('reserved');
+        expect(mid.yuri.goal.turnsUsed).toBe(0);
+        expect(parsePendingContinuation(mid.yuri.goal.pendingContinuation)?.phase).toBe('reserved');
 
         await runtime.pauseGoal('ses-goal', '/repo', 'paused by user');
         releaseAgent();
@@ -1845,9 +1845,9 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
 
         expect(promptBodies).toEqual([]);
         const finalMeta = await store.get('ses-goal');
-        expect(finalMeta.openchamber.goal.turnsUsed).toBe(0);
-        expect(finalMeta.openchamber.goal.pendingContinuation == null).toBe(true);
-        expect(finalMeta.openchamber.goal.status).toBe('paused');
+        expect(finalMeta.yuri.goal.turnsUsed).toBe(0);
+        expect(finalMeta.yuri.goal.pendingContinuation == null).toBe(true);
+        expect(finalMeta.yuri.goal.status).toBe('paused');
         runtime.stop();
       } finally {
         globalThis.fetch = originalFetch;
@@ -1862,9 +1862,9 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
     const knownMessageIDs = new Set([messageID]);
     // Durable state after accept + crash before turnsUsed commit.
     await store.setSessionMetadata('ses-goal', {
-      openchamber: {
+      yuri: {
         goal: {
-          ...buildSession('active').metadata.openchamber.goal,
+          ...buildSession('active').metadata.yuri.goal,
           executionGeneration: 0,
           createdAt: 1,
           turnsUsed: 0,
@@ -1899,8 +1899,8 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
       };
       try {
         const meta = await store.get('ses-goal');
-        expect(parsePendingContinuation(meta.openchamber.goal.pendingContinuation)?.phase).toBe('accepted');
-        expect(meta.openchamber.goal.turnsUsed).toBe(0);
+        expect(parsePendingContinuation(meta.yuri.goal.pendingContinuation)?.phase).toBe('accepted');
+        expect(meta.yuri.goal.turnsUsed).toBe(0);
 
         // Fresh runtime = reboot: reconcile finds message, counts once, no blind new id.
         const runtime = createSessionGoalRuntime({
@@ -1916,8 +1916,8 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         });
         await runtime.runTick('ses-goal', '/repo');
         const after = await store.get('ses-goal');
-        expect(after.openchamber.goal.turnsUsed).toBe(1);
-        expect(after.openchamber.goal.pendingContinuation == null).toBe(true);
+        expect(after.yuri.goal.turnsUsed).toBe(1);
+        expect(after.yuri.goal.pendingContinuation == null).toBe(true);
         expect(promptCount).toBe(0);
         runtime.stop();
       } finally {
@@ -1930,13 +1930,13 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   it('transport drop after accept pauses with stable identity and reboot reconciles', async () => {
     const { store, cleanup } = await makeTempStore();
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
     const knownMessageIDs = new Set();
     let promptAttempts = 0;
 
@@ -1967,12 +1967,12 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         });
         await runtime.runTick('ses-goal', '/repo');
         const mid = await store.get('ses-goal');
-        expect(mid.openchamber.goal.status).toBe('paused');
-        expect(String(mid.openchamber.goal.statusReason)).toMatch(/uncertain|continuation/i);
-        const pending = parsePendingContinuation(mid.openchamber.goal.pendingContinuation);
+        expect(mid.yuri.goal.status).toBe('paused');
+        expect(String(mid.yuri.goal.statusReason)).toMatch(/uncertain|continuation/i);
+        const pending = parsePendingContinuation(mid.yuri.goal.pendingContinuation);
         expect(pending).toBeTruthy();
         expect(pending.messageID).toMatch(/^msg_goalc_/);
-        expect(mid.openchamber.goal.turnsUsed).toBe(0);
+        expect(mid.yuri.goal.turnsUsed).toBe(0);
         expect(promptAttempts).toBe(1);
 
         // Reboot + resume: reconcile finds the message, counts once, no second prompt.
@@ -1980,12 +1980,12 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         await store.mutateSessionMetadata('ses-goal', (current) => ({
           ok: true,
           patch: {
-            openchamber: {
+            yuri: {
               goal: {
-                ...current.openchamber.goal,
+                ...current.yuri.goal,
                 status: 'active',
                 statusReason: 'resumed',
-                executionGeneration: current.openchamber.goal.executionGeneration + 1,
+                executionGeneration: current.yuri.goal.executionGeneration + 1,
               },
             },
           },
@@ -2005,9 +2005,9 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         await runtime2.runTick('ses-goal', '/repo');
         const after = await store.get('ses-goal');
         // Found under stale gen → counted once; may continue a new turn after.
-        expect(after.openchamber.goal.turnsUsed).toBeGreaterThanOrEqual(1);
-        expect(after.openchamber.goal.pendingContinuation == null
-          || after.openchamber.goal.turnsUsed >= 1).toBe(true);
+        expect(after.yuri.goal.turnsUsed).toBeGreaterThanOrEqual(1);
+        expect(after.yuri.goal.pendingContinuation == null
+          || after.yuri.goal.turnsUsed >= 1).toBe(true);
         runtime2.stop();
       } finally {
         globalThis.fetch = originalFetch;
@@ -2032,14 +2032,14 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
       agent: 'build',
     });
     const goal = {
-      ...buildSession('active').metadata.openchamber.goal,
+      ...buildSession('active').metadata.yuri.goal,
       executionGeneration: 0,
       createdAt: 1,
       turnsUsed: 0,
       statusReason: 'resumed',
       pendingContinuation: pending,
     };
-    await store.setSessionMetadata('ses-goal', { openchamber: { goal } });
+    await store.setSessionMetadata('ses-goal', { yuri: { goal } });
     const promptBodies = [];
     const knownMessageIDs = new Set();
 
@@ -2074,8 +2074,8 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         expect(promptBodies[0].id).toBe(messageID);
         expect(promptBodies[0].text).toBe(fixedText);
         const finalMeta = await store.get('ses-goal');
-        expect(finalMeta.openchamber.goal.turnsUsed).toBe(1);
-        expect(finalMeta.openchamber.goal.pendingContinuation == null).toBe(true);
+        expect(finalMeta.yuri.goal.turnsUsed).toBe(1);
+        expect(finalMeta.yuri.goal.pendingContinuation == null).toBe(true);
         runtime.stop();
       } finally {
         globalThis.fetch = originalFetch;
@@ -2085,7 +2085,7 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
   });
 
   it('pending mutate is invisible to readers until persist succeeds', async () => {
-    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-goal-pending-'));
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-goal-pending-'));
     let unlock;
     const gate = new Promise((resolve) => { unlock = resolve; });
     const fsPromises = {
@@ -2099,9 +2099,9 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
     // First write without gate
     const warm = createSessionMetadataStore({ dataDir });
     await warm.setSessionMetadata('ses-goal', {
-      openchamber: {
+      yuri: {
         goal: {
-          ...buildSession('active').metadata.openchamber.goal,
+          ...buildSession('active').metadata.yuri.goal,
           executionGeneration: 0,
         },
       },
@@ -2110,15 +2110,15 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
 
     const pending = store.mutateSessionMetadata('ses-goal', () => ({
       ok: true,
-      patch: { openchamber: { goal: { status: 'paused', executionGeneration: 1 } } },
+      patch: { yuri: { goal: { status: 'paused', executionGeneration: 1 } } },
     }));
     await expect(store.get('ses-goal')).resolves.toMatchObject({
-      openchamber: { goal: { status: 'active', executionGeneration: 0 } },
+      yuri: { goal: { status: 'active', executionGeneration: 0 } },
     });
     unlock();
     await pending;
     await expect(store.get('ses-goal')).resolves.toMatchObject({
-      openchamber: { goal: { status: 'paused', executionGeneration: 1 } },
+      yuri: { goal: { status: 'paused', executionGeneration: 1 } },
     });
     fs.rmSync(dataDir, { recursive: true, force: true });
   });

@@ -110,7 +110,7 @@ export function parseContactPart(value) {
 
 export function serializeContactPart(part, index) {
   return {
-    id: part.id || `oc_contact_part:${index + 1}`,
+    id: part.id || `yuri_contact_part:${index + 1}`,
     ...part,
   };
 }

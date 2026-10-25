@@ -66,7 +66,7 @@ async function createFile(fileName = 'test.js', content = '//x') {
 
 describe('opencode plugin routes', () => {
   beforeAll(async () => {
-    rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-plugin-routes-'));
+    rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-plugin-routes-'));
     userConfigPath = path.join(rootDir, 'user-opencode.json');
     vi.stubEnv('OPENCODE_CONFIG', userConfigPath);
     vi.stubEnv('OPENCODE_CONFIG_DIR', path.join(rootDir, 'global-config'));

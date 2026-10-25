@@ -1,4 +1,4 @@
-package com.openchamber.app;
+package com.yuri.app;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;

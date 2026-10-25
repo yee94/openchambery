@@ -63,10 +63,10 @@ type SessionFoldersStore = SessionFoldersState & SessionFoldersActions;
 
 // --- Storage ---
 
-const FOLDERS_STORAGE_KEY = 'oc.sessions.folders';
-const COLLAPSED_STORAGE_KEY = 'oc.sessions.folderCollapse';
-const SESSION_ORDER_STORAGE_KEY = 'oc.sessions.order';
-const SESSION_ORDER_ACTIVITY_STORAGE_KEY = 'oc.sessions.orderActivity';
+const FOLDERS_STORAGE_KEY = 'yuri.sessions.folders';
+const COLLAPSED_STORAGE_KEY = 'yuri.sessions.folderCollapse';
+const SESSION_ORDER_STORAGE_KEY = 'yuri.sessions.order';
+const SESSION_ORDER_ACTIVITY_STORAGE_KEY = 'yuri.sessions.orderActivity';
 const SESSION_FOLDERS_API_PATH = '/api/session-folders';
 const DISK_WRITE_DEBOUNCE_MS = 250;
 const ARCHIVED_SCOPE_PREFIX = '__archived__:';

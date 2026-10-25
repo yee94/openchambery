@@ -99,7 +99,7 @@ test.each(['image', 'mermaid'] as const)('%s shares focus trapping, Escape and m
   root = createRoot(host);
   await act(async () => root.render(<Preview />));
   const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
-  expect(dialog.style.backgroundColor).toBe('var(--oc-media-preview-background)');
+  expect(dialog.style.backgroundColor).toBe('var(--yuri-media-preview-background)');
   const buttons = dialog.querySelectorAll<HTMLButtonElement>('button');
   expect(document.activeElement).toBe(buttons[0]);
   await act(async () => buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })));
@@ -145,7 +145,7 @@ test('fullscreen image saves directly from its icon without a sheet or context-m
   await act(async () => button.click());
   expect(saveImageToDevice).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'data:image/png;base64,AA==' }), expect.any(AbortSignal), expect.any(Function));
   expect(button.dataset.mediaSave).toBe('saved');
-  expect(document.querySelector('[data-oc-motion-id="image-save-actions-sheet"]')).toBeNull();
+  expect(document.querySelector('[data-yuri-motion-id="image-save-actions-sheet"]')).toBeNull();
   expect(document.querySelector('[data-media-preview="image"]')).not.toBeNull();
   expect(mobileWindowStack.getSnapshot()).toBe(previewOwner);
   expect(document.querySelector('[data-media-preview="image"]')).not.toBeNull();

@@ -688,7 +688,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     return value;
   };
   const goalOfSession = (session) => {
-    const goal = session?.metadata?.openchamber?.goal;
+    const goal = session?.metadata?.yuri?.goal;
     if (!goal || typeof goal !== 'object') return null;
     const status = typeof goal.status === 'string' ? goal.status.trim() : '';
     return status ? { status } : null;
@@ -1507,7 +1507,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (signal?.aborted) return;
     const chunk = typeof delta === 'string' ? delta : '';
     if (chunk) spokenByIndex.set(bubbleIndex, `${spokenByIndex.get(bubbleIndex) || ''}${chunk}`);
-    emitContactTurnEvent('openchamber:contact-bubble-delta', {
+    emitContactTurnEvent('yuri:contact-bubble-delta', {
       assistantID,
       turnID,
       bubbleIndex,
@@ -1791,7 +1791,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
   };
   /**
-   * Find a session row in the OpenChamber session index (directory is index-authoritative).
+   * Find a session row in the Yuri session index (directory is index-authoritative).
    * Index failure throws — never silent empty.
    */
   const findSessionInIndex = (sessionID) => {
@@ -2305,7 +2305,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         return { sessionID, directory: resolved.directory, operation, messageID, admitted: true };
       }
       if (operation === 'archive') {
-        // OC2: Host owns archive stamps (openchamber.archive.archivedAt). Do not
+        // OC2: Host owns archive stamps (yuri.archive.archivedAt). Do not
         // call upstream session.update time.archived — it is unavailable.
         if (typeof archiveSessionHost !== 'function') {
           throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session archive is unavailable.');
@@ -2682,7 +2682,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const finishCancelled = () => {
       if (!closed) {
         settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
-        emitContactTurnEvent('openchamber:contact-turn-end', { assistantID, turnID, status: 'cancelled' });
+        emitContactTurnEvent('yuri:contact-turn-end', { assistantID, turnID, status: 'cancelled' });
       }
       resolveContactTurnSettlement(messageID, { status: 'cancelled' });
     };
@@ -2695,7 +2695,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     });
     // Tip snapshot so list green dots / 3-dot row rehydrate without waiting for lane start.
     bump();
-    emitContactTurnEvent('openchamber:contact-turn-start', {
+    emitContactTurnEvent('yuri:contact-turn-start', {
       assistantID,
       turnID,
       messageID,
@@ -2926,7 +2926,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         if (scheduledRun && generated?.silent === true) {
           db.prepare('INSERT OR IGNORE INTO assistant_scheduled_result(assistant_id, run_id, status) VALUES (?,?,?)').run(assistantID, scheduledRun.id, 'silent');
           settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
-          emitContactTurnEvent('openchamber:contact-turn-end', { assistantID, turnID, status: 'complete' });
+          emitContactTurnEvent('yuri:contact-turn-end', { assistantID, turnID, status: 'complete' });
           resolveContactTurnSettlement(messageID, { status: 'complete', silent: true });
           return;
         }
@@ -2942,7 +2942,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         if (bubbles.length === 0 && cards.length === 0) {
           const detail = 'Assistant returned no text';
           settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
-          emitContactTurnEvent('openchamber:contact-turn-end', {
+          emitContactTurnEvent('yuri:contact-turn-end', {
             assistantID,
             turnID,
             status: 'error',
@@ -2967,7 +2967,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           reset: resetThisTurn,
         });
         settleActiveContactTurn(assistantID, turnID);
-        emitContactTurnEvent('openchamber:contact-turn-end', {
+        emitContactTurnEvent('yuri:contact-turn-end', {
           assistantID,
           turnID,
           status: 'complete',
@@ -2988,7 +2988,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           : (error?.code || 'upstream_error');
         const statusCode = error?.code === 'no_provider' ? 'no_provider' : (error?.code || 'upstream_error');
         settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
-        emitContactTurnEvent('openchamber:contact-turn-end', {
+        emitContactTurnEvent('yuri:contact-turn-end', {
           assistantID,
           turnID,
           status: 'error',
@@ -3036,8 +3036,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   };
   /**
    * Contact composer send: validate → admit user (202) → async turn.
-   * Does not await the LLM. Live bubble tokens use openchamber:contact-bubble-delta
-   * on /api/openchamber/events; turn lifecycle uses contact-turn-start/end.
+   * Does not await the LLM. Live bubble tokens use yuri:contact-bubble-delta
+   * on /api/yuri/events; turn lifecycle uses contact-turn-start/end.
    */
   const send = async (assistantID, input) => {
     if (!plainObject(input)) fail('validation_error');
@@ -3091,7 +3091,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     contactControllers.set(messageID, { assistantID: row.assistant_id, controller });
     const finishCancelled = () => {
       settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
-      emitContactTurnEvent('openchamber:contact-turn-end', { assistantID: row.assistant_id, turnID, status: 'cancelled' });
+      emitContactTurnEvent('yuri:contact-turn-end', { assistantID: row.assistant_id, turnID, status: 'cancelled' });
       resolveContactTurnSettlement(messageID, { status: 'cancelled' });
       contactControllers.delete(messageID);
     };
@@ -3101,7 +3101,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       status: 'queued',
       admittedAt: now(),
     });
-    emitContactTurnEvent('openchamber:contact-turn-start', {
+    emitContactTurnEvent('yuri:contact-turn-start', {
       assistantID: row.assistant_id,
       turnID,
       messageID,
@@ -3298,7 +3298,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           if (bubbles.length === 0 && cards.length === 0) {
             const detail = 'Assistant returned no text';
             settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
-            emitContactTurnEvent('openchamber:contact-turn-end', {
+            emitContactTurnEvent('yuri:contact-turn-end', {
               assistantID: row.assistant_id,
               turnID,
               status: 'error',
@@ -3337,7 +3337,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           });
           // persistContactAssistantReply already bumps; clear activity without a second tip.
           settleActiveContactTurn(row.assistant_id, turnID);
-          emitContactTurnEvent('openchamber:contact-turn-end', {
+          emitContactTurnEvent('yuri:contact-turn-end', {
             assistantID: row.assistant_id,
             turnID,
             status: 'complete',
@@ -3358,7 +3358,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             : (error?.code || 'upstream_error');
           const statusCode = error?.code === 'no_provider' ? 'no_provider' : (error?.code || 'upstream_error');
           settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
-          emitContactTurnEvent('openchamber:contact-turn-end', {
+          emitContactTurnEvent('yuri:contact-turn-end', {
             assistantID: row.assistant_id,
             turnID,
             status: 'error',
@@ -3434,7 +3434,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
   };
   /**
-   * Delete this assistant's OpenChamber contact transcript (messages, parts,
+   * Delete this assistant's Yuri contact transcript (messages, parts,
    * watches) and clear the context boundary. Also the POST /contact/reset
    * contract. Does not call OpenCode session/new.
    *
@@ -3549,7 +3549,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     return { messageID, admitted: true, card };
   };
   /**
-   * Read-only inter-assistant DM. Inserts into the recipient's OpenChamber
+   * Read-only inter-assistant DM. Inserts into the recipient's Yuri
    * contact transcript only. Must never call OpenCode session.prompt, mutate
    * sessions/files/worktrees, or run tools on the recipient's behalf.
    *

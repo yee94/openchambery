@@ -57,7 +57,7 @@ describe('PermissionCard', () => {
 
     const alwaysButton = markup.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Always agree(?:(?!<\/button>)[\s\S])*<\/button>/)?.[0];
     expect(alwaysButton).toBeDefined();
-    expect(alwaysButton).toContain('#oc-arrow-right');
+    expect(alwaysButton).toContain('#yuri-arrow-right');
     expect(alwaysButton).toContain('var(--status-success)');
     expect(alwaysButton).not.toContain('/Library/Logs');
   });

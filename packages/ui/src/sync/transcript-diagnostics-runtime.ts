@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 /**
  * Production selector for client diagnostics (`transcript` and `task`).
  *
@@ -12,7 +13,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core"
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 import { isCapacitorApp } from "@/lib/platform"
 
-type OpenChamberMediaPlugin = {
+type YuriMediaPlugin = {
   saveFile: (options: {
     dataBase64: string
     mimeType?: string
@@ -20,7 +21,7 @@ type OpenChamberMediaPlugin = {
   }) => Promise<{ cancelled?: boolean }>
 }
 
-const OpenChamberMedia = registerPlugin<OpenChamberMediaPlugin>("OpenChamberMedia")
+const YuriMedia = registerPlugin<YuriMediaPlugin>("YuriMedia")
 
 export type DiagnosticsDownloadOutcome = "saved" | "downloaded" | "cancelled" | "failed"
 
@@ -32,7 +33,7 @@ function encodeUtf8Base64(value: string): string {
 }
 
 function isNativeFileSaveAvailable(): boolean {
-  return isCapacitorApp() && typeof Capacitor !== "undefined" && Capacitor.isPluginAvailable("OpenChamberMedia")
+  return isCapacitorApp() && typeof Capacitor !== "undefined" && Capacitor.isPluginAvailable("YuriMedia")
 }
 
 import {
@@ -283,7 +284,7 @@ export async function exportTranscriptDiagnosticsReport(): Promise<string> {
 
 export async function downloadDiagnosticsReport(content: string, fileName = diagnosticsExportFileName()): Promise<DiagnosticsDownloadOutcome> {
   if (isNativeFileSaveAvailable()) {
-    const result = await OpenChamberMedia.saveFile({
+    const result = await YuriMedia.saveFile({
       dataBase64: encodeUtf8Base64(content),
       mimeType: "application/json",
       filename: fileName,

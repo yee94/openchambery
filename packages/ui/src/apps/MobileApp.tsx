@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import React from 'react';
 import { ContentIndexOnboarding } from '@/components/onboarding/ContentIndexOnboarding';
 import { MobileAutoReadProvider, MobileAutoReadMenuItem } from '@/mobile/chat/MobileAutoRead';
@@ -9,13 +10,13 @@ import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { McpIcon } from '@/components/icons/McpIcon';
 import { McpDropdownContent } from '@/components/mcp/McpDropdown';
-import { AboutSettings } from '@/components/sections/openchamber/AboutSettings';
+import { AboutSettings } from '@/components/sections/yuri/AboutSettings';
 import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { MobileAppUpdateToast } from '@/components/update/MobileAppUpdateToast';
 import { MobileOtaUpdateNotice } from '@/components/update/MobileOtaUpdateNotice';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
 import { Button } from '@/components/ui/button';
-import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
+import { YuriLogo } from '@/components/ui/YuriLogo';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { MobileGlobalSearchHost } from '@/mobile/MobileGlobalSearchHost';
 import { ChatView } from '@/components/views/ChatView';
@@ -149,7 +150,7 @@ const applyIpadSidebarLiveWidth = (asideRef: React.RefObject<HTMLElement | null>
   aside.style.width = `${nextWidth}px`;
   aside.style.minWidth = `${nextWidth}px`;
   aside.style.maxWidth = `${nextWidth}px`;
-  aside.style.setProperty('--oc-ipad-sidebar-width', `${nextWidth}px`);
+  aside.style.setProperty('--yuri-ipad-sidebar-width', `${nextWidth}px`);
 };
 
 /** Drag-resize for the iPad sidebars: same live-width mechanics as the desktop
@@ -261,22 +262,22 @@ export const useNativeMobileChrome = (): void => {
   React.useEffect(() => {
     if (!isCapacitorMobileApp()) return;
 
-    document.documentElement.classList.add('oc-native-app-active');
+    document.documentElement.classList.add('yuri-native-app-active');
     let disposed = false;
     const cleanup: Array<() => void> = [];
     const root = document.documentElement;
     // Marks the Capacitor shell so keyboard-inset CSS only applies here, not in
     // the browser-hosted PWA (which handles the keyboard via dvh / interactive-widget).
-    root.classList.add('oc-capacitor-app');
+    root.classList.add('yuri-capacitor-app');
     // Platform marker for Android-specific safe-area / status-bar CSS. Keyboard
     // geometry is shared with iOS: full-height WebView + transform FLIP (WeChat-style).
     const capacitorPlatform = (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.();
     if (capacitorPlatform === 'android') {
-      root.classList.add('oc-platform-android');
+      root.classList.add('yuri-platform-android');
     }
 
     const setInset = (px: number) => {
-      root.style.setProperty('--oc-keyboard-inset', `${Math.max(0, Math.round(px))}px`);
+      root.style.setProperty('--yuri-keyboard-inset', `${Math.max(0, Math.round(px))}px`);
     };
 
     void import('@capacitor/status-bar').then(async ({ StatusBar, Style }) => {
@@ -291,7 +292,7 @@ export const useNativeMobileChrome = (): void => {
           // Inset the WebView below the bar and paint it with the resolved theme background
           // (the splash colours the theme system persists). On Android 15+ edge-to-edge is
           // enforced and both calls are no-ops — there the app pads itself via the
-          // Capacitor-injected --safe-area-inset-* CSS vars (see mobile.css, oc-platform-android).
+          // Capacitor-injected --safe-area-inset-* CSS vars (see mobile.css, yuri-platform-android).
           const isDark = document.documentElement.classList.contains('dark');
           const themeBg =
             (isDark ? localStorage.getItem('splashBgDark') : localStorage.getItem('splashBgLight')) ||
@@ -326,7 +327,7 @@ export const useNativeMobileChrome = (): void => {
     void import('@capacitor/keyboard').then(async ({ Keyboard }) => {
       if (disposed) return;
       // Keyboard choreography:
-      //   iOS — resize:none + immediate shell shrink (--oc-kb-layout). Header
+      //   iOS — resize:none + immediate shell shrink (--yuri-kb-layout). Header
       //            stays pinned; the composer sits at the new shell bottom so
       //            the full input is visible above the IME. No transform FLIP.
       //   Android — adjustNothing + an early composer-only CSS FLIP. Android's
@@ -364,7 +365,7 @@ export const useNativeMobileChrome = (): void => {
           settleTimer = null;
         }
       };
-      const dispatchKb = (type: 'oc:keyboard-intent' | 'oc:keyboard-anim' | 'oc:keyboard-settled', detail: Record<string, unknown>) => {
+      const dispatchKb = (type: 'yuri:keyboard-intent' | 'yuri:keyboard-anim' | 'yuri:keyboard-settled', detail: Record<string, unknown>) => {
         window.dispatchEvent(new CustomEvent(type, { detail }));
       };
       const isVisibleKbMover = (element: HTMLElement): boolean => (
@@ -385,14 +386,14 @@ export const useNativeMobileChrome = (): void => {
         if (anchorElement && !isComposerKeyboardTarget(anchorElement)) {
           return movers;
         }
-        const anchoredComposer = anchorElement?.closest<HTMLElement>('.oc-mobile-composer') ?? null;
+        const anchoredComposer = anchorElement?.closest<HTMLElement>('.yuri-mobile-composer') ?? null;
         const composer = anchoredComposer && isVisibleKbMover(anchoredComposer)
           ? anchoredComposer
-          : findVisibleKbMover<HTMLElement>('.oc-mobile-composer');
+          : findVisibleKbMover<HTMLElement>('.yuri-mobile-composer');
         if (composer) movers.push({ el: composer, factor: 1 });
         // Draft title only rides along when the bottom composer is lifting.
         if (composer) {
-          const draftCenter = findVisibleKbMover<HTMLElement>('.oc-draft-center');
+          const draftCenter = findVisibleKbMover<HTMLElement>('.yuri-draft-center');
           if (draftCenter) movers.push({ el: draftCenter, factor: 0.5 });
         }
         return movers;
@@ -400,7 +401,7 @@ export const useNativeMobileChrome = (): void => {
       const isTextFieldLike = (node: unknown): boolean =>
         node instanceof HTMLElement
         && (node.tagName === 'TEXTAREA' || node.tagName === 'INPUT' || node.isContentEditable);
-      // ChatInput dispatches oc:keyboard-intent before focus lands. Treat that as
+      // ChatInput dispatches yuri:keyboard-intent before focus lands. Treat that as
       // composer-scoped unless another text field already owns focus (question).
       const shouldLiftComposerForIntent = (): boolean => {
         const active = document.activeElement;
@@ -411,19 +412,19 @@ export const useNativeMobileChrome = (): void => {
         isComposerKeyboardTarget(anchor)
       );
       const clearKbMovers = () => {
-        for (const el of document.querySelectorAll<HTMLElement>('.oc-mobile-composer, .oc-draft-center')) {
+        for (const el of document.querySelectorAll<HTMLElement>('.yuri-mobile-composer, .yuri-draft-center')) {
           el.style.transition = '';
           el.style.transform = '';
         }
       };
       const measureSafeBottom = () => {
-        const shell = document.querySelector('.oc-mobile-app-shell');
+        const shell = document.querySelector('.yuri-mobile-app-shell');
         safeBottomPx = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 0;
       };
 
       // ── Android: pre-focus CSS FLIP from cached IME height ────────────────
       if (isAndroid) {
-        const IME_RATIO_STORAGE_KEY = 'openchamber.androidImeHeightRatio.v2';
+        const IME_RATIO_STORAGE_KEY = 'yuri.androidImeHeightRatio.v2';
         // Open starts from intent/focus before the IME moves; keep it short.
         // Close usually begins after the system IME has already started (or
         // finished) dismissing, so a long hide leaves the composer hanging.
@@ -472,14 +473,14 @@ export const useNativeMobileChrome = (): void => {
           clearAndroidTimer();
           const slide = getAndroidSlide(height);
           const movers = getKbMovers(anchor);
-          root.classList.add('oc-kb-animating');
+          root.classList.add('yuri-kb-animating');
           for (const { el, factor } of movers) {
             el.style.transition = `transform ${durationMs}ms ${easing}`;
             el.style.transform = getAndroidTransform(slide, factor);
           }
           androidTimer = window.setTimeout(() => {
             androidTimer = null;
-            root.classList.remove('oc-kb-animating');
+            root.classList.remove('yuri-kb-animating');
             for (const { el } of movers) {
               el.style.transition = '';
             }
@@ -493,13 +494,13 @@ export const useNativeMobileChrome = (): void => {
           keyboardOpen = true;
           composerLiftArmed = false;
           armedImeHeight = resolvedHeight;
-          root.classList.remove('oc-keyboard-open', 'oc-kb-animating');
+          root.classList.remove('yuri-keyboard-open', 'yuri-kb-animating');
           setInset(resolvedHeight);
-          setVar('--oc-kb-layout', 0);
-          setVar('--oc-kb-scroll-inset', getAndroidSlide(resolvedHeight));
+          setVar('--yuri-kb-layout', 0);
+          setVar('--yuri-kb-scroll-inset', getAndroidSlide(resolvedHeight));
           clearAndroidTimer();
           clearKbMovers();
-          dispatchKb('oc:keyboard-settled', { open: true });
+          dispatchKb('yuri:keyboard-settled', { open: true });
         };
 
         const markOpen = (
@@ -523,43 +524,43 @@ export const useNativeMobileChrome = (): void => {
             const movers = getKbMovers(source === 'focus' ? anchor : undefined);
             if (movers.length === 0) return;
             composerLiftArmed = true;
-            root.classList.add('oc-keyboard-open');
+            root.classList.add('yuri-keyboard-open');
             setInset(0);
-            setVar('--oc-kb-scroll-inset', 0);
+            setVar('--yuri-kb-scroll-inset', 0);
             const alreadyPositioned = movers.every(
               ({ el, factor }) => el.style.transform === getAndroidTransform(slide, factor),
             );
             if (alreadyPositioned) return;
             liftMovers(activeImeHeight, CORRECT_MS, SHOW_EASING, source === 'focus' ? anchor : undefined);
-            dispatchKb('oc:keyboard-anim', {
+            dispatchKb('yuri:keyboard-anim', {
               phase: 'show',
               slide,
               durationMs: CORRECT_MS,
               easing: SHOW_EASING,
             });
-            dispatchKb('oc:keyboard-settled', { open: true });
+            dispatchKb('yuri:keyboard-settled', { open: true });
             return;
           }
           keyboardOpen = true;
           composerLiftArmed = true;
-          root.classList.add('oc-keyboard-open');
+          root.classList.add('yuri-keyboard-open');
           setInset(0);
-          setVar('--oc-kb-layout', 0);
-          setVar('--oc-kb-scroll-inset', 0);
+          setVar('--yuri-kb-layout', 0);
+          setVar('--yuri-kb-scroll-inset', 0);
           armedImeHeight = imeHeight;
           const slide = liftMovers(armedImeHeight, SHOW_MS, SHOW_EASING, source === 'focus' ? anchor : undefined);
-          dispatchKb('oc:keyboard-anim', {
+          dispatchKb('yuri:keyboard-anim', {
             phase: 'show',
             slide,
             durationMs: SHOW_MS,
             easing: SHOW_EASING,
           });
-          dispatchKb('oc:keyboard-settled', { open: true });
+          dispatchKb('yuri:keyboard-settled', { open: true });
         };
         const markClosed = (blur: boolean) => {
           // Native close events can arrive after focus moved into a settings or
           // overlay field. Blur ownership stays with the bottom chat composer.
-          // focusout and oc:ime-state can both fire for one dismissal; restarting
+          // focusout and yuri:ime-state can both fire for one dismissal; restarting
           // the hide transition mid-flight is what parks the composer above the
           // already-gone IME for an extra beat.
           if (!keyboardOpen) {
@@ -576,21 +577,21 @@ export const useNativeMobileChrome = (): void => {
           if (blur && isTextField(document.activeElement) && isComposerKeyboardTarget(document.activeElement)) {
             (document.activeElement as HTMLElement).blur();
           }
-          root.classList.remove('oc-keyboard-open');
+          root.classList.remove('yuri-keyboard-open');
           setInset(0);
-          setVar('--oc-kb-layout', 0);
-          setVar('--oc-kb-scroll-inset', 0);
-          dispatchKb('oc:keyboard-intent', { open: false });
+          setVar('--yuri-kb-layout', 0);
+          setVar('--yuri-kb-scroll-inset', 0);
+          dispatchKb('yuri:keyboard-intent', { open: false });
           const slide = getAndroidSlide(activeImeHeight);
           if (!hadComposerLift) {
             clearAndroidTimer();
             clearKbMovers();
-            dispatchKb('oc:keyboard-settled', { open: false });
+            dispatchKb('yuri:keyboard-settled', { open: false });
             return;
           }
           // Start the transform first so the same frame collapses chrome + lift.
           liftMovers(0, HIDE_MS, HIDE_EASING);
-          dispatchKb('oc:keyboard-anim', {
+          dispatchKb('yuri:keyboard-anim', {
             phase: 'hide',
             slide,
             durationMs: HIDE_MS,
@@ -599,9 +600,9 @@ export const useNativeMobileChrome = (): void => {
           clearAndroidTimer();
           androidTimer = window.setTimeout(() => {
             androidTimer = null;
-            root.classList.remove('oc-kb-animating');
+            root.classList.remove('yuri-kb-animating');
             clearKbMovers();
-            dispatchKb('oc:keyboard-settled', { open: false });
+            dispatchKb('yuri:keyboard-settled', { open: false });
           }, HIDE_MS + 20);
         };
 
@@ -623,7 +624,7 @@ export const useNativeMobileChrome = (): void => {
           // to a question card (or any other field) must drop the lift.
           if (isComposerKeyboardFocusTransfer(event.relatedTarget)) return;
           if (shouldReserveChatScrollInset(event.relatedTarget)) {
-            dispatchKb('oc:keyboard-intent', { open: false });
+            dispatchKb('yuri:keyboard-intent', { open: false });
             reserveFieldScrollInset(armedImeHeight || imeHeight);
             return;
           }
@@ -665,7 +666,7 @@ export const useNativeMobileChrome = (): void => {
                 SHOW_EASING,
                 isComposerKeyboardTarget(document.activeElement) ? document.activeElement : undefined,
               );
-              dispatchKb('oc:keyboard-anim', { phase: 'show', slide, durationMs: CORRECT_MS, easing: SHOW_EASING });
+              dispatchKb('yuri:keyboard-anim', { phase: 'show', slide, durationMs: CORRECT_MS, easing: SHOW_EASING });
             }
             if (action === 'field') reserveFieldScrollInset(measured || imeHeight);
           }
@@ -679,29 +680,29 @@ export const useNativeMobileChrome = (): void => {
 
         document.addEventListener('focusin', handleFocusIn, true);
         document.addEventListener('focusout', handleFocusOut, true);
-        window.addEventListener('oc:ime-state', handleImeState);
-        window.addEventListener('oc:keyboard-intent', handleKeyboardIntent);
+        window.addEventListener('yuri:ime-state', handleImeState);
+        window.addEventListener('yuri:keyboard-intent', handleKeyboardIntent);
 
         if (disposed) {
           clearAndroidTimer();
           document.removeEventListener('focusin', handleFocusIn, true);
           document.removeEventListener('focusout', handleFocusOut, true);
-          window.removeEventListener('oc:ime-state', handleImeState);
-          window.removeEventListener('oc:keyboard-intent', handleKeyboardIntent);
+          window.removeEventListener('yuri:ime-state', handleImeState);
+          window.removeEventListener('yuri:keyboard-intent', handleKeyboardIntent);
           return;
         }
         cleanup.push(
           clearAndroidTimer,
           () => document.removeEventListener('focusin', handleFocusIn, true),
           () => document.removeEventListener('focusout', handleFocusOut, true),
-          () => window.removeEventListener('oc:ime-state', handleImeState),
-          () => window.removeEventListener('oc:keyboard-intent', handleKeyboardIntent),
+          () => window.removeEventListener('yuri:ime-state', handleImeState),
+          () => window.removeEventListener('yuri:keyboard-intent', handleKeyboardIntent),
         );
         return;
       }
 
       // ── iOS: shrink the shell immediately (no transform FLIP) ────────────
-      const IOS_IME_RATIO_STORAGE_KEY = 'openchamber.iosImeHeightRatio.v1';
+      const IOS_IME_RATIO_STORAGE_KEY = 'yuri.iosImeHeightRatio.v1';
       const clampIosImeRatio = (value: number): number => (
         Number.isFinite(value) ? Math.min(0.68, Math.max(0.28, value)) : 0.39
       );
@@ -724,14 +725,14 @@ export const useNativeMobileChrome = (): void => {
       // Header stays pinned. The shell height drops by the IME so the whole
       // composer (textarea + model/attach footer + foot padding) sits in flow
       // at the new shell bottom — not just the focused caret. Clear
-      // --oc-kb-scroll-inset here: that var is only for non-composer fields
+      // --yuri-kb-scroll-inset here: that var is only for non-composer fields
       // that keep a full-height shell and need chat-scroll padding to reveal.
       const applyIosKeyboardLayout = (height: number): number => {
         measureSafeBottom();
         const slide = Math.max(0, height - safeBottomPx);
         setInset(height);
-        setVar('--oc-kb-layout', height);
-        setVar('--oc-kb-scroll-inset', 0);
+        setVar('--yuri-kb-layout', height);
+        setVar('--yuri-kb-scroll-inset', 0);
         layoutApplied = true;
         clearKbMovers();
         window.scrollTo(0, 0);
@@ -739,17 +740,17 @@ export const useNativeMobileChrome = (): void => {
         // WebKit's default reveal is the caret. Pin the form's BOTTOM edge
         // (footer + padding) to the visible bottom instead.
         const focusedComposer = document.activeElement instanceof Element
-          ? document.activeElement.closest<HTMLElement>('.oc-mobile-composer')
+          ? document.activeElement.closest<HTMLElement>('.yuri-mobile-composer')
           : null;
         (focusedComposer && isVisibleKbMover(focusedComposer)
           ? focusedComposer
-          : findVisibleKbMover<HTMLElement>('.oc-mobile-composer'))
+          : findVisibleKbMover<HTMLElement>('.yuri-mobile-composer'))
           ?.scrollIntoView({ block: 'end', inline: 'nearest' });
         return slide;
       };
       const handleIosKeyboardIntent = (event: Event) => {
         if (shouldDeferWebKeyboardToNativeComposer(
-          root.classList.contains('oc-native-ios-composer'),
+          root.classList.contains('yuri-native-ios-composer'),
           document.activeElement,
         )) return;
         const detail = (event as CustomEvent<{ open?: boolean }>).detail;
@@ -760,23 +761,23 @@ export const useNativeMobileChrome = (): void => {
           return;
         }
         keyboardOpen = true;
-        root.classList.remove('oc-kb-hide');
-        root.classList.add('oc-keyboard-open');
+        root.classList.remove('yuri-kb-hide');
+        root.classList.add('yuri-keyboard-open');
         const predictedHeight = keyboardHeight > 0 ? keyboardHeight : readCachedIosImeHeight();
         const slide = applyIosKeyboardLayout(predictedHeight);
-        dispatchKb('oc:keyboard-anim', {
+        dispatchKb('yuri:keyboard-anim', {
           phase: 'show',
           slide,
           durationMs: 0,
           easing: KB_ANIM_EASING,
         });
-        dispatchKb('oc:keyboard-settled', { open: true });
+        dispatchKb('yuri:keyboard-settled', { open: true });
       };
-      window.addEventListener('oc:keyboard-intent', handleIosKeyboardIntent);
+      window.addEventListener('yuri:keyboard-intent', handleIosKeyboardIntent);
 
       const showHandle = await Keyboard.addListener('keyboardWillShow', (info) => {
         if (shouldDeferWebKeyboardToNativeComposer(
-          root.classList.contains('oc-native-ios-composer'),
+          root.classList.contains('yuri-native-ios-composer'),
           document.activeElement,
         )) return;
         clearSettle();
@@ -786,11 +787,11 @@ export const useNativeMobileChrome = (): void => {
         // the bottom chat input only.
         const liftComposer = isComposerKeyboardTarget(document.activeElement) || (
           // Pre-focus intent may have armed the open class before focus lands.
-          root.classList.contains('oc-keyboard-open')
+          root.classList.contains('yuri-keyboard-open')
           && !isTextFieldLike(document.activeElement)
         );
         keyboardOpen = true;
-        root.classList.remove('oc-kb-hide');
+        root.classList.remove('yuri-kb-hide');
         if (caretTimer !== null) {
           window.clearTimeout(caretTimer);
           caretTimer = null;
@@ -799,19 +800,19 @@ export const useNativeMobileChrome = (): void => {
           // Question / other fields: keep the overlay and chat scroll insets
           // without shrinking the shell or moving the bottom composer.
           setInset(keyboardHeight);
-          setVar('--oc-kb-layout', 0);
+          setVar('--yuri-kb-layout', 0);
           measureSafeBottom();
-          setVar('--oc-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
-          root.classList.remove('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold');
+          setVar('--yuri-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
+          root.classList.remove('yuri-keyboard-open', 'yuri-kb-animating', 'yuri-kb-caret-hold');
           clearKbMovers();
           layoutApplied = false;
-          dispatchKb('oc:keyboard-settled', { open: true });
+          dispatchKb('yuri:keyboard-settled', { open: true });
           return;
         }
-        root.classList.add('oc-keyboard-open');
+        root.classList.add('yuri-keyboard-open');
         const slide = applyIosKeyboardLayout(keyboardHeight);
-        dispatchKb('oc:keyboard-settled', { open: true });
-        dispatchKb('oc:keyboard-anim', { phase: 'show', slide, durationMs: 0, easing: KB_ANIM_EASING });
+        dispatchKb('yuri:keyboard-settled', { open: true });
+        dispatchKb('yuri:keyboard-anim', { phase: 'show', slide, durationMs: 0, easing: KB_ANIM_EASING });
       });
 
       const blurActiveTextField = () => {
@@ -830,8 +831,8 @@ export const useNativeMobileChrome = (): void => {
         if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
       };
 
-      // Native overlay owns IME lift. Still unwind leftover --oc-kb-layout,
-      // oc-keyboard-open, and WKWebView pan so hide cannot leave the shell raised.
+      // Native overlay owns IME lift. Still unwind leftover --yuri-kb-layout,
+      // yuri-keyboard-open, and WKWebView pan so hide cannot leave the shell raised.
       const unwindKeyboardShell = () => {
         keyboardOpen = false;
         clearSettle();
@@ -839,10 +840,10 @@ export const useNativeMobileChrome = (): void => {
           window.clearTimeout(caretTimer);
           caretTimer = null;
         }
-        root.classList.remove('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold', 'oc-kb-hide');
+        root.classList.remove('yuri-keyboard-open', 'yuri-kb-animating', 'yuri-kb-caret-hold', 'yuri-kb-hide');
         setInset(0);
-        setVar('--oc-kb-scroll-inset', 0);
-        setVar('--oc-kb-layout', 0);
+        setVar('--yuri-kb-scroll-inset', 0);
+        setVar('--yuri-kb-layout', 0);
         layoutApplied = false;
         clearKbMovers();
         snapWindowScroll();
@@ -850,10 +851,10 @@ export const useNativeMobileChrome = (): void => {
       };
 
       const runHide = () => {
-        if (root.classList.contains('oc-native-ios-composer')) {
+        if (root.classList.contains('yuri-native-ios-composer')) {
           unwindKeyboardShell();
           void getNativeIosComposerPlugin().blur();
-          dispatchKb('oc:keyboard-settled', { open: false });
+          dispatchKb('yuri:keyboard-settled', { open: false });
           return;
         }
         if (!keyboardOpen) return;
@@ -863,24 +864,24 @@ export const useNativeMobileChrome = (): void => {
         // lets focusout run after collapse so interactive IME dismiss is less likely
         // to see a still-focused composer and bail. One short confirm retries if
         // WKWebView restored focus onto the textarea without reopening the keyboard.
-        dispatchKb('oc:keyboard-intent', { open: false });
+        dispatchKb('yuri:keyboard-intent', { open: false });
         blurActiveTextField();
         window.setTimeout(() => {
           if (keyboardOpen) return;
           if (!isComposerKeyboardTarget(document.activeElement)) return;
           blurActiveTextField();
-          dispatchKb('oc:keyboard-intent', { open: false });
+          dispatchKb('yuri:keyboard-intent', { open: false });
         }, 80);
         if (caretTimer !== null) {
           window.clearTimeout(caretTimer);
           caretTimer = null;
         }
-        root.classList.remove('oc-kb-caret-hold', 'oc-kb-animating');
+        root.classList.remove('yuri-kb-caret-hold', 'yuri-kb-animating');
         const slide = Math.max(0, keyboardHeight - safeBottomPx);
-        root.classList.remove('oc-keyboard-open');
+        root.classList.remove('yuri-keyboard-open');
         setInset(0);
-        setVar('--oc-kb-scroll-inset', 0);
-        setVar('--oc-kb-layout', 0);
+        setVar('--yuri-kb-scroll-inset', 0);
+        setVar('--yuri-kb-layout', 0);
         layoutApplied = false;
         clearKbMovers();
         // WKWebView pans its own scroll view to reveal the caret on focus and
@@ -891,12 +892,12 @@ export const useNativeMobileChrome = (): void => {
         // snap below) so the shell lands with the keyboard, not after it.
         snapWindowScroll();
         window.setTimeout(snapWindowScroll, 350);
-        dispatchKb('oc:keyboard-anim', { phase: 'hide', slide, durationMs: 0, easing: KB_ANIM_EASING });
-        root.classList.add('oc-kb-animating', 'oc-kb-hide');
+        dispatchKb('yuri:keyboard-anim', { phase: 'hide', slide, durationMs: 0, easing: KB_ANIM_EASING });
+        root.classList.add('yuri-kb-animating', 'yuri-kb-hide');
         settleTimer = window.setTimeout(() => {
           settleTimer = null;
-          root.classList.remove('oc-kb-animating', 'oc-kb-hide');
-          dispatchKb('oc:keyboard-settled', { open: false });
+          root.classList.remove('yuri-kb-animating', 'yuri-kb-hide');
+          dispatchKb('yuri:keyboard-settled', { open: false });
         }, KB_HIDE_CURTAIN_MS);
       };
 
@@ -911,7 +912,7 @@ export const useNativeMobileChrome = (): void => {
         // Drop composer lift when focus leaves the bottom composer (question
         // cards and other fields must not keep the shell raised).
         if (isComposerKeyboardFocusTransfer(event.relatedTarget)) {
-          setVar('--oc-kb-scroll-inset', 0);
+          setVar('--yuri-kb-scroll-inset', 0);
           return;
         }
         window.setTimeout(() => {
@@ -922,16 +923,16 @@ export const useNativeMobileChrome = (): void => {
           if (isTextInput(document.activeElement)) {
             // Soft reverse: clear layout without blurring the new field.
             clearSettle();
-            root.classList.remove('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold', 'oc-kb-hide');
+            root.classList.remove('yuri-keyboard-open', 'yuri-kb-animating', 'yuri-kb-caret-hold', 'yuri-kb-hide');
             setInset(keyboardHeight);
-            setVar('--oc-kb-layout', 0);
+            setVar('--yuri-kb-layout', 0);
             measureSafeBottom();
-            setVar('--oc-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
+            setVar('--yuri-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
             layoutApplied = false;
             clearKbMovers();
             // Let ChatInput collapse expanded chrome; do not blur the new field.
-            dispatchKb('oc:keyboard-intent', { open: false });
-            dispatchKb('oc:keyboard-settled', { open: true });
+            dispatchKb('yuri:keyboard-intent', { open: false });
+            dispatchKb('yuri:keyboard-settled', { open: true });
             return;
           }
           runHide();
@@ -942,7 +943,7 @@ export const useNativeMobileChrome = (): void => {
       if (disposed) {
         clearSettle();
         document.removeEventListener('focusout', handleFocusOut, true);
-        window.removeEventListener('oc:keyboard-intent', handleIosKeyboardIntent);
+        window.removeEventListener('yuri:keyboard-intent', handleIosKeyboardIntent);
         void showHandle.remove();
         void hideHandle.remove();
         return;
@@ -956,7 +957,7 @@ export const useNativeMobileChrome = (): void => {
           }
         },
         () => document.removeEventListener('focusout', handleFocusOut, true),
-        () => window.removeEventListener('oc:keyboard-intent', handleIosKeyboardIntent),
+        () => window.removeEventListener('yuri:keyboard-intent', handleIosKeyboardIntent),
         () => void showHandle.remove(),
         () => void hideHandle.remove(),
       );
@@ -965,11 +966,11 @@ export const useNativeMobileChrome = (): void => {
     return () => {
       disposed = true;
       cleanup.forEach((remove) => remove());
-      root.classList.remove('oc-capacitor-app', 'oc-keyboard-open', 'oc-kb-animating', 'oc-kb-hide', 'oc-kb-caret-hold', 'oc-platform-android');
-      root.style.removeProperty('--oc-keyboard-inset');
-      root.style.removeProperty('--oc-kb-shift');
-      root.style.removeProperty('--oc-kb-layout');
-      root.style.removeProperty('--oc-kb-scroll-inset');
+      root.classList.remove('yuri-capacitor-app', 'yuri-keyboard-open', 'yuri-kb-animating', 'yuri-kb-hide', 'yuri-kb-caret-hold', 'yuri-platform-android');
+      root.style.removeProperty('--yuri-keyboard-inset');
+      root.style.removeProperty('--yuri-kb-shift');
+      root.style.removeProperty('--yuri-kb-layout');
+      root.style.removeProperty('--yuri-kb-scroll-inset');
     };
   }, []);
 };
@@ -1007,10 +1008,10 @@ const useNativeMobileLifecycle = (onResume: () => void): void => {
       const initialState = await App.getState().catch(() => null);
       if (disposed) return;
       if (initialState) {
-        document.documentElement.classList.toggle('oc-native-app-active', initialState.isActive);
+        document.documentElement.classList.toggle('yuri-native-app-active', initialState.isActive);
       }
       const state = await App.addListener('appStateChange', ({ isActive }) => {
-        document.documentElement.classList.toggle('oc-native-app-active', isActive);
+        document.documentElement.classList.toggle('yuri-native-app-active', isActive);
         if (!isActive) {
           wasInactiveRef.current = true;
           return;
@@ -1029,7 +1030,7 @@ const useNativeMobileLifecycle = (onResume: () => void): void => {
     return () => {
       disposed = true;
       cleanup.forEach((remove) => remove());
-      document.documentElement.classList.remove('oc-native-app-active');
+      document.documentElement.classList.remove('yuri-native-app-active');
     };
   }, [onResume]);
 };
@@ -1175,10 +1176,10 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
   });
 
   return (
-    <main className="oc-keyboard-fill-screen flex min-h-dvh flex-col overflow-y-auto bg-background px-6 pb-[calc(var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))+28px)] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+28px)] text-foreground">
+    <main className="yuri-keyboard-fill-screen flex min-h-dvh flex-col overflow-y-auto bg-background px-6 pb-[calc(var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))+28px)] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+28px)] text-foreground">
       <div className="m-auto flex w-full max-w-[360px] shrink-0 flex-col items-center gap-9 py-8">
         <div className="flex flex-col items-center gap-5 text-center">
-          <OpenChamberLogo width={72} height={72} className="size-[72px]" />
+          <YuriLogo width={72} height={72} className="size-[72px]" />
           <h1 className="typography-h2 text-foreground">{t('mobile.connect.welcome.title')}</h1>
         </div>
 
@@ -1504,12 +1505,12 @@ const MobileInstancesSurface: React.FC<{
 
   if (pendingConnection) {
     return (
-      <div className="oc-settings-page-content">
+      <div className="yuri-settings-page-content">
         <SettingsGroup
           label={t('mobile.connect.password.label')}
           itemId="instances.manage"
         >
-          <form className="oc-settings-group-row flex flex-col gap-3" onSubmit={handlePasswordSubmit}>
+          <form className="yuri-settings-group-row flex flex-col gap-3" onSubmit={handlePasswordSubmit}>
             <div className="flex items-center gap-3 rounded-[18px] border border-border/70 bg-surface-elevated px-3.5 py-3">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-[12px] bg-interactive-hover text-foreground">
                 <Icon name="lock" className="size-[18px]" />
@@ -1545,7 +1546,7 @@ const MobileInstancesSurface: React.FC<{
   }
 
   return (
-    <div className="oc-settings-page-content">
+    <div className="yuri-settings-page-content">
       <SettingsGroup
         label={t('mobile.connect.saved.title')}
         itemId="instances.manage"
@@ -1566,7 +1567,7 @@ const MobileInstancesSurface: React.FC<{
               <div
                 key={connection.id}
                 className={cn(
-                  'oc-settings-group-row relative flex items-center',
+                  'yuri-settings-group-row relative flex items-center',
                   confirming && 'bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)]',
                 )}
               >
@@ -1651,7 +1652,7 @@ const MobileInstancesSurface: React.FC<{
             );
           })
         ) : (
-          <div className="oc-settings-group-row flex items-center justify-center text-center typography-small text-muted-foreground">
+          <div className="yuri-settings-group-row flex items-center justify-center text-center typography-small text-muted-foreground">
             {t('mobile.connect.saved.empty')}
           </div>
         )}
@@ -1663,7 +1664,7 @@ const MobileInstancesSurface: React.FC<{
         label={editingConnection ? t('mobile.instances.editTitle') : t('mobile.instances.addTitle')}
       >
         {!formOpen && !editingConnection ? (
-          <div className="oc-settings-group-row flex flex-col items-stretch gap-2">
+          <div className="yuri-settings-group-row flex flex-col items-stretch gap-2">
               {qrScanSupported ? (
                 <Button
                   type="button"
@@ -1689,7 +1690,7 @@ const MobileInstancesSurface: React.FC<{
               {error ? <p className="px-1 text-center typography-small text-[var(--status-error)]">{error}</p> : null}
           </div>
         ) : (
-          <div className="oc-settings-group-row flex flex-col gap-3">
+          <div className="yuri-settings-group-row flex flex-col gap-3">
               <div className="flex min-h-8 items-center justify-end px-1">
                 <Button type="button" variant="ghost" size="xs" onClick={resetForm}>
                   {t('mobile.instances.cancelEdit')}
@@ -1902,19 +1903,19 @@ const SessionMetadataOverlay: React.FC<{
   if (!shouldRender) return null;
 
   return (
-    <div ref={wrapperRef} className="fixed inset-x-0 bottom-0 top-[calc(var(--oc-safe-area-top,0px)+var(--oc-header-height,56px))] z-20 pointer-events-none">
+    <div ref={wrapperRef} className="fixed inset-x-0 bottom-0 top-[calc(var(--yuri-safe-area-top,0px)+var(--yuri-header-height,56px))] z-20 pointer-events-none">
       <div
         ref={panelRef}
         role="dialog"
         aria-label={t('mobile.header.openMetadataAria')}
         className={cn(
-          'overflow-y-auto overscroll-contain rounded-[20px] oc-mobile-overlay-surface p-2 will-change-transform',
+          'overflow-y-auto overscroll-contain rounded-[20px] yuri-mobile-overlay-surface p-2 will-change-transform',
           ipadPopover ? 'absolute origin-top-left' : 'mx-3 mt-2',
           isExiting ? 'pointer-events-none' : 'pointer-events-auto',
         )}
         style={{
           animation: `${isExiting ? 'session-metadata-out' : 'session-metadata-in'} ${isExiting ? 140 : 170}ms cubic-bezier(0.32, 0.72, 0, 1) forwards`,
-          maxHeight: 'min(72dvh, calc(100dvh - var(--oc-safe-area-top, 0px) - var(--oc-header-height, 56px) - 1rem))',
+          maxHeight: 'min(72dvh, calc(100dvh - var(--yuri-safe-area-top, 0px) - var(--yuri-header-height, 56px) - 1rem))',
           ...(ipadPopover
             ? {
                 top: 8,
@@ -2098,7 +2099,7 @@ const MobileOverflowMenu: React.FC<{
     >
       <button
         type="button"
-        className="pointer-events-auto absolute inset-x-0 bottom-0 cursor-default top-[calc(var(--oc-safe-area-top,0px)+var(--oc-mobile-detail-navigation-height,3.5rem)+0.25rem)]"
+        className="pointer-events-auto absolute inset-x-0 bottom-0 cursor-default top-[calc(var(--yuri-safe-area-top,0px)+var(--yuri-mobile-detail-navigation-height,3.5rem)+0.25rem)]"
         aria-label={t('mobile.surface.closeAria')}
         onPointerDown={(event) => {
           event.preventDefault();
@@ -2107,10 +2108,10 @@ const MobileOverflowMenu: React.FC<{
       />
       <div
         id={MOBILE_OVERFLOW_MENU_ID}
-        className="pointer-events-auto absolute top-[calc(var(--oc-safe-area-top,0px)+var(--oc-mobile-detail-navigation-height,3.5rem)+0.25rem)] w-[min(220px,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-2xl oc-mobile-overlay-surface"
+        className="pointer-events-auto absolute top-[calc(var(--yuri-safe-area-top,0px)+var(--yuri-mobile-detail-navigation-height,3.5rem)+0.25rem)] w-[min(220px,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-2xl yuri-mobile-overlay-surface"
         role="menu"
         style={{
-          right: `max(1rem, calc(8px + ${rightOffset}px + var(--oc-safe-area-right, 0px)))`,
+          right: `max(1rem, calc(8px + ${rightOffset}px + var(--yuri-safe-area-right, 0px)))`,
           animation: 'mobile-menu-in 160ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
         }}
         onAnimationEnd={(event) => {
@@ -2302,7 +2303,7 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
             <span
               className={cn(
                 'block truncate',
-                syncHint ? 'oc-mobile-detail-subtitle text-muted-foreground' : 'typography-micro text-muted-foreground',
+                syncHint ? 'yuri-mobile-detail-subtitle text-muted-foreground' : 'typography-micro text-muted-foreground',
               )}
               aria-live="polite"
             >
@@ -2789,8 +2790,8 @@ const MobileShell: React.FC<{
   }, [ipadRightPanel, isIPad]);
   const renderedIpadRightPanel = ipadRightPanel ?? lastIpadRightPanelRef.current;
 
-  const leftResize = useIpadSidebarResize('left', 'openchamber.ipad.leftSidebarWidth', IPAD_LEFT_SIDEBAR_WIDTH);
-  const rightResize = useIpadSidebarResize('right', 'openchamber.ipad.rightSidebarWidth', IPAD_RIGHT_SIDEBAR_WIDTH);
+  const leftResize = useIpadSidebarResize('left', 'yuri.ipad.leftSidebarWidth', IPAD_LEFT_SIDEBAR_WIDTH);
+  const rightResize = useIpadSidebarResize('right', 'yuri.ipad.rightSidebarWidth', IPAD_RIGHT_SIDEBAR_WIDTH);
 
   const mobileActions = React.useMemo<MobileAppActions>(
     () => ({
@@ -2822,7 +2823,7 @@ const MobileShell: React.FC<{
     setTurnDiffTargetFilePath(null);
   });
 
-  // Expose the shell's panel-opening actions to the deep-link layer so openchamber:// URLs
+  // Expose the shell's panel-opening actions to the deep-link layer so yuri:// URLs
   // (and notification taps / widgets) can navigate to these surfaces. Session and
   // new-session intents resolve directly against the store, so they aren't wired here.
   const deepLinkHandlers = React.useMemo(
@@ -2951,7 +2952,7 @@ const MobileShell: React.FC<{
       return true;
     }
     if (scheduledTasksDialogOpen) {
-      window.dispatchEvent(new Event('oc:scheduled-tasks-close-request'));
+      window.dispatchEvent(new Event('yuri:scheduled-tasks-close-request'));
       return true;
     }
     if (mobileSessionPanelOpen) {
@@ -3138,7 +3139,7 @@ const MobileShell: React.FC<{
     <DedicatedMobileAppProvider actions={mobileActions}>
       <MobileGlobalSearchHost>
       <div
-        className="oc-mobile-app-shell main-content-safe-area flex h-[100dvh] flex-row text-foreground"
+        className="yuri-mobile-app-shell main-content-safe-area flex h-[100dvh] flex-row text-foreground"
         data-page-scroll-lock="true"
       >
         {/* iPad: persistent full-height sessions sidebar; the chat column and
@@ -3155,9 +3156,9 @@ const MobileShell: React.FC<{
               width: ipadSidebarOpen ? leftResize.width : 0,
               minWidth: ipadSidebarOpen ? leftResize.width : 0,
               maxWidth: ipadSidebarOpen ? leftResize.width : 0,
-              ['--oc-ipad-sidebar-width' as string]: `${leftResize.width}px`,
+              ['--yuri-ipad-sidebar-width' as string]: `${leftResize.width}px`,
               overflowX: 'clip',
-              paddingTop: 'var(--oc-safe-area-top, 0px)',
+              paddingTop: 'var(--yuri-safe-area-top, 0px)',
               transitionProperty: leftResize.isResizing ? 'none' : 'width, min-width, max-width',
               transitionDuration: '200ms',
               transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
@@ -3179,7 +3180,7 @@ const MobileShell: React.FC<{
                 leftResize.isResizing && 'pointer-events-none',
                 !ipadSidebarOpen && 'pointer-events-none select-none opacity-0',
               )}
-              style={{ width: 'var(--oc-ipad-sidebar-width)', overflowX: 'hidden' }}
+              style={{ width: 'var(--yuri-ipad-sidebar-width)', overflowX: 'hidden' }}
             >
               <ErrorBoundary>
                 <MobileSessionsSheet
@@ -3238,14 +3239,14 @@ const MobileShell: React.FC<{
                 />
               ) : undefined}
               instancesSecondaryPage={showCapacitorOnlyFeatures ? (
-                <div className="oc-settings-workspace oc-settings-workspace-mobile flex h-full min-h-0 flex-col bg-[var(--surface-background)]">
+                <div className="yuri-settings-workspace yuri-settings-workspace-mobile flex h-full min-h-0 flex-col bg-[var(--surface-background)]">
                   <MobileDetailNavigation
                     title={t('mobile.settings.switchInstance')}
                     backAriaLabel={t('header.actions.backAria')}
                     onBack={closeInstancesSecondary}
                   />
-                  <div className="min-h-0 flex-1 overflow-y-auto px-[var(--oc-mobile-page-inline-inset)]">
-                    <MobileFloatingSurface className="oc-mobile-settings-detail-card">
+                  <div className="min-h-0 flex-1 overflow-y-auto px-[var(--yuri-mobile-page-inline-inset)]">
+                    <MobileFloatingSurface className="yuri-mobile-settings-detail-card">
                       <MobileInstancesSurface
                         connection={connection}
                         onConnect={() => undefined}
@@ -3315,9 +3316,9 @@ const MobileShell: React.FC<{
               width: ipadRightPanel ? rightResize.width : 0,
               minWidth: ipadRightPanel ? rightResize.width : 0,
               maxWidth: ipadRightPanel ? rightResize.width : 0,
-              ['--oc-ipad-sidebar-width' as string]: `${rightResize.width}px`,
+              ['--yuri-ipad-sidebar-width' as string]: `${rightResize.width}px`,
               overflowX: 'clip',
-              paddingTop: 'var(--oc-safe-area-top, 0px)',
+              paddingTop: 'var(--yuri-safe-area-top, 0px)',
               transitionProperty: rightResize.isResizing ? 'none' : 'width, min-width, max-width',
               transitionDuration: '200ms',
               transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
@@ -3339,7 +3340,7 @@ const MobileShell: React.FC<{
                 rightResize.isResizing && 'pointer-events-none',
                 !ipadRightPanel && 'pointer-events-none select-none opacity-0',
               )}
-              style={{ width: 'var(--oc-ipad-sidebar-width)', overflowX: 'hidden' }}
+              style={{ width: 'var(--yuri-ipad-sidebar-width)', overflowX: 'hidden' }}
             >
               {ipadRightContentMounted ? (
                 <ErrorBoundary>
@@ -3347,7 +3348,7 @@ const MobileShell: React.FC<{
                     <MobileFilesSurface onClose={closeIpadRightPanel} />
                   ) : renderedIpadRightPanel === 'turn-diff' ? (
                     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
-                      <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-2 border-b border-border/40 px-3">
+                      <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-2 border-b border-border/40 px-3">
                         <h2 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">
                           {t('mobile.nav.changes')}
                         </h2>
@@ -3378,7 +3379,7 @@ const MobileShell: React.FC<{
                     </div>
                   ) : pendingChangesDiff?.toolPatches?.length ? (
                     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
-                      <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-2 border-b border-border/40 px-3">
+                      <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-2 border-b border-border/40 px-3">
                         <h2 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">
                           {pendingChangesDiff.toolPatches.length > 1
                             ? t('mobile.nav.changes')
@@ -3829,7 +3830,7 @@ export function MobileApp({ apis }: MobileAppProps) {
     const now = Date.now();
     if (now - lastNativeResumeSyncEventAtRef.current >= NATIVE_RESUME_SYNC_EVENT_THROTTLE_MS) {
       lastNativeResumeSyncEventAtRef.current = now;
-      window.dispatchEvent(new Event('openchamber:system-resume'));
+      window.dispatchEvent(new Event('yuri:system-resume'));
     }
   });
 
@@ -4105,7 +4106,7 @@ export function MobileApp({ apis }: MobileAppProps) {
   if (!fontsReady) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-background text-foreground">
-        <OpenChamberLogo width={120} height={120} isAnimated />
+        <YuriLogo width={120} height={120} isAnimated />
       </main>
     );
   }
@@ -4123,7 +4124,7 @@ export function MobileApp({ apis }: MobileAppProps) {
       return (
         <main className="flex min-h-dvh items-center justify-center bg-background px-6 text-center text-foreground">
           <div className="flex max-w-sm flex-col items-center gap-4">
-            <OpenChamberLogo width={120} height={120} isAnimated={!showConnectionRecovery} />
+            <YuriLogo width={120} height={120} isAnimated={!showConnectionRecovery} />
             {showConnectionRecovery ? (
               <>
                 <div className="space-y-2">
@@ -4152,7 +4153,7 @@ export function MobileApp({ apis }: MobileAppProps) {
     if (autoConnectPhase !== 'done') {
       return (
         <main className="relative flex min-h-dvh items-center justify-center bg-background text-foreground">
-          <OpenChamberLogo width={120} height={120} isAnimated />
+          <YuriLogo width={120} height={120} isAnimated />
           {/* Absolutely positioned below the (still perfectly centered) logo so
               the text never pushes it up. 50% + half the 120px logo + a gap. */}
           {autoConnectLabel ? (
@@ -4177,7 +4178,7 @@ export function MobileApp({ apis }: MobileAppProps) {
     if (!showConnectionRecovery) {
       return (
         <main className="flex min-h-dvh items-center justify-center bg-background text-foreground">
-          <OpenChamberLogo width={120} height={120} isAnimated />
+          <YuriLogo width={120} height={120} isAnimated />
         </main>
       );
     }
@@ -4208,7 +4209,7 @@ export function MobileApp({ apis }: MobileAppProps) {
                 useMobileNavigationStore.getState().reset();
                 setConnectionEpoch((value) => value + 1);
               }} />
-              <Toaster position="top-center" offset="calc(var(--oc-safe-area-top, 0px) + 16px)" />
+              <Toaster position="top-center" offset="calc(var(--yuri-safe-area-top, 0px) + 16px)" />
               {isInitialized ? <ConfigUpdateOverlay /> : null}
               {isInitialized ? <ContentIndexOnboarding /> : null}
             </div>

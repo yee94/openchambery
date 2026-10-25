@@ -57,7 +57,7 @@ describe('SyncActions', () => {
     const markup = renderSyncActions(0, 0);
 
     expect(markup).not.toContain('data-sync-direction=');
-    expect(markup).toContain('oc-refresh');
+    expect(markup).toContain('yuri-refresh');
     expect(markup).not.toContain('bg-[var(--status-error)]');
   });
 });

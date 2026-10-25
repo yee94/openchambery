@@ -42,7 +42,7 @@ const parseCache = (raw: string | null): BranchCache | Record<string, unknown> |
 
 const writeCache = (storage: GitBranchStartupStorage, cache: BranchCache): void => {
   try {
-    storage.setItem('oc.gitBranchCache', JSON.stringify(cache));
+    storage.setItem('yuri.gitBranchCache', JSON.stringify(cache));
   } catch {
     // Storage availability does not affect the live Query result.
   }
@@ -54,7 +54,7 @@ export const readGitBranchStartupSnapshot = (directory: string | null | undefine
   if (!normalizedDirectory || !transport) return null;
   let raw: string | null;
   try {
-    raw = storage.getItem('oc.gitBranchCache');
+    raw = storage.getItem('yuri.gitBranchCache');
   } catch {
     return null;
   }
@@ -80,7 +80,7 @@ export const writeGitBranchStartupSnapshot = (directory: string | null | undefin
   if (!normalizedDirectory || !transport || !isGitBranch(branches)) return;
   let raw: string | null = null;
   try {
-    raw = storage.getItem('oc.gitBranchCache');
+    raw = storage.getItem('yuri.gitBranchCache');
   } catch {
     return;
   }

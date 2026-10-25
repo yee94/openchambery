@@ -1,6 +1,6 @@
 import type { Session } from '@/lib/opencode/v2-types';
 
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeYuriEvents } from '@/lib/yuriEvents';
 import { runtimeFetch } from './runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from './runtime-switch';
 import { normalizePath } from './pathNormalization';
@@ -116,7 +116,7 @@ export const lookupSessionIndexById = async (
   if (!id) return null;
   try {
     const response = await runtimeFetch(
-      `/api/openchamber/session-index/session/${encodeURIComponent(id)}`,
+      `/api/yuri/session-index/session/${encodeURIComponent(id)}`,
       { signal: options?.signal },
     );
     if (response.status === 404 || response.status === 501) return null;
@@ -153,7 +153,7 @@ export const loadSessionIndexSnapshot = async (
   const existing = requests.get(options?.signal);
   if (existing) return existing;
   const flight = (async (): Promise<SessionIndexSnapshot | null> => {
-    const response = await runtimeFetch('/api/openchamber/session-index', {
+    const response = await runtimeFetch('/api/yuri/session-index', {
       signal: options?.signal,
     });
     if (response.status === 501) return null;
@@ -180,7 +180,7 @@ export const startSessionIndexBackgroundSync = async (
   const existing = sessionIndexSyncInflight.get(key);
   if (existing) return existing;
   const flight = (async () => {
-    const response = await runtimeFetch('/api/openchamber/session-index/sync', {
+    const response = await runtimeFetch('/api/yuri/session-index/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ directories: normalized }),
@@ -198,7 +198,7 @@ export const startSessionIndexBackgroundSync = async (
 
 /**
  * Wait until a session-index tip arrives with revision > afterRevision, or the
- * OpenChamber event stream becomes ready (reconnect repair), or the signal aborts.
+ * Yuri event stream becomes ready (reconnect repair), or the signal aborts.
  *
  * Busy revision tips use a fixed throttle window; idle tips shorten that window
  * to the normal debounce so consumers promptly read the final snapshot.
@@ -256,7 +256,7 @@ export const waitForSessionIndexInvalidation = (
   const safetyTimer = safetyTimeoutMs === null
     ? undefined
     : setTimeout(() => finish('timeout'), safetyTimeoutMs);
-  const unsubscribe = subscribeOpenchamberEvents((event) => {
+  const unsubscribe = subscribeYuriEvents((event) => {
     if (event.type === 'event-stream-ready') {
       // Reconnect repair: coalesce with any in-flight tip burst, otherwise wait
       // the same quiet window so a ready edge mid-sync does not force an extra GET.
@@ -296,7 +296,7 @@ export const pinSession = async (
   const id = sessionId.trim();
   if (!id) throw new Error('session index pin requires a session id');
   const response = await runtimeFetch(
-    `/api/openchamber/session-index/session/${encodeURIComponent(id)}/pin`,
+    `/api/yuri/session-index/session/${encodeURIComponent(id)}/pin`,
     { method: 'POST', signal: options?.signal },
   );
   if (response.status === 501) {
@@ -316,7 +316,7 @@ export const unpinSession = async (
   const id = sessionId.trim();
   if (!id) throw new Error('session index unpin requires a session id');
   const response = await runtimeFetch(
-    `/api/openchamber/session-index/session/${encodeURIComponent(id)}/pin`,
+    `/api/yuri/session-index/session/${encodeURIComponent(id)}/pin`,
     { method: 'DELETE', signal: options?.signal },
   );
   if (response.status === 501) {
@@ -333,7 +333,7 @@ export const persistSessionIndexDirectory = async (input: {
   fullSync?: boolean;
 }): Promise<void> => {
   if (typeof window === 'undefined') return;
-  const response = await runtimeFetch('/api/openchamber/session-index/directory', {
+  const response = await runtimeFetch('/api/yuri/session-index/directory', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -350,7 +350,7 @@ export const persistSessionIndexDirectories = async (directories: Array<{
   fullSync?: boolean;
 }>): Promise<void> => {
   if (typeof window === 'undefined' || directories.length === 0) return;
-  const response = await runtimeFetch('/api/openchamber/session-index/snapshot', {
+  const response = await runtimeFetch('/api/yuri/session-index/snapshot', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ directories }),

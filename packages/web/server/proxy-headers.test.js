@@ -20,7 +20,7 @@ describe('OpenCode proxy header handling', () => {
 
   it('replaces client authorization with managed OpenCode auth', () => {
     const headers = collectForwardProxyHeaders(
-      { authorization: 'Bearer oc_client_stale-ui-token' },
+      { authorization: 'Bearer yuri_client_stale-ui-token' },
       { Authorization: 'Bearer managed-opencode-token' },
     );
 
@@ -31,7 +31,7 @@ describe('OpenCode proxy header handling', () => {
   it('drops client authorization when upstream has no managed auth', () => {
     const headers = collectForwardProxyHeaders({
       accept: 'application/json',
-      authorization: 'Bearer oc_client_stale-ui-token',
+      authorization: 'Bearer yuri_client_stale-ui-token',
     });
 
     expect(headers['authorization']).toBeUndefined();

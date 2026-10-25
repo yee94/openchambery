@@ -156,7 +156,7 @@ test('expansion shows pending state and reports failure so a later expansion can
 
 test('server first-title generation shows loading without clicking the AI button', async () => {
   root = createRoot(container);
-  const generating = { ...session, title: '', metadata: { openchamber: { titleRefresh: { isGenerating: true } } } } as Session;
+  const generating = { ...session, title: '', metadata: { yuri: { titleRefresh: { isGenerating: true } } } } as Session;
   await act(async () => root.render(<Harness editing={false} live={generating} />));
   expect(container.querySelector('[aria-busy="true"]')?.classList.contains('animate-text-shimmer')).toBe(true);
   expect(requestTitle).not.toHaveBeenCalled();
@@ -168,10 +168,10 @@ test('server first-title generation shows loading without clicking the AI button
 
 test('metadata-only title completion stops text loading while execution remains busy', async () => {
   root = createRoot(container);
-  const generating = { ...session, metadata: { openchamber: { titleRefresh: { isGenerating: true } } } } as Session;
+  const generating = { ...session, metadata: { yuri: { titleRefresh: { isGenerating: true } } } } as Session;
   await act(async () => root.render(<Harness editing={false} live={generating} />));
   expect(container.querySelector('.animate-text-shimmer')?.textContent).toBe(session.title);
-  const completed = { ...session, metadata: { openchamber: { titleRefresh: {} } } } as Session;
+  const completed = { ...session, metadata: { yuri: { titleRefresh: {} } } } as Session;
   await act(async () => root.render(<Harness editing={false} live={completed} />));
   expect(container.querySelector('.animate-text-shimmer')).toBeNull();
   expect(container.querySelector('[aria-busy="true"]')).toBeNull();

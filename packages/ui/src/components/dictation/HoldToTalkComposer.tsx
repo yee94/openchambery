@@ -57,7 +57,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         if (disabled || !(target instanceof HTMLElement)) return null;
         const input = containerRef.current?.querySelector('textarea');
         if (!input || input.value !== '' || input.disabled || input.readOnly) return null;
-        if (target !== input && !target.closest('[data-oc-composer-compact-surface]')) return null;
+        if (target !== input && !target.closest('[data-yuri-composer-compact-surface]')) return null;
         if (target.closest('button, [data-composer-action]')) return null;
         return input;
     });
@@ -165,40 +165,40 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     if (!held && !processing) return null;
     const energy = Math.pow(Math.min(1, Math.max(0, volume)), 0.6);
     return createPortal(
-        <div className="oc-speech-overlay" data-intent={intent} data-error={Boolean(error)} onClick={error ? cancel : undefined} style={{ ...speechPalette, '--speech-energy': energy } as CSSProperties}>
-            <div className="oc-speech-light-field" aria-hidden="true">
-                {['ice', 'lilac', 'mint', 'blush', 'mid', 'core'].map((tone) => <div key={tone} className={`oc-speech-reactor oc-speech-reactor--${tone}`}><div className="oc-speech-light" /></div>)}
+        <div className="yuri-speech-overlay" data-intent={intent} data-error={Boolean(error)} onClick={error ? cancel : undefined} style={{ ...speechPalette, '--speech-energy': energy } as CSSProperties}>
+            <div className="yuri-speech-light-field" aria-hidden="true">
+                {['ice', 'lilac', 'mint', 'blush', 'mid', 'core'].map((tone) => <div key={tone} className={`yuri-speech-reactor yuri-speech-reactor--${tone}`}><div className="yuri-speech-light" /></div>)}
             </div>
-            <div className="oc-speech-content" data-starting={isStarting || processing}>
-                {error && !processing ? <p role="alert" className="oc-speech-caption oc-speech-error">{error}</p> : <div role="status" aria-live="polite" aria-atomic="true" className="oc-speech-caption">
+            <div className="yuri-speech-content" data-starting={isStarting || processing}>
+                {error && !processing ? <p role="alert" className="yuri-speech-caption yuri-speech-error">{error}</p> : <div role="status" aria-live="polite" aria-atomic="true" className="yuri-speech-caption">
                     {isStarting || processing ? <DictationLoading size={72} />
-                        : partialTranscript ? <span className="oc-speech-interim">{partialTranscript}</span> : t(status === 'uploading' ? 'chat.dictation.processing' : 'chat.dictation.listening')}
+                        : partialTranscript ? <span className="yuri-speech-interim">{partialTranscript}</span> : t(status === 'uploading' ? 'chat.dictation.processing' : 'chat.dictation.listening')}
                 </div>}
             </div>
-            {held && <div className="oc-speech-gesture-stage" aria-hidden="true">
-                <div className="oc-speech-gesture-surfaces">
-                <div className="oc-speech-target-glass" style={{ clipPath: `url(#${cancelClipId})` }} />
-                <div className="oc-speech-target-glass" style={{ clipPath: `url(#${editClipId})` }} />
-                <svg className="oc-speech-geometry" viewBox="0 0 400 226" focusable="false">
+            {held && <div className="yuri-speech-gesture-stage" aria-hidden="true">
+                <div className="yuri-speech-gesture-surfaces">
+                <div className="yuri-speech-target-glass" style={{ clipPath: `url(#${cancelClipId})` }} />
+                <div className="yuri-speech-target-glass" style={{ clipPath: `url(#${editClipId})` }} />
+                <svg className="yuri-speech-geometry" viewBox="0 0 400 226" focusable="false">
                     <defs>
                     <clipPath id={cancelClipId} clipPathUnits="objectBoundingBox"><path transform="scale(0.0025 0.004424778761)" d={cancelTargetPath} /></clipPath>
                     <clipPath id={editClipId} clipPathUnits="objectBoundingBox"><path transform="scale(0.0025 0.004424778761)" d={editTargetPath} /></clipPath>
                     <linearGradient id={arcGradientId} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" className="oc-speech-arc-top" />
-                        <stop offset="100%" className="oc-speech-arc-bottom" />
+                        <stop offset="0%" className="yuri-speech-arc-top" />
+                        <stop offset="100%" className="yuri-speech-arc-bottom" />
                     </linearGradient></defs>
                     {/* All three arcs share (200, 620); target radii are 600/524 and the lower radius is 500. */}
-                    <g className="oc-speech-targets" ref={gestureStage}>
-                        <g className="oc-speech-target oc-speech-target--cancel" data-active={intent === 'cancel'}>
+                    <g className="yuri-speech-targets" ref={gestureStage}>
+                        <g className="yuri-speech-target yuri-speech-target--cancel" data-active={intent === 'cancel'}>
                             <path d={cancelTargetPath} />
                             <text x="95" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(-11 95 68)">{t('chat.dictation.cancelGesture')}</text>
                         </g>
-                        <g className="oc-speech-target oc-speech-target--send" data-active={intent === 'send'}>
+                        <g className="yuri-speech-target yuri-speech-target--send" data-active={intent === 'send'}>
                             <path d={editTargetPath} />
                             <text x="305" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(11 305 68)">{t('chat.dictation.send')}</text>
                         </g>
                     </g>
-                    <path className="oc-speech-hold-arc" fill={`url(#${arcGradientId})`} d="M-50 186.987 A500 500 0 0 1 450 186.987 L450 300 H-50 Z" />
+                    <path className="yuri-speech-hold-arc" fill={`url(#${arcGradientId})`} d="M-50 186.987 A500 500 0 0 1 450 186.987 L450 300 H-50 Z" />
                 </svg>
                 </div>
             </div>}

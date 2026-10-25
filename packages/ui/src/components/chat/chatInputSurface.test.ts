@@ -44,8 +44,8 @@ describe('ChatInput surface contract', () => {
     const primary = surface('primary', 'ses_primary') as ChatInputPrimarySurface;
     const assistant = { ...surface('assistant', 'ses_assistant'), commandPolicy: (command: { name: string }) => command.name !== 'fork' };
     expect(resolveChatInputSurface(primary, assistant)).toBe(assistant);
-    expect(isChatInputCommandAllowed(assistant, { name: 'fork', source: 'openchamber' })).toBe(false);
-    expect(isChatInputCommandAllowed(assistant, { name: 'compact', source: 'openchamber' })).toBe(true);
+    expect(isChatInputCommandAllowed(assistant, { name: 'fork', source: 'yuri' })).toBe(false);
+    expect(isChatInputCommandAllowed(assistant, { name: 'compact', source: 'yuri' })).toBe(true);
   });
 
   test('keeps a secondary selection catalog scoped to its surface', () => {

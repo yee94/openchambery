@@ -24,7 +24,7 @@ type MarkstreamCodeBlockProps = NodeComponentProps<CodeBlockNodeShape> & {
 /**
  * Markstream `code_block` override: delegate fenced blocks to the established
  * MarkdownRendererImpl path (marked + Shiki + morphdom decorate) so chat keeps
- * the compact OpenChamber code card instead of markstream-react's default
+ * the compact Yuri code card instead of markstream-react's default
  * multi-control toolbar. Body nodes stay on Markstream.
  */
 /** Stable enough to separate two fences; length breaks trivial hash ties. */
@@ -59,7 +59,7 @@ export function MarkstreamCodeBlockNode(props: MarkstreamCodeBlockProps) {
     () => fenceMarkdownFromCodeBlockNode({ type: 'code_block', language, code, raw, loading }),
     [language, code, raw, loading],
   );
-  // Nested MarkdownRendererImpl streaming follows the OpenChamber host flag and
+  // Nested MarkdownRendererImpl streaming follows the Yuri host flag and
   // Markstream node.loading (open fence). Host already passes
   // codeBlockStream={isStreaming}; the library stream prop alone is not treated
   // as a proven blank-on-remount root cause — only as adapter input to ignore
@@ -76,9 +76,9 @@ export function MarkstreamCodeBlockNode(props: MarkstreamCodeBlockProps) {
 
   return (
     <div
-      className="oc-markstream-code-host min-w-0 w-full"
-      data-oc-markstream-code="markdown-impl"
-      data-oc-markstream-code-id={messageId}
+      className="yuri-markstream-code-host min-w-0 w-full"
+      data-yuri-markstream-code="markdown-impl"
+      data-yuri-markstream-code-id={messageId}
     >
       <MarkdownRenderer
         content={content}

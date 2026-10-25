@@ -23,13 +23,13 @@ import { QueryRuntimeProvider } from './lib/QueryRuntimeProvider'
 
 declare global {
   interface Window {
-    __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
-    __OPENCHAMBER_REFRESH_DEBUG_INSTALLED__?: boolean;
+    __YURI_RUNTIME_APIS__?: RuntimeAPIs;
+    __YURI_REFRESH_DEBUG_INSTALLED__?: boolean;
   }
 }
 
-if (typeof window !== 'undefined' && !window.__OPENCHAMBER_REFRESH_DEBUG_INSTALLED__) {
-  window.__OPENCHAMBER_REFRESH_DEBUG_INSTALLED__ = true;
+if (typeof window !== 'undefined' && !window.__YURI_REFRESH_DEBUG_INSTALLED__) {
+  window.__YURI_REFRESH_DEBUG_INSTALLED__ = true;
   const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
   console.warn('[refresh-debug] renderer-entry', {
     navigationType: navigation?.type ?? 'unknown',
@@ -43,7 +43,7 @@ if (typeof window !== 'undefined' && !window.__OPENCHAMBER_REFRESH_DEBUG_INSTALL
   });
 }
 
-const runtimeAPIs = (typeof window !== 'undefined' && window.__OPENCHAMBER_RUNTIME_APIS__) || (() => {
+const runtimeAPIs = (typeof window !== 'undefined' && window.__YURI_RUNTIME_APIS__) || (() => {
   throw new Error('Runtime APIs not provided for legacy UI entrypoint.');
 })();
 

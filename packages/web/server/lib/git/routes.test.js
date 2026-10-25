@@ -878,7 +878,7 @@ describe('git worktree topology broadcasts', () => {
 
     expect(response.statusCode).toBe(503);
     expect(broadcastWorktreeTopologyChanged).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'openchamber:worktree-topology-changed',
+      type: 'yuri:worktree-topology-changed',
       properties: expect.objectContaining({ projectDirectory: '/repo', directory: '/created-worktree', operation: 'added', occurredAt: expect.any(Number) }),
     }));
   });

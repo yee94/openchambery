@@ -13,7 +13,7 @@ vi.mock('@/lib/runtime-switch', () => ({
 }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: mocks.fetch }));
 vi.mock('@/contexts/runtimeAPIRegistry', () => ({ getRegisteredRuntimeAPIs: () => ({ runtime: { isVSCode: false } }) }));
-vi.mock('@/lib/openchamberEvents', () => ({ subscribeOpenchamberEvents: (listener: (event: { type: string }) => void) => { mocks.eventListeners.add(listener); return () => { mocks.eventListeners.delete(listener); }; } }));
+vi.mock('@/lib/yuriEvents', () => ({ subscribeYuriEvents: (listener: (event: { type: string }) => void) => { mocks.eventListeners.add(listener); return () => { mocks.eventListeners.delete(listener); }; } }));
 vi.mock('@/stores/useConfigStore', () => ({ useConfigStore: { getState: () => mocks.state, setState: mocks.setState } }));
 import { queryClient } from '@/lib/queryRuntime';
 import { mountSpeechSettingsSync } from './speech-settings-sync';

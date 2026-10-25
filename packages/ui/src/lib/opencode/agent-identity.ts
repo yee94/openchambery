@@ -5,7 +5,7 @@
  * - `id` — machine key the server expects on prompts / session switches (`build`)
  * - `name` — display label only (`Build`)
  *
- * OpenChamber has always keyed selection, persistence, and send by `name`.
+ * Yuri has always keyed selection, persistence, and send by `name`.
  * Project each wire row so domain `name` equals authoritative `id`, and keep the
  * wire label as `displayName`. Lookup accepts either key so persisted display
  * names still resolve after catalog load. Never blind-case-fold: custom ids may

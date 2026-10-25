@@ -54,11 +54,11 @@ describe('desktopLocalRuntime', () => {
     mocks.localClientToken = Promise.resolve('token-abc');
     mocks.switchCalls.length = 0;
     mocks.switchResult = { ok: true, via: 'direct', status: { status: 'ok', latencyMs: 0 } };
-    window.__OPENCHAMBER_LOCAL_ORIGIN__ = 'http://127.0.0.1:4096';
+    window.__YURI_LOCAL_ORIGIN__ = 'http://127.0.0.1:4096';
   });
 
   afterEach(() => {
-    delete window.__OPENCHAMBER_LOCAL_ORIGIN__;
+    delete window.__YURI_LOCAL_ORIGIN__;
   });
 
   test('getLocalRuntimeOrigin prefers injected local origin', () => {

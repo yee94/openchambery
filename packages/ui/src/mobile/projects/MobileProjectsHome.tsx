@@ -39,7 +39,7 @@ import {
 import { resolveMobileSessionIndicator } from './mobileSessionIndicator';
 
 const INTENT_LOCK_PX = 10;
-const REVEALED_WORKTREE_EVENT = 'oc:mobile-worktree-row-revealed';
+const REVEALED_WORKTREE_EVENT = 'yuri:mobile-worktree-row-revealed';
 
 const broadcastWorktreeRevealed = (id: string): void => {
   window.dispatchEvent(new CustomEvent(REVEALED_WORKTREE_EVENT, { detail: id }));
@@ -391,10 +391,10 @@ function MobileWorktreeGroupLabel({
 
   const content = (
     <>
-      <span className="oc-mobile-group-label-icon" aria-hidden>
+      <span className="yuri-mobile-group-label-icon" aria-hidden>
         <Icon name="git-branch" className="size-3.5" />
       </span>
-      <span className="min-w-0 flex-1 truncate text-left oc-mobile-entity-title font-semibold text-foreground">
+      <span className="min-w-0 flex-1 truncate text-left yuri-mobile-entity-title font-semibold text-foreground">
         {highlightQuery ? renderHighlightedText(worktree.name, highlightQuery) : worktree.name}
       </span>
       <span className="typography-small text-muted-foreground tabular-nums">
@@ -413,19 +413,19 @@ function MobileWorktreeGroupLabel({
   );
 
   return (
-    <div className="oc-mobile-group-label oc-mobile-worktree-label relative isolate overflow-hidden">
+    <div className="yuri-mobile-group-label yuri-mobile-worktree-label relative isolate overflow-hidden">
       {canSwipe ? (
         <div
           ref={actionRailRef}
           className={cn(
-            'oc-mobile-worktree-actions absolute inset-y-0 right-0 z-0 flex items-stretch',
+            'yuri-mobile-worktree-actions absolute inset-y-0 right-0 z-0 flex items-stretch',
             dragging ? 'transition-none' : 'transition-transform duration-150 ease-out',
             !revealed && 'invisible pointer-events-none',
           )}
           style={{
             // Width tracks the visible action count so a single-button rail
             // does not leave a half-empty swipe region.
-            width: `calc(${swipeActionCount} * var(--oc-mobile-worktree-action-width))`,
+            width: `calc(${swipeActionCount} * var(--yuri-mobile-worktree-action-width))`,
             transform: `translate3d(calc(100% + ${offset}px), 0, 0)`,
             willChange: offset === 0 ? undefined : 'transform',
           }}
@@ -435,13 +435,13 @@ function MobileWorktreeGroupLabel({
             <Button
               type="button"
               variant="secondary"
-              className="oc-mobile-worktree-action h-full flex-col rounded-none border-0 bg-interactive-selection px-1 text-interactive-selection-foreground hover:bg-interactive-active"
+              className="yuri-mobile-worktree-action h-full flex-col rounded-none border-0 bg-interactive-selection px-1 text-interactive-selection-foreground hover:bg-interactive-active"
               aria-label={t('mobile.sessions.newSessionAria')}
               tabIndex={revealed ? 0 : -1}
               onClick={handleNewSession}
             >
               <Icon name="add" className="size-[18px]" />
-              <span className="oc-mobile-session-action-label font-medium">
+              <span className="yuri-mobile-session-action-label font-medium">
                 {t('sessions.sidebar.project.actions.newSession')}
               </span>
             </Button>
@@ -450,13 +450,13 @@ function MobileWorktreeGroupLabel({
             <Button
               type="button"
               variant="destructive"
-              className="oc-mobile-worktree-action h-full flex-col rounded-none border-0 px-1"
+              className="yuri-mobile-worktree-action h-full flex-col rounded-none border-0 px-1"
               aria-label={t('mobile.projectEdit.deleteWorktreeAria', { label: worktree.name })}
               tabIndex={revealed ? 0 : -1}
               onClick={handleDelete}
             >
               <Icon name="delete-bin" className="size-[18px]" />
-              <span className="oc-mobile-session-action-label font-medium">
+              <span className="yuri-mobile-session-action-label font-medium">
                 {t('mobile.projectEdit.deleteWorktreeConfirmButton')}
               </span>
             </Button>
@@ -466,7 +466,7 @@ function MobileWorktreeGroupLabel({
 
       <div
         className={cn(
-          'oc-mobile-worktree-label-content relative z-10 flex min-w-0 flex-1 items-center',
+          'yuri-mobile-worktree-label-content relative z-10 flex min-w-0 flex-1 items-center',
           'ease-out motion-reduce:transition-none',
           // Match session rows: transform-only while dragging; no fill on press/click.
           dragging ? 'transition-none' : 'transition-transform duration-150',
@@ -481,7 +481,7 @@ function MobileWorktreeGroupLabel({
           type="button"
           // Soft scale only — no hover/active fill (session row parity).
           data-mobile-press-feedback="soft"
-          className="oc-mobile-group-label-trigger oc-mobile-worktree-label-trigger"
+          className="yuri-mobile-group-label-trigger yuri-mobile-worktree-label-trigger"
           aria-expanded={expanded}
           onClick={handleToggle}
           onPointerDown={handlePointerDown}
@@ -499,7 +499,7 @@ function MobileWorktreeGroupLabel({
             type="button"
             variant="ghost"
             size="icon"
-            className="oc-mobile-worktree-more rounded-full text-muted-foreground"
+            className="yuri-mobile-worktree-more rounded-full text-muted-foreground"
             aria-label={t('agentManager.detail.actions.worktreeActionsAria')}
             onClick={handleOpenActions}
           >
@@ -554,7 +554,7 @@ export function MobileProjectsHome({
                 <Button
                   type="button"
                   size="mobileIcon"
-                  className="oc-mobile-round-control border-transparent bg-[var(--primary-base)] text-[var(--primary-foreground)] shadow-[0_10px_22px_color-mix(in_srgb,var(--primary-base)_22%,transparent)] hover:bg-[var(--primary-hover)] dark:bg-[var(--primary-base)] dark:hover:bg-[var(--primary-hover)]"
+                  className="yuri-mobile-round-control border-transparent bg-[var(--primary-base)] text-[var(--primary-foreground)] shadow-[0_10px_22px_color-mix(in_srgb,var(--primary-base)_22%,transparent)] hover:bg-[var(--primary-hover)] dark:bg-[var(--primary-base)] dark:hover:bg-[var(--primary-hover)]"
                   aria-label={t('mobile.projects.menu.label')}
                 >
                   <Icon
@@ -595,7 +595,7 @@ export function MobileProjectsHome({
 
       {pinnedSessions.length > 0 || inProgressSessions.length > 0 ? (
         <MobileFloatingSurface asChild>
-          <section className="oc-mobile-project-shell" aria-label={t('mobile.sessions.section.pinned')}>
+          <section className="yuri-mobile-project-shell" aria-label={t('mobile.sessions.section.pinned')}>
             <MobileProjectCard
               project={{
                 id: '__pinned__',
@@ -609,9 +609,9 @@ export function MobileProjectsHome({
               onToggle={() => setPinnedExpanded((expanded) => !expanded)}
             />
             {pinnedExpanded ? (
-              <div className="oc-mobile-project-groups" role="group">
+              <div className="yuri-mobile-project-groups" role="group">
                 {pinnedSessions.length > 0 ? (
-                  <div className="oc-mobile-labeled-surface-group">
+                  <div className="yuri-mobile-labeled-surface-group">
                     <SessionList
                       sessions={pinnedSessions}
                       orderScope={PINNED_SESSION_ORDER_SCOPE}
@@ -624,7 +624,7 @@ export function MobileProjectsHome({
                   </div>
                 ) : null}
                 {inProgressSessions.length > 0 ? (
-                  <div className="oc-mobile-labeled-surface-group">
+                  <div className="yuri-mobile-labeled-surface-group">
                     <SessionList
                       sessions={inProgressSessions}
                       onSelectSession={onSelectSession}
@@ -663,7 +663,7 @@ export function MobileProjectsHome({
 
           return (
             <MobileFloatingSurface key={project.id} asChild>
-              <section className="oc-mobile-project-shell" aria-label={project.name}>
+              <section className="yuri-mobile-project-shell" aria-label={project.name}>
               {/* Project header and every workspace/session group share one parent surface. */}
               <MobileProjectCard
                 project={project}
@@ -674,10 +674,10 @@ export function MobileProjectsHome({
               />
 
               {projectExpanded ? (
-                <div className="oc-mobile-project-groups" role="group" aria-label={project.name}>
+                <div className="yuri-mobile-project-groups" role="group" aria-label={project.name}>
                   {/* Main workspace sessions flow directly below the project header. */}
                   {mainSessions.length > 0 ? (
-                    <div className="oc-mobile-labeled-surface-group">
+                    <div className="yuri-mobile-labeled-surface-group">
                       <SessionList
                         sessions={mainSessions}
                         orderScope={mainWorkspace?.path}
@@ -696,7 +696,7 @@ export function MobileProjectsHome({
                     return (
                       <MobileLabeledSurfaceGroup
                         key={worktree.id}
-                        className="oc-mobile-worktree-group"
+                        className="yuri-mobile-worktree-group"
                         ariaLabel={worktree.name}
                         label={(
                           <MobileWorktreeGroupLabel

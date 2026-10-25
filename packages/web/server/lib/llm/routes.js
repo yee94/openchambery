@@ -25,14 +25,14 @@ export const registerLlmRoutes = (app, dependencies) => {
     headers: dependencies.getOpenCodeAuthHeaders(),
   });
 
-  app.get('/api/openchamber/llm/models', (_req, res) => {
+  app.get('/api/yuri/llm/models', (_req, res) => {
     Promise.resolve()
       .then(() => loadConnectedCatalog(client()))
       .then((catalog) => res.json({ ok: true, ...catalog }))
       .catch((error) => fail(res, error));
   });
 
-  app.post('/api/openchamber/llm/chat/completions', (req, res) => {
+  app.post('/api/yuri/llm/chat/completions', (req, res) => {
     Promise.resolve()
       .then(() => createChatCompletion({
         body: req.body,

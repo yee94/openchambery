@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import React, {
   useEffect,
   useMemo,
@@ -72,17 +73,17 @@ const suppressTransitionsForThemeSwitch = () => {
   }
 
   const root = document.documentElement;
-  root.classList.add('oc-theme-switching');
+  root.classList.add('yuri-theme-switching');
 
   const frame = window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
-      root.classList.remove('oc-theme-switching');
+      root.classList.remove('yuri-theme-switching');
     });
   });
 
   return () => {
     window.cancelAnimationFrame(frame);
-    root.classList.remove('oc-theme-switching');
+    root.classList.remove('yuri-theme-switching');
   };
 };
 
@@ -178,7 +179,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     if (typeof window === 'undefined' || !isVSCodeRuntime()) {
       return null;
     }
-    const existing = (window as unknown as { __OPENCHAMBER_VSCODE_THEME__?: Theme }).__OPENCHAMBER_VSCODE_THEME__;
+    const existing = (window as unknown as { __YURI_VSCODE_THEME__?: Theme }).__YURI_VSCODE_THEME__;
     return existing || null;
   });
   const isVSCode = useMemo(() => isVSCodeRuntime(), []);
@@ -309,21 +310,21 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       }
     };
 
-    const existing = (window as unknown as { __OPENCHAMBER_VSCODE_THEME__?: Theme }).__OPENCHAMBER_VSCODE_THEME__;
+    const existing = (window as unknown as { __YURI_VSCODE_THEME__?: Theme }).__YURI_VSCODE_THEME__;
     if (existing) {
       applyVSCodeTheme(existing);
     }
 
-    window.addEventListener('openchamber:vscode-theme', handleThemeEvent as EventListener);
-    return () => window.removeEventListener('openchamber:vscode-theme', handleThemeEvent as EventListener);
+    window.addEventListener('yuri:vscode-theme', handleThemeEvent as EventListener);
+    return () => window.removeEventListener('yuri:vscode-theme', handleThemeEvent as EventListener);
   }, [isVSCode]);
 
   const updateBrowserChrome = useEvent((theme: Theme) => {
     if (typeof document === 'undefined') {
       return;
     }
-    const hasMacVibrancy = document.documentElement.hasAttribute('data-oc-vibrancy')
-      || window.__OPENCHAMBER_ELECTRON__?.macVibrancy === true;
+    const hasMacVibrancy = document.documentElement.hasAttribute('data-yuri-vibrancy')
+      || window.__YURI_ELECTRON__?.macVibrancy === true;
     const chromeColor = hasMacVibrancy ? 'transparent' : theme.colors.surface.background;
 
     document.body.style.backgroundColor = chromeColor;
@@ -537,14 +538,14 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     }
 
     const scopedWindow = window as unknown as {
-      __openchamberApplyThemeSync?: (payload: ThemeSyncPayload) => void;
+      __yuriApplyThemeSync?: (payload: ThemeSyncPayload) => void;
     };
 
-    scopedWindow.__openchamberApplyThemeSync = applyIncomingThemeSync;
+    scopedWindow.__yuriApplyThemeSync = applyIncomingThemeSync;
 
     return () => {
-      if (scopedWindow.__openchamberApplyThemeSync === applyIncomingThemeSync) {
-        delete scopedWindow.__openchamberApplyThemeSync;
+      if (scopedWindow.__yuriApplyThemeSync === applyIncomingThemeSync) {
+        delete scopedWindow.__yuriApplyThemeSync;
       }
     };
   }, [applyIncomingThemeSync]);
@@ -564,7 +565,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         payload?: ThemeSyncPayload;
       };
 
-      if (data?.type !== 'openchamber:theme-sync' || !data.payload) {
+      if (data?.type !== 'yuri:theme-sync' || !data.payload) {
         return;
       }
 
@@ -659,12 +660,12 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       setThemeServerSyncArmed(true);
     };
 
-    window.addEventListener('openchamber:settings-synced', handleSettingsSynced);
-    return () => window.removeEventListener('openchamber:settings-synced', handleSettingsSynced);
+    window.addEventListener('yuri:settings-synced', handleSettingsSynced);
+    return () => window.removeEventListener('yuri:settings-synced', handleSettingsSynced);
   }, []);
 
   // In-window host switch: reload theme prefs from the new transport's scoped bucket
-  // (server sync will still override via openchamber:settings-synced).
+  // (server sync will still override via yuri:settings-synced).
   useEffect(() => {
     if (receivesParentThemeSync || typeof window === 'undefined') return;
     return subscribeRuntimeEndpointChanged((detail) => {

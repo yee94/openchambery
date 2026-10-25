@@ -17,7 +17,7 @@ Own filesystem API behavior for the web server runtime, including file operation
     - `GET /api/fs/raw`
     - `GET /api/fs/serve/:path(*)`
     - `POST /api/fs/write`
-    - `PUT /api/fs/prompt-attachments/:attachmentID` (binary prompt attachment; returns `{ path, size, mime, sha256 }`). Chat uses `?storage=temporary`: bytes stream into a private `<os.tmpdir()>/openchamber-prompt-*/<filename>` on the active model host, including relay clients. The query parameter deliberately avoids adding a CORS request header: Electron UI OTA updates retain installer-owned backends and their fixed preflight allowlist. Older hosts ignore the query and continue accepting uploads within their existing 25 MiB limit in the content-addressed store; temporary/large-file storage requires an updated host. Temporary storage has no model-context byte limit; size and SHA-256 are verified before returning, and failed/aborted uploads are removed. Successful files remain for later tool reads until OS/user temporary-file cleanup. The legacy/default mode retains the 25 MiB content-addressed store under `<openchamberDataDir>/prompt-attachments/<sha256-prefix>/<sha256><ext>`; Assistant storage is unchanged.
+    - `PUT /api/fs/prompt-attachments/:attachmentID` (binary prompt attachment; returns `{ path, size, mime, sha256 }`). Chat uses `?storage=temporary`: bytes stream into a private `<os.tmpdir()>/yuri-prompt-*/<filename>` on the active model host, including relay clients. The query parameter deliberately avoids adding a CORS request header: Electron UI OTA updates retain installer-owned backends and their fixed preflight allowlist. Older hosts ignore the query and continue accepting uploads within their existing 25 MiB limit in the content-addressed store; temporary/large-file storage requires an updated host. Temporary storage has no model-context byte limit; size and SHA-256 are verified before returning, and failed/aborted uploads are removed. Successful files remain for later tool reads until OS/user temporary-file cleanup. The legacy/default mode retains the 25 MiB content-addressed store under `<yuriDataDir>/prompt-attachments/<sha256-prefix>/<sha256><ext>`; Assistant storage is unchanged.
     - `POST /api/fs/delete`
     - `POST /api/fs/rename`
     - `POST /api/fs/reveal`
@@ -42,5 +42,5 @@ Own filesystem API behavior for the web server runtime, including file operation
   `raw-video.test.js` exercises the real route; the compiled Relay E2E test checks
   that authorized ranges retain metadata/bytes across the encrypted tunnel.
 - Keep filesystem policy (read access, workspace root checks for mutations, error mapping, exec timeout behavior) inside this module, not in the composition root.
-- Optional `GET /api/fs/read` responses retain their `text/plain` body and set `x-openchamber-file-exists` to `true` or `false` so empty files remain distinguishable from missing files.
+- Optional `GET /api/fs/read` responses retain their `text/plain` body and set `x-yuri-file-exists` to `true` or `false` so empty files remain distinguishable from missing files.
 - If adding new `/api/fs/*` endpoints, add them in `routes.js` and extend this document.

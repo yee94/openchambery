@@ -1,5 +1,5 @@
 /**
- * OpenChamber-owned session Changes API (L2 file list / L3 single-file patch).
+ * Yuri-owned session Changes API (L2 file list / L3 single-file patch).
  *
  * L2 (no `file`): read official `session.message`, project summary.diffs to
  *   `{ files: [{ file, status?, additions, deletions }] }` — never patch bodies

@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 /**
  * Persisted child-store metadata caches.
  *
@@ -29,7 +30,7 @@ function hashCode(str: string): string {
 function storagePrefix(directory: string): string {
   const head = directory.slice(0, 12).replace(/[^a-zA-Z0-9]/g, "_")
   const instance = hashCode(getRuntimeKey().trim() || "default")
-  return `oc.dir.${instance}.${head}.${hashCode(directory)}`
+  return `yuri.dir.${instance}.${head}.${hashCode(directory)}`
 }
 
 // ---------------------------------------------------------------------------

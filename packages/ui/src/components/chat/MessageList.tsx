@@ -1978,7 +1978,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
                         <div
                             key={entry.key}
                             data-turn-entry={entry.key}
-                            className="oc-chat-message-layout-boundary"
+                            className="yuri-chat-message-layout-boundary"
                         >
                             {renderEntry(entry)}
                         </div>
@@ -2032,7 +2032,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
                                 ref={measureHistoryElement}
                                 data-turn-entry={entry.key}
                                 style={{ opacity: tanstackVirtualizer.itemSizeCache.has(entry.key) ? undefined : 0 }}
-                                className="oc-chat-message-layout-boundary"
+                                className="yuri-chat-message-layout-boundary"
                             >
                                 {renderEntry(
                                     entry,
@@ -2078,7 +2078,7 @@ const TailEntry = React.memo<{
     activeStreamingPhase?: StreamPhase | null;
     reviewTransferDirection?: ReviewTransferDirection | null;
 }>((props) => (
-    <div className="oc-chat-message-layout-boundary">
+    <div className="yuri-chat-message-layout-boundary">
         <MessageListEntry {...props} />
     </div>
 ));

@@ -146,7 +146,7 @@ All notable changes to this project will be documented in this file.
 - 长对话滚动与消息悬停操作收敛开销：虚拟化只在激活瞬间测量一次已挂载行高度，悬停操作改为叶子级属性开关，滚动长对话不再整棵富文本重排。
 - 智能体与助手头像改为按身份、配色和动效缓存生成的矢量图，重复渲染不再重复生成，并有条数与内存上限。
 - 移动端底部智能体按钮与模型选择更紧凑，头像与名称间距、按钮宽度在窄屏下更省空间。
-- 桌面退出确认、系统托盘、连接服务器、Mini Chat 等界面文案统一为 OpenChamberY 品牌。
+- 桌面退出确认、系统托盘、连接服务器、Mini Chat 等界面文案统一为 Yuri 品牌。
 
 ### 修复
 
@@ -479,7 +479,7 @@ All notable changes to this project will be documented in this file.
 ### 新增
 
 - Android 支持独立于聊天页面的原生后台通知连接，接收当前服务器的任务完成、失败、提问、权限请求和助理消息；支持直连与加密 Relay 回退、断线重连及短时通知补收，通知标题跟随 App 语言。需更新 Android 安装包和 Host 服务。
-- 默认共享服务模式下，OpenChamber 新会话内置按需加载的定时任务入口，可将对话内容创建为当前项目的计划任务；自动处理鉴权并继承会话模型，无需手动安装 Skill 或填写凭据。
+- 默认共享服务模式下，Yuri 新会话内置按需加载的定时任务入口，可将对话内容创建为当前项目的计划任务；自动处理鉴权并继承会话模型，无需手动安装 Skill 或填写凭据。
 - 为 Xiaomi MiMo 模型添加品牌识别与图标，并与 MiniMax 正确区分。
 
 ### 改进
@@ -644,7 +644,7 @@ All notable changes to this project will be documented in this file.
 
 ### 新增
 
-- 默认共享服务模式下，OpenChamber 新会话内置按需加载的定时任务入口，可将对话内容创建为当前项目的计划任务；自动处理鉴权并继承会话模型，无需手动安装 Skill 或填写凭据。
+- 默认共享服务模式下，Yuri 新会话内置按需加载的定时任务入口，可将对话内容创建为当前项目的计划任务；自动处理鉴权并继承会话模型，无需手动安装 Skill 或填写凭据。
 
 ### 改进
 
@@ -761,7 +761,7 @@ All notable changes to this project will be documented in this file.
 ### 修复
 
 - 修复 Magpie 提前返回结果后，打开用量菜单未加载其他服务商的问题；发现不完整时保留已有读数。
-- 移除用量菜单底部的停止 OpenChamber 入口。
+- 移除用量菜单底部的停止 Yuri 入口。
 
 ## [2.0.10-beta.9] - 2026-10-18
 
@@ -1164,7 +1164,7 @@ All notable changes to this project will be documented in this file.
 
 ### 新增
 
-- 桌面支持 UI 与本地 OpenChamber 后端一起 OTA 更新，下载后重启生效；不兼容当前桌面壳时，在应用内下载完整安装包并重启安装，无需跳转 GitHub。首次使用后端 OTA 需安装本版桌面客户端。
+- 桌面支持 UI 与本地 Yuri 后端一起 OTA 更新，下载后重启生效；不兼容当前桌面壳时，在应用内下载完整安装包并重启安装，无需跳转 GitHub。首次使用后端 OTA 需安装本版桌面客户端。
 - 桌面设置新增「关于」页面，统一提供版本信息、检查更新、Beta 通道、问题反馈、诊断日志及导出，并支持设置搜索；移除系统「关于」弹窗中重复的诊断入口。
 
 ### 修复与改进
@@ -1272,7 +1272,7 @@ All notable changes to this project will be documented in this file.
 
 ### 修复
 
-- 启动时不再自动弹出「关于 OpenChamber」窗口。
+- 启动时不再自动弹出「关于 Yuri」窗口。
 
 ## [2.0.3] - 2026-10-09
 
@@ -1284,7 +1284,7 @@ All notable changes to this project will be documented in this file.
 
 ### 修复与改进
 
-- 恢复隐藏 `[Scheduled]`、`[Assistant]`、`[openchamber-llm]` 标记的后台会话，兼容缺少元数据的旧记录，不再占用对话列表名额。
+- 恢复隐藏 `[Scheduled]`、`[Assistant]`、`[yuri-llm]` 标记的后台会话，兼容缺少元数据的旧记录，不再占用对话列表名额。
 - 后台会话运行、重试和结束时不再改变项目顺序；会话更名或补齐后台标记后也会及时移出普通列表。
 - 移动端计划编辑页将启用开关改为标题右侧的 Switch，保存改为顶部更多菜单左侧的勾选图标，移除底部保存浮条。
 - 移动端、折叠态及 iOS 原生输入框统一使用与 PC 相同的完整提示语，保留引用、命令和 Shell 操作提示。
@@ -1308,7 +1308,7 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.0] - 2026-10-08
 
-OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
+Yuri 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### OpenCode 2
 
@@ -1400,7 +1400,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 会话标题
 
-- OpenChamber 生成的标题和手动重命名持久化为权威标题，并同步写入 OpenCode 会话；原生标题迟到覆盖时自动纠正，重启与重连后恢复同步。
+- Yuri 生成的标题和手动重命名持久化为权威标题，并同步写入 OpenCode 会话；原生标题迟到覆盖时自动纠正，重启与重连后恢复同步。
 - 手动改名优先于正在生成的旧结果，分叉会话不继承父会话的标题锁定；同步失败保留目标标题并自动重试。
 
 ### 移动搜索与对话展示
@@ -1705,7 +1705,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 ### OpenCode 2
 
 - 对接官方 OpenCode 2.0.12。命令名是 `opencode`，`opencode2` 只是别名。
-- 优先复用本机已安装的 2.x，没有才安装到 OpenChamber 自己的目录。不会覆盖 PATH 上的 1.x `opencode`。
+- 优先复用本机已安装的 2.x，没有才安装到 Yuri 自己的目录。不会覆盖 PATH 上的 1.x `opencode`。
 - 启动时复用 4096 上已有的健康 2.x serve。别人的进程只挂上去用，不重启、不杀掉、不升级。1.x serve 不会被顶掉。
 - 环境里如果还指着 1.x 或旧的 `opencode2` 0.x，会跳过并改用已安装的 2.x，不再把整个启动判死。
 - OpenCode 还在启动时，Loading 显示「正在启动 OpenCode API…」。
@@ -1713,7 +1713,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 目标模式
 
-- Goal 状态改存在 OpenChamber 自己的会话记录里，不再依赖 OpenCode 的 session metadata。
+- Goal 状态改存在 Yuri 自己的会话记录里，不再依赖 OpenCode 的 session metadata。
 - 定时任务开启目标后，会写入同一份记录，进度可以被追踪。
 
 ## [1.19.22-beta.1] - 2026-09-23
@@ -1860,7 +1860,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 定时任务
 
-- 同一条定时任务在多个 OpenChamber 进程同时运行时，到点只会触发一次。
+- 同一条定时任务在多个 Yuri 进程同时运行时，到点只会触发一次。
 
 ## [1.19.17-beta.3] - 2026-09-16
 
@@ -1884,7 +1884,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 定时任务
 
-- 同一条定时任务在多个 OpenChamber 进程同时运行时，到点只会触发一次。
+- 同一条定时任务在多个 Yuri 进程同时运行时，到点只会触发一次。
 
 ## [1.19.16] - 2026-09-13
 
@@ -2117,7 +2117,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 通知
 
-- iOS Live Activity 后台刷新：App 被挂起或杀掉后，服务器每 30 秒按权威会话状态重算 Live Activity 快照，仅在内容实际变化时推送更新（busy/retry 状态变化、新出现的可见会话、遗漏的完成、stale 恢复）；无变化不推送，节省 APNs 每小时更新预算。`OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS` 可调，`0` 关闭。
+- iOS Live Activity 后台刷新：App 被挂起或杀掉后，服务器每 30 秒按权威会话状态重算 Live Activity 快照，仅在内容实际变化时推送更新（busy/retry 状态变化、新出现的可见会话、遗漏的完成、stale 恢复）；无变化不推送，节省 APNs 每小时更新预算。`YURI_LIVE_ACTIVITY_REFRESH_INTERVAL_MS` 可调，`0` 关闭。
 - 定时任务通知：计划触发的任务运行在成功或失败时通知全通道（桌面 / 界面 / Web Push / APNs）；手动「立即运行」不通知。APNs 使用本地化场景标题（10 语言），失败详情只进桌面与 Web Push，不经过推送中继。
 - 通知开关补全：新增「权限请求」「定时任务」「助手消息」「目标结算」四个独立开关（默认开启，设置 → 通知 → 事件）。助手消息不再跟随「任务完成」开关，权限通知不再跟随「问题」开关。
 
@@ -2191,7 +2191,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 - 「开新对话 / 清除记忆」只清空模型上下文，聊天记录仍保留；「清空聊天记录」才真正删除 transcript，且须用户明确授权，模型不能自行删记录。
 - 清除记忆的水位按当前轮用户消息 ordinal 截断，不会吞掉排队中已 admit 的后续用户消息；清记忆后本轮立即结束。
-- LLM 网关提示改为说明应用侧工具（含 openchamber-tool fence）由应用执行，避免生成器把自己当成无文本回复。
+- LLM 网关提示改为说明应用侧工具（含 yuri-tool fence）由应用执行，避免生成器把自己当成无文本回复。
 
 ### 桌面
 
@@ -2215,23 +2215,23 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 通知
 
-- 过滤内部 LLM 网关会话（如 `[openchamber-llm] generate`）的完成/提问/权限推送，避免侧栏不可见会话仍推到 iOS、桌面、Web 与 VS Code。
+- 过滤内部 LLM 网关会话（如 `[yuri-llm] generate`）的完成/提问/权限推送，避免侧栏不可见会话仍推到 iOS、桌面、Web 与 VS Code。
 
 ### 会话
 
-- 修复 Markstream 里 language=text 的围栏代码块（ASCII 树、纯文本）空白：语言键与段落节点键冲突时改走 OpenChamber 代码卡片。
+- 修复 Markstream 里 language=text 的围栏代码块（ASCII 树、纯文本）空白：语言键与段落节点键冲突时改走 Yuri 代码卡片。
 
 ## [1.19.8-beta.10] - 2026-09-08
 
 ### 会话
 
-- 修复 Markstream 里 language=text 的围栏代码块（ASCII 树、纯文本）空白：语言键与段落节点键冲突时改走 OpenChamber 代码卡片。
+- 修复 Markstream 里 language=text 的围栏代码块（ASCII 树、纯文本）空白：语言键与段落节点键冲突时改走 Yuri 代码卡片。
 
 ## [1.19.8-beta.9] - 2026-09-08
 
 ### 通知
 
-- 过滤内部 LLM 网关会话（如 `[openchamber-llm] generate`）的完成/提问/权限推送，避免侧栏不可见会话仍推到 iOS、桌面、Web 与 VS Code。
+- 过滤内部 LLM 网关会话（如 `[yuri-llm] generate`）的完成/提问/权限推送，避免侧栏不可见会话仍推到 iOS、桌面、Web 与 VS Code。
 
 ## [1.19.8] - 2026-09-07
 
@@ -2868,8 +2868,8 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 其它
 
-- 自托管 Relay 支持推送，并提供 `openchamber-push-relay`。
-- 命令行也可安装为 `openchambery`。
+- 自托管 Relay 支持推送，并提供 `yuri-push-relay`。
+- 命令行也可安装为 `yuri`。
 - 凭证同步改成配置同步里的可选项。
 
 ## [1.19.0-beta.42] - 2026-09-02
@@ -2881,8 +2881,8 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### Changed
 
-- The global CLI also installs as `openchambery`.
-- Product README presents OpenChamberY and current mobile screens.
+- The global CLI also installs as `yuri`.
+- Product README presents Yuri and current mobile screens.
 
 ## [1.19.0-beta.41] - 2026-09-01
 
@@ -2930,7 +2930,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### Added
 
-- `@openchambery/relay-server` exposes a push-relay package entry and `openchamber-push-relay` CLI; Relay-only releases use the `relay/v*` tag path without desktop or mobile installers.
+- `@yuri/relay-server` exposes a push-relay package entry and `yuri-push-relay` CLI; Relay-only releases use the `relay/v*` tag path without desktop or mobile installers.
 
 ## [1.19.0-beta.36] - 2026-08-31
 
@@ -3502,13 +3502,13 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 远程实例（SSH + Private Relay）
 
-- **SSH 远程自行托管 Relay：** managed SSH 启动的 `openchamber serve` 以 `OPENCHAMBER_RUNTIME=ssh-remote` 运行，并带 `--relay-host`；remote 进程本身成为 private relay host（与 desktop 同级），手机 / 另一台电脑用普通 pairing 直连该 remote，不再经桌面中继。
+- **SSH 远程自行托管 Relay：** managed SSH 启动的 `yuri serve` 以 `YURI_RUNTIME=ssh-remote` 运行，并带 `--relay-host`；remote 进程本身成为 private relay host（与 desktop 同级），手机 / 另一台电脑用普通 pairing 直连该 remote，不再经桌面中继。
 - **按远程 CLI 能力门控 `--relay-host`：** 连上远程后先探测 CLI 是否支持 `--relay-host`，旧版本会自动省略该 flag，避免「新桌面配旧远程」时命令直接失败。
 - **复用旧 web serve 时自动重启为 relay host：** 已在跑、但 runtime 不是 `ssh-remote`/`desktop` 的 managed 实例会先停再按新命令拉起，避免「连上了却 relayAvailable=false」。
 - **更细的启动错误分类：** 远程 CLI 缺失、npm registry 不可达、CLI 版本过旧不再都归入「安装失败」，各自给出对应的排查指引。
 - **桌面 SSH host 挂上 relay 描述符：** 连接成功后把 remote 的 `serverId` / `hostEncPubJwk` 写进该 host，SSH 隧道断开后桌面可走 relay 回连；手机配对仍在该 remote 的「添加设备」里生成普通 pairing。
 - **SSH 默认开启 remote relay host：** 新建/已有 managed 实例默认 `relayHost: true`（可显式关掉）；连接时带 `--relay-host`，并在连上后写入 relay 描述符。
-- **移除 desktop 中继 SSH 路径：** 删除 `x-openchamber-target-port` 路由、`/api/openchamber/ssh-host-token`、`sshTarget` / `viaSshRelay` / pairing `sshHostId`。桌面本机仍可通过 SSH local-forward（apiUrl + clientToken）访问该实例。
+- **移除 desktop 中继 SSH 路径：** 删除 `x-yuri-target-port` 路由、`/api/yuri/ssh-host-token`、`sshTarget` / `viaSshRelay` / pairing `sshHostId`。桌面本机仍可通过 SSH local-forward（apiUrl + clientToken）访问该实例。
 
 ## [1.18.4-beta.6] - 2026-08-25
 
@@ -4025,7 +4025,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 移动端
 
-- **OTA 更新通道国内入口就绪：** `openchamber.xiaobe.top` 现通过边缘反向代理实时跟随权威更新源——渠道清单 60 秒边缘缓存、更新包内容寻址永久缓存，国内设备检查更新与下载包全程走 EdgeOne CDN，发布后无需任何手动同步。
+- **OTA 更新通道国内入口就绪：** `updates-mirror.example.com` 现通过边缘反向代理实时跟随权威更新源——渠道清单 60 秒边缘缓存、更新包内容寻址永久缓存，国内设备检查更新与下载包全程走 EdgeOne CDN，发布后无需任何手动同步。
 - **字体按物理尺寸渲染（pt 基准）：** 移动端引入 design-pt 缩放管线，字号以物理点为单位换算，不同屏幕密度下视觉大小一致。
 
 ## [1.18.2-beta.29] - 2026-08-22
@@ -4140,7 +4140,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 会话
 
-- **置顶改为服务端全局同步：** 置顶状态从各设备浏览器本地存储迁移到 OpenChamber server（session-index SQLite `pinned_at`，目录重建时随行保留），PC 与移动端连接同一 server 后置顶集合实时互通（复用 session-index revision + SSE 变更推送，其他设备自动重取快照）。置顶/取消走乐观更新，失败回滚并提示。排序保持「置顶优先 + 创建时间倒序」，会话归档即自动取消置顶；本地置顶 store 与失效 ID 剪枝逻辑退役，旧本地数据不迁移、以服务端为准。external OpenCode 直连、VS Code 及连接非 OpenChamber server 的移动端不提供置顶（入口静默无效）。
+- **置顶改为服务端全局同步：** 置顶状态从各设备浏览器本地存储迁移到 Yuri server（session-index SQLite `pinned_at`，目录重建时随行保留），PC 与移动端连接同一 server 后置顶集合实时互通（复用 session-index revision + SSE 变更推送，其他设备自动重取快照）。置顶/取消走乐观更新，失败回滚并提示。排序保持「置顶优先 + 创建时间倒序」，会话归档即自动取消置顶；本地置顶 store 与失效 ID 剪枝逻辑退役，旧本地数据不迁移、以服务端为准。external OpenCode 直连、VS Code 及连接非 Yuri server 的移动端不提供置顶（入口静默无效）。
 
 ## [1.18.2-beta.14] - 2026-08-22
 
@@ -4237,7 +4237,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 - **同步方向可选：** 同步向导先选方向——「本地 → 远端」或「远端 → 本地」；每次切换方向都会丢弃旧差异并重新计算，确认前不产生任何写入。拉取同样先展示远端清单与覆盖预览，再应用。
 - **同步范围可勾选：** 向导按配置文件组（互斥组只保留赢家）、完整目录、Agent skills（`~/.agents`）与凭据逐项勾选，选择贯穿预览、删除计划与应用。
-- **支持更多目标：** 除托管 SSH 实例外，可直连的 OpenChamber 实例与已配对的 relay 对端也能同步；直连与 relay 走服务端同步协议，relay 经端到端加密隧道并固定对端身份（`serverId` 变化即拒绝，不回落）。
+- **支持更多目标：** 除托管 SSH 实例外，可直连的 Yuri 实例与已配对的 relay 对端也能同步；直连与 relay 走服务端同步协议，relay 经端到端加密隧道并固定对端身份（`serverId` 变化即拒绝，不回落）。
 - **凭据传输需要显式授权：** 能访问目标不再意味着能传 token。`auth.json` 默认跳过；必须在实例 / 主机设置等信任渠道授予「凭据同步」授权后才可勾选，预览与执行双层强制，授权可随时撤销。
 - **分代备份与运行记录：** 每次同步按运行分代备份（保留近 5 代，失败保留现场），覆盖前远端 / 本地各自留档；每个目标保留最近 20 次同步结果，实例页可查看。
 - **配置写入更稳：** 桌面端 settings 读写统一走串行链（含进程内 web server），并发更新不再互相覆盖。
@@ -4259,7 +4259,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 ### SSH 远程实例
 
 - **全新远程机自动初始化：** 托管 SSH 会话现在会在命令级别发现 Node.js 22+、补全 bun / npm 全局 bin 路径，并自动安装与桌面端固定 OpenCode CLI 版本一致的 OpenCode。
-- **原生数据库绑定自动修复：** OpenChamber 检测到 `better-sqlite3` 与选定 Node ABI 不匹配时会重建绑定，覆盖新开发机默认 Node / 编译工具链不兼容导致的启动失败。
+- **原生数据库绑定自动修复：** Yuri 检测到 `better-sqlite3` 与选定 Node ABI 不匹配时会重建绑定，覆盖新开发机默认 Node / 编译工具链不兼容导致的启动失败。
 
 ## [1.18.0] - 2026-08-21
 
@@ -4389,18 +4389,18 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 远程实例（SSH + Private Relay 打通）
 
-- **手机经 Relay 访问 SSH 远程实例：** Relay 隧道分发器支持按请求头 `x-openchamber-target-port` 在已就绪的 SSH 会话端口间路由（HTTP 与 WebSocket），未命中路由表返回 503 不回退桌面数据；读取/缓存按目标端口隔离。
+- **手机经 Relay 访问 SSH 远程实例：** Relay 隧道分发器支持按请求头 `x-yuri-target-port` 在已就绪的 SSH 会话端口间路由（HTTP 与 WebSocket），未命中路由表返回 503 不回退桌面数据；读取/缓存按目标端口隔离。
 - **PC 端为 SSH 实例生成配对二维码：** 「添加设备」弹窗新增目标实例 tab（本机 + 已连接 SSH 实例），SSH 实例行新增「手机连接」按钮直接预选；多台手机可各自配对同一 SSH 实例（多对多）。
 - **手机扫码直达 SSH 实例：** 扫码后存为一条普通连接（带 SSH 徽章，副标题注明「经桌面中继 · 需桌面在线」），连接时自动现查路由端口，SSH 重连换端口无需重新配对；SSH 不可达时降级存为桌面连接并提示。
 - **另一台电脑导入 SSH 连接：** 桌面端「导入连接链接」支持带 SSH 目标的配对链接，存为带 `sshTarget` 的 relay host；启动恢复与切换同样走目标端口路由。
 - **凭据链修复：** SSH 目标连接统一携带 `desktopClientToken`（现查端口用桌面凭据、业务请求用 SSH 实例凭据），修复此前现查端口会被 401 拒绝的问题。
-- **token 下发绑定配对会话：** `POST /api/openchamber/ssh-host-token` 支持 `pairingId` 校验（仅已兑换且目标匹配的配对可换取 token），无绑定的旧调用放行并标记弃用。
+- **token 下发绑定配对会话：** `POST /api/yuri/ssh-host-token` 支持 `pairingId` 校验（仅已兑换且目标匹配的配对可换取 token），无绑定的旧调用放行并标记弃用。
 - **LAN 直连转发原语：** SSH 实例支持 `0.0.0.0` 固定端口转发（`lanForward` 配置 + `desktop_ssh_ensure_lan_forward`），SSH 重连自动重建（UI 开关与二维码 LAN 候选后续版本接入）。
 
 ### SSH 连接可靠性
 
 - **scp 风格地址支持：** `ssh root@host:36000` 形式自动拆分为 `-p 36000`；与显式 `-p` 冲突时报错，IPv6 裸地址不受影响；`-p` 写在目标之后（`ssh host -p 22`）也被接受。
-- **远程安装幂等：** npm 全局安装追加 `--force`，修复残留 bin 链接导致的 EEXIST 安装失败（CLI `openchamber update` 同步修复）。
+- **远程安装幂等：** npm 全局安装追加 `--force`，修复残留 bin 链接导致的 EEXIST 安装失败（CLI `yuri update` 同步修复）。
 - **SSH 失败可诊断：** ControlMaster 提前退出时错误信息附带 stderr 尾部，不再只有一句 "exited before ready"。
 
 ## [1.17.1] - 2026-08-20
@@ -4438,9 +4438,9 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### 平台与分发
 
-- **npm 包改到 `@openchambery`：** `@openchambery/web` 与 `@openchambery/relay-server` 随 GitHub Release 发布；安装脚本、CLI 更新和 SSH 远程预装都改用新包名。
+- **npm 包改到 `@yuri`：** `@yuri/web` 与 `@yuri/relay-server` 随 GitHub Release 发布；安装脚本、CLI 更新和 SSH 远程预装都改用新包名。
 - **移除 Cloudflare/ngrok 公网隧道：** 服务端 provider、CLI `tunnel` 命令、设置页 Tunnel 面板与文档站整套移除；远程访问统一收敛到配对链接、LAN 直连与 Private Relay，旧 `--tunnel` 标志改为报错并提示迁移。
-- **远程实例设置合并：** 「其他 OpenChamber 服务器」并入「远程实例」，添加方式收敛为「导入连接」与「添加 SSH」两种，以「链接 / SSH」徽章区分来源。
+- **远程实例设置合并：** 「其他 Yuri 服务器」并入「远程实例」，添加方式收敛为「导入连接」与「添加 SSH」两种，以「链接 / SSH」徽章区分来源。
 
 ### 其他
 
@@ -4461,11 +4461,11 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 - **多会话流式卡顿修复（SSE 批量合并）：** 同一刷新帧内同一会话的多个 transcript SSE 事件（`message.part.updated` / `message.updated` 等）现在只做一次全量 flatten/rebuild/freeze 与一次订阅通知，此前每个事件各付一次整棵 transcript 重建成本，多会话并发流式时（约 11 事件/秒 × 6 会话）主线程被打满导致界面死卡；批内事件按顺序应用、保留中间快照与去重语义，不违反 part.updated 保序契约；同帧内 payload 相同的冗余事件折叠后不再触发重建。
 
 - **移除 Cloudflare/ngrok 公网隧道：** 服务端 provider、CLI `tunnel` 命令、设置页 Tunnel 面板与文档站整套移除；远程访问统一收敛到配对链接、LAN 直连与 Private Relay，旧 `--tunnel` 标志改为报错并提示迁移；Relay 与 SSH 端口转发不受影响。
-- **远程实例设置合并：** 设置里的「其他 OpenChamber 服务器」并入「远程实例」，添加方式收敛为「导入连接」与「添加 SSH」两种，列表混排并以「链接 / SSH」徽章区分来源；旧手动添加的服务器不再展示（数据保留，不删除），Docker 镜像与安全文档同步去掉 cloudflared。
+- **远程实例设置合并：** 设置里的「其他 Yuri 服务器」并入「远程实例」，添加方式收敛为「导入连接」与「添加 SSH」两种，列表混排并以「链接 / SSH」徽章区分来源；旧手动添加的服务器不再展示（数据保留，不删除），Docker 镜像与安全文档同步去掉 cloudflared。
 
 ## [1.17.1-beta.7] - 2026-08-20
 
-- **npm 包改到 `@openchambery`：** `@openchambery/web` 与 `@openchambery/relay-server` 随 GitHub Release 发布；安装脚本、CLI 更新和 SSH 远程预装都改用新包名。
+- **npm 包改到 `@yuri`：** `@yuri/web` 与 `@yuri/relay-server` 随 GitHub Release 发布；安装脚本、CLI 更新和 SSH 远程预装都改用新包名。
 
 ## [1.17.1-beta.6] - 2026-08-20
 
@@ -4632,7 +4632,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 - **Transcript diagnostics:** new `transcript-diff` diagnostics event captures a canonical snapshot (message IDs, per-message part counts, slim/full distribution, optimistic markers) before and after every user send/edit/delete/refresh and every reconnect-compensation, materialize, and destructive-reset path, then derives the added/removed/downgraded/optimistic-lost diff. Snapshots carry no message text or attachment payloads; existing merge and compensation behavior is unchanged. Export via About → client diagnostics.
 - **Composer session mentions:** @-referenced sessions now ship a self-describing card with id, title, owning directory, and cached client messages, plus a verified read-only SQLite recipe the receiving assistant can use to look up the transcript itself. Empty `messages` arrays now signal a client cache miss (still retrievable) instead of masquerading as an empty session.
-- **Android save-file picker:** the Capacitor `OpenChamberMedia.saveFile` bridge now stages bytes in an app-private cache file before opening the system picker, avoiding Binder `TransactionTooLargeException` on large diagnostics exports, and uses `application/octet-stream` + `EXTRA_TITLE` so OEM DocumentsUI does not crash on confirm.
+- **Android save-file picker:** the Capacitor `YuriMedia.saveFile` bridge now stages bytes in an app-private cache file before opening the system picker, avoiding Binder `TransactionTooLargeException` on large diagnostics exports, and uses `application/octet-stream` + `EXTRA_TITLE` so OEM DocumentsUI does not crash on confirm.
 
 ## [1.17.0-beta.13] - 2026-08-18
 
@@ -4662,7 +4662,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.17.0-beta.7] - 2026-08-17
 
-- **Desktop image upload:** Electron can send prompt attachments again. The runtime CORS allowlist now includes the OpenChamber upload headers used from `openchamber-ui://app`.
+- **Desktop image upload:** Electron can send prompt attachments again. The runtime CORS allowlist now includes the Yuri upload headers used from `yuri-ui://app`.
 
 ## [1.17.0-beta.6] - 2026-08-17
 
@@ -4671,7 +4671,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.17.0-beta.5] - 2026-08-17
 
-- **Transcript load:** a missing parent message no longer blocks the whole conversation. Sessions that OpenCode can open now load in OpenChamber even if one assistant row points at a deleted user message.
+- **Transcript load:** a missing parent message no longer blocks the whole conversation. Sessions that OpenCode can open now load in Yuri even if one assistant row points at a deleted user message.
 
 ## [1.17.0-beta.4] - 2026-08-17
 
@@ -4855,7 +4855,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 - **Session todos:** after opening a session, fill the todo list from the latest loaded `todowrite`/`todoread` in the transcript when live `todo.updated` never arrived.
 - **Mobile Projects canvas:** share one page-background token between the app shell and tabs root, and keep the floating shell as a clip frame so short project lists no longer seam into plain `--background`.
 - **Sidebar contrast:** lift session-sidebar ink in dark mode so labels stay readable on charcoal / vibrancy surfaces.
-- **Mobile/Android pairing QR:** Google scan still runs first on devices with Play Services; if it fails to start, fall back to the bundled CameraX scanner so phones without GMS can pair. Old WebViews that misread `openchamber://` pairing links now parse the scanned string directly.
+- **Mobile/Android pairing QR:** Google scan still runs first on devices with Play Services; if it fails to start, fall back to the bundled CameraX scanner so phones without GMS can pair. Old WebViews that misread `yuri://` pairing links now parse the scanned string directly.
 
 ## [1.16.132-beta.8] - 2026-08-14
 
@@ -4890,7 +4890,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.132-beta.1] - 2026-08-14
 
-- **Mobile/Android pairing QR:** Google scan still runs first on devices with Play Services; if it fails to start, fall back to the bundled CameraX scanner so phones without GMS can pair. Old WebViews that misread `openchamber://` pairing links now parse the scanned string directly.
+- **Mobile/Android pairing QR:** Google scan still runs first on devices with Play Services; if it fails to start, fall back to the bundled CameraX scanner so phones without GMS can pair. Old WebViews that misread `yuri://` pairing links now parse the scanned string directly.
 
 ## [1.16.131] - 2026-08-14
 
@@ -4920,15 +4920,15 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.130] - 2026-08-13
 
-- **Android 12 launch crash:** move `OnBackAnimationCallback` / `OnBackInvokedCallback` out of `OpenChamberNavigationPlugin` into SDK-gated support classes so registering the plugin no longer class-loads Android 13/14-only `android.window.*` types on older devices.
+- **Android 12 launch crash:** move `OnBackAnimationCallback` / `OnBackInvokedCallback` out of `YuriNavigationPlugin` into SDK-gated support classes so registering the plugin no longer class-loads Android 13/14-only `android.window.*` types on older devices.
 
 ## [1.16.130-beta.1] - 2026-08-13
 
-- **Android 12 launch crash:** move `OnBackAnimationCallback` / `OnBackInvokedCallback` out of `OpenChamberNavigationPlugin` into SDK-gated support classes so registering the plugin no longer class-loads Android 13/14-only `android.window.*` types on older devices.
+- **Android 12 launch crash:** move `OnBackAnimationCallback` / `OnBackInvokedCallback` out of `YuriNavigationPlugin` into SDK-gated support classes so registering the plugin no longer class-loads Android 13/14-only `android.window.*` types on older devices.
 
 ## [1.16.129] - 2026-08-12
 
-- **Android package identity:** change release `applicationId` to `com.yee94.openchamber` (debug: `com.yee94.openchamber.debug`) so the fork no longer collides with upstream `com.openchamber.app` installs that use a different signing key. Uninstall any older `com.openchamber.app` build before installing this APK.
+- **Android package identity:** change release `applicationId` to `com.yee94.yuri` (debug: `com.yee94.yuri.debug`) so the fork no longer collides with upstream `com.yee94.yuri` installs that use a different signing key. Uninstall any older `com.yee94.yuri` build before installing this APK.
 - **Windows: agent turns end reliably.** An agent turn no longer leaves the composer stuck in a busy state: benign durable-sync replica frames no longer tear down the WebSocket stream, a single unreadable frame can no longer wedge reconnect resume, and directory spellings that differ by drive-letter case or separators converge on the same session store so `session.idle` always reaches the composer.
 - **Windows: queued follow-ups are admitted again.** Queue admission, ledger keys, chip scope matching, and server-queue scope lookup now address the canonical directory, so one project resolves to one queue whichever win32/canonical spelling a caller holds.
 - **Path normalization hardening:** directory identity keys now canonicalize Windows drive-letter case and separator spellings, and read-only session status hooks no longer provision a directory store on a miss.
@@ -4961,7 +4961,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.129-beta.1] - 2026-08-12
 
-- **Android package identity:** change release `applicationId` to `com.yee94.openchamber` (debug: `com.yee94.openchamber.debug`) so the fork no longer collides with upstream `com.openchamber.app` installs that use a different signing key. Uninstall any older `com.openchamber.app` build before installing this APK.
+- **Android package identity:** change release `applicationId` to `com.yee94.yuri` (debug: `com.yee94.yuri.debug`) so the fork no longer collides with upstream `com.yee94.yuri` installs that use a different signing key. Uninstall any older `com.yee94.yuri` build before installing this APK.
 
 ## [1.16.128] - 2026-08-12
 
@@ -5005,7 +5005,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 - **Desktop new window black screen fix:** remove `setVisualZoomLevelLimits(-3, 5)` which broke the macOS compositor surface (0×0 layout viewport, fully opaque/blank paint) on Electron 41 additional windows; first window only survived because splash → app navigation reset the broken state.
 - **Desktop window boot reliability:** per-key init-script assignment so contextBridge read-only globals no longer abort boot-outcome injection (fixes New Window / re-shown windows stuck on splash); boot outcome pushed through preload for host switches.
 - **Desktop single-main-window semantics:** app-level broadcasts (deep links, notification clicks, updater/SSH/installed-apps events, system resume) now route to the main window only; closing the main window promotes the next surviving primary window in creation order.
-- **electron:dev environment isolation:** strip production/preview `OPENCHAMBER_*` / `OPENCODE_*` env leakage (UI password, dist dir, runtime flags) from HMR children so dev API no longer 401s.
+- **electron:dev environment isolation:** strip production/preview `YURI_*` / `OPENCODE_*` env leakage (UI password, dist dir, runtime flags) from HMR children so dev API no longer 401s.
 - **Desktop menu/dock:** New Window accelerator restored to Cmd/Ctrl+Shift+N, New Worktree entry removed, "Add Workspace" → "Add Project", and a dock menu (New Window / New Session / New Mini Chat).
 - **File mention autocomplete:** move state derivation into a focused `fileMentionAutocompleteState.ts` module with tests.
 - **Desktop host switch:** extract desktop host switch mutation/query helpers with tests.
@@ -5223,7 +5223,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 ## [1.16.117] - 2026-08-04
 
 - **Relay Markdown images:** load local image references through the encrypted binary tunnel on first paint, so screenshots and other agent-produced image artifacts render directly on paired clients.
-- **Native Relay images:** stream host-backed images through an opaque virtual asset protocol on desktop and mobile (Electron `openchamber-asset` scheme + Capacitor bridge), so progressive tunnel images load without exposing host paths or credentials.
+- **Native Relay images:** stream host-backed images through an opaque virtual asset protocol on desktop and mobile (Electron `yuri-asset` scheme + Capacitor bridge), so progressive tunnel images load without exposing host paths or credentials.
 - **Chat history:** preserve current-session transcript content while older history pages load, with transport-aware turn windows and safer hosted Assistant transcript reconciliation.
 - **Chat tool activity:** render each static tool call on its own row, keep pre-assistant compaction disclosure expandable, and seed task avatars by task id.
 - **Queued message chips:** improve chip state handling for pending composer messages.
@@ -5252,7 +5252,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 - **Session identity gate:** primary chat unblocks Send once a renderable message snapshot exists, even if the directory session-list row is still lagging; live/global session entity is a second proof path.
 - **Model picker tooltip:** show provider name, capability icons (tools / reasoning / image / video / audio), and stacked In/Out cost rows instead of raw modality text dumps.
 - **Sync:** initial session materialization uses the turn-page limit (`getInitialSessionTurnLimit`) so bootstrap page size matches history pagination.
-- **Desktop branding:** refresh packaged `icon.ico` / `icon.png` assets for the dark OpenChamber mark.
+- **Desktop branding:** refresh packaged `icon.ico` / `icon.png` assets for the dark Yuri mark.
 
 ## [1.16.114] - 2026-08-03
 
@@ -5306,7 +5306,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.106] - 2026-08-01
 
-- **Mobile updates:** Android and iOS Capacitor clients now check for app updates directly against EdgeOne, then Vercel, then GitHub Releases, using the native app version instead of the connected OpenChamber Server’s network and version.
+- **Mobile updates:** Android and iOS Capacitor clients now check for app updates directly against EdgeOne, then Vercel, then GitHub Releases, using the native app version instead of the connected Yuri Server’s network and version.
 
 ## [1.16.105] - 2026-08-01
 
@@ -5318,7 +5318,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.103] - 2026-08-01
 
-- **Update service:** restore the EdgeOne transition feed for already-installed clients still pointed at `openchamber-update.edgeone.dev`, sharing the same stable release manifest and GitHub assets as Vercel.
+- **Update service:** restore the EdgeOne transition feed for already-installed clients still pointed at `updates-legacy.example.com`, sharing the same stable release manifest and GitHub assets as Vercel.
 - **Update service:** route EdgeOne desktop updater manifests through one dynamic handler so every `latest*.yml` path resolves without per-file edge routes.
 - **Release CI:** keep TestFlight submission-limit deferrals from blocking GitHub Release finalize.
 - **Sessions sidebar:** rename the sidebar new-conversation entry to “New chat” and wire it to the correct label key instead of the schedule copy.
@@ -5334,7 +5334,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.100] - 2026-08-01
 
-- **Update service:** move the public auto-update API and desktop Electron updater feed from EdgeOne Pages to Vercel (`openchamber-update.vercel.app`), removing the EdgeOne project layout and fixing mainland check-update failures that returned HTTP 401.
+- **Update service:** move the public auto-update API and desktop Electron updater feed from EdgeOne Pages to Vercel (`updates.example.com`), removing the EdgeOne project layout and fixing mainland check-update failures that returned HTTP 401.
 
 ## [1.16.99] - 2026-07-31
 
@@ -5383,7 +5383,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 - **Sessions sidebar:** keep the project display-mode menu beside the add-project action, and align “New Session” copy across mobile/desktop entry points.
 - **Mobile share:** native Assistant shortcuts and iOS share suggestions use the Assistant display name and emoji/identicon avatar.
 - **Git worktrees:** skip double-wrapping already-gated web/mobile discovery bridges so concurrent worktree listings no longer deadlock the discovery semaphore.
-- **Branding:** use the dark OpenChamber mark for desktop production icons (without the PREVIEW badge), iOS AppIcon/splash, and Android launcher/splash assets.
+- **Branding:** use the dark Yuri mark for desktop production icons (without the PREVIEW badge), iOS AppIcon/splash, and Android launcher/splash assets.
 - **Desktop branding:** force the macOS Icon Composer `AppIcon` (`Assets.car`) to the dark mark in light, dark, and tinted appearances so Dock no longer switches back to the light glyph.
 - **Desktop packaging:** regenerate a multi-size Windows `icon.ico` (includes 256×256) so electron-builder packaging succeeds after the dark-logo refresh.
 - **Android branding:** regenerate adaptive-icon cube-only foreground mipmaps and use a full-bleed dark gradient background drawable so launchers no longer stack a finished icon card over the adaptive background; render share-shortcut avatars on transparent canvases.
@@ -5423,7 +5423,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.94-beta.3] - 2026-07-31
 
-- **Branding:** use the dark OpenChamber mark for desktop production icons (without the PREVIEW badge), iOS AppIcon/splash, and Android launcher/splash assets.
+- **Branding:** use the dark Yuri mark for desktop production icons (without the PREVIEW badge), iOS AppIcon/splash, and Android launcher/splash assets.
 
 ## [1.16.94-beta.2] - 2026-07-31
 
@@ -5458,7 +5458,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.89] - 2026-07-30
 
-- **Mobile About:** show the installed native client version separately from the connected OpenChamber and OpenCode instance versions, and use the native version for mobile update checks.
+- **Mobile About:** show the installed native client version separately from the connected Yuri and OpenCode instance versions, and use the native version for mobile update checks.
 
 ## [1.16.88] - 2026-07-30
 
@@ -5471,8 +5471,8 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.86] - 2026-07-30
 
-- **macOS signed desktop:** give Electron helper processes their own hardened-runtime JIT entitlements so notarized DMGs no longer crash in `OpenChamber Helper (Renderer)` during V8 startup.
-- **Desktop updates:** allow the packaged UI to check, download, and apply desktop updates independently of the active OpenChamber host connection, while still keeping generic remote `desktop_restart` blocked.
+- **macOS signed desktop:** give Electron helper processes their own hardened-runtime JIT entitlements so notarized DMGs no longer crash in `Yuri Helper (Renderer)` during V8 startup.
+- **Desktop updates:** allow the packaged UI to check, download, and apply desktop updates independently of the active Yuri host connection, while still keeping generic remote `desktop_restart` blocked.
 - **Relay Docker:** build `linux/amd64` and `linux/arm64` images natively in parallel, then merge digests into the multi-arch `:version` and `:latest` manifests.
 
 ## [1.16.85] - 2026-07-29
@@ -5488,7 +5488,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 ## [1.16.83] - 2026-07-29
 
 - **Apple release signing:** configure Developer ID signing and notarization for macOS desktop builds, and App Store distribution signing for iOS TestFlight (main app, Widget, Notification Service, Share Extension).
-- **iOS App Group:** link `group.com.yee94.openchamber` across all App Store targets and regenerate provisioning profiles so archive and export succeed.
+- **iOS App Group:** link `group.com.yee94.yuri` across all App Store targets and regenerate provisioning profiles so archive and export succeed.
 - **iOS App Store upload:** declare the full iPad interface orientation set required for multitasking review.
 - **Release pipeline:** include iOS TestFlight upload in the formal GitHub Release workflow alongside desktop, Android, VS Code, and Relay.
 
@@ -5508,12 +5508,12 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ## [1.16.79] - 2026-07-29
 
-- **Relay pairing:** choose official or custom `ws://` / `wss://` Relay endpoints when creating device QR codes, pin server-side endpoints with `OPENCHAMBER_RELAY_URL`, and remember the endpoint from scanned pairing payloads.
+- **Relay pairing:** choose official or custom `ws://` / `wss://` Relay endpoints when creating device QR codes, pin server-side endpoints with `YURI_RELAY_URL`, and remember the endpoint from scanned pairing payloads.
 - **Relay packaging:** publish Relay Docker images on release, document remote `docker-compose` deployment, and keep repository artifacts free of personal domains or machine paths.
 - **Session message pages:** use one 30-message page size for bootstrap, history, recovery, and materialization on every surface, including private Relay tunnels.
 - **Mobile composer keyboard:** only the bottom chat composer arms keyboard lift; question cards and other fields no longer move chrome.
 - **Draft branch picker:** keep branch lists scoped to the project root so switching worktrees does not drop a warm list while git probes settle.
-- **Desktop Preview:** share the machine OpenCode config and session store with release/CLI while still isolating OpenChamber app data.
+- **Desktop Preview:** share the machine OpenCode config and session store with release/CLI while still isolating Yuri app data.
 
 ## [1.16.78-beta.1] - 2026-07-29
 

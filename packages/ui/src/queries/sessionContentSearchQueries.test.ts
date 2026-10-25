@@ -42,7 +42,7 @@ describe('searchSessionContent', () => {
       fetch,
     });
 
-    expect(fetch).toHaveBeenCalledWith('/api/openchamber/content-search', {
+    expect(fetch).toHaveBeenCalledWith('/api/yuri/content-search', {
       query: {
         q: 'retry budget',
         limit: String(SESSION_CONTENT_SEARCH_LIMIT),
@@ -77,7 +77,7 @@ describe('sessionContentIndexStatusOptions', () => {
     const options = sessionContentIndexStatusOptions(fetch);
     const signal = new AbortController().signal;
     expect(await options.queryFn?.({ signal } as never)).toEqual(index);
-    expect(fetch).toHaveBeenCalledWith('/api/openchamber/content-search', { signal });
+    expect(fetch).toHaveBeenCalledWith('/api/yuri/content-search', { signal });
   });
 
   test('distinguishes unsupported, legacy progress, failure and malformed coverage', async () => {

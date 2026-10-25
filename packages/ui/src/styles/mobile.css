@@ -5,138 +5,138 @@
   --is-mobile: 0;
   --device-type: "desktop";
   --font-scale: 1;
-  --oc-mobile-detail-title-size: 0.9375rem;
-  --oc-mobile-detail-subtitle-size: 0.625rem;
+  --yuri-mobile-detail-title-size: 0.9375rem;
+  --yuri-mobile-detail-subtitle-size: 0.625rem;
   /* Content-driven title bar height rides the density chain; the back button
      inside keeps its own fixed touch size. */
-  --oc-mobile-detail-navigation-height: calc(3.5rem * var(--padding-scale, 1));
-  --oc-mobile-detail-action-edge-inset: 1rem;
+  --yuri-mobile-detail-navigation-height: calc(3.5rem * var(--padding-scale, 1));
+  --yuri-mobile-detail-action-edge-inset: 1rem;
   /* Shared overlay/collapsing-header fade. Strong enough to read the
      title over scrolling transcript, still open at the bottom edge. */
-  --oc-mobile-header-fade: color-mix(
+  --yuri-mobile-header-fade: color-mix(
     in srgb,
     var(--surface-background) 85%,
     transparent
   );
   /* Glass tokens live on :root so slash catalogs and other overlays still
-     resolve a fill when they are not under .oc-mobile-floating-shell.
-     An undefined --oc-mobile-glass-fill paints a hole. */
-  --oc-mobile-glass-fill: rgb(255 255 255 / 0.68);
-  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.6);
-  --oc-mobile-glass-blur: 20px;
-  --oc-mobile-glass-saturate: 1.25;
-  --oc-mobile-glass-shadow:
+     resolve a fill when they are not under .yuri-mobile-floating-shell.
+     An undefined --yuri-mobile-glass-fill paints a hole. */
+  --yuri-mobile-glass-fill: rgb(255 255 255 / 0.68);
+  --yuri-mobile-glass-highlight: rgb(255 255 255 / 0.6);
+  --yuri-mobile-glass-blur: 20px;
+  --yuri-mobile-glass-saturate: 1.25;
+  --yuri-mobile-glass-shadow:
     0 0 2px rgb(0 0 0 / 0.05),
     0 0 12px rgb(0 0 0 / 0.06),
     0 8px 20px -6px rgb(0 0 0 / 0.12),
-    inset 0 1px 0 var(--oc-mobile-glass-highlight);
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight);
 }
 
 .dark {
-  --oc-mobile-glass-fill: rgb(38 38 44 / 0.66);
-  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.18);
-  --oc-mobile-glass-blur: 20px;
-  --oc-mobile-glass-saturate: 1.2;
-  --oc-mobile-glass-shadow:
+  --yuri-mobile-glass-fill: rgb(38 38 44 / 0.66);
+  --yuri-mobile-glass-highlight: rgb(255 255 255 / 0.18);
+  --yuri-mobile-glass-blur: 20px;
+  --yuri-mobile-glass-saturate: 1.2;
+  --yuri-mobile-glass-shadow:
     0 0 2px rgb(0 0 0 / 0.3),
     0 0 12px rgb(0 0 0 / 0.28),
     0 8px 20px -6px rgb(0 0 0 / 0.4),
-    inset 0 1px 0 var(--oc-mobile-glass-highlight);
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight);
 }
 
 /* Projects home floating material. Project capsule, session container, and
    bottom dock deliberately share this exact recipe so their elevation reads
    as one system. Keep blur on the three container surfaces, never per row. */
-.oc-mobile-floating-shell {
-  /* Quiet page canvas shared with .oc-mobile-app-shell so short tab content
+.yuri-mobile-floating-shell {
+  /* Quiet page canvas shared with .yuri-mobile-app-shell so short tab content
      and bottom-safe padding never seam against plain --background. */
-  --oc-mobile-page-background: color-mix(
+  --yuri-mobile-page-background: color-mix(
     in srgb,
     var(--surface-muted) 18%,
     var(--surface-background)
   );
-  --oc-mobile-border: color-mix(
+  --yuri-mobile-border: color-mix(
     in srgb,
     var(--surface-foreground) 6%,
     transparent
   );
-  --oc-mobile-divider: var(--oc-mobile-border);
-  --oc-mobile-control-border: color-mix(
+  --yuri-mobile-divider: var(--yuri-mobile-border);
+  --yuri-mobile-control-border: color-mix(
     in srgb,
     var(--surface-foreground) 9%,
     transparent
   );
   /* Momentary row/card press only — a wash, not a slab. Full
      --interactive-hover reads too dense on Projects home glass. */
-  --oc-mobile-press-fill: color-mix(
+  --yuri-mobile-press-fill: color-mix(
     in srgb,
     var(--surface-foreground) 7%,
     transparent
   );
-  --oc-mobile-surface-radius: 1.5rem;
-  --oc-mobile-inset-radius: 1rem;
-  --oc-mobile-control-radius: 1.25rem;
-  --oc-mobile-page-gap: 1.25rem;
-  --oc-mobile-page-inline-inset: 1.125rem;
-  --oc-mobile-root-title-size: 2rem;
-  --oc-mobile-project-group-gap: 0.75rem;
+  --yuri-mobile-surface-radius: 1.5rem;
+  --yuri-mobile-inset-radius: 1rem;
+  --yuri-mobile-control-radius: 1.25rem;
+  --yuri-mobile-page-gap: 1.25rem;
+  --yuri-mobile-page-inline-inset: 1.125rem;
+  --yuri-mobile-root-title-size: 2rem;
+  --yuri-mobile-project-group-gap: 0.75rem;
   /* Card header is title+subtitle driven; rides density (not a touch target). */
-  --oc-mobile-project-header-height: calc(5.25rem * var(--padding-scale, 1));
-  --oc-mobile-project-icon-size: calc(2.75rem * var(--padding-scale, 1));
-  --oc-mobile-project-action-size: calc(2.25rem * var(--padding-scale, 1));
-  --oc-mobile-entity-title-size: 1rem;
-  --oc-mobile-entity-title-line-height: 1.25rem;
-  --oc-mobile-entity-meta-size: 0.8125rem;
-  --oc-mobile-entity-meta-line-height: 1rem;
+  --yuri-mobile-project-header-height: calc(5.25rem * var(--padding-scale, 1));
+  --yuri-mobile-project-icon-size: calc(2.75rem * var(--padding-scale, 1));
+  --yuri-mobile-project-action-size: calc(2.25rem * var(--padding-scale, 1));
+  --yuri-mobile-entity-title-size: 1rem;
+  --yuri-mobile-entity-title-line-height: 1.25rem;
+  --yuri-mobile-entity-meta-size: 0.8125rem;
+  --yuri-mobile-entity-meta-line-height: 1rem;
   /* 2.875rem at --dpt 1 = 46px — still above the 36px touch minimum. */
-  --oc-mobile-session-row-height: calc(2.875rem * var(--padding-scale, 1));
-  --oc-mobile-session-actions-width: 7rem;
-  --oc-mobile-worktree-action-width: 3.5rem;
-  --oc-mobile-session-action-width: calc(
-    var(--oc-mobile-session-actions-width) / 2
+  --yuri-mobile-session-row-height: calc(2.875rem * var(--padding-scale, 1));
+  --yuri-mobile-session-actions-width: 7rem;
+  --yuri-mobile-worktree-action-width: 3.5rem;
+  --yuri-mobile-session-action-width: calc(
+    var(--yuri-mobile-session-actions-width) / 2
   );
   /* The root dock is a primary Liquid Glass navigation layer: let it follow
      the phone's lower screen curve rather than reading as a small control
      floating high above it. The larger slots also keep the direct-touch
      target comfortably above the platform minimum. */
-  --oc-mobile-dock-height: 4.25rem;
-  --oc-mobile-dock-inline-inset: 1rem;
-  --oc-mobile-dock-max-width: 26rem;
-  --oc-mobile-dock-inner-inset: 0.3125rem;
-  --oc-mobile-dock-gap: 0.1875rem;
-  --oc-mobile-dock-radius: calc(var(--oc-mobile-dock-height) / 2);
-  --oc-mobile-tab-height: calc(
-    var(--oc-mobile-dock-height) - (var(--oc-mobile-dock-inner-inset) * 2)
+  --yuri-mobile-dock-height: 4.25rem;
+  --yuri-mobile-dock-inline-inset: 1rem;
+  --yuri-mobile-dock-max-width: 26rem;
+  --yuri-mobile-dock-inner-inset: 0.3125rem;
+  --yuri-mobile-dock-gap: 0.1875rem;
+  --yuri-mobile-dock-radius: calc(var(--yuri-mobile-dock-height) / 2);
+  --yuri-mobile-tab-height: calc(
+    var(--yuri-mobile-dock-height) - (var(--yuri-mobile-dock-inner-inset) * 2)
   );
-  --oc-mobile-tab-radius: calc(
-    var(--oc-mobile-dock-radius) - var(--oc-mobile-dock-inner-inset)
+  --yuri-mobile-tab-radius: calc(
+    var(--yuri-mobile-dock-radius) - var(--yuri-mobile-dock-inner-inset)
   );
-  --oc-mobile-float-background: color-mix(
+  --yuri-mobile-float-background: color-mix(
     in srgb,
     var(--surface-elevated) 45%,
     transparent
   );
-  --oc-mobile-field-background: color-mix(
+  --yuri-mobile-field-background: color-mix(
     in srgb,
     var(--surface-elevated) 70%,
     transparent
   );
-  --oc-mobile-float-highlight: color-mix(
+  --yuri-mobile-float-highlight: color-mix(
     in srgb,
     var(--surface-elevated) 92%,
     transparent
   );
-  --oc-mobile-shadow-far: color-mix(
+  --yuri-mobile-shadow-far: color-mix(
     in srgb,
     var(--surface-foreground) 7%,
     transparent
   );
-  --oc-mobile-shadow-near: color-mix(
+  --yuri-mobile-shadow-near: color-mix(
     in srgb,
     var(--surface-foreground) 3%,
     transparent
   );
-  --oc-mobile-shadow-control: color-mix(
+  --yuri-mobile-shadow-control: color-mix(
     in srgb,
     var(--surface-foreground) 10%,
     transparent
@@ -146,77 +146,77 @@
      outside-only shadows: a near-contact all-around shade defines the top
      arc, a soft halo + gentle drop give lift. Blur does the glass.
      Composer uses a more translucent fill so chat content reads through. */
-  --oc-mobile-glass-fill: rgb(255 255 255 / 0.68);
-  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.6);
-  --oc-mobile-glass-blur: 20px;
-  --oc-mobile-glass-saturate: 1.25;
-  --oc-mobile-glass-shadow:
+  --yuri-mobile-glass-fill: rgb(255 255 255 / 0.68);
+  --yuri-mobile-glass-highlight: rgb(255 255 255 / 0.6);
+  --yuri-mobile-glass-blur: 20px;
+  --yuri-mobile-glass-saturate: 1.25;
+  --yuri-mobile-glass-shadow:
     0 0 2px rgb(0 0 0 / 0.05),
     0 0 12px rgb(0 0 0 / 0.06),
     0 8px 20px -6px rgb(0 0 0 / 0.12),
-    inset 0 1px 0 var(--oc-mobile-glass-highlight);
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight);
   /* Card-scale surfaces (project shells, settings cards) share the floating
      control's outside-only shading, softened for the larger footprint. The
      background token stays untouched — only elevation unifies. */
-  --oc-mobile-float-shadow:
+  --yuri-mobile-float-shadow:
     0 0 2px rgb(0 0 0 / 0.04),
     0 0 12px rgb(0 0 0 / 0.05),
     0 10px 24px -6px rgb(0 0 0 / 0.1),
-    inset 0 1px 0 var(--oc-mobile-float-highlight);
+    inset 0 1px 0 var(--yuri-mobile-float-highlight);
 }
 
 /* In dark mode, elevation should recede into the page instead of casting a
    pale halo. Keep elevated mobile materials on a black shadow scale. */
-.dark .oc-mobile-floating-shell {
-  --oc-mobile-border: color-mix(
+.dark .yuri-mobile-floating-shell {
+  --yuri-mobile-border: color-mix(
     in srgb,
     var(--surface-foreground) 3%,
     transparent
   );
-  --oc-mobile-divider: color-mix(
+  --yuri-mobile-divider: color-mix(
     in srgb,
     var(--surface-foreground) 2%,
     transparent
   );
-  --oc-mobile-control-border: color-mix(
+  --yuri-mobile-control-border: color-mix(
     in srgb,
     var(--surface-foreground) 5%,
     transparent
   );
-  --border: var(--oc-mobile-border);
-  --form-control-border: var(--oc-mobile-control-border);
-  --form-surface-border: var(--oc-mobile-border);
-  --form-row-divider: var(--oc-mobile-divider);
-  --oc-mobile-press-fill: color-mix(
+  --border: var(--yuri-mobile-border);
+  --form-control-border: var(--yuri-mobile-control-border);
+  --form-surface-border: var(--yuri-mobile-border);
+  --form-row-divider: var(--yuri-mobile-divider);
+  --yuri-mobile-press-fill: color-mix(
     in srgb,
     var(--surface-foreground) 10%,
     transparent
   );
-  --oc-mobile-shadow-far: rgb(0 0 0 / 0.24);
-  --oc-mobile-shadow-near: rgb(0 0 0 / 0.14);
-  --oc-mobile-shadow-control: rgb(0 0 0 / 0.22);
-  --oc-mobile-glass-fill: rgb(38 38 44 / 0.66);
-  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.18);
-  --oc-mobile-glass-blur: 20px;
-  --oc-mobile-glass-saturate: 1.2;
-  --oc-mobile-glass-shadow:
+  --yuri-mobile-shadow-far: rgb(0 0 0 / 0.24);
+  --yuri-mobile-shadow-near: rgb(0 0 0 / 0.14);
+  --yuri-mobile-shadow-control: rgb(0 0 0 / 0.22);
+  --yuri-mobile-glass-fill: rgb(38 38 44 / 0.66);
+  --yuri-mobile-glass-highlight: rgb(255 255 255 / 0.18);
+  --yuri-mobile-glass-blur: 20px;
+  --yuri-mobile-glass-saturate: 1.2;
+  --yuri-mobile-glass-shadow:
     0 0 2px rgb(0 0 0 / 0.3),
     0 0 12px rgb(0 0 0 / 0.28),
     0 8px 20px -6px rgb(0 0 0 / 0.4),
-    inset 0 1px 0 var(--oc-mobile-glass-highlight);
-  --oc-mobile-float-highlight: color-mix(
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight);
+  --yuri-mobile-float-highlight: color-mix(
     in srgb,
     var(--surface-elevated) 24%,
     transparent
   );
-  --oc-mobile-float-shadow:
+  --yuri-mobile-float-shadow:
     0 0 2px rgb(0 0 0 / 0.26),
     0 0 12px rgb(0 0 0 / 0.24),
     0 10px 24px -6px rgb(0 0 0 / 0.34),
-    inset 0 1px 0 var(--oc-mobile-float-highlight);
+    inset 0 1px 0 var(--yuri-mobile-float-highlight);
 }
 
-.oc-mobile-floating-bottom-bar-frame {
+.yuri-mobile-floating-bottom-bar-frame {
   pointer-events: none;
   position: fixed;
   right: 0;
@@ -228,7 +228,7 @@
   justify-content: center;
   padding-bottom: max(
     1.25rem,
-    var(--oc-safe-area-bottom-visual, 0px)
+    var(--yuri-safe-area-bottom-visual, 0px)
   );
 }
 
@@ -238,62 +238,62 @@
  * and the save capsule sits above the retained dock. Native iOS dock is hidden
  * while editing (`tabBarCovered`), so the overlay can go edge-to-edge.
  */
-.oc-mobile-scheduled-editor-overlay {
+.yuri-mobile-scheduled-editor-overlay {
   position: fixed;
   inset: 0;
   z-index: 30;
 }
 
-:root.oc-native-ios-tab-bar .oc-mobile-scheduled-editor-overlay {
+:root.yuri-native-ios-tab-bar .yuri-mobile-scheduled-editor-overlay {
   z-index: 50;
 }
 
-.oc-mobile-scheduled-editor-body {
+.yuri-mobile-scheduled-editor-body {
   padding-bottom: calc(
     1.5rem +
     var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
   );
 }
 
-:root:not(.oc-native-ios-tab-bar) .oc-mobile-scheduled-editor-body {
+:root:not(.yuri-native-ios-tab-bar) .yuri-mobile-scheduled-editor-body {
   padding-bottom: calc(
-    var(--oc-mobile-dock-height) + 2rem +
+    var(--yuri-mobile-dock-height) + 2rem +
     var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
   );
 }
 
-.oc-mobile-floating-bottom-bar {
+.yuri-mobile-floating-bottom-bar {
   pointer-events: auto;
   display: flex;
-  width: calc(100% - (var(--oc-mobile-dock-inline-inset) * 2));
-  max-width: var(--oc-mobile-dock-max-width);
-  height: var(--oc-mobile-dock-height);
+  width: calc(100% - (var(--yuri-mobile-dock-inline-inset) * 2));
+  max-width: var(--yuri-mobile-dock-max-width);
+  height: var(--yuri-mobile-dock-height);
   align-items: center;
-  border-radius: var(--oc-mobile-dock-radius);
+  border-radius: var(--yuri-mobile-dock-radius);
   corner-shape: round;
 }
 
-.oc-mobile-floating-bottom-bar-navigation {
-  gap: var(--oc-mobile-dock-gap);
-  padding: var(--oc-mobile-dock-inner-inset);
+.yuri-mobile-floating-bottom-bar-navigation {
+  gap: var(--yuri-mobile-dock-gap);
+  padding: var(--yuri-mobile-dock-inner-inset);
   /* Assistant unread bubble overhangs the icon; do not clip the glass dock. */
   overflow: visible;
 }
 
-.oc-mobile-floating-bottom-bar-actions {
+.yuri-mobile-floating-bottom-bar-actions {
   padding: 0.5rem 0.875rem;
 }
 
-.oc-mobile-floating-bottom-bar-actions > * {
+.yuri-mobile-floating-bottom-bar-actions > * {
   width: 100%;
 }
 
-.oc-mobile-tab-button {
-  height: var(--oc-mobile-tab-height) !important;
+.yuri-mobile-tab-button {
+  height: var(--yuri-mobile-tab-height) !important;
   min-height: 0 !important;
-  gap: var(--oc-mobile-dock-gap);
-  padding: var(--oc-mobile-dock-inner-inset);
-  border-radius: var(--oc-mobile-tab-radius) !important;
+  gap: var(--yuri-mobile-dock-gap);
+  padding: var(--yuri-mobile-dock-inner-inset);
+  border-radius: var(--yuri-mobile-tab-radius) !important;
   corner-shape: round;
   font-size: 0.75rem !important;
   line-height: 0.75rem !important;
@@ -313,18 +313,18 @@
    intentionally separate from selection: touching either the current tab or
    a destination shows feedback before navigation changes the selected state.
    Match the selected-tab selection gray so press and selection read as one system. */
-.oc-mobile-tab-button:active {
+.yuri-mobile-tab-button:active {
   background: color-mix(in srgb, var(--interactive-selection) 55%, transparent);
 }
 
 /* Label-only clip keeps long locales ellipsized without hiding the unread badge. */
-.oc-mobile-tab-button > .oc-mobile-tab-label {
+.yuri-mobile-tab-button > .yuri-mobile-tab-label {
   overflow: hidden;
   scrollbar-width: none;
 }
 
-.oc-mobile-tab-button::-webkit-scrollbar,
-.oc-mobile-tab-button > .oc-mobile-tab-label::-webkit-scrollbar {
+.yuri-mobile-tab-button::-webkit-scrollbar,
+.yuri-mobile-tab-button > .yuri-mobile-tab-label::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -334,16 +334,16 @@
    with !important. Re-assert the dock's measured label size at higher
    specificity so 计划任务 remains complete on the 378px native viewport. */
 :root.mobile-pointer:not(.desktop-runtime)
-  .oc-mobile-tab-button.typography-ui-label {
+  .yuri-mobile-tab-button.typography-ui-label {
   font-size: 0.75rem !important;
   line-height: 0.75rem !important;
 }
 
-.oc-mobile-floating-surface,
-.oc-mobile-glass-surface {
+.yuri-mobile-floating-surface,
+.yuri-mobile-glass-surface {
   border: 0;
-  background: var(--oc-mobile-float-background);
-  box-shadow: var(--oc-mobile-float-shadow);
+  background: var(--yuri-mobile-float-background);
+  box-shadow: var(--yuri-mobile-float-shadow);
   -webkit-backdrop-filter: blur(22px) saturate(1.35);
   backdrop-filter: blur(22px) saturate(1.35);
 }
@@ -351,33 +351,33 @@
 /* The bottom dock is a control-scale glass layer (like the header back disc),
    not a content card: it shares the control token for blur/shadow/highlight
    while keeping its own translucent float background. */
-.oc-mobile-floating-bottom-bar {
-  box-shadow: var(--oc-mobile-glass-shadow);
+.yuri-mobile-floating-bottom-bar {
+  box-shadow: var(--yuri-mobile-glass-shadow);
   -webkit-backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
   backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
 }
 
 /* Filled glass control (project icon disc, search field): same clean recipe
    as the header floating action — light milky fill, outside-only shading. */
-.oc-mobile-glass-control {
+.yuri-mobile-glass-control {
   border: 0;
-  background: var(--oc-mobile-glass-fill);
-  box-shadow: var(--oc-mobile-glass-shadow);
+  background: var(--yuri-mobile-glass-fill);
+  box-shadow: var(--yuri-mobile-glass-shadow);
   -webkit-backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
   backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
 }
 
 /* Clear variant (assistant big avatar): no milky base, only the ambient
    shadow ring + backdrop blur define the disc. */
-.oc-mobile-glass-control--clear {
+.yuri-mobile-glass-control--clear {
   background: transparent;
   box-shadow:
     0 0 2px rgb(0 0 0 / 0.05),
@@ -385,7 +385,7 @@
     0 8px 20px -6px rgb(0 0 0 / 0.12);
 }
 
-.dark .oc-mobile-glass-control--clear {
+.dark .yuri-mobile-glass-control--clear {
   box-shadow:
     0 0 2px rgb(0 0 0 / 0.3),
     0 0 12px rgb(0 0 0 / 0.28),
@@ -397,7 +397,7 @@
    NOTE: fixed-position overlays can't backdrop-filter content in a
    different stacking context, so we use a semi-opaque fill as the base
    and keep backdrop-filter as progressive enhancement. */
-.oc-mobile-overlay-surface {
+.yuri-mobile-overlay-surface {
   border: 0;
   background: color-mix(in srgb, var(--surface-elevated) 95%, transparent);
   box-shadow:
@@ -406,14 +406,14 @@
     0 20px 48px -12px rgb(0 0 0 / 0.18),
     inset 0 1px 0 rgb(255 255 255 / 0.8);
   -webkit-backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
   backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
 }
 
-.dark .oc-mobile-overlay-surface {
+.dark .yuri-mobile-overlay-surface {
   background: color-mix(in srgb, var(--surface-elevated) 95%, transparent);
   box-shadow:
     0 0 0 1px rgb(0 0 0 / 0.2),
@@ -424,43 +424,43 @@
 
 /* Translucent variant for panels that sit inside the same stacking context
    as their backdrop (e.g. phone metadata sheet). */
-.oc-mobile-overlay-surface--translucent {
+.yuri-mobile-overlay-surface--translucent {
   background: color-mix(in srgb, var(--surface-elevated) 48%, transparent);
 }
 
-.dark .oc-mobile-overlay-surface--translucent {
+.dark .yuri-mobile-overlay-surface--translucent {
   background: color-mix(in srgb, var(--surface-elevated) 48%, transparent);
 }
 
 /* Composer `/` `@` `#` catalogs: keep overlay elevation/blur, but a much
    thinner fill than --translucent (48%). A heavy wash hides the frost. */
-.oc-composer-autocomplete-surface {
+.yuri-composer-autocomplete-surface {
   background: color-mix(in srgb, var(--surface-elevated) 22%, transparent);
 }
 
-.dark .oc-composer-autocomplete-surface {
+.dark .yuri-composer-autocomplete-surface {
   background: color-mix(in srgb, var(--surface-elevated) 22%, transparent);
 }
 
-.oc-composer-autocomplete-row {
+.yuri-composer-autocomplete-row {
   margin-inline: 0.375rem;
   -webkit-tap-highlight-color: transparent;
 }
 
-.oc-composer-autocomplete-row:active {
-  background: var(--oc-mobile-press-fill);
+.yuri-composer-autocomplete-row:active {
+  background: var(--yuri-mobile-press-fill);
 }
 
-.oc-mobile-round-control {
+.yuri-mobile-round-control {
   corner-shape: round;
 }
 
-.oc-mobile-tab-page {
+.yuri-mobile-tab-page {
   display: flex;
   height: 100%;
   min-height: 70dvh;
   flex-direction: column;
-  gap: var(--oc-mobile-page-gap);
+  gap: var(--yuri-mobile-page-gap);
 }
 
 /*
@@ -468,34 +468,34 @@
  * - Sticky header layout box is CONSTANT (compact chrome height).
  * - Expanded extra offset is a static in-flow spacer that scrolls away natively.
  * - Scroll only drives compositor props (transform / opacity) via
- *   --oc-mobile-title-collapse. Never rewrite padding/font-size/height from it.
+ *   --yuri-mobile-title-collapse. Never rewrite padding/font-size/height from it.
  *
  * Expanded visual = compact sticky + spacer (0.625rem) + inner translateY
  * matching the pre-collapse rhythm (safe-area + 1rem + pt-1.5).
  * Compact title is 1.25rem (not detail-nav 0.9375rem) so it holds weight next
  * to the 40px glass actions: scale = 1.25 / 2 = 0.625 (reduce by 0.375).
  */
-.oc-mobile-root-page-title {
+.yuri-mobile-root-page-title {
   width: max-content;
   max-width: 100%;
-  font-size: var(--oc-mobile-root-title-size);
+  font-size: var(--yuri-mobile-root-title-size);
   line-height: 1.2;
   letter-spacing: calc(
-    -0.04em + (0.02em * var(--oc-mobile-title-collapse, 0))
+    -0.04em + (0.02em * var(--yuri-mobile-title-collapse, 0))
   );
   /* scale 1 → 0.625; origin left center keeps left edge and vertical balance
      with the action row (top-left looked undersized/top-heavy vs 40px buttons). */
-  transform: scale(calc(1 - (0.375 * var(--oc-mobile-title-collapse, 0))));
+  transform: scale(calc(1 - (0.375 * var(--yuri-mobile-title-collapse, 0))));
   transform-origin: left center;
   will-change: transform;
 }
 
-.oc-mobile-collapsing-header {
-  --oc-mobile-title-collapse: 0;
-  --oc-mobile-collapsing-action-size: 2.5rem;
-  --oc-mobile-collapsing-title-compact-size: 1.25rem;
+.yuri-mobile-collapsing-header {
+  --yuri-mobile-title-collapse: 0;
+  --yuri-mobile-collapsing-action-size: 2.5rem;
+  --yuri-mobile-collapsing-title-compact-size: 1.25rem;
   /* Expanded top inset minus collapsed top inset (1rem + 0.375rem - 0.75rem). */
-  --oc-mobile-collapsing-expand-shift: 0.625rem;
+  --yuri-mobile-collapsing-expand-shift: 0.625rem;
   position: sticky;
   z-index: 30;
   top: 0;
@@ -503,19 +503,19 @@
   box-sizing: border-box;
   /* FIXED layout: collapsed chrome only — never depend on collapse progress. */
   height: calc(
-    var(--oc-safe-area-top, 0px) + 0.75rem +
-      var(--oc-mobile-collapsing-action-size)
+    var(--yuri-safe-area-top, 0px) + 0.75rem +
+      var(--yuri-mobile-collapsing-action-size)
   );
-  margin-inline: calc(-1 * var(--oc-mobile-page-inline-inset));
-  padding-top: calc(var(--oc-safe-area-top, 0px) + 0.75rem);
-  padding-right: calc(var(--oc-mobile-page-inline-inset) + 0.25rem);
+  margin-inline: calc(-1 * var(--yuri-mobile-page-inline-inset));
+  padding-top: calc(var(--yuri-safe-area-top, 0px) + 0.75rem);
+  padding-right: calc(var(--yuri-mobile-page-inline-inset) + 0.25rem);
   padding-bottom: 0;
-  padding-left: calc(var(--oc-mobile-page-inline-inset) + 0.25rem);
+  padding-left: calc(var(--yuri-mobile-page-inline-inset) + 0.25rem);
   background: transparent;
   overflow: visible;
 }
 
-.oc-mobile-collapsing-header-inner {
+.yuri-mobile-collapsing-header-inner {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -526,17 +526,17 @@
   /* Expanded: shift content down into the spacer; collapsed: sit in chrome. */
   transform: translateY(
     calc(
-      var(--oc-mobile-collapsing-expand-shift) *
-        (1 - var(--oc-mobile-title-collapse, 0))
+      var(--yuri-mobile-collapsing-expand-shift) *
+        (1 - var(--yuri-mobile-title-collapse, 0))
     )
   );
   will-change: transform;
 }
 
-.oc-mobile-collapsing-header-title-block {
+.yuri-mobile-collapsing-header-title-block {
   display: flex;
   min-width: 0;
-  height: var(--oc-mobile-collapsing-action-size);
+  height: var(--yuri-mobile-collapsing-action-size);
   flex: 1 1 auto;
   flex-direction: column;
   align-items: flex-start;
@@ -544,184 +544,184 @@
   overflow: visible;
 }
 
-.oc-mobile-collapsing-header-trailing {
+.yuri-mobile-collapsing-header-trailing {
   align-self: center;
   overflow: visible;
 }
 
 /* Native scroll clearance for the expanded translateY; not sticky, not JS-driven. */
-.oc-mobile-collapsing-header-spacer {
+.yuri-mobile-collapsing-header-spacer {
   flex-shrink: 0;
-  height: var(--oc-mobile-collapsing-expand-shift, 0.625rem);
+  height: var(--yuri-mobile-collapsing-expand-shift, 0.625rem);
   pointer-events: none;
 }
 
-.oc-mobile-collapsing-header::after {
+.yuri-mobile-collapsing-header::after {
   position: absolute;
   z-index: -1;
   inset: 0 0 auto;
   height: calc(
-    var(--oc-safe-area-top, 0px) +
-      var(--oc-mobile-detail-navigation-height) + 1.75rem
+    var(--yuri-safe-area-top, 0px) +
+      var(--yuri-mobile-detail-navigation-height) + 1.75rem
   );
   content: "";
   pointer-events: none;
-  opacity: var(--oc-mobile-title-collapse);
+  opacity: var(--yuri-mobile-title-collapse);
   background: linear-gradient(
     to bottom,
-    var(--oc-mobile-header-fade) 0%,
-    var(--oc-mobile-header-fade)
-      calc(var(--oc-safe-area-top, 0px) + 35%),
+    var(--yuri-mobile-header-fade) 0%,
+    var(--yuri-mobile-header-fade)
+      calc(var(--yuri-safe-area-top, 0px) + 35%),
     transparent 100%
   );
 }
 
-.oc-mobile-collapsing-header-eyebrow {
+.yuri-mobile-collapsing-header-eyebrow {
   max-height: 1rem;
   margin-bottom: 0.125rem;
   overflow: hidden;
-  opacity: calc(1 - var(--oc-mobile-title-collapse, 0));
-  transform: scaleY(calc(1 - var(--oc-mobile-title-collapse, 0)));
+  opacity: calc(1 - var(--yuri-mobile-title-collapse, 0));
+  transform: scaleY(calc(1 - var(--yuri-mobile-title-collapse, 0)));
   transform-origin: top left;
   will-change: opacity, transform;
 }
 
-.oc-mobile-tab-page-flow {
+.yuri-mobile-tab-page-flow {
   height: auto;
   min-height: 0;
 }
 
-.oc-mobile-tab-page-flow .oc-mobile-tab-page-content {
+.yuri-mobile-tab-page-flow .yuri-mobile-tab-page-content {
   min-height: 0;
   flex: none;
 }
 
-.oc-mobile-tab-page-surface {
+.yuri-mobile-tab-page-surface {
   min-height: 0;
   flex: 1 1 0%;
   overflow: hidden;
-  border-radius: var(--oc-mobile-surface-radius);
+  border-radius: var(--yuri-mobile-surface-radius);
 }
 
-.oc-mobile-tab-page-content {
+.yuri-mobile-tab-page-content {
   min-height: 0;
   flex: 1 1 0%;
 }
 
-.oc-mobile-project-shell {
-  --oc-mobile-project-group-gap: 0.625rem;
-  --oc-mobile-project-header-height: calc(4.625rem * var(--padding-scale, 1));
-  --oc-mobile-project-icon-size: calc(2.375rem * var(--padding-scale, 1));
-  --oc-mobile-entity-title-size: 0.875rem;
-  --oc-mobile-entity-title-line-height: 1.125rem;
-  --oc-mobile-entity-meta-size: 0.75rem;
-  --oc-mobile-entity-meta-line-height: 0.9375rem;
-  --oc-mobile-session-row-height: calc(2.5rem * var(--padding-scale, 1));
-  --oc-mobile-session-actions-width: 6.25rem;
-  --oc-mobile-worktree-action-width: 3.125rem;
+.yuri-mobile-project-shell {
+  --yuri-mobile-project-group-gap: 0.625rem;
+  --yuri-mobile-project-header-height: calc(4.625rem * var(--padding-scale, 1));
+  --yuri-mobile-project-icon-size: calc(2.375rem * var(--padding-scale, 1));
+  --yuri-mobile-entity-title-size: 0.875rem;
+  --yuri-mobile-entity-title-line-height: 1.125rem;
+  --yuri-mobile-entity-meta-size: 0.75rem;
+  --yuri-mobile-entity-meta-line-height: 0.9375rem;
+  --yuri-mobile-session-row-height: calc(2.5rem * var(--padding-scale, 1));
+  --yuri-mobile-session-actions-width: 6.25rem;
+  --yuri-mobile-worktree-action-width: 3.125rem;
   display: flex;
   flex-direction: column;
   /* Allow worktree/session swipe rails to paint without clipping. */
   overflow: visible;
-  border-radius: var(--oc-mobile-surface-radius);
+  border-radius: var(--yuri-mobile-surface-radius);
 }
 
-.oc-mobile-project-card {
-  min-height: var(--oc-mobile-project-header-height);
+.yuri-mobile-project-card {
+  min-height: var(--yuri-mobile-project-header-height);
   flex: none;
   background: transparent;
 }
 
-.oc-mobile-project-trigger {
+.yuri-mobile-project-trigger {
   gap: 0.5rem;
   padding: 0.75rem;
 }
 
-.oc-mobile-project-shell .oc-mobile-project-trigger {
+.yuri-mobile-project-shell .yuri-mobile-project-trigger {
   gap: 0.4375rem;
   padding: 0.625rem;
 }
 
-.oc-mobile-project-icon {
-  width: var(--oc-mobile-project-icon-size);
-  height: var(--oc-mobile-project-icon-size);
+.yuri-mobile-project-icon {
+  width: var(--yuri-mobile-project-icon-size);
+  height: var(--yuri-mobile-project-icon-size);
 }
 
-.oc-mobile-project-icon-glyph {
+.yuri-mobile-project-icon-glyph {
   width: 1.25rem;
   height: 1.25rem;
 }
 
-.oc-mobile-project-shell .oc-mobile-project-icon-glyph {
+.yuri-mobile-project-shell .yuri-mobile-project-icon-glyph {
   width: 1.125rem;
   height: 1.125rem;
 }
 
-.oc-mobile-entity-title {
-  font-size: var(--oc-mobile-entity-title-size);
-  line-height: var(--oc-mobile-entity-title-line-height);
+.yuri-mobile-entity-title {
+  font-size: var(--yuri-mobile-entity-title-size);
+  line-height: var(--yuri-mobile-entity-title-line-height);
   letter-spacing: -0.024em;
 }
 
-.oc-mobile-entity-meta {
+.yuri-mobile-entity-meta {
   gap: 0.3125rem;
-  font-size: var(--oc-mobile-entity-meta-size);
-  line-height: var(--oc-mobile-entity-meta-line-height);
+  font-size: var(--yuri-mobile-entity-meta-size);
+  line-height: var(--yuri-mobile-entity-meta-line-height);
 }
 
-.oc-mobile-project-chevron {
+.yuri-mobile-project-chevron {
   width: 0.875rem;
   height: 0.875rem;
 }
 
-.oc-mobile-project-action {
-  width: var(--oc-mobile-project-action-size);
-  min-width: var(--oc-mobile-project-action-size) !important;
-  min-height: var(--oc-mobile-project-action-size) !important;
-  height: var(--oc-mobile-project-action-size);
+.yuri-mobile-project-action {
+  width: var(--yuri-mobile-project-action-size);
+  min-width: var(--yuri-mobile-project-action-size) !important;
+  min-height: var(--yuri-mobile-project-action-size) !important;
+  height: var(--yuri-mobile-project-action-size);
   margin-right: 0.25rem;
 }
 
-.oc-mobile-project-groups {
+.yuri-mobile-project-groups {
   display: flex;
   flex-direction: column;
-  gap: var(--oc-mobile-project-group-gap);
+  gap: var(--yuri-mobile-project-group-gap);
   padding: 0.125rem 0.75rem 0.875rem;
 }
 
-.oc-mobile-labeled-surface-group {
-  --oc-mobile-session-row-background: transparent;
+.yuri-mobile-labeled-surface-group {
+  --yuri-mobile-session-row-background: transparent;
   display: flex;
   flex-direction: column;
   /* Keep group geometry open so left-swipe action rails are not clipped. */
   overflow: visible;
-  border-radius: var(--oc-mobile-inset-radius);
-  border: 1px solid var(--oc-mobile-border);
+  border-radius: var(--yuri-mobile-inset-radius);
+  border: 1px solid var(--yuri-mobile-border);
   background: transparent;
   box-shadow: none;
 }
 
-.oc-mobile-labeled-surface-group-label {
+.yuri-mobile-labeled-surface-group-label {
   min-width: 0;
-  box-shadow: inset 0 -1px 0 var(--oc-mobile-divider);
+  box-shadow: inset 0 -1px 0 var(--yuri-mobile-divider);
 }
 
-.oc-mobile-labeled-surface-group-label:last-child {
+.yuri-mobile-labeled-surface-group-label:last-child {
   box-shadow: none;
 }
 
-.oc-mobile-labeled-surface-group-label:first-child {
+.yuri-mobile-labeled-surface-group-label:first-child {
   overflow: hidden;
-  border-start-start-radius: calc(var(--oc-mobile-inset-radius) - 1px);
-  border-start-end-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+  border-start-start-radius: calc(var(--yuri-mobile-inset-radius) - 1px);
+  border-start-end-radius: calc(var(--yuri-mobile-inset-radius) - 1px);
 }
 
-.oc-mobile-labeled-surface-group-label:last-child {
-  border-end-end-radius: calc(var(--oc-mobile-inset-radius) - 1px);
-  border-end-start-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+.yuri-mobile-labeled-surface-group-label:last-child {
+  border-end-end-radius: calc(var(--yuri-mobile-inset-radius) - 1px);
+  border-end-start-radius: calc(var(--yuri-mobile-inset-radius) - 1px);
 }
 
-.oc-mobile-page-section-label {
+.yuri-mobile-page-section-label {
   display: block;
   padding: 0.25rem 0.5rem;
   font-size: var(--text-micro);
@@ -729,11 +729,11 @@
   color: var(--muted-foreground);
 }
 
-.oc-mobile-labeled-surface-group-content {
+.yuri-mobile-labeled-surface-group-content {
   min-width: 0;
 }
 
-.oc-mobile-group-label {
+.yuri-mobile-group-label {
   display: flex;
   min-height: 2.625rem;
   min-width: 0;
@@ -741,32 +741,32 @@
   gap: 0.25rem;
 }
 
-.oc-mobile-group-label-trigger {
+.yuri-mobile-group-label-trigger {
   display: flex;
   min-height: 2.625rem;
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
   gap: 0.4375rem;
-  border-radius: var(--oc-mobile-inset-radius);
+  border-radius: var(--yuri-mobile-inset-radius);
   padding: 0.375rem 0.625rem;
   text-align: left;
 }
 
-button.oc-mobile-group-label-trigger {
+button.yuri-mobile-group-label-trigger {
   outline: none;
   transition: background-color 150ms ease;
 }
 
-button.oc-mobile-group-label-trigger:hover {
+button.yuri-mobile-group-label-trigger:hover {
   background: color-mix(in srgb, var(--surface-muted) 46%, transparent);
 }
 
-button.oc-mobile-group-label-trigger:focus-visible {
+button.yuri-mobile-group-label-trigger:focus-visible {
   box-shadow: inset 0 0 0 2px var(--interactive-focus-ring);
 }
 
-.oc-mobile-group-label-icon {
+.yuri-mobile-group-label-icon {
   display: flex;
   width: 1.125rem;
   height: 1.125rem;
@@ -776,17 +776,17 @@ button.oc-mobile-group-label-trigger:focus-visible {
   color: var(--muted-foreground);
 }
 
-.oc-mobile-group-label-trigger .typography-ui-label {
+.yuri-mobile-group-label-trigger .typography-ui-label {
   font-size: 0.75rem !important;
   line-height: 1rem !important;
 }
 
-.oc-mobile-group-label-trigger .typography-small {
+.yuri-mobile-group-label-trigger .typography-small {
   font-size: 0.6875rem !important;
   line-height: 0.875rem !important;
 }
 
-.oc-mobile-group-action {
+.yuri-mobile-group-action {
   width: 2.25rem;
   min-width: 2.25rem !important;
   height: 2.25rem;
@@ -797,21 +797,21 @@ button.oc-mobile-group-label-trigger:focus-visible {
 /* Worktree header: long-press + left-swipe (new session / delete) parity with
    session rows. Overflow menu only (no always-visible +); new session lives on
    the swipe rail and action sheet so the title keeps full width. */
-.oc-mobile-worktree-label {
+.yuri-mobile-worktree-label {
   min-width: 0;
   width: 100%;
   background: transparent;
 }
 
-.oc-mobile-worktree-label-content {
+.yuri-mobile-worktree-label-content {
   min-width: 0;
   width: 100%;
   background: transparent;
 }
 
 /* Full-bleed row main, not a rounded pill region that clips/truncates the title. */
-.oc-mobile-worktree-label-trigger,
-.oc-mobile-worktree-group .oc-mobile-group-label-trigger {
+.yuri-mobile-worktree-label-trigger,
+.yuri-mobile-worktree-group .yuri-mobile-group-label-trigger {
   flex: 1 1 0%;
   min-width: 0;
   border-radius: 0;
@@ -819,14 +819,14 @@ button.oc-mobile-group-label-trigger:focus-visible {
   background: transparent !important;
 }
 
-button.oc-mobile-worktree-label-trigger:hover,
-button.oc-mobile-worktree-label-trigger:active,
-.oc-mobile-worktree-group button.oc-mobile-group-label-trigger:hover,
-.oc-mobile-worktree-group button.oc-mobile-group-label-trigger:active {
+button.yuri-mobile-worktree-label-trigger:hover,
+button.yuri-mobile-worktree-label-trigger:active,
+.yuri-mobile-worktree-group button.yuri-mobile-group-label-trigger:hover,
+.yuri-mobile-worktree-group button.yuri-mobile-group-label-trigger:active {
   background: transparent !important;
 }
 
-.oc-mobile-worktree-more {
+.yuri-mobile-worktree-more {
   width: 2.25rem;
   min-width: 2.25rem !important;
   min-height: 2.25rem !important;
@@ -835,106 +835,106 @@ button.oc-mobile-worktree-label-trigger:active,
   padding: 0 !important;
 }
 
-.oc-mobile-worktree-action {
-  width: var(--oc-mobile-worktree-action-width, 3.5rem);
-  min-width: var(--oc-mobile-worktree-action-width, 3.5rem) !important;
+.yuri-mobile-worktree-action {
+  width: var(--yuri-mobile-worktree-action-width, 3.5rem);
+  min-width: var(--yuri-mobile-worktree-action-width, 3.5rem) !important;
   gap: 0.1875rem;
   border-radius: 0 !important;
 }
 
-.oc-mobile-session-row {
-  --oc-mobile-session-radius-start-start: 0;
-  --oc-mobile-session-radius-start-end: 0;
-  --oc-mobile-session-radius-end-end: 0;
-  --oc-mobile-session-radius-end-start: 0;
+.yuri-mobile-session-row {
+  --yuri-mobile-session-radius-start-start: 0;
+  --yuri-mobile-session-radius-start-end: 0;
+  --yuri-mobile-session-radius-end-end: 0;
+  --yuri-mobile-session-radius-end-start: 0;
   min-width: 0;
   overflow: hidden;
-  border-start-start-radius: var(--oc-mobile-session-radius-start-start);
-  border-start-end-radius: var(--oc-mobile-session-radius-start-end);
-  border-end-end-radius: var(--oc-mobile-session-radius-end-end);
-  border-end-start-radius: var(--oc-mobile-session-radius-end-start);
+  border-start-start-radius: var(--yuri-mobile-session-radius-start-start);
+  border-start-end-radius: var(--yuri-mobile-session-radius-start-end);
+  border-end-end-radius: var(--yuri-mobile-session-radius-end-end);
+  border-end-start-radius: var(--yuri-mobile-session-radius-end-start);
   background: transparent;
 }
 
-.oc-mobile-labeled-surface-group > .oc-mobile-session-row:first-child {
-  --oc-mobile-session-radius-start-start: calc(
-    var(--oc-mobile-inset-radius) - 1px
+.yuri-mobile-labeled-surface-group > .yuri-mobile-session-row:first-child {
+  --yuri-mobile-session-radius-start-start: calc(
+    var(--yuri-mobile-inset-radius) - 1px
   );
-  --oc-mobile-session-radius-start-end: calc(
-    var(--oc-mobile-inset-radius) - 1px
-  );
-}
-
-.oc-mobile-labeled-surface-group > .oc-mobile-session-row:last-child,
-.oc-mobile-labeled-surface-group-content > .oc-mobile-session-row:last-child {
-  --oc-mobile-session-radius-end-end: calc(
-    var(--oc-mobile-inset-radius) - 1px
-  );
-  --oc-mobile-session-radius-end-start: calc(
-    var(--oc-mobile-inset-radius) - 1px
+  --yuri-mobile-session-radius-start-end: calc(
+    var(--yuri-mobile-inset-radius) - 1px
   );
 }
 
-.oc-mobile-session-row:not(:last-child) {
-  box-shadow: inset 0 -1px 0 var(--oc-mobile-divider);
+.yuri-mobile-labeled-surface-group > .yuri-mobile-session-row:last-child,
+.yuri-mobile-labeled-surface-group-content > .yuri-mobile-session-row:last-child {
+  --yuri-mobile-session-radius-end-end: calc(
+    var(--yuri-mobile-inset-radius) - 1px
+  );
+  --yuri-mobile-session-radius-end-start: calc(
+    var(--yuri-mobile-inset-radius) - 1px
+  );
 }
 
-.oc-mobile-labeled-surface-group > [data-session-sortable-row]:first-child > .oc-mobile-session-row {
-  --oc-mobile-session-radius-start-start: calc(var(--oc-mobile-inset-radius) - 1px);
-  --oc-mobile-session-radius-start-end: calc(var(--oc-mobile-inset-radius) - 1px);
+.yuri-mobile-session-row:not(:last-child) {
+  box-shadow: inset 0 -1px 0 var(--yuri-mobile-divider);
 }
 
-:is(.oc-mobile-labeled-surface-group, .oc-mobile-labeled-surface-group-content) > [data-session-sortable-row]:not(:has(~ [data-session-sortable-row], ~ .oc-mobile-session-row)) > .oc-mobile-session-row {
-  --oc-mobile-session-radius-end-end: calc(var(--oc-mobile-inset-radius) - 1px);
-  --oc-mobile-session-radius-end-start: calc(var(--oc-mobile-inset-radius) - 1px);
+.yuri-mobile-labeled-surface-group > [data-session-sortable-row]:first-child > .yuri-mobile-session-row {
+  --yuri-mobile-session-radius-start-start: calc(var(--yuri-mobile-inset-radius) - 1px);
+  --yuri-mobile-session-radius-start-end: calc(var(--yuri-mobile-inset-radius) - 1px);
 }
 
-[data-session-sortable-row]:has(~ [data-session-sortable-row], ~ .oc-mobile-session-row) > .oc-mobile-session-row {
-  box-shadow: inset 0 -1px 0 var(--oc-mobile-divider);
+:is(.yuri-mobile-labeled-surface-group, .yuri-mobile-labeled-surface-group-content) > [data-session-sortable-row]:not(:has(~ [data-session-sortable-row], ~ .yuri-mobile-session-row)) > .yuri-mobile-session-row {
+  --yuri-mobile-session-radius-end-end: calc(var(--yuri-mobile-inset-radius) - 1px);
+  --yuri-mobile-session-radius-end-start: calc(var(--yuri-mobile-inset-radius) - 1px);
+}
+
+[data-session-sortable-row]:has(~ [data-session-sortable-row], ~ .yuri-mobile-session-row) > .yuri-mobile-session-row {
+  box-shadow: inset 0 -1px 0 var(--yuri-mobile-divider);
 }
 
 /* “More” and “Fewer” are one pagination control, not two separately divided
    list items. Keep the divider above the control group, but remove the split
    inside it. */
-.oc-mobile-session-row.oc-mobile-session-pagination-continues {
+.yuri-mobile-session-row.yuri-mobile-session-pagination-continues {
   box-shadow: none;
 }
 
-.oc-mobile-session-row-content,
-.oc-mobile-session-row-main,
-.oc-mobile-session-pagination-row {
-  min-height: var(--oc-mobile-session-row-height);
+.yuri-mobile-session-row-content,
+.yuri-mobile-session-row-main,
+.yuri-mobile-session-pagination-row {
+  min-height: var(--yuri-mobile-session-row-height);
 }
 
-.oc-mobile-session-row-content,
-.oc-mobile-session-pagination-row {
+.yuri-mobile-session-row-content,
+.yuri-mobile-session-pagination-row {
   /* Transparent so swipe rails and group chrome do not double-paint a slab. */
-  border-start-start-radius: var(--oc-mobile-session-radius-start-start);
-  border-start-end-radius: var(--oc-mobile-session-radius-start-end);
-  border-end-end-radius: var(--oc-mobile-session-radius-end-end);
-  border-end-start-radius: var(--oc-mobile-session-radius-end-start);
+  border-start-start-radius: var(--yuri-mobile-session-radius-start-start);
+  border-start-end-radius: var(--yuri-mobile-session-radius-start-end);
+  border-end-end-radius: var(--yuri-mobile-session-radius-end-end);
+  border-end-start-radius: var(--yuri-mobile-session-radius-end-start);
   background: transparent;
 }
 
 /* Momentary press only. Do not persist a selected/active session fill —
    that looked like a stuck tap highlight after returning to Home. */
-.oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"]),
-.oc-mobile-session-pagination-row:active {
-  background: var(--oc-mobile-press-fill);
+.yuri-mobile-session-row-content:has(.yuri-mobile-session-row-main:active):not([data-dragging="true"]),
+.yuri-mobile-session-pagination-row:active {
+  background: var(--yuri-mobile-press-fill);
 }
 
-.oc-mobile-project-card:has([data-mobile-press-surface-trigger]:active),
-.oc-mobile-project-card[data-pressed="true"] {
-  background: var(--oc-mobile-press-fill);
+.yuri-mobile-project-card:has([data-mobile-press-surface-trigger]:active),
+.yuri-mobile-project-card[data-pressed="true"] {
+  background: var(--yuri-mobile-press-fill);
 }
 
-.oc-mobile-session-row-main {
+.yuri-mobile-session-row-main {
   gap: 0.5rem;
   padding-block: 0.3125rem;
   padding-right: 0.125rem;
 }
 
-.oc-mobile-session-status {
+.yuri-mobile-session-status {
   display: inline-flex;
   width: 0.75rem;
   height: 0.75rem;
@@ -942,44 +942,44 @@ button.oc-mobile-worktree-label-trigger:active,
   justify-content: center;
 }
 
-.oc-mobile-session-dot {
+.yuri-mobile-session-dot {
   display: block;
   width: 0.3125rem;
   height: 0.3125rem;
 }
 
-.oc-mobile-session-title {
+.yuri-mobile-session-title {
   font-size: 0.75rem;
   line-height: 1rem;
   letter-spacing: -0.012em;
 }
 
-.oc-mobile-session-subtitle,
-.oc-mobile-session-action-label {
+.yuri-mobile-session-subtitle,
+.yuri-mobile-session-action-label {
   font-size: 0.625rem;
   line-height: 0.75rem;
 }
 
-.oc-mobile-session-time {
+.yuri-mobile-session-time {
   font-size: 0.625rem;
   line-height: 0.75rem;
 }
 
-.oc-mobile-session-actions {
-  width: var(--oc-mobile-session-actions-width);
+.yuri-mobile-session-actions {
+  width: var(--yuri-mobile-session-actions-width);
   overflow: hidden;
-  border-start-end-radius: var(--oc-mobile-session-radius-start-end);
-  border-end-end-radius: var(--oc-mobile-session-radius-end-end);
+  border-start-end-radius: var(--yuri-mobile-session-radius-start-end);
+  border-end-end-radius: var(--yuri-mobile-session-radius-end-end);
 }
 
-.oc-mobile-session-action {
-  width: var(--oc-mobile-session-action-width);
-  min-width: var(--oc-mobile-session-action-width) !important;
+.yuri-mobile-session-action {
+  width: var(--yuri-mobile-session-action-width);
+  min-width: var(--yuri-mobile-session-action-width) !important;
   gap: 0.1875rem;
   border-radius: 0 !important;
 }
 
-.oc-mobile-project-shell .oc-mobile-session-action {
+.yuri-mobile-project-shell .yuri-mobile-session-action {
   height: 100%;
   min-height: 36px !important;
   align-items: center;
@@ -987,7 +987,7 @@ button.oc-mobile-worktree-label-trigger:active,
   padding-block: 0;
 }
 
-.oc-mobile-session-pagination-row {
+.yuri-mobile-session-pagination-row {
   display: flex;
   width: 100%;
   align-items: center;
@@ -998,30 +998,30 @@ button.oc-mobile-worktree-label-trigger:active,
   outline: none;
 }
 
-.oc-mobile-session-pagination-row:focus-visible {
+.yuri-mobile-session-pagination-row:focus-visible {
   box-shadow: inset 0 0 0 2px var(--interactive-focus-ring);
 }
 
-.oc-mobile-assistant-state {
+.yuri-mobile-assistant-state {
   display: flex;
   min-height: 0;
   flex: 1 1 0%;
   align-items: center;
 }
 
-.oc-mobile-assistant-state-card {
+.yuri-mobile-assistant-state-card {
   width: 100%;
   padding: 1.25rem;
-  border-radius: var(--oc-mobile-surface-radius);
+  border-radius: var(--yuri-mobile-surface-radius);
 }
 
-.oc-mobile-assistant-guide-host {
+.yuri-mobile-assistant-guide-host {
   display: flex;
   overflow-x: hidden;
   overflow-y: auto;
 }
 
-.oc-mobile-assistant-guide {
+.yuri-mobile-assistant-guide {
   display: flex;
   width: 100%;
   min-height: 0;
@@ -1033,28 +1033,28 @@ button.oc-mobile-worktree-label-trigger:active,
   padding: 0.25rem 0 1.5rem;
 }
 
-.oc-mobile-assistant-guide-hero {
+.yuri-mobile-assistant-guide-hero {
   position: relative;
   width: min(calc(100% - 1.5rem), 18.5rem);
   aspect-ratio: 16 / 9;
   align-self: center;
   overflow: hidden;
-  border-radius: var(--oc-mobile-inset-radius);
+  border-radius: var(--yuri-mobile-inset-radius);
   background: var(--surface-elevated);
 }
 
-.oc-mobile-assistant-guide-hero > img {
+.yuri-mobile-assistant-guide-hero > img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-.dark .oc-mobile-assistant-guide-hero > img {
+.dark .yuri-mobile-assistant-guide-hero > img {
   filter: brightness(0.68) saturate(0.8);
   opacity: 0.88;
 }
 
-.oc-mobile-assistant-guide-body {
+.yuri-mobile-assistant-guide-body {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1063,7 +1063,7 @@ button.oc-mobile-worktree-label-trigger:active,
   text-align: center;
 }
 
-.oc-mobile-assistant-guide-title {
+.yuri-mobile-assistant-guide-title {
   max-width: 18rem;
   font-size: 1.25rem;
   font-weight: 650;
@@ -1072,23 +1072,23 @@ button.oc-mobile-worktree-label-trigger:active,
   color: var(--foreground);
 }
 
-.oc-mobile-assistant-guide-description {
+.yuri-mobile-assistant-guide-description {
   max-width: 18rem;
   font-size: var(--text-ui-label);
   line-height: 1.45;
   color: var(--muted-foreground);
 }
 
-.oc-mobile-assistant-guide-body > button {
+.yuri-mobile-assistant-guide-body > button {
   margin-top: 0.75rem;
 }
 
-.oc-mobile-assistant-guide-share {
+.yuri-mobile-assistant-guide-share {
   width: 100%;
   min-width: 0;
 }
 
-.oc-mobile-assistant-guide-share-title {
+.yuri-mobile-assistant-guide-share-title {
   padding-inline: 0.75rem;
   font-size: var(--text-ui-label);
   font-weight: 600;
@@ -1096,7 +1096,7 @@ button.oc-mobile-worktree-label-trigger:active,
   color: var(--muted-foreground);
 }
 
-.oc-mobile-assistant-guide-steps {
+.yuri-mobile-assistant-guide-steps {
   display: flex;
   gap: 0.75rem;
   margin-top: 0.75rem;
@@ -1108,59 +1108,59 @@ button.oc-mobile-worktree-label-trigger:active,
   -webkit-overflow-scrolling: touch;
 }
 
-.oc-mobile-assistant-guide-steps::-webkit-scrollbar {
+.yuri-mobile-assistant-guide-steps::-webkit-scrollbar {
   display: none;
 }
 
-.oc-mobile-assistant-guide-step {
+.yuri-mobile-assistant-guide-step {
   display: flex;
   width: min(70vw, 15.5rem);
   flex: none;
   flex-direction: column;
   overflow: hidden;
   scroll-snap-align: start;
-  border-radius: var(--oc-mobile-inset-radius);
+  border-radius: var(--yuri-mobile-inset-radius);
   background: var(--surface-elevated);
 }
 
-.oc-mobile-assistant-guide-step-image {
+.yuri-mobile-assistant-guide-step-image {
   height: 8.25rem;
   overflow: hidden;
   background: var(--surface-muted);
 }
 
-.oc-mobile-assistant-guide-step-image img {
+.yuri-mobile-assistant-guide-step-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center 18%;
 }
 
-.oc-mobile-assistant-guide-step-copy {
+.yuri-mobile-assistant-guide-step-copy {
   padding: 0.75rem 0.875rem 0.875rem;
 }
 
-.oc-mobile-assistant-guide-step-copy h4 {
+.yuri-mobile-assistant-guide-step-copy h4 {
   font-size: var(--text-ui-label);
   font-weight: 650;
   line-height: 1.25;
   color: var(--foreground);
 }
 
-.oc-mobile-assistant-guide-step-copy p {
+.yuri-mobile-assistant-guide-step-copy p {
   margin-top: 0.25rem;
   font-size: var(--text-micro);
   line-height: 1.4;
   color: var(--muted-foreground);
 }
 
-.oc-mobile-assistant-onboarding {
+.yuri-mobile-assistant-onboarding {
   width: 100%;
   padding: 1.5rem;
-  border-radius: var(--oc-mobile-surface-radius);
+  border-radius: var(--yuri-mobile-surface-radius);
 }
 
-.oc-mobile-assistant-onboarding-icon {
+.yuri-mobile-assistant-onboarding-icon {
   display: flex;
   width: 2.25rem;
   height: 2.25rem;
@@ -1171,7 +1171,7 @@ button.oc-mobile-worktree-label-trigger:active,
   background: var(--interactive-selection);
 }
 
-.oc-mobile-assistant-onboarding h2 {
+.yuri-mobile-assistant-onboarding h2 {
   margin-top: 1.25rem;
   font-size: 1.125rem;
   font-weight: 650;
@@ -1180,19 +1180,19 @@ button.oc-mobile-worktree-label-trigger:active,
   color: var(--foreground);
 }
 
-.oc-mobile-assistant-onboarding p {
+.yuri-mobile-assistant-onboarding p {
   margin-top: 0.5rem;
   font-size: var(--text-ui-label);
   line-height: 1.55;
   color: var(--muted-foreground);
 }
 
-.oc-mobile-assistant-content {
+.yuri-mobile-assistant-content {
   min-height: 0;
   flex: 1 1 0%;
 }
 
-.oc-mobile-assistant-catalog {
+.yuri-mobile-assistant-catalog {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -1200,17 +1200,17 @@ button.oc-mobile-worktree-label-trigger:active,
   gap: 0.875rem;
 }
 
-.oc-mobile-assistant-loading {
+.yuri-mobile-assistant-loading {
   overflow: hidden;
-  border-radius: var(--oc-mobile-surface-radius);
+  border-radius: var(--yuri-mobile-surface-radius);
 }
 
-.oc-mobile-assistant-card-shell {
+.yuri-mobile-assistant-card-shell {
   overflow: hidden;
-  border-radius: var(--oc-mobile-surface-radius);
+  border-radius: var(--yuri-mobile-surface-radius);
 }
 
-.oc-mobile-assistant-card {
+.yuri-mobile-assistant-card {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -1218,7 +1218,7 @@ button.oc-mobile-worktree-label-trigger:active,
   align-items: center;
   gap: 0.75rem;
   border: 0;
-  border-radius: var(--oc-mobile-surface-radius);
+  border-radius: var(--yuri-mobile-surface-radius);
   corner-shape: round;
   padding: 1rem;
   text-align: left;
@@ -1231,14 +1231,14 @@ button.oc-mobile-worktree-label-trigger:active,
   background-color: transparent;
 }
 
-.oc-mobile-assistant-card:hover,
-.oc-mobile-assistant-card:active,
-.oc-mobile-assistant-card:focus {
+.yuri-mobile-assistant-card:hover,
+.yuri-mobile-assistant-card:active,
+.yuri-mobile-assistant-card:focus {
   background: transparent;
   background-color: transparent;
 }
 
-.oc-mobile-assistant-avatar {
+.yuri-mobile-assistant-avatar {
   display: flex;
   width: 2.75rem;
   height: 2.75rem;
@@ -1253,7 +1253,7 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 /* Keep the animated face inside its fixed, softly rounded square. */
-.oc-mobile-assistant-avatar [data-agent-avatar] {
+.yuri-mobile-assistant-avatar [data-agent-avatar] {
   width: 100% !important;
   min-width: 100% !important;
   max-width: 100% !important;
@@ -1266,13 +1266,13 @@ button.oc-mobile-worktree-label-trigger:active,
   -ms-overflow-style: none;
 }
 
-.oc-mobile-assistant-avatar [data-agent-avatar]::-webkit-scrollbar {
+.yuri-mobile-assistant-avatar [data-agent-avatar]::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
 }
 
-.oc-mobile-assistant-avatar :is(img, svg) {
+.yuri-mobile-assistant-avatar :is(img, svg) {
   display: block;
   width: 100%;
   height: 100%;
@@ -1280,17 +1280,17 @@ button.oc-mobile-worktree-label-trigger:active,
   object-fit: cover;
 }
 
-.oc-mobile-assistant-name {
+.yuri-mobile-assistant-name {
   font-size: 0.9375rem;
   line-height: 1.5rem;
   letter-spacing: -0.02em;
 }
 
-.oc-mobile-assistant-card-content {
+.yuri-mobile-assistant-card-content {
   padding-top: 0;
 }
 
-.oc-mobile-assistant-summary {
+.yuri-mobile-assistant-summary {
   display: block;
   margin-top: 0.25rem;
   overflow: hidden;
@@ -1300,7 +1300,7 @@ button.oc-mobile-worktree-label-trigger:active,
   text-overflow: ellipsis;
 }
 
-.oc-mobile-assistant-content > * {
+.yuri-mobile-assistant-content > * {
   height: 100%;
   min-height: 0;
 }
@@ -1308,73 +1308,73 @@ button.oc-mobile-worktree-label-trigger:active,
 /* Scheduled tab content participates in the root tabpanel scroll (like Projects).
    Auto height lets task/history lists grow and scroll with the shell, not a nested
    fixed viewport that flashes a native scrollbar. */
-.oc-mobile-scheduled-content > * {
+.yuri-mobile-scheduled-content > * {
   height: auto;
   min-height: 0;
 }
 
-.oc-mobile-scheduled-workspace {
+.yuri-mobile-scheduled-workspace {
   background: transparent;
 }
 
-.oc-mobile-scheduled-workspace [data-slot="input"]:not(:focus) {
+.yuri-mobile-scheduled-workspace [data-slot="input"]:not(:focus) {
   border-color: transparent;
-  background: var(--oc-mobile-field-background);
-  box-shadow: var(--oc-mobile-glass-shadow);
+  background: var(--yuri-mobile-field-background);
+  box-shadow: var(--yuri-mobile-glass-shadow);
 }
 
 /* Shared mobile segmented track (Tasks/History, filters, similar one-of-N bars).
-   Pair with .oc-mobile-floating-surface for glass elevation. Selected chrome is
-   .oc-segmented-selected-pill from design-system.css.
-   Radius system: outer uses --oc-mobile-surface-radius; inner item/pill radius is
+   Pair with .yuri-mobile-floating-surface for glass elevation. Selected chrome is
+   .yuri-segmented-selected-pill from design-system.css.
+   Radius system: outer uses --yuri-mobile-surface-radius; inner item/pill radius is
    surface − pad so corners stay concentric with the track (one variable family).
    Track height may differ by content (e.g. trailing +), but pad/gap/item height
    stay shared so vertical rhythm and pill centering match across rows. */
-.oc-mobile-segmented-track,
-.oc-mobile-scheduled-controls {
-  --oc-mobile-segmented-pad: 0.25rem;
-  --oc-mobile-segmented-gap: 0.25rem;
-  --oc-mobile-segmented-item-height: 2.5rem;
+.yuri-mobile-segmented-track,
+.yuri-mobile-scheduled-controls {
+  --yuri-mobile-segmented-pad: 0.25rem;
+  --yuri-mobile-segmented-gap: 0.25rem;
+  --yuri-mobile-segmented-item-height: 2.5rem;
   /* Outer + inner from the same surface radius token. */
-  --oc-mobile-segmented-track-radius: var(--oc-mobile-surface-radius);
-  --oc-mobile-segmented-item-radius: max(
+  --yuri-mobile-segmented-track-radius: var(--yuri-mobile-surface-radius);
+  --yuri-mobile-segmented-item-radius: max(
     0px,
-    calc(var(--oc-mobile-segmented-track-radius) - var(--oc-mobile-segmented-pad))
+    calc(var(--yuri-mobile-segmented-track-radius) - var(--yuri-mobile-segmented-pad))
   );
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: var(--oc-mobile-segmented-gap);
-  border-radius: var(--oc-mobile-segmented-track-radius);
-  padding: var(--oc-mobile-segmented-pad);
+  gap: var(--yuri-mobile-segmented-gap);
+  border-radius: var(--yuri-mobile-segmented-track-radius);
+  padding: var(--yuri-mobile-segmented-pad);
   /* Content-sized: pad + item height. Do not force a taller min-height. */
   min-height: calc(
-    var(--oc-mobile-segmented-item-height) + (var(--oc-mobile-segmented-pad) * 2)
+    var(--yuri-mobile-segmented-item-height) + (var(--yuri-mobile-segmented-pad) * 2)
   );
 }
 
-.oc-mobile-segmented-group {
+.yuri-mobile-segmented-group {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: var(--oc-mobile-segmented-gap, 0.25rem);
+  gap: var(--yuri-mobile-segmented-gap, 0.25rem);
 }
 
-.oc-mobile-segmented-item {
+.yuri-mobile-segmented-item {
   position: relative;
   box-sizing: border-box;
   display: inline-flex;
-  height: var(--oc-mobile-segmented-item-height) !important;
-  min-height: var(--oc-mobile-segmented-item-height) !important;
-  max-height: var(--oc-mobile-segmented-item-height) !important;
+  height: var(--yuri-mobile-segmented-item-height) !important;
+  min-height: var(--yuri-mobile-segmented-item-height) !important;
+  max-height: var(--yuri-mobile-segmented-item-height) !important;
   min-width: 0;
   flex: 1 1 0%;
   align-items: center;
   justify-content: center;
   padding-inline: 0.5rem !important;
   border: 0;
-  border-radius: var(--oc-mobile-segmented-item-radius);
+  border-radius: var(--yuri-mobile-segmented-item-radius);
   background: transparent;
   box-shadow: none;
   color: var(--surface-muted-foreground, var(--muted-foreground));
@@ -1386,45 +1386,45 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 /* Selected pill inherits the same item radius (no separate inset token). */
-.oc-mobile-segmented-item > .oc-segmented-selected-pill {
-  border-radius: var(--oc-mobile-segmented-item-radius);
+.yuri-mobile-segmented-item > .yuri-segmented-selected-pill {
+  border-radius: var(--yuri-mobile-segmented-item-radius);
   transition: background-color 80ms ease-out;
 }
 
-.oc-mobile-segmented-item:active > .oc-segmented-selected-pill {
+.yuri-mobile-segmented-item:active > .yuri-segmented-selected-pill {
   background: var(--interactive-active);
 }
 
 /* Trailing control on a segmented track (e.g. create +) — same height as items.
    Full-circle uses half the item height so it still reads as a disc inside the track. */
-.oc-mobile-segmented-track > .oc-mobile-segmented-action,
-.oc-mobile-scheduled-controls > .oc-mobile-segmented-action {
-  width: var(--oc-mobile-segmented-item-height) !important;
-  height: var(--oc-mobile-segmented-item-height) !important;
-  min-width: var(--oc-mobile-segmented-item-height) !important;
-  min-height: var(--oc-mobile-segmented-item-height) !important;
-  max-height: var(--oc-mobile-segmented-item-height) !important;
+.yuri-mobile-segmented-track > .yuri-mobile-segmented-action,
+.yuri-mobile-scheduled-controls > .yuri-mobile-segmented-action {
+  width: var(--yuri-mobile-segmented-item-height) !important;
+  height: var(--yuri-mobile-segmented-item-height) !important;
+  min-width: var(--yuri-mobile-segmented-item-height) !important;
+  min-height: var(--yuri-mobile-segmented-item-height) !important;
+  max-height: var(--yuri-mobile-segmented-item-height) !important;
   flex: none;
   padding: 0 !important;
-  border-radius: var(--oc-mobile-segmented-item-radius) !important;
+  border-radius: var(--yuri-mobile-segmented-item-radius) !important;
 }
 
-.oc-mobile-segmented-item:hover {
+.yuri-mobile-segmented-item:hover {
   background: transparent;
   color: var(--foreground);
 }
 
-.oc-mobile-segmented-item[aria-selected="true"],
-.oc-mobile-segmented-item[aria-pressed="true"] {
+.yuri-mobile-segmented-item[aria-selected="true"],
+.yuri-mobile-segmented-item[aria-pressed="true"] {
   color: var(--foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-mobile-segmented-item {
+  .yuri-mobile-segmented-item {
     transition: none;
   }
 
-  .oc-mobile-segmented-item > .oc-segmented-selected-pill {
+  .yuri-mobile-segmented-item > .yuri-segmented-selected-pill {
     transition: none;
   }
 }
@@ -1432,36 +1432,36 @@ button.oc-mobile-worktree-label-trigger:active,
 /* Dense segmented chips: opt out of the global 36px touch min so pad/item
    metrics stay exact (still ≥ 40px with 2.5rem item height). */
 :root.mobile-pointer:not(.desktop-runtime)
-  .oc-mobile-segmented-track
-  button.oc-mobile-segmented-item,
+  .yuri-mobile-segmented-track
+  button.yuri-mobile-segmented-item,
 :root.mobile-pointer:not(.desktop-runtime)
-  .oc-mobile-segmented-track
-  button.oc-mobile-segmented-action,
+  .yuri-mobile-segmented-track
+  button.yuri-mobile-segmented-action,
 :root.mobile-pointer:not(.desktop-runtime)
-  .oc-mobile-scheduled-controls
-  button.oc-mobile-segmented-item,
+  .yuri-mobile-scheduled-controls
+  button.yuri-mobile-segmented-item,
 :root.mobile-pointer:not(.desktop-runtime)
-  .oc-mobile-scheduled-controls
-  button.oc-mobile-segmented-action {
-  min-height: var(--oc-mobile-segmented-item-height) !important;
+  .yuri-mobile-scheduled-controls
+  button.yuri-mobile-segmented-action {
+  min-height: var(--yuri-mobile-segmented-item-height) !important;
   min-width: 0 !important;
 }
 
 :root.mobile-pointer:not(.desktop-runtime)
-  .oc-mobile-segmented-track
-  button.oc-mobile-segmented-action,
+  .yuri-mobile-segmented-track
+  button.yuri-mobile-segmented-action,
 :root.mobile-pointer:not(.desktop-runtime)
-  .oc-mobile-scheduled-controls
-  button.oc-mobile-segmented-action {
-  min-width: var(--oc-mobile-segmented-item-height) !important;
+  .yuri-mobile-scheduled-controls
+  button.yuri-mobile-segmented-action {
+  min-width: var(--yuri-mobile-segmented-item-height) !important;
 }
 
-.oc-mobile-scheduled-task-card {
+.yuri-mobile-scheduled-task-card {
   overflow: hidden;
-  border-radius: var(--oc-mobile-surface-radius);
+  border-radius: var(--yuri-mobile-surface-radius);
 }
 
-.oc-mobile-scheduled-task-card .oc-mobile-scheduled-task-row {
+.yuri-mobile-scheduled-task-card .yuri-mobile-scheduled-task-row {
   border: 0;
   border-radius: 0;
   /* Press scale lives on the floating shell; keep the row fill transparent. */
@@ -1470,172 +1470,172 @@ button.oc-mobile-worktree-label-trigger:active,
   background-color: transparent;
 }
 
-.oc-mobile-scheduled-task-card .oc-mobile-scheduled-task-row:hover,
-.oc-mobile-scheduled-task-card .oc-mobile-scheduled-task-row:active,
-.oc-mobile-scheduled-task-card .oc-mobile-scheduled-task-row:focus {
+.yuri-mobile-scheduled-task-card .yuri-mobile-scheduled-task-row:hover,
+.yuri-mobile-scheduled-task-card .yuri-mobile-scheduled-task-row:active,
+.yuri-mobile-scheduled-task-card .yuri-mobile-scheduled-task-row:focus {
   background: transparent;
   background-color: transparent;
 }
 
 /* Larger, vertically centered ⋯ on scheduled task cards. */
-.oc-mobile-scheduled-task-action {
-  --oc-mobile-project-action-size: calc(2.75rem * var(--padding-scale, 1));
+.yuri-mobile-scheduled-task-action {
+  --yuri-mobile-project-action-size: calc(2.75rem * var(--padding-scale, 1));
   align-self: center;
   margin-right: 0.375rem;
 }
 
-.oc-mobile-scheduled-workspace .border-t {
+.yuri-mobile-scheduled-workspace .border-t {
   border-color: transparent;
 }
 
 /* Mobile Settings follows the native grouped-list grammar: a quiet label,
    one full-width material card, and compact rows with inset separators. */
-.oc-mobile-settings-content,
-.oc-mobile-settings-content > *,
-.oc-mobile-settings-content [data-settings-view="true"] {
+.yuri-mobile-settings-content,
+.yuri-mobile-settings-content > *,
+.yuri-mobile-settings-content [data-settings-view="true"] {
   width: 100%;
   min-width: 0;
 }
 
-.oc-mobile-settings-content [data-settings-view="true"] {
+.yuri-mobile-settings-content [data-settings-view="true"] {
   height: auto;
   border: 0;
   background: transparent;
 }
 
-.oc-mobile-settings-content [data-settings-view="true"] .bg-background,
-.oc-mobile-settings-content [data-settings-view="true"] .bg-sidebar {
+.yuri-mobile-settings-content [data-settings-view="true"] .bg-background,
+.yuri-mobile-settings-content [data-settings-view="true"] .bg-sidebar {
   background: transparent;
 }
 
-.oc-mobile-settings-root-surface {
+.yuri-mobile-settings-root-surface {
   background: var(--surface-background);
 }
 
-.oc-mobile-settings-search {
+.yuri-mobile-settings-search {
   width: 100%;
   padding: 0;
 }
 
 /* Settings search field keeps its filled base (it is an input), but shares
    the same clean outside-shadow recipe as the floating glass controls. */
-.oc-mobile-settings-search-field {
+.yuri-mobile-settings-search-field {
   width: 100%;
   min-height: 2.75rem;
   border: 0;
-  border-radius: var(--oc-mobile-control-radius);
-  background: var(--oc-mobile-field-background);
-  box-shadow: var(--oc-mobile-glass-shadow);
+  border-radius: var(--yuri-mobile-control-radius);
+  background: var(--yuri-mobile-field-background);
+  box-shadow: var(--yuri-mobile-glass-shadow);
 }
 
-.oc-mobile-settings-nav-list {
+.yuri-mobile-settings-nav-list {
   width: 100%;
-  gap: var(--oc-settings-section-stack-gap);
-  padding: var(--oc-settings-section-stack-gap) 0 0;
+  gap: var(--yuri-settings-section-stack-gap);
+  padding: var(--yuri-settings-section-stack-gap) 0 0;
 }
 
-.oc-mobile-settings-group {
+.yuri-mobile-settings-group {
   display: flex;
   width: 100%;
   min-width: 0;
   flex-direction: column;
-  gap: var(--oc-settings-section-gap);
+  gap: var(--yuri-settings-section-gap);
 }
 
-.oc-mobile-settings-group-label {
-  padding-inline: var(--oc-settings-section-title-inset);
-  font-size: var(--oc-settings-section-title-size);
-  line-height: var(--oc-settings-section-title-line-height);
-  font-weight: var(--oc-settings-section-title-weight);
+.yuri-mobile-settings-group-label {
+  padding-inline: var(--yuri-settings-section-title-inset);
+  font-size: var(--yuri-settings-section-title-size);
+  line-height: var(--yuri-settings-section-title-line-height);
+  font-weight: var(--yuri-settings-section-title-weight);
   color: var(--muted-foreground);
 }
 
-.oc-mobile-settings-card {
+.yuri-mobile-settings-card {
   width: 100%;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--oc-settings-group-border);
-  border-radius: var(--oc-settings-group-radius);
-  background: var(--oc-settings-group-background);
+  border: 1px solid var(--yuri-settings-group-border);
+  border-radius: var(--yuri-settings-group-radius);
+  background: var(--yuri-settings-group-background);
   box-shadow: none;
 }
 
-.oc-mobile-settings-card-borderless {
+.yuri-mobile-settings-card-borderless {
   border: 0;
   box-shadow: none;
 }
 
-.oc-mobile-settings-row {
+.yuri-mobile-settings-row {
   display: flex;
   width: 100%;
-  min-height: var(--oc-settings-row-min-height);
+  min-height: var(--yuri-settings-row-min-height);
   min-width: 0;
   align-items: center;
-  gap: var(--oc-settings-row-gap);
+  gap: var(--yuri-settings-row-gap);
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  padding-inline: var(--oc-settings-row-inset);
+  padding-inline: var(--yuri-settings-row-inset);
   background: transparent;
   text-align: left;
   outline: none;
 }
 
-.oc-mobile-settings-row + .oc-mobile-settings-row {
-  box-shadow: inset 0 1px 0 var(--oc-settings-row-divider);
+.yuri-mobile-settings-row + .yuri-mobile-settings-row {
+  box-shadow: inset 0 1px 0 var(--yuri-settings-row-divider);
 }
 
-.oc-mobile-settings-row:focus-visible {
+.yuri-mobile-settings-row:focus-visible {
   box-shadow: inset 0 0 0 2px var(--interactive-focus-ring);
 }
 
-.oc-mobile-settings-search-result {
+.yuri-mobile-settings-search-result {
   flex-direction: row;
   justify-content: space-between;
   padding-block: 0.625rem;
 }
 
-.oc-mobile-settings-footer {
+.yuri-mobile-settings-footer {
   width: 100%;
   padding-top: 1.25rem;
   padding-bottom: 0.25rem;
 }
 
-.oc-mobile-settings-footer > .oc-mobile-settings-card {
+.yuri-mobile-settings-footer > .yuri-mobile-settings-card {
   padding: 0;
-  border: 1px solid var(--oc-settings-group-border);
-  background: var(--oc-settings-group-background);
+  border: 1px solid var(--yuri-settings-group-border);
+  background: var(--yuri-settings-group-background);
 }
 
-.oc-mobile-detail-navigation {
+.yuri-mobile-detail-navigation {
   isolation: isolate;
   border-bottom: 0;
   background: transparent;
   box-shadow: none;
 }
 
-.oc-mobile-detail-navigation::after {
+.yuri-mobile-detail-navigation::after {
   position: absolute;
   z-index: -1;
   top: 0;
   right: 0;
   left: 0;
   height: calc(
-    var(--oc-safe-area-top, 0px) +
-      var(--oc-mobile-detail-navigation-height) + 1.75rem
+    var(--yuri-safe-area-top, 0px) +
+      var(--yuri-mobile-detail-navigation-height) + 1.75rem
   );
   content: "";
   pointer-events: none;
   background: linear-gradient(
     to bottom,
-    var(--oc-mobile-header-fade) 0%,
-    var(--oc-mobile-header-fade)
-      calc(var(--oc-safe-area-top, 0px) + 35%),
+    var(--yuri-mobile-header-fade) 0%,
+    var(--yuri-mobile-header-fade)
+      calc(var(--yuri-safe-area-top, 0px) + 35%),
     transparent 100%
   );
 }
 
-.oc-mobile-detail-navigation-sticky {
+.yuri-mobile-detail-navigation-sticky {
   position: sticky;
   top: 0;
   z-index: 30;
@@ -1644,40 +1644,40 @@ button.oc-mobile-worktree-label-trigger:active,
 /* Root tabs keep comfortable page gutters. Secondary detail surfaces may
    already be viewport-fixed, so the shared header must not apply a compensating
    negative margin. Its content owns the physical edge inset and safe area. */
-.oc-mobile-floating-shell [role="tabpanel"]:has(.oc-mobile-detail-navigation) {
+.yuri-mobile-floating-shell [role="tabpanel"]:has(.yuri-mobile-detail-navigation) {
   padding-top: 0;
 }
 
-.oc-mobile-floating-shell [role="tabpanel"]:has(.oc-mobile-collapsing-header),
-.oc-mobile-settings-root-surface:has(.oc-mobile-collapsing-header) {
+.yuri-mobile-floating-shell [role="tabpanel"]:has(.yuri-mobile-collapsing-header),
+.yuri-mobile-settings-root-surface:has(.yuri-mobile-collapsing-header) {
   padding-top: 0;
 }
 
-.oc-mobile-detail-navigation-content {
-  min-height: var(--oc-mobile-detail-navigation-height);
+.yuri-mobile-detail-navigation-content {
+  min-height: var(--yuri-mobile-detail-navigation-height);
   padding-left: max(
-    var(--oc-mobile-detail-action-edge-inset, 1rem),
-    var(--oc-safe-area-left, 0px)
+    var(--yuri-mobile-detail-action-edge-inset, 1rem),
+    var(--yuri-safe-area-left, 0px)
   );
   padding-right: max(
-    var(--oc-mobile-detail-action-edge-inset, 1rem),
-    var(--oc-safe-area-right, 0px)
+    var(--yuri-mobile-detail-action-edge-inset, 1rem),
+    var(--yuri-safe-area-right, 0px)
   );
 }
 
-.oc-mobile-detail-title {
-  font-size: var(--oc-mobile-detail-title-size);
+.yuri-mobile-detail-title {
+  font-size: var(--yuri-mobile-detail-title-size);
   /* 1.4 leaves ascender/descender headroom for CJK; line-height == font-size
      clips glyph extremes at every --dpt scale. Never clip — let the bar grow. */
-  line-height: calc(var(--oc-mobile-detail-title-size) * 1.4);
+  line-height: calc(var(--yuri-mobile-detail-title-size) * 1.4);
   font-weight: 650;
   text-align: center;
 }
 
-.oc-mobile-detail-subtitle {
+.yuri-mobile-detail-subtitle {
   margin-block-start: 0.125rem;
-  font-size: var(--oc-mobile-detail-subtitle-size);
-  line-height: calc(var(--oc-mobile-detail-subtitle-size) * 1.4);
+  font-size: var(--yuri-mobile-detail-subtitle-size);
+  line-height: calc(var(--yuri-mobile-detail-subtitle-size) * 1.4);
   font-weight: 400;
   text-align: center;
 }
@@ -1687,33 +1687,33 @@ button.oc-mobile-worktree-label-trigger:active,
  * All shading lives OUTSIDE the disc (ambient + drop); inside only keeps
  * a single top light line. No inner dark shadow — that reads as dirt.
  */
-.oc-mobile-floating-action {
+.yuri-mobile-floating-action {
   position: relative;
   isolation: isolate;
   overflow: hidden;
   border-radius: 999px;
   corner-shape: round;
   border: 0;
-  background: var(--oc-mobile-glass-fill);
-  box-shadow: var(--oc-mobile-glass-shadow);
+  background: var(--yuri-mobile-glass-fill);
+  box-shadow: var(--yuri-mobile-glass-shadow);
   -webkit-backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
   backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
 }
 
-.oc-mobile-floating-action > * {
+.yuri-mobile-floating-action > * {
   position: relative;
   z-index: 1;
 }
 
-.dark .oc-mobile-floating-action {
+.dark .yuri-mobile-floating-action {
   color: var(--surface-foreground);
 }
 
-.oc-mobile-detail-editor-title {
+.yuri-mobile-detail-editor-title {
   color: var(--surface-foreground);
   border-color: transparent !important;
   background: transparent !important;
@@ -1721,10 +1721,10 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 /* Quiet canvas only: Settings detail must not inherit floating-surface fill.
-   Higher specificity beats generic .oc-mobile-floating-surface (and
+   Higher specificity beats generic .yuri-mobile-floating-surface (and
    reduced-transparency opaque chrome overrides further below). */
-.oc-mobile-floating-surface.oc-mobile-settings-detail-card,
-.oc-mobile-settings-detail-card {
+.yuri-mobile-floating-surface.yuri-mobile-settings-detail-card,
+.yuri-mobile-settings-detail-card {
   width: 100%;
   min-width: 0;
   height: auto;
@@ -1737,26 +1737,26 @@ button.oc-mobile-worktree-label-trigger:active,
   backdrop-filter: none;
 }
 
-.oc-mobile-settings-detail-card > * {
+.yuri-mobile-settings-detail-card > * {
   min-height: 0;
   height: auto;
   background: transparent;
 }
 
-.oc-mobile-settings-detail-card .openchamber-page-body {
+.yuri-mobile-settings-detail-card .yuri-page-body {
   width: 100%;
   max-width: none;
-  padding: 0.75rem 0 calc(var(--oc-mobile-dock-height) + 1.5rem);
+  padding: 0.75rem 0 calc(var(--yuri-mobile-dock-height) + 1.5rem);
 }
 
-.oc-mobile-settings-detail-card .oc-settings-page-content {
+.yuri-mobile-settings-detail-card .yuri-settings-page-content {
   width: 100%;
   max-width: none;
-  padding: 0.75rem 0 calc(var(--oc-mobile-dock-height) + 1.5rem);
+  padding: 0.75rem 0 calc(var(--yuri-mobile-dock-height) + 1.5rem);
 }
 
-.oc-mobile-settings-detail-card > * > .border-b:first-child,
-.oc-mobile-settings-detail-card > .border-b:first-child {
+.yuri-mobile-settings-detail-card > * > .border-b:first-child,
+.yuri-mobile-settings-detail-card > .border-b:first-child {
   border-bottom: 0;
 }
 
@@ -1764,15 +1764,15 @@ button.oc-mobile-worktree-label-trigger:active,
    canvas, with only the individual setting sections receiving a subtle local
    material. This prevents desktop form wrappers from reading as one giant
    mobile card while preserving their underlying controls and data anchors. */
-.oc-mobile-settings-detail-card .openchamber-page-body > .oc-settings-section-stack {
+.yuri-mobile-settings-detail-card .yuri-page-body > .yuri-settings-section-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--oc-settings-section-stack-gap);
+  gap: var(--yuri-settings-section-stack-gap);
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group) {
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group) {
   position: relative;
   isolation: isolate;
   overflow: visible;
@@ -1783,47 +1783,47 @@ button.oc-mobile-worktree-label-trigger:active,
   box-shadow: none;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)::before {
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)::before {
   position: absolute;
   z-index: -1;
   inset: 0;
   border: 0;
-  border-radius: var(--oc-settings-group-radius);
+  border-radius: var(--yuri-settings-group-radius);
   content: "";
   pointer-events: none;
-  background: var(--oc-settings-group-background);
+  background: var(--yuri-settings-group-background);
   box-shadow: none;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group):has(> h3, > h4) {
-  padding-top: var(--oc-settings-section-title-slot) !important;
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group):has(> h3, > h4) {
+  padding-top: var(--yuri-settings-section-title-slot) !important;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group):has(> h3, > h4)::before {
-  top: var(--oc-settings-section-title-slot);
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group):has(> h3, > h4)::before {
+  top: var(--yuri-settings-section-title-slot);
 }
 
-.oc-mobile-settings-detail-card
-  .oc-settings-page-content
+.yuri-mobile-settings-detail-card
+  .yuri-settings-page-content
   > [data-settings-item] {
   min-width: 0;
   overflow: hidden;
   margin: 0 !important;
-  padding: var(--oc-settings-row-inset) !important;
+  padding: var(--yuri-settings-row-inset) !important;
   border: 0;
-  border-radius: var(--oc-settings-group-radius);
-  background: var(--oc-settings-group-background);
+  border-radius: var(--yuri-settings-group-radius);
+  background: var(--yuri-settings-group-background);
   box-shadow: none;
 }
 
-.oc-mobile-settings-detail-card
-  .oc-settings-page-content
+.yuri-mobile-settings-detail-card
+  .yuri-settings-page-content
   > [data-settings-item]
   > section {
   padding: 0 !important;
@@ -1832,96 +1832,96 @@ button.oc-mobile-worktree-label-trigger:active,
   box-shadow: none;
 }
 
-.oc-mobile-settings-detail-card
-  .oc-settings-page-content
+.yuri-mobile-settings-detail-card
+  .yuri-settings-page-content
   > [data-settings-item]
   > section::before {
   display: none;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   > h3,
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   > h4 {
   position: absolute;
   top: 0;
   right: 0;
   left: 0;
   margin: 0 !important;
-  padding: 0 var(--oc-settings-section-title-inset) !important;
-  font-size: var(--oc-settings-section-title-size) !important;
-  line-height: var(--oc-settings-section-title-line-height) !important;
-  font-weight: var(--oc-settings-section-title-weight) !important;
+  padding: 0 var(--yuri-settings-section-title-inset) !important;
+  font-size: var(--yuri-settings-section-title-size) !important;
+  line-height: var(--yuri-settings-section-title-line-height) !important;
+  font-weight: var(--yuri-settings-section-title-weight) !important;
   color: var(--muted-foreground) !important;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   > :not(h3, h4) {
   min-width: 0;
   margin: 0 !important;
-  padding: var(--oc-settings-row-block-padding)
-    var(--oc-settings-row-inset) !important;
-  border-top: 1px solid var(--oc-settings-row-divider);
+  padding: var(--yuri-settings-row-block-padding)
+    var(--yuri-settings-row-inset) !important;
+  border-top: 1px solid var(--yuri-settings-row-divider);
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   > :first-child:not(h3, h4) {
   border-top: 0;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   > :is(h3, h4)
   + * {
   border-top: 0;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   > :not(h3, h4)
   > [data-settings-item]
   + [data-settings-item] {
-  border-top: 1px solid var(--oc-settings-row-divider);
+  border-top: 1px solid var(--yuri-settings-row-divider);
 }
 
-.oc-mobile-settings-detail-card .oc-mobile-settings-chip {
-  font-size: var(--oc-settings-row-label-size) !important;
-  line-height: var(--oc-settings-row-label-line-height) !important;
+.yuri-mobile-settings-detail-card .yuri-mobile-settings-chip {
+  font-size: var(--yuri-settings-row-label-size) !important;
+  line-height: var(--yuri-settings-row-label-line-height) !important;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   > :not(h3, h4)
   .typography-ui-label {
-  font-size: var(--oc-settings-row-label-size) !important;
-  line-height: var(--oc-settings-row-label-line-height) !important;
+  font-size: var(--yuri-settings-row-label-size) !important;
+  line-height: var(--yuri-settings-row-label-line-height) !important;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
   section
   > :not(h3, h4)
   .typography-meta {
-  font-size: var(--oc-settings-row-meta-size) !important;
-  line-height: var(--oc-settings-row-meta-line-height) !important;
+  font-size: var(--yuri-settings-row-meta-size) !important;
+  line-height: var(--yuri-settings-row-meta-line-height) !important;
 }
 
 /* Explicit mobile detail primitives. These share the Settings home tokens,
    but never infer layout from arbitrary desktop DOM. */
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  .oc-mobile-settings-detail-group {
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  .yuri-mobile-settings-detail-group {
   display: flex;
   overflow: visible;
   padding: 0 !important;
@@ -1931,64 +1931,64 @@ button.oc-mobile-worktree-label-trigger:active,
   box-shadow: none;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  .oc-mobile-settings-detail-group::before {
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  .yuri-mobile-settings-detail-group::before {
   display: none;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  .oc-mobile-settings-detail-group
-  > :is(.oc-mobile-settings-group-label, .oc-settings-group-label) {
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  .yuri-mobile-settings-detail-group
+  > :is(.yuri-mobile-settings-group-label, .yuri-settings-group-label) {
   position: static;
   margin: 0 !important;
-  padding: 0 var(--oc-settings-section-title-inset) !important;
+  padding: 0 var(--yuri-settings-section-title-inset) !important;
   border: 0;
-  font-size: var(--oc-settings-section-title-size) !important;
-  line-height: var(--oc-settings-section-title-line-height) !important;
-  font-weight: var(--oc-settings-section-title-weight) !important;
+  font-size: var(--yuri-settings-section-title-size) !important;
+  line-height: var(--yuri-settings-section-title-line-height) !important;
+  font-weight: var(--yuri-settings-section-title-weight) !important;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  .oc-mobile-settings-detail-group
-  > :is(.oc-mobile-settings-card, .oc-settings-group-card) {
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  .yuri-mobile-settings-detail-group
+  > :is(.yuri-mobile-settings-card, .yuri-settings-group-card) {
   min-width: 0;
   margin: 0 !important;
   padding: 0 !important;
-  border: 1px solid var(--oc-settings-group-border) !important;
-  background: var(--oc-settings-group-background);
+  border: 1px solid var(--yuri-settings-group-border) !important;
+  background: var(--yuri-settings-group-background);
   box-shadow: none !important;
 }
 
-.oc-mobile-settings-detail-row {
+.yuri-mobile-settings-detail-row {
   display: grid;
-  min-height: var(--oc-settings-row-min-height);
+  min-height: var(--yuri-settings-row-min-height);
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   column-gap: 1rem;
-  padding-block: var(--oc-settings-row-block-padding);
+  padding-block: var(--yuri-settings-row-block-padding);
 }
 
-.oc-mobile-settings-detail-row-copy {
+.yuri-mobile-settings-detail-row-copy {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 0.125rem;
 }
 
-.oc-mobile-settings-detail-row-copy .typography-ui-label {
-  font-size: var(--oc-settings-row-label-size) !important;
-  line-height: var(--oc-settings-row-label-line-height) !important;
+.yuri-mobile-settings-detail-row-copy .typography-ui-label {
+  font-size: var(--yuri-settings-row-label-size) !important;
+  line-height: var(--yuri-settings-row-label-line-height) !important;
 }
 
-.oc-mobile-settings-detail-row-copy .typography-meta {
-  font-size: var(--oc-settings-row-meta-size) !important;
-  line-height: var(--oc-settings-row-meta-line-height) !important;
+.yuri-mobile-settings-detail-row-copy .typography-meta {
+  font-size: var(--yuri-settings-row-meta-size) !important;
+  line-height: var(--yuri-settings-row-meta-line-height) !important;
 }
 
-.oc-mobile-settings-detail-row-control {
+.yuri-mobile-settings-detail-row-control {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -1997,22 +1997,22 @@ button.oc-mobile-worktree-label-trigger:active,
   gap: 0.5rem;
 }
 
-.oc-mobile-settings-detail-row-control > [data-slot="select-trigger"],
-.oc-mobile-settings-detail-row-control > [data-slot="input"],
-.oc-mobile-settings-detail-row-control > [data-slot="number-input"] {
+.yuri-mobile-settings-detail-row-control > [data-slot="select-trigger"],
+.yuri-mobile-settings-detail-row-control > [data-slot="input"],
+.yuri-mobile-settings-detail-row-control > [data-slot="number-input"] {
   width: auto;
   min-width: 0;
   max-width: 13rem;
   flex: 1 1 0;
 }
 
-.oc-mobile-settings-detail-row-control > button:not([data-slot="select-trigger"]) {
+.yuri-mobile-settings-detail-row-control > button:not([data-slot="select-trigger"]) {
   flex: none;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   [data-slot="select-trigger"] {
   min-height: 2rem;
   height: 2rem;
@@ -2023,32 +2023,32 @@ button.oc-mobile-worktree-label-trigger:active,
   box-shadow: none;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   [data-slot="input"] {
   min-height: 2rem;
   height: 2rem;
-  border-color: var(--oc-mobile-control-border);
+  border-color: var(--yuri-mobile-control-border);
   border-radius: 0.625rem;
   background: color-mix(in srgb, var(--surface-elevated) 54%, transparent);
   box-shadow: none;
 }
 
-.oc-mobile-settings-detail-card
-  .openchamber-page-body
-  section:not(.oc-settings-group)
+.yuri-mobile-settings-detail-card
+  .yuri-page-body
+  section:not(.yuri-settings-group)
   [data-slot="checkbox"] {
   width: 1.125rem;
   height: 1.125rem;
   border-radius: 0.3125rem;
 }
 
-.oc-mobile-floating-shell [role="tabpanel"] {
+.yuri-mobile-floating-shell [role="tabpanel"] {
   scrollbar-width: none;
 }
 
-.oc-mobile-floating-shell [role="tabpanel"]::-webkit-scrollbar {
+.yuri-mobile-floating-shell [role="tabpanel"]::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -2056,8 +2056,8 @@ button.oc-mobile-worktree-label-trigger:active,
 
 /* Mobile notifications use the shared glass-control recipe (fill, blur,
    saturate, shadow) — the same material as the dock and header discs.
-   sonner.tsx pins box-shadow from --oc-toast-shadow, so that token must
-   be --oc-mobile-glass-shadow or the pin replaces the elevation.
+   sonner.tsx pins box-shadow from --yuri-toast-shadow, so that token must
+   be --yuri-mobile-glass-shadow or the pin replaces the elevation.
    Material applies to every toast, including custom undo toasts
    (data-styled=false). WebKit will not backdrop-filter through a
    transformed ancestor or a transformed element: the toaster is centered
@@ -2066,17 +2066,17 @@ button.oc-mobile-worktree-label-trigger:active,
    the glass fill and a shorter contact shadow; Sonner's 5% scale /
    0.5rem offset separates the stack. */
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime) {
-  --oc-toast-background: var(--oc-mobile-glass-fill);
-  --oc-toast-background-rear-near: var(--oc-mobile-glass-fill);
-  --oc-toast-background-rear-far: var(--oc-mobile-glass-fill);
-  --oc-toast-shadow: var(--oc-mobile-glass-shadow);
-  --oc-toast-shadow-rear-near: 0 3px 7px -5px
+  --yuri-toast-background: var(--yuri-mobile-glass-fill);
+  --yuri-toast-background-rear-near: var(--yuri-mobile-glass-fill);
+  --yuri-toast-background-rear-far: var(--yuri-mobile-glass-fill);
+  --yuri-toast-shadow: var(--yuri-mobile-glass-shadow);
+  --yuri-toast-shadow-rear-near: 0 3px 7px -5px
     color-mix(
       in srgb,
       var(--surface-foreground, var(--foreground)) 22%,
       transparent
     );
-  --oc-toast-shadow-rear-far: 0 2px 5px -4px
+  --yuri-toast-shadow-rear-far: 0 2px 5px -4px
     color-mix(
       in srgb,
       var(--surface-foreground, var(--foreground)) 16%,
@@ -2087,13 +2087,13 @@ button.oc-mobile-worktree-label-trigger:active,
 :root.dark:is(.device-mobile, .device-tablet, .mobile-pointer):not(
     .desktop-runtime
   ) {
-  --oc-toast-shadow-rear-near: 0 3px 7px -5px
+  --yuri-toast-shadow-rear-near: 0 3px 7px -5px
     color-mix(
       in srgb,
       var(--surface-background, var(--background)) 62%,
       transparent
     );
-  --oc-toast-shadow-rear-far: 0 2px 5px -4px
+  --yuri-toast-shadow-rear-far: 0 2px 5px -4px
     color-mix(
       in srgb,
       var(--surface-background, var(--background)) 48%,
@@ -2104,15 +2104,15 @@ button.oc-mobile-worktree-label-trigger:active,
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
   [data-sonner-toaster] {
   --gap: 0.5rem !important;
-  --normal-bg: var(--oc-toast-background);
-  --success-bg: var(--oc-toast-background);
-  --error-bg: var(--oc-toast-background);
-  --warning-bg: var(--oc-toast-background);
-  --info-bg: var(--oc-toast-background);
-  --oc-toast-action-background: transparent;
-  --oc-toast-action-foreground: var(--primary-base);
-  --oc-toast-cancel-background: transparent;
-  --oc-toast-cancel-foreground: var(--muted-foreground);
+  --normal-bg: var(--yuri-toast-background);
+  --success-bg: var(--yuri-toast-background);
+  --error-bg: var(--yuri-toast-background);
+  --warning-bg: var(--yuri-toast-background);
+  --info-bg: var(--yuri-toast-background);
+  --yuri-toast-action-background: transparent;
+  --yuri-toast-action-foreground: var(--primary-base);
+  --yuri-toast-cancel-background: transparent;
+  --yuri-toast-cancel-foreground: var(--muted-foreground);
 }
 
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
@@ -2129,14 +2129,14 @@ button.oc-mobile-worktree-label-trigger:active,
   [data-sonner-toast] {
   border: 0 !important;
   border-radius: var(--radius-xl) !important;
-  background: var(--oc-toast-background) !important;
-  background-color: var(--oc-toast-background) !important;
+  background: var(--yuri-toast-background) !important;
+  background-color: var(--yuri-toast-background) !important;
   -webkit-backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
   backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
 }
 
 /* translateY(0) is still a transform. Resting front cards drop it so
@@ -2157,16 +2157,16 @@ button.oc-mobile-worktree-label-trigger:active,
 
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
   [data-sonner-toast][data-expanded="false"][data-front="false"][data-index="1"] {
-  --oc-toast-shadow: var(--oc-toast-shadow-rear-near);
-  background: var(--oc-toast-background-rear-near) !important;
+  --yuri-toast-shadow: var(--yuri-toast-shadow-rear-near);
+  background: var(--yuri-toast-background-rear-near) !important;
 }
 
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
   [data-sonner-toast][data-expanded="false"][data-front="false"][data-index]:not(
     [data-index="1"]
   ) {
-  --oc-toast-shadow: var(--oc-toast-shadow-rear-far);
-  background: var(--oc-toast-background-rear-far) !important;
+  --yuri-toast-shadow: var(--yuri-toast-shadow-rear-far);
+  background: var(--yuri-toast-background-rear-far) !important;
 }
 
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
@@ -2195,13 +2195,13 @@ button.oc-mobile-worktree-label-trigger:active,
 
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
   [data-sonner-toast]
-  .oc-toast-status-icon-desktop {
+  .yuri-toast-status-icon-desktop {
   display: none;
 }
 
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
   [data-sonner-toast]
-  .oc-toast-status-icon-mobile {
+  .yuri-toast-status-icon-mobile {
   display: block;
 }
 
@@ -2250,31 +2250,31 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .oc-mobile-glass-surface,
-  .oc-mobile-floating-surface,
-  .oc-mobile-floating-action,
-  .oc-mobile-glass-control,
-  .oc-composer-autocomplete-surface,
-  .oc-mobile-overlay-surface {
+  .yuri-mobile-glass-surface,
+  .yuri-mobile-floating-surface,
+  .yuri-mobile-floating-action,
+  .yuri-mobile-glass-control,
+  .yuri-composer-autocomplete-surface,
+  .yuri-mobile-overlay-surface {
     background: var(--surface-elevated);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 
   /* Settings detail stays a transparent canvas; only group cards own material. */
-  .oc-mobile-floating-surface.oc-mobile-settings-detail-card,
-  .oc-mobile-settings-detail-card {
+  .yuri-mobile-floating-surface.yuri-mobile-settings-detail-card,
+  .yuri-mobile-settings-detail-card {
     background: transparent;
     box-shadow: none;
   }
 
-  .oc-mobile-floating-action {
+  .yuri-mobile-floating-action {
     box-shadow:
       0 6px 14px -5px rgb(0 0 0 / 0.12),
       0 2px 4px -2px rgb(0 0 0 / 0.08);
   }
 
-  .oc-mobile-glass-control--clear {
+  .yuri-mobile-glass-control--clear {
     background: var(--surface-elevated);
   }
 
@@ -2386,7 +2386,7 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: 36px;
   }
 
-  :root.mobile-pointer:not(.desktop-runtime) button.oc-pending-changes-trigger {
+  :root.mobile-pointer:not(.desktop-runtime) button.yuri-pending-changes-trigger {
     min-height: 28px !important;
   }
 
@@ -2402,14 +2402,14 @@ button.oc-mobile-worktree-label-trigger:active,
 
   /* Tool rows provide their own compact rhythm. The generic touch target rule
      would otherwise enlarge expandable rows such as Search Files only. */
-  :root.mobile-pointer:not(.desktop-runtime) .oc-tool-row[role="button"] {
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-tool-row[role="button"] {
     min-height: auto;
     min-width: auto;
   }
 
   /* Inline background actions must not add height to their tool row. */
   :root.mobile-pointer:not(.desktop-runtime)
-    .oc-tool-row button[data-component="session-background-move"] {
+    .yuri-tool-row button[data-component="session-background-move"] {
     height: auto;
     min-height: 0 !important;
     min-width: 0 !important;
@@ -2454,10 +2454,10 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 
   :root.mobile-pointer:not(.desktop-runtime)
-    .oc-mobile-draft-target-selectors
+    .yuri-mobile-draft-target-selectors
     button,
   :root.mobile-pointer:not(.desktop-runtime)
-    .oc-mobile-draft-target-selectors
+    .yuri-mobile-draft-target-selectors
     [role="button"] {
     height: 26px !important;
     min-height: 26px !important;
@@ -2513,10 +2513,10 @@ button.oc-mobile-worktree-label-trigger:active,
      The generic 36px touch-target rule would stretch drag/delete/edit/send
      and make left-cluster gaps look huge under mobile-pointer. */
   :root.mobile-pointer:not(.desktop-runtime)
-    .oc-composer-queue
+    .yuri-composer-queue
     button,
   :root.mobile-pointer:not(.desktop-runtime)
-    .oc-composer-queue
+    .yuri-composer-queue
     [role="button"] {
     min-height: 0 !important;
     min-width: 0 !important;
@@ -2586,16 +2586,16 @@ button.oc-mobile-worktree-label-trigger:active,
      - none:           opt out (drag handles and custom fill-only feedback)
      Press-in engages quickly; release uses one restrained spring-like settle. */
   :root.mobile-pointer:not(.desktop-runtime) {
-    --oc-press-edge-outset: 3px;
-    --oc-press-compact-scale: 1.05;
-    --oc-press-engage-duration: 80ms;
-    --oc-press-engage-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --oc-press-release-duration: 260ms;
-    --oc-press-release-ease: cubic-bezier(0.2, 1.28, 0.3, 1);
+    --yuri-press-edge-outset: 3px;
+    --yuri-press-compact-scale: 1.05;
+    --yuri-press-engage-duration: 80ms;
+    --yuri-press-engage-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --yuri-press-release-duration: 260ms;
+    --yuri-press-release-ease: cubic-bezier(0.2, 1.28, 0.3, 1);
     /* ~per-side outset via scale; clamp so tiny/huge widths stay restrained */
-    --oc-press-soft-scale: clamp(
+    --yuri-press-soft-scale: clamp(
       1.006,
-      calc(1 + (2 * var(--oc-press-edge-outset)) / 100cqi),
+      calc(1 + (2 * var(--yuri-press-edge-outset)) / 100cqi),
       1.03
     );
   }
@@ -2603,15 +2603,15 @@ button.oc-mobile-worktree-label-trigger:active,
   /* Full-bleed shells expose inline size so soft/surface children resolve cqi
      against roughly their own width (row/card ≈ shell). Chat message bodies
      also host wide tool/subagent rows that must stay on soft press. */
-  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-project-shell,
-  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-project-groups,
-  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-session-row,
-  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-settings-card,
-  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-settings-nav-list,
-  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-catalog,
-  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-card-shell,
-  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-scheduled-task-card,
-  :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel,
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-project-shell,
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-project-groups,
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-session-row,
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-settings-card,
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-settings-nav-list,
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-assistant-catalog,
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-assistant-card-shell,
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-scheduled-task-card,
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-changes-panel,
   :root.mobile-pointer:not(.desktop-runtime) .pwa-overlay-panel,
   :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-message-text-export-root="true"],
@@ -2619,11 +2619,11 @@ button.oc-mobile-worktree-label-trigger:active,
     container-type: inline-size;
   }
 
-  :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel {
-    --oc-press-edge-outset: 2px;
-    --oc-press-soft-scale: clamp(
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-changes-panel {
+    --yuri-press-edge-outset: 2px;
+    --yuri-press-soft-scale: clamp(
       1.004,
-      calc(1 + (2 * var(--oc-press-edge-outset)) / 100cqi),
+      calc(1 + (2 * var(--yuri-press-edge-outset)) / 100cqi),
       1.02
     );
   }
@@ -2639,7 +2639,7 @@ button.oc-mobile-worktree-label-trigger:active,
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     transform-origin: center;
-    transition: scale var(--oc-press-release-duration) var(--oc-press-release-ease);
+    transition: scale var(--yuri-press-release-duration) var(--yuri-press-release-ease);
   }
 
   /* Default + soft: gentle absolute-ish edge outset. Wide tool/subagent rows,
@@ -2654,9 +2654,9 @@ button.oc-mobile-worktree-label-trigger:active,
     ):not(
       [data-mobile-press-surface-trigger]
     ):active:not(:has(:where(button, [role="button"], [role="menuitem"]):active)) {
-    scale: var(--oc-press-soft-scale);
-    transition-duration: var(--oc-press-engage-duration);
-    transition-timing-function: var(--oc-press-engage-ease);
+    scale: var(--yuri-press-soft-scale);
+    transition-duration: var(--yuri-press-engage-duration);
+    transition-timing-function: var(--yuri-press-engage-ease);
   }
 
   /* Compact: opt-in only for particularly small controls (icon buttons). */
@@ -2668,9 +2668,9 @@ button.oc-mobile-worktree-label-trigger:active,
     ):active:not(
       :has(:where(button, [role="button"], [role="menuitem"]):active)
     ) {
-    scale: var(--oc-press-compact-scale);
-    transition-duration: var(--oc-press-engage-duration);
-    transition-timing-function: var(--oc-press-engage-ease);
+    scale: var(--yuri-press-compact-scale);
+    transition-duration: var(--yuri-press-engage-duration);
+    transition-timing-function: var(--yuri-press-engage-ease);
   }
 
   /* Menu rows use semantic pressed fill while their soft grow remains subtle. */
@@ -2684,16 +2684,16 @@ button.oc-mobile-worktree-label-trigger:active,
     [data-mobile-press-surface="soft"] {
     -webkit-tap-highlight-color: transparent;
     transform-origin: center;
-    transition: scale var(--oc-press-release-duration) var(--oc-press-release-ease);
+    transition: scale var(--yuri-press-release-duration) var(--yuri-press-release-ease);
   }
 
   :root.mobile-pointer:not(.desktop-runtime)
     [data-mobile-press-surface="soft"]:has(
       [data-mobile-press-surface-trigger]:active
     ) {
-    scale: var(--oc-press-soft-scale);
-    transition-duration: var(--oc-press-engage-duration);
-    transition-timing-function: var(--oc-press-engage-ease);
+    scale: var(--yuri-press-soft-scale);
+    transition-duration: var(--yuri-press-engage-duration);
+    transition-timing-function: var(--yuri-press-engage-ease);
   }
 
   /* typography.css keeps a desktop favorite-button press transform. Mobile
@@ -2758,7 +2758,7 @@ button.oc-mobile-worktree-label-trigger:active,
      rule above would otherwise let short Projects content size the shell to
      its children and reveal the parent --background underneath. */
   :root.mobile-pointer:not(.desktop-runtime)
-    .oc-mobile-floating-shell.overflow-hidden {
+    .yuri-mobile-floating-shell.overflow-hidden {
     overflow: hidden !important;
   }
 
@@ -2783,7 +2783,7 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime) [data-agent-avatar],
   :root.mobile-pointer:not(.desktop-runtime) [data-agent-avatar].overflow-hidden,
   :root.mobile-pointer:not(.desktop-runtime) [data-assistant-working-avatar] .overflow-hidden,
-  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-avatar .overflow-hidden {
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-assistant-avatar .overflow-hidden {
     overflow: hidden !important;
     overflow-x: hidden !important;
     overflow-y: hidden !important;
@@ -2834,7 +2834,7 @@ button.oc-mobile-worktree-label-trigger:active,
       .markdown-content
       [data-component="markdown-code"]
       :is(pre, code),
-    :root.oc-capacitor-app:not(.oc-platform-android)
+    :root.yuri-capacitor-app:not(.yuri-platform-android)
       .markdown-content
       [data-component="markdown-code"]
       :is(pre, code) {
@@ -2843,10 +2843,10 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 
   @supports (-webkit-touch-callout: none) {
-    :root.mobile-pointer:not(.desktop-runtime):not(.oc-platform-android)
+    :root.mobile-pointer:not(.desktop-runtime):not(.yuri-platform-android)
       .markdown-content
       [data-md-code-line-numbers],
-    :root.oc-capacitor-app:not(.oc-platform-android)
+    :root.yuri-capacitor-app:not(.yuri-platform-android)
       .markdown-content
       [data-md-code-line-numbers] {
       display: none;
@@ -2950,24 +2950,24 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.device-mobile:not(.desktop-runtime),
   :root.device-tablet:not(.desktop-runtime),
   :root.mobile-pointer:not(.desktop-runtime) {
-    --oc-safe-area-top: env(safe-area-inset-top, 0);
-    --oc-safe-area-right: env(safe-area-inset-right, 0);
-    --oc-safe-area-bottom: env(safe-area-inset-bottom, 0);
-    --oc-safe-area-bottom-visual: clamp(
+    --yuri-safe-area-top: env(safe-area-inset-top, 0);
+    --yuri-safe-area-right: env(safe-area-inset-right, 0);
+    --yuri-safe-area-bottom: env(safe-area-inset-bottom, 0);
+    --yuri-safe-area-bottom-visual: clamp(
       0px,
-      calc(var(--oc-safe-area-bottom) * 0.05),
+      calc(var(--yuri-safe-area-bottom) * 0.05),
       4px
     );
-    --oc-safe-area-left: env(safe-area-inset-left, 0);
+    --yuri-safe-area-left: env(safe-area-inset-left, 0);
   }
 
   :root.device-mobile:not(.desktop-runtime) .header-safe-area,
   :root.device-tablet:not(.desktop-runtime) .header-safe-area,
   :root.mobile-pointer:not(.desktop-runtime) .header-safe-area {
-    padding-top: var(--oc-safe-area-top);
+    padding-top: var(--yuri-safe-area-top);
   }
 
-  :root.oc-capacitor-app [data-sonner-toaster][data-y-position="top"] {
+  :root.yuri-capacitor-app [data-sonner-toaster][data-y-position="top"] {
     top: calc(env(safe-area-inset-top, 0px) + 16px) !important;
   }
 }
@@ -2980,21 +2980,21 @@ button.oc-mobile-worktree-label-trigger:active,
     :root.device-mobile:not(.desktop-runtime),
     :root.device-tablet:not(.desktop-runtime),
     :root.mobile-pointer:not(.desktop-runtime) {
-      --oc-safe-area-top: env(safe-area-inset-top, 0);
-      --oc-safe-area-right: env(safe-area-inset-right, 0);
-      --oc-safe-area-bottom: env(safe-area-inset-bottom, 0);
-      --oc-safe-area-bottom-visual: clamp(
+      --yuri-safe-area-top: env(safe-area-inset-top, 0);
+      --yuri-safe-area-right: env(safe-area-inset-right, 0);
+      --yuri-safe-area-bottom: env(safe-area-inset-bottom, 0);
+      --yuri-safe-area-bottom-visual: clamp(
         0px,
-        calc(var(--oc-safe-area-bottom) * 0.05),
+        calc(var(--yuri-safe-area-bottom) * 0.05),
         4px
       );
-      --oc-safe-area-left: env(safe-area-inset-left, 0);
+      --yuri-safe-area-left: env(safe-area-inset-left, 0);
     }
 
     :root.device-mobile:not(.desktop-runtime) .header-safe-area,
     :root.device-tablet:not(.desktop-runtime) .header-safe-area,
     :root.mobile-pointer:not(.desktop-runtime) .header-safe-area {
-      padding-top: var(--oc-safe-area-top);
+      padding-top: var(--yuri-safe-area-top);
     }
 
     :root.device-mobile:not(.desktop-runtime) .main-content-safe-area,
@@ -3002,15 +3002,15 @@ button.oc-mobile-worktree-label-trigger:active,
     :root.mobile-pointer:not(.desktop-runtime) .main-content-safe-area {
       padding-top: 0;
       padding-bottom: 0;
-      padding-left: var(--oc-safe-area-left);
-      padding-right: var(--oc-safe-area-right);
+      padding-left: var(--yuri-safe-area-left);
+      padding-right: var(--yuri-safe-area-right);
     }
 
     /* Safe area for bottom fixed/bottom-0 elements */
     :root.device-mobile:not(.desktop-runtime) .bottom-safe-area,
     :root.device-tablet:not(.desktop-runtime) .bottom-safe-area,
     :root.mobile-pointer:not(.desktop-runtime) .bottom-safe-area {
-      padding-bottom: var(--oc-safe-area-bottom-visual) !important;
+      padding-bottom: var(--yuri-safe-area-bottom-visual) !important;
     }
 
     /* Drawer safe area - top already offset by header height */
@@ -3018,7 +3018,7 @@ button.oc-mobile-worktree-label-trigger:active,
     :root.device-tablet:not(.desktop-runtime) .drawer-safe-area,
     :root.mobile-pointer:not(.desktop-runtime) .drawer-safe-area {
       padding-top: 0;
-      padding-bottom: var(--oc-safe-area-bottom-visual);
+      padding-bottom: var(--yuri-safe-area-bottom-visual);
     }
 
     /* Fix iOS viewport issues */
@@ -3088,21 +3088,21 @@ button.oc-mobile-worktree-label-trigger:active,
     :root.device-mobile:not(.desktop-runtime),
     :root.device-tablet:not(.desktop-runtime),
     :root.mobile-pointer:not(.desktop-runtime) {
-      --oc-safe-area-top: env(safe-area-inset-top, 0);
-      --oc-safe-area-right: env(safe-area-inset-right, 0);
-      --oc-safe-area-bottom: env(safe-area-inset-bottom, 0);
-      --oc-safe-area-bottom-visual: clamp(
+      --yuri-safe-area-top: env(safe-area-inset-top, 0);
+      --yuri-safe-area-right: env(safe-area-inset-right, 0);
+      --yuri-safe-area-bottom: env(safe-area-inset-bottom, 0);
+      --yuri-safe-area-bottom-visual: clamp(
         0px,
-        calc(var(--oc-safe-area-bottom) * 0.05),
+        calc(var(--yuri-safe-area-bottom) * 0.05),
         4px
       );
-      --oc-safe-area-left: env(safe-area-inset-left, 0);
+      --yuri-safe-area-left: env(safe-area-inset-left, 0);
     }
 
     :root.device-mobile:not(.desktop-runtime) .header-safe-area,
     :root.device-tablet:not(.desktop-runtime) .header-safe-area,
     :root.mobile-pointer:not(.desktop-runtime) .header-safe-area {
-      padding-top: var(--oc-safe-area-top);
+      padding-top: var(--yuri-safe-area-top);
     }
 
     :root.device-mobile:not(.desktop-runtime) .main-content-safe-area,
@@ -3110,14 +3110,14 @@ button.oc-mobile-worktree-label-trigger:active,
     :root.mobile-pointer:not(.desktop-runtime) .main-content-safe-area {
       padding-top: 0;
       padding-bottom: 0;
-      padding-left: var(--oc-safe-area-left);
-      padding-right: var(--oc-safe-area-right);
+      padding-left: var(--yuri-safe-area-left);
+      padding-right: var(--yuri-safe-area-right);
     }
 
     :root.device-mobile:not(.desktop-runtime) .bottom-safe-area,
     :root.device-tablet:not(.desktop-runtime) .bottom-safe-area,
     :root.mobile-pointer:not(.desktop-runtime) .bottom-safe-area {
-      padding-bottom: var(--oc-safe-area-bottom-visual) !important;
+      padding-bottom: var(--yuri-safe-area-bottom-visual) !important;
     }
   }
 }
@@ -3131,16 +3131,16 @@ button.oc-mobile-worktree-label-trigger:active,
        keep the vh-based fallback. Newer browsers use 100dvh so Android
        Chrome's collapsible URL bar doesn't push the dialog footer off-screen. */
     max-height: calc(
-      100vh - var(--oc-safe-area-top, 0px) -
-        var(--oc-safe-area-bottom-visual, 0px) - 20px
+      100vh - var(--yuri-safe-area-top, 0px) -
+        var(--yuri-safe-area-bottom-visual, 0px) - 20px
     );
     max-height: calc(
-      100dvh - var(--oc-safe-area-top, 0px) -
-        var(--oc-safe-area-bottom-visual, 0px) - 20px
+      100dvh - var(--yuri-safe-area-top, 0px) -
+        var(--yuri-safe-area-bottom-visual, 0px) - 20px
     );
     padding: var(--pwa-dialog-padding);
     padding-top: calc(
-      var(--pwa-dialog-padding) + (var(--oc-safe-area-top, 0px) * 0.35)
+      var(--pwa-dialog-padding) + (var(--yuri-safe-area-top, 0px) * 0.35)
     );
     row-gap: clamp(0.75rem, 2vw, 1.25rem);
   }
@@ -3151,12 +3151,12 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 
   .pwa-dialog-content [data-slot="dialog-close"] {
-    top: calc(0.25rem + (var(--oc-safe-area-top, 0px) * 0.35));
+    top: calc(0.25rem + (var(--yuri-safe-area-top, 0px) * 0.35));
     right: var(--pwa-dialog-padding);
   }
 
   .pwa-dialog-content.pwa-compact [data-slot="dialog-close"] {
-    top: calc(0.2rem + (var(--oc-safe-area-top, 0px) * 0.3));
+    top: calc(0.2rem + (var(--yuri-safe-area-top, 0px) * 0.3));
   }
 
   .pwa-dialog-content .settings-page-body {
@@ -3182,7 +3182,7 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 
   .pwa-overlay-panel .pwa-overlay-scroll {
-    padding-bottom: calc(var(--oc-safe-area-bottom-visual, 0px) + 12px);
+    padding-bottom: calc(var(--yuri-safe-area-bottom-visual, 0px) + 12px);
   }
 }
 
@@ -3197,8 +3197,8 @@ button.oc-mobile-worktree-label-trigger:active,
     left: 0;
     right: 0;
     height: var(
-      --oc-safe-area-bottom-visual,
-      var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0))
+      --yuri-safe-area-bottom-visual,
+      var(--yuri-safe-area-bottom, env(safe-area-inset-bottom, 0))
     );
     background: linear-gradient(
       to top,
@@ -3254,14 +3254,14 @@ button.oc-mobile-worktree-label-trigger:active,
    padding is gated behind display-mode: standalone — which the Capacitor WebView does
    not match — so nothing reserves bottom room in the native app. Expose it as a token
    so any native surface can consume it; the chat shell does so below. */
-:root.oc-capacitor-app {
-  --oc-app-bottom-safe: max(
+:root.yuri-capacitor-app {
+  --yuri-app-bottom-safe: max(
     16px,
     calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) * 0.5)
   );
 }
 
-/* Android native safe areas. Every --oc-safe-area-* definition above is gated
+/* Android native safe areas. Every --yuri-safe-area-* definition above is gated
    behind -webkit-touch-callout (iOS) or display-mode: standalone, neither of
    which matches the Capacitor Android WebView — so the Android app used to rely
    entirely on StatusBar overlay:false insetting the WebView natively. Android 15
@@ -3270,22 +3270,22 @@ button.oc-mobile-worktree-label-trigger:active,
    <html> (env() still reads 0 on WebViews without the safe-area passthrough
    fix), so read those first and fall back to env(). On devices where the native
    inset still applies, both sources report 0 — no double padding. */
-:root.oc-capacitor-app.oc-platform-android {
-  --oc-safe-area-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
-  --oc-safe-area-right: var(
+:root.yuri-capacitor-app.yuri-platform-android {
+  --yuri-safe-area-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --yuri-safe-area-right: var(
     --safe-area-inset-right,
     env(safe-area-inset-right, 0px)
   );
-  --oc-safe-area-bottom: var(
+  --yuri-safe-area-bottom: var(
     --safe-area-inset-bottom,
     env(safe-area-inset-bottom, 0px)
   );
-  --oc-safe-area-bottom-visual: clamp(
+  --yuri-safe-area-bottom-visual: clamp(
     0px,
-    calc(var(--oc-safe-area-bottom) * 0.05),
+    calc(var(--yuri-safe-area-bottom) * 0.05),
     4px
   );
-  --oc-safe-area-left: var(
+  --yuri-safe-area-left: var(
     --safe-area-inset-left,
     env(safe-area-inset-left, 0px)
   );
@@ -3296,15 +3296,15 @@ button.oc-mobile-worktree-label-trigger:active,
    intentional full-platform downgrade, not progressive enhancement.
    Accessibility fallback remains `@media (prefers-reduced-transparency: reduce)`
    above. Settings detail stays a quiet canvas via the shared
-   `.oc-mobile-settings-detail-card` rules (transparent, no blur). */
+   `.yuri-mobile-settings-detail-card` rules (transparent, no blur). */
 
-:root.oc-capacitor-app.oc-platform-android .header-safe-area {
-  padding-top: var(--oc-safe-area-top);
+:root.yuri-capacitor-app.yuri-platform-android .header-safe-area {
+  padding-top: var(--yuri-safe-area-top);
 }
 
-:root.oc-capacitor-app.oc-platform-android
+:root.yuri-capacitor-app.yuri-platform-android
   [data-sonner-toaster][data-y-position="top"] {
-  top: calc(var(--oc-safe-area-top) + 16px) !important;
+  top: calc(var(--yuri-safe-area-top) + 16px) !important;
 }
 
 /* Paint the document canvas with the theme background in the native app — the same
@@ -3313,18 +3313,18 @@ button.oc-mobile-worktree-label-trigger:active,
    makes the bare UA canvas dark, so any sliver not covered by content (notably the
    area behind the status bar) bled through as a dark band at the top. It only showed
    in dark mode, which is why it tracked the system theme. */
-:root.oc-capacitor-app,
-:root.oc-capacitor-app body,
-:root.oc-capacitor-app #root {
+:root.yuri-capacitor-app,
+:root.yuri-capacitor-app body,
+:root.yuri-capacitor-app #root {
   background: var(--background) !important;
   background-color: var(--background) !important;
 }
 
 /* Native (Capacitor) keyboard handling (iOS + Android).
    Message list keeps scrollTop (auto-follow freezes geometry chase).
-   Scoped to .oc-capacitor-app so the browser PWA keeps its dvh behaviour.
+   Scoped to .yuri-capacitor-app so the browser PWA keeps its dvh behaviour.
 
-   iOS: Keyboard resize:none + immediate --oc-kb-layout shell shrink. Header
+   iOS: Keyboard resize:none + immediate --yuri-kb-layout shell shrink. Header
    stays pinned; the composer sits at the new shell bottom above the IME.
    No transform FLIP.
 
@@ -3338,29 +3338,29 @@ button.oc-mobile-worktree-label-trigger:active,
    Header stays fixed; shell keeps solid bottom-safe breathing room.
    https://developer.android.com/develop/ui/views/layout/sw-keyboard
 
-   --oc-keyboard-inset: portal overlays. --oc-kb-layout: iOS shell height (and
-   Android unused / kept at 0 during FLIP). --oc-kb-scroll-inset: chat-scroll
+   --yuri-keyboard-inset: portal overlays. --yuri-kb-layout: iOS shell height (and
+   Android unused / kept at 0 during FLIP). --yuri-kb-scroll-inset: chat-scroll
    padding for non-composer fields (question cards, etc.) when the shell is
-   not shrunk; cleared to 0 while composer focus owns --oc-kb-layout. */
+   not shrunk; cleared to 0 while composer focus owns --yuri-kb-layout. */
 /* Match the tabs-root canvas so Capacitor bottom-safe padding and any
    under-filled phone shell never seam against plain --background. */
-.oc-mobile-app-shell {
-  --oc-mobile-page-background: color-mix(
+.yuri-mobile-app-shell {
+  --yuri-mobile-page-background: color-mix(
     in srgb,
     var(--surface-muted) 18%,
     var(--surface-background)
   );
-  background-color: var(--oc-mobile-page-background);
+  background-color: var(--yuri-mobile-page-background);
 }
 
-:root.oc-capacitor-app .oc-mobile-app-shell {
-  height: calc(100dvh - var(--oc-kb-layout, 0px));
+:root.yuri-capacitor-app .yuri-mobile-app-shell {
+  height: calc(100dvh - var(--yuri-kb-layout, 0px));
   /* Reserve the bottom safe area only while the keyboard is down — when it's up the
      inset cancels it out (the home indicator is hidden and the composer should sit
      flush above the keyboard). The shell keeps its own bg behind this padding. */
   padding-bottom: max(
     0px,
-    calc(var(--oc-app-bottom-safe, 0px) - var(--oc-kb-layout, 0px))
+    calc(var(--yuri-app-bottom-safe, 0px) - var(--yuri-kb-layout, 0px))
   );
 }
 
@@ -3368,8 +3368,8 @@ button.oc-mobile-worktree-label-trigger:active,
    The gap paints with the shell's own --background (set on this element), so
    the composer has breathing room above the keyboard instead of sitting flush,
    and chat content never shows through the gap. */
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-app-shell {
-  padding-bottom: var(--oc-app-bottom-safe, 16px);
+:root.yuri-capacitor-app.yuri-platform-android .yuri-mobile-app-shell {
+  padding-bottom: var(--yuri-app-bottom-safe, 16px);
 }
 
 /* Portal surfaces (bottom sheets, overlay panels) render at <body> level, outside
@@ -3379,8 +3379,8 @@ button.oc-mobile-worktree-label-trigger:active,
    any input above the keyboard instead of hiding it underneath. The opacity term
    preserves the scrim's enter fade (Tailwind's `transition-opacity` would otherwise
    be overridden by this rule's `transition` shorthand). */
-:root.oc-capacitor-app .oc-keyboard-inset-surface {
-  bottom: var(--oc-keyboard-inset, 0px);
+:root.yuri-capacitor-app .yuri-keyboard-inset-surface {
+  bottom: var(--yuri-keyboard-inset, 0px);
   transition:
     bottom 0.25s cubic-bezier(0.38, 0.7, 0.125, 1),
     opacity 0.2s ease-out;
@@ -3388,18 +3388,18 @@ button.oc-mobile-worktree-label-trigger:active,
 /* While a panel is playing its enter animation, its bottom anchor snaps
    instead of transitioning — opening an overlay typically dismisses the
    keyboard in the same moment, and animating both made the entrance jerky. */
-:root.oc-capacitor-app .oc-keyboard-inset-surface.oc-keyboard-inset-snap {
+:root.yuri-capacitor-app .yuri-keyboard-inset-surface.yuri-keyboard-inset-snap {
   transition: opacity 0.2s ease-out;
 }
 
 /* Motion owns scrim opacity through rAF and WAAPI. Keep the native keyboard anchor
    transition scoped to this surface and suspend it during window movement. */
-:root.oc-capacitor-app .oc-keyboard-inset-surface.oc-mobile-window-motion {
+:root.yuri-capacitor-app .yuri-keyboard-inset-surface.yuri-mobile-window-motion {
   transition: bottom 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
 
-:root.oc-capacitor-app
-  .oc-keyboard-inset-surface.oc-mobile-window-motion.oc-mobile-window-motion-active {
+:root.yuri-capacitor-app
+  .yuri-keyboard-inset-surface.yuri-mobile-window-motion.yuri-mobile-window-motion-active {
   transition: none;
 }
 
@@ -3409,9 +3409,9 @@ button.oc-mobile-worktree-label-trigger:active,
    Without this cap a sheet with the keyboard raised (typing inside it) can
    grow past the top safe area and slide under the notch/status bar. Subtract
    both the keyboard inset and the top safe area from the available height. */
-:root.oc-capacitor-app .pwa-overlay-panel {
+:root.yuri-capacitor-app .pwa-overlay-panel {
   max-height: calc(
-    100dvh - var(--oc-keyboard-inset, 0px) -
+    100dvh - var(--yuri-keyboard-inset, 0px) -
       max(0.75rem, env(safe-area-inset-top))
   );
   /* Bottom sheets must clear the home indicator / rounded hardware edge.
@@ -3419,9 +3419,9 @@ button.oc-mobile-worktree-label-trigger:active,
      the reservation here for every native overlay panel. */
   padding-bottom: max(
     0.75rem,
-    var(--oc-app-bottom-safe, 16px),
+    var(--yuri-app-bottom-safe, 16px),
     var(
-      --oc-safe-area-bottom,
+      --yuri-safe-area-bottom,
       var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
     )
   ) !important;
@@ -3430,12 +3430,12 @@ button.oc-mobile-worktree-label-trigger:active,
 /* HTML preview in a sheet must reach the physical bottom. The surface owns the
    default safe pad; a child negative margin cannot paint through body overflow
    clip. Zero pad only while an active (non-inert) sheet hosts html preview. */
-[data-mobile-overlay-active="true"]:not([inert]) [data-oc-motion-id]:has([data-mobile-html-preview="true"]),
-:root.oc-capacitor-app [data-mobile-overlay-active="true"]:not([inert]) .pwa-overlay-panel[data-oc-motion-id]:has([data-mobile-html-preview="true"]) {
+[data-mobile-overlay-active="true"]:not([inert]) [data-yuri-motion-id]:has([data-mobile-html-preview="true"]),
+:root.yuri-capacitor-app [data-mobile-overlay-active="true"]:not([inert]) .pwa-overlay-panel[data-yuri-motion-id]:has([data-mobile-html-preview="true"]) {
   padding-bottom: 0 !important;
 }
 
-:root.oc-capacitor-app .pwa-overlay-panel .pwa-overlay-scroll {
+:root.yuri-capacitor-app .pwa-overlay-panel .pwa-overlay-scroll {
   /* Surface already owns the physical bottom inset; keep only a small list gap. */
   padding-bottom: 12px;
 }
@@ -3445,8 +3445,8 @@ button.oc-mobile-worktree-label-trigger:active,
    the height (instead of min-height: 100dvh) is what makes overflow-y-auto actually
    scroll, so a field near the bottom lifts above the keyboard rather than staying
    hidden behind it. min-height: 0 neutralises the Tailwind min-h-dvh baseline. */
-:root.oc-capacitor-app .oc-keyboard-fill-screen {
-  height: calc(100dvh - var(--oc-keyboard-inset, 0px));
+:root.yuri-capacitor-app .yuri-keyboard-fill-screen {
+  height: calc(100dvh - var(--yuri-keyboard-inset, 0px));
   min-height: 0;
   transition: height 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
@@ -3454,61 +3454,61 @@ button.oc-mobile-worktree-label-trigger:active,
 /* Keyboard FLIP movers stay layer-promoted for the Capacitor session. Toggling
    will-change on every open/close churns WebKit compositor layers and slows
    later animations; keep a stable promotion on the fixed movers instead. */
-:root.oc-capacitor-app .oc-mobile-composer,
-:root.oc-capacitor-app .oc-draft-center {
+:root.yuri-capacitor-app .yuri-mobile-composer,
+:root.yuri-capacitor-app .yuri-draft-center {
   will-change: transform;
 }
 
 /* Keyboard slide choreography: the composer (and the draft title, see
-   .oc-draft-center note below) are moved with INLINE transform/transition set
+   .yuri-draft-center note below) are moved with INLINE transform/transition set
    by useNativeMobileChrome — WebKit does not reliably start transitions when a
    transform changes via a CSS custom property, which parked the composer until
    the keyboard finished. Only the sliding backdrop lives here. */
-:root.oc-capacitor-app.oc-kb-animating .oc-mobile-composer {
+:root.yuri-capacitor-app.yuri-kb-animating .yuri-mobile-composer {
   /* Keep the solid page foot while the keyboard slides so the safe-area
      does not flash a translucent seam under the input. */
   background: var(--background) !important;
   background-color: var(--background) !important;
 }
 
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-app-shell .chat-scroll {
-  /* Android keeps the FLIP constant-viewport: shell shrinks by --oc-kb-layout
+:root.yuri-capacitor-app.yuri-platform-android .yuri-mobile-app-shell .chat-scroll {
+  /* Android keeps the FLIP constant-viewport: shell shrinks by --yuri-kb-layout
      but the scroller extends that far below so virtualizer clientHeight stays
      stable across the composer transform. */
   bottom: calc(
-    -1 * max(var(--oc-kb-layout, 0px) - var(--oc-app-bottom-safe, 0px), 0px)
+    -1 * max(var(--yuri-kb-layout, 0px) - var(--yuri-app-bottom-safe, 0px), 0px)
   );
-  padding-bottom: var(--oc-kb-scroll-inset, var(--oc-kb-layout, 0px));
+  padding-bottom: var(--yuri-kb-scroll-inset, var(--yuri-kb-layout, 0px));
 }
 
 /* iOS: page-push layout. The scroller is a normal flex sibling above the
-   composer, so shrinking the shell (--oc-kb-layout) lifts the transcript with
+   composer, so shrinking the shell (--yuri-kb-layout) lifts the transcript with
    the full input. Do not extend behind the composer during that path — that
    was the FLIP trick and left the page visually pinned while only the caret
    moved.
 
-   Question / other non-composer fields keep --oc-kb-layout at 0 and publish
-   --oc-kb-scroll-inset instead. Without that padding there is no scroll range
+   Question / other non-composer fields keep --yuri-kb-layout at 0 and publish
+   --yuri-kb-scroll-inset instead. Without that padding there is no scroll range
    to reveal the focused field above the IME (resize:none keeps a full-height
    viewport). Composer focus clears the scroll inset so shell shrink and
    padding never double-count. */
-:root.oc-capacitor-app:not(.oc-platform-android) .oc-mobile-app-shell .chat-scroll {
+:root.yuri-capacitor-app:not(.yuri-platform-android) .yuri-mobile-app-shell .chat-scroll {
   bottom: 0;
-  padding-bottom: var(--oc-kb-scroll-inset, 0px);
+  padding-bottom: var(--yuri-kb-scroll-inset, 0px);
 }
 
 /* WKWebView draws the text caret as a native layer that ignores CSS transforms:
    after the keyboard rise it visibly flies from the pre-keyboard position to
    the final one. Hide it during the transition (+ UIKit's reposition lag,
-   see oc-kb-caret-hold timing in useNativeMobileChrome) and pop it back in. */
-:root.oc-capacitor-app.oc-kb-caret-hold textarea,
-:root.oc-capacitor-app.oc-kb-caret-hold input {
+   see yuri-kb-caret-hold timing in useNativeMobileChrome) and pop it back in. */
+:root.yuri-capacitor-app.yuri-kb-caret-hold textarea,
+:root.yuri-capacitor-app.yuri-kb-caret-hold input {
   caret-color: transparent;
 }
 
 /* Keep a small breathing gap between the input card and the IME on every
    native platform. Flush-to-keyboard reads too tight on iPhone. */
-:root.oc-capacitor-app.oc-keyboard-open .oc-mobile-composer {
+:root.yuri-capacitor-app.yuri-keyboard-open .yuri-mobile-composer {
   /* Beat .bottom-safe-area's !important visual inset. The home indicator is
      behind the IME; leaving that padding in place parks the model row / foot
      padding under the keyboard (web only scrolls to the caret). */
@@ -3519,14 +3519,14 @@ button.oc-mobile-worktree-label-trigger:active,
    bridges, so a temporary gap may expose chat content. During show, correction,
    and hide, a dedicated pseudo paints from the composer's bottom to the viewport
    bottom. The ambient ::after mask stays disabled. */
-:root.oc-capacitor-app.oc-keyboard-open .oc-mobile-composer,
-:root.oc-capacitor-app.oc-kb-animating .oc-mobile-composer {
+:root.yuri-capacitor-app.yuri-keyboard-open .yuri-mobile-composer,
+:root.yuri-capacitor-app.yuri-kb-animating .yuri-mobile-composer {
   isolation: isolate;
   box-shadow: none;
 }
 
-:root.oc-capacitor-app.oc-keyboard-open .oc-mobile-composer::before,
-:root.oc-capacitor-app.oc-kb-animating .oc-mobile-composer::before {
+:root.yuri-capacitor-app.yuri-keyboard-open .yuri-mobile-composer::before,
+:root.yuri-capacitor-app.yuri-kb-animating .yuri-mobile-composer::before {
   content: "";
   position: absolute;
   z-index: -2;
@@ -3542,7 +3542,7 @@ button.oc-mobile-worktree-label-trigger:active,
    no elevation under the input — those read as a full-width soft shadow and
    only exist on chat pages (home uses a floating dock instead).
    Sub-agent read-only banner reuses the same foot treatment via
-   .oc-mobile-readonly-prompt-foot (no keyboard-lift hooks). */
+   .yuri-mobile-readonly-prompt-foot (no keyboard-lift hooks). */
 /* Selection actions replace the composer foot. The bar is only that foot's
    box, so transcript selection above it stays interactive. */
 [data-text-selection-menu] {
@@ -3550,8 +3550,8 @@ button.oc-mobile-worktree-label-trigger:active,
   background-color: var(--background) !important;
 }
 
-.oc-mobile-composer,
-.oc-mobile-readonly-prompt-foot {
+.yuri-mobile-composer,
+.yuri-mobile-readonly-prompt-foot {
   background: var(--background) !important;
   background-color: var(--background) !important;
   isolation: isolate;
@@ -3566,8 +3566,8 @@ button.oc-mobile-worktree-label-trigger:active,
    isolated gradients (Android Chromium paints them). Keep a solid page fill
    and fade only the alpha mask; z-index must stay non-negative so the
    compositor includes the overflow above the host. */
-.oc-mobile-composer::after,
-.oc-mobile-readonly-prompt-foot::after {
+.yuri-mobile-composer::after,
+.yuri-mobile-readonly-prompt-foot::after {
   content: "";
   position: absolute;
   z-index: 0;
@@ -3599,20 +3599,20 @@ button.oc-mobile-worktree-label-trigger:active,
 
 /* Capacitor chat safe-area cover: keep the home-indicator / navigation foot
    on the semantic page background while preserving higher overlay layers. */
-:root.oc-capacitor-app body:has(.oc-mobile-composer)::before,
-:root.oc-capacitor-app body:has(.oc-mobile-readonly-prompt-foot)::before {
+:root.yuri-capacitor-app body:has(.yuri-mobile-composer)::before,
+:root.yuri-capacitor-app body:has(.yuri-mobile-readonly-prompt-foot)::before {
   content: "";
   position: fixed;
   z-index: 1;
   left: 0;
   right: 0;
   bottom: 0;
-  height: var(--oc-app-bottom-safe, 16px);
+  height: var(--yuri-app-bottom-safe, 16px);
   background: var(--background);
   pointer-events: none;
 }
 
-@property --oc-mobile-composer-swap {
+@property --yuri-mobile-composer-swap {
   syntax: "<number>";
   inherits: true;
   initial-value: 0;
@@ -3622,7 +3622,7 @@ button.oc-mobile-worktree-label-trigger:active,
    Composer keeps one fixed reservation while its two layers exchange through
    paint-only motion.
 
-   Declared on the root rather than on `.oc-chat-composer-swap-scope`, because
+   Declared on the root rather than on `.yuri-chat-composer-swap-scope`, because
    the native iOS override further down is a plain root-class selector: a
    scope-qualified default carries more specificity and won a cascade the
    source order suggested it lost, so the measured native reservation never
@@ -3630,12 +3630,12 @@ button.oc-mobile-worktree-label-trigger:active,
    class. A root declaration also means no consumer can resolve an undefined
    inset when React `isMobile` disagrees with `mobile-pointer`. */
 :root {
-  --oc-chat-foot-inset: calc(
-    8rem + var(--oc-safe-area-bottom-visual, 0px)
+  --yuri-chat-foot-inset: calc(
+    8rem + var(--yuri-safe-area-bottom-visual, 0px)
   );
 }
 
-.oc-mobile-composer-surface {
+.yuri-mobile-composer-surface {
   z-index: 20;
   position: relative;
   width: 100%;
@@ -3648,31 +3648,31 @@ button.oc-mobile-worktree-label-trigger:active,
   filter: none !important;
 }
 
-.oc-mobile-composer-surface[data-composer-height-snap] {
+.yuri-mobile-composer-surface[data-composer-height-snap] {
   max-height: none;
 }
 
-.oc-mobile-composer-surface[data-composer-height-manual] textarea[data-chat-input="true"] {
+.yuri-mobile-composer-surface[data-composer-height-manual] textarea[data-chat-input="true"] {
   max-height: none !important;
   overflow-y: auto !important;
 }
 
 /* Sub-agent read-only card: no elevation halo (Android reads soft shadows as a
    full-width foot bar under the banner). */
-.oc-mobile-readonly-prompt-surface {
+.yuri-mobile-readonly-prompt-surface {
   box-shadow: none !important;
   filter: none !important;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
 
-.oc-mobile-composer-stack {
+.yuri-mobile-composer-stack {
   position: relative;
   width: 100%;
   min-width: 0;
 }
 
-.oc-mobile-composer-reveal {
+.yuri-mobile-composer-reveal {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -3683,7 +3683,7 @@ button.oc-mobile-worktree-label-trigger:active,
   pointer-events: auto;
 }
 
-.oc-mobile-composer-foot--overlay {
+.yuri-mobile-composer-foot--overlay {
   position: absolute !important;
   inset: 0 !important;
   display: flex;
@@ -3694,67 +3694,67 @@ button.oc-mobile-worktree-label-trigger:active,
   pointer-events: none;
 }
 
-.oc-mobile-composer-foot > * {
+.yuri-mobile-composer-foot > * {
   pointer-events: auto;
 }
 
 /* In-flow feet (draft / empty / history-error) never swap. Opening a new
    chat from a session reuses ChatContainer's root node, so the session's
-   inline --oc-mobile-composer-swap: 1 can leak onto the draft page. The
+   inline --yuri-mobile-composer-swap: 1 can leak onto the draft page. The
    compact pill then paints "Tap to type" with pointer-events: none and
    hides the real textarea. Pin expanded and drop the pill. */
-.oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {
-  --oc-mobile-composer-swap: 0;
+.yuri-mobile-composer-foot:not(.yuri-mobile-composer-foot--overlay) {
+  --yuri-mobile-composer-swap: 0;
 }
 
-.oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay)
-  .oc-mobile-composer-compact-layer {
+.yuri-mobile-composer-foot:not(.yuri-mobile-composer-foot--overlay)
+  .yuri-mobile-composer-compact-layer {
   display: none;
 }
 
 /* Expanded keeps the solid page foot fill. Compact fades the host so the
    rising glass pill can sit over the transcript without a solid bar behind it. */
-.oc-mobile-composer {
-  --oc-mobile-composer-host-fill: color-mix(
+.yuri-mobile-composer {
+  --yuri-mobile-composer-host-fill: color-mix(
     in srgb,
-    var(--background) calc((1 - var(--oc-mobile-composer-swap, 0)) * 100%),
+    var(--background) calc((1 - var(--yuri-mobile-composer-swap, 0)) * 100%),
     transparent
   );
-  background: var(--oc-mobile-composer-host-fill) !important;
-  background-color: var(--oc-mobile-composer-host-fill) !important;
+  background: var(--yuri-mobile-composer-host-fill) !important;
+  background-color: var(--yuri-mobile-composer-host-fill) !important;
 }
 
-.oc-mobile-composer::after {
-  background: var(--oc-mobile-composer-host-fill) !important;
-  background-color: var(--oc-mobile-composer-host-fill) !important;
+.yuri-mobile-composer::after {
+  background: var(--yuri-mobile-composer-host-fill) !important;
+  background-color: var(--yuri-mobile-composer-host-fill) !important;
   opacity: 1;
 }
 
 /* Expanded is a foot sibling. Overlay covers the chat, so `bottom-full` would
    pin to the top of the overlay — keep the original foot-inset anchor + mb-2.
-   Sit above `.oc-mobile-composer::after` (z-index: 0 page-background fade) so
+   Sit above `.yuri-mobile-composer::after` (z-index: 0 page-background fade) so
    the control stays readable; that fade is background only. */
-.oc-mobile-composer-foot--overlay > .oc-scroll-to-bottom--expanded {
+.yuri-mobile-composer-foot--overlay > .yuri-scroll-to-bottom--expanded {
   z-index: 30;
-  bottom: var(--oc-chat-foot-inset);
-  opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
+  bottom: var(--yuri-chat-foot-inset);
+  opacity: calc(1 - min(1, var(--yuri-mobile-composer-swap) * 2));
 }
 
 /* Compact sits inside the pill trailing cluster; fade with the rise half. */
-.oc-scroll-to-bottom--compact {
-  opacity: max(0, calc(var(--oc-mobile-composer-swap) * 2 - 1));
+.yuri-scroll-to-bottom--compact {
+  opacity: max(0, calc(var(--yuri-mobile-composer-swap) * 2 - 1));
 }
 
-.oc-scroll-to-bottom--hidden {
+.yuri-scroll-to-bottom--hidden {
   opacity: 0 !important;
   pointer-events: none;
 }
 
 .mobile-pointer:not(.desktop-runtime) .chat-scroll-foot-inset {
-  padding-bottom: var(--oc-chat-foot-inset);
+  padding-bottom: var(--yuri-chat-foot-inset);
 }
 
-.oc-mobile-composer-motion-viewport {
+.yuri-mobile-composer-motion-viewport {
   position: relative;
   display: flex;
   min-height: 2.75rem;
@@ -3769,63 +3769,63 @@ button.oc-mobile-worktree-label-trigger:active,
    Rest must stay transform:none / no will-change: identity translate3d and
    will-change:transform create a containing block that stops slash-catalog
    backdrop-filter from frosting the transcript. */
-.oc-mobile-composer-expanded-layer {
+.yuri-mobile-composer-expanded-layer {
   position: relative;
   z-index: 20;
   transform: none;
-  opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
+  opacity: calc(1 - min(1, var(--yuri-mobile-composer-swap) * 2));
 }
 
-.oc-chat-composer-swap-scope:is(
-  [data-oc-composer-swap-phase="tracking"],
-  [data-oc-composer-swap-phase="snapping"]
-) .oc-mobile-composer-motion-viewport {
+.yuri-chat-composer-swap-scope:is(
+  [data-yuri-composer-swap-phase="tracking"],
+  [data-yuri-composer-swap-phase="snapping"]
+) .yuri-mobile-composer-motion-viewport {
   contain: layout;
 }
 
-.oc-chat-composer-swap-scope:is(
-  [data-oc-composer-swap-phase="tracking"],
-  [data-oc-composer-swap-phase="snapping"]
-) .oc-mobile-composer-expanded-layer {
+.yuri-chat-composer-swap-scope:is(
+  [data-yuri-composer-swap-phase="tracking"],
+  [data-yuri-composer-swap-phase="snapping"]
+) .yuri-mobile-composer-expanded-layer {
   will-change: transform, opacity;
   transform: translate3d(
     0,
-    calc(min(1, var(--oc-mobile-composer-swap) * 2) * 110%),
+    calc(min(1, var(--yuri-mobile-composer-swap) * 2) * 110%),
     0
   );
 }
 
-.oc-mobile-composer-compact-layer {
+.yuri-mobile-composer-compact-layer {
   position: absolute;
   z-index: 30;
   left: 50%;
-  bottom: var(--oc-safe-area-bottom-visual, 0px);
+  bottom: var(--yuri-safe-area-bottom-visual, 0px);
   width: 80%;
   height: 2.75rem;
-  /* Keep overflow visible so --oc-mobile-glass-shadow's outer drop can paint;
+  /* Keep overflow visible so --yuri-mobile-glass-shadow's outer drop can paint;
      the preview child still clips the single-line text. */
   overflow: visible;
   border: 0;
   border-radius: 1.5rem;
-  background: var(--oc-mobile-glass-fill);
-  box-shadow: var(--oc-mobile-glass-shadow);
+  background: var(--yuri-mobile-glass-fill);
+  box-shadow: var(--yuri-mobile-glass-shadow);
   -webkit-backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
   backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--yuri-mobile-glass-blur))
+    saturate(var(--yuri-mobile-glass-saturate));
   transform: translate3d(
     -50%,
-    calc((1 - max(0, var(--oc-mobile-composer-swap) * 2 - 1)) * 140%),
+    calc((1 - max(0, var(--yuri-mobile-composer-swap) * 2 - 1)) * 140%),
     0
   );
-  opacity: max(0, calc(var(--oc-mobile-composer-swap) * 2 - 1));
+  opacity: max(0, calc(var(--yuri-mobile-composer-swap) * 2 - 1));
   pointer-events: none;
   will-change: transform, opacity;
 }
 
-.oc-mobile-composer-compact-preview {
+.yuri-mobile-composer-compact-preview {
   position: absolute;
   /* Leave room for attach (left) and trailing scroll/stop (right). */
   inset: 0 2.75rem;
@@ -3843,28 +3843,28 @@ button.oc-mobile-worktree-label-trigger:active,
   pointer-events: inherit;
 }
 
-.oc-mobile-composer-compact-preview::-webkit-scrollbar {
+.yuri-mobile-composer-compact-preview::-webkit-scrollbar {
   display: none;
 }
 
-.oc-mobile-composer-compact-chrome--with-scroll
-  ~ .oc-mobile-composer-compact-preview,
-.oc-mobile-composer-compact-chrome--aborting
-  ~ .oc-mobile-composer-compact-preview,
-.oc-mobile-composer-compact-chrome--sending
-  ~ .oc-mobile-composer-compact-preview {
+.yuri-mobile-composer-compact-chrome--with-scroll
+  ~ .yuri-mobile-composer-compact-preview,
+.yuri-mobile-composer-compact-chrome--aborting
+  ~ .yuri-mobile-composer-compact-preview,
+.yuri-mobile-composer-compact-chrome--sending
+  ~ .yuri-mobile-composer-compact-preview {
   right: 2.25rem;
 }
 
-.oc-mobile-composer-compact-chrome--with-scroll.oc-mobile-composer-compact-chrome--aborting
-  ~ .oc-mobile-composer-compact-preview,
-.oc-mobile-composer-compact-chrome--with-scroll.oc-mobile-composer-compact-chrome--sending
-  ~ .oc-mobile-composer-compact-preview {
+.yuri-mobile-composer-compact-chrome--with-scroll.yuri-mobile-composer-compact-chrome--aborting
+  ~ .yuri-mobile-composer-compact-preview,
+.yuri-mobile-composer-compact-chrome--with-scroll.yuri-mobile-composer-compact-chrome--sending
+  ~ .yuri-mobile-composer-compact-preview {
   /* Attach left + scroll + send/stop on the right. */
   right: 5rem;
 }
 
-.oc-mobile-composer-compact-preview--placeholder {
+.yuri-mobile-composer-compact-preview--placeholder {
   color: var(--muted-foreground);
 }
 
@@ -3873,11 +3873,11 @@ button.oc-mobile-worktree-label-trigger:active,
    the row instead of the whole document. Paint containment is deliberately
    NOT used: selection halos, sticky headers, and horizontally scrollable code
    must keep overflowing the row bounds. Mobile touch surfaces only. */
-.mobile-pointer:not(.desktop-runtime) .oc-chat-message-layout-boundary {
+.mobile-pointer:not(.desktop-runtime) .yuri-chat-message-layout-boundary {
   contain: layout;
 }
 
-.oc-mobile-composer-compact-chrome {
+.yuri-mobile-composer-compact-chrome {
   position: absolute;
   z-index: 40;
   /* 0.625rem right/left: 24px action circle (same as expanded) sits concentric
@@ -3890,80 +3890,80 @@ button.oc-mobile-worktree-label-trigger:active,
   height: 100%;
 }
 
-.oc-mobile-composer-surface textarea[data-chat-input="true"] {
+.yuri-mobile-composer-surface textarea[data-chat-input="true"] {
   touch-action: manipulation;
 }
 
-.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"] {
-  transition: --oc-mobile-composer-swap 240ms cubic-bezier(0.22, 1, 0.36, 1);
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"] {
+  transition: --yuri-mobile-composer-swap 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="tracking"] {
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="tracking"] {
   transition: none;
 }
 
 /* Tracking: neither layer accepts taps mid-gesture. Snapping only disables the
    exiting layer — the destination must stay interactive so a compact→expand
    focus is not stolen by click-through onto the transcript scroller. */
-.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="tracking"]
-  :is(.oc-mobile-composer-expanded-layer, .oc-mobile-composer-compact-layer) {
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="tracking"]
+  :is(.yuri-mobile-composer-expanded-layer, .yuri-mobile-composer-compact-layer) {
   pointer-events: none;
 }
 
-.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"][data-oc-composer-swap-rest="expanded"]
-  .oc-mobile-composer-compact-layer,
-.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"][data-oc-composer-swap-rest="compact"]
-  .oc-mobile-composer-expanded-layer {
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"][data-yuri-composer-swap-rest="expanded"]
+  .yuri-mobile-composer-compact-layer,
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"][data-yuri-composer-swap-rest="compact"]
+  .yuri-mobile-composer-expanded-layer {
   pointer-events: none;
 }
 
-.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="tracking"]
-  :is(.oc-scroll-to-bottom--expanded, .oc-scroll-to-bottom--compact),
-.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"]
-  :is(.oc-scroll-to-bottom--expanded, .oc-scroll-to-bottom--compact) {
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="tracking"]
+  :is(.yuri-scroll-to-bottom--expanded, .yuri-scroll-to-bottom--compact),
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"]
+  :is(.yuri-scroll-to-bottom--expanded, .yuri-scroll-to-bottom--compact) {
   pointer-events: none;
 }
 
-.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="compact"]
-  .oc-mobile-composer-expanded-layer,
-.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="expanded"]
-  .oc-mobile-composer-compact-layer {
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-rest="compact"]
+  .yuri-mobile-composer-expanded-layer,
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-rest="expanded"]
+  .yuri-mobile-composer-compact-layer {
   pointer-events: none;
 }
 
-.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="compact"]
-  .oc-scroll-to-bottom--expanded,
-.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="expanded"]
-  .oc-scroll-to-bottom--compact {
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-rest="compact"]
+  .yuri-scroll-to-bottom--expanded,
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-rest="expanded"]
+  .yuri-scroll-to-bottom--compact {
   pointer-events: none;
 }
 
-.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="compact"][data-oc-composer-swap-phase="rest"]
-  .oc-mobile-composer-compact-layer {
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-rest="compact"][data-yuri-composer-swap-phase="rest"]
+  .yuri-mobile-composer-compact-layer {
   pointer-events: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"] {
+  .yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"] {
     transition-duration: 0ms;
   }
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .oc-mobile-composer::after,
-  .oc-mobile-readonly-prompt-foot::after {
+  .yuri-mobile-composer::after,
+  .yuri-mobile-readonly-prompt-foot::after {
     content: none;
     display: none;
   }
 
-  .oc-mobile-composer-compact-layer {
+  .yuri-mobile-composer-compact-layer {
     background: var(--surface-elevated) !important;
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
     /* Keep the glass outer + top inset shadow; only drop the translucent fill. */
   }
 
-  .oc-mobile-readonly-prompt-surface {
+  .yuri-mobile-readonly-prompt-surface {
     background: var(--surface-subtle) !important;
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
@@ -3972,19 +3972,19 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 /* Draft starter chips leave the moment the keyboard starts rising
-   (oc-keyboard-open lands at keyboardWillShow) and return when it's gone —
+   (yuri-keyboard-open lands at keyboardWillShow) and return when it's gone —
    with the keyboard up there is only room for the draft title. Instant
    show/hide (no squish animation); the title's own keyboard compensation
-   (.oc-draft-center below) carries the smooth motion. */
-:root.oc-capacitor-app.oc-keyboard-open .oc-draft-starters,
-:root:not(.oc-capacitor-app):has(
-    .oc-mobile-composer textarea[data-chat-input="true"]:focus
+   (.yuri-draft-center below) carries the smooth motion. */
+:root.yuri-capacitor-app.yuri-keyboard-open .yuri-draft-starters,
+:root:not(.yuri-capacitor-app):has(
+    .yuri-mobile-composer textarea[data-chat-input="true"]:focus
   )
-  .oc-draft-starters {
+  .yuri-draft-starters {
   display: none;
 }
 
-/* The draft title (.oc-draft-center) is vertically centered, so it has no
+/* The draft title (.yuri-draft-center) is vertically centered, so it has no
    scroll-pinning to compensate the keyboard like the chat does. It rides the
    keyboard choreography with an INLINE transform of half the keyboard shift
    (exactly how far the center moves after the shell snap) — see the kb-movers
@@ -3993,7 +3993,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
 /* Installed PWA (standalone) safe areas. In the in-browser page Safari's own
    chrome covers the home indicator and status bar, and the Capacitor shell has
-   its own choreography (--oc-app-bottom-safe + keyboard FLIP) — neither matches
+   its own choreography (--yuri-app-bottom-safe + keyboard FLIP) — neither matches
    display-mode: standalone, so this block is PWA-only and cannot regress them.
    Standalone runs the page edge-to-edge (viewport-fit=cover), so the composer
    needs real top/bottom safe-area room of its own. */
@@ -4006,17 +4006,17 @@ button.oc-mobile-worktree-label-trigger:active,
      Cancel the room while the keyboard is up (the indicator area is behind the
      keyboard). Textarea focus selects that state directly; the transition
      smooths the safe-area padding change. */
-  :root:not(.oc-capacitor-app) .oc-mobile-composer {
+  :root:not(.yuri-capacitor-app) .yuri-mobile-composer {
     transition: padding-bottom 220ms cubic-bezier(0.33, 1, 0.68, 1);
   }
 
-  :root:not(.oc-capacitor-app):not(
-      :has(.oc-mobile-composer textarea[data-chat-input="true"]:focus)
+  :root:not(.yuri-capacitor-app):not(
+      :has(.yuri-mobile-composer textarea[data-chat-input="true"]:focus)
     )
-    .oc-mobile-composer {
+    .yuri-mobile-composer {
     padding-bottom: calc(
       0.75rem +
-        max(16px, var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0px)))
+        max(16px, var(--yuri-safe-area-bottom, env(safe-area-inset-bottom, 0px)))
     ) !important;
   }
 
@@ -4026,20 +4026,20 @@ button.oc-mobile-worktree-label-trigger:active,
      collapsing browser chrome, so the dynamic and large viewports are the same
      thing — pin the shell to 100lvh, which always reports full screen height.
      Initial geometry is identical (lvh == dvh on load). */
-  :root:not(.oc-capacitor-app) .h-\[100dvh\] {
+  :root:not(.yuri-capacitor-app) .h-\[100dvh\] {
     height: 100lvh;
   }
 
   /* Top toasts: same offset the Capacitor shell already applies — without it
      they render under the clock / Dynamic Island. */
-  :root:not(.oc-capacitor-app) [data-sonner-toaster][data-y-position="top"] {
+  :root:not(.yuri-capacitor-app) [data-sonner-toaster][data-y-position="top"] {
     top: calc(
-      var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) + 16px
+      var(--yuri-safe-area-top, env(safe-area-inset-top, 0px)) + 16px
     ) !important;
   }
 }
 
-@keyframes oc-composer-morph-fade {
+@keyframes yuri-composer-morph-fade {
   from {
     opacity: 0;
   }
@@ -4052,26 +4052,26 @@ button.oc-mobile-worktree-label-trigger:active,
    the morphing shape), but its content stays hidden until the shape has mostly
    finished growing, then fades in — no clipped controls mid-morph. Timings
    follow the 340ms wrapper morph in ChatInput. */
-.oc-composer-morph-content-fade > * {
-  animation: oc-composer-morph-fade 0.18s ease-out 0.26s both;
+.yuri-composer-morph-content-fade > * {
+  animation: yuri-composer-morph-fade 0.18s ease-out 0.26s both;
 }
 
 /* CameraX pairing scanner: the native preview sits behind the WebView, so the
    page must go transparent and hide chrome until a code is read or cancelled. */
-html.oc-barcode-scanner-active,
-html.oc-barcode-scanner-active body {
+html.yuri-barcode-scanner-active,
+html.yuri-barcode-scanner-active body {
   background: transparent !important;
 }
 
-html.oc-barcode-scanner-active body > * {
+html.yuri-barcode-scanner-active body > * {
   visibility: hidden !important;
 }
 
-html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
+html.yuri-barcode-scanner-active .yuri-barcode-scanner-chrome {
   visibility: visible !important;
   position: fixed;
-  top: calc(var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) + 12px);
-  right: calc(var(--oc-safe-area-right, env(safe-area-inset-right, 0px)) + 12px);
+  top: calc(var(--yuri-safe-area-top, env(safe-area-inset-top, 0px)) + 12px);
+  right: calc(var(--yuri-safe-area-right, env(safe-area-inset-right, 0px)) + 12px);
   z-index: 9999;
   display: flex;
   align-items: center;
@@ -4094,7 +4094,7 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
    empty / history-error keep the in-flow foot and reserve the collapsed
    pill height so the same strip (project / branch) sits above the input.
    The native field does not morph.
-   --oc-native-composer-dock (distance from the live edge, not swap rest)
+   --yuri-native-composer-dock (distance from the live edge, not swap rest)
    fades that strip. Approaching stays hidden until the true bottom; leaving
    fades over the first follow-range px. Swap can rest expanded far from the
    bottom; these rows have no background and must stay hidden until the
@@ -4103,39 +4103,39 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
    above the pill with symmetric padding. The native scroll-to-bottom
    control stays on the overlay, appears after ~80px of upward travel, and
    does not change published occupancy.
-   --oc-native-composer-height is collapsed pill occupancy only. */
-:root.oc-native-ios-composer {
-  --oc-chat-foot-inset: calc(
-    var(--oc-native-composer-height, 5.5rem)
-    + var(--oc-native-composer-accessory, 0px)
+   --yuri-native-composer-height is collapsed pill occupancy only. */
+:root.yuri-native-ios-composer {
+  --yuri-chat-foot-inset: calc(
+    var(--yuri-native-composer-height, 5.5rem)
+    + var(--yuri-native-composer-accessory, 0px)
   );
 }
 
-:root.oc-native-ios-composer .oc-mobile-composer-expanded-layer {
+:root.yuri-native-ios-composer .yuri-mobile-composer-expanded-layer {
   transform: none !important;
   opacity: 1 !important;
 }
 
-:root.oc-native-ios-composer .oc-mobile-composer {
+:root.yuri-native-ios-composer .yuri-mobile-composer {
   padding-bottom: 0 !important;
   background: transparent !important;
   background-color: transparent !important;
   will-change: auto;
 }
 
-:root.oc-native-ios-composer .oc-mobile-composer::after {
+:root.yuri-native-ios-composer .yuri-mobile-composer::after {
   content: none;
 }
 
-:root.oc-native-ios-composer .oc-composer-queue {
+:root.yuri-native-ios-composer .yuri-composer-queue {
   margin-bottom: 0;
 }
 
-:root.oc-native-ios-composer .oc-composer-queue [data-oc-queue-composer-overlap] {
+:root.yuri-native-ios-composer .yuri-composer-queue [data-yuri-queue-composer-overlap] {
   display: none;
 }
 
-:root.oc-native-ios-composer .oc-composer-queue [data-oc-queue-card-body] {
+:root.yuri-native-ios-composer .yuri-composer-queue [data-yuri-queue-card-body] {
   padding-top: 0.375rem;
   padding-bottom: 0.375rem;
 }
@@ -4144,55 +4144,55 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
    zero-height stack. Accessories settle 8px into the pill so Changes /
    Tasks sit against the overlay, not a floating gap. Occupancy never
    reserves the native scroll button. */
-:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay {
+:root.yuri-native-ios-composer .yuri-mobile-composer-foot--overlay {
   overflow: visible;
 }
 
-:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer,
-:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer-stack,
-:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer-expanded-layer,
-:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer-reveal {
+:root.yuri-native-ios-composer .yuri-mobile-composer-foot--overlay .yuri-mobile-composer,
+:root.yuri-native-ios-composer .yuri-mobile-composer-foot--overlay .yuri-mobile-composer-stack,
+:root.yuri-native-ios-composer .yuri-mobile-composer-foot--overlay .yuri-mobile-composer-expanded-layer,
+:root.yuri-native-ios-composer .yuri-mobile-composer-foot--overlay .yuri-mobile-composer-reveal {
   position: static !important;
   padding-bottom: 0;
 }
 
-:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer {
+:root.yuri-native-ios-composer .yuri-mobile-composer-foot--overlay .yuri-mobile-composer {
   pointer-events: none;
 }
 
-:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay [data-native-composer-accessories] {
+:root.yuri-native-ios-composer .yuri-mobile-composer-foot--overlay [data-native-composer-accessories] {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(var(--oc-native-composer-height, 5.5rem) - 8px);
+  bottom: calc(var(--yuri-native-composer-height, 5.5rem) - 8px);
   z-index: 25;
   pointer-events: auto;
   /* Default 1 keeps the strip hidden until JS publishes a real distance. */
-  opacity: calc(1 - min(1, var(--oc-native-composer-dock, 1) * 2));
+  opacity: calc(1 - min(1, var(--yuri-native-composer-dock, 1) * 2));
 }
 
 /* Draft / empty / history-error stay in-flow (no overlay, no compact leak).
    The web textarea is display:none, so without this hole the project /
    branch chips sit under the native pill. Same occupancy Changes / TODO
-   get from `bottom: calc(var(--oc-native-composer-height) - 8px)` on
+   get from `bottom: calc(var(--yuri-native-composer-height) - 8px)` on
    overlay pages. These pages have no transcript to leave, so the strip
    stays visible. */
-:root.oc-native-ios-composer
-  .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {
-  padding-bottom: calc(var(--oc-native-composer-height, 5.5rem) - 8px);
+:root.yuri-native-ios-composer
+  .yuri-mobile-composer-foot:not(.yuri-mobile-composer-foot--overlay) {
+  padding-bottom: calc(var(--yuri-native-composer-height, 5.5rem) - 8px);
 }
 
-:root.oc-native-ios-composer
-  .oc-chat-composer-swap-scope[data-oc-native-composer-dock="away"]
+:root.yuri-native-ios-composer
+  .yuri-chat-composer-swap-scope[data-yuri-native-composer-dock="away"]
   [data-native-composer-accessories] {
   pointer-events: none;
 }
 
-:root.oc-native-ios-composer .oc-mobile-composer-motion-viewport,
-:root.oc-native-ios-composer .oc-mobile-composer-compact-layer,
-:root.oc-native-ios-composer .oc-mobile-composer-full-chrome,
-:root.oc-native-ios-composer .oc-mobile-composer-attachment-content,
-:root.oc-native-ios-composer .oc-scroll-to-bottom--expanded,
-:root.oc-native-ios-composer .oc-scroll-to-bottom--compact {
+:root.yuri-native-ios-composer .yuri-mobile-composer-motion-viewport,
+:root.yuri-native-ios-composer .yuri-mobile-composer-compact-layer,
+:root.yuri-native-ios-composer .yuri-mobile-composer-full-chrome,
+:root.yuri-native-ios-composer .yuri-mobile-composer-attachment-content,
+:root.yuri-native-ios-composer .yuri-scroll-to-bottom--expanded,
+:root.yuri-native-ios-composer .yuri-scroll-to-bottom--compact {
   display: none !important;
 }

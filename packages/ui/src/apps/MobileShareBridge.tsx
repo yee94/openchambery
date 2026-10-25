@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 /* eslint-disable react-refresh/only-export-components */
 import React from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -22,7 +23,7 @@ type NativeAssistantCatalogEntry = Omit<AssistantCatalogEntry, 'name'> & { name:
 type NativeAssistantInteraction = { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string; avatarPng?: string };
 type NativeShareAttachment = { stagedPath: string; originalName: string; mime: string; byteSize: number };
 export type NativeShareEnvelope = { version: 1; operationID: string; serverInstanceID: string; assistantID: string; text?: string; attachments: NativeShareAttachment[]; source: 'ios-share' | 'android-share'; createdAt: number; expiresAt: number };
-type OpenChamberSharePlugin = {
+type YuriSharePlugin = {
   updateCatalog(options: { entries: NativeAssistantCatalogEntry[] }): Promise<void>;
   donateAssistantInteraction(options: NativeAssistantInteraction): Promise<void>;
   listPending(): Promise<{ envelopes: NativeShareEnvelope[] }>;
@@ -35,8 +36,8 @@ type OpenChamberSharePlugin = {
   addListener(eventName: 'assistantOpenRequested', listener: (event: { requestID: string }) => void): Promise<{ remove: () => Promise<void> }>;
 };
 
-const OpenChamberShare = registerPlugin<OpenChamberSharePlugin>('OpenChamberShare');
-const OUTBOX_KEY = 'openchamber.mobile-share.outbox.v1';
+const YuriShare = registerPlugin<YuriSharePlugin>('YuriShare');
+const OUTBOX_KEY = 'yuri.mobile-share.outbox.v1';
 export type MobileShareState = 'pending' | 'resolving-instance' | 'connecting' | 'auth-required' | 'offline' | 'target-stale' | 'dispatching' | 'reconciling' | 'delivered' | 'failed';
 type OutboxItem = { envelope: NativeShareEnvelope; messageID: string; state: MobileShareState; cleanupPhase?: 'server-completed' | 'native-acked' | 'files-released'; updatedAt: number; error?: string };
 
@@ -153,13 +154,13 @@ export const publishNativeAssistantCatalog = async (): Promise<void> => {
       ...(avatarPng ? { avatarPng } : {}),
     });
   }
-  await OpenChamberShare.updateCatalog({ entries });
+  await YuriShare.updateCatalog({ entries });
 };
 
 export const donateNativeAssistantInteraction = async (target: NativeAssistantInteraction): Promise<void> => {
   if (Capacitor.getPlatform() !== 'ios') return;
   const avatarPng = await rasterizePngBase64(generatedAvatarDataUri('assistant', target.avatarSeed), 128);
-  await OpenChamberShare.donateAssistantInteraction({ ...target, ...(avatarPng ? { avatarPng } : {}) });
+  await YuriShare.donateAssistantInteraction({ ...target, ...(avatarPng ? { avatarPng } : {}) });
 };
 
 const deliver = (envelope: NativeShareEnvelope): Promise<void> => {
@@ -174,11 +175,11 @@ const deliver = (envelope: NativeShareEnvelope): Promise<void> => {
 const cleanupNativeDelivery = async (item: OutboxItem): Promise<void> => {
   if (item.cleanupPhase === 'files-released') return;
   if (item.cleanupPhase === 'server-completed') {
-    await retryMobileShareCleanupStage(() => OpenChamberShare.ack({ operationID: item.envelope.operationID }));
+    await retryMobileShareCleanupStage(() => YuriShare.ack({ operationID: item.envelope.operationID }));
     item = { ...item, state: 'delivered', cleanupPhase: 'native-acked', updatedAt: Date.now() }; save(item);
   }
   if (item.cleanupPhase === 'native-acked') {
-    await retryMobileShareCleanupStage(() => OpenChamberShare.releaseFiles({ operationID: item.envelope.operationID }));
+    await retryMobileShareCleanupStage(() => YuriShare.releaseFiles({ operationID: item.envelope.operationID }));
     save({ ...item, state: 'delivered', cleanupPhase: 'files-released', updatedAt: Date.now() });
   }
 };
@@ -242,7 +243,7 @@ const drain = async (): Promise<void> => {
 
 const drainOne = async (): Promise<void> => {
   if (!nativeAvailable()) return;
-  const pending = await OpenChamberShare.listPending().catch(() => null);
+  const pending = await YuriShare.listPending().catch(() => null);
   const envelopes = new Map((pending?.envelopes ?? []).map((envelope) => [envelope.operationID, envelope]));
   const outbox = readOutbox();
   const items: MobileShareDrainItem[] = [
@@ -323,7 +324,7 @@ const processAssignedNativeDraftOne = async (draft: AssignedNativeShareDraft): P
   const handoff = await handoffMobileShareDraft(draft, {
     input: useInputStore.getState(),
     transportIdentity,
-    cancelDraft: (draftID) => OpenChamberShare.cancelDraft({ draftID }),
+    cancelDraft: (draftID) => YuriShare.cancelDraft({ draftID }),
     readAttachment: stagedImageBlob,
   });
   if (!handoff.durable || !handoff.cancelled || !current(runtimeKey, generation) || getRuntimeTransportIdentity() !== transportIdentity) return false;
@@ -345,7 +346,7 @@ const processAssignedNativeDraft = (draft: AssignedNativeShareDraft): Promise<bo
 
 const drainNativeDraftsOne = async (): Promise<void> => {
   if (Capacitor.getPlatform() !== 'android') return;
-  const recoveredTargets = await retryMobileShareDraftCancellations((draftID) => OpenChamberShare.cancelDraft({ draftID }));
+  const recoveredTargets = await retryMobileShareDraftCancellations((draftID) => YuriShare.cancelDraft({ draftID }));
   for (const target of recoveredTargets) {
     try {
       if (await openRecoveredNativeDraftTarget(target) && await clearMobileShareDraftHandoffMarker(target, useInputStore.getState())) finalizeMobileShareDraftHandoff(target);
@@ -353,7 +354,7 @@ const drainNativeDraftsOne = async (): Promise<void> => {
       // The cancelled journal remains available for the next runtime recovery.
     }
   }
-  const pending = await OpenChamberShare.listDrafts().catch(() => null);
+  const pending = await YuriShare.listDrafts().catch(() => null);
   if (!pending) return;
   const drafts = [...(pending?.drafts ?? [])].sort((left, right) => left.createdAt - right.createdAt);
   setPendingNativeRecipientDrafts(drafts.filter((draft) => !isAssignedNativeShareDraft(draft)));
@@ -389,7 +390,7 @@ export const MobileShareBridge: React.FC = () => {
   const cancelRecipientSelection = useEvent((pendingDraft: NativeShareDraft): void => {
     if (selectedDraftID === pendingDraft.draftID) return;
     removePendingNativeRecipientDraft(pendingDraft.draftID);
-    void OpenChamberShare.cancelDraft({ draftID: pendingDraft.draftID }).catch(() => { void drainNativeDrafts(); });
+    void YuriShare.cancelDraft({ draftID: pendingDraft.draftID }).catch(() => { void drainNativeDrafts(); });
   });
   React.useEffect(() => {
     if (!nativeAvailable()) return;
@@ -399,15 +400,15 @@ export const MobileShareBridge: React.FC = () => {
     void handlePendingNativeAssistantOpen();
     const unsubscribe = subscribeRuntimeEndpointChanged(() => { void refreshNativeAssistantCatalog(); void drainNativeDrafts(); void handlePendingNativeAssistantOpen(); });
     const resume = () => { void refreshNativeAssistantCatalog(); void drain(); void drainNativeDrafts(); void handlePendingNativeAssistantOpen(); };
-    window.addEventListener('openchamber:system-resume', resume);
+    window.addEventListener('yuri:system-resume', resume);
     let removed = false;
     let listener: { remove: () => Promise<void> } | null = null;
     let draftListener: { remove: () => Promise<void> } | null = null;
     let assistantOpenListener: { remove: () => Promise<void> } | null = null;
-    void OpenChamberShare.addListener('shareReceived', () => { void drain(); }).then((value) => { if (removed) void value.remove(); else listener = value; }).catch(() => undefined);
-    void OpenChamberShare.addListener('shareDraftReceived', () => { void drainNativeDrafts(); }).then((value) => { if (removed) void value.remove(); else draftListener = value; }).catch(() => undefined);
-    void OpenChamberShare.addListener('assistantOpenRequested', () => { void handlePendingNativeAssistantOpen(); }).then((value) => { if (removed) void value.remove(); else assistantOpenListener = value; }).catch(() => undefined);
-    return () => { removed = true; unsubscribe(); window.removeEventListener('openchamber:system-resume', resume); if (listener) void listener.remove(); if (draftListener) void draftListener.remove(); if (assistantOpenListener) void assistantOpenListener.remove(); };
+    void YuriShare.addListener('shareReceived', () => { void drain(); }).then((value) => { if (removed) void value.remove(); else listener = value; }).catch(() => undefined);
+    void YuriShare.addListener('shareDraftReceived', () => { void drainNativeDrafts(); }).then((value) => { if (removed) void value.remove(); else draftListener = value; }).catch(() => undefined);
+    void YuriShare.addListener('assistantOpenRequested', () => { void handlePendingNativeAssistantOpen(); }).then((value) => { if (removed) void value.remove(); else assistantOpenListener = value; }).catch(() => undefined);
+    return () => { removed = true; unsubscribe(); window.removeEventListener('yuri:system-resume', resume); if (listener) void listener.remove(); if (draftListener) void draftListener.remove(); if (assistantOpenListener) void assistantOpenListener.remove(); };
   }, []);
   return <MobileShareRecipientPicker draft={draft} entries={entries} busy={selectedDraftID === draft?.draftID} onSelect={selectRecipient} onCancel={cancelRecipientSelection} />;
 };

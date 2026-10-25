@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 export async function writeInstallerFeed({ directory, version, platform, arch }) {
   const suffix = platform === 'darwin' ? '-mac' : platform === 'linux' ? `-linux${arch === 'x64' ? '' : `-${arch}`}` : '';
   const extension = platform === 'darwin' ? '.zip' : platform === 'linux' ? '.AppImage' : '.exe';
-  const files = (await readdir(directory)).filter((name) => name.startsWith(`OpenChamber-${version}-`) && name.endsWith(extension));
+  const files = (await readdir(directory)).filter((name) => name.startsWith(`Yuri-${version}-`) && name.endsWith(extension));
   if (files.length !== 1) throw new Error(`Expected one ${platform}/${arch} installer, found ${files.length}`);
   const name = files[0];
   const file = path.join(directory, name);

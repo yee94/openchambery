@@ -38,7 +38,7 @@ const ROOT = path.resolve(__dirname, '../..')
 
 // CI deploys snapshots to Vercel; it is the authoritative OTA origin. The
 // EdgeOne host stays client-readable as a legacy mirror but never as write source.
-const DEFAULT_OTA_BASE = 'https://openchamber-update.vercel.app'
+const DEFAULT_OTA_BASE = ''
 const BUNDLE_ID_PATTERN = /^[0-9a-f]{16}$/
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const ALLOWED_CHANNELS = new Set(['beta', 'stable'])
@@ -452,6 +452,7 @@ async function mirrorOtherChannel(baseUrl, targetChannel, channelsDir, bundlesDi
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const baseUrl = process.env.OTA_BASE_URL || DEFAULT_OTA_BASE
+  if (!baseUrl) throw new Error('Release blocked: configure OTA_BASE_URL with a verified Yuri update origin')
 
   const outRoot = path.resolve(args.out)
   const bundlesDir = path.join(outRoot, 'ota', 'bundles')

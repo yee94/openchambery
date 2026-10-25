@@ -56,10 +56,10 @@ import { UsagePage } from "@/components/sections/usage/UsagePage";
 import { MagicPromptsSidebar } from "@/components/sections/magic-prompts/MagicPromptsSidebar";
 import { MagicPromptsPage } from "@/components/sections/magic-prompts/MagicPromptsPage";
 import { GitPage } from "@/components/sections/git-identities/GitPage";
-import type { OpenChamberSection } from "@/components/sections/openchamber/types";
-import { OpenChamberPage } from "@/components/sections/openchamber/OpenChamberPage";
-import { AboutSettings } from "@/components/sections/openchamber/AboutSettings";
-import { ArchivedSessionsPage } from "@/components/sections/openchamber/ArchivedSessionsPage";
+import type { YuriSection } from "@/components/sections/yuri/types";
+import { YuriPage } from "@/components/sections/yuri/YuriPage";
+import { AboutSettings } from "@/components/sections/yuri/AboutSettings";
+import { ArchivedSessionsPage } from "@/components/sections/yuri/ArchivedSessionsPage";
 import { useDeviceInfo } from "@/lib/device";
 import {
   isDesktopLocalOriginActive,
@@ -98,7 +98,7 @@ import { useMobileBackRoute } from "@/mobile/mobileBackNavigation";
 const SETTINGS_NAV_MIN_WIDTH = 176;
 const SETTINGS_NAV_MAX_WIDTH = 280;
 const SETTINGS_NAV_RESIZE_STEP = 8;
-const SETTINGS_DETAIL_HISTORY_KEY = "__openchamberSettingsDetail";
+const SETTINGS_DETAIL_HISTORY_KEY = "__yuriSettingsDetail";
 
 function clampSettingsNavWidth(width: number): number {
   return Math.min(
@@ -475,16 +475,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return (
       isDesktopShell() &&
       typeof window !== "undefined" &&
-      (window as unknown as { __OPENCHAMBER_PLATFORM__?: string })
-        .__OPENCHAMBER_PLATFORM__ === "darwin"
+      (window as unknown as { __YURI_PLATFORM__?: string })
+        .__YURI_PLATFORM__ === "darwin"
     );
   }, []);
   const isWindows = React.useMemo(() => {
     return (
       isDesktopShell() &&
       typeof window !== "undefined" &&
-      (window as unknown as { __OPENCHAMBER_PLATFORM__?: string })
-        .__OPENCHAMBER_PLATFORM__ === "win32"
+      (window as unknown as { __YURI_PLATFORM__?: string })
+        .__YURI_PLATFORM__ === "win32"
     );
   }, []);
 
@@ -639,8 +639,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Nav is always open (collapsed state removed)
 
-  const openChamberSectionBySlug: Partial<
-    Record<SettingsPageSlug, OpenChamberSection>
+  const yuriSectionBySlug: Partial<
+    Record<SettingsPageSlug, YuriSection>
   > = React.useMemo(
     () => ({
       appearance: "visual",
@@ -901,7 +901,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       if (result.id === "plugins.create" && typeof window !== "undefined") {
         window.setTimeout(() => {
           window.dispatchEvent(
-            new CustomEvent("openchamber:settings-open-plugin-add"),
+            new CustomEvent("yuri:settings-open-plugin-add"),
           );
         }, 50);
       }
@@ -1131,8 +1131,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         case "summary-ai":
         case "notifications":
         case "voice": {
-          const section = openChamberSectionBySlug[slug] ?? "visual";
-          return <OpenChamberPage section={section} flowMobile={mobileFlow} />;
+          const section = yuriSectionBySlug[slug] ?? "visual";
+          return <YuriPage section={section} flowMobile={mobileFlow} />;
         }
         default:
           return <SettingsHome onOpen={openPage} />;
@@ -1144,7 +1144,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       isMobile,
       mobileInstancesPage,
       mobileFlow,
-      openChamberSectionBySlug,
+      yuriSectionBySlug,
       openPage,
       renderUnavailable,
       runtimeCtx,
@@ -1320,20 +1320,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div
         className={cn(
           "flex h-full flex-col overflow-hidden",
-          isMobile && "oc-settings-navigation-content",
+          isMobile && "yuri-settings-navigation-content",
           mobileFlow && "h-auto w-full overflow-visible",
         )}
       >
         <div
           className={cn(
             "px-2 pt-3",
-            isMobile && "oc-mobile-settings-search",
+            isMobile && "yuri-mobile-settings-search",
           )}
         >
           <div
             className={cn(
               "flex h-10 items-center gap-1.5 rounded-md border border-border bg-background/70 px-2 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/40 sm:h-8",
-              isMobile && "oc-mobile-settings-search-field",
+              isMobile && "yuri-mobile-settings-search-field",
             )}
           >
             <Icon name="search" className="h-4 w-4 shrink-0" />
@@ -1368,7 +1368,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div
             className={cn(
               isMobile
-                ? "oc-mobile-settings-nav-list flex min-w-0 flex-col"
+                ? "yuri-mobile-settings-nav-list flex min-w-0 flex-col"
                 : "flex flex-col gap-0.5 px-2 pb-2 pt-4",
             )}
           >
@@ -1396,7 +1396,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           onClick={() => openSearchResult(result)}
                           className={cn(
                             isMobile
-                              ? "oc-mobile-settings-row oc-mobile-settings-search-result"
+                              ? "yuri-mobile-settings-row yuri-mobile-settings-search-result"
                               : "flex w-full flex-col rounded-md px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
                             hasDescription ? "min-h-11 py-1.5" : "py-2",
                             active
@@ -1471,7 +1471,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           aria-current={selected ? "page" : undefined}
                           className={cn(
                             isMobile
-                              ? "oc-mobile-settings-row"
+                              ? "yuri-mobile-settings-row"
                               : "flex h-8 w-full items-center gap-2 overflow-hidden rounded-md px-2 text-left",
                             selected && !isMobile
                               ? "bg-interactive-selection text-foreground"
@@ -1536,13 +1536,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div
           className={cn(
             "overflow-hidden transition-opacity duration-150 opacity-100",
-            isMobile && "oc-mobile-settings-footer",
+            isMobile && "yuri-mobile-settings-footer",
           )}
         >
           <div
             className={cn(
               "border-t-[0.5px] border-border/40 bg-sidebar px-2 py-1 space-y-0.5",
-              isMobile && "oc-mobile-floating-surface oc-mobile-settings-card",
+              isMobile && "yuri-mobile-floating-surface yuri-mobile-settings-card",
             )}
           >
             {!runtimeCtx.isVSCode && (
@@ -1554,7 +1554,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 aria-busy={reloadMutation.isPending}
                 className={cn(
                   isMobile
-                    ? "oc-mobile-settings-row"
+                    ? "yuri-mobile-settings-row"
                     : "w-full justify-start overflow-hidden",
                   "text-sm font-semibold text-sidebar-foreground/90",
                   "hover:text-sidebar-foreground hover:bg-interactive-hover",
@@ -1605,7 +1605,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       "flex-1 min-h-0 overflow-hidden bg-transparent",
       mobileFlow
         ? "w-full flex-none overflow-visible"
-        : "px-[var(--oc-mobile-page-inline-inset)]",
+        : "px-[var(--yuri-mobile-page-inline-inset)]",
     );
 
     if (!activePageMeta) {
@@ -1618,7 +1618,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         const fallback = renderPageContent(settingsSlug);
         return (
           <div className={mobileDetailStageClassName}>
-            <MobileFloatingSurface className="oc-mobile-settings-detail-card">
+            <MobileFloatingSurface className="yuri-mobile-settings-detail-card">
               <ErrorBoundary>{fallback}</ErrorBoundary>
             </MobileFloatingSurface>
           </div>
@@ -1626,7 +1626,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
       return (
         <div className={mobileDetailStageClassName}>
-          <MobileFloatingSurface className="oc-mobile-settings-detail-card">
+          <MobileFloatingSurface className="yuri-mobile-settings-detail-card">
             <ErrorBoundary>
               {renderPageSidebar(settingsSlug, {
                 onItemSelect: handleMobilePageSidebarItemSelect,
@@ -1642,7 +1642,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     return (
       <div className={mobileDetailStageClassName}>
-        <MobileFloatingSurface className="oc-mobile-settings-detail-card">
+        <MobileFloatingSurface className="yuri-mobile-settings-detail-card">
           <ErrorBoundary>{content}</ErrorBoundary>
         </MobileFloatingSurface>
       </div>
@@ -1660,10 +1660,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     if (activePageMeta.kind === "split") {
       return (
-        <div className="oc-settings-entity-split flex h-full min-h-0 overflow-hidden">
+        <div className="yuri-settings-entity-split flex h-full min-h-0 overflow-hidden">
           <div
             className={cn(
-              "oc-settings-entity-list min-h-0 border-r-[0.5px] border-border/40",
+              "yuri-settings-entity-list min-h-0 border-r-[0.5px] border-border/40",
               runtimeCtx.isVSCode ? "bg-background" : "bg-sidebar",
             )}
           >
@@ -1726,7 +1726,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         ref={containerRef}
         data-settings-view="true"
         data-mobile-settings-detail-active={detailActive ? "true" : undefined}
-        className="oc-settings-workspace oc-settings-workspace-mobile h-auto w-full min-w-0 overflow-visible bg-transparent"
+        className="yuri-settings-workspace yuri-settings-workspace-mobile h-auto w-full min-w-0 overflow-visible bg-transparent"
       >
         <div
           ref={mobileBackRootRef}
@@ -1734,7 +1734,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           data-mobile-navigation-underlay={rootIsUnderlay ? "true" : undefined}
           aria-hidden={detailActive ? "true" : undefined}
           inert={detailActive ? true : undefined}
-          className="oc-mobile-settings-root-surface fixed inset-0 z-20 flex h-[100dvh] w-full min-w-0 max-w-full flex-col gap-[var(--oc-mobile-page-gap)] overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--oc-safe-area-top,env(safe-area-inset-top,0px))+1rem)] [contain:layout_paint]"
+          className="yuri-mobile-settings-root-surface fixed inset-0 z-20 flex h-[100dvh] w-full min-w-0 max-w-full flex-col gap-[var(--yuri-mobile-page-gap)] overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--yuri-mobile-page-inline-inset)] pb-[calc(var(--yuri-mobile-dock-height)+2.5rem+var(--yuri-safe-area-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--yuri-safe-area-top,env(safe-area-inset-top,0px))+1rem)] [contain:layout_paint]"
         >
           <MobileTabPageHeader title={t("mobile.settings.placeholder.title")} />
           {renderMobileNavStage()}
@@ -1750,7 +1750,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="fixed inset-0 z-40 flex h-[100dvh] w-full min-w-0 max-w-full touch-pan-y flex-col overflow-hidden bg-background [contain:layout_paint]"
           >
             {renderMobileDetailNavigation("page-sidebar")}
-            <div className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)]">
+            <div className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--yuri-mobile-page-inline-inset)]">
               {renderMobileStage("page-sidebar")}
             </div>
           </div>
@@ -1763,7 +1763,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="fixed inset-0 z-50 flex h-[100dvh] w-full min-w-0 max-w-full touch-pan-y flex-col overflow-hidden bg-background [contain:layout_paint]"
           >
             {renderMobileDetailNavigation("page-content")}
-            <div className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)]">
+            <div className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--yuri-mobile-page-inline-inset)]">
               {renderMobileStage("page-content")}
             </div>
           </div>
@@ -1777,10 +1777,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       ref={containerRef}
       data-settings-view="true"
       className={cn(
-        "oc-settings-workspace relative flex h-full min-h-0 flex-col overflow-hidden",
+        "yuri-settings-workspace relative flex h-full min-h-0 flex-col overflow-hidden",
         isMobile
-          ? "oc-settings-workspace-mobile bg-transparent"
-          : "oc-settings-workspace-desktop bg-background",
+          ? "yuri-settings-workspace-mobile bg-transparent"
+          : "yuri-settings-workspace-desktop bg-background",
         mobileFlow && "h-auto w-full overflow-visible",
       )}
     >
@@ -1877,7 +1877,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <ErrorBoundary>{renderSettingsNav()}</ErrorBoundary>
             </div>
 
-            <div className="oc-settings-detail-pane flex-1 overflow-hidden bg-background">
+            <div className="yuri-settings-detail-pane flex-1 overflow-hidden bg-background">
               {renderDesktopContent()}
             </div>
           </>

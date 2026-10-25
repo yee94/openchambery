@@ -4,7 +4,7 @@ import { sharedExclude } from '../../vitest.shared.ts';
 
 export default defineConfig({
   test: {
-    name: '@openchamber/mobile',
+    name: '@yuri/mobile',
     environment: 'node',
     isolate: true,
     include: ['test/**/*.test.mjs'],

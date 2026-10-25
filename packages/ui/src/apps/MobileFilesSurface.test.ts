@@ -37,7 +37,7 @@ describe('MobileFilesSurface html preview', () => {
     expect(source).toContain('data-mobile-html-fullscreen');
     expect(source).toContain("htmlViewMode === 'preview' && !htmlFullscreen ? 'true' : undefined");
     expect(source).toContain("htmlViewMode === 'preview' && htmlFullscreen ? 'true' : undefined");
-    expect(source).not.toContain('oc-html-file-preview-open');
+    expect(source).not.toContain('yuri-html-file-preview-open');
     expect(source).not.toMatch(/mb-\[calc\(-1\*max\(0\.5rem/);
     expect(source).toContain("'flex min-h-0 flex-1 flex-col overflow-hidden bg-background'");
   });

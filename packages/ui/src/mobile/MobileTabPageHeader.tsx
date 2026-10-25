@@ -47,7 +47,7 @@ export function MobileTabPageHeader({
     }
     lastProgressRef.current = renderedProgress;
     // Compositor-friendly only: CSS must not change layout box from this var.
-    header.style.setProperty('--oc-mobile-title-collapse', renderedProgress.toFixed(4));
+    header.style.setProperty('--yuri-mobile-title-collapse', renderedProgress.toFixed(4));
   });
 
   const scheduleCollapseProgress = useEvent(() => {
@@ -60,7 +60,7 @@ export function MobileTabPageHeader({
     if (!header) return;
 
     const scrollParent = header.closest<HTMLElement>(
-      '.oc-mobile-settings-root-surface, [role="tabpanel"]',
+      '.yuri-mobile-settings-root-surface, [role="tabpanel"]',
     );
     if (!scrollParent) return;
 
@@ -89,21 +89,21 @@ export function MobileTabPageHeader({
     <>
       <header
         ref={headerRef}
-        className={cn('oc-mobile-collapsing-header flex shrink-0 items-start gap-4', className)}
+        className={cn('yuri-mobile-collapsing-header flex shrink-0 items-start gap-4', className)}
       >
-        <div className="oc-mobile-collapsing-header-inner">
-          <div className="oc-mobile-collapsing-header-title-block min-w-0 flex-1">
+        <div className="yuri-mobile-collapsing-header-inner">
+          <div className="yuri-mobile-collapsing-header-title-block min-w-0 flex-1">
             {eyebrow ? (
-              <p className="oc-mobile-collapsing-header-eyebrow truncate typography-micro font-medium text-muted-foreground">
+              <p className="yuri-mobile-collapsing-header-eyebrow truncate typography-micro font-medium text-muted-foreground">
                 {eyebrow}
               </p>
             ) : null}
-            <h1 className="oc-mobile-root-page-title truncate font-semibold text-foreground">
+            <h1 className="yuri-mobile-root-page-title truncate font-semibold text-foreground">
               {title}
             </h1>
           </div>
           {trailing ? (
-            <div className="oc-mobile-collapsing-header-trailing flex min-h-10 shrink-0 items-center gap-3.5">
+            <div className="yuri-mobile-collapsing-header-trailing flex min-h-10 shrink-0 items-center gap-3.5">
               {trailing}
             </div>
           ) : null}
@@ -113,7 +113,7 @@ export function MobileTabPageHeader({
         Static in-flow clearance for the expanded visual offset. Scrolls away
         natively so collapse never rewrites sticky layout height (bounce source).
       */}
-      <div className="oc-mobile-collapsing-header-spacer" aria-hidden="true" />
+      <div className="yuri-mobile-collapsing-header-spacer" aria-hidden="true" />
     </>
   );
 }

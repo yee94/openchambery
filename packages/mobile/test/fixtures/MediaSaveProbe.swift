@@ -4,7 +4,7 @@ import UIKit
 
 @main
 final class MediaSaveProbe: UIResponder, UIApplicationDelegate {
-    private let plugin = OpenChamberMediaPlugin()
+    private let plugin = YuriMediaPlugin()
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         DispatchQueue.main.async {

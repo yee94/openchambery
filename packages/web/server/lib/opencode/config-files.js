@@ -172,7 +172,7 @@ export function writeConfigText(content, filePath) {
     fs.writeFileSync(temporaryPath, content, { encoding: 'utf8', flag: 'wx', mode });
     if (original !== null) {
       fs.chmodSync(temporaryPath, mode);
-      fs.copyFileSync(targetPath, `${filePath}.openchamber.backup`);
+      fs.copyFileSync(targetPath, `${filePath}.yuri.backup`);
     }
     fs.renameSync(temporaryPath, targetPath);
   } finally {

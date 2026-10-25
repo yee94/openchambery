@@ -185,7 +185,7 @@ export const resolveTimelineDistanceFromParkedEnd = ({
  * and jump-to-latest read it so the parked row — not `scrollHeight` — is
  * the live edge.
  */
-export const TIMELINE_PARK_END_ATTRIBUTE = 'data-oc-timeline-park-end';
+export const TIMELINE_PARK_END_ATTRIBUTE = 'data-yuri-timeline-park-end';
 
 export const readTimelineParkEndOffset = (
     element: HTMLElement | null | undefined,
@@ -466,7 +466,7 @@ export const getAnchoredTurnMetrics = ({
 // (half a viewport): that band hid the scroll-to-bottom pill and re-armed
 // follow while the user had genuinely scrolled away, yanking them back on the
 // next stream chunk. Distance is measured against the parked offset while a
-// send is reserved (`data-oc-timeline-park-end`), otherwise against the full
+// send is reserved (`data-yuri-timeline-park-end`), otherwise against the full
 // content length. Slack below the parked row is still the live edge.
 export const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
 /**
@@ -561,7 +561,7 @@ export const didPrependTimelineEntries = (
  * An attribute rather than a prop: those observers hold the scroll element, not
  * a path through the component tree.
  */
-export const TIMELINE_ANCHORING_ATTRIBUTE = 'data-oc-timeline-anchoring';
+export const TIMELINE_ANCHORING_ATTRIBUTE = 'data-yuri-timeline-anchoring';
 
 /**
  * How long after a prepend the list keeps compensating for size changes.

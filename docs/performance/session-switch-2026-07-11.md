@@ -69,8 +69,8 @@ The trace showed four causal groups:
 - The chat root shows an inert lightweight surface during the authority change,
   preventing stale-session input or actions.
 - Added User Timing measures:
-  - `openchamber.session-switch.highlight-latency`
-  - `openchamber.session-switch.content-latency`
+  - `yuri.session-switch.highlight-latency`
+  - `yuri.session-switch.content-latency`
 
 ### Historical rendering
 
@@ -238,7 +238,7 @@ loading placeholder; no old/blank view represented the new title.
 ## Regression commands
 
 ```sh
-bunx vitest run --project @openchamber/ui \
+bunx vitest run --project @yuri/ui \
   packages/ui/src/lib/afterPaintTaskQueue.test.ts \
   packages/ui/src/lib/dualLimitLru.test.ts \
   packages/ui/src/components/chat/hooks/useTurnRecords.test.ts \

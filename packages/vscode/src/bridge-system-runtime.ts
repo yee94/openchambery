@@ -48,12 +48,12 @@ const claimNotification = (key: string): boolean => {
 };
 
 
-const getOpenChamberConfigDir = (): string => {
+const getYuriConfigDir = (): string => {
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA;
-    if (appData) return path.join(appData, 'openchamber');
+    if (appData) return path.join(appData, 'yuri');
   }
-  return path.join(os.homedir(), '.config', 'openchamber');
+  return path.join(os.homedir(), '.config', 'yuri');
 };
 
 const sanitizeInstallScope = (scope: string): 'vscode' | 'web' => {
@@ -62,7 +62,7 @@ const sanitizeInstallScope = (scope: string): 'vscode' | 'web' => {
 };
 
 const getOrCreateInstallId = (scope: string): string => {
-  const configDir = getOpenChamberConfigDir();
+  const configDir = getYuriConfigDir();
   const normalizedScope = sanitizeInstallScope(scope);
   const idPath = path.join(configDir, `install-id-${normalizedScope}`);
 
@@ -98,7 +98,7 @@ type ParsedDiffHunk = {
   newLines: string[];
 };
 
-const VIRTUAL_DIFF_SCHEME = 'openchamber-diff';
+const VIRTUAL_DIFF_SCHEME = 'yuri-diff';
 const virtualDiffContents = new Map<string, string>();
 let virtualDiffCounter = 0;
 let virtualDiffProviderDisposable: vscode.Disposable | null = null;
@@ -244,7 +244,7 @@ export async function handleSystemBridgeMessage(
       try {
         const result = await installManagedRequiredOpenCode(ctx?.manager, {
           persistBinary: async (binaryPath) => {
-            await vscode.workspace.getConfiguration('openchamber').update(
+            await vscode.workspace.getConfiguration('yuri').update(
               'opencodeBinary',
               binaryPath,
               vscode.ConfigurationTarget.Global,
@@ -316,7 +316,7 @@ export async function handleSystemBridgeMessage(
       return { id, type, success: true, data: { models } };
     }
 
-    case 'api:openchamber:update-check': {
+    case 'api:yuri:update-check': {
       try {
         const body = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
         const currentVersion = typeof body.currentVersion === 'string' && body.currentVersion.trim().length > 0
@@ -336,13 +336,16 @@ export async function handleSystemBridgeMessage(
           : os.arch();
         const reportUsage = body.reportUsage === true;
 
+        if (!deps.updateCheckUrl) {
+          return { id, type, success: false, error: 'Yuri update service is not configured (YURI_UPDATE_API_URL)' };
+        }
         const installId = getOrCreateInstallId('vscode');
         const requestBody = {
           appType: 'vscode',
           deviceClass,
           platform: mapNodePlatformToApiPlatform(platformRaw),
           arch: mapNodeArchToApiArch(archRaw),
-          channel: 'stable',
+          channel: currentVersion.includes('-') ? 'beta' : 'stable',
           currentVersion,
           installId,
           instanceMode,

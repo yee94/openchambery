@@ -23,7 +23,7 @@ import { useAppFontEffects } from './useAppFontEffects';
 import { useMiniChatKeyboardShortcuts } from '@/hooks/useMiniChatKeyboardShortcuts';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 
-const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
+const MINI_CHAT_PRESENCE_CHANNEL = 'yuri:mini-chat-presence';
 
 type MiniChatMode = 'session' | 'draft';
 
@@ -153,8 +153,8 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
   // Switch this mini-chat to another session in place (e.g. picked from the
   // tray while this window was focused) instead of spawning a new window.
   React.useEffect(() => {
-    window.addEventListener('openchamber:open-session', handleOpenSession);
-    return () => window.removeEventListener('openchamber:open-session', handleOpenSession);
+    window.addEventListener('yuri:open-session', handleOpenSession);
+    return () => window.removeEventListener('yuri:open-session', handleOpenSession);
   }, [handleOpenSession]);
 
   React.useEffect(() => {

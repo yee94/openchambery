@@ -8,12 +8,12 @@ import { desktopOtaEvidenceArgs } from './desktop-ota-evidence-launch.mjs';
 
 const [root, stage = 'download'] = process.argv.slice(2);
 app.setPath('userData', path.join(root, 'user-data'));
-protocol.registerSchemesAsPrivileged([{ scheme: 'openchamber-ui', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+protocol.registerSchemesAsPrivileged([{ scheme: 'yuri-ui', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.whenReady().then(async () => {
 try {
   const decision = JSON.parse(await readFile(path.join(root, 'decision.json'), 'utf8'));
   const ota = new DesktopOta({ directory: path.join(root, 'ota'), builtinDirectory: path.join(root, 'builtin'),
-    nativeVersion: '2.1.0', requireBackend: true, fetchImpl: async (url) => String(url).includes('/check')
+    nativeVersion: '2.1.0', requireBackend: true, origin: 'https://updates.example.com', fetchImpl: async (url) => String(url).includes('/check')
       ? Response.json(decision) : new Response(await readFile(path.join(root, 'bundle.zip'))) });
   await ota.initialize();
   if (stage === 'download') {
@@ -26,13 +26,13 @@ try {
   } else {
     const backend = await loadDesktopBackend(ota.backendDirectory);
     const server = await backend.startWebUiServer();
-    const { openchamberVersion: backendVersion } = await (await fetch(`http://127.0.0.1:${server.getPort()}/api/system/info`)).json();
-    protocol.handle('openchamber-ui', (request) => {
+    const { yuriVersion: backendVersion } = await (await fetch(`http://127.0.0.1:${server.getPort()}/api/system/info`)).json();
+    protocol.handle('yuri-ui', (request) => {
       const relative = new URL(request.url).pathname.replace(/^\//, '');
       return net.fetch(pathToFileURL(path.join(ota.assetDirectory, relative)).href);
     });
     const window = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false } });
-    await window.loadURL('openchamber-ui://app/index.html');
+    await window.loadURL('yuri-ui://app/index.html');
     const rendered = await window.webContents.executeJavaScript('document.body.textContent');
     await ota.ready(ota.version);
     const before = JSON.parse(await readFile(path.join(root, 'shutdown.json'), 'utf8'));

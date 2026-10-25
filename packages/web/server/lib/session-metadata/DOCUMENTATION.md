@@ -1,14 +1,16 @@
 # Session metadata store
 
-OpenChamber session metadata whose durable copy lives on the OpenCode session
+Yuri session metadata whose durable copy lives on the OpenCode session
 record. The side JSON file is the cache and the pre-migration source.
+
+During Yuri 2.x, the projection owner reads the prior product namespace only if `yuri` is absent. New state, including explicit unarchive and removed fields, wins. Source metadata and user content are preserved; writes carry the projected Yuri namespace through the existing record writer. See `packages/web/BRAND-MIGRATION.md` for the exact legacy-key exception and exit window.
 
 ## Why
 
 Session goal progress, Host archive stamps, titles, and other Host state under
-the `openchamber` namespace travel with the OpenCode session. `session.update`
+the `yuri` namespace travel with the OpenCode session. `session.update`
 (`PATCH /api/session/:id`, body `{ title?, metadata?, permissions? }`) replaces
-`metadata` wholesale. Archive is `metadata.openchamber.archive.archivedAt` on
+`metadata` wholesale. Archive is `metadata.yuri.archive.archivedAt` on
 that record and is still projected onto `time.archived`. Title is the record's
 `title` field and is not sent when only metadata changes.
 
@@ -23,7 +25,7 @@ A session OpenCode still has is listed even when the side file has no row.
 One failed copy does not delete the other rows or the other OpenCode sessions.
 
 Fork-specific fields (`goal`, `assistant`, `scheduledTask`, `llm`, `smallModel`,
-and the rest of `openchamber`) are merged onto the record. They are not dropped
+and the rest of `yuri`) are merged onto the record. They are not dropped
 to match a narrower upstream metadata shape.
 
 | OpenCode client | Session metadata update |
@@ -46,7 +48,7 @@ to match a narrower upstream metadata shape.
 
 ## Contracts
 
-- OpenCode `session.title` owns title display. `openchamber.titleAuthority` is
+- OpenCode `session.title` owns title display. `yuri.titleAuthority` is
   retained only as a generation revision fence; see `../session-title/DOCUMENTATION.md`.
   Projection never substitutes its stored title into list/detail or rename
   events, including replay. Existing persisted records require no migration.
@@ -55,19 +57,19 @@ to match a narrower upstream metadata shape.
 - Mutations are fully serialized (read-merge-write + persist) so concurrent writers cannot lose neighbors.
 - Committed `entries` update **only after** successful persist — concurrent readers never observe uncommitted drafts. Persist failure keeps the last committed snapshot and surfaces the error.
 - `mutateSessionMetadata(sessionID, decide)` runs `decide(committedMetadata)` on the same exclusive lock. Return `{ ok: false, reason? }` to reject without writing, or `{ ok: true, patch }` to merge-persist-publish. Session-goal uses this for generation/status preconditions.
-- Goal-shaped metadata PUT patches advance `openchamber.goal.executionGeneration` via `withGoalExecutionGeneration` inside the mutate lock (pause/resume/condition changes).
+- Goal-shaped metadata PUT patches advance `yuri.goal.executionGeneration` via `withGoalExecutionGeneration` inside the mutate lock (pause/resume/condition changes).
 - A failed or **corrupt** file read is **not** empty success — the store stays unwritable, keeps the file, and throws; it does not overwrite unknown disk state with `{}`.
 - Entries are keyed by `sessionID` only (not directory). Runtime isolation is the Host data dir. Multiple Hosts sharing one data file are outside the current contract.
-- Generic metadata patches **cannot** wipe Host archive: `openchamber.archive` is stripped from the patch and restored after merge (including null ancestor deletes). Archive writes use `setSessionMetadata(..., { allowArchive: true })`.
-- Host archive authority (`metadata.openchamber.archive.archivedAt`):
+- Generic metadata patches **cannot** wipe Host archive: `yuri.archive` is stripped from the patch and restored after merge (including null ancestor deletes). Archive writes use `setSessionMetadata(..., { allowArchive: true })`.
+- Host archive authority (`metadata.yuri.archive.archivedAt`):
   - positive number → archived (`time.archived` = that value)
   - `0` → explicit unarchive (clears `time.archived` even if upstream still has history)
   - missing → fall back to upstream `time.archived`
-- `PUT /api/openchamber/sessions/:sessionId/archive` body `{ archivedAt: number, directory?: string }` returns `{ session, index? }`. Validates upstream id + directory (`location.directory` first). Does not mutate upstream `created`/`updated`. Metadata commit is authoritative; `index: { ok: false, retryable: true }` is observable when SQLite apply fails after commit (`retryIndexUpdate` / `getIndexRepairStatus`).
+- `PUT /api/yuri/sessions/:sessionId/archive` body `{ archivedAt: number, directory?: string }` returns `{ session, index? }`. Validates upstream id + directory (`location.directory` first). Does not mutate upstream `created`/`updated`. Metadata commit is authoritative; `index: { ok: false, retryable: true }` is observable when SQLite apply fails after commit (`retryIndexUpdate` / `getIndexRepairStatus`).
 - When the Host store is wired, proxy list/get return **503 retryable** on metadata read failure (never silent un-overlaid upstream). Until the store is ready, session lifecycle SSE/hub frames are suppressed; transcript/message paths stay open. Hub `replayAfter` re-projects with **current** committed metadata.
 - Successful proxy `DELETE /api/session/:id` and assistant SDK delete run idempotent `forgetSession`; `session.deleted` remains compensatory. Upstream delete failure keeps metadata.
-- Successful metadata `PUT` may broadcast `openchamber:session-metadata` with the **full** merged metadata object.
-- Successful archive broadcasts `session.updated` with projected `info` (global UI + openchamber SSE).
+- Successful metadata `PUT` may broadcast `yuri:session-metadata` with the **full** merged metadata object.
+- Successful archive broadcasts `session.updated` with projected `info` (global UI + yuri SSE).
 - `session.deleted` events best-effort `removeSession` metadata cleanup.
 
 ## Server wiring
@@ -83,21 +85,21 @@ Wired from `packages/web/server/index.js` + `feature-routes-runtime.js`:
 7. `registerSessionMetadataRoutes` (metadata + archive)
 8. assistants `archiveSessionHost` → shared Host archive, which write-throughs `metadata` onto the OpenCode session record without clearing `title`
 9. system session creators persist isolation through `persistSessionMetadata`
-   (`setSessionMetadata` + `openchamber:session-metadata` broadcast) and then
+   (`setSessionMetadata` + `yuri:session-metadata` broadcast) and then
    `onSystemSessionPersisted` (index upsert that removes the row). Wired from
    `index.js` into scheduled-task runtime, LLM attachment generate, and
    Assistant binding create. Create-time `metadata` is merged onto the session record; it is not a second authority.
 
 Capability is open (`supported: true`). Manual UI metadata writes, session-goal
-routes, and scheduled-task goal create all persist `openchamber.goal` through
+routes, and scheduled-task goal create all persist `yuri.goal` through
 this store. After first create/resume persist, the server notifies the goal
 runtime with a synthetic `session.updated` so the loop can arm.
 
 System ownership for sidebar / session-index / notifications is established when Host metadata
-carries a non-empty `openchamber.assistant.assistantID` (unless
-`assigned.from === 'contact'`), `openchamber.scheduledTask.taskID`,
-`openchamber.smallModel.purpose`, or `openchamber.llm.purpose`. Every system
+carries a non-empty `yuri.assistant.assistantID` (unless
+`assigned.from === 'contact'`), `yuri.scheduledTask.taskID`,
+`yuri.smallModel.purpose`, or `yuri.llm.purpose`. Every system
 session creator must persist the matching patch through this store. Separately,
 ordinary sidebar/session-index lists also exclude reserved leading title tags
-`[Scheduled]`, `[Assistant]`, and `[openchamber-llm]`, including legacy sessions
+`[Scheduled]`, `[Assistant]`, and `[yuri-llm]`, including legacy sessions
 without metadata; these tags do not establish metadata ownership.

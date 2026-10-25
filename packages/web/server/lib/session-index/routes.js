@@ -40,7 +40,7 @@ export const registerSessionIndexRoutes = (app, {
     retryable: true,
   });
 
-  app.get('/api/openchamber/session-index', async (_req, res) => {
+  app.get('/api/yuri/session-index', async (_req, res) => {
     if (!sessionIndexService) return unsupported(res);
     const base = sessionIndexSyncRuntime?.snapshot() ?? sessionIndexService.snapshot();
     if (!hostStoreWired) {
@@ -52,7 +52,7 @@ export const registerSessionIndexRoutes = (app, {
     return res.json({ available: true, ...filtered });
   });
 
-  app.post('/api/openchamber/session-index/sync', async (req, res) => {
+  app.post('/api/yuri/session-index/sync', async (req, res) => {
     if (!sessionIndexSyncRuntime) return unsupported(res);
     const directories = Array.isArray(req.body?.directories) ? req.body.directories : [];
     const base = sessionIndexSyncRuntime.enqueue(directories);
@@ -63,7 +63,7 @@ export const registerSessionIndexRoutes = (app, {
     return res.status(202).json(applyHostArchiveToIndexSnapshot(base, host.stored));
   });
 
-  app.put('/api/openchamber/session-index/directory', (req, res) => {
+  app.put('/api/yuri/session-index/directory', (req, res) => {
     if (!sessionIndexService) return unsupported(res);
     try {
       sessionIndexService.replaceDirectory(req.body ?? {});
@@ -73,7 +73,7 @@ export const registerSessionIndexRoutes = (app, {
     }
   });
 
-  app.put('/api/openchamber/session-index/snapshot', (req, res) => {
+  app.put('/api/yuri/session-index/snapshot', (req, res) => {
     if (!sessionIndexService) return unsupported(res);
     try {
       sessionIndexService.replaceDirectories(req.body?.directories);
@@ -83,19 +83,19 @@ export const registerSessionIndexRoutes = (app, {
     }
   });
 
-  app.post('/api/openchamber/session-index/session', (req, res) => {
+  app.post('/api/yuri/session-index/session', (req, res) => {
     if (!sessionIndexService) return unsupported(res);
     res.status(sessionIndexService.upsert(req.body?.session) ? 204 : 400).end();
   });
 
-  app.delete('/api/openchamber/session-index/session/:sessionId', (req, res) => {
+  app.delete('/api/yuri/session-index/session/:sessionId', (req, res) => {
     if (!sessionIndexService) return unsupported(res);
     sessionIndexService.remove(req.params.sessionId);
     res.status(204).end();
   });
 
   // Deep-link resolution: GET by session id without requiring a directory.
-  app.get('/api/openchamber/session-index/session/:sessionId', async (req, res) => {
+  app.get('/api/yuri/session-index/session/:sessionId', async (req, res) => {
     if (!sessionIndexService) return unsupported(res);
     if (typeof sessionIndexService.findBySessionId !== 'function') {
       return res.status(501).json({ error: 'Session lookup is unavailable' });
@@ -121,7 +121,7 @@ export const registerSessionIndexRoutes = (app, {
     return res.json({ available: true, session: projected.session });
   });
 
-  app.post('/api/openchamber/session-index/session/:id/pin', (req, res) => {
+  app.post('/api/yuri/session-index/session/:id/pin', (req, res) => {
     if (!sessionIndexService) return unsupported(res);
     if (typeof sessionIndexService.setPinned !== 'function') {
       return res.status(501).json({ error: 'Session pin is unavailable' });
@@ -138,7 +138,7 @@ export const registerSessionIndexRoutes = (app, {
     res.status(204).end();
   });
 
-  app.delete('/api/openchamber/session-index/session/:id/pin', (req, res) => {
+  app.delete('/api/yuri/session-index/session/:id/pin', (req, res) => {
     if (!sessionIndexService) return unsupported(res);
     if (typeof sessionIndexService.clearPinned !== 'function') {
       return res.status(501).json({ error: 'Session unpin is unavailable' });

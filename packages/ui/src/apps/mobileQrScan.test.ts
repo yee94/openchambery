@@ -50,7 +50,7 @@ import {
 } from './mobileQrScan';
 
 const hostEncPubJwk = { kty: 'EC', crv: 'P-256', x: 'eHhY', y: 'eVlZ' } as const;
-const BUNDLED_SCANNER_ACTIVE_CLASS = 'oc-barcode-scanner-active';
+const BUNDLED_SCANNER_ACTIVE_CLASS = 'yuri-barcode-scanner-active';
 
 const originalWindowCapacitor = (window as typeof window & { Capacitor?: unknown }).Capacitor;
 
@@ -71,7 +71,7 @@ beforeEach(() => {
 afterEach(() => {
   resolveStopScan();
   document.documentElement.classList.remove(BUNDLED_SCANNER_ACTIVE_CLASS);
-  document.querySelectorAll('.oc-barcode-scanner-chrome').forEach((node) => node.remove());
+  document.querySelectorAll('.yuri-barcode-scanner-chrome').forEach((node) => node.remove());
   (window as typeof window & { Capacitor?: unknown }).Capacitor = originalWindowCapacitor;
   vi.restoreAllMocks();
 });
@@ -92,7 +92,7 @@ describe('evaluateQrScanSupport', () => {
 
 describe('parseConnectionPayload', () => {
   test('parses bare http(s) URLs', () => {
-    expect(parseConnectionPayload('https://oc.example')).toEqual({ url: 'https://oc.example' });
+    expect(parseConnectionPayload('https://yuri.example')).toEqual({ url: 'https://yuri.example' });
     expect(parseConnectionPayload('  http://192.168.1.10:2606 ')).toEqual({ url: 'http://192.168.1.10:2606' });
   });
 
@@ -116,12 +116,12 @@ describe('parseConnectionPayload', () => {
   test('rejects non-connection and legacy/relay-offer payloads', () => {
     expect(parseConnectionPayload('')).toBeNull();
     expect(parseConnectionPayload('hello world')).toBeNull();
-    expect(parseConnectionPayload('openchamber://connect')).toBeNull();
-    expect(parseConnectionPayload('openchamber://session/abc')).toBeNull();
+    expect(parseConnectionPayload('yuri://connect')).toBeNull();
+    expect(parseConnectionPayload('yuri://session/abc')).toBeNull();
     // Legacy v1 direct links are no longer accepted.
-    expect(parseConnectionPayload('openchamber://connect?v=1&server=http%3A%2F%2F192.168.1.10%3A2606&token=tok')).toBeNull();
+    expect(parseConnectionPayload('yuri://connect?v=1&server=http%3A%2F%2F192.168.1.10%3A2606&token=tok')).toBeNull();
     // Legacy relay-offer format (mode=relay + fragment) is no longer accepted.
-    expect(parseConnectionPayload('openchamber://connect?v=1&mode=relay#offer=eyJ2IjoxfQ')).toBeNull();
+    expect(parseConnectionPayload('yuri://connect?v=1&mode=relay#offer=eyJ2IjoxfQ')).toBeNull();
   });
 });
 
@@ -149,10 +149,10 @@ describe('scanConnectionQr bundled CameraX cancel cleanup', () => {
     const scanPromise = scanConnectionQr();
     await vi.waitFor(() => {
       expect(document.documentElement.classList.contains(BUNDLED_SCANNER_ACTIVE_CLASS)).toBe(true);
-      expect(document.querySelector('.oc-barcode-scanner-chrome')).not.toBeNull();
+      expect(document.querySelector('.yuri-barcode-scanner-chrome')).not.toBeNull();
     });
 
-    document.querySelector<HTMLButtonElement>('.oc-barcode-scanner-chrome')?.click();
+    document.querySelector<HTMLButtonElement>('.yuri-barcode-scanner-chrome')?.click();
     await vi.waitFor(() => {
       expect(stopScan).toHaveBeenCalledTimes(1);
     });
@@ -160,7 +160,7 @@ describe('scanConnectionQr bundled CameraX cancel cleanup', () => {
     // Visibility must recover before native stopScan finishes — otherwise the
     // page stays blank behind the transparent WebView while CameraX tears down.
     expect(document.documentElement.classList.contains(BUNDLED_SCANNER_ACTIVE_CLASS)).toBe(false);
-    expect(document.querySelector('.oc-barcode-scanner-chrome')).toBeNull();
+    expect(document.querySelector('.yuri-barcode-scanner-chrome')).toBeNull();
     expect(removeBarcode).toHaveBeenCalledTimes(1);
     expect(removeError).toHaveBeenCalledTimes(1);
 
@@ -177,7 +177,7 @@ describe('scanConnectionQr bundled CameraX cancel cleanup', () => {
       if (
         this === document.body
         && child instanceof HTMLElement
-        && child.classList.contains('oc-barcode-scanner-chrome')
+        && child.classList.contains('yuri-barcode-scanner-chrome')
       ) {
         // Simulate a concurrent detach (e.g. React removeChild) before our cleanup runs.
         if (child.parentNode === document.body) originalRemoveChild.call(document.body, child);
@@ -188,10 +188,10 @@ describe('scanConnectionQr bundled CameraX cancel cleanup', () => {
 
     const scanPromise = scanConnectionQr();
     await vi.waitFor(() => {
-      expect(document.querySelector('.oc-barcode-scanner-chrome')).not.toBeNull();
+      expect(document.querySelector('.yuri-barcode-scanner-chrome')).not.toBeNull();
     });
 
-    document.querySelector<HTMLButtonElement>('.oc-barcode-scanner-chrome')?.click();
+    document.querySelector<HTMLButtonElement>('.yuri-barcode-scanner-chrome')?.click();
     await vi.waitFor(() => {
       expect(stopScan).toHaveBeenCalledTimes(1);
     });
@@ -199,7 +199,7 @@ describe('scanConnectionQr bundled CameraX cancel cleanup', () => {
     await expect(scanPromise).resolves.toEqual({ status: 'cancelled' });
 
     expect(document.documentElement.classList.contains(BUNDLED_SCANNER_ACTIVE_CLASS)).toBe(false);
-    expect(document.querySelector('.oc-barcode-scanner-chrome')).toBeNull();
+    expect(document.querySelector('.yuri-barcode-scanner-chrome')).toBeNull();
     expect(stopScan).toHaveBeenCalledTimes(1);
     removeChildSpy.mockRestore();
   });

@@ -63,7 +63,7 @@ describe('parseModelRef', () => {
 });
 
 describe('resolveSmallModel', () => {
-  it('gives the OpenChamber settings override top priority', () => {
+  it('gives the Yuri settings override top priority', () => {
     const result = resolveSmallModel({
       catalog,
       settingsSmallModel: 'anthropic/claude-haiku-4-5',

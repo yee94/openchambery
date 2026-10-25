@@ -26,7 +26,7 @@ export function registerGitRoutes(app, { messageQueueService = null, createReque
   const notifyWorktreeTopologyChanged = (projectDirectory, directory, operation) => {
     try {
       broadcastWorktreeTopologyChanged({
-        type: 'openchamber:worktree-topology-changed',
+        type: 'yuri:worktree-topology-changed',
         properties: {
           projectDirectory,
           directory,

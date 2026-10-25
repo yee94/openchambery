@@ -152,7 +152,7 @@ describe('local SSE routes', () => {
       expect(res.getHeader('connection')).toBe('keep-alive');
       expect(res.getHeader('x-accel-buffering')).toBe('no');
       expect(res.flushed).toBe(true);
-      expect(res.body).toContain('openchamber:notification-stream-ready');
+      expect(res.body).toContain('yuri:notification-stream-ready');
       expect(clients.has(res)).toBe(true);
       expect(vi.getTimerCount()).toBe(1);
       expect(res.bodyFlushCount).toBe(1);
@@ -173,19 +173,19 @@ describe('local SSE routes', () => {
     }
   });
 
-  it('serves OpenChamber SSE with nginx-safe headers', () => {
+  it('serves Yuri SSE with nginx-safe headers', () => {
     const { app, getRoute } = createRouteRegistry();
     const clients = new Set();
 
     registerScheduledTaskRoutes(app, {
-      getOpenChamberEventClients: () => clients,
+      getYuriEventClients: () => clients,
       writeSseEvent(res, payload) {
         res.write(`data: ${JSON.stringify(payload)}\n\n`);
         return true;
       },
     });
 
-    const handler = getRoute('GET', '/api/openchamber/events');
+    const handler = getRoute('GET', '/api/yuri/events');
     const req = createMockRequest();
     const res = createMockResponse();
 
@@ -197,14 +197,14 @@ describe('local SSE routes', () => {
     expect(res.getHeader('connection')).toBe('keep-alive');
     expect(res.getHeader('x-accel-buffering')).toBe('no');
     expect(res.flushed).toBe(true);
-    expect(res.body).toContain('openchamber:event-stream-ready');
+    expect(res.body).toContain('yuri:event-stream-ready');
     expect(clients.has(res)).toBe(true);
 
     req.emit('close');
     expect(clients.has(res)).toBe(false);
   });
 
-  it('evicts half-open OpenChamber SSE clients after consecutive paused heartbeats', () => {
+  it('evicts half-open Yuri SSE clients after consecutive paused heartbeats', () => {
     vi.useFakeTimers();
     const { app, getRoute } = createRouteRegistry();
     const clients = new Set();
@@ -212,14 +212,14 @@ describe('local SSE routes', () => {
 
     try {
       registerScheduledTaskRoutes(app, {
-        getOpenChamberEventClients: () => clients,
+        getYuriEventClients: () => clients,
         writeSseEvent(res) {
           res.__ssePaused = true;
           return false;
         },
       });
 
-      const handler = getRoute('GET', '/api/openchamber/events');
+      const handler = getRoute('GET', '/api/yuri/events');
       const req = createMockRequest();
       const res = createMockResponse();
       res.destroy = () => {

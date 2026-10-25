@@ -76,12 +76,12 @@ it('renders structured status and icon consistently, including non-error interru
   }));
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('chat.response.auth');
   expect(host.textContent).toContain('provider.auth · 401');
-  expect(host.querySelector('use')?.getAttribute('href')).toBe('#oc-lock');
+  expect(host.querySelector('use')?.getAttribute('href')).toBe('#yuri-lock');
   await act(async () => useNotificationStore.getState().append({
     type: 'error', session: 'test-session', directory: '/test-project', time: Date.now(), viewed: false,
     error: { name: 'aborted', type: 'aborted', message: 'Step interrupted' },
   }));
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(host.querySelector('[role="status"]')?.textContent).toContain('chat.response.interrupted');
-  expect(host.querySelector('use')?.getAttribute('href')).toBe('#oc-pause-circle');
+  expect(host.querySelector('use')?.getAttribute('href')).toBe('#yuri-pause-circle');
 });

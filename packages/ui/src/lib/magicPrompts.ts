@@ -509,7 +509,7 @@ Keep the review concise and practical. Respond in the same language the user use
     title: 'Review Handoff Instructions',
     group: 'Session',
     description: 'Hidden instructions attached to the /handoff-review command. Produces a handoff for a separate review agent.',
-    template: `Produce a review handoff for another agent. Do not compact or mutate session history. Your output is an assistant message that OpenChamber will send to a separate reviewer agent.
+    template: `Produce a review handoff for another agent. Do not compact or mutate session history. Your output is an assistant message that Yuri will send to a separate reviewer agent.
 
 Include:
 - The user's original intent and any later clarifications that changed the intent
@@ -522,7 +522,7 @@ Include:
 Formatting:
 - Concise markdown with clear sections
 - No preamble like "Here is a handoff"
-- Do not mention OpenChamber metadata, linked sessions, session IDs, or routing
+- Do not mention Yuri metadata, linked sessions, session IDs, or routing
 - Respond in the same language the user used most in the conversation`,
   },
   {

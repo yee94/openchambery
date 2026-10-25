@@ -31,7 +31,7 @@ function mountStyledFixture(html: string): HTMLElement {
       :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"] { overflow: hidden !important; overflow-y: hidden !important; }
       :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"] button { min-height: 0 !important; min-width: 0 !important; }
       :root.mobile-pointer:not(.desktop-runtime) button { min-height: 36px; min-width: 36px; }
-      :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-composer-surface { min-height: min-content !important; }
+      :root.mobile-pointer:not(.desktop-runtime) .yuri-mobile-composer-surface { min-height: min-content !important; }
     `;
     document.head.appendChild(style);
     injected.add(style);
@@ -95,35 +95,35 @@ describe('mobile composer overflow and swap contract', () => {
     });
 
     test('declares alternating transform layers and snap-only transition', () => {
-        expect(mobileCss).toContain('@property --oc-mobile-composer-swap');
-        expect(mobileCss).toMatch(/\.oc-mobile-composer-expanded-layer\s*\{[^}]*transform:\s*none/s);
-        expect(mobileCss).toMatch(/data-oc-composer-swap-phase="snapping"[\s\S]*?\.oc-mobile-composer-expanded-layer\s*\{[^}]*min\(1, var\(--oc-mobile-composer-swap\) \* 2\) \* 110%/s);
-        expect(mobileCss).toMatch(/\.oc-mobile-composer-compact-layer\s*\{[^}]*width:\s*80%;[^}]*--oc-mobile-glass-shadow[^}]*--oc-mobile-glass-blur[^}]*max\(0, var\(--oc-mobile-composer-swap\) \* 2 - 1\)/s);
-        expect(mobileCss).toMatch(/\.oc-mobile-composer-compact-layer\s*\{[^}]*background:\s*var\(--oc-mobile-glass-fill\)/s);
-        expect(mobileCss).toMatch(/data-oc-composer-swap-phase="snapping"[^}]*transition:\s*--oc-mobile-composer-swap 240ms/s);
-        expect(mobileCss).toMatch(/data-oc-composer-swap-phase="tracking"[^}]*transition:\s*none/s);
-        expect(chatInputSource).toContain('data-oc-composer-compact-surface="true"');
-        expect(chatInputSource).toContain('oc-mobile-composer-compact-preview');
-        expect(chatInputSource).toContain('oc-mobile-composer-compact-preview--placeholder');
+        expect(mobileCss).toContain('@property --yuri-mobile-composer-swap');
+        expect(mobileCss).toMatch(/\.yuri-mobile-composer-expanded-layer\s*\{[^}]*transform:\s*none/s);
+        expect(mobileCss).toMatch(/data-yuri-composer-swap-phase="snapping"[\s\S]*?\.yuri-mobile-composer-expanded-layer\s*\{[^}]*min\(1, var\(--yuri-mobile-composer-swap\) \* 2\) \* 110%/s);
+        expect(mobileCss).toMatch(/\.yuri-mobile-composer-compact-layer\s*\{[^}]*width:\s*80%;[^}]*--yuri-mobile-glass-shadow[^}]*--yuri-mobile-glass-blur[^}]*max\(0, var\(--yuri-mobile-composer-swap\) \* 2 - 1\)/s);
+        expect(mobileCss).toMatch(/\.yuri-mobile-composer-compact-layer\s*\{[^}]*background:\s*var\(--yuri-mobile-glass-fill\)/s);
+        expect(mobileCss).toMatch(/data-yuri-composer-swap-phase="snapping"[^}]*transition:\s*--yuri-mobile-composer-swap 240ms/s);
+        expect(mobileCss).toMatch(/data-yuri-composer-swap-phase="tracking"[^}]*transition:\s*none/s);
+        expect(chatInputSource).toContain('data-yuri-composer-compact-surface="true"');
+        expect(chatInputSource).toContain('yuri-mobile-composer-compact-preview');
+        expect(chatInputSource).toContain('yuri-mobile-composer-compact-preview--placeholder');
         expect(chatInputSource).toContain('placeholder: composerPlaceholder');
         expect(chatInputSource).toContain('{message.trim() ? message : holdToTalkEnabled ? speechPlaceholder : composerPlaceholder}');
         expect(chatInputSource).toMatch(
             /inputMode === 'shell'\s*\?\s*t\('chat\.chatInput\.placeholder\.shell'\)\s*:\s*isMobile\s*\?\s*t\('chat\.chatInput\.placeholder\.chatCompact'\)\s*:\s*t\('chat\.chatInput\.placeholder\.chat'\)/,
         );
         expect(chatInputSource).not.toContain("t('chat.chatInput.placeholder.compactTap')");
-        expect(mobileCss).toContain('.oc-mobile-composer-compact-preview--placeholder');
+        expect(mobileCss).toContain('.yuri-mobile-composer-compact-preview--placeholder');
     });
 
     test('anchors independent expanded and compact scroll-to-bottom buttons', () => {
-        expect(mobileCss).not.toMatch(/\.oc-mobile-composer-foot--overlay\s*>\s*div:first-child[^{]*\{[^}]*--oc-mobile-composer-swap/s);
-        expect(mobileCss).toMatch(/\.oc-scroll-to-bottom--expanded\s*\{[^}]*z-index:\s*30;[^}]*bottom:\s*var\(--oc-chat-foot-inset\)[^}]*opacity:\s*calc\(1 - min\(1, var\(--oc-mobile-composer-swap\) \* 2\)\)/s);
-        expect(mobileCss).toMatch(/\.oc-scroll-to-bottom--compact\s*\{[^}]*opacity:\s*max\(0, calc\(var\(--oc-mobile-composer-swap\) \* 2 - 1\)\)/s);
+        expect(mobileCss).not.toMatch(/\.yuri-mobile-composer-foot--overlay\s*>\s*div:first-child[^{]*\{[^}]*--yuri-mobile-composer-swap/s);
+        expect(mobileCss).toMatch(/\.yuri-scroll-to-bottom--expanded\s*\{[^}]*z-index:\s*30;[^}]*bottom:\s*var\(--yuri-chat-foot-inset\)[^}]*opacity:\s*calc\(1 - min\(1, var\(--yuri-mobile-composer-swap\) \* 2\)\)/s);
+        expect(mobileCss).toMatch(/\.yuri-scroll-to-bottom--compact\s*\{[^}]*opacity:\s*max\(0, calc\(var\(--yuri-mobile-composer-swap\) \* 2 - 1\)\)/s);
         expect(chatContainerSource).toContain('placement="expanded"');
         expect(chatContainerSource).not.toContain('placement="compact"');
         expect(chatInputSource).toContain('placement="compact"');
-        expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--with-scroll');
-        expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--aborting');
-        expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--sending');
+        expect(chatInputSource).toContain('yuri-mobile-composer-compact-chrome--with-scroll');
+        expect(chatInputSource).toContain('yuri-mobile-composer-compact-chrome--aborting');
+        expect(chatInputSource).toContain('yuri-mobile-composer-compact-chrome--sending');
         expect(chatInputSource).toContain('data-mobile-composer-compact-slot="trailing"');
         expect(readFileSync(join(here, '../components/chat/components/ScrollToBottomButton.tsx'), 'utf-8')).toContain(
             "isCompactInline ? 'ghost' : 'outline'",
@@ -133,8 +133,8 @@ describe('mobile composer overflow and swap contract', () => {
     test('removes timelines, shrink publishing, and geometry mutation', () => {
         expect(mobileCss).not.toContain('scroll-timeline');
         expect(mobileCss).not.toContain('animation-timeline');
-        expect(mobileCss).not.toContain('--oc-mobile-composer-shrink');
-        expect(mobileCss).not.toContain('@keyframes oc-mobile-composer-');
+        expect(mobileCss).not.toContain('--yuri-mobile-composer-shrink');
+        expect(mobileCss).not.toContain('@keyframes yuri-mobile-composer-');
         const establishingDraftShell = chatContainerSource.slice(
             chatContainerSource.indexOf('if ((draftSubmitting || draftEstablishing) && draftPendingMessage)'),
             chatContainerSource.indexOf('if (draftSubmitting || draftEstablishing)'),
@@ -148,83 +148,83 @@ describe('mobile composer overflow and swap contract', () => {
             chatContainerSource.indexOf('const MemoizedChatContainerContent'),
         );
         for (const shell of [establishingDraftShell, hydratingShell, transcriptShell]) {
-            expect(shell.match(/oc-chat-composer-swap-scope/g)).toHaveLength(1);
-            expect(shell.match(/oc-mobile-composer-foot--overlay/g)).toHaveLength(1);
+            expect(shell.match(/yuri-chat-composer-swap-scope/g)).toHaveLength(1);
+            expect(shell.match(/yuri-mobile-composer-foot--overlay/g)).toHaveLength(1);
         }
-        expect(chatContainerSource.match(/oc-chat-composer-swap-scope/g)).toHaveLength(3);
-        expect(chatContainerSource.match(/oc-mobile-composer-foot--overlay/g)).toHaveLength(3);
+        expect(chatContainerSource.match(/yuri-chat-composer-swap-scope/g)).toHaveLength(3);
+        expect(chatContainerSource.match(/yuri-mobile-composer-foot--overlay/g)).toHaveLength(3);
         for (const source of [chatContainerSource, chatInputSource, autoFollowSource]) {
-            expect(source).not.toContain("setProperty('--oc-mobile-composer-shrink'");
-            expect(source).not.toContain("setProperty('--oc-chat-foot-inset'");
+            expect(source).not.toContain("setProperty('--yuri-mobile-composer-shrink'");
+            expect(source).not.toContain("setProperty('--yuri-chat-foot-inset'");
             expect(source).not.toContain('publishMobileComposerShrink');
         }
     });
 
     test('keeps fixed inset and pin accessibility contracts', () => {
-        expect(mobileCss).toMatch(/--oc-chat-foot-inset:\s*calc\(\s*8rem/);
-        expect(mobileCss).not.toMatch(/\.oc-mobile-composer-foot\s*\{[^}]*--oc-mobile-composer-swap:/s);
-        expect(mobileCss).toContain('padding-bottom: var(--oc-chat-foot-inset)');
+        expect(mobileCss).toMatch(/--yuri-chat-foot-inset:\s*calc\(\s*8rem/);
+        expect(mobileCss).not.toMatch(/\.yuri-mobile-composer-foot\s*\{[^}]*--yuri-mobile-composer-swap:/s);
+        expect(mobileCss).toContain('padding-bottom: var(--yuri-chat-foot-inset)');
         expect(swapHookSource).toContain('textarea[data-chat-input="true"]');
-        expect(swapHookSource).toContain('[data-oc-composer-dictation-active="true"]');
-        expect(swapHookSource).toContain("root.classList.contains('oc-keyboard-open')");
+        expect(swapHookSource).toContain('[data-yuri-composer-dictation-active="true"]');
+        expect(swapHookSource).toContain("root.classList.contains('yuri-keyboard-open')");
         expect(swapHookSource).toContain("applyComposerSwapForce(stateRef.current, 'expanded')");
         expect(swapHookSource).toContain("textarea?.focus({ preventScroll: true })");
         expect(swapHookSource).toContain('armExpandFocusShield');
         expect(swapHookSource).toContain("addEventListener('click', swallow, true)");
         // Expanding snap must keep the expanded layer interactive so focus sticks.
         expect(mobileCss).toMatch(
-            /data-oc-composer-swap-phase="snapping"\]\[data-oc-composer-swap-rest="expanded"\][\s\S]*?\.oc-mobile-composer-compact-layer[\s\S]*?pointer-events:\s*none/,
+            /data-yuri-composer-swap-phase="snapping"\]\[data-yuri-composer-swap-rest="expanded"\][\s\S]*?\.yuri-mobile-composer-compact-layer[\s\S]*?pointer-events:\s*none/,
         );
         expect(mobileCss).not.toMatch(
-            /data-oc-composer-swap-phase="snapping"\]\s*:is\(\.oc-mobile-composer-expanded-layer,\s*\.oc-mobile-composer-compact-layer\)/,
+            /data-yuri-composer-swap-phase="snapping"\]\s*:is\(\.yuri-mobile-composer-expanded-layer,\s*\.yuri-mobile-composer-compact-layer\)/,
         );
         expect(mobileCss).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*transition-duration:\s*0ms/);
-        expect(mobileCss).toMatch(/prefers-reduced-transparency:\s*reduce[\s\S]*\.oc-mobile-composer-compact-layer/);
+        expect(mobileCss).toMatch(/prefers-reduced-transparency:\s*reduce[\s\S]*\.yuri-mobile-composer-compact-layer/);
     });
 
     test('hides web composer chrome when the iOS native overlay is active', () => {
-        expect(mobileCss).toContain(':root.oc-native-ios-composer');
-        expect(mobileCss).toContain('--oc-native-composer-height');
+        expect(mobileCss).toContain(':root.yuri-native-ios-composer');
+        expect(mobileCss).toContain('--yuri-native-composer-height');
         expect(mobileCss).not.toMatch(
-            /:root\.oc-native-ios-composer \.oc-chat-composer-swap-scope\s*\{[^}]*--oc-mobile-composer-swap:\s*0\s*!important/,
+            /:root\.yuri-native-ios-composer \.yuri-chat-composer-swap-scope\s*\{[^}]*--yuri-mobile-composer-swap:\s*0\s*!important/,
         );
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer\s*\{[^}]*--oc-chat-foot-inset:\s*calc\(\s*var\(--oc-native-composer-height/,
+            /:root\.yuri-native-ios-composer\s*\{[^}]*--yuri-chat-foot-inset:\s*calc\(\s*var\(--yuri-native-composer-height/,
         );
-        expect(mobileCss).toContain('--oc-native-composer-accessory');
+        expect(mobileCss).toContain('--yuri-native-composer-accessory');
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer \.oc-mobile-composer-expanded-layer\s*\{[^}]*transform:\s*none\s*!important;[^}]*opacity:\s*1\s*!important/,
+            /:root\.yuri-native-ios-composer \.yuri-mobile-composer-expanded-layer\s*\{[^}]*transform:\s*none\s*!important;[^}]*opacity:\s*1\s*!important/,
         );
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*calc\(\s*var\(--oc-native-composer-height/,
+            /:root\.yuri-native-ios-composer \.yuri-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*calc\(\s*var\(--yuri-native-composer-height/,
         );
         expect(mobileCss).not.toMatch(
-            /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*padding-bottom:\s*8px/,
+            /:root\.yuri-native-ios-composer \.yuri-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*padding-bottom:\s*8px/,
         );
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*opacity:\s*calc\(1 - min\(1, var\(--oc-native-composer-dock/,
+            /:root\.yuri-native-ios-composer \.yuri-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*opacity:\s*calc\(1 - min\(1, var\(--yuri-native-composer-dock/,
         );
         expect(mobileCss).toMatch(
-            /data-oc-native-composer-dock="away"[\s\S]*?\[data-native-composer-accessories\][\s\S]*?pointer-events:\s*none/,
+            /data-yuri-native-composer-dock="away"[\s\S]*?\[data-native-composer-accessories\][\s\S]*?pointer-events:\s*none/,
         );
         expect(swapHookSource).toContain('publishNativeComposerDock');
         expect(mobileCss).not.toContain('[data-native-composer-accessories]:has(*)::before');
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer \.oc-composer-queue\s*\{[^}]*margin-bottom:\s*0/,
+            /:root\.yuri-native-ios-composer \.yuri-composer-queue\s*\{[^}]*margin-bottom:\s*0/,
         );
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer \.oc-composer-queue \[data-oc-queue-composer-overlap\]\s*\{[^}]*display:\s*none/,
+            /:root\.yuri-native-ios-composer \.yuri-composer-queue \[data-yuri-queue-composer-overlap\]\s*\{[^}]*display:\s*none/,
         );
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer \.oc-composer-queue \[data-oc-queue-card-body\]\s*\{[^}]*padding-top:\s*0\.375rem;[^}]*padding-bottom:\s*0\.375rem/,
+            /:root\.yuri-native-ios-composer \.yuri-composer-queue \[data-yuri-queue-card-body\]\s*\{[^}]*padding-top:\s*0\.375rem;[^}]*padding-bottom:\s*0\.375rem/,
         );
-        expect(queuedChipsSource).toContain('data-oc-queue-composer-overlap');
-        expect(queuedChipsSource).toContain('data-oc-queue-card');
-        expect(queuedChipsSource).toContain("'oc-composer-queue relative z-0 -mb-5 w-full'");
-        expect(queuedChipsSource).toMatch(/data-oc-queue-composer-overlap[\s\S]*isMobile \? 'h-4' : 'h-5'/);
-        expect(mobileCss.match(/\.oc-composer-queue\s*\{[^}]*margin-bottom:\s*0/g)).toHaveLength(1);
+        expect(queuedChipsSource).toContain('data-yuri-queue-composer-overlap');
+        expect(queuedChipsSource).toContain('data-yuri-queue-card');
+        expect(queuedChipsSource).toContain("'yuri-composer-queue relative z-0 -mb-5 w-full'");
+        expect(queuedChipsSource).toMatch(/data-yuri-queue-composer-overlap[\s\S]*isMobile \? 'h-4' : 'h-5'/);
+        expect(mobileCss.match(/\.yuri-composer-queue\s*\{[^}]*margin-bottom:\s*0/g)).toHaveLength(1);
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer \.oc-scroll-to-bottom--expanded,\s*:root\.oc-native-ios-composer \.oc-scroll-to-bottom--compact/,
+            /:root\.yuri-native-ios-composer \.yuri-scroll-to-bottom--expanded,\s*:root\.yuri-native-ios-composer \.yuri-scroll-to-bottom--compact/,
         );
         expect(chatInputSource).toContain('data-native-composer-accessories');
         expect(chatInputSource).toContain('applyNativeComposerAccessoryVar');
@@ -234,23 +234,23 @@ describe('mobile composer overflow and swap contract', () => {
         expect(chatInputSource).toContain('reconcileComposerAttachmentTextDeletion');
         expect(chatInputSource).toContain('onRemoveAttachment');
         expect(chatInputSource).toContain('nativeIosComposerActive ? null');
-        expect(chatInputSource).not.toContain("setProperty('--oc-chat-foot-inset'");
+        expect(chatInputSource).not.toContain("setProperty('--yuri-chat-foot-inset'");
         expect(chatContainerSource).not.toContain('canUseNativeIosComposer');
         expect(chatContainerSource).toMatch(
             /useMobileComposerSwap\(\{\s*enabled:\s*isMobile,/,
         );
-        expect(mobileAppSource).toContain("root.classList.contains('oc-native-ios-composer')");
+        expect(mobileAppSource).toContain("root.classList.contains('yuri-native-ios-composer')");
         expect(mobileAppSource).toContain('unwindKeyboardShell');
         expect(mobileAppSource).toContain('getNativeIosComposerPlugin().blur()');
         expect(mobileAppSource).toMatch(
-            /oc-native-ios-composer[\s\S]*unwindKeyboardShell\(\)/,
+            /yuri-native-ios-composer[\s\S]*unwindKeyboardShell\(\)/,
         );
-        expect(mobileAppSource).toContain("setVar('--oc-kb-layout', 0)");
+        expect(mobileAppSource).toContain("setVar('--yuri-kb-layout', 0)");
     });
 
     /**
      * A source regex cannot tell which foot-inset declaration actually wins.
-     * The native reservation used to be scoped to `.oc-chat-composer-swap-scope`
+     * The native reservation used to be scoped to `.yuri-chat-composer-swap-scope`
      * while the web default was scoped to `:root.mobile-pointer:not(...)` and
      * the same scope class — one extra compound selector, so the web default
      * out-specified it and the transcript reserved a fixed 8rem no matter how
@@ -260,7 +260,7 @@ describe('mobile composer overflow and swap contract', () => {
     test('native iOS foot inset wins the cascade over the fixed web reservation', () => {
         const footInsetRules: string[] = [];
         for (let cursor = 0; ;) {
-            const declaration = mobileCss.indexOf('--oc-chat-foot-inset:', cursor);
+            const declaration = mobileCss.indexOf('--yuri-chat-foot-inset:', cursor);
             if (declaration === -1) break;
             const blockEnd = mobileCss.indexOf('}', declaration);
             const blockStart = mobileCss.lastIndexOf('{', declaration);
@@ -273,21 +273,21 @@ describe('mobile composer overflow and swap contract', () => {
 
         const resolveFootInset = (nativeIos: boolean): string => {
             document.documentElement.className = nativeIos
-                ? 'mobile-pointer oc-native-ios-composer'
+                ? 'mobile-pointer yuri-native-ios-composer'
                 : 'mobile-pointer';
             const style = document.createElement('style');
             style.textContent = `
               :root {
-                --oc-native-composer-height: 90px;
-                --oc-native-composer-accessory: 100px;
-                --oc-safe-area-bottom-visual: 34px;
+                --yuri-native-composer-height: 90px;
+                --yuri-native-composer-accessory: 100px;
+                --yuri-safe-area-bottom-visual: 34px;
               }
               ${footInsetRules.join('\n')}
             `;
             document.head.appendChild(style);
             injected.add(style);
             return getComputedStyle(document.documentElement)
-                .getPropertyValue('--oc-chat-foot-inset')
+                .getPropertyValue('--yuri-chat-foot-inset')
                 .replace(/\s+/g, '');
         };
 
@@ -296,38 +296,38 @@ describe('mobile composer overflow and swap contract', () => {
     });
 
     test('queue card tuck stays on web and Android; native iOS hides the overlap', () => {
-        const start = mobileCss.indexOf(':root.oc-native-ios-composer .oc-composer-queue {');
+        const start = mobileCss.indexOf(':root.yuri-native-ios-composer .yuri-composer-queue {');
         const end = mobileCss.indexOf('/* Static ancestors so absolute docking', start);
         expect(start).toBeGreaterThan(-1);
         expect(end).toBeGreaterThan(start);
         const queueCss = mobileCss.slice(start, end);
 
         const mountQueue = (nativeIos: boolean) => {
-            document.documentElement.className = nativeIos ? 'oc-native-ios-composer' : '';
+            document.documentElement.className = nativeIos ? 'yuri-native-ios-composer' : '';
             const style = document.createElement('style');
             style.textContent = `
-              .oc-composer-queue { margin-bottom: -1.25rem; }
-              [data-oc-queue-card-body] { padding-top: 0.25rem; padding-bottom: 0.25rem; }
-              [data-oc-queue-composer-overlap] { height: 1rem; }
+              .yuri-composer-queue { margin-bottom: -1.25rem; }
+              [data-yuri-queue-card-body] { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+              [data-yuri-queue-composer-overlap] { height: 1rem; }
               ${queueCss}
             `;
             document.head.appendChild(style);
             injected.add(style);
             const host = document.createElement('div');
             host.innerHTML = `
-              <div class="oc-composer-queue">
-                <div data-oc-queue-card="">
-                  <div data-oc-queue-card-body=""></div>
-                  <div data-oc-queue-composer-overlap=""></div>
+              <div class="yuri-composer-queue">
+                <div data-yuri-queue-card="">
+                  <div data-yuri-queue-card-body=""></div>
+                  <div data-yuri-queue-composer-overlap=""></div>
                 </div>
               </div>
             `;
             document.body.appendChild(host);
             injected.add(host);
             return {
-                queue: host.querySelector<HTMLElement>('.oc-composer-queue')!,
-                body: host.querySelector<HTMLElement>('[data-oc-queue-card-body]')!,
-                overlap: host.querySelector<HTMLElement>('[data-oc-queue-composer-overlap]')!,
+                queue: host.querySelector<HTMLElement>('.yuri-composer-queue')!,
+                body: host.querySelector<HTMLElement>('[data-yuri-queue-card-body]')!,
+                overlap: host.querySelector<HTMLElement>('[data-yuri-queue-composer-overlap]')!,
             };
         };
 
@@ -351,10 +351,10 @@ describe('mobile composer overflow and swap contract', () => {
 
     test('idle draft feet stay in-flow while the establishing draft uses the overlay contract', () => {
         expect(mobileCss).toMatch(
-            /\.oc-mobile-composer-foot:not\(\.oc-mobile-composer-foot--overlay\)\s*\{[^}]*--oc-mobile-composer-swap:\s*0/,
+            /\.yuri-mobile-composer-foot:not\(\.yuri-mobile-composer-foot--overlay\)\s*\{[^}]*--yuri-mobile-composer-swap:\s*0/,
         );
         expect(mobileCss).toMatch(
-            /\.oc-mobile-composer-foot:not\(\.oc-mobile-composer-foot--overlay\)\s+\.oc-mobile-composer-compact-layer\s*\{[^}]*display:\s*none/,
+            /\.yuri-mobile-composer-foot:not\(\.yuri-mobile-composer-foot--overlay\)\s+\.yuri-mobile-composer-compact-layer\s*\{[^}]*display:\s*none/,
         );
         expect(swapHookSource).toContain('clearComposerSwap');
         const establishingDraftShell = chatContainerSource.slice(
@@ -365,57 +365,57 @@ describe('mobile composer overflow and swap contract', () => {
             chatContainerSource.indexOf('if (draftSubmitting || draftEstablishing)'),
             chatContainerSource.indexOf('if (!currentSessionId)', chatContainerSource.indexOf('if (draftSubmitting || draftEstablishing)')),
         );
-        expect(establishingDraftShell).toContain('oc-mobile-composer-foot--overlay');
-        expect(establishingDraftShell).toContain('oc-chat-composer-swap-scope');
-        expect(idleDraftShell).toContain('oc-mobile-composer-foot');
-        expect(idleDraftShell).not.toContain('oc-mobile-composer-foot--overlay');
-        expect(idleDraftShell).toContain('oc-draft-center');
+        expect(establishingDraftShell).toContain('yuri-mobile-composer-foot--overlay');
+        expect(establishingDraftShell).toContain('yuri-chat-composer-swap-scope');
+        expect(idleDraftShell).toContain('yuri-mobile-composer-foot');
+        expect(idleDraftShell).not.toContain('yuri-mobile-composer-foot--overlay');
+        expect(idleDraftShell).toContain('yuri-draft-center');
     });
 
     test('native iOS in-flow feet reserve the pill so draft pickers sit above the input', () => {
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer\s+\.oc-mobile-composer-foot:not\(\.oc-mobile-composer-foot--overlay\)\s*\{[^}]*padding-bottom:\s*calc\(\s*var\(--oc-native-composer-height/,
+            /:root\.yuri-native-ios-composer\s+\.yuri-mobile-composer-foot:not\(\.yuri-mobile-composer-foot--overlay\)\s*\{[^}]*padding-bottom:\s*calc\(\s*var\(--yuri-native-composer-height/,
         );
-        expect(chatInputSource).toContain('oc-mobile-draft-target-selectors');
+        expect(chatInputSource).toContain('yuri-mobile-draft-target-selectors');
         expect(chatInputSource).toContain('data-native-composer-accessories');
         // Establishing foot is geometry-only; project/branch must not paint through
-        // the invisible shell via `.oc-mobile-composer-reveal { visibility: visible }`.
+        // the invisible shell via `.yuri-mobile-composer-reveal { visibility: visible }`.
         expect(chatInputSource).toContain('&& !draftBusy');
         expect(chatInputSource).toMatch(
             /const showDraftTargetSelectors = surface\.kind === 'primary'[\s\S]*?&& !draftBusy/,
         );
 
         const start = mobileCss.indexOf(
-            ':root.oc-native-ios-composer\n  .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {',
+            ':root.yuri-native-ios-composer\n  .yuri-mobile-composer-foot:not(.yuri-mobile-composer-foot--overlay) {',
         );
         expect(start).toBeGreaterThan(-1);
         const end = mobileCss.indexOf('}', start);
         const inFlowNativeCss = mobileCss.slice(start, end + 1);
 
         const mountFeet = (nativeIos: boolean) => {
-            document.documentElement.className = nativeIos ? 'oc-native-ios-composer' : '';
+            document.documentElement.className = nativeIos ? 'yuri-native-ios-composer' : '';
             const style = document.createElement('style');
             style.textContent = `
-              :root { --oc-native-composer-height: 88px; }
-              .oc-mobile-composer-foot { padding-bottom: 0; }
+              :root { --yuri-native-composer-height: 88px; }
+              .yuri-mobile-composer-foot { padding-bottom: 0; }
               ${inFlowNativeCss}
             `;
             document.head.appendChild(style);
             injected.add(style);
             const host = document.createElement('div');
             host.innerHTML = `
-              <div class="oc-mobile-composer-foot">
+              <div class="yuri-mobile-composer-foot">
                 <div data-native-composer-accessories="" data-testid="draft-accessories"></div>
               </div>
-              <div class="oc-mobile-composer-foot oc-mobile-composer-foot--overlay">
+              <div class="yuri-mobile-composer-foot yuri-mobile-composer-foot--overlay">
                 <div data-native-composer-accessories="" data-testid="overlay-accessories"></div>
               </div>
             `;
             document.body.appendChild(host);
             injected.add(host);
             return {
-                draft: host.querySelector<HTMLElement>('.oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay)')!,
-                overlay: host.querySelector<HTMLElement>('.oc-mobile-composer-foot--overlay')!,
+                draft: host.querySelector<HTMLElement>('.yuri-mobile-composer-foot:not(.yuri-mobile-composer-foot--overlay)')!,
+                overlay: host.querySelector<HTMLElement>('.yuri-mobile-composer-foot--overlay')!,
             };
         };
 
@@ -431,35 +431,35 @@ describe('mobile composer overflow and swap contract', () => {
     test('leftover session swap cannot cover the in-flow draft composer', () => {
         const host = mountStyledFixture(`
           <style>
-            .oc-mobile-composer-expanded-layer {
-              opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
+            .yuri-mobile-composer-expanded-layer {
+              opacity: calc(1 - min(1, var(--yuri-mobile-composer-swap) * 2));
             }
-            .oc-mobile-composer-compact-layer {
-              opacity: max(0, calc(var(--oc-mobile-composer-swap) * 2 - 1));
+            .yuri-mobile-composer-compact-layer {
+              opacity: max(0, calc(var(--yuri-mobile-composer-swap) * 2 - 1));
               pointer-events: none;
             }
-            .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {
-              --oc-mobile-composer-swap: 0;
+            .yuri-mobile-composer-foot:not(.yuri-mobile-composer-foot--overlay) {
+              --yuri-mobile-composer-swap: 0;
             }
-            .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay)
-              .oc-mobile-composer-compact-layer {
+            .yuri-mobile-composer-foot:not(.yuri-mobile-composer-foot--overlay)
+              .yuri-mobile-composer-compact-layer {
               display: none;
             }
           </style>
-          <div style="--oc-mobile-composer-swap: 1">
-            <div class="oc-mobile-composer-foot">
-              <div class="oc-mobile-composer-expanded-layer" data-testid="draft-expanded"></div>
-              <div class="oc-mobile-composer-compact-layer" data-testid="draft-compact"></div>
+          <div style="--yuri-mobile-composer-swap: 1">
+            <div class="yuri-mobile-composer-foot">
+              <div class="yuri-mobile-composer-expanded-layer" data-testid="draft-expanded"></div>
+              <div class="yuri-mobile-composer-compact-layer" data-testid="draft-compact"></div>
             </div>
-            <div class="oc-mobile-composer-foot oc-mobile-composer-foot--overlay">
-              <div class="oc-mobile-composer-compact-layer" data-testid="overlay-compact"></div>
+            <div class="yuri-mobile-composer-foot yuri-mobile-composer-foot--overlay">
+              <div class="yuri-mobile-composer-compact-layer" data-testid="overlay-compact"></div>
             </div>
           </div>
         `);
-        const draftFoot = host.querySelector<HTMLElement>('.oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay)')!;
+        const draftFoot = host.querySelector<HTMLElement>('.yuri-mobile-composer-foot:not(.yuri-mobile-composer-foot--overlay)')!;
         const draftCompact = host.querySelector('[data-testid="draft-compact"]')!;
         const overlayCompact = host.querySelector('[data-testid="overlay-compact"]')!;
-        expect(getComputedStyle(draftFoot).getPropertyValue('--oc-mobile-composer-swap').trim()).toBe('0');
+        expect(getComputedStyle(draftFoot).getPropertyValue('--yuri-mobile-composer-swap').trim()).toBe('0');
         expect(getComputedStyle(draftCompact).display).toBe('none');
         expect(getComputedStyle(overlayCompact).display).not.toBe('none');
     });

@@ -1,16 +1,17 @@
+import '@/lib/brand-storage-bootstrap';
 /**
  * Sync debug logging — gated behind localStorage flag.
  *
  * Enable in browser console:
- *   localStorage.setItem("openchamber:sync:debug", "1")
+ *   localStorage.setItem("yuri:sync:debug", "1")
  *
  * Disable:
- *   localStorage.removeItem("openchamber:sync:debug")
+ *   localStorage.removeItem("yuri:sync:debug")
  *
  * All checks are early-returns on the hot path — zero cost when disabled.
  */
 
-const FLAG_KEY = "openchamber:sync:debug"
+const FLAG_KEY = "yuri:sync:debug"
 
 let _enabled: boolean | undefined
 

@@ -40,7 +40,7 @@ export function MagpieConnection() {
     } finally { setSaving(false); }
   });
   return <SettingsGroup label="Magpie" itemId="usage.magpie">
-    <div className="oc-settings-group-row min-w-0">
+    <div className="yuri-settings-group-row min-w-0">
       <p className="typography-meta text-muted-foreground break-words">
         {providerCount > 0 ? t('settings.usage.magpie.connected', { count: providerCount }) : t('settings.usage.magpie.description')}
       </p>

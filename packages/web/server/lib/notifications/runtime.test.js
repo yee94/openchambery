@@ -160,7 +160,7 @@ describe('notification trigger runtime smallModel suppression', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
       id: 'ses_small',
       parentID: null,
-      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+      metadata: { yuri: { smallModel: { purpose: 'session-title' } } },
     })));
 
     const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
@@ -187,7 +187,7 @@ describe('notification trigger runtime smallModel suppression', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
       id: 'ses_small',
       parentID: null,
-      metadata: { openchamber: { smallModel: { purpose: 'commit' } } },
+      metadata: { yuri: { smallModel: { purpose: 'commit' } } },
     })));
 
     const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
@@ -208,7 +208,7 @@ describe('notification trigger runtime smallModel suppression', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
       id: 'ses_small',
       parentID: null,
-      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+      metadata: { yuri: { smallModel: { purpose: 'session-title' } } },
     })));
 
     const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
@@ -231,7 +231,7 @@ describe('notification trigger runtime smallModel suppression', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
       id: 'ses_small',
       parentID: null,
-      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+      metadata: { yuri: { smallModel: { purpose: 'session-title' } } },
     })));
 
     const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
@@ -296,7 +296,7 @@ describe('notification trigger runtime smallModel suppression', () => {
       id: 'ses_binding',
       parentID: null,
       title: '大小白',
-      metadata: { openchamber: { assistant: { assistantID: 'asst_1', name: '大小白' } } },
+      metadata: { yuri: { assistant: { assistantID: 'asst_1', name: '大小白' } } },
     })));
     const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
     await runtime.maybeSendPushForTrigger(completionPayload('ses_binding'));
@@ -309,7 +309,7 @@ describe('notification trigger runtime smallModel suppression', () => {
       id: 'ses_sched',
       parentID: null,
       title: 'Nightly',
-      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+      metadata: { yuri: { scheduledTask: { taskID: 'task_1' } } },
     })));
     const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
     await runtime.maybeSendPushForTrigger(completionPayload('ses_sched'));
@@ -322,7 +322,7 @@ describe('notification trigger runtime smallModel suppression', () => {
       id: 'ses_worker',
       parentID: null,
       title: 'Assigned work',
-      metadata: { openchamber: { assigned: { from: 'contact', assistantID: 'asst_1', name: '大小白' } } },
+      metadata: { yuri: { assigned: { from: 'contact', assistantID: 'asst_1', name: '大小白' } } },
     })));
     const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
     await runtime.maybeSendPushForTrigger(completionPayload('ses_worker'));
@@ -335,8 +335,8 @@ describe('notification trigger runtime llm system-session suppression', () => {
   const llmSessionResponse = (purpose = 'chat-completions') => jsonResponse({
     id: 'ses_llm',
     parentID: null,
-    title: '[openchamber-llm] generate',
-    metadata: { openchamber: { llm: { purpose } } },
+    title: '[yuri-llm] generate',
+    metadata: { yuri: { llm: { purpose } } },
   });
 
   const expectAllOutletsSilent = ({
@@ -437,8 +437,8 @@ describe('notification trigger runtime llm system-session suppression', () => {
           id: 'ses_llm',
           sessionID: 'ses_llm',
           parentID: null,
-          title: '[openchamber-llm] generate',
-          metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+          title: '[yuri-llm] generate',
+          metadata: { yuri: { llm: { purpose: 'chat-completions' } } },
         },
       },
     });
@@ -458,7 +458,7 @@ describe('notification trigger runtime llm system-session suppression', () => {
       id: 'ses_llm_empty',
       parentID: null,
       title: 'Looks like llm',
-      metadata: { openchamber: { llm: { purpose: '' } } },
+      metadata: { yuri: { llm: { purpose: '' } } },
     })));
     const {
       runtime,
@@ -524,7 +524,7 @@ describe('contact turn notifications', () => {
       body: '我去找一下',
       data: expect.objectContaining({
         assistantID: 'asst_1',
-        url: 'openchamber://assistant/asst_1',
+        url: 'yuri://assistant/asst_1',
       }),
     }), expect.objectContaining({ preserveAlert: true }));
     expect(sendApnsToAllUiSessions.mock.calls[0][0].type).toBeUndefined();
@@ -632,7 +632,7 @@ describe('notification trigger live activity end', () => {
       return jsonResponse({
         id: 'ses_small',
         parentID: null,
-        metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+        metadata: { yuri: { smallModel: { purpose: 'session-title' } } },
       });
     });
     vi.stubGlobal('fetch', fetchMock);

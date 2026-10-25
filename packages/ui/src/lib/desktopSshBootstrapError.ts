@@ -4,10 +4,10 @@ export const MANAGED_SSH_BOOTSTRAP_ERROR_CODES = [
   'nodeRuntimeMissing',
   'packageManagerMissing',
   'nativeBinding',
-  'openchamberCliMissing',
-  'openchamberRegistry',
-  'openchamberInstall',
-  'openchamberCliIncompatible',
+  'yuriCliMissing',
+  'yuriRegistry',
+  'yuriInstall',
+  'yuriCliIncompatible',
   'opencodeInstall',
   'serverStart',
   'sshAuth',
@@ -29,21 +29,21 @@ export const classifyManagedSshBootstrapError = (raw: string | null | undefined)
   if (/requires Node\.js \d+|no supported Node runtime/i.test(text)) return 'nodeRuntimeMissing';
   if (/neither bun nor npm/i.test(text)) return 'packageManagerMissing';
   if (/better-sqlite3|node_gyp_bins|gyp ERR|failed to prepare better-sqlite3/i.test(text)) return 'nativeBinding';
-  if (/OpenChamber installation completed but the executable is unavailable/i.test(text)) {
-    return 'openchamberCliMissing';
+  if (/Yuri installation completed but the executable is unavailable/i.test(text)) {
+    return 'yuriCliMissing';
   }
   if (/could not reach the npm registry|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|CERT_HAS_EXPIRED|UNABLE_TO_GET_ISSUER_CERT|self-signed certificate|registry\.npmjs|npm error code E404|npm ERR! code E404|getaddrinfo/i.test(text)) {
-    return 'openchamberRegistry';
+    return 'yuriRegistry';
   }
-  if (/Failed to install OpenChamber/i.test(text)) {
-    return 'openchamberInstall';
+  if (/Failed to install Yuri/i.test(text)) {
+    return 'yuriInstall';
   }
   if (/Unknown option:\s*--relay-host|does not advertise --relay-host|does not support --relay-host/i.test(text)) {
-    return 'openchamberCliIncompatible';
+    return 'yuriCliIncompatible';
   }
-  if (/Unknown option:/i.test(text)) return 'openchamberCliIncompatible';
+  if (/Unknown option:/i.test(text)) return 'yuriCliIncompatible';
   if (/Failed to install OpenCode|OpenCode CLI/i.test(text)) return 'opencodeInstall';
-  if (/failed to become reachable|Managed OpenChamber server failed/i.test(text)) return 'serverStart';
+  if (/failed to become reachable|Managed Yuri server failed/i.test(text)) return 'serverStart';
   if (/Permission denied|Authentication failed|publickey|keyboard-interactive/i.test(text)) return 'sshAuth';
   if (/Could not resolve hostname|Connection refused|Connection timed out|ControlMaster connection timed out|SSH master process exited|Network is unreachable/i.test(text)) {
     return 'sshUnreachable';
@@ -68,14 +68,14 @@ export const sshBootstrapErrorTitleKey = (code: ManagedSshBootstrapErrorCode): I
       return 'desktopHostSwitcher.sshError.packageManagerMissing.title';
     case 'nativeBinding':
       return 'desktopHostSwitcher.sshError.nativeBinding.title';
-    case 'openchamberCliMissing':
-      return 'desktopHostSwitcher.sshError.openchamberCliMissing.title';
-    case 'openchamberRegistry':
-      return 'desktopHostSwitcher.sshError.openchamberRegistry.title';
-    case 'openchamberInstall':
-      return 'desktopHostSwitcher.sshError.openchamberInstall.title';
-    case 'openchamberCliIncompatible':
-      return 'desktopHostSwitcher.sshError.openchamberCliIncompatible.title';
+    case 'yuriCliMissing':
+      return 'desktopHostSwitcher.sshError.yuriCliMissing.title';
+    case 'yuriRegistry':
+      return 'desktopHostSwitcher.sshError.yuriRegistry.title';
+    case 'yuriInstall':
+      return 'desktopHostSwitcher.sshError.yuriInstall.title';
+    case 'yuriCliIncompatible':
+      return 'desktopHostSwitcher.sshError.yuriCliIncompatible.title';
     case 'opencodeInstall':
       return 'desktopHostSwitcher.sshError.opencodeInstall.title';
     case 'serverStart':
@@ -99,14 +99,14 @@ export const sshBootstrapErrorGuidanceKey = (code: ManagedSshBootstrapErrorCode)
       return 'desktopHostSwitcher.sshError.packageManagerMissing.guidance';
     case 'nativeBinding':
       return 'desktopHostSwitcher.sshError.nativeBinding.guidance';
-    case 'openchamberCliMissing':
-      return 'desktopHostSwitcher.sshError.openchamberCliMissing.guidance';
-    case 'openchamberRegistry':
-      return 'desktopHostSwitcher.sshError.openchamberRegistry.guidance';
-    case 'openchamberInstall':
-      return 'desktopHostSwitcher.sshError.openchamberInstall.guidance';
-    case 'openchamberCliIncompatible':
-      return 'desktopHostSwitcher.sshError.openchamberCliIncompatible.guidance';
+    case 'yuriCliMissing':
+      return 'desktopHostSwitcher.sshError.yuriCliMissing.guidance';
+    case 'yuriRegistry':
+      return 'desktopHostSwitcher.sshError.yuriRegistry.guidance';
+    case 'yuriInstall':
+      return 'desktopHostSwitcher.sshError.yuriInstall.guidance';
+    case 'yuriCliIncompatible':
+      return 'desktopHostSwitcher.sshError.yuriCliIncompatible.guidance';
     case 'opencodeInstall':
       return 'desktopHostSwitcher.sshError.opencodeInstall.guidance';
     case 'serverStart':
@@ -123,7 +123,7 @@ export const sshBootstrapErrorGuidanceKey = (code: ManagedSshBootstrapErrorCode)
 };
 
 export const sshBootstrapErrorShowsRawDetail = (code: ManagedSshBootstrapErrorCode): boolean => {
-  return code === 'unknown' || code === 'openchamberCliIncompatible';
+  return code === 'unknown' || code === 'yuriCliIncompatible';
 };
 
 export const formatSshBootstrapErrorDescription = (

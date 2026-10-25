@@ -89,8 +89,8 @@ describe('project drag and live activity ordering', () => {
     for (const [id, title, metadata] of [
       ['scheduled', '[Scheduled] Background run', undefined],
       ['assistant', '[Assistant] Background run', undefined],
-      ['llm', '[openchamber-llm] generate', undefined],
-      ['owned', 'Renamed background run', { openchamber: { scheduledTask: { taskID: 'task-1' } } }],
+      ['llm', '[yuri-llm] generate', undefined],
+      ['owned', 'Renamed background run', { yuri: { scheduledTask: { taskID: 'task-1' } } }],
       ['unknown', undefined, undefined],
     ] as const) {
       if (title) handleEvent('/workspace/b', {
@@ -126,13 +126,13 @@ describe('project drag and live activity ordering', () => {
     children.disposeAll();
   });
 
-  test.each(['session.updated', 'openchamber:session-metadata', 'session.renamed'] as const)('stops project promotion after %s hides a known session', (type) => {
+  test.each(['session.updated', 'yuri:session-metadata', 'session.renamed'] as const)('stops project promotion after %s hides a known session', (type) => {
     const children = new ChildStoreManager();
     const routing: Parameters<typeof handleEvent>[3] = {
       sessionDirectoryById: new Map(), messageSessionById: new Map(), sessionMessageIdsById: new Map(),
     };
     const info = { id: 'session-b', title: 'Task', directory: '/workspace/b', time: { created: 1, updated: 1 } };
-    const metadata = { openchamber: { scheduledTask: { taskID: 'task-1' } } };
+    const metadata = { yuri: { scheduledTask: { taskID: 'task-1' } } };
     handleEvent('/workspace/b', { type: 'session.created', properties: { info } } as Event, children, routing);
     handleEvent('/workspace/b', {
       type,

@@ -8,7 +8,7 @@ import {
 import {
   installPinnedOpenCode2Cli,
   readOpenCode2BinaryVersion,
-  resolveOpenChamberDataDir,
+  resolveYuriDataDir,
 } from './ensure-cli.js';
 import { registerUpgradeScreenRoutes } from './upgrade-screen.js';
 import { evaluateRuntimeContract } from './runtime-contract.js';
@@ -53,13 +53,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getResolvedOpenCodeBinary = () => null,
     getResolvedOpenCodeBinarySource = () => null,
     getActiveSessionCount = () => 0,
-    openchamberDataDir = null,
+    yuriDataDir = null,
     discoverOpenCodeUpdate = createOpenCodeUpdateDiscovery(),
     upgradeOpenCodeCli = null,
   } = dependencies;
 
   const upgradeOperation = createUpgradeOperationState();
-  const resolveDataDir = () => openchamberDataDir || resolveOpenChamberDataDir();
+  const resolveDataDir = () => yuriDataDir || resolveYuriDataDir();
 
   let authLibrary = null;
   const pendingMcpAuthContextByState = new Map();
@@ -329,7 +329,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         return res.status(status).json({
           success: false,
           error: ownership.guidance
-            || 'OpenChamber can only upgrade its owned OpenCode cache in-app.',
+            || 'Yuri can only upgrade its owned OpenCode cache in-app.',
           errorCode: ownership.reason || 'UPGRADE_NOT_MANAGED',
           ownership: ownership.ownership,
           management: ownership.management,

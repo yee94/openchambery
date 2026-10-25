@@ -12,9 +12,9 @@ test.skipIf(!resolveChrome())('desktop typing does not invalidate the retained t
     const source = join(dirname(fileURLToPath(import.meta.url)), '..');
     const css = await compileProductionCssAsync(source);
     const html = join(root, 'desktop-typing.html');
-    writeFileSync(html, `<!doctype html><html class="desktop-runtime dark" data-oc-vibrancy data-oc-vibrancy-ready>
+    writeFileSync(html, `<!doctype html><html class="desktop-runtime dark" data-yuri-vibrancy data-yuri-vibrancy-ready>
       <head><style>${css}</style></head><body style="--sidebar: rgb(10,20,30); --sidebar-vibrancy-overlay: rgba(10,20,30,.5)">
-      <aside class="oc-vibrancy-surface">Sidebar</aside><main id="history"></main><textarea data-chat-input="true"></textarea>
+      <aside class="yuri-vibrancy-surface">Sidebar</aside><main id="history"></main><textarea data-chat-input="true"></textarea>
       <script>
       const history=document.querySelector('#history');
       const fragment=document.createDocumentFragment();
@@ -52,11 +52,11 @@ test.skipIf(!resolveChrome())('desktop typing does not invalidate the retained t
       expect(Math.max(...recalcSizes)).toBeLessThan(100);
       expect(timing.p95).toBeLessThan(16);
       const colors = await page.evaluate<string[]>(`(() => {
-        const surface=document.querySelector('.oc-vibrancy-surface');
+        const surface=document.querySelector('.yuri-vibrancy-surface');
         const normal=getComputedStyle(surface).backgroundColor;
-        document.documentElement.setAttribute('data-oc-native-browser-visible','');
+        document.documentElement.setAttribute('data-yuri-native-browser-visible','');
         const browser=getComputedStyle(surface).backgroundColor;
-        document.documentElement.removeAttribute('data-oc-native-browser-visible');
+        document.documentElement.removeAttribute('data-yuri-native-browser-visible');
         return [normal,browser,getComputedStyle(surface).backgroundColor];
       })()`);
       expect(colors).toEqual(['rgba(10, 20, 30, 0.5)', 'rgb(10, 20, 30)', 'rgba(10, 20, 30, 0.5)']);

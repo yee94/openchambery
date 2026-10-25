@@ -130,7 +130,7 @@ describe('serializeAppPath path mode', () => {
 describe('updateBrowserURL embedded-session-chat guard', () => {
   test('is a no-op in the embedded session-chat iframe', () => {
     const history = installWindow(
-      'http://127.0.0.1:5173/app?ocPanel=session-chat&sessionId=ses_child&directory=%2Frepo&readOnly=1',
+      'http://127.0.0.1:5173/app?yuriPanel=session-chat&sessionId=ses_child&directory=%2Frepo&readOnly=1',
     );
 
     updateBrowserURL(sessionState('ses_grandchild'), { replace: true, force: true });
@@ -239,7 +239,7 @@ describe('new session draft path', () => {
 describe('isEmbeddedSessionChat caching', () => {
   test('caches the first result so URL rewrites cannot flip it', () => {
     installWindow(
-      'http://127.0.0.1:5173/app?ocPanel=session-chat&sessionId=ses_child&directory=%2Frepo&readOnly=1',
+      'http://127.0.0.1:5173/app?yuriPanel=session-chat&sessionId=ses_child&directory=%2Frepo&readOnly=1',
     );
 
     expect(isEmbeddedSessionChat()).toBe(true);

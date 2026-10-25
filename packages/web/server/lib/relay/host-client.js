@@ -48,7 +48,7 @@ export const sanitizeRelayErrorMessage = (value) => {
 // the 150 ms default. Only applies on directions where batching was negotiated.
 const resolveBatchWindowMs = (option) => {
   if (Number.isFinite(option) && option >= 0) return option;
-  const envValue = Number.parseInt(process.env.OPENCHAMBER_RELAY_BATCH_WINDOW_MS ?? '', 10);
+  const envValue = Number.parseInt(process.env.YURI_RELAY_BATCH_WINDOW_MS ?? '', 10);
   if (Number.isFinite(envValue) && envValue >= 0) return envValue;
   return DEFAULT_BATCH_WINDOW_MS;
 };

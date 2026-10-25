@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { create, type StoreApi } from "zustand"
 import { filterMovedSessionState } from './session-location-authority'
 import { normalizeDirectoryKey } from "@/lib/pathNormalization"

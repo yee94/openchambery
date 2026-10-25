@@ -13,7 +13,7 @@ import { createSharedOpenCodeService } from './shared-service.js';
 import { registerOpenCodeRoutes } from './routes.js';
 
 // Downloads real official binaries; never touches the user's shared service.
-test.skipIf(process.env.OPENCHAMBER_TEST_REMOTE_UPGRADE !== '1')('remote discovery upgrades an isolated shared service and verifies its running version', async () => {
+test.skipIf(process.env.YURI_TEST_REMOTE_UPGRADE !== '1')('remote discovery upgrades an isolated shared service and verifies its running version', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-upgrade-'));
   const env = {
     PATH: process.env.PATH, HOME: root, TMPDIR: os.tmpdir(),
@@ -51,7 +51,7 @@ test.skipIf(process.env.OPENCHAMBER_TEST_REMOTE_UPGRADE !== '1')('remote discove
         await service.start({ binary: binaryPath, env, replace: true });
         registration = await service.readRegistration();
       },
-      openchamberDataDir: root,
+      yuriDataDir: root,
     });
     const before = await request(app).get('/api/opencode/upgrade-status').expect(200);
     expect(before.body).toMatchObject({ available: true, targetVersion: target });

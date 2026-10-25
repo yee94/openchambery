@@ -1,7 +1,7 @@
 import { QueryObserver, type QueryObserverResult } from '@tanstack/react-query';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { queryClient } from '@/lib/queryRuntime';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeYuriEvents } from '@/lib/yuriEvents';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { speechDefaults, type SpeechSettings } from '@/lib/voice/speechSettings';
 import { speechSettingsQueryOptions } from '@/queries/speechSettingsQueries';
@@ -10,7 +10,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 export function mountSpeechSettingsSync(): () => void {
     if (getRegisteredRuntimeAPIs()?.runtime.isVSCode) return () => {};
     const observer = new QueryObserver(queryClient, speechSettingsQueryOptions());
-    const unsubscribeEvents = subscribeOpenchamberEvents((event) => {
+    const unsubscribeEvents = subscribeYuriEvents((event) => {
         if (event.type === 'speech-settings-changed' || event.type === 'event-stream-ready') {
             void queryClient.invalidateQueries({ queryKey: speechSettingsQueryOptions().queryKey, exact: true });
         }

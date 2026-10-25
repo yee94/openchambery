@@ -15,7 +15,7 @@
  * Raw OpenCode SDK cursors may still be passed through as the first `before`.
  */
 
-const ASSISTANT_SESSION_DIVIDER_PREFIX = 'oc_asst_session_divider:';
+const ASSISTANT_SESSION_DIVIDER_PREFIX = 'yuri_asst_session_divider:';
 
 const DEFAULT_MAX_SCAN_PAGES = 50;
 const DEFAULT_MAX_SCAN_MESSAGES = 5000;
@@ -38,7 +38,7 @@ const hasPartType = (parts: unknown, type: string): boolean =>
 
 const isHostedSessionDivider = (record: unknown): boolean => {
   const id = (record as { info?: { id?: unknown } } | null)?.info?.id;
-  return typeof id === 'string' && id.startsWith(ASSISTANT_SESSION_DIVIDER_PREFIX);
+  return typeof id === 'string' && (id.startsWith(ASSISTANT_SESSION_DIVIDER_PREFIX) || id.startsWith('oc_asst_session_divider:'));
 };
 
 /**

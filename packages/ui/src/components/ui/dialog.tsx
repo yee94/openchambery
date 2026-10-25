@@ -47,11 +47,11 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => {
   React.useEffect(() => {
     openDialogCount += 1;
-    document.documentElement.classList.add('oc-dialog-open');
+    document.documentElement.classList.add('yuri-dialog-open');
     return () => {
       openDialogCount = Math.max(0, openDialogCount - 1);
       if (openDialogCount === 0) {
-        document.documentElement.classList.remove('oc-dialog-open');
+        document.documentElement.classList.remove('yuri-dialog-open');
       }
     };
   }, []);

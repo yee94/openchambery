@@ -36,22 +36,22 @@ export async function upgradeSelectedOpenCodeCli({ binaryPath, version, launchSp
 }
 
 export function isOpenCode2AutoInstallEnabled(env = process.env) {
-  const value = typeof env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL === 'string'
-    ? env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL.trim().toLowerCase()
+  const value = typeof env.YURI_OPENCODE2_AUTO_INSTALL === 'string'
+    ? env.YURI_OPENCODE2_AUTO_INSTALL.trim().toLowerCase()
     : '';
   return value !== '0' && value !== 'false' && value !== 'no';
 }
 
-export function resolveOpenChamberDataDir(env = process.env, homedir = os.homedir) {
-  if (typeof env.OPENCHAMBER_DATA_DIR === 'string' && env.OPENCHAMBER_DATA_DIR.trim()) {
-    return path.resolve(env.OPENCHAMBER_DATA_DIR.trim());
+export function resolveYuriDataDir(env = process.env, homedir = os.homedir) {
+  if (typeof env.YURI_DATA_DIR === 'string' && env.YURI_DATA_DIR.trim()) {
+    return path.resolve(env.YURI_DATA_DIR.trim());
   }
   const home = typeof homedir === 'function' ? homedir() : homedir;
-  return path.join(home, '.config', 'openchamber');
+  return path.join(home, '.config', 'yuri');
 }
 
 export function installedOpenCode2BinaryPath(version = PINNED_OPENCODE2_VERSION, options = {}) {
-  const dataDir = options.dataDir || resolveOpenChamberDataDir(options.env, options.homedir);
+  const dataDir = options.dataDir || resolveYuriDataDir(options.env, options.homedir);
   return path.join(dataDir, 'opencode-cli', version, openCodeBinaryName(options.platform));
 }
 
@@ -150,7 +150,7 @@ export async function installPinnedOpenCode2Cli(options = {}) {
   const version = options.version || PINNED_OPENCODE2_VERSION;
   const platform = options.platform || process.platform;
   const arch = options.arch || process.arch;
-  const dataDir = options.dataDir || resolveOpenChamberDataDir(options.env, options.homedir);
+  const dataDir = options.dataDir || resolveYuriDataDir(options.env, options.homedir);
   const binaryName = openCodeBinaryName(platform);
   const outputBinary = installedOpenCode2BinaryPath(version, { dataDir, platform });
   const run = typeof options.spawnSync === 'function' ? options.spawnSync : spawnSync;

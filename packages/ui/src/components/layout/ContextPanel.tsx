@@ -27,7 +27,7 @@ import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { getRuntimeApiBaseUrl, getRuntimeKey } from '@/lib/runtime-switch';
 import { Icon } from "@/components/icon/Icon";
-import { OpenChamberLogo } from "@/components/ui/OpenChamberLogo";
+import { YuriLogo } from "@/components/ui/YuriLogo";
 import { invokeDesktopCommand } from '@/lib/desktopNative';
 import {
   EMBEDDED_SESSION_CHAT_CLOSE_TAB_EVENT,
@@ -347,13 +347,13 @@ const useSessionTitleMap = (directory: string | undefined, sessionIDs: readonly 
 };
 
 const DESKTOP_BROWSER_INSPECT_SCRIPT = `new Promise((resolve) => {
-  const existing = document.getElementById('__openchamber_desktop_browser_overlay');
+  const existing = document.getElementById('__yuri_desktop_browser_overlay');
   if (existing) existing.remove();
-  if (typeof window.__openchamberDesktopBrowserCancelInspect === 'function') {
-    try { window.__openchamberDesktopBrowserCancelInspect(); } catch { /* webview not ready */ }
+  if (typeof window.__yuriDesktopBrowserCancelInspect === 'function') {
+    try { window.__yuriDesktopBrowserCancelInspect(); } catch { /* webview not ready */ }
   }
   const overlay = document.createElement('div');
-  overlay.id = '__openchamber_desktop_browser_overlay';
+  overlay.id = '__yuri_desktop_browser_overlay';
   overlay.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;border:2px solid #60a5fa;background:rgba(96,165,250,.24);border-radius:3px;display:none;box-sizing:border-box;';
   document.documentElement.appendChild(overlay);
   const cssEscape = (value) => {
@@ -404,8 +404,8 @@ const DESKTOP_BROWSER_INSPECT_SCRIPT = `new Promise((resolve) => {
     window.removeEventListener('mousemove', move, true);
     window.removeEventListener('click', click, true);
     window.removeEventListener('keydown', keydown, true);
-    if (window.__openchamberDesktopBrowserCancelInspect === cancel) {
-      delete window.__openchamberDesktopBrowserCancelInspect;
+    if (window.__yuriDesktopBrowserCancelInspect === cancel) {
+      delete window.__yuriDesktopBrowserCancelInspect;
     }
   };
   const cancel = () => {
@@ -426,24 +426,24 @@ const DESKTOP_BROWSER_INSPECT_SCRIPT = `new Promise((resolve) => {
     if (event.key !== 'Escape') return;
     cancel();
   };
-  window.__openchamberDesktopBrowserCancelInspect = cancel;
+  window.__yuriDesktopBrowserCancelInspect = cancel;
   window.addEventListener('mousemove', move, true);
   window.addEventListener('click', click, true);
   window.addEventListener('keydown', keydown, true);
 });`;
 
 const DESKTOP_BROWSER_CANCEL_INSPECT_SCRIPT = `(() => {
-  if (typeof window.__openchamberDesktopBrowserCancelInspect === 'function') {
-    window.__openchamberDesktopBrowserCancelInspect();
+  if (typeof window.__yuriDesktopBrowserCancelInspect === 'function') {
+    window.__yuriDesktopBrowserCancelInspect();
     return;
   }
-  const overlay = document.getElementById('__openchamber_desktop_browser_overlay');
+  const overlay = document.getElementById('__yuri_desktop_browser_overlay');
   if (overlay) overlay.remove();
 })()`;
 
 const DESKTOP_BROWSER_SAME_WEBVIEW_NAVIGATION_SCRIPT = `(() => {
-  if (window.__openchamberSameWebviewNavigationInstalled) return;
-  window.__openchamberSameWebviewNavigationInstalled = true;
+  if (window.__yuriSameWebviewNavigationInstalled) return;
+  window.__yuriSameWebviewNavigationInstalled = true;
 
   const navigate = (rawUrl) => {
     if (typeof rawUrl !== 'string' || rawUrl.length === 0) return false;
@@ -524,9 +524,9 @@ const stripPreviewTokenFromUrl = (value: string): string => {
   if (!value) return value;
   try {
     const parsed = new URL(value);
-    parsed.searchParams.delete('oc_preview_token');
-    parsed.searchParams.delete('oc_client_token');
-    parsed.searchParams.delete('oc_url_token');
+    parsed.searchParams.delete('yuri_preview_token');
+    parsed.searchParams.delete('yuri_client_token');
+    parsed.searchParams.delete('yuri_url_token');
     return parsed.toString();
   } catch {
     return value;
@@ -537,10 +537,10 @@ const stripPreviewQueryParams = (value: string): string => {
   if (!value) return value;
   try {
     const parsed = new URL(value);
-    parsed.searchParams.delete('ocPreview');
-    parsed.searchParams.delete('oc_preview_token');
-    parsed.searchParams.delete('oc_client_token');
-    parsed.searchParams.delete('oc_url_token');
+    parsed.searchParams.delete('yuriPreview');
+    parsed.searchParams.delete('yuri_preview_token');
+    parsed.searchParams.delete('yuri_client_token');
+    parsed.searchParams.delete('yuri_url_token');
     return parsed.toString();
   } catch {
     return value;
@@ -693,10 +693,10 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     ? (() => {
       const path = normalizedUrl.pathname || '/';
       const searchParams = new URLSearchParams(normalizedUrl.search);
-      searchParams.delete('oc_url_token');
-      searchParams.delete('oc_client_token');
-      searchParams.set('ocPreview', String(reloadNonce));
-      searchParams.set('oc_preview_token', proxyState.previewToken || '');
+      searchParams.delete('yuri_url_token');
+      searchParams.delete('yuri_client_token');
+      searchParams.set('yuriPreview', String(reloadNonce));
+      searchParams.set('yuri_preview_token', proxyState.previewToken || '');
       const search = searchParams.toString();
       const hash = normalizedUrl.hash || '';
       return getRuntimeUrlResolver().authenticatedAsset(`${proxyState.proxyBasePath}${path}${search ? `?${search}` : ''}${hash}`);
@@ -814,7 +814,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     // postMessage targetOrigin must match the iframe document origin (gateway
     // under Relay, authenticated asset origin on LAN/direct).
     postPreviewBridgeMessage(frameWindow, effectiveSrc || proxySrc, {
-      source: 'openchamber-preview-parent',
+      source: 'yuri-preview-parent',
       version: 1,
       type: 'set-inspect-mode',
       enabled: inspectMode,
@@ -827,7 +827,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
       return;
     }
     postPreviewBridgeMessage(frameWindow, effectiveSrc || proxySrc, {
-      source: 'openchamber-preview-parent',
+      source: 'yuri-preview-parent',
       version: 1,
       type: 'set-color-scheme',
       scheme: previewColorScheme,
@@ -878,7 +878,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
         return;
       }
       const data = event.data;
-      if (!data || data.source !== 'openchamber-preview-bridge' || data.version !== 1) {
+      if (!data || data.source !== 'yuri-preview-bridge' || data.version !== 1) {
         return;
       }
 
@@ -1361,7 +1361,7 @@ type DesktopBrowserPaneProps = {
 };
 
 const isElectronBrowserRuntime = (): boolean => {
-  return typeof window !== 'undefined' && Boolean(window.__OPENCHAMBER_ELECTRON__);
+  return typeof window !== 'undefined' && Boolean(window.__YURI_ELECTRON__);
 };
 
 const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, directory, tabID }) => {
@@ -1555,10 +1555,10 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
       const parsed = new URL(loadedUrl);
       const path = parsed.pathname || '/';
       const searchParams = new URLSearchParams(parsed.search);
-      searchParams.delete('oc_url_token');
-      searchParams.delete('oc_client_token');
-      searchParams.set('ocPreview', String(reloadNonce));
-      searchParams.set('oc_preview_token', proxyState.previewToken || '');
+      searchParams.delete('yuri_url_token');
+      searchParams.delete('yuri_client_token');
+      searchParams.set('yuriPreview', String(reloadNonce));
+      searchParams.set('yuri_preview_token', proxyState.previewToken || '');
       const search = searchParams.toString();
       return getRuntimeUrlResolver().authenticatedAsset(`${proxyState.proxyBasePath}${path}${search ? `?${search}` : ''}${parsed.hash}`);
     } catch {
@@ -1655,7 +1655,7 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
     if (!frameWindow) return;
     // targetOrigin must match the iframe document origin (gateway under Relay).
     postPreviewBridgeMessage(frameWindow, iframeSrc || proxySrc, {
-      source: 'openchamber-preview-parent',
+      source: 'yuri-preview-parent',
       version: 1,
       type: 'set-inspect-mode',
       enabled,
@@ -1732,7 +1732,7 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
     const handler = (event: MessageEvent<PreviewBridgeMessage>) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
       const data = event.data;
-      if (!data || data.source !== 'openchamber-preview-bridge' || data.version !== 1) return;
+      if (!data || data.source !== 'yuri-preview-bridge' || data.version !== 1) return;
 
       if (data.type === 'ready') {
         const frameUrl = typeof data.url === 'string' ? data.url : '';
@@ -1889,7 +1889,7 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
           </div>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-background p-6 text-center">
-            <OpenChamberLogo width={140} height={140} className="opacity-20" />
+            <YuriLogo width={140} height={140} className="opacity-20" />
             <span className="typography-ui-header text-muted-foreground">{t('contextPanel.browser.empty')}</span>
             <span className="max-w-sm typography-micro text-muted-foreground">{t('contextPanel.browser.emptyHint')}</span>
             <span className="max-w-md typography-micro leading-relaxed text-status-warning/70">{t('contextPanel.browser.trustNotice')}</span>
@@ -2164,13 +2164,13 @@ const DesktopBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dir
         <webview
           ref={webviewRef}
           src={initialWebviewSrcRef.current}
-          partition="persist:openchamber-browser"
+          partition="persist:yuri-browser"
           allowpopups
           style={{ width: '100%', height: '100%', border: 'none' }}
         />
         {(!currentUrl || currentUrl === 'about:blank') && !isLoading ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-background p-6 text-center">
-            <OpenChamberLogo width={140} height={140} className="opacity-20" />
+            <YuriLogo width={140} height={140} className="opacity-20" />
             <span className="typography-ui-header text-muted-foreground">{t('contextPanel.browser.empty')}</span>
           </div>
         ) : null}
@@ -2322,7 +2322,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
       return;
     }
 
-    panel.style.setProperty('--oc-context-panel-width', `${clampWidthToAvailableSpace(nextWidth, panel)}px`);
+    panel.style.setProperty('--yuri-context-panel-width', `${clampWidthToAvailableSpace(nextWidth, panel)}px`);
   }, []);
 
   const handleResizeStart = React.useCallback((event: React.PointerEvent) => {
@@ -2527,8 +2527,8 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
       }
 
       const directThemeSync = (frameWindow as unknown as {
-        __openchamberApplyThemeSync?: (themePayload: typeof payload) => void;
-      }).__openchamberApplyThemeSync;
+        __yuriApplyThemeSync?: (themePayload: typeof payload) => void;
+      }).__yuriApplyThemeSync;
 
       if (typeof directThemeSync === 'function') {
         try {
@@ -2541,7 +2541,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
 
       frameWindow.postMessage(
         {
-          type: 'openchamber:theme-sync',
+          type: 'yuri:theme-sync',
           payload,
         },
         window.location.origin,
@@ -2558,8 +2558,8 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
       if (!frameWindow) continue;
 
       const directSync = (frameWindow as unknown as {
-        __openchamberApplyChatSettingsSync?: (settings: typeof payload) => void;
-      }).__openchamberApplyChatSettingsSync;
+        __yuriApplyChatSettingsSync?: (settings: typeof payload) => void;
+      }).__yuriApplyChatSettingsSync;
       if (typeof directSync === 'function') {
         try {
           directSync(payload);
@@ -2569,7 +2569,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
         }
       }
 
-      frameWindow.postMessage({ type: 'openchamber:chat-settings-sync', payload }, window.location.origin);
+      frameWindow.postMessage({ type: 'yuri:chat-settings-sync', payload }, window.location.origin);
     }
   }, [allowPromptingSubagentSessions]);
 
@@ -2586,8 +2586,8 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
 
       const payload = { visible: activeChatTabID === tabID };
       const directVisibilitySync = (frameWindow as unknown as {
-        __openchamberSetEmbeddedVisibility?: (visibilityPayload: typeof payload) => void;
-      }).__openchamberSetEmbeddedVisibility;
+        __yuriSetEmbeddedVisibility?: (visibilityPayload: typeof payload) => void;
+      }).__yuriSetEmbeddedVisibility;
 
       if (typeof directVisibilitySync === 'function') {
         try {
@@ -2634,7 +2634,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
         return;
       }
 
-      if (data?.type === 'openchamber:chat-settings-request') {
+      if (data?.type === 'yuri:chat-settings-request') {
         postChatSettingsSyncToEmbeddedChat();
         return;
       }
@@ -2644,7 +2644,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
         postEmbeddedVisibilityToChats();
         return;
       }
-      if (data?.type !== 'openchamber:cycle-theme-request') {
+      if (data?.type !== 'yuri:cycle-theme-request') {
         return;
       }
 
@@ -2721,8 +2721,8 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     // MainLayout owns one ContextPanel. Publish only visibility transitions;
     // root :has(descendant) otherwise invalidates the whole tree on text edits.
     const root = document.documentElement;
-    root.setAttribute('data-oc-native-browser-visible', '');
-    return () => root.removeAttribute('data-oc-native-browser-visible');
+    root.setAttribute('data-yuri-native-browser-visible', '');
+    return () => root.removeAttribute('data-yuri-native-browser-visible');
   }, [nativeBrowserVisible]);
   const hasFileTabs = React.useMemo(
     () => tabs.some((tab) => tab.mode === 'file'),
@@ -2864,7 +2864,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
 
   const panelStyle: React.CSSProperties = !isOpen
     ? {
-        ['--oc-context-panel-width' as string]: `${isResizing ? (resizingWidthRef.current ?? width) : width}px`,
+        ['--yuri-context-panel-width' as string]: `${isResizing ? (resizingWidthRef.current ?? width) : width}px`,
         width: 0,
         minWidth: 0,
         maxWidth: 0,
@@ -2874,16 +2874,16 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
       }
     : isExpanded
       ? {
-          ['--oc-context-panel-width' as string]: '100%',
+          ['--yuri-context-panel-width' as string]: '100%',
           width: '100%',
           minWidth: '100%',
           maxWidth: '100%',
         }
       : {
-          width: 'min(var(--oc-context-panel-width), 100%)',
+          width: 'min(var(--yuri-context-panel-width), 100%)',
           minWidth: `min(${CONTEXT_PANEL_MIN_WIDTH}px, 100%)`,
           maxWidth: '100%',
-          ['--oc-context-panel-width' as string]: `${isResizing ? (resizingWidthRef.current ?? width) : width}px`,
+          ['--yuri-context-panel-width' as string]: `${isResizing ? (resizingWidthRef.current ?? width) : width}px`,
         };
 
   return (
@@ -2895,7 +2895,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
       inert={!isOpen || undefined}
       className={cn(
         'flex min-h-0 flex-col overflow-hidden bg-background',
-        !isExpanded && 'oc-layout-divider-l',
+        !isExpanded && 'yuri-layout-divider-l',
         isExpanded
           ? 'absolute inset-0 z-20 min-w-0'
           : 'relative h-full flex-shrink-0',

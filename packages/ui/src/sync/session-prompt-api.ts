@@ -3,7 +3,7 @@
  *
  * Verified against `@opencode/client` / protocol **2.0.12** (upstream core
  * inbox `admit` + `reconcile` by stable message id; promoted-from-message is
- * treated as already admitted). OpenChamber POSTs through the Host shallow
+ * treated as already admitted). Yuri POSTs through the Host shallow
  * proxy + `runtimeFetch` so the Host never interprets the body.
  *
  * Idle send: POST `/api/session/:sessionID/prompt` with `delivery: "steer"`.

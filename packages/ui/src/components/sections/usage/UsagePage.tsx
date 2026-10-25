@@ -151,7 +151,7 @@ export const UsagePage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="yuri-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -174,7 +174,7 @@ export const UsagePage: React.FC = () => {
         <SettingsGroup>
           <div
             data-settings-item="usage.header-menu"
-            className="oc-settings-group-row oc-settings-split-row group cursor-pointer"
+            className="yuri-settings-group-row yuri-settings-split-row group cursor-pointer"
             role="button"
             tabIndex={0}
             aria-pressed={showInDropdown}
@@ -186,7 +186,7 @@ export const UsagePage: React.FC = () => {
               }
             }}
           >
-            <div className="oc-settings-split-row-copy">
+            <div className="yuri-settings-split-row-copy">
               <div className="flex min-w-0 items-center gap-1.5">
                 <span className="typography-ui-label text-foreground">{t('settings.usage.page.options.showInHeader')}</span>
                 <Tooltip>
@@ -199,7 +199,7 @@ export const UsagePage: React.FC = () => {
                 </Tooltip>
               </div>
             </div>
-            <div data-settings-value="" className="oc-settings-split-row-control">
+            <div data-settings-value="" className="yuri-settings-split-row-control">
               <Checkbox
                 checked={showInDropdown}
                 onChange={handleDropdownToggle}
@@ -242,7 +242,7 @@ export const UsagePage: React.FC = () => {
         {/* Overall Usage Windows */}
         {usage?.accounts?.map((account, index) => (
           <SettingsGroup key={`${account.id}:${index}`} label={account.name}>
-            <div className="oc-settings-group-row">
+            <div className="yuri-settings-group-row">
               <p className="typography-meta text-muted-foreground break-words">{[account.user, account.plan, account.from].filter(Boolean).join(' · ')}</p>
               {account.readAt && <p className="typography-meta text-muted-foreground">{t('settings.usage.page.header.lastUpdated', { time: formatTime(account.readAt, timeFormatPreference) })}</p>}
               {account.stale && <p className="typography-meta text-muted-foreground">{t('settings.usage.magpie.cached')}</p>}
@@ -255,7 +255,7 @@ export const UsagePage: React.FC = () => {
         ))}
         {!usage?.accounts && usage?.windows && Object.keys(usage.windows).length > 0 && (
           <SettingsGroup>
-            <div data-settings-item="usage.model-quotas" className="oc-settings-group-row">
+            <div data-settings-item="usage.model-quotas" className="yuri-settings-group-row">
               <div className="divide-y divide-[var(--surface-subtle)]">
                 {Object.entries(usage.windows).map(([label, window]) => (
                   <UsageCard key={label} title={label} window={window} />
@@ -276,7 +276,7 @@ export const UsagePage: React.FC = () => {
                 const isCollapsed = collapsedFamilies[family.id] ?? false;
 
                 return (
-                  <div key={family.id} className="oc-settings-group-row">
+                  <div key={family.id} className="yuri-settings-group-row">
                     <Collapsible
                       open={!isCollapsed}
                       onOpenChange={() => toggleFamilyCollapsed(family.id)}
@@ -329,7 +329,7 @@ export const UsagePage: React.FC = () => {
                 const isCollapsed = collapsedFamilies['other'] ?? false;
 
                 return (
-                  <div className="oc-settings-group-row">
+                  <div className="yuri-settings-group-row">
                     <Collapsible
                       open={!isCollapsed}
                       onOpenChange={() => toggleFamilyCollapsed('other')}

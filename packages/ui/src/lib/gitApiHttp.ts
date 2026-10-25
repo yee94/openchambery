@@ -101,7 +101,7 @@ export const withGitDiscoveryNetworkSlot = async <T>(task: () => Promise<T>): Pr
 // while holding the first stalls forever once every permit is held by a task
 // doing the same. Helpers below already take a slot; tag them so callers
 // reaching them through a runtime bridge know not to wrap them again.
-const GIT_DISCOVERY_GATED = Symbol.for('openchamber.git.discoveryGated');
+const GIT_DISCOVERY_GATED = Symbol.for('yuri.git.discoveryGated');
 
 const markGitDiscoveryGated = <T extends object>(fn: T): T => {
   Object.defineProperty(fn, GIT_DISCOVERY_GATED, { value: true, configurable: true });

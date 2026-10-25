@@ -1,13 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const sessionActive = mock();
-const eventSubscribe = mock();
-const make = mock(() => ({
+const { sessionActive, eventSubscribe, make } = vi.hoisted(() => {
+const sessionActive = vi.fn();
+const eventSubscribe = vi.fn();
+const make = vi.fn(() => ({
   session: { active: sessionActive },
   event: { subscribe: eventSubscribe },
 }));
+return { sessionActive, eventSubscribe, make };
+});
 
-mock.module('@opencode/client', () => ({ OpenCode: { make } }));
+vi.mock('@opencode/client', () => ({ OpenCode: { make } }));
 
 const {
   startGlobalEventWatcher,
@@ -72,8 +75,8 @@ describe('session activity watcher', () => {
     expect(sessionActive).toHaveBeenCalled();
     expect(eventSubscribe).toHaveBeenCalledWith({ signal: expect.any(AbortSignal) });
     expect(posts).toEqual(expect.arrayContaining([
-      { type: 'openchamber:session-activity', properties: { sessionId: 'ses_1', phase: 'busy' } },
-      { type: 'openchamber:session-activity', properties: { sessionId: 'ses_1', phase: 'cooldown' } },
+      { type: 'yuri:session-activity', properties: { sessionId: 'ses_1', phase: 'busy' } },
+      { type: 'yuri:session-activity', properties: { sessionId: 'ses_1', phase: 'cooldown' } },
     ]));
     expect(getSessionActivitySnapshot()).toMatchObject({
       ses_1: { type: 'cooldown' },

@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import type { PersistStorage, StateStorage, StorageValue } from 'zustand/middleware';
 
 let safeStorageInstance: Storage | null = null;

@@ -45,10 +45,10 @@ describe('rewriteLengthToDesignPt', () => {
     expect(shouldRewriteProp('font-size')).toBe(true);
     expect(shouldRewriteProp('line-height')).toBe(true);
     expect(shouldRewriteProp('--text-sm')).toBe(true);
-    expect(shouldRewriteProp('--oc-mobile-root-title-size')).toBe(true);
-    expect(shouldRewriteProp('--oc-mobile-entity-meta-size')).toBe(true);
-    expect(shouldRewriteProp('--oc-mobile-detail-subtitle-size')).toBe(true);
-    expect(shouldRewriteProp('--oc-settings-section-title-size')).toBe(true);
+    expect(shouldRewriteProp('--yuri-mobile-root-title-size')).toBe(true);
+    expect(shouldRewriteProp('--yuri-mobile-entity-meta-size')).toBe(true);
+    expect(shouldRewriteProp('--yuri-mobile-detail-subtitle-size')).toBe(true);
+    expect(shouldRewriteProp('--yuri-settings-section-title-size')).toBe(true);
     expect(shouldRewriteProp('--form-helper-font-size')).toBe(true);
     // Geometry element props rewrite (rem only) through --padding-scale…
     expect(shouldRewriteProp('padding')).toBe(true);
@@ -58,11 +58,11 @@ describe('rewriteLengthToDesignPt', () => {
     expect(shouldRewriteProp('width')).toBe(true);
     expect(shouldRewriteProp('min-height')).toBe(true);
     // …but geometry custom props stay untouched:
-    expect(shouldRewriteProp('--oc-mobile-dock-height')).toBe(false);
-    expect(shouldRewriteProp('--oc-header-height')).toBe(false);
-    expect(shouldRewriteProp('--oc-mobile-project-icon-size')).toBe(false);
+    expect(shouldRewriteProp('--yuri-mobile-dock-height')).toBe(false);
+    expect(shouldRewriteProp('--yuri-header-height')).toBe(false);
+    expect(shouldRewriteProp('--yuri-mobile-project-icon-size')).toBe(false);
     expect(shouldRewriteProp('--form-control-line-height')).toBe(true); // line-height rides dpt
-    expect(shouldRewriteProp('--oc-safe-area-top')).toBe(false);
+    expect(shouldRewriteProp('--yuri-safe-area-top')).toBe(false);
     expect(shouldRewriteProp('border-radius')).toBe(false);
     expect(isTypographyProp('padding')).toBe(false);
     expect(isTypographyProp('font-size')).toBe(true);

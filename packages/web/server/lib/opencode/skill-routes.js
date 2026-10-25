@@ -142,7 +142,7 @@ export const registerSkillRoutes = (app, dependencies) => {
 
       return payload
         .map((item) => {
-          // OpenChamber's name is the invocation key, not the V2 display label.
+          // Yuri's name is the invocation key, not the V2 display label.
           const name = typeof item?.id === 'string' ? item.id : '';
           const location = typeof item?.path === 'string' ? item.path : '';
           const description = typeof item?.description === 'string' ? item.description : '';

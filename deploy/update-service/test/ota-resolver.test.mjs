@@ -6,14 +6,37 @@ import { fnv1a32, resolveCurrentFloorVersion, resolveMobileUpdate, rolloutBucket
 
 const CHECKSUM = `sha256:${'a'.repeat(64)}`;
 
+test('application identity gates both clients and bundles before OTA rollout', () => {
+  for (const platform of ['ios', 'android', 'desktop']) {
+    for (const applicationId of [undefined, '', 'com.example.legacy']) {
+      const result = resolveMobileUpdate(validManifest(), baseRequest({ platform, applicationId }));
+      assert.equal(result.primaryAction, 'install_native_required');
+      assert.equal(result.ota.state, 'incompatible');
+      assert.equal(result.ota.bundle, undefined);
+    }
+  }
+  const result = resolveMobileUpdate(validManifest({ activeBundle: activeBundle({ applicationId: undefined }) }), baseRequest());
+  assert.equal(result.primaryAction, 'install_native_required');
+  assert.equal(result.ota.bundle, undefined);
+  for (const platform of ['ios', 'android']) {
+    const oldBridge = resolveMobileUpdate(validManifest(), baseRequest({ platform, shellApiVersion: 1 }));
+    assert.equal(oldBridge.primaryAction, 'install_native_required');
+    assert.equal(oldBridge.ota.bundle, undefined);
+    const invalidFloor = resolveMobileUpdate(validManifest({ activeBundle: activeBundle({ minShellApiVersion: 1 }) }), baseRequest({ platform }));
+    assert.equal(invalidFloor.primaryAction, 'install_native_required');
+    assert.equal(invalidFloor.ota.bundle, undefined);
+  }
+});
+
 test('desktop uses the shared channel, rollout and rollback policy with its own asset and real shell floor', () => {
   const manifest = validManifest();
   manifest.activeBundle.desktop = { bundleId: '1234567890abcdef', url: '/ota/bundles/1234567890abcdef.zip',
+    applicationId: 'dev.yuri.desktop', minShellApiVersion: 2,
     size: 100, checksum: 'b'.repeat(64), shellFingerprint: 'c'.repeat(64), minShellReleaseVersion: '1.18.2-beta.20' };
   manifest.nativeTargets.desktop = { version: '1.18.2-beta.20', build: 1, installUrl: 'https://example.com/releases' };
   const parsed = parseOtaManifest(manifest);
   assert.equal(parsed.ok, true);
-  const request = baseRequest({ platform: 'desktop', nativeVersion: '1.18.2-beta.20', currentBundleId: '1.18.2-beta.21' });
+  const request = baseRequest({ platform: 'desktop', applicationId: 'dev.yuri.desktop', nativeVersion: '1.18.2-beta.20', currentBundleId: '1.18.2-beta.21' });
   let result = resolveMobileUpdate(parsed.manifest, request);
   assert.equal(result.primaryAction, 'apply_ota');
   assert.equal(result.ota.bundle.bundleId, '1234567890abcdef');
@@ -34,6 +57,7 @@ test('desktop uses the shared channel, rollout and rollback policy with its own 
 
 function activeBundle(overrides = {}) {
   return {
+    applicationId: 'com.yee94.yuri',
     bundleId: '34ab092a8e7f6d21',
     releaseVersion: '1.18.2-beta.23',
     url: '/ota/bundles/34ab092a8e7f6d21.zip',
@@ -41,7 +65,7 @@ function activeBundle(overrides = {}) {
     checksum: CHECKSUM,
     rolloutPercent: 100,
     rolloutSalt: 'beta-42',
-    minShellApiVersion: 1,
+    minShellApiVersion: 2,
     platforms: {
       ios: { minNativeBuild: 350 },
       android: { minNativeBuild: 350 },
@@ -67,7 +91,7 @@ function validManifest(overrides = {}) {
         version: '1.18.2-beta.22',
         build: 350,
         status: 'published',
-        installUrl: 'https://github.com/yee94/openchamber/releases/tag/v1.18.2-beta.22',
+        installUrl: 'https://github.com/yee94/yuri/releases/tag/v1.18.2-beta.22',
       },
     },
     rollbackBundleIds: ['81e304792d416341', '201ae56fa03d7082'],
@@ -77,12 +101,13 @@ function validManifest(overrides = {}) {
 
 function baseRequest(overrides = {}) {
   return {
+    applicationId: 'com.yee94.yuri',
     channel: 'beta',
     platform: 'ios',
     deviceId: 'device-abc',
     nativeVersion: '1.18.2-beta.22',
     nativeBuild: 350,
-    shellApiVersion: 1,
+    shellApiVersion: 2,
     currentBundleId: 'builtin',
     ...overrides,
   };

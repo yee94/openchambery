@@ -135,7 +135,7 @@ const requireSelectionShape = (
 ): DesktopSshConfigSyncSelectionShape => {
   const shape = localPlan?.selectionShape;
   if (!shape) {
-    throw new Error('Local sync inventory missing selectionShape (update the OpenChamberY desktop app)');
+    throw new Error('Local sync inventory missing selectionShape (update the Yuri desktop app)');
   }
   return shape;
 };
@@ -251,7 +251,7 @@ const createRelayHttpExecutor = (
   return {
     tunnel,
     async probe(plan) {
-      const result = await jsonFetch('POST', '/api/openchamber/config-sync/probe', { plan });
+      const result = await jsonFetch('POST', '/api/yuri/config-sync/probe', { plan });
       return {
         remoteExisting: Array.isArray(result.remoteExisting) ? result.remoteExisting as string[] : [],
         remoteAgentsRootExists: result.remoteAgentsRootExists === true,
@@ -260,11 +260,11 @@ const createRelayHttpExecutor = (
       };
     },
     async prepare(plan, syncRunId) {
-      await jsonFetch('POST', '/api/openchamber/config-sync/prepare', { plan, syncRunId });
+      await jsonFetch('POST', '/api/yuri/config-sync/prepare', { plan, syncRunId });
     },
     async putTar(kind, payload, syncRunId) {
       const response = await tunnel.fetch(
-        `/api/openchamber/config-sync/put/${encodeURIComponent(kind)}?syncRunId=${encodeURIComponent(syncRunId)}`,
+        `/api/yuri/config-sync/put/${encodeURIComponent(kind)}?syncRunId=${encodeURIComponent(syncRunId)}`,
         {
           method: 'PUT',
           headers: {
@@ -289,7 +289,7 @@ const createRelayHttpExecutor = (
     },
     async download(kind) {
       const response = await tunnel.fetch(
-        `/api/openchamber/config-sync/download/${encodeURIComponent(kind)}`,
+        `/api/yuri/config-sync/download/${encodeURIComponent(kind)}`,
         { method: 'GET', headers },
       );
       if (!response.ok) {
@@ -307,12 +307,12 @@ const createRelayHttpExecutor = (
       return new Uint8Array(await response.arrayBuffer());
     },
     async finalize(syncRunId) {
-      const result = await jsonFetch('POST', '/api/openchamber/config-sync/finalize', { syncRunId });
+      const result = await jsonFetch('POST', '/api/yuri/config-sync/finalize', { syncRunId });
       return Array.isArray(result.magpieWarnings)
         ? result.magpieWarnings.filter((entry): entry is string => entry === 'sign_in_required' || entry === 'agent_settings_skipped') : [];
     },
     async abort(syncRunId) {
-      await jsonFetch('POST', '/api/openchamber/config-sync/abort', { syncRunId }).catch(() => undefined);
+      await jsonFetch('POST', '/api/yuri/config-sync/abort', { syncRunId }).catch(() => undefined);
     },
     close() {
       tunnel.close();
@@ -479,7 +479,7 @@ export const applyRelayConfigSync = async (
         const credentialPayload = plan.providerCredentials ? await executor.download('credentials') : null;
         const magpiePayload = plan.magpie ? await executor.download('magpie') : null;
         if (!hasDesktopInvoke()) {
-          throw new Error('Relay pull apply requires the OpenChamberY desktop app');
+          throw new Error('Relay pull apply requires the Yuri desktop app');
         }
         // Structured-clone Uint8Array directly (desktop_relay_sync_apply_local contract).
         const applied = await invokeDesktop('desktop_relay_sync_apply_local', {
@@ -497,7 +497,7 @@ export const applyRelayConfigSync = async (
       const plan = buildPushPlan(localPlan!, selections);
       if (!planHasPayload(plan)) return emptyResult(plan);
       if (!hasDesktopInvoke()) {
-        throw new Error('Relay push apply requires the OpenChamberY desktop app');
+        throw new Error('Relay push apply requires the Yuri desktop app');
       }
 
       // Structured-clone Uint8Array directly (desktop_relay_sync_pack_local contract).

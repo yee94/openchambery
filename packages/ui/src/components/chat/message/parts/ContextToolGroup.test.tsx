@@ -41,7 +41,7 @@ describe('LatticeOrb', () => {
         expect(desktopMarkup).toContain('relative block flex-none overflow-clip');
         expect(desktopMarkup).toContain('width:14px;height:14px');
         expect(mobileMarkup).toContain('width:12px;height:12px');
-        expect(desktopMarkup.match(/oc-lattice-orb-dot/g)).toHaveLength(9);
+        expect(desktopMarkup.match(/yuri-lattice-orb-dot/g)).toHaveLength(9);
         expect(desktopMarkup).toContain('data-center="true"');
         expect(desktopMarkup).toContain('left:4px;top:4px;width:4px;height:4px');
         expect(desktopMarkup).toContain('left:24px;top:24px;width:4px;height:4px');
@@ -69,7 +69,7 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('inline-flex flex-none items-center justify-center self-center h-6 w-3.5');
         expect(markup).toContain('width:14px;height:14px');
         expect(markup).toContain('typography-meta inline-flex min-h-0 w-0 min-w-0 max-w-full flex-1 items-center');
-        expect(markup).toContain('oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6');
+        expect(markup).toContain('yuri-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6');
     });
 
     test('centers a 12px orb in the 16px leading slot on mobile', () => {
@@ -87,24 +87,24 @@ describe('ContextToolGroup', () => {
     });
 
     test('clips both moving layers inside a fixed-height paint viewport', () => {
-        expect(flipUpTextSource).toContain("'oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6'");
-        expect(flipUpTextSource).toContain('oc-summary-flip-stage absolute inset-0 block overflow-clip');
+        expect(flipUpTextSource).toContain("'yuri-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6'");
+        expect(flipUpTextSource).toContain('yuri-summary-flip-stage absolute inset-0 block overflow-clip');
         expect(indexCssSource).toContain('overflow: clip;');
-        expect(flipUpTextSource).toContain('oc-summary-flip-out absolute inset-x-0 top-0 block h-full truncate');
-        expect(flipUpTextSource).toContain('oc-summary-flip-in absolute inset-x-0 top-0 block h-full truncate');
-        expect(indexCssSource).toContain('.oc-summary-flip-viewport,');
-        expect(indexCssSource).toContain('.oc-summary-flip-stage {');
+        expect(flipUpTextSource).toContain('yuri-summary-flip-out absolute inset-x-0 top-0 block h-full truncate');
+        expect(flipUpTextSource).toContain('yuri-summary-flip-in absolute inset-x-0 top-0 block h-full truncate');
+        expect(indexCssSource).toContain('.yuri-summary-flip-viewport,');
+        expect(indexCssSource).toContain('.yuri-summary-flip-stage {');
         expect(indexCssSource).toContain('contain: strict;');
         expect(indexCssSource).toContain('transform: translateZ(0);');
         expect(indexCssSource).toContain('-webkit-mask-image: linear-gradient(#000 0 100%);');
         expect(indexCssSource).toContain('-webkit-clip-path: inset(0);');
-        expect(indexCssSource).not.toContain('.oc-summary-flip-out,\n.oc-summary-flip-in {\n  will-change: transform;');
+        expect(indexCssSource).not.toContain('.yuri-summary-flip-out,\n.yuri-summary-flip-in {\n  will-change: transform;');
         expect(indexCssSource).toContain('transform: translateY(-100%);');
         expect(indexCssSource).toContain('transform: translateY(100%);');
-        expect(indexCssSource).toContain('animation: oc-summary-flip-out 280ms ease-out forwards;');
-        expect(indexCssSource).toContain('animation: oc-summary-flip-in 280ms ease-out forwards;');
-        expect(indexCssSource).toContain('.oc-summary-flip-out {\n    display: none;');
-        expect(indexCssSource).toContain('.oc-summary-flip-in {\n    transform: none;\n    opacity: 1;');
+        expect(indexCssSource).toContain('animation: yuri-summary-flip-out 280ms ease-out forwards;');
+        expect(indexCssSource).toContain('animation: yuri-summary-flip-in 280ms ease-out forwards;');
+        expect(indexCssSource).toContain('.yuri-summary-flip-out {\n    display: none;');
+        expect(indexCssSource).toContain('.yuri-summary-flip-in {\n    transform: none;\n    opacity: 1;');
     });
 
     test('keeps running after grouped calls settle until a later non-process part appears', () => {
@@ -129,11 +129,11 @@ describe('ContextToolGroup', () => {
         );
 
         expect(liveMarkup).toContain('Running');
-        expect(liveMarkup).toContain('oc-lattice-orb-dot');
+        expect(liveMarkup).toContain('yuri-lattice-orb-dot');
         expect(settledMarkup).toContain('Used');
-        expect(settledMarkup).toContain('#oc-search');
+        expect(settledMarkup).toContain('#yuri-search');
         expect(settledMarkup).toContain('inline-flex flex-none items-center justify-center self-center h-6 w-3.5');
-        expect(settledMarkup).not.toContain('oc-lattice-orb-dot');
+        expect(settledMarkup).not.toContain('yuri-lattice-orb-dot');
     });
 
     test('defaults to settled when every grouped call settles and exploring is omitted', () => {
@@ -148,8 +148,8 @@ describe('ContextToolGroup', () => {
         );
 
         expect(markup).toContain('Used');
-        expect(markup).toContain('#oc-search');
-        expect(markup).not.toContain('oc-lattice-orb-dot');
+        expect(markup).toContain('#yuri-search');
+        expect(markup).not.toContain('yuri-lattice-orb-dot');
     });
 
     test('keeps running when parent passes explicit exploring after tools settle', () => {
@@ -169,10 +169,10 @@ describe('ContextToolGroup', () => {
         );
 
         expect(exploringMarkup).toContain('Running');
-        expect(exploringMarkup).toContain('oc-lattice-orb-dot');
+        expect(exploringMarkup).toContain('yuri-lattice-orb-dot');
         expect(exploredMarkup).toContain('Used');
-        expect(exploredMarkup).toContain('#oc-search');
-        expect(exploredMarkup).not.toContain('oc-lattice-orb-dot');
+        expect(exploredMarkup).toContain('#yuri-search');
+        expect(exploredMarkup).not.toContain('yuri-lattice-orb-dot');
     });
 
     test('folds explore and used tools into one Used summary with line diffs', () => {
@@ -218,6 +218,6 @@ describe('ContextToolGroup', () => {
         );
 
         expect(markup).toContain('Running');
-        expect(markup).toContain('oc-lattice-orb-dot');
+        expect(markup).toContain('yuri-lattice-orb-dot');
     });
 });

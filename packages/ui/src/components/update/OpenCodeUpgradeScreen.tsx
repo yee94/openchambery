@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useEvent } from '@reactuses/core';
-import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
+import { YuriLogo } from '@/components/ui/YuriLogo';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import { DesktopHostSwitcherInline } from '@/components/desktop/DesktopHostSwitcher';
@@ -115,7 +115,7 @@ export const OpenCodeUpgradeScreen: React.FC<React.PropsWithChildren> = ({ child
       data-opencode-upgrade-screen="true"
     >
       <div className="flex w-full max-w-sm flex-col items-center text-center">
-        <OpenChamberLogo width={48} height={48} />
+        <YuriLogo width={48} height={48} />
         <h1
           id={titleId}
           ref={headingRef}

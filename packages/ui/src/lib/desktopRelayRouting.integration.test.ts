@@ -50,10 +50,10 @@ beforeEach(() => {
   healthIdentity = undefined;
   defaultHostId = host.id;
   vi.stubGlobal('window', Object.assign(new EventTarget(), {
-    location: { origin: 'null', href: 'openchamber-ui://app/index.html' },
-    __OPENCHAMBER_ELECTRON__: { runtime: 'electron', packaged: true },
-    __OPENCHAMBER_LOCAL_ORIGIN__: localOrigin,
-    __OPENCHAMBER_DESKTOP__: { invoke },
+    location: { origin: 'null', href: 'yuri-ui://app/index.html' },
+    __YURI_ELECTRON__: { runtime: 'electron', packaged: true },
+    __YURI_LOCAL_ORIGIN__: localOrigin,
+    __YURI_DESKTOP__: { invoke },
     setTimeout,
   }));
   nativeFetch.mockImplementation(async (input) => {
@@ -143,7 +143,7 @@ describe.each(['packaged', 'HMR'])('remote-computer worktree routing in %s UI', 
   });
 
   it('does not classify a Relay virtual loopback URL as the local computer or inherit local storage', async () => {
-    Object.defineProperty(window, '__OPENCHAMBER_API_BASE_URL__', { value: localOrigin, writable: false, configurable: true });
+    Object.defineProperty(window, '__YURI_API_BASE_URL__', { value: localOrigin, writable: false, configurable: true });
     const storage = { getItem: (key: string) => key === 'lastDirectory' ? '/client-only/project' : null };
     expect(isDesktopLocalOriginActive()).toBe(true);
     expect(readRuntimeScopedItem('lastDirectory', { storage })).toBe('/client-only/project');

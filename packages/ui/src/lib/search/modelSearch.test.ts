@@ -23,7 +23,7 @@ describe('matchesModelSearch', () => {
 
   test('matches project names when separators differ', () => {
     expect(matchesModelSearch('oh-my-opencode-slim', 'oh my opencode')).toBe(true);
-    expect(matchesModelSearch('openchamber-local', 'openchamberlocal')).toBe(true);
+    expect(matchesModelSearch('yuri-local', 'yurilocal')).toBe(true);
   });
 
   test('still matches plain substrings and empty query', () => {

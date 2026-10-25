@@ -1,4 +1,4 @@
-# OpenChamber Mobile Handoff
+# Yuri Mobile Handoff
 
 Status and process reference for the native iOS/Android apps. Written so work can continue after
 merge — either by finishing CI/release automation, or by adding features as follow-up fixes. The
@@ -11,10 +11,10 @@ renderer), not the desktop shell. The native app is a WKWebView (iOS) / Android 
 bundled copy of the web build; native capabilities are added via Capacitor plugins and two iOS app
 extensions.
 
-- App id / package: `com.yee94.openchamber` (release Android `applicationId` + iOS bundle id);
-  debug Android uses `com.yee94.openchamber.debug` via `applicationIdSuffix` so a local debug
+- App id / package: `com.yee94.yuri` (release Android `applicationId` + iOS bundle id);
+  debug Android uses `com.yee94.yuri.debug` via `applicationIdSuffix` so a local debug
   APK can sit alongside a store/CI release install. Java/R namespace remains
-  `com.openchamber.app`. Launcher label is `OpenChamber` / `OpenChamber Debug`.
+  `com.yuri.app`. Launcher label is `Yuri` / `Yuri Debug`.
 - Capacitor config: `capacitor.config.ts` (Keyboard `resize: 'none'`; Android
   `adjustNothing` + cached-height composer CSS FLIP + `ImeSyncBridge`
   (zero parent padding, backdrop, state/height bookends), StatusBar overlay,
@@ -77,7 +77,7 @@ bun run --cwd packages/mobile android:logcat      # app logs
 
 Typical device iteration: `bun run --cwd packages/mobile build:android:debug` then
 `android:run`. APK path: `android/app/build/outputs/apk/debug/app-debug.apk`
-(package `com.yee94.openchamber.debug`; does not replace a release install of `com.yee94.openchamber`).
+(package `com.yee94.yuri.debug`; does not replace a release install of `com.yee94.yuri`).
 
 iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (see
 `scripts/ios-sim.mjs`; `serve-sim` for a browser preview of the simulator).
@@ -91,15 +91,15 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   downloaded on first scan (needs Play Services + network); `mobileQrScan.ts` installs/awaits it
   and retries. CAMERA permission + `NSCameraUsageDescription` declared.
 - **Secure storage** — `@aparajita/capacitor-secure-storage` for connection tokens.
-- **Deep links** — `openchamber://` URL scheme; a reusable intent vocabulary (`apps/deepLinks.ts`)
+- **Deep links** — `yuri://` URL scheme; a reusable intent vocabulary (`apps/deepLinks.ts`)
   used by notification taps, widgets, and Control Center. Cold-launch intents are stashed.
 - **Push notifications** — iOS APNs + Android native foreground notification stream (see below). Every subscribed device receives
   the push; another client's visibility does not suppress delivery.
 - **iOS widgets + Control Center + Notification Service Extension** — WidgetKit extension
-  (`OpenChamberWidget`), a Control Center control, and an NSE (`OpenChamberNotificationService`)
-  that refreshes widgets from push. All share the App Group `group.com.yee94.openchamber`.
-- **iOS Live Activity** — `OpenChamberLiveActivity` Capacitor plugin. Runtime is
-  iOS 17.0+ (`OpenChamberWidget` deployment) with `areActivitiesEnabled`; the App target stays
+  (`YuriWidget`), a Control Center control, and an NSE (`YuriNotificationService`)
+  that refreshes widgets from push. All share the App Group `group.com.yee94.yuri`.
+- **iOS Live Activity** — `YuriLiveActivity` Capacitor plugin. Runtime is
+  iOS 17.0+ (`YuriWidget` deployment) with `areActivitiesEnabled`; the App target stays
   15.5. One Activity lists every live working session (`{n} working` plus title/elapsed rows);
   JS starts after 5 seconds busy. `Activity.request` uses `pushType: .token`. ActivityKit
   owns timing (`staleDate` = 20 min; success dismissal 15 min, error 60 min). App restart can
@@ -107,7 +107,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   counter. User-dismissed Activities are not rebuilt for the same task.
   See `packages/mobile/README.md`.
 - **Native chrome** — status bar (iOS overlay + safe-area; Android inset + themed background),
-  keyboard handling (iOS immediate shell shrink via --oc-kb-layout; Android pre-focus cached-height FLIP), edge-swipe session switch,
+  keyboard handling (iOS immediate shell shrink via --yuri-kb-layout; Android pre-focus cached-height FLIP), edge-swipe session switch,
   back-button handling, app-icon badge.
 - **App icons** — iOS `AppIcon`; Android adaptive launcher icon; notification small icon
   (`ic_stat_notify`).
@@ -115,7 +115,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 ## Push / notifications architecture
 
 - iOS registers an APNs device token with the connected server; the signed Push Relay delivers it to APNs.
-- Android shells with `OpenChamberNotifications` use a native foreground service and authenticated notification-only SSE, either directly or through the existing E2EE relay. They do not register FCM tokens. Legacy Firebase build configuration remains, but the Push Relay has no FCM sender. See `README.md` → Native Android Background Notifications for lifecycle, replay and upgrade requirements.
+- Android shells with `YuriNotifications` use a native foreground service and authenticated notification-only SSE, either directly or through the existing E2EE relay. They do not register FCM tokens. Legacy Firebase build configuration remains, but the Push Relay has no FCM sender. See `README.md` → Native Android Background Notifications for lifecycle, replay and upgrade requirements.
 - Each client still reports foreground visibility + its platform, but that heartbeat is not a
   push gate: native and web-push always fan out. iOS still suppresses the foreground banner.
 - Foreground behavior: iOS suppresses the banner via `presentationOptions: []`; the web/PWA service
@@ -125,15 +125,15 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 
 ### iOS (`ios/App`)
 
-- Keyboard intent shrinks the app shell immediately (`--oc-kb-layout` from the cached
+- Keyboard intent shrinks the app shell immediately (`--yuri-kb-layout` from the cached
   IME height) so the header stays pinned and the full composer sits above the keyboard.
   `keyboardWillShow` calibrates the final height and persists its viewport ratio. The
   shared native curtain covers the gap while UIKit is still sliding. The Composer
   removes its resting bottom-safe padding while the keyboard is open.
-- Extensions: `OpenChamberWidget` (WidgetKit, deployment 17.0) and `OpenChamberNotificationService`
+- Extensions: `YuriWidget` (WidgetKit, deployment 17.0) and `YuriNotificationService`
   (NSE, 15.5), both hand-wired into `App.xcodeproj/project.pbxproj` and embedded via a copy phase.
-- App Group `group.com.yee94.openchamber` in all three targets' entitlements (app + widget + NSE).
-- `Info.plist`: `CFBundleURLTypes` scheme `openchamber`, `NSCameraUsageDescription`,
+- App Group `group.com.yee94.yuri` in all three targets' entitlements (app + widget + NSE).
+- `Info.plist`: `CFBundleURLTypes` scheme `yuri`, `NSCameraUsageDescription`,
   `NSSupportsLiveActivities`. Live Activity plugin methods are gated at iOS 17.0 to match the
   widget; App remains 15.5.
 - Push entitlement (aps-environment) required.
@@ -141,14 +141,14 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 
 ### Android (`android/app`)
 
-- `google-services.json` (committed; Firebase project `openchamber-8bf7e`). The Google Services
+- `google-services.json` (committed; Firebase project `yuri-8bf7e`). The Google Services
   Gradle plugin is applied conditionally when the file exists; `@capacitor/push-notifications`
   brings `firebase-messaging`.
 - Manifest: permissions `INTERNET`, `CAMERA` (+ optional camera feature), `POST_NOTIFICATIONS`
   (Android 13+; older versions allow notifications by default). `windowSoftInputMode=adjustNothing`.
   Android WebView on the current Capacitor host reports a full-height visual/layout
   viewport while IME is open, and VirtualKeyboard geometry reports 0. Android
-   therefore starts a 200ms composer-only CSS FLIP from `oc:keyboard-intent` /
+   therefore starts a 200ms composer-only CSS FLIP from `yuri:keyboard-intent` /
    `focusin`, using the previous measured IME-height ratio (39dvh first-open
    fallback). `ImeSyncBridge` keeps WebView-parent padding at 0, paints the
    edge-to-edge backdrop, removes Capacitor's empty root animation callback, and
@@ -172,7 +172,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   `scripts/ios-sim-build.mjs` temporarily strips the `CapacitorMlkitBarcodeScanning` pod, builds,
   then restores it. Device builds include it normally.
 - **Android design pt (`--dpt`)**: WebView CSS px is 1 dp, not 1 iOS pt. Capacitor
-  plugin `OpenChamberPhysicalScale` reads `DisplayMetrics.xdpi/ydpi` and the web
+  plugin `YuriPhysicalScale` reads `DisplayMetrics.xdpi/ydpi` and the web
   layer sets `--dpt` so compiled font sizes (`calc(N * var(--dpt))`) track ~1/163
   inch, then × `0.95/0.9` and cap at `0.95` (typical ~0.9 actually moves).
   Do not pin `--dpt` to `1` or copy iOS `10/9` — both read too large. Do not
@@ -210,8 +210,8 @@ TestFlight / Play internal testing:
 ### iOS
 
 - Apple Developer account; App IDs for the app **and** both extensions
-  (`com.yee94.openchamber`, `.OpenChamberWidget`, `.OpenChamberNotificationService`,
-  `.OpenChamberShareExtension`), each enabled for the **App Group** and (app) **Push**.
+  (`com.yee94.yuri`, `.YuriWidget`, `.YuriNotificationService`,
+  `.YuriShareExtension`), each enabled for the **App Group** and (app) **Push**.
 - Signing certificate + provisioning profiles for all three targets (extensions need their own).
 - App Store Connect API key for non-interactive TestFlight upload (`xcodebuild archive` +
   `notarytool`/`altool`, or fastlane `gym`+`pilot`).
@@ -266,8 +266,8 @@ Self-hosted live updates use `@capgo/capacitor-updater` (plugin config key `Capa
 
 ### What was added
 
-- `capacitor.config.ts` — `plugins.CapacitorUpdater` (self-hosted `updateUrl`, `statsUrl: ''`, `defaultChannel` from build-time `otaChannel`, `autoUpdate: false` so About can confirm a one-tap reload, `appReadyTimeout: 20000`, `autoDeleteFailed: false` so failed/partial bundles remain for native HTTP Range resume, `autoDeletePrevious: true` for cleanup after a successful start, `resetWhenUpdate: true`, optional `publicKey`) plus top-level `OpenChamberOTA` (`channel` / `shellApiVersion`) for the web layer. `otaChannel` = `process.env.OPENCHAMBER_OTA_CHANNEL === 'stable' ? 'stable' : 'beta'` (baked at `mobile:sync`; stable store builds pass `OPENCHAMBER_OTA_CHANNEL=stable`). OTA never applies a lower `releaseVersion` than the device already has.
-- `src/openchamber-ota.ts` — local typed bridge (`CapacitorUpdaterBridge` via `registerPlugin('CapacitorUpdater')`); does **not** import `@capgo/capacitor-updater`. Canonical constants: `OPENCHAMBER_OTA_CHANNEL` (build default `'beta'`, overridable at sync via env — mirrors `capacitor.config.ts`), `OPENCHAMBER_SHELL_API_VERSION` (literal mirrored in config so Cap CLI does not execute `registerPlugin` when loading config).
+- `capacitor.config.ts` — `plugins.CapacitorUpdater` (self-hosted `updateUrl`, `statsUrl: ''`, `defaultChannel` from build-time `otaChannel`, `autoUpdate: false` so About can confirm a one-tap reload, `appReadyTimeout: 20000`, `autoDeleteFailed: false` so failed/partial bundles remain for native HTTP Range resume, `autoDeletePrevious: true` for cleanup after a successful start, `resetWhenUpdate: true`, optional `publicKey`) plus top-level `YuriOTA` (`channel` / `shellApiVersion`) for the web layer. `otaChannel` = `process.env.YURI_OTA_CHANNEL === 'stable' ? 'stable' : 'beta'` (baked at `mobile:sync`; stable store builds pass `YURI_OTA_CHANNEL=stable`). OTA never applies a lower `releaseVersion` than the device already has.
+- `src/yuri-ota.ts` — local typed bridge (`CapacitorUpdaterBridge` via `registerPlugin('CapacitorUpdater')`); does **not** import `@capgo/capacitor-updater`. Canonical constants: `YURI_OTA_CHANNEL` (build default `'beta'`, overridable at sync via env — mirrors `capacitor.config.ts`), `YURI_SHELL_API_VERSION` (literal mirrored in config so Cap CLI does not execute `registerPlugin` when loading config).
 - `test/ota-config-contract.test.mjs` — source-regex contract for config + bridge surface.
 
 ### Native wiring
@@ -278,13 +278,13 @@ iOS pods / Android Gradle plugin registration for Capgo is **not** checked in fr
 
 | Env | Purpose |
 |---|---|
-| `OPENCHAMBER_OTA_CHANNEL` | Bake shell channel at `mobile:sync` (`stable` or default `beta`) |
-| `OPENCHAMBER_OTA_UPDATE_URL` | Override the Capgo check endpoint (default `https://openchamber.xiaobe.top/v1/ota/check`) |
-| `OPENCHAMBER_OTA_PUBLIC_KEY` | Optional E2E encryption public key; empty / unset = unencrypted bundles |
+| `YURI_OTA_CHANNEL` | Bake shell channel at `mobile:sync` (`stable` or default `beta`) |
+| `YURI_OTA_UPDATE_URL` | Ownership-verified Capgo check endpoint; unset disables the endpoint |
+| `YURI_OTA_PUBLIC_KEY` | Optional E2E encryption public key; empty / unset = unencrypted bundles |
 
 ### `shellApiVersion` bump rule
 
-`OpenChamberOTA.shellApiVersion` / `OPENCHAMBER_SHELL_API_VERSION` is the native bridge contract version. **Bump it when any custom Capacitor plugin method surface changes.** OTA manifests declare `minShellApiVersion`; older shells should receive `install_native_required` instead of a JS bundle that would call missing native APIs.
+`YuriOTA.shellApiVersion` / `YURI_SHELL_API_VERSION` is the native bridge contract version. **Bump it when any custom Capacitor plugin method surface changes.** OTA manifests declare `minShellApiVersion`; older shells should receive `install_native_required` instead of a JS bundle that would call missing native APIs.
 
 ### Related endpoints / CI
 

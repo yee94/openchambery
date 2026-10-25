@@ -1,7 +1,7 @@
 /**
  * Session-goal Host capability for the current OpenCode surface.
  *
- * Goal records live in the OpenChamber session-metadata store
+ * Goal records live in the Yuri session-metadata store
  * (`packages/web/server/lib/session-metadata/`), not OpenCode SessionInfo.
  * When the store + scheduled-task / route persist seams are wired, advertise
  * supported so create·resume·edit paths write trackable goal state.

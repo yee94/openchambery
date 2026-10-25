@@ -17,7 +17,7 @@ type ComposerAutocompleteLayerProps = {
  * the panel under transformed ancestors (session swipe / shell), and using
  * the visual-viewport bottom for `bottom` parked catalogs under the Android
  * IME on small screens. iOS WebKit also cannot frost the transcript from an
- * `absolute` child of `.oc-mobile-composer` (`will-change: transform`).
+ * `absolute` child of `.yuri-mobile-composer` (`will-change: transform`).
  */
 export const ComposerAutocompleteLayer = React.forwardRef<HTMLDivElement, ComposerAutocompleteLayerProps>(({
   isMobile,

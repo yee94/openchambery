@@ -37,7 +37,7 @@ vi.mock('@/sync/session-ui-store', () => ({
   routeMessage: mocks.routeMessage,
   useSessionUIStore: {
     getState: () => ({
-      markSessionAsOpenChamberCreated: vi.fn(() => undefined),
+      markSessionAsYuriCreated: vi.fn(() => undefined),
       setWorktreeMetadata: (sessionId: string, metadata: { path: string }) => {
         mocks.worktreeMetadataCalls.push({ sessionId, path: metadata.path });
       },
@@ -104,7 +104,7 @@ vi.mock('@/lib/worktrees/worktreeStatus', () => ({
   getRootBranch: vi.fn(() => Promise.resolve('main')),
 }));
 
-vi.mock('@/lib/openchamberConfig', () => ({
+vi.mock('@/lib/yuriConfig', () => ({
   getWorktreeSetupWaitEnabled: vi.fn(() => Promise.resolve(mocks.state.waitForWorktreeSetup)),
   saveWorktreeSetupCommands: vi.fn(() => Promise.resolve()),
 }));

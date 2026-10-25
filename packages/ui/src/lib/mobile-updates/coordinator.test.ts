@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
     isPluginAvailable: boolean;
     platform: string;
     config: {
-      OpenChamberOTA?: {
+      YuriOTA?: {
         channel: 'beta' | 'stable';
         shellApiVersion: number;
       };
@@ -32,13 +32,14 @@ const mocks = vi.hoisted(() => {
     isPluginAvailable: true,
     platform: 'ios',
     config: {
-      OpenChamberOTA: {
+      YuriOTA: {
         channel: 'beta',
         shellApiVersion: 2,
       },
     },
   };
-  return { updater, capacitorState };
+  const getInfo = vi.fn(async () => ({ version: '1.2.3', build: '45', id: 'com.yee94.yuri', name: 'Yuri' }));
+  return { updater, capacitorState, getInfo };
 });
 
 vi.mock('@capacitor/core', () => ({
@@ -59,7 +60,7 @@ vi.mock('@capacitor/core', () => ({
 
 vi.mock('@capacitor/app', () => ({
   App: {
-    getInfo: vi.fn(async () => ({ version: '1.2.3', build: '45', id: 'app', name: 'OpenChamber' })),
+    getInfo: mocks.getInfo,
   },
 }));
 
@@ -92,11 +93,12 @@ const sampleDecision = (overrides: Partial<MobileUpdateDecision> = {}): MobileUp
 describe('mobile OTA coordinator', () => {
   beforeEach(() => {
     resetCapgoUpdaterCache();
+    mocks.getInfo.mockResolvedValue({ version: '1.2.3', build: '45', id: 'com.yee94.yuri', name: 'Yuri' });
     mocks.capacitorState.isNativePlatform = true;
     mocks.capacitorState.isPluginAvailable = true;
     mocks.capacitorState.platform = 'ios';
     mocks.capacitorState.config = {
-      OpenChamberOTA: { channel: 'beta', shellApiVersion: 2 },
+      YuriOTA: { channel: 'beta', shellApiVersion: 2 },
     };
     mocks.updater.current.mockResolvedValue({ bundle: { id: 'builtin', version: 'builtin' }, native: '1.2.3' });
     mocks.updater.getDeviceId.mockResolvedValue({ deviceId: 'device-abc' });
@@ -109,6 +111,7 @@ describe('mobile OTA coordinator', () => {
     expect(body).toMatchObject({
       channel: 'beta',
       platform: 'ios',
+      applicationId: 'com.yee94.yuri',
       deviceId: 'device-abc',
       nativeVersion: '1.2.3',
       nativeBuild: 45,
@@ -116,6 +119,31 @@ describe('mobile OTA coordinator', () => {
       currentBundleId: 'builtin',
       releaseMajor: 1,
     });
+  });
+
+  test.each(['com.example.legacy', ''])('reports the native identity without inventing Yuri identity (%s)', async (id) => {
+    mocks.getInfo.mockResolvedValue({ version: '1.2.3', build: '45', id, name: 'Yuri' });
+    const bodies: unknown[] = [];
+    const decision = await checkMobileOtaUpdate({ updater: mocks.updater, fetchImpl: vi.fn(async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify(sampleDecision({ primaryAction: 'install_native_required', ota: { state: 'incompatible' }, native: { state: 'required' } })));
+    }) });
+    expect(decision.primaryAction).toBe('install_native_required');
+    expect((bodies[0] as { applicationId?: string }).applicationId).toBe(id || undefined);
+    expect(mocks.updater.download).not.toHaveBeenCalled();
+  });
+
+  test('does not derive native identity from web bundle or config when App.getInfo fails', async () => {
+    mocks.getInfo.mockRejectedValue(new Error('native plugin unavailable'));
+    expect((await assembleMobileOtaCheckRequest({ updater: mocks.updater })).applicationId).toBeUndefined();
+  });
+
+  test('blocks old shells from downloading Yuri OTA even if a stale service offers it', async () => {
+    mocks.getInfo.mockResolvedValue({ version: '1.2.3', build: '45', id: 'com.example.legacy', name: 'Yuri' });
+    const bundle: MobileOtaBundleInfo = { bundleId: 'next', releaseVersion: '1.2.4', url: 'https://updates.example/bundle.zip', size: 1, checksum: 'sha', minShellApiVersion: 1 };
+    await expect(checkMobileOtaUpdate({ updater: mocks.updater, fetchImpl: vi.fn(async () => new Response(JSON.stringify(sampleDecision({ primaryAction: 'apply_ota', ota: { state: 'available', bundle } })))) })).rejects.toThrow('requires the Yuri native application');
+    await expect(downloadOtaBundle(bundle)).rejects.toThrow('requires the Yuri native application');
+    expect(mocks.updater.download).not.toHaveBeenCalled();
   });
 
   test('reports the running web major even when native shell still reports 1.x', async () => {
@@ -155,9 +183,9 @@ describe('mobile OTA coordinator', () => {
     expect(body.shellApiVersion).toBe(1);
   });
 
-  test('channelOverride wins over the baked OpenChamberOTA.channel', async () => {
+  test('channelOverride wins over the baked YuriOTA.channel', async () => {
     mocks.capacitorState.config = {
-      OpenChamberOTA: { channel: 'beta', shellApiVersion: 2 },
+      YuriOTA: { channel: 'beta', shellApiVersion: 2 },
     };
     const stableBody = await assembleMobileOtaCheckRequest({
       updater: mocks.updater,
@@ -166,7 +194,7 @@ describe('mobile OTA coordinator', () => {
     expect(stableBody.channel).toBe('stable');
 
     mocks.capacitorState.config = {
-      OpenChamberOTA: { channel: 'stable', shellApiVersion: 2 },
+      YuriOTA: { channel: 'stable', shellApiVersion: 2 },
     };
     const betaBody = await assembleMobileOtaCheckRequest({
       updater: mocks.updater,
@@ -177,7 +205,7 @@ describe('mobile OTA coordinator', () => {
 
   test('omitting channelOverride follows the baked channel', async () => {
     mocks.capacitorState.config = {
-      OpenChamberOTA: { channel: 'stable', shellApiVersion: 2 },
+      YuriOTA: { channel: 'stable', shellApiVersion: 2 },
     };
     const body = await assembleMobileOtaCheckRequest({ updater: mocks.updater });
     expect(body.channel).toBe('stable');
@@ -187,7 +215,7 @@ describe('mobile OTA coordinator', () => {
     // Simulate: baked channel is stable, user opts into beta — identity must
     // follow the effective (override) channel, not the baked one.
     mocks.capacitorState.config = {
-      OpenChamberOTA: { channel: 'stable', shellApiVersion: 2 },
+      YuriOTA: { channel: 'stable', shellApiVersion: 2 },
     };
     mocks.updater.current.mockResolvedValue({
       bundle: { id: 'builtin', version: '1.18.2' },

@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { canUseElectronDesktopIPC, invokeDesktop } from '@/lib/desktop';
 
 /** Chromium/webview zoom bounds — matches typical Electron zoomIn/Out range. */
@@ -6,7 +7,7 @@ export const WEBVIEW_ZOOM_MAX = 3;
 export const WEBVIEW_ZOOM_STEP = 0.1;
 export const WEBVIEW_ZOOM_DEFAULT = 1;
 
-const WEB_ZOOM_STORAGE_KEY = 'oc.webviewZoomFactor';
+const WEB_ZOOM_STORAGE_KEY = 'yuri.webviewZoomFactor';
 
 const clampZoomFactor = (factor: number): number => {
   if (!Number.isFinite(factor)) return WEBVIEW_ZOOM_DEFAULT;

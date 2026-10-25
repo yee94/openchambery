@@ -386,8 +386,8 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         ? t('diffView.actions.collapseAll')
         : t('diffView.actions.expandAll');
       const toggleViewLabel = isTreeView
-        ? t('settings.openchamber.git.option.flatList')
-        : t('settings.openchamber.git.option.treeView');
+        ? t('settings.yuri.git.option.flatList')
+        : t('settings.yuri.git.option.treeView');
       return (
         <div
           className={cn(
@@ -599,7 +599,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
 
   return (
     <>
-      <div className="oc-changes-panel relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <div className="yuri-changes-panel relative flex h-full min-h-0 w-full flex-col overflow-hidden">
         {pinnedGroup ? (
           <div className={cn('shrink-0', headerBackgroundClassName)}>
             {renderHeader(pinnedGroup, { pinned: true, showToolbar: true })}

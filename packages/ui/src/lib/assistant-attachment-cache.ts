@@ -1,3 +1,4 @@
+import { migrateBrandIndexedDB } from '@/lib/brand-storage-migration';
 /**
  * Independent assistant-attachment cache lane (UI lib only).
  *
@@ -37,7 +38,7 @@ export const ASSISTANT_ATTACHMENT_CACHE_MAX_ENTRIES = 200;
 /** Display/download bound for legacy descriptors (native ceiling); upload stays 25 MiB. */
 export const ASSISTANT_ATTACHMENT_DISPLAY_MAX_BYTES = RELAY_IMAGE_MAX_BYTES;
 
-const IDB_NAME = 'openchamber-assistant-attachments';
+const IDB_NAME = 'yuri-assistant-attachments';
 const IDB_VERSION = 2;
 const IDB_META = 'meta';
 const IDB_DATA = 'data';
@@ -253,7 +254,8 @@ const getIndexedDB = (): IDBFactory | null => {
   return null;
 };
 
-const openIdb = (): Promise<IDBDatabase | null> => {
+const openIdb = async (): Promise<IDBDatabase | null> => {
+  await migrateBrandIndexedDB(IDB_NAME);
   if (idbDisabled) return Promise.resolve(null);
   if (idbPromise) return idbPromise;
   idbPromise = new Promise((resolve) => {
@@ -574,7 +576,7 @@ const throwIfAborted = (signal?: AbortSignal): void => {
 };
 
 const attachmentPath = (assistantID: string, attachmentID: string): string =>
-  `/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/attachments/${encodeURIComponent(attachmentID)}`;
+  `/api/yuri/assistants/${encodeURIComponent(assistantID)}/contact/attachments/${encodeURIComponent(attachmentID)}`;
 
 const streamDownloadVerified = async (
   assistantID: string,
@@ -1120,7 +1122,7 @@ const releaseDisplayFlightOrphan = (flight: DisplayInflight, cacheKey: string): 
 };
 
 /**
- * Materialize a display URL (native openchamber-asset or object URL).
+ * Materialize a display URL (native yuri-asset or object URL).
  * Flight owns its AbortController; external subscriber aborts only leave the
  * flight when the last subscriber exits (mirrors downloadSingleflight).
  */

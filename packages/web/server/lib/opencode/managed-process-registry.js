@@ -1,6 +1,6 @@
 // Managed OpenCode process registry + orphan reaper.
 //
-// OpenChamber spawns the OpenCode server as an EXTERNAL child binary (on Unix
+// Yuri spawns the OpenCode server as an EXTERNAL child binary (on Unix
 // with `detached: true`, so it leads its own process group). That binary can
 // therefore outlive its parent if the parent is hard-killed/crashes/`Ctrl+C`ed
 // before graceful teardown runs — leaving an orphaned `opencode serve` that
@@ -41,13 +41,13 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const resolveRegistryDir = () => {
-  const override = process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY;
+  const override = process.env.YURI_MANAGED_PROCESS_REGISTRY;
   if (override && override.trim()) return override.trim();
-  // Prefer the active OpenChamber data dir (Preview/dev isolate this under
+  // Prefer the active Yuri data dir (Preview/dev isolate this under
   // Electron userData) so managed-OpenCode reapers never cross product profiles.
-  const dataDir = typeof process.env.OPENCHAMBER_DATA_DIR === 'string' ? process.env.OPENCHAMBER_DATA_DIR.trim() : '';
+  const dataDir = typeof process.env.YURI_DATA_DIR === 'string' ? process.env.YURI_DATA_DIR.trim() : '';
   if (dataDir) return path.join(dataDir, 'managed-opencode');
-  return path.join(os.homedir(), '.config', 'openchamber', 'managed-opencode');
+  return path.join(os.homedir(), '.config', 'yuri', 'managed-opencode');
 };
 
 const entryFilePath = (pid) => path.join(resolveRegistryDir(), `${pid}.json`);

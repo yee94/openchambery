@@ -9,10 +9,10 @@ import { resolveSmallModel, parseModelRef } from './resolve.js';
 import { generateCustomSummaryText, listCustomSummaryModels, testCustomSummaryApi } from './custom-api.js';
 import { summaryErrorMessage } from './error-details.js';
 
-const OPENCHAMBER_SETTINGS_FILE = path.join(
-  process.env.OPENCHAMBER_DATA_DIR
-    ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-    : path.join(os.homedir(), '.config', 'openchamber'),
+const YURI_SETTINGS_FILE = path.join(
+  process.env.YURI_DATA_DIR
+    ? path.resolve(process.env.YURI_DATA_DIR)
+    : path.join(os.homedir(), '.config', 'yuri'),
   'settings.json',
 );
 
@@ -20,7 +20,7 @@ const SUMMARY_PURPOSES = new Set(['commit', 'session-title']);
 
 const readSummarySettings = () => {
   try {
-    const raw = fs.readFileSync(OPENCHAMBER_SETTINGS_FILE, 'utf8');
+    const raw = fs.readFileSync(YURI_SETTINGS_FILE, 'utf8');
     const settings = JSON.parse(raw);
     if (!settings || typeof settings !== 'object') return null;
     const mode = settings.summaryModelMode === 'custom' ? 'custom' : 'provider';
@@ -49,11 +49,11 @@ const readSummarySettings = () => {
   }
 };
 
-// OpenChamber's own settings: when the user unchecks "use default small model"
+// Yuri's own settings: when the user unchecks "use default small model"
 // their explicit override outranks every other resolution step.
 const readSmallModelSettingsOverride = () => {
   try {
-    const raw = fs.readFileSync(OPENCHAMBER_SETTINGS_FILE, 'utf8');
+    const raw = fs.readFileSync(YURI_SETTINGS_FILE, 'utf8');
     const settings = JSON.parse(raw);
     if (!settings || typeof settings !== 'object') return null;
     if (settings.smallModelUseDefault !== false) return null;
@@ -236,7 +236,7 @@ export function createSmallModelService(dependencies) {
 
   /**
    * Generates text with the user's small model, resolved server-side from
-   * OpenChamber settings, the OpenCode config, and the connected catalog.
+   * Yuri settings, the OpenCode config, and the connected catalog.
    */
   async function generateSmallModelText({
     prompt,

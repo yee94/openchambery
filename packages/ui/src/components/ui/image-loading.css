@@ -1,5 +1,5 @@
 @layer components {
-.oc-image-loading {
+.yuri-image-loading {
   display: block;
   position: relative;
   overflow: hidden;
@@ -10,7 +10,7 @@
   isolation: isolate;
 }
 
-.oc-image-loading::after {
+.yuri-image-loading::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -20,22 +20,22 @@
   mask-repeat: no-repeat;
   mask-size: 74% 64%, 54% 54%;
   mask-position: 16% 20%, 30% 32%;
-  animation: oc-image-loading-drift 4.2s ease-in-out infinite, oc-image-loading-breathe 1.9s ease-in-out infinite;
+  animation: yuri-image-loading-drift 4.2s ease-in-out infinite, yuri-image-loading-breathe 1.9s ease-in-out infinite;
 }
 
-@keyframes oc-image-loading-drift {
+@keyframes yuri-image-loading-drift {
   0%, 100% { mask-size: 74% 64%, 54% 54%; mask-position: 16% 20%, 30% 32%; }
   25% { mask-size: 64% 82%, 59% 51%; mask-position: 84% 16%, 66% 30%; }
   50% { mask-size: 83% 62%, 51% 62%; mask-position: 82% 84%, 62% 68%; }
   75% { mask-size: 67% 75%, 62% 54%; mask-position: 14% 82%, 34% 66%; }
 }
 
-@keyframes oc-image-loading-breathe {
+@keyframes yuri-image-loading-breathe {
   0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
 }
 
-.oc-image-frame {
+.yuri-image-frame {
   position: relative;
   display: inline-grid;
   max-width: 100%;
@@ -43,12 +43,12 @@
   border-radius: 0.5rem;
 }
 
-.oc-image-frame > img {
+.yuri-image-frame > img {
   grid-area: 1 / 1;
   min-width: 0;
 }
 
-.oc-image-frame[data-image-state]:not([data-image-state='loaded']):not([data-image-fill]):not([data-image-content]) {
+.yuri-image-frame[data-image-state]:not([data-image-state='loaded']):not([data-image-fill]):not([data-image-content]) {
   min-width: min(12rem, 100%);
   min-height: 12rem;
 }
@@ -56,24 +56,24 @@
 /* Transcript images reserve the same compact frame in every loading phase.
    Full-size viewing belongs to the preview. */
 :root {
-  --oc-content-image-height: 10rem;
+  --yuri-content-image-height: 10rem;
 }
 
 /* Absolute widths only: a percentage width inside a shrink-to-fit bubble is
    cyclic and collapses an image-only bubble to 0px. max-width then clamps to
    the column. Mobile asks for more than any bubble so it fills the bubble. */
-.oc-image-frame[data-image-content] {
+.yuri-image-frame[data-image-content] {
   display: block;
   width: 20rem;
   max-width: 100%;
-  height: var(--oc-content-image-height);
+  height: var(--yuri-content-image-height);
 }
 
-.oc-image-frame[data-image-content='mobile'] {
+.yuri-image-frame[data-image-content='mobile'] {
   width: 48rem;
 }
 
-.oc-image-frame[data-image-content] > img {
+.yuri-image-frame[data-image-content] > img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -82,19 +82,19 @@
   object-position: left center;
 }
 
-.oc-image-frame[data-image-fill] {
+.yuri-image-frame[data-image-fill] {
   width: 100%;
   height: 100%;
 }
 
-.oc-image-frame > .oc-image-loading,
-.oc-image-frame > .oc-image-error {
+.yuri-image-frame > .yuri-image-loading,
+.yuri-image-frame > .yuri-image-error {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-.oc-image-error {
+.yuri-image-error {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -110,7 +110,7 @@
 [data-md-image-presentation='true'] {
   width: 20rem;
   max-width: 100%;
-  height: var(--oc-content-image-height);
+  height: var(--yuri-content-image-height);
   border-radius: 0.75rem;
 }
 
@@ -128,24 +128,24 @@
 }
 
 [data-md-image-presentation='true'] > img:not([data-md-image-state='loaded']) { opacity: 0; }
-[data-md-image-presentation='true']:has(img[data-md-image-state='loading']) .oc-image-loading > *,
-[data-md-image-presentation='true']:has(img[data-md-image-state='placeholder']) .oc-image-loading > * { visibility: hidden; }
-[data-md-image-presentation='true']:has(img[data-md-image-state='error']) .oc-image-loading::after { animation: none; }
+[data-md-image-presentation='true']:has(img[data-md-image-state='loading']) .yuri-image-loading > *,
+[data-md-image-presentation='true']:has(img[data-md-image-state='placeholder']) .yuri-image-loading > * { visibility: hidden; }
+[data-md-image-presentation='true']:has(img[data-md-image-state='error']) .yuri-image-loading::after { animation: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-image-loading::after { animation: none; }
+  .yuri-image-loading::after { animation: none; }
 }
 }
 
 /* Unlayered on purpose: Markdown themes have unlayered intrinsic-image rules.
    The frame owns geometry even when a lazy theme stylesheet arrives later. */
-:is(.oc-image-frame[data-image-content], [data-md-image-presentation='true']) {
+:is(.yuri-image-frame[data-image-content], [data-md-image-presentation='true']) {
   position: relative;
   overflow: clip;
 }
 
-:is(.oc-image-frame[data-image-content], [data-md-image-presentation='true']) > img,
-.oc-markstream-host .markstream-react .oc-image-frame[data-image-content] > img {
+:is(.yuri-image-frame[data-image-content], [data-md-image-presentation='true']) > img,
+.yuri-markstream-host .markstream-react .yuri-image-frame[data-image-content] > img {
   display: block;
   position: absolute;
   inset: 0;
@@ -159,36 +159,36 @@
 
 /* Decoded images participate in intrinsic width sizing; only pending frames
    need a placeholder width. Height stays reserved through the transition. */
-.oc-image-frame[data-image-content][data-image-state='loaded'],
+.yuri-image-frame[data-image-content][data-image-state='loaded'],
 [data-md-image-presentation='true']:has(> img[data-md-image-state='loaded']) {
   width: fit-content;
 }
 
-.oc-image-frame[data-image-content][data-image-state='loaded'] > img,
-.oc-markstream-host .markstream-react .oc-image-frame[data-image-content][data-image-state='loaded'] > img,
+.yuri-image-frame[data-image-content][data-image-state='loaded'] > img,
+.yuri-markstream-host .markstream-react .yuri-image-frame[data-image-content][data-image-state='loaded'] > img,
 [data-md-image-presentation='true'] > img[data-md-image-state='loaded'] {
   position: static;
   width: auto;
-  height: var(--oc-content-image-height);
+  height: var(--yuri-content-image-height);
 }
 
 /* Contact media has no text-bubble backing. Round the actual image bounds,
    not a contain-fit letterbox, while retaining the frame's reserved height. */
-[data-assistant-contact-media] :is(.oc-image-frame[data-image-content], [data-md-image-presentation='true']) {
+[data-assistant-contact-media] :is(.yuri-image-frame[data-image-content], [data-md-image-presentation='true']) {
   margin: 0;
   border-radius: 1.35rem;
 }
 
-[data-assistant-contact-media] .oc-image-frame[data-image-content][data-image-state='loaded'],
+[data-assistant-contact-media] .yuri-image-frame[data-image-content][data-image-state='loaded'],
 [data-assistant-contact-media] [data-md-image-presentation='true']:has(> img[data-md-image-state='loaded']) {
   display: flex;
   align-items: center;
 }
 
-[data-assistant-contact-media] .oc-image-frame[data-image-content][data-image-state='loaded'] > img,
-[data-assistant-contact-media] .oc-markstream-host .markstream-react .oc-image-frame[data-image-content][data-image-state='loaded'] > img,
+[data-assistant-contact-media] .yuri-image-frame[data-image-content][data-image-state='loaded'] > img,
+[data-assistant-contact-media] .yuri-markstream-host .markstream-react .yuri-image-frame[data-image-content][data-image-state='loaded'] > img,
 [data-assistant-contact-media] [data-md-image-presentation='true'] > img[data-md-image-state='loaded'] {
   height: auto;
-  max-height: var(--oc-content-image-height);
+  max-height: var(--yuri-content-image-height);
   border-radius: 1.35rem;
 }

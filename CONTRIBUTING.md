@@ -1,12 +1,12 @@
-# Contributing to OpenChamber
+# Contributing to Yuri
 
 ## Getting Started
 
 Repository development uses Node.js 24. Activate the version from `.nvmrc` before installing dependencies or running development commands.
 
 ```bash
-git clone https://github.com/yee94/openchamber.git
-cd openchamber
+git clone https://github.com/yee94/yuri.git
+cd yuri
 nvm use
 bun install
 ```
@@ -34,7 +34,7 @@ Run commands from the project root unless a section says otherwise.
 | `bun run dev:web:hmr` | Vite dev server + Express API. **Open the Vite URL for HMR**, not the backend. | `5180` (Vite HMR), `3902` (API) |
 | `bun run start:web` | Start the packaged web server. | `3000` by default |
 
-Both are configurable via env vars: `OPENCHAMBER_PORT`, `OPENCHAMBER_HMR_UI_PORT`, `OPENCHAMBER_HMR_API_PORT`.
+Both are configurable via env vars: `YURI_PORT`, `YURI_HMR_UI_PORT`, `YURI_HMR_API_PORT`.
 The watched API validates and repairs the active Node.js `better-sqlite3` binding before every restart.
 
 ### Desktop (Electron)
@@ -61,9 +61,9 @@ bun run vscode:build    # Build extension + webview
 bun run vscode:package  # Create a local .vsix package
 ```
 
-`bun run vscode:dev` opens an Extension Development Host automatically. You can override the editor or workspace with `OPENCHAMBER_VSCODE_BIN` and `OPENCHAMBER_VSCODE_DEV_WORKSPACE`.
+`bun run vscode:dev` opens an Extension Development Host automatically. You can override the editor or workspace with `YURI_VSCODE_BIN` and `YURI_VSCODE_DEV_WORKSPACE`.
 
-Example: `OPENCHAMBER_VSCODE_BIN=cursor bun run vscode:dev`.
+Example: `YURI_VSCODE_BIN=cursor bun run vscode:dev`.
 
 ### Shared UI (`packages/ui`)
 
@@ -88,7 +88,7 @@ bun run lint:ui
 | `bun run electron:build` | Build packaged desktop app for the current OS |
 | `bun run vscode:build` | Build the VS Code extension |
 | `bun run vscode:package` | Package the VS Code extension as `.vsix` |
-| `bun run pack:web` | Create a package archive for `@openchambery/web` |
+| `bun run pack:web` | Create a package archive for `@yuri/web` |
 
 ## Platform Build Notes
 
@@ -162,4 +162,4 @@ You can still help:
 
 ## Questions?
 
-Open an [issue](https://github.com/yee94/openchamber/issues) or ask in [Discord](https://discord.gg/ZYRSdnwwKA).
+Open an [issue](https://github.com/yee94/yuri/issues) or ask in [Discord](https://discord.gg/ZYRSdnwwKA).

@@ -70,7 +70,7 @@ export function createTerminalRuntime({
   const getTerminalShellCandidates = () => {
     if (process.platform === 'win32') {
       const windowsCandidates = [
-        process.env.OPENCHAMBER_TERMINAL_SHELL,
+        process.env.YURI_TERMINAL_SHELL,
         process.env.SHELL,
         process.env.ComSpec,
         path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
@@ -97,7 +97,7 @@ export function createTerminalRuntime({
     }
 
     const unixCandidates = [
-      process.env.OPENCHAMBER_TERMINAL_SHELL,
+      process.env.YURI_TERMINAL_SHELL,
       process.env.SHELL,
       '/bin/zsh',
       '/bin/bash',

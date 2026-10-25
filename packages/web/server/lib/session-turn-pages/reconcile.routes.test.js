@@ -31,8 +31,8 @@ const response = () => ({
   },
 });
 
-const RECONCILE_ROUTE = '/api/openchamber/sessions/:sessionID/messages/reconcile';
-const TURN_ROUTE = '/api/openchamber/sessions/:sessionID/messages';
+const RECONCILE_ROUTE = '/api/yuri/sessions/:sessionID/messages/reconcile';
+const TURN_ROUTE = '/api/yuri/sessions/:sessionID/messages';
 
 const successPage = (overrides = {}) => ({
   ok: true,

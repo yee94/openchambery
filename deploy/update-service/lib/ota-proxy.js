@@ -17,7 +17,6 @@
  * Channel manifests and CHANGELOG never forward Range.
  */
 
-const DEFAULT_UPSTREAM_ORIGIN = 'https://openchamber-update.vercel.app';
 const UPSTREAM_TIMEOUT_MS = 20_000;
 
 // Content-addressed, immutable artifacts — safe for long edge caching.
@@ -51,7 +50,8 @@ function upstreamUnavailable() {
  * forwarding to the Vercel origin. Returns a `Response`; never throws.
  */
 export async function handleOtaProxyRequest(request, options = {}) {
-  const origin = options.upstreamOrigin ?? DEFAULT_UPSTREAM_ORIGIN;
+  const origin = options.upstreamOrigin;
+  if (!origin) return upstreamUnavailable();
   const fetchImpl = options.fetchImpl ?? fetch;
 
   const method = request.method.toUpperCase();

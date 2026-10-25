@@ -14,7 +14,7 @@ async function* synthesize(ticket: SpeechTicket, text: string, signal: AbortSign
     } : {}),
   };
   const payload = (event: number, withText = false) => ({
-    user: { uid: 'openchamber' }, namespace: 'BidirectionalTTS', event,
+    user: { uid: 'yuri' }, namespace: 'BidirectionalTTS', event,
     req_params: { ...params, ...(withText ? { text } : {}) },
   });
   let state: 'connection' | 'session' | 'audio' = 'connection';

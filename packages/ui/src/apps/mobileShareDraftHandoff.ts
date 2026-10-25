@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { draftKeyString, draftRootAttachmentOccurrenceRefID, surfaceDraftKey, type DraftAttachmentMetadata, type DraftKey } from '@/sync/input-draft-types';
 import type { DraftCommitResult, DraftSnapshot, InputDraftRuntimeCapture } from '@/sync/input-store';
 
@@ -10,7 +11,7 @@ export const isAssignedNativeShareDraft = (draft: NativeShareDraft): draft is As
 export type MobileShareDraftHandoffTarget = { draftID: string; serverInstanceID: string; connectionKey: string; assistantID: string; transportIdentity: string };
 type JournalRecord = MobileShareDraftHandoffTarget & { targetDraftKey: DraftKey; baseRevision: number | 'absent'; resultText: string; attachmentIDs: string[]; phase: 'materializing' | 'materialized' | 'cancelled' };
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
-export const MOBILE_SHARE_DRAFT_HANDOFF_JOURNAL_KEY = 'openchamber.mobile-share.draft-handoff.v1';
+export const MOBILE_SHARE_DRAFT_HANDOFF_JOURNAL_KEY = 'yuri.mobile-share.draft-handoff.v1';
 export const MOBILE_SHARE_HANDOFF_MARKER_PREFIX = 'mobile-share-handoff:';
 const MAX_ANDROID_SHARE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_ANDROID_SHARE_TOTAL_BYTES = 20 * 1024 * 1024;

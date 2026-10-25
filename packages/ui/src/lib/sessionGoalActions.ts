@@ -22,7 +22,7 @@ const writeGoal = (
   update: (currentGoal: Record<string, unknown> | null) => Record<string, unknown> | null,
 ) =>
   patchSessionMetadata(sessionId, directory, (metadata) => {
-    const namespace = isRecord(metadata.openchamber) ? metadata.openchamber : {};
+    const namespace = isRecord(metadata.yuri) ? metadata.yuri : {};
     const currentGoal = isRecord(namespace.goal) ? namespace.goal : null;
     const nextGoal = update(currentGoal);
     const nextNamespace = { ...namespace };
@@ -32,7 +32,7 @@ const writeGoal = (
       // Metadata writes are Merge Patch: omission preserves the stored goal.
       nextNamespace.goal = null;
     }
-    return { ...metadata, openchamber: nextNamespace };
+    return { ...metadata, yuri: nextNamespace };
   });
 
 // File-backed objectives: the text lives in a server-side file keyed by the

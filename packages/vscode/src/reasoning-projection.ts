@@ -1,9 +1,9 @@
 /**
- * OpenChamber outbound reasoning projection (VS Code Extension Host).
+ * Yuri outbound reasoning projection (VS Code Extension Host).
  *
  * `includeReasoning=false` (strict string only) strips reasoning from
  * Host→webview HTTP/SSE payloads. Missing/other values keep current behavior.
- * OpenChamber-only — never forward the param to OpenCode.
+ * Yuri-only — never forward the param to OpenCode.
  *
  * Parity with packages/web/server/lib/event-stream/reasoning-projection.js
  * (surface used by sseProxy + bridge-proxy / turn-page).
@@ -42,17 +42,17 @@ export function readIncludeReasoningQuery(query: unknown): boolean {
 export function readIncludeReasoningFromUrl(rawUrl: string): boolean {
   if (typeof rawUrl !== 'string' || !rawUrl.includes('includeReasoning=')) return true;
   try {
-    return shouldIncludeReasoning(new URL(rawUrl, 'http://openchamber.local').searchParams.get('includeReasoning'));
+    return shouldIncludeReasoning(new URL(rawUrl, 'http://yuri.local').searchParams.get('includeReasoning'));
   } catch {
     return true;
   }
 }
 
-/** Strip OpenChamber-only `includeReasoning` before OpenCode upstream. */
+/** Strip Yuri-only `includeReasoning` before OpenCode upstream. */
 export function stripIncludeReasoningParam(requestUrl: string): string {
   if (typeof requestUrl !== 'string' || !requestUrl.includes('includeReasoning=')) return requestUrl;
   try {
-    const url = new URL(requestUrl, 'http://openchamber.local');
+    const url = new URL(requestUrl, 'http://yuri.local');
     if (!url.searchParams.has('includeReasoning')) return requestUrl;
     url.searchParams.delete('includeReasoning');
     const search = url.searchParams.toString();

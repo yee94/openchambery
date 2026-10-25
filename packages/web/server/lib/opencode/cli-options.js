@@ -5,10 +5,10 @@ export const parseServeCliOptions = ({
 }) => {
   const args = Array.isArray(argv) ? [...argv] : [];
   const envPassword =
-    env.OPENCHAMBER_UI_PASSWORD ||
+    env.YURI_UI_PASSWORD ||
     env.OPENCODE_UI_PASSWORD ||
     null;
-  const envApiOnly = env.OPENCHAMBER_API_ONLY === '1' || env.OPENCHAMBER_API_ONLY === 'true';
+  const envApiOnly = env.YURI_API_ONLY === '1' || env.YURI_API_ONLY === 'true';
 
   const options = {
     port: defaultPort,

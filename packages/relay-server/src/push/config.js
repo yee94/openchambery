@@ -4,8 +4,8 @@ import { isIP } from 'node:net';
 export const DEFAULT_HOST = '127.0.0.1';
 export const DEFAULT_PORT = 8788;
 export const DEFAULT_DATABASE_PATH = './data/push-relay.sqlite';
-export const DEFAULT_BUNDLE_ID = 'com.yee94.openchamber';
-export const ENV_PREFIX = 'OPENCHAMBER_PUSH_RELAY_';
+export const DEFAULT_BUNDLE_ID = 'com.yee94.yuri';
+export const ENV_PREFIX = 'YURI_PUSH_RELAY_';
 export const DEFAULT_LIMITS = {
   timestampSkewMs: 300_000,
   replayMs: 600_000,

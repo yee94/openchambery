@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
 
 const readExpectedVersion = () => {
-  const version = process.env.OPENCHAMBER_OPENCODE2_VERSION || PINNED_OPENCODE2_VERSION;
+  const version = process.env.YURI_OPENCODE2_VERSION || PINNED_OPENCODE2_VERSION;
   if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
     throw new Error(`Expected pinned opencode2 to be an exact version, got: ${version || '(missing)'}`);
   }

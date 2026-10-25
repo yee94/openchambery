@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 /**
  * Session UI Store — ephemeral UI state only.
  *
@@ -37,7 +38,7 @@ import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { normalizePath } from "@/lib/pathNormalization"
 import { waitForPendingDraftWorktreeRequest } from "@/lib/worktrees/pendingDraftWorktree"
 import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap"
-import { getWorktreeSetupWaitEnabled } from "@/lib/openchamberConfig"
+import { getWorktreeSetupWaitEnabled } from "@/lib/yuriConfig"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { useWorktreeOrderStore } from "@/stores/useWorktreeOrderStore"
 import { createUuid } from "@/lib/uuid"
@@ -639,10 +640,10 @@ export type SessionUIState = {
   clearAbortPrompt: () => void
   armAbortPrompt: (durationMs?: number) => number | null
   clearError: () => void
-  markSessionAsOpenChamberCreated: (sessionId: string) => void
-  isOpenChamberCreatedSession: (sessionId: string) => boolean
+  markSessionAsYuriCreated: (sessionId: string) => void
+  isYuriCreatedSession: (sessionId: string) => boolean
   getContextUsage: (contextLimit: number, outputLimit: number) => SessionContextUsage | null
-  initializeNewOpenChamberSession: (sessionId: string, agents: unknown[]) => void
+  initializeNewYuriSession: (sessionId: string, agents: unknown[]) => void
   setWorktreeMetadata: (sessionId: string, metadata: WorktreeMetadata | null) => void
   overrideNewSessionDraftTarget: (options: Record<string, unknown>) => void
   resolvePendingDraftWorktreeTarget: (requestId: string, directory: string | null, options?: Record<string, unknown>) => void
@@ -706,7 +707,7 @@ const resolveDirectoryKey = (session: Session): string | null => {
 }
 
 const safeStorage = getDeferredSafeStorage()
-const DRAFT_TARGET_STORAGE_KEY = "oc.chatInput.lastDraftTarget"
+const DRAFT_TARGET_STORAGE_KEY = "yuri.chatInput.lastDraftTarget"
 
 type PersistedDraftTarget = { projectId: string | null; directory: string | null }
 
@@ -1045,7 +1046,7 @@ function recordCreatedSession(created: Session, directory: string | null): void 
     registerSessionDirectory(created.id, sessionDir)
   }
   useGlobalSessionsStore.getState().upsertSession(created)
-  useSessionUIStore.getState().markSessionAsOpenChamberCreated(created.id)
+  useSessionUIStore.getState().markSessionAsYuriCreated(created.id)
 }
 
 async function finalizeDraftSession(
@@ -1078,7 +1079,7 @@ async function finalizeDraftSession(
       useSelectionStore.getState().saveAgentModelForSession(created.id, effectiveDraftAgent, selection.providerID, selection.modelID)
       useSelectionStore.getState().saveAgentModelVariantForSession(created.id, effectiveDraftAgent, selection.providerID, selection.modelID, selection.variant)
     }
-    store.initializeNewOpenChamberSession(created.id, configState.agents ?? [])
+    store.initializeNewYuriSession(created.id, configState.agents ?? [])
     store.setCurrentSession(created.id, createdDirectory)
     promoteProjectForConversation(createdDirectory, useSessionUIStore.getState().availableWorktreesByProject, created)
     if (draftPermissionAutoAcceptEnabled) {
@@ -1366,7 +1367,7 @@ async function handleCombinedDraftSend(params: {
 // the FIRST launch — yielding a single project-scoped config load instead of a
 // worktree+project double-load. Discovery refreshes it in the background.
 // ---------------------------------------------------------------------------
-const WORKTREE_MAP_STORAGE_KEY = 'oc.worktreeMap'
+const WORKTREE_MAP_STORAGE_KEY = 'yuri.worktreeMap'
 
 const loadPersistedWorktreeMap = (): Map<string, WorktreeMetadata[]> => {
   try {
@@ -1972,14 +1973,14 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   clearError: () => set({ error: null }),
 
-  markSessionAsOpenChamberCreated: (sessionId) =>
+  markSessionAsYuriCreated: (sessionId) =>
     set((s) => {
       const next = new Set(s.webUICreatedSessions)
       next.add(sessionId)
       return { webUICreatedSessions: next }
     }),
 
-  isOpenChamberCreatedSession: (sessionId) => get().webUICreatedSessions.has(sessionId),
+  isYuriCreatedSession: (sessionId) => get().webUICreatedSessions.has(sessionId),
 
   getContextUsage: (contextLimit: number, outputLimit: number) => {
     if (get().newSessionDraft?.open) return null
@@ -1997,7 +1998,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     return buildSessionContextUsage(baseline, contextLimit, outputLimit)
   },
 
-  initializeNewOpenChamberSession: () => {
+  initializeNewYuriSession: () => {
     // Stub — was a no-op in old store
   },
 

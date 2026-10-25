@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { openMobileAppUpdateDownload } from './mobileAppUpdateDownload';
 
-const downloadUrl = 'https://example.com/OpenChamber.apk';
+const downloadUrl = 'https://example.com/Yuri.apk';
 
 describe('openMobileAppUpdateDownload', () => {
   test('hands Android updates to the native system-browser plugin', async () => {

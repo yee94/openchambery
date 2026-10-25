@@ -20,7 +20,7 @@ import { createSettingsStore } from './settings-store.mjs';
 const tempDirs = [];
 
 const makeTempDir = async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'openchamber-sync-run-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'yuri-sync-run-'));
   tempDirs.push(dir);
   return dir;
 };

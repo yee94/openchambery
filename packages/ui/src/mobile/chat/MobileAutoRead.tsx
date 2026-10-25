@@ -14,7 +14,7 @@ export function MobileAutoReadProvider({ sessionId, directory, active, children 
     const { t } = useI18n();
     const messages = useSessionMessages(sessionId, directory);
     const resolved = useSessionMessagesResolved(sessionId, directory);
-    const [preference, setPreference] = useLocalStorage('openchamber.auto-read', false);
+    const [preference, setPreference] = useLocalStorage('yuri.auto-read', false);
     const preferred = preference === true;
     const [runtimeEpoch, setRuntimeEpoch] = useState(0);
     const [enabled, setEnabled] = useState(false);

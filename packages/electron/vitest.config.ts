@@ -4,7 +4,7 @@ import { bunTestShim, sharedExclude } from '../../vitest.shared.ts';
 
 export default defineConfig({
   test: {
-    name: '@openchamber/electron',
+    name: '@yuri/electron',
     environment: 'node',
     isolate: true,
     exclude: sharedExclude,

@@ -21,8 +21,8 @@ describe('ReadOnlyPromptBanner', () => {
 
         expect(markup).toContain('Agent: Fixer');
         expect(markup).toContain('>Fixer</span>');
-        expect(markup).toContain('oc-mobile-readonly-prompt-foot');
-        expect(markup).toContain('oc-mobile-readonly-prompt-surface');
+        expect(markup).toContain('yuri-mobile-readonly-prompt-foot');
+        expect(markup).toContain('yuri-mobile-readonly-prompt-surface');
     });
 
     test('keeps agent and model metadata in a two-column row', () => {
@@ -44,6 +44,6 @@ describe('ReadOnlyPromptBanner', () => {
         expect(markup).toContain('>Oracle</span>');
         expect(markup).toContain('>GPT-5.6 Sol Fast</span>');
         expect(markup).toContain('text-right');
-        expect(markup).toContain('oc-mobile-readonly-prompt-foot');
+        expect(markup).toContain('yuri-mobile-readonly-prompt-foot');
     });
 });

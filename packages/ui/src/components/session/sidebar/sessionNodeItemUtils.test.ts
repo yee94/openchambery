@@ -39,7 +39,7 @@ describe('resolvedSessionRenderKey', () => {
 
     test('reacts to title-refresh state the row renders', () => {
         const generating = session({
-            metadata: { openchamber: { titleRefresh: { isGenerating: true } } },
+            metadata: { yuri: { titleRefresh: { isGenerating: true } } },
         } as unknown as Partial<Session>);
 
         expect(resolvedSessionRenderKey(session())).not.toBe(resolvedSessionRenderKey(generating));

@@ -37,7 +37,7 @@ const SCAN_LIMIT_MAX = 200;
  * "operator chose 100" apart from "nobody chose anything".
  */
 const _inner_scanLimitEnv = (() => {
-  const raw = typeof process !== 'undefined' ? process.env?.OPENCHAMBER_SESSION_TURN_SCAN_LIMIT : undefined;
+  const raw = typeof process !== 'undefined' ? process.env?.YURI_SESSION_TURN_SCAN_LIMIT : undefined;
   if (raw === undefined || raw === null || raw === '') return null;
   const parsed = Number(String(raw).trim());
   if (!Number.isInteger(parsed) || parsed < SCAN_LIMIT_MIN || parsed > SCAN_LIMIT_MAX) {
@@ -77,7 +77,7 @@ type TurnPagePayload = {
   turns?: unknown;
   scanLimit?: unknown;
   before?: unknown;
-  /** OpenChamber projection control — strict string `'false'` strips reasoning parts. */
+  /** Yuri projection control — strict string `'false'` strips reasoning parts. */
   includeReasoning?: unknown;
 };
 

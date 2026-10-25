@@ -1,34 +1,34 @@
-import { openChamberComposerContract } from './openchamber-composer.mjs'
-import { openChamberExternalBrowserContract } from './openchamber-external-browser.mjs'
-import { openChamberHapticsContract } from './openchamber-haptics.mjs'
-import { openChamberMediaContract } from './openchamber-media.mjs'
-import { openChamberNavigationContract } from './openchamber-navigation.mjs'
-import { openChamberShareContract } from './openchamber-share.mjs'
-import { openChamberTabBarContract } from './openchamber-tab-bar.mjs'
-import { openChamberVirtualAssetContract } from './openchamber-virtual-asset.mjs'
-import { openChamberVideoContract } from './openchamber-video.mjs'
+import { yuriComposerContract } from './yuri-composer.mjs'
+import { yuriExternalBrowserContract } from './yuri-external-browser.mjs'
+import { yuriHapticsContract } from './yuri-haptics.mjs'
+import { yuriMediaContract } from './yuri-media.mjs'
+import { yuriNavigationContract } from './yuri-navigation.mjs'
+import { yuriShareContract } from './yuri-share.mjs'
+import { yuriTabBarContract } from './yuri-tab-bar.mjs'
+import { yuriVirtualAssetContract } from './yuri-virtual-asset.mjs'
+import { yuriVideoContract } from './yuri-video.mjs'
 
 /** All custom native bridge contracts checked by mobile-release-plan. */
 export const mobileBridgeContracts = [
-  openChamberShareContract,
-  openChamberVirtualAssetContract,
-  openChamberVideoContract,
-  openChamberMediaContract,
-  openChamberHapticsContract,
-  openChamberNavigationContract,
-  openChamberExternalBrowserContract,
-  openChamberComposerContract,
-  openChamberTabBarContract,
+  yuriShareContract,
+  yuriVirtualAssetContract,
+  yuriVideoContract,
+  yuriMediaContract,
+  yuriHapticsContract,
+  yuriNavigationContract,
+  yuriExternalBrowserContract,
+  yuriComposerContract,
+  yuriTabBarContract,
 ]
 
 export {
-  openChamberComposerContract,
-  openChamberExternalBrowserContract,
-  openChamberHapticsContract,
-  openChamberMediaContract,
-  openChamberNavigationContract,
-  openChamberShareContract,
-  openChamberTabBarContract,
-  openChamberVirtualAssetContract,
-  openChamberVideoContract,
+  yuriComposerContract,
+  yuriExternalBrowserContract,
+  yuriHapticsContract,
+  yuriMediaContract,
+  yuriNavigationContract,
+  yuriShareContract,
+  yuriTabBarContract,
+  yuriVirtualAssetContract,
+  yuriVideoContract,
 }

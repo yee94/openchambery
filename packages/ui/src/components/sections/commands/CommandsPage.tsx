@@ -190,7 +190,7 @@ export const CommandsPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="yuri-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
         <div className="mb-4 flex items-center justify-between gap-4">
@@ -240,7 +240,7 @@ export const CommandsPage: React.FC = () => {
               </SettingsRow>
             )}
 
-            <SettingsRow label={t('settings.common.field.description')} className="oc-settings-split-row-stacked">
+            <SettingsRow label={t('settings.common.field.description')} className="yuri-settings-split-row-stacked">
                 <Textarea
                   embedded
                   value={description}
@@ -262,7 +262,7 @@ export const CommandsPage: React.FC = () => {
               <AgentSelector
                 agentName={agent}
                 onChange={(agentName: string) => setAgent(agentName)}
-                className="oc-settings-inline-value"
+                className="yuri-settings-inline-value"
               />
             </SettingsRow>
 
@@ -280,7 +280,7 @@ export const CommandsPage: React.FC = () => {
                     setModel('');
                   }
                 }}
-                className="oc-settings-inline-value"
+                className="yuri-settings-inline-value"
               />
             </SettingsRow>
 
@@ -298,7 +298,7 @@ export const CommandsPage: React.FC = () => {
             </>
           )}
           descriptionPlacement="outside"
-          className="oc-settings-split-row-stacked"
+          className="yuri-settings-split-row-stacked"
         >
             <Textarea
               embedded

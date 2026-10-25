@@ -94,14 +94,14 @@ function MobileSessionRowImpl({
   if (session.kind === 'pagination') {
     return (
       <div className={cn(
-        'oc-mobile-session-row',
-        paginationContinues && 'oc-mobile-session-pagination-continues',
+        'yuri-mobile-session-row',
+        paginationContinues && 'yuri-mobile-session-pagination-continues',
         className,
       )}>
         <button
           type="button"
           data-mobile-press-feedback="soft"
-          className="oc-mobile-session-pagination-row"
+          className="yuri-mobile-session-pagination-row"
           style={{ touchAction: 'pan-y' }}
           onClick={handleSelect}
           onPointerDown={() => undefined}
@@ -117,7 +117,7 @@ function MobileSessionRowImpl({
   }
 
   return (
-    <div className={cn('oc-mobile-session-row relative isolate', className)}>
+    <div className={cn('yuri-mobile-session-row relative isolate', className)}>
       {/* iOS-style trailing rail: it stays fixed underneath while the complete
           session foreground follows the finger to the left. */}
       <MobileSwipeActionRail swipe={swipe} actions={[
@@ -129,7 +129,7 @@ function MobileSessionRowImpl({
           and overflow menu, matching the native iOS swipe model. */}
       <div
         className={cn(
-          'oc-mobile-session-row-content relative z-10 flex items-center',
+          'yuri-mobile-session-row-content relative z-10 flex items-center',
           'text-foreground',
           'ease-out motion-reduce:transition-none',
           dragging ? 'transition-none' : 'transition-[transform,background-color] duration-150',
@@ -165,7 +165,7 @@ function MobileSessionRowImpl({
         <button
           type="button"
           data-mobile-press-feedback="soft"
-          className="oc-mobile-session-row-main flex min-w-0 flex-1 items-center text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
+          className="yuri-mobile-session-row-main flex min-w-0 flex-1 items-center text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
           style={{
             paddingLeft: 16 + Math.min(depth, 4) * 12,
             touchAction: 'pan-y',
@@ -178,7 +178,7 @@ function MobileSessionRowImpl({
           onContextMenu={handleContextMenu}
         >
           <span
-            className="oc-mobile-session-status shrink-0"
+            className="yuri-mobile-session-status shrink-0"
             data-session-status={resolvedIndicator}
             aria-hidden={indicatorLabel ? undefined : true}
             aria-label={indicatorLabel}
@@ -193,7 +193,7 @@ function MobileSessionRowImpl({
             ) : (
               <span
                 className={cn(
-                  'oc-mobile-session-dot rounded-full',
+                  'yuri-mobile-session-dot rounded-full',
                   resolvedIndicator === 'completed-unread'
                     ? 'bg-[var(--status-info)]'
                     : 'bg-muted-foreground/35',
@@ -204,18 +204,18 @@ function MobileSessionRowImpl({
 
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex min-w-0 items-center gap-1.5">
-              <span className={cn('oc-mobile-session-title truncate', session.unread ? 'font-semibold' : 'font-medium')}>
+              <span className={cn('yuri-mobile-session-title truncate', session.unread ? 'font-semibold' : 'font-medium')}>
                 {highlightQuery ? renderHighlightedText(session.title, highlightQuery) : session.title}
               </span>
               {session.changes ? (
-                <span className="oc-mobile-session-changes shrink-0 tabular-nums text-muted-foreground">
+                <span className="yuri-mobile-session-changes shrink-0 tabular-nums text-muted-foreground">
                   {session.changes}
                 </span>
               ) : null}
               {session.archived ? <Icon name="archive" className="size-3 shrink-0 text-muted-foreground" aria-hidden /> : null}
             </span>
             {session.subtitle ? (
-              <span className="oc-mobile-session-subtitle truncate text-muted-foreground">
+              <span className="yuri-mobile-session-subtitle truncate text-muted-foreground">
                 {highlightQuery ? renderHighlightedText(session.subtitle, highlightQuery) : session.subtitle}
               </span>
             ) : null}
@@ -223,7 +223,7 @@ function MobileSessionRowImpl({
 
           <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
             {session.activityLabel ? (
-              <span className="oc-mobile-session-time tabular-nums">{session.activityLabel}</span>
+              <span className="yuri-mobile-session-time tabular-nums">{session.activityLabel}</span>
             ) : null}
           </span>
         </button>

@@ -49,7 +49,7 @@ const createClientAuthDependencies = (options = {}) => {
           clientKind: clientKind || null,
         };
         clients.push(client);
-        return { client, token: 'oc_client_secret' };
+        return { client, token: 'yuri_client_secret' };
       },
       renameClient: vi.fn(async (id, label) => {
         const client = clients.find((entry) => entry.id === id);
@@ -215,6 +215,16 @@ describe('core-routes', () => {
     }
   });
 
+  it('returns an explicit upgrade response for a retired product API before the SPA', async () => {
+    const app = express();
+    registerServerStatusRoutes(app, { express, yuriVersion: '2.1.10', runtimeName: 'test', getHealthSnapshot: () => ({}) });
+    app.use((_req, res) => res.send('<html>SPA</html>'));
+    const response = await request(app).get('/api/openchamber/relay/status').expect(426);
+    expect(response.body.error).toBe('YURI_CLIENT_UPGRADE_REQUIRED');
+    const health = await request(app).get('/health').expect(200);
+    expect(health.body.compatibility).toMatchObject({ productIdentity: 'yuri', brandProtocolVersion: 1 });
+  });
+
   it('should call gracefulShutdown with exitProcess: true on /api/system/shutdown', async () => {
     const app = express();
     let shutdownOpts = null;
@@ -223,7 +233,7 @@ describe('core-routes', () => {
         shutdownOpts = opts;
       }),
       getHealthSnapshot: () => ({ status: 'ok' }),
-      openchamberVersion: '1.0.0',
+      yuriVersion: '1.0.0',
       runtimeName: 'test',
       express,
     };
@@ -241,7 +251,7 @@ describe('core-routes', () => {
     const dependencies = {
       gracefulShutdown: vi.fn(async () => {}),
       getHealthSnapshot: () => ({ status: 'ok' }),
-      openchamberVersion: '1.0.0',
+      yuriVersion: '1.0.0',
       runtimeName: 'test',
       express,
       tunnelAuthController: {
@@ -268,7 +278,7 @@ describe('core-routes', () => {
     const dependencies = {
       gracefulShutdown: vi.fn(async () => {}),
       getHealthSnapshot: () => ({ status: 'ok' }),
-      openchamberVersion: '1.0.0',
+      yuriVersion: '1.0.0',
       runtimeName: 'test',
       express,
       tunnelAuthController: {
@@ -295,7 +305,7 @@ describe('core-routes', () => {
     const dependencies = {
       gracefulShutdown: vi.fn(async () => {}),
       getHealthSnapshot: () => ({ status: 'ok' }),
-      openchamberVersion: '1.0.0',
+      yuriVersion: '1.0.0',
       runtimeName: 'test',
       express,
       tunnelAuthController: {
@@ -352,7 +362,7 @@ describe('core-routes', () => {
     });
 
     await request(app)
-      .put('/api/openchamber/session-index/directory')
+      .put('/api/yuri/session-index/directory')
       .send({
         directory: '/repo',
         sessions: [{ id: 'ses_1', title: 'Cached', time: { created: 1, updated: 2 } }],
@@ -372,13 +382,13 @@ describe('core-routes', () => {
   it('should parse JSON bodies for bounded message queue routes', async () => {
     const app = express();
     registerCommonRequestMiddleware(app, { express });
-    app.post('/api/openchamber/message-queue/items', (req, res) => {
+    app.post('/api/yuri/message-queue/items', (req, res) => {
       res.json({ body: req.body });
     });
 
     const payload = { requestID: 'request_1', item: { content: 'queued message' } };
     await request(app)
-      .post('/api/openchamber/message-queue/items')
+      .post('/api/yuri/message-queue/items')
       .send(payload)
       .expect(200, { body: payload });
   });
@@ -386,13 +396,13 @@ describe('core-routes', () => {
   it('should parse JSON bodies for Assistant routes with the attachment payload parser', async () => {
     const app = express();
     registerCommonRequestMiddleware(app, { express });
-    app.post('/api/openchamber/assistants/topics/topic_1/messages', (req, res) => {
+    app.post('/api/yuri/assistants/topics/topic_1/messages', (req, res) => {
       res.json({ body: req.body });
     });
 
     const payload = { operationID: 'operation_1', parts: [{ type: 'file', mime: 'image/heic', url: 'data:image/heic;base64,aGVsbG8=' }] };
     await request(app)
-      .post('/api/openchamber/assistants/topics/topic_1/messages')
+      .post('/api/yuri/assistants/topics/topic_1/messages')
       .send(payload)
       .expect(200, { body: payload });
   });
@@ -415,7 +425,7 @@ describe('core-routes', () => {
 
     const scopePayload = { queueItemIDs: ['item_2', 'item_1'], expectedRevision: 4 };
     await request(app)
-      .put('/api/openchamber/message-queue/scopes/scope_1/order')
+      .put('/api/yuri/message-queue/scopes/scope_1/order')
       .send(scopePayload)
       .expect(200, { updated: 'scope', scopeID: 'scope_1' });
     expect(reorder).toHaveBeenCalledWith({ ...scopePayload, scopeID: 'scope_1' });
@@ -423,7 +433,7 @@ describe('core-routes', () => {
 
     const worktreePayload = { projectDirectory: '/repo', worktreePaths: ['/repo/a', '/repo/b'] };
     await request(app)
-      .put('/api/openchamber/message-queue/worktrees/order')
+      .put('/api/yuri/message-queue/worktrees/order')
       .send(worktreePayload)
       .expect(200, { updated: 'worktree' });
     expect(setWorktreeOrder).toHaveBeenCalledWith(worktreePayload);
@@ -449,7 +459,7 @@ describe('core-routes', () => {
 
     const payload = Buffer.from(JSON.stringify({ content: 'a'.repeat(1024 * 1024) }));
     const uploadRequest = request(app)
-      .put('/api/openchamber/message-queue/attachments/uploads/upload_1')
+      .put('/api/yuri/message-queue/attachments/uploads/upload_1')
       .set('Content-Type', 'application/json')
       .set('Content-Length', String(payload.length))
       .set('x-message-queue-upload-token', 'upload-token');
@@ -491,7 +501,7 @@ describe('core-routes', () => {
 
     const payload = Buffer.from('relay-bytes');
     const uploadRequest = request(app)
-      .put('/api/openchamber/message-queue/attachments/uploads/upload_2')
+      .put('/api/yuri/message-queue/attachments/uploads/upload_2')
       .set('Content-Type', 'application/octet-stream')
       .set('x-message-queue-content-length', String(payload.length))
       .set('x-message-queue-upload-token', 'upload-token');
@@ -511,7 +521,7 @@ describe('core-routes', () => {
     const openAttachment = vi.fn(async () => ({ stream: Readable.from([Buffer.from('attachment bytes')]), size: 16, mime: 'text/plain', filename: 'notes.txt' }));
     const getRuntimeKey = vi.fn(() => 'a'.repeat(64));
     registerMessageQueueRoutes(app, { messageQueueService: { getItemAttachment, getRuntimeKey }, messageQueueRuntime: { service: { getItemAttachment, getRuntimeKey }, attachmentStore: { openAttachment } } });
-    await request(app).get('/api/openchamber/message-queue/items/item_1/attachments/attachment_1/content').expect('Content-Type', /text\/plain/).expect('Content-Disposition', 'attachment; filename="notes.txt"').expect(200, 'attachment bytes');
+    await request(app).get('/api/yuri/message-queue/items/item_1/attachments/attachment_1/content').expect('Content-Type', /text\/plain/).expect('Content-Disposition', 'attachment; filename="notes.txt"').expect(200, 'attachment bytes');
     expect(getItemAttachment).toHaveBeenCalledWith('item_1', 'attachment_1', { runtimeKey: 'a'.repeat(64) });
     expect(openAttachment).toHaveBeenCalledWith({ attachmentID: 'attachment_1' }, { runtimeKey: 'a'.repeat(64), directory: '/repo' });
   });
@@ -520,18 +530,18 @@ describe('core-routes', () => {
     const app = express();
     const reached = vi.fn((_req, res) => res.sendStatus(204));
     registerCommonRequestMiddleware(app, { express });
-    app.put('/api/openchamber/message-queue/attachments/uploads/:uploadID/metadata', reached);
-    app.put('/api/openchamber/message-queue/items', reached);
+    app.put('/api/yuri/message-queue/attachments/uploads/:uploadID/metadata', reached);
+    app.put('/api/yuri/message-queue/items', reached);
     app.use((error, _req, res, _next) => res.status(error.status || 500).json({ error: error.type }));
 
     const oversizedJson = JSON.stringify({ content: 'a'.repeat(1024 * 1024) });
     await request(app)
-      .put('/api/openchamber/message-queue/attachments/uploads/upload_1/metadata')
+      .put('/api/yuri/message-queue/attachments/uploads/upload_1/metadata')
       .set('Content-Type', 'application/json')
       .send(oversizedJson)
       .expect(413);
     await request(app)
-      .put('/api/openchamber/message-queue/items')
+      .put('/api/yuri/message-queue/items')
       .set('Content-Type', 'application/json')
       .send(oversizedJson)
       .expect(413);
@@ -542,29 +552,29 @@ describe('core-routes', () => {
   it('should allow a queue HTTP envelope in the explicit 70–72 MiB parser margin', async () => {
     const app = express(); const reached = vi.fn((_req, res) => res.sendStatus(204));
     registerCommonRequestMiddleware(app, { express });
-    app.post('/api/openchamber/message-queue/items', reached);
-    app.post('/api/openchamber/assistants/a/message', reached);
+    app.post('/api/yuri/message-queue/items', reached);
+    app.post('/api/yuri/assistants/a/message', reached);
     app.use((error, _req, res, _next) => res.status(error.status || 500).json({ error: error.type }));
     const body = { content: 'a'.repeat(71 * 1024 * 1024) };
-    await request(app).post('/api/openchamber/message-queue/items').send(body).expect(204);
-    await request(app).post('/api/openchamber/assistants/a/message').send(body).expect(204);
+    await request(app).post('/api/yuri/message-queue/items').send(body).expect(204);
+    await request(app).post('/api/yuri/assistants/a/message').send(body).expect(204);
     expect(reached).toHaveBeenCalledTimes(2);
   });
 
   it('should reject message queue JSON beyond the 72 MiB HTTP envelope', async () => {
     const app = express(); const reached = vi.fn((_req, res) => res.sendStatus(204));
     registerCommonRequestMiddleware(app, { express });
-    app.post('/api/openchamber/message-queue/items', reached);
+    app.post('/api/yuri/message-queue/items', reached);
     app.use((error, _req, res, _next) => res.status(error.status || 500).json({ error: error.type }));
     const body = { content: 'a'.repeat((72 * 1024 * 1024) + 1) };
-    await request(app).post('/api/openchamber/message-queue/items').send(body).expect(413, { error: 'entity.too.large' });
+    await request(app).post('/api/yuri/message-queue/items').send(body).expect(413, { error: 'entity.too.large' });
     expect(reached).not.toHaveBeenCalled();
   });
 
   it('should parse JSON bodies for conversation creation', async () => {
     const app = express();
     registerCommonRequestMiddleware(app, { express });
-    app.post('/api/openchamber/conversations', (req, res) => {
+    app.post('/api/yuri/conversations', (req, res) => {
       res.json({ body: req.body });
     });
 
@@ -574,7 +584,7 @@ describe('core-routes', () => {
       messageID: 'msg_1',
     };
     const response = await request(app)
-      .post('/api/openchamber/conversations')
+      .post('/api/yuri/conversations')
       .send(payload)
       .expect(200);
 
@@ -584,13 +594,13 @@ describe('core-routes', () => {
   it('should parse conversation attachments larger than 256 KB', async () => {
     const app = express();
     registerCommonRequestMiddleware(app, { express });
-    app.post('/api/openchamber/conversations', (req, res) => {
+    app.post('/api/yuri/conversations', (req, res) => {
       res.json({ attachmentUrl: req.body.parts?.[0]?.url });
     });
 
     const url = `data:text/plain;base64,${'a'.repeat(300 * 1024)}`;
     const response = await request(app)
-      .post('/api/openchamber/conversations')
+      .post('/api/yuri/conversations')
       .send({ parts: [{ type: 'file', url }] })
       .expect(200);
 
@@ -739,7 +749,7 @@ describe('core-routes', () => {
         redeemPairingSession: vi.fn(async () => ({
           pairing: { fingerprint: 'ABCD-1234' },
           client: { id: 'client-1', label: 'Phone', authMethod: 'pairing' },
-          token: 'oc_client_token',
+          token: 'yuri_client_token',
         })),
       },
       readSettingsFromDiskMigrated: vi.fn(async () => ({})),
@@ -1198,9 +1208,9 @@ describe('core-routes', () => {
     expect(response.headers['cache-control']).toBe('no-store');
     expect(response.body).toMatchObject({
       ok: true,
-      server: { label: 'OpenChamber', url: 'http://runtime.example', fingerprint: 'ABCD-1234' },
+      server: { label: 'Yuri', url: 'http://runtime.example', fingerprint: 'ABCD-1234' },
       client: { id: 'client-1', authMethod: 'pairing' },
-      clientToken: 'oc_client_token',
+      clientToken: 'yuri_client_token',
     });
     expect(dependencies.clientPairingRuntime.redeemPairingSession).toHaveBeenCalledWith(expect.objectContaining({
       pairingId: 'pair_1',
@@ -1284,12 +1294,12 @@ describe('core-routes', () => {
     app.use('/api/preview/proxy', (_req, res) => res.json({ reached: true }));
 
     await request(app)
-      .get('/api/preview/proxy/abc123/?oc_preview_token=preview-secret')
+      .get('/api/preview/proxy/abc123/?yuri_preview_token=preview-secret')
       .expect(200, { reached: true });
 
     await request(app)
       .get('/api/preview/proxy/abc123/')
-      .set('Cookie', 'oc_preview_token=preview-secret')
+      .set('Cookie', 'yuri_preview_token=preview-secret')
       .expect(200, { reached: true });
 
     await request(app)
@@ -1299,7 +1309,7 @@ describe('core-routes', () => {
     expect(requireAuth).toHaveBeenCalledTimes(1);
 
     await request(app)
-      .get('/api/openchamber/transcript-cache/session?oc_preview_token=preview-secret')
+      .get('/api/yuri/transcript-cache/session?yuri_preview_token=preview-secret')
       .expect(401, 'Authentication required');
     expect(requireAuth).toHaveBeenCalledTimes(2);
   });
@@ -1384,7 +1394,7 @@ describe('client auth routes', () => {
       .post('/api/client-auth/clients')
       .send({ label: 'Laptop' });
     expect(created.status).toBe(201);
-    expect(created.body.token).toBe('oc_client_secret');
+    expect(created.body.token).toBe('yuri_client_secret');
     expect(created.headers['cache-control']).toBe('no-store');
 
     const listed = await request(app).get('/api/client-auth/clients');
@@ -1483,7 +1493,7 @@ describe('client auth routes', () => {
 
     const current = await request(app)
       .post('/api/client-auth/clients')
-      .send({ label: 'OpenChamber Desktop', clientKind: 'desktop-local' });
+      .send({ label: 'Yuri Desktop', clientKind: 'desktop-local' });
     const other = await request(app)
       .post('/api/client-auth/clients')
       .send({ label: 'Other device' });
@@ -1519,7 +1529,7 @@ describe('client auth routes', () => {
 
     const desktop = await request(app)
       .post('/api/client-auth/clients')
-      .send({ label: 'OpenChamber Desktop', clientKind: 'desktop-local' });
+      .send({ label: 'Yuri Desktop', clientKind: 'desktop-local' });
     const other = await request(app)
       .post('/api/client-auth/clients')
       .send({ label: 'Other device' });
@@ -1553,7 +1563,7 @@ describe('client auth routes', () => {
 
     const localDesktop = await request(app)
       .post('/api/client-auth/clients')
-      .send({ label: 'OpenChamber Desktop', clientKind: 'desktop-local' });
+      .send({ label: 'Yuri Desktop', clientKind: 'desktop-local' });
     const pairedDesktop = await request(app)
       .post('/api/client-auth/clients')
       .send({ label: 'Study desktop', clientKind: 'desktop' });
@@ -1593,7 +1603,7 @@ describe('client auth routes', () => {
 
     const desktop = await request(app)
       .post('/api/client-auth/clients')
-      .send({ label: 'OpenChamber Desktop', clientKind: 'desktop-local' });
+      .send({ label: 'Yuri Desktop', clientKind: 'desktop-local' });
     const remote = await request(app)
       .post('/api/client-auth/clients')
       .send({ label: 'Phone' });
@@ -1659,17 +1669,17 @@ describe('client auth routes', () => {
 describe('hasPreviewProxyCredential', () => {
   it('detects the preview-proxy token in the query or cookie on any path', () => {
     expect(hasPreviewProxyCredential({
-      originalUrl: '/api/openchamber/transcript-cache/session?oc_preview_token=preview-secret',
+      originalUrl: '/api/yuri/transcript-cache/session?yuri_preview_token=preview-secret',
     })).toBe(true);
     expect(hasPreviewProxyCredential({
-      url: '/api/openchamber/transcript-cache/session',
-      headers: { cookie: 'oc_preview_token=preview-secret' },
+      url: '/api/yuri/transcript-cache/session',
+      headers: { cookie: 'yuri_preview_token=preview-secret' },
     })).toBe(true);
     expect(hasPreviewProxyCredential({
       originalUrl: '/api/preview/proxy/abc123/',
     })).toBe(false);
     expect(hasPreviewProxyCredential({
-      originalUrl: '/api/openchamber/transcript-cache/session',
+      originalUrl: '/api/yuri/transcript-cache/session',
     })).toBe(false);
   });
 });

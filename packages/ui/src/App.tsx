@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -228,7 +229,7 @@ function App({ apis }: AppProps) {
   React.useEffect(() => {
     markStartupTrace('App:mounted');
     if (startupTraceEnabled()) {
-      console.info('[startup-trace] enabled. Run console.table(window.__OPENCHAMBER_STARTUP_TRACE__) after startup.');
+      console.info('[startup-trace] enabled. Run console.table(window.__YURI_STARTUP_TRACE__) after startup.');
     }
   }, []);
 
@@ -592,10 +593,10 @@ function App({ apis }: AppProps) {
     };
 
     const scopedWindow = window as unknown as {
-      __openchamberSetEmbeddedVisibility?: (payload?: EmbeddedVisibilityPayload) => void;
+      __yuriSetEmbeddedVisibility?: (payload?: EmbeddedVisibilityPayload) => void;
     };
 
-    scopedWindow.__openchamberSetEmbeddedVisibility = applyVisibility;
+    scopedWindow.__yuriSetEmbeddedVisibility = applyVisibility;
     window.addEventListener('message', handleMessage);
 
     // Parent may have pushed visibility on iframe onLoad before this listener
@@ -609,8 +610,8 @@ function App({ apis }: AppProps) {
 
     return () => {
       window.removeEventListener('message', handleMessage);
-      if (scopedWindow.__openchamberSetEmbeddedVisibility === applyVisibility) {
-        delete scopedWindow.__openchamberSetEmbeddedVisibility;
+      if (scopedWindow.__yuriSetEmbeddedVisibility === applyVisibility) {
+        delete scopedWindow.__yuriSetEmbeddedVisibility;
       }
     };
   }, [embeddedSessionChat]);
@@ -664,11 +665,11 @@ function App({ apis }: AppProps) {
       }
     };
 
-    window.addEventListener('openchamber:open-session', handler as EventListener);
-    window.addEventListener('openchamber:open-assistant', openAssistantHandler as EventListener);
+    window.addEventListener('yuri:open-session', handler as EventListener);
+    window.addEventListener('yuri:open-assistant', openAssistantHandler as EventListener);
     return () => {
-      window.removeEventListener('openchamber:open-session', handler as EventListener);
-      window.removeEventListener('openchamber:open-assistant', openAssistantHandler as EventListener);
+      window.removeEventListener('yuri:open-session', handler as EventListener);
+      window.removeEventListener('yuri:open-assistant', openAssistantHandler as EventListener);
     };
   }, []);
 
@@ -686,8 +687,8 @@ function App({ apis }: AppProps) {
         projectId: activeProject?.id ?? null,
       });
     };
-    window.addEventListener('openchamber:open-mini-chat', onOpenMiniChat);
-    return () => window.removeEventListener('openchamber:open-mini-chat', onOpenMiniChat);
+    window.addEventListener('yuri:open-mini-chat', onOpenMiniChat);
+    return () => window.removeEventListener('yuri:open-mini-chat', onOpenMiniChat);
   }, []);
 
   // When the window regains focus, mark the currently-selected session as seen.
@@ -729,8 +730,8 @@ function App({ apis }: AppProps) {
       });
     };
 
-    window.addEventListener('openchamber:open-draft-session', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-draft-session', handler as EventListener);
+    window.addEventListener('yuri:open-draft-session', handler as EventListener);
+    return () => window.removeEventListener('yuri:open-draft-session', handler as EventListener);
   }, []);
 
   React.useEffect(() => {
@@ -749,8 +750,8 @@ function App({ apis }: AppProps) {
       }
     };
 
-    window.addEventListener('openchamber:open-project', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-project', handler as EventListener);
+    window.addEventListener('yuri:open-project', handler as EventListener);
+    return () => window.removeEventListener('yuri:open-project', handler as EventListener);
   }, []);
 
   React.useEffect(() => {
@@ -758,8 +759,8 @@ function App({ apis }: AppProps) {
     if (!embeddedBackgroundWorkEnabled || !isInitialized || isSwitchingDirectory) return;
     if (appReadyDispatchedRef.current) return;
     appReadyDispatchedRef.current = true;
-    (window as unknown as { __openchamberAppReady?: boolean }).__openchamberAppReady = true;
-    window.dispatchEvent(new Event('openchamber:app-ready'));
+    (window as unknown as { __yuriAppReady?: boolean }).__yuriAppReady = true;
+    window.dispatchEvent(new Event('yuri:app-ready'));
   }, [embeddedBackgroundWorkEnabled, isInitialized, isSwitchingDirectory]);
 
   // useEventStream replaced by SyncProvider + SyncBridge
@@ -884,7 +885,7 @@ function App({ apis }: AppProps) {
   }, [clearError, embeddedSessionChat, error]);
 
   // Poll for the injected boot outcome until it becomes available (desktop only).
-  // The Rust backend sets window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__ once the
+  // The Rust backend sets window.__YURI_DESKTOP_BOOT_OUTCOME__ once the
   // sidecar reaches a stable state. We poll with exponential backoff to handle
   // potential race conditions during startup and config writes.
   React.useEffect(() => {
@@ -954,7 +955,7 @@ function App({ apis }: AppProps) {
     // have finished (or short-circuited) before OpenCode was ready, leaving empty
     // providers/agents. Soft-swapping bootView to main reuses that half-init shell.
     // Reload re-runs initializeApp + SyncProvider bootstrap against a ready runtime.
-    // Packaged openchamber-ui reloads are allowed by will-navigate; init scripts
+    // Packaged yuri-ui reloads are allowed by will-navigate; init scripts
     // are synced on desktop_hosts_set so the post-reload boot outcome is local/ok.
     window.location.reload();
   });

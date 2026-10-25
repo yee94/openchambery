@@ -32,12 +32,12 @@ struct VideoPlaybackProbe {
         await writer.finishWriting()
         precondition(writer.status == .completed)
         let bytes = try Data(contentsOf: file)
-        var server: OpenChamberVideoServer!
-        server = OpenChamberVideoServer(assetId: "avfoundation-test") { event in
+        var server: YuriVideoServer!
+        server = YuriVideoServer(assetId: "avfoundation-test") { event in
             guard event["cancelled"] as? Bool != true, let id = event["requestId"] as? String else { return }
             let range = (event["range"] as? String ?? "bytes=0-").dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
             let start = Int(range[0]) ?? 0
-            let end = min(Int(range.last!) ?? (bytes.count - 1), start + OpenChamberVideoServer.maxRangeBytes - 1, bytes.count - 1)
+            let end = min(Int(range.last!) ?? (bytes.count - 1), start + YuriVideoServer.maxRangeBytes - 1, bytes.count - 1)
             if start >= bytes.count {
                 server.respond(requestId: id, status: 416, contentType: nil, contentRange: "bytes */\(bytes.count)", contentLength: 0, data: Data())
             } else {

@@ -438,7 +438,7 @@ describe('handleCombinedDraftSend', () => {
 
       const allSessions = [...useGlobalSessionsStore.getState().activeSessions, ...useGlobalSessionsStore.getState().archivedSessions]
       expect(allSessions.some((s: any) => s.id === SESSION_ID)).toBe(true)
-      expect(useSessionUIStore.getState().isOpenChamberCreatedSession(SESSION_ID)).toBe(true)
+      expect(useSessionUIStore.getState().isYuriCreatedSession(SESSION_ID)).toBe(true)
       expect(useSessionUIStore.getState().currentSessionId).toBe(SESSION_ID)
       expect(useSessionUIStore.getState().newSessionDraft.open).toBe(false)
 
@@ -450,7 +450,7 @@ describe('handleCombinedDraftSend', () => {
       expect(messages.filter((m: any) => m.role === 'assistant')).toHaveLength(1)
       expect(messages.some((m: any) => m.id === knownMessageID)).toBe(true)
       const allParts = Object.values(childStore.getState().part).flat() as any[]
-      expect(allParts.every((p) => !p.__openchamberOptimistic)).toBe(true)
+      expect(allParts.every((p) => !p.__yuriOptimistic)).toBe(true)
       expect(messagesCalls).toBeGreaterThanOrEqual(2)
     } finally {
       restoreMessages()
@@ -495,7 +495,7 @@ describe('handleCombinedDraftSend', () => {
       expect(messages.filter((m: any) => m.role === 'assistant')).toHaveLength(1)
       expect(messages.some((m: any) => m.id === messageID)).toBe(true)
       const parts = childStore.getState().part[messageID] as any[]
-      expect(parts?.every((p) => !p.__openchamberOptimistic)).toBe(true)
+      expect(parts?.every((p) => !p.__yuriOptimistic)).toBe(true)
     } finally {
       restoreMessages()
     }

@@ -1,6 +1,7 @@
-export const DEFAULT_PAIRING_RELAY_URL = 'wss://relay.openchamber.dev/ws';
+import '@/lib/brand-storage-bootstrap';
+export const DEFAULT_PAIRING_RELAY_URL = 'wss://relay.yuri.dev/ws';
 
-const PAIRING_RELAY_URL_STORAGE_KEY = 'openchamber.pairing.relayUrl.v1';
+const PAIRING_RELAY_URL_STORAGE_KEY = 'yuri.pairing.relayUrl.v1';
 
 export const normalizePairingRelayUrl = (value: unknown): string | null => {
   if (typeof value !== 'string' || !value.trim()) return null;

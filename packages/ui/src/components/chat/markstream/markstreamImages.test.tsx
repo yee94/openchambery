@@ -89,10 +89,10 @@ test.each(['/workspace/photo.png', 'assets/photo.png'])(
 
 test('relay/native image keeps its original source for keyboard preview', async () => {
   transport.identity = 'relay:test-host';
-  streamImage.mockResolvedValue('openchamber-asset://image/asset');
+  streamImage.mockResolvedValue('yuri-asset://image/asset');
   await act(async () => root.render(<MarkstreamRenderer content="![photo](/workspace/photo.png)" messageId="relay-image" enableFileReferences={false} onShowPopup={showPopup} />));
   const image = host.querySelector('img')!;
-  expect(image.getAttribute('src')).toBe('openchamber-asset://image/asset');
+  expect(image.getAttribute('src')).toBe('yuri-asset://image/asset');
   await act(async () => image.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
   expect(showPopup).toHaveBeenCalledWith(expect.objectContaining({ image: expect.objectContaining({ url: '/workspace/photo.png' }) }));
 });

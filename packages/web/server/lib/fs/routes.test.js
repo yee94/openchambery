@@ -121,7 +121,7 @@ const registerExec = ({ spawn }) => {
     resolveProjectDirectory: async () => ({ directory: '/repo' }),
     buildAugmentedPath: () => '/usr/bin',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: '/home/user/.config',
+    yuriUserConfigRoot: '/home/user/.config',
   });
   return getRoute('POST', '/api/fs/exec');
 };
@@ -141,7 +141,7 @@ const registerWrite = (fsPromises) => {
     resolveProjectDirectory: async () => ({ directory: '/repo' }),
     buildAugmentedPath: () => '/usr/bin',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: '/home/user/.config',
+    yuriUserConfigRoot: '/home/user/.config',
   });
   return getRoute('POST', '/api/fs/write');
 };
@@ -161,7 +161,7 @@ const registerRead = (fsPromises) => {
     resolveProjectDirectory: async () => ({ directory: '/repo' }),
     buildAugmentedPath: () => '/usr/bin',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: '/home/user/.config',
+    yuriUserConfigRoot: '/home/user/.config',
   });
   return getRoute('GET', '/api/fs/read');
 };
@@ -181,7 +181,7 @@ const registerStat = (fsPromises) => {
     resolveProjectDirectory: async () => ({ directory: '/repo' }),
     buildAugmentedPath: () => '/usr/bin',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: '/home/user/.config',
+    yuriUserConfigRoot: '/home/user/.config',
   });
   return getRoute('GET', '/api/fs/stat');
 };
@@ -201,7 +201,7 @@ const registerRaw = (fsPromises) => {
     resolveProjectDirectory: async () => ({ directory: '/repo' }),
     buildAugmentedPath: () => '/usr/bin',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: '/home/user/.config',
+    yuriUserConfigRoot: '/home/user/.config',
   });
   return getRoute('GET', '/api/fs/raw');
 };
@@ -221,8 +221,8 @@ const registerPromptAttachment = (fsPromises, extras = {}) => {
     resolveProjectDirectory: async () => ({ directory: '/repo' }),
     buildAugmentedPath: () => '/usr/bin',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: '/home/user/.config',
-    openchamberDataDir: '/data/openchamber',
+    yuriUserConfigRoot: '/home/user/.config',
+    yuriDataDir: '/data/yuri',
     ...extras,
   });
   return getRoute('PUT', '/api/fs/prompt-attachments/:attachmentID');
@@ -243,7 +243,7 @@ const registerMkdir = (fsPromises) => {
     resolveProjectDirectory: async () => ({ directory: '/repo' }),
     buildAugmentedPath: () => '/usr/bin',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: '/home/user/.config',
+    yuriUserConfigRoot: '/home/user/.config',
   });
   return getRoute('POST', '/api/fs/mkdir');
 };
@@ -336,10 +336,10 @@ describe('fs prompt attachments', () => {
       params: { attachmentID: 'att-large' },
       query: { storage: 'temporary' },
       headers: {
-        'x-openchamber-content-length': String(chunk.length * 26),
-        'x-openchamber-sha256': digest,
-        'x-openchamber-mime': 'application/gzip',
-        'x-openchamber-filename': encodeURIComponent('../../trace.json.gz'),
+        'x-yuri-content-length': String(chunk.length * 26),
+        'x-yuri-sha256': digest,
+        'x-yuri-mime': 'application/gzip',
+        'x-yuri-filename': encodeURIComponent('../../trace.json.gz'),
       },
       async *[Symbol.asyncIterator]() { for (let i = 0; i < 26; i++) yield chunk; },
     }, res);
@@ -347,7 +347,7 @@ describe('fs prompt attachments', () => {
     const dir = path.dirname(res.body.path);
     try {
       expect(path.dirname(dir)).toBe(os.tmpdir());
-      expect(path.basename(dir)).toMatch(/^openchamber-prompt-/);
+      expect(path.basename(dir)).toMatch(/^yuri-prompt-/);
       expect(path.basename(res.body.path)).toBe('trace.json.gz');
       expect(fs.statSync(res.body.path).size).toBe(chunk.length * 26);
       expect(createHash('sha256').update(fs.readFileSync(res.body.path)).digest('hex')).toBe(digest);
@@ -356,16 +356,16 @@ describe('fs prompt attachments', () => {
 
   it('stores binary bytes under the data-dir content-addressed path', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-prompt-att-'));
-    const handler = registerPromptAttachment({}, { openchamberDataDir: dataDir });
+    const handler = registerPromptAttachment({}, { yuriDataDir: dataDir });
     const body = Buffer.from('hello-image');
     const digest = createHash('sha256').update(body).digest('hex');
     const req = {
       params: { attachmentID: 'att-1' },
       headers: {
         'content-length': String(body.length),
-        'x-openchamber-sha256': digest,
-        'x-openchamber-mime': 'image/png',
-        'x-openchamber-filename': 'photo.png',
+        'x-yuri-sha256': digest,
+        'x-yuri-mime': 'image/png',
+        'x-yuri-filename': 'photo.png',
       },
       async *[Symbol.asyncIterator]() {
         yield body;
@@ -387,14 +387,14 @@ describe('fs prompt attachments', () => {
 
   it('rejects digest mismatches without writing a durable file', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-prompt-att-bad-'));
-    const handler = registerPromptAttachment({}, { openchamberDataDir: dataDir });
+    const handler = registerPromptAttachment({}, { yuriDataDir: dataDir });
     const body = Buffer.from('hello-image');
     const req = {
       params: { attachmentID: 'att-1' },
       headers: {
         'content-length': String(body.length),
-        'x-openchamber-sha256': 'a'.repeat(64),
-        'x-openchamber-mime': 'image/png',
+        'x-yuri-sha256': 'a'.repeat(64),
+        'x-yuri-mime': 'image/png',
       },
       async *[Symbol.asyncIterator]() {
         yield body;
@@ -410,14 +410,14 @@ describe('fs prompt attachments', () => {
   });
 
   it('reports unavailable storage when the data dir is missing', async () => {
-    const handler = registerPromptAttachment({}, { openchamberDataDir: '' });
+    const handler = registerPromptAttachment({}, { yuriDataDir: '' });
     const res = createMockResponse();
     await handler({
       params: { attachmentID: 'att-1' },
       headers: {
         'content-length': '1',
-        'x-openchamber-sha256': 'a'.repeat(64),
-        'x-openchamber-mime': 'image/png',
+        'x-yuri-sha256': 'a'.repeat(64),
+        'x-yuri-mime': 'image/png',
       },
       async *[Symbol.asyncIterator]() {
         yield Buffer.from('x');
@@ -601,7 +601,7 @@ describe('fs read', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toBe('');
-    expect(res.getHeader('x-openchamber-file-exists')).toBe('false');
+    expect(res.getHeader('x-yuri-file-exists')).toBe('false');
   });
 
   it('signals optional empty files as existing', async () => {
@@ -614,7 +614,7 @@ describe('fs read', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toBe('');
-    expect(res.getHeader('x-openchamber-file-exists')).toBe('true');
+    expect(res.getHeader('x-yuri-file-exists')).toBe('true');
   });
 
   it('keeps regular missing-file reads at 404', async () => {
@@ -630,11 +630,11 @@ describe('fs read', () => {
 
 describe('fs exec git-read cache', () => {
   beforeEach(() => {
-    delete process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS;
+    delete process.env.YURI_GIT_READ_CACHE_TTL_MS;
   });
 
   afterEach(() => {
-    delete process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS;
+    delete process.env.YURI_GIT_READ_CACHE_TTL_MS;
   });
 
   it('rejects background command execution', async () => {
@@ -743,7 +743,7 @@ describe('fs exec git-read cache', () => {
   });
 
   it('disables caching when TTL is 0', async () => {
-    process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS = '0';
+    process.env.YURI_GIT_READ_CACHE_TTL_MS = '0';
     const command = 'git rev-parse --absolute-git-dir';
     const { spawn, calls } = createSpawn({ stdoutByCommand: { [command]: '/repo/.git\n' } });
     const handler = registerExec({ spawn });

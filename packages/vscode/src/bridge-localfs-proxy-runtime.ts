@@ -68,7 +68,7 @@ const isBinaryFile = async (filePath: string): Promise<boolean> => {
 export const tryHandleLocalFsProxy = async (method: string, requestPath: string): Promise<ApiProxyResponsePayload | null> => {
   let parsed: URL;
   try {
-    parsed = new URL(requestPath, 'https://openchamber.local');
+    parsed = new URL(requestPath, 'https://yuri.local');
   } catch {
     return buildProxyJsonError(400, 'Invalid request path');
   }
@@ -92,7 +92,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
         headers: {
           'content-type': 'text/plain; charset=utf-8',
           'cache-control': 'no-store',
-          'x-openchamber-file-exists': 'false',
+          'x-yuri-file-exists': 'false',
         },
         bodyBase64: base64EncodeUtf8(''),
       };
@@ -141,7 +141,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
         headers: {
           'content-type': 'text/plain; charset=utf-8',
           'cache-control': 'no-store',
-          ...(optional ? { 'x-openchamber-file-exists': 'true' } : {}),
+          ...(optional ? { 'x-yuri-file-exists': 'true' } : {}),
         },
         bodyBase64: base64EncodeUtf8(content),
       };
@@ -165,7 +165,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
           headers: {
             'content-type': 'text/plain; charset=utf-8',
             'cache-control': 'no-store',
-            'x-openchamber-file-exists': 'false',
+            'x-yuri-file-exists': 'false',
           },
           bodyBase64: base64EncodeUtf8(''),
         };

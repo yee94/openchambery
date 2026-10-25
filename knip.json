@@ -35,8 +35,8 @@
     },
     "packages/relay-server": {
       "entry": [
-        "bin/openchamber-relay.js",
-        "bin/openchamber-push-relay.js",
+        "bin/yuri-relay.js",
+        "bin/yuri-push-relay.js",
         "src/index.js",
         "src/index.d.ts",
         "src/push/index.js",

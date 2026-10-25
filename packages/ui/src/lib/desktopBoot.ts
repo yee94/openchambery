@@ -2,7 +2,7 @@
  * Authoritative desktop boot outcome types and UI-facing resolver.
  *
  * The Rust backend computes a `DesktopBootOutcome` at startup and injects
- * it as `window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__`. This module provides
+ * it as `window.__YURI_DESKTOP_BOOT_OUTCOME__`. This module provides
  * pure functions to read that outcome and derive the minimal UI state
  * needed for the loading/chooser/recovery/main decision.
  */
@@ -295,15 +295,15 @@ const readRawBootOutcome = (): unknown => {
   // Prefer the main-world global when initScript has written it (host switch /
   // hosts_set live inject). Fall back to the preload getter so cold New Window
   // / re-shown windows have a synchronous outcome before executeJavaScript runs.
-  const fromGlobal = (window as { __OPENCHAMBER_DESKTOP_BOOT_OUTCOME__?: unknown })
-    .__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__;
+  const fromGlobal = (window as { __YURI_DESKTOP_BOOT_OUTCOME__?: unknown })
+    .__YURI_DESKTOP_BOOT_OUTCOME__;
   if (fromGlobal !== undefined && fromGlobal !== null) {
     return fromGlobal;
   }
 
   const bridge = (window as {
-    __OPENCHAMBER_DESKTOP_BOOT__?: { getOutcome?: () => unknown };
-  }).__OPENCHAMBER_DESKTOP_BOOT__;
+    __YURI_DESKTOP_BOOT__?: { getOutcome?: () => unknown };
+  }).__YURI_DESKTOP_BOOT__;
   if (bridge && typeof bridge.getOutcome === 'function') {
     try {
       return bridge.getOutcome();

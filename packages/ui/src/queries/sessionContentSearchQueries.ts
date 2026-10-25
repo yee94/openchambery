@@ -62,7 +62,7 @@ export const searchSessionContent = async (input: {
   const query = input.query.trim();
   if (!query) return [];
   const fetch = input.fetch ?? runtimeFetch;
-  const response = await fetch('/api/openchamber/content-search', {
+  const response = await fetch('/api/yuri/content-search', {
     query: {
       q: query,
       limit: String(input.limit ?? SESSION_CONTENT_SEARCH_LIMIT),
@@ -128,7 +128,7 @@ export type SessionContentIndexStatus = {
 export const sessionContentIndexStatusOptions = (fetch = runtimeFetch) => queryOptions({
   queryKey: [getRuntimeTransportIdentity(), 'contentSearchStatus', getRuntimeGeneration()],
   queryFn: async ({ signal }) => {
-    const response = await fetch('/api/openchamber/content-search', { signal });
+    const response = await fetch('/api/yuri/content-search', { signal });
     if (response.status === 404 || response.status === 501) return null;
     if (!response.ok) throw new Error(`Content index unavailable (${response.status})`);
     const { index } = await response.json() as { index?: SessionContentIndexStatus };

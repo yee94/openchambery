@@ -1,5 +1,5 @@
 const STORE_VERSION = 1;
-const TOKEN_PREFIX = 'oc_client_';
+const TOKEN_PREFIX = 'yuri_client_';
 const TOKEN_BYTES = 32;
 const MAX_LABEL_LENGTH = 80;
 const LAST_USED_WRITE_INTERVAL_MS = 60_000;
@@ -246,13 +246,14 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
   };
 
   const authenticateBearerToken = async (token, req) => {
-    if (typeof token !== 'string' || !token.startsWith(TOKEN_PREFIX)) {
+    // Yuri 2.x migration: existing hashed client credentials retain their bytes.
+    if (typeof token !== 'string' || (!token.startsWith(TOKEN_PREFIX) && !token.startsWith('oc_client_'))) {
       return null;
     }
     // Which transport carried this request: the relay tunnel proxy stamps every
-    // forwarded request with x-openchamber-relay-connection; anything else is a
+    // forwarded request with x-yuri-relay-connection; anything else is a
     // direct (local/LAN/tunnel-URL) request. Display-only device metadata.
-    const transport = req?.headers?.['x-openchamber-relay-connection'] ? 'relay' : 'direct';
+    const transport = req?.headers?.['x-yuri-relay-connection'] ? 'relay' : 'direct';
     return withStoreMutation(async () => {
       const tokenHash = hashToken(token);
       const store = await readStore();

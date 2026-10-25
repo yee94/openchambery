@@ -44,7 +44,7 @@ const catalogBody = (url) => {
 };
 
 if (process.env.REPRO_CHILD !== '1') {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'oc-sched-put-catalog-'));
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'yuri-sched-put-catalog-'));
   const home = path.join(root, 'home');
   const dataDir = path.join(root, 'data-dir');
   const workspace = path.join(root, 'workspace');
@@ -178,10 +178,10 @@ if (process.env.REPRO_CHILD !== '1') {
       REPRO_CHILD: '1',
       REPRO_ROOT: root,
       REPRO_WORKSPACE: workspace,
-      OPENCHAMBER_DATA_DIR: dataDir,
-      OPENCHAMBER_RUNTIME: 'web',
-      OPENCHAMBER_API_ONLY: 'true',
-      OPENCHAMBER_SKIP_OPENCODE_START: 'true',
+      YURI_DATA_DIR: dataDir,
+      YURI_RUNTIME: 'web',
+      YURI_API_ONLY: 'true',
+      YURI_SKIP_OPENCODE_START: 'true',
       OPENCODE_SKIP_START: 'true',
       OPENCODE_HOST: `http://127.0.0.1:${fixturePort}`,
       OPENCODE_CONFIG_DIR: opencodeConfig,
@@ -247,7 +247,7 @@ const stopHost = async () => {
 };
 process.once('SIGTERM', () => { void stopHost().finally(() => process.exit(1)); });
 process.once('SIGINT', () => { void stopHost().finally(() => process.exit(1)); });
-const report = { isolation: { home, dataDir: process.env.OPENCHAMBER_DATA_DIR } };
+const report = { isolation: { home, dataDir: process.env.YURI_DATA_DIR } };
 
 const fail = (message, extra) => {
   const error = new Error(message);
@@ -284,7 +284,7 @@ try {
   const projectID = project.id;
   const directory = registered.body.path;
   const putPath = `/api/projects/${encodeURIComponent(projectID)}/scheduled-tasks`;
-  const configPath = path.join(home, '.config', 'openchamber', 'projects', `${projectID}.json`);
+  const configPath = path.join(process.env.YURI_DATA_DIR, 'projects', `${projectID}.json`);
   const readDisk = async () => {
     try {
       return JSON.parse(await fsp.readFile(configPath, 'utf8')).scheduledTasks || [];
@@ -451,7 +451,7 @@ try {
   report.directory = directory;
   report.disabledFromEnabled = true;
   report.configPath = configPath;
-  report.underDataDir = configPath.startsWith(process.env.OPENCHAMBER_DATA_DIR);
+  report.underDataDir = configPath.startsWith(process.env.YURI_DATA_DIR);
   await fsp.writeFile(path.join(process.env.REPRO_ROOT, 'report.json'), JSON.stringify(report));
 } catch (error) {
   await fsp.writeFile(path.join(process.env.REPRO_ROOT, 'report.json'), JSON.stringify({

@@ -177,7 +177,7 @@ function extractJavaSurface(source) {
   for (const match of source.matchAll(/notifyListeners\(\s*"([^"]+)"/g)) {
     events.add(match[1])
   }
-  // OpenChamberNavigationPlugin forwards progress via notifyListeners(eventName, …)
+  // YuriNavigationPlugin forwards progress via notifyListeners(eventName, …)
   // where eventName is the string literal passed into notifyProgress("backStarted"|…).
   for (const match of source.matchAll(/notifyProgress\(\s*"([^"]+)"/g)) {
     events.add(match[1])

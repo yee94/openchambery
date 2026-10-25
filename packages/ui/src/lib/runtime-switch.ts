@@ -24,7 +24,7 @@ export type RuntimeEndpointChangedDetail = {
   transportIdentityChanged?: boolean;
 };
 
-const RUNTIME_ENDPOINT_CHANGED_EVENT = 'openchamber:runtime-endpoint-changed';
+const RUNTIME_ENDPOINT_CHANGED_EVENT = 'yuri:runtime-endpoint-changed';
 
 let activeApiBaseUrl = '';
 let activeRuntimeKey = '';
@@ -67,11 +67,11 @@ const buildEndpointFingerprint = (options: {
   relay: options.relay ?? null,
 });
 
-const setWindowRuntimeValue = <K extends '__OPENCHAMBER_API_BASE_URL__' | '__OPENCHAMBER_CLIENT_TOKEN__' | '__OPENCHAMBER_RUNTIME_HEADERS__'>(
+const setWindowRuntimeValue = <K extends '__YURI_API_BASE_URL__' | '__YURI_CLIENT_TOKEN__' | '__YURI_RUNTIME_HEADERS__'>(
   runtimeWindow: typeof window & {
-    __OPENCHAMBER_API_BASE_URL__?: string;
-    __OPENCHAMBER_CLIENT_TOKEN__?: string;
-    __OPENCHAMBER_RUNTIME_HEADERS__?: Record<string, string>;
+    __YURI_API_BASE_URL__?: string;
+    __YURI_CLIENT_TOKEN__?: string;
+    __YURI_RUNTIME_HEADERS__?: Record<string, string>;
   },
   key: K,
   value: (typeof runtimeWindow)[K],
@@ -117,20 +117,20 @@ export const isRuntimeEndpointIdentityChange = (detail: RuntimeEndpointChangedDe
   ?? normalizeRuntimeUrlKey(detail.apiBaseUrl) !== normalizeRuntimeUrlKey(detail.previousApiBaseUrl)
 );
 
-/** True when the paired device / OpenChamber host changed. LAN⇄relay keeps the same runtimeKey. */
+/** True when the paired device / Yuri host changed. LAN⇄relay keeps the same runtimeKey. */
 export const isRuntimeInstanceChange = (detail: RuntimeEndpointChangedDetail): boolean => (
   detail.runtimeKey !== detail.previousRuntimeKey
 );
 
 const readInjectedApiBaseUrl = (): string => {
   if (typeof window === 'undefined') return '';
-  const injected = (window as typeof window & { __OPENCHAMBER_API_BASE_URL__?: string }).__OPENCHAMBER_API_BASE_URL__;
+  const injected = (window as typeof window & { __YURI_API_BASE_URL__?: string }).__YURI_API_BASE_URL__;
   return typeof injected === 'string' ? injected.trim() : '';
 };
 
 const readInjectedLocalOrigin = (): string => {
   if (typeof window === 'undefined') return '';
-  const injected = (window as typeof window & { __OPENCHAMBER_LOCAL_ORIGIN__?: string }).__OPENCHAMBER_LOCAL_ORIGIN__;
+  const injected = (window as typeof window & { __YURI_LOCAL_ORIGIN__?: string }).__YURI_LOCAL_ORIGIN__;
   return typeof injected === 'string' ? injected.trim() : '';
 };
 
@@ -193,13 +193,13 @@ export const switchRuntimeEndpoint = (options: { apiBaseUrl: string; clientToken
   activeRuntimeKey = runtimeKey;
   if (typeof window !== 'undefined') {
     const runtimeWindow = window as typeof window & {
-      __OPENCHAMBER_API_BASE_URL__?: string;
-      __OPENCHAMBER_CLIENT_TOKEN__?: string;
-      __OPENCHAMBER_RUNTIME_HEADERS__?: Record<string, string>;
+      __YURI_API_BASE_URL__?: string;
+      __YURI_CLIENT_TOKEN__?: string;
+      __YURI_RUNTIME_HEADERS__?: Record<string, string>;
     };
-    setWindowRuntimeValue(runtimeWindow, '__OPENCHAMBER_API_BASE_URL__', apiBaseUrl);
-    setWindowRuntimeValue(runtimeWindow, '__OPENCHAMBER_CLIENT_TOKEN__', options.clientToken || undefined);
-    setWindowRuntimeValue(runtimeWindow, '__OPENCHAMBER_RUNTIME_HEADERS__', options.requestHeaders || undefined);
+    setWindowRuntimeValue(runtimeWindow, '__YURI_API_BASE_URL__', apiBaseUrl);
+    setWindowRuntimeValue(runtimeWindow, '__YURI_CLIENT_TOKEN__', options.clientToken || undefined);
+    setWindowRuntimeValue(runtimeWindow, '__YURI_RUNTIME_HEADERS__', options.requestHeaders || undefined);
   }
   configureRuntimeUrlResolver({ apiBaseUrl, realtimeBaseUrl: apiBaseUrl });
   // Transport fingerprint is already the target. Credential mutations during

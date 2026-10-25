@@ -11,7 +11,7 @@ type VideoPlugin = {
   respond(options: VideoReply): Promise<void>;
   addListener(event: 'request', callback: (event: VideoRequest) => void): Promise<PluginListenerHandle>;
 };
-const plugin = registerPlugin<VideoPlugin>('OpenChamberVideo');
+const plugin = registerPlugin<VideoPlugin>('YuriVideo');
 
 const boundedRange = (range: string | undefined): string => {
   const match = /^bytes=(\d*)-(\d*)$/.exec(range || `bytes=0-${VIDEO_RANGE_BYTES - 1}`);
@@ -40,7 +40,7 @@ export async function openNativeVideoSource(
   options: Pick<RuntimeFetchOptions, 'query'>,
   signal: AbortSignal,
 ): Promise<{ url: string; release: () => Promise<void> } | null> {
-  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'ios' || !Capacitor.isPluginAvailable('OpenChamberVideo')) return null;
+  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'ios' || !Capacitor.isPluginAvailable('YuriVideo')) return null;
   const identity = getRuntimeTransportIdentity();
   const assetId = crypto.randomUUID();
   const requests = new Map<string, AbortController>();

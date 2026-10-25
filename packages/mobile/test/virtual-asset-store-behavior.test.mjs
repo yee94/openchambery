@@ -61,7 +61,7 @@ function createStore() {
         lastActivity: now,
         activeReaders: 0,
       });
-      return `openchamber-asset://v/${assetId}`;
+      return `yuri-asset://v/${assetId}`;
     },
     append(assetId, bytes) {
       prune();
@@ -129,7 +129,7 @@ function createStore() {
 test('create returns opaque scheme URL without credentials', () => {
   const store = createStore();
   const url = store.create('asset-001', 'image/png');
-  assert.equal(url, 'openchamber-asset://v/asset-001');
+  assert.equal(url, 'yuri-asset://v/asset-001');
   assert.doesNotMatch(url, /@|password|token/i);
 });
 

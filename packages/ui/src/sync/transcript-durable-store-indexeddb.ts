@@ -1,3 +1,4 @@
+import { migrateBrandIndexedDB } from '@/lib/brand-storage-migration';
 import type { Message, Part } from "@/lib/opencode/v2-types"
 
 import type {
@@ -29,7 +30,7 @@ import {
   transcriptSortKeyOf,
 } from "./transcript-durable-store"
 
-const DATABASE_NAME = "openchamber-transcript-durable"
+const DATABASE_NAME = "yuri-transcript-durable"
 const DATABASE_VERSION = 1
 const INDEX_STORE = "transcriptIndex"
 const CONTENT_STORE = "transcriptContent"
@@ -199,7 +200,7 @@ const wrapRequest = <V>(request: IDBRequest<V>, transaction: IDBTransaction): Pr
   })
 
 const openDatabase = (databaseName: string): Promise<IDBDatabase> =>
-  new Promise((resolve, reject) => {
+  migrateBrandIndexedDB(databaseName).then(() => new Promise<IDBDatabase>((resolve, reject) => {
     if (!globalThis.indexedDB) {
       reject(new Failure("database-unavailable"))
       return
@@ -236,7 +237,7 @@ const openDatabase = (databaseName: string): Promise<IDBDatabase> =>
     }
     request.onerror = fail
     request.onblocked = fail
-  })
+  }))
 
 const deleteDatabase = (databaseName: string): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -522,7 +523,7 @@ export function createTranscriptDurableStoreFromDriver(
 
 /**
  * Production IndexedDB adapter. Pass `databaseName` to isolate tests; omit it
- * for the shared `openchamber-transcript-durable` database.
+ * for the shared `yuri-transcript-durable` database.
  */
 export function createIndexedDBTranscriptDurableStore(
   options: IndexedDBTranscriptDurableStoreOptions = {},

@@ -122,7 +122,7 @@ describe('AssistantView contact surface', () => {
     const desktop = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
     const mobile = await readFile(join(directory, '../../mobile/assistant/MobileAssistantTab.tsx'), 'utf8')
     const desktopHeader = desktop.slice(desktop.indexOf('<section className="flex h-full'), desktop.indexOf('role="listbox"'))
-    const mobileHeader = mobile.slice(mobile.indexOf('snapshot.data.assistants.length > 0'), mobile.indexOf('className="oc-mobile-assistant-catalog"'))
+    const mobileHeader = mobile.slice(mobile.indexOf('snapshot.data.assistants.length > 0'), mobile.indexOf('className="yuri-mobile-assistant-catalog"'))
     for (const header of [desktopHeader, mobileHeader]) {
       expect(header).toContain('type="button"')
       expect(header).toContain("aria-label={t('assistants.settings.create')}")

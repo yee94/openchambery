@@ -58,7 +58,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   const options = {
     port: DEFAULT_PORT,
     host: undefined,
-    uiPassword: process.env.OPENCHAMBER_UI_PASSWORD || undefined,
+    uiPassword: process.env.YURI_UI_PASSWORD || undefined,
     json: false,
     all: false,
     follow: true,
@@ -262,7 +262,7 @@ function parseArgs(argv = process.argv.slice(2)) {
       case 'tunnel-token':
       case 'tunnel-hostname':
       case 'tunnel':
-        removedFlagErrors.push(`\`--${name}\` was removed. Use LAN pairing (\`openchamber connect-url\`) or private relay instead.`);
+        removedFlagErrors.push(`\`--${name}\` was removed. Use LAN pairing (\`yuri connect-url\`) or private relay instead.`);
         break;
       default:
         if (!long && name.length === 1) {
@@ -297,10 +297,10 @@ function parseArgs(argv = process.argv.slice(2)) {
 
 function showHelp() {
   console.log(`
- OpenChamber - Web interface for the OpenCode AI coding agent
+ Yuri - Web interface for the OpenCode AI coding agent
 
 USAGE:
-  openchamber [COMMAND] [OPTIONS]
+  yuri [COMMAND] [OPTIONS]
 
 COMMANDS:
   serve          Start the web server (daemon default)
@@ -308,7 +308,7 @@ COMMANDS:
   restart        Stop and start the server
   status         Show server status
   startup        Manage launch at system startup
-  logs           Tail OpenChamber logs
+  logs           Tail Yuri logs
   connect-url    Generate URL/QR for connecting another client
   update         Check for and install updates
 
@@ -329,36 +329,36 @@ OPTIONS:
   -v, --version           Show version
 
 ENVIRONMENT:
-  OPENCHAMBER_HOST             Bind address (e.g. 0.0.0.0 for all interfaces)
-  OPENCHAMBER_UI_PASSWORD      Alternative to --ui-password flag
-  OPENCHAMBER_API_ONLY         Set to true/1 to start API routes only
-  OPENCHAMBER_DATA_DIR         Override OpenChamber data directory
-  OPENCHAMBER_RELAY_URL        Pin private relay endpoint (ws:// or wss://)
+  YURI_HOST             Bind address (e.g. 0.0.0.0 for all interfaces)
+  YURI_UI_PASSWORD      Alternative to --ui-password flag
+  YURI_API_ONLY         Set to true/1 to start API routes only
+  YURI_DATA_DIR         Override Yuri data directory
+  YURI_RELAY_URL        Pin private relay endpoint (ws:// or wss://)
   OPENCODE_HOST               External OpenCode server base URL, e.g. http://hostname:4096
   OPENCODE_PORT               Port of external OpenCode server to connect to
   OPENCODE_SKIP_START          Skip starting OpenCode, use external server
-  OPENCHAMBER_OPENCODE_HOSTNAME  Bind hostname for managed OpenCode server (default: 127.0.0.1)
+  YURI_OPENCODE_HOSTNAME  Bind hostname for managed OpenCode server (default: 127.0.0.1)
 
 EXAMPLES:
-  openchamber                    # Start in daemon mode on default port 3000 (or free port)
-  openchamber --port 8080        # Start on port 8080 (daemon)
-  openchamber --lan --port 3002  # Start on LAN at 0.0.0.0:3002
-  openchamber serve --foreground # Start in foreground (for systemd Type=simple)
-  openchamber serve --relay-host # Enable private relay host (SSH-managed remote)
-  openchamber serve --relay-host wss://relay.example/ws
-  openchamber connect-url --port 3000 --qr
-  openchamber connect-url --server https://openchamber.example.com
-  openchamber startup enable     # Start OpenChamber at user login
-  openchamber logs               # Follow logs for latest running instance
+  yuri                    # Start in daemon mode on default port 3000 (or free port)
+  yuri --port 8080        # Start on port 8080 (daemon)
+  yuri --lan --port 3002  # Start on LAN at 0.0.0.0:3002
+  yuri serve --foreground # Start in foreground (for systemd Type=simple)
+  yuri serve --relay-host # Enable private relay host (SSH-managed remote)
+  yuri serve --relay-host wss://relay.example/ws
+  yuri connect-url --port 3000 --qr
+  yuri connect-url --server https://yuri.example.com
+  yuri startup enable     # Start Yuri at user login
+  yuri logs               # Follow logs for latest running instance
 `);
 }
 
 function showStartupHelp() {
   console.log(`
- OpenChamber Startup Commands
+ Yuri Startup Commands
 
 USAGE:
-  openchamber startup <SUBCOMMAND> [OPTIONS]
+  yuri startup <SUBCOMMAND> [OPTIONS]
 
 SUBCOMMANDS:
   status      Show startup integration status
@@ -375,23 +375,23 @@ OPTIONS:
   -q, --quiet             Suppress non-essential output
 
 EXAMPLES:
-  openchamber startup enable
-  openchamber startup enable --port 3000
-  openchamber startup enable --port 3000 --api-only --host 0.0.0.0
-  openchamber startup status --json
+  yuri startup enable
+  yuri startup enable --port 3000
+  yuri startup enable --port 3000 --api-only --host 0.0.0.0
+  yuri startup status --json
 `);
 }
 
 function showConnectUrlHelp() {
   console.log(`
- OpenChamber Connect URL
+ Yuri Connect URL
 
 USAGE:
-  openchamber connect-url [OPTIONS]
+  yuri connect-url [OPTIONS]
 
 DESCRIPTION:
-  Generate an openchamber:// connection link for adding this server to another
-  OpenChamber app. If no server is running on the selected port, it starts one.
+  Generate an yuri:// connection link for adding this server to another
+  Yuri app. If no server is running on the selected port, it starts one.
 
 OPTIONS:
   -p, --port <port>       Server port to use or start (default: ${DEFAULT_PORT})
@@ -404,7 +404,7 @@ OPTIONS:
                           so the link works away from the local network. The
                           device prefers the direct connection when reachable;
                           the instance brings the relay up on its own. Set
-                          OPENCHAMBER_RELAY_URL to use a self-hosted relay.
+                          YURI_RELAY_URL to use a self-hosted relay.
   --name <label>          Instance name stored on the connecting device
   --ui-password <value>   Protect browser access when UI routes are enabled
   --api-only              Start in headless/API-only mode when starting
@@ -414,10 +414,10 @@ OPTIONS:
   -h, --help              Show this help
 
 EXAMPLES:
-  openchamber connect-url --port 3000 --qr
-  openchamber connect-url --port 3000 --api-only --lan --server http://workstation.local:3000 --qr
-  openchamber connect-url --server https://openchamber.example.com --name Workstation
-  openchamber connect-url --relay --name "My laptop"
+  yuri connect-url --port 3000 --qr
+  yuri connect-url --port 3000 --api-only --lan --server http://workstation.local:3000 --qr
+  yuri connect-url --server https://yuri.example.com --name Workstation
+  yuri connect-url --relay --name "My laptop"
 `);
 }
 

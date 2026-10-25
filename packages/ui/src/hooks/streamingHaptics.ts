@@ -3,7 +3,7 @@
  *
  * Pure logic (platform checks, visible-session evaluation, dedup state machine)
  * lives here and is tested standalone. The hook wraps it with store subscriptions
- * and the native OpenChamber haptics plugin.
+ * and the native Yuri haptics plugin.
  */
 
 import React from 'react';
@@ -20,24 +20,24 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? React.useLayou
 
 export type MobileHapticStrength = 'light' | 'medium' | 'heavy';
 
-type OpenChamberHapticsPlugin = {
+type YuriHapticsPlugin = {
   impactLight: () => Promise<void>;
   impactMedium: () => Promise<void>;
   impactHeavy: () => Promise<void>;
 };
 
-const OpenChamberHaptics = registerPlugin<OpenChamberHapticsPlugin>('OpenChamberHaptics');
+const YuriHaptics = registerPlugin<YuriHapticsPlugin>('YuriHaptics');
 let nativeHapticsAvailable: boolean | null = null;
 
 const isNativeHapticsAvailable = (): boolean => {
-  nativeHapticsAvailable ??= Capacitor.isPluginAvailable('OpenChamberHaptics');
+  nativeHapticsAvailable ??= Capacitor.isPluginAvailable('YuriHaptics');
   return nativeHapticsAvailable;
 };
 
 /** Maps declared strength to the matching native plugin method. */
 export function resolveMobileHapticMethod(
   strength: MobileHapticStrength,
-): keyof OpenChamberHapticsPlugin {
+): keyof YuriHapticsPlugin {
   switch (strength) {
     case 'medium':
       return 'impactMedium';
@@ -77,7 +77,7 @@ export type HapticsInput = {
   eventSessionId: string;
   /** Session currently displayed by the mobile shell. */
   currentSessionId: string | null;
-  /** True when the app is in the foreground (e.g. `oc-native-app-active` class is set). */
+  /** True when the app is in the foreground (e.g. `yuri-native-app-active` class is set). */
   isForeground: boolean;
   /** True when document.visibilityState is 'visible'. */
   isVisible: boolean;
@@ -168,14 +168,14 @@ export function triggerMobileHaptic(
 ): boolean {
   if (!isCapacitorMobileNative()) return false;
   if (!isNativeHapticsAvailable()) return false;
-  if (document.visibilityState !== 'visible' || !document.documentElement.classList.contains('oc-native-app-active')) return false;
+  if (document.visibilityState !== 'visible' || !document.documentElement.classList.contains('yuri-native-app-active')) return false;
 
   const now = Date.now();
   if (!options?.bypassCadence && !shouldTriggerHaptic(lastHapticAt, now)) return false;
   lastHapticAt = now;
 
   const method = resolveMobileHapticMethod(strength);
-  void OpenChamberHaptics[method]().catch(() => undefined);
+  void YuriHaptics[method]().catch(() => undefined);
   notePerfHapticFired(strength);
   return true;
 }
@@ -226,7 +226,7 @@ export function useStreamingHaptics(): void {
       if (!shouldProcessEvent(event)) return;
 
       const currentSessionId = useSessionUIStore.getState().currentSessionId;
-      const isForeground = document.documentElement.classList.contains('oc-native-app-active');
+      const isForeground = document.documentElement.classList.contains('yuri-native-app-active');
 
       const decision = evaluateHaptics({
         eventSessionId: event.sessionID,

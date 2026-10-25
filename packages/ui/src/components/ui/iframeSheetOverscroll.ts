@@ -11,9 +11,9 @@ import {
   shouldCommitMobileWindowMotionDismiss,
 } from './useMobileWindowMotionDismissGesture';
 
-export const MOBILE_WINDOW_MOTION_ID_ATTR = 'data-oc-motion-id';
+export const MOBILE_WINDOW_MOTION_ID_ATTR = 'data-yuri-motion-id';
 
-const SHEET_OVERSCROLL_STYLE_ATTR = 'data-oc-sheet-overscroll';
+const SHEET_OVERSCROLL_STYLE_ATTR = 'data-yuri-sheet-overscroll';
 const SHEET_OVERSCROLL_STYLE = 'html, body { overscroll-behavior-y: none; }';
 /** Form / editable chrome must never arm sheet dismiss (incl. plaintext-only). */
 const NO_DISMISS_TARGET_SELECTOR = [

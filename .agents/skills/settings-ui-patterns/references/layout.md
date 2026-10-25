@@ -21,10 +21,10 @@ Use the shared Settings tokens instead of assigning typography classes to
 section headings:
 
 - Secondary-page title: shared navigation/header component.
-- Section label: `.oc-settings-group-label` and
-  `--oc-settings-section-title-*`.
-- Values/labels: `--oc-settings-row-label-*` through `SettingsRow`.
-- Helper/meta: `--oc-settings-row-meta-*` through `SettingsRow` or the group
+- Section label: `.yuri-settings-group-label` and
+  `--yuri-settings-section-title-*`.
+- Values/labels: `--yuri-settings-row-label-*` through `SettingsRow`.
+- Helper/meta: `--yuri-settings-row-meta-*` through `SettingsRow` or the group
   description.
 - Numeric values: add `tabular-nums` without changing the base size.
 
@@ -32,10 +32,10 @@ Never use `typography-ui-header` for a Settings section label.
 
 ## Spacing
 
-- Use `oc-settings-page-content` or `oc-settings-section-stack` between sibling
+- Use `yuri-settings-page-content` or `yuri-settings-section-stack` between sibling
   groups.
-- Use `--oc-settings-section-gap` between a section label and its card.
-- Use `--oc-settings-section-stack-gap` between cards.
+- Use `--yuri-settings-section-gap` between a section label and its card.
+- Use `--yuri-settings-section-stack-gap` between cards.
 - Let `SettingsRow` own row height, padding, divider, and card insets.
 - Do not use local `mb-8`, `space-y-6`, `space-y-8`, or
   `px-2 pb-2 pt-0` section recipes.

@@ -37,7 +37,7 @@ describe('MobileRowActionsSheet project actions', () => {
       <I18nProvider>
         <MobileRowActionsSheet
           open
-          target={{ kind: 'project', title: 'OpenChamber', gitRepository: true }}
+          target={{ kind: 'project', title: 'Yuri', gitRepository: true }}
           actions={{ onSyncSessions: () => undefined }}
           onOpenChange={() => undefined}
         />

@@ -69,7 +69,7 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
   return (
     <div
       className={cn(
-        'oc-settings-group-row group relative flex items-center transition-colors duration-150',
+        'yuri-settings-group-row group relative flex items-center transition-colors duration-150',
         selected
           ? 'bg-interactive-selection'
           : 'hover:bg-interactive-hover',

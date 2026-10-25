@@ -1,7 +1,7 @@
 /**
  * Platform-agnostic question auto-delegate core contracts.
  * Shared by the web runtime adapter and VS Code host integration.
- * API tip event: `openchamber:question-auto-delegate-changed` with `{ epoch, revision }` only —
+ * API tip event: `yuri:question-auto-delegate-changed` with `{ epoch, revision }` only —
  * consumers must GET `/api/question-auto-delegate` for the authoritative snapshot.
  */
 import type { QuestionPauseStore } from './pause-store.js';

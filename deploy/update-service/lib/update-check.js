@@ -3,7 +3,7 @@ import { loadReleaseNotes } from './release-notes.js';
 const VERSION_PATTERN = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const DEFAULT_CHECK_INTERVAL_SECONDS = 3600;
 const MANIFEST_PATH = '/update-manifest.json';
-const RELEASE_DOWNLOAD_BASE = 'https://github.com/yee94/openchamber/releases/download';
+const RELEASE_DOWNLOAD_BASE = 'https://github.com/yee94/yuri/releases/download';
 const IOS_TESTFLIGHT_PUBLIC_URL = 'https://testflight.apple.com/join/ZCENBHtm';
 
 function responseHeaders(headers = {}) {

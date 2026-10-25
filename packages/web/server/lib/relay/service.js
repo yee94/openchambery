@@ -1,5 +1,5 @@
 // Private relay service: config persistence, lifecycle of the relay host
-// client, and the /api/openchamber/relay/* management routes.
+// client, and the /api/yuri/relay/* management routes.
 //
 // Config lives in the server settings file as `settings.privateRelay =
 // { enabled, relayUrl, extraRelayUrls }` (same storage precedent as
@@ -8,11 +8,11 @@
 // endpoints ("multi-relay"): the host dials every configured endpoint at once
 // with the SAME identity, so one server is reachable via several domains and
 // clients treat serverId + relayUrl pairs as distinct instances. Routes are
-// registered with the other OpenChamber feature routes, before the generic
+// registered with the other Yuri feature routes, before the generic
 // OpenCode proxy, and are covered by the same global UI auth gate.
 //
 // Host gate: only the Electron desktop runtime or an SSH-managed remote server
-// may run a relay host (OPENCHAMBER_RUNTIME=desktop | ssh-remote).
+// may run a relay host (YURI_RUNTIME=desktop | ssh-remote).
 // Plain `node server`, `dev:web:hmr`, VS Code, ordinary CLI, and browser clients
 // must never open the host-control socket, mint a relay identity, advertise a
 // host pairing candidate, or probe the relay. They may still be relay *clients*
@@ -23,18 +23,18 @@ import express from 'express';
 import { createRelayIdentityRuntime } from './identity.js';
 import { startRelayHost } from './host-client.js';
 
-export const DEFAULT_RELAY_URL = 'wss://relay.openchamber.dev/ws';
+export const DEFAULT_RELAY_URL = '';
 
 export const RELAY_HOST_DESKTOP_ONLY_MESSAGE =
-  'Relay host is only available in the OpenChamber desktop app or an SSH-managed remote server';
+  'Relay host is only available in the Yuri desktop app or an SSH-managed remote server';
 
 // Electron main sets this before importing the in-process web server.
 export const isDesktopRelayHostRuntime = (env = process.env) =>
-  env?.OPENCHAMBER_RUNTIME === 'desktop';
+  env?.YURI_RUNTIME === 'desktop';
 
-// Desktop app, or an SSH-manager-started remote (`OPENCHAMBER_RUNTIME=ssh-remote`).
+// Desktop app, or an SSH-manager-started remote (`YURI_RUNTIME=ssh-remote`).
 export const isRelayHostRuntime = (env = process.env) => {
-  const runtime = env?.OPENCHAMBER_RUNTIME;
+  const runtime = env?.YURI_RUNTIME;
   return runtime === 'desktop' || runtime === 'ssh-remote';
 };
 
@@ -105,12 +105,12 @@ const normalizeExtraRelayUrls = (value) => {
 // stored setting entirely, so the host connection, the pairing offer, and the
 // status all point at it — clients then inherit it from the offer automatically.
 const envRelayUrlOverride = (env = process.env) => {
-  const raw = env?.OPENCHAMBER_RELAY_URL;
+  const raw = env?.YURI_RELAY_URL;
   if (typeof raw !== 'string' || !raw.trim()) return null;
   return canonicalizeRelayUrl(raw);
 };
 
-// Env (`OPENCHAMBER_RELAY_URL`) → settings.privateRelay.relayUrl → DEFAULT_RELAY_URL.
+// Env (`YURI_RELAY_URL`) → settings.privateRelay.relayUrl → DEFAULT_RELAY_URL.
 export const resolveEffectiveRelayUrl = ({ settings = null, env = process.env } = {}) =>
   envRelayUrlOverride(env) ?? normalizeRelayUrl(settings?.privateRelay?.relayUrl);
 
@@ -192,8 +192,8 @@ export const createRelayService = ({
       // every endpoint simultaneously, so one server is reachable via several
       // domains. The primary stays authoritative for push and default pairing.
       extraRelayUrls: extras,
-      relayUrls: [primary, ...extras],
-      // True when the endpoint is pinned by OPENCHAMBER_RELAY_URL (a self-hosted
+      relayUrls: [primary, ...extras].filter(Boolean),
+      // True when the endpoint is pinned by YURI_RELAY_URL (a self-hosted
       // relay); the stored setting is ignored while it is set.
       relayUrlLocked: override !== null,
     };
@@ -248,7 +248,7 @@ export const createRelayService = ({
 
   const standbyStatus = (holderPid) => ({
     state: 'standby',
-    lastError: `relay host is owned by another local OpenChamber process (pid ${holderPid})`,
+    lastError: `relay host is owned by another local Yuri process (pid ${holderPid})`,
     connectedClients: 0,
   });
 
@@ -355,7 +355,7 @@ export const createRelayService = ({
   // Non-host runtimes never host: skip entirely so a shared data dir with
   // Electron is not rewritten or claim-contested by dev/CLI servers.
   // SSH-managed remotes (`ssh-remote`) may also keep an explicit
-  // `privateRelay.enabled` opt-in (e.g. `openchamber serve --relay-host`) even
+  // `privateRelay.enabled` opt-in (e.g. `yuri serve --relay-host`) even
   // when no paired device is present yet — desktop still auto-clears enabled
   // when demand drops.
   const reconcile = async () => {
@@ -462,7 +462,7 @@ export const createRelayService = ({
   const getPairingCandidate = async () => {
     if (!hostAllowed()) return null;
     const config = await readConfig();
-    if (!config.enabled) return null;
+    if (!config.enabled || !config.relayUrl) return null;
     return buildPairingCandidate(config.relayUrl);
   };
 
@@ -471,7 +471,7 @@ export const createRelayService = ({
   const getPairingCandidates = async () => {
     if (!hostAllowed()) return [];
     const config = await readConfig();
-    if (!config.enabled) return [];
+    if (!config.enabled || config.relayUrls.length === 0) return [];
     const identity = await identityRuntime.getRelayIdentity();
     return config.relayUrls.map((relayUrl) => ({
       type: 'relay',
@@ -511,9 +511,14 @@ export const createRelayService = ({
       }
     }
 
+    if (!targetUrl) {
+      const error = new Error('Configure YURI_RELAY_URL or select a Relay endpoint before pairing');
+      error.statusCode = 400;
+      throw error;
+    }
     const endpointsChanged = extraRelayUrls.join('\n') !== config.extraRelayUrls.join('\n');
     if (!config.enabled || endpointsChanged) {
-      await writeConfig({ enabled: true, relayUrl: config.relayUrl, extraRelayUrls });
+      await writeConfig({ enabled: true, relayUrl: config.relayUrl || targetUrl, extraRelayUrls });
     }
     const next = await readConfig();
     if (next.relayUrl !== config.relayUrl) {
@@ -529,7 +534,7 @@ export const createRelayService = ({
   };
 
   const registerRoutes = (app) => {
-    app.get('/api/openchamber/relay/status', async (_req, res) => {
+    app.get('/api/yuri/relay/status', async (_req, res) => {
       try {
         res.json(await getStatus());
       } catch (error) {
@@ -537,7 +542,7 @@ export const createRelayService = ({
       }
     });
 
-    app.post('/api/openchamber/relay/enable', express.json({ limit: '16kb' }), async (req, res) => {
+    app.post('/api/yuri/relay/enable', express.json({ limit: '16kb' }), async (req, res) => {
       try {
         if (!hostAllowed()) {
           return res.status(403).json({ error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });
@@ -553,6 +558,7 @@ export const createRelayService = ({
           }
           relayUrl = canonical;
         }
+        if (!relayUrl) return res.status(400).json({ error: 'Configure YURI_RELAY_URL or select a Relay endpoint' });
         await writeConfig({ enabled: true, relayUrl, extraRelayUrls: current.extraRelayUrls });
         const next = await readConfig();
         if (next.relayUrl !== current.relayUrl) {
@@ -570,7 +576,7 @@ export const createRelayService = ({
       }
     });
 
-    app.post('/api/openchamber/relay/disable', async (_req, res) => {
+    app.post('/api/yuri/relay/disable', async (_req, res) => {
       try {
         if (!hostAllowed()) {
           return res.status(403).json({ error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });
@@ -590,7 +596,7 @@ export const createRelayService = ({
     // Owner-only: a UI session or the local desktop shell. Paired remote
     // clients never add or remove a host's relay endpoints — the same boundary
     // that keeps them from re-pointing the primary.
-    app.post('/api/openchamber/relay/endpoints', express.json({ limit: '16kb' }), async (req, res) => {
+    app.post('/api/yuri/relay/endpoints', express.json({ limit: '16kb' }), async (req, res) => {
       try {
         if (!hostAllowed()) {
           return res.status(403).json({ error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });

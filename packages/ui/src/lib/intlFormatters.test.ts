@@ -31,8 +31,8 @@ describe('intlFormatters', () => {
     });
 
     // Unique locales avoid pollution from other modules that may have warmed the cache.
-    const localeA = 'en-US-x-oc-fmt-a';
-    const localeB = 'zh-CN-x-oc-fmt-b';
+    const localeA = 'en-US-x-yuri-fmt-a';
+    const localeB = 'zh-CN-x-yuri-fmt-b';
 
     formatCompactNumber(1_000, localeA);
     formatCompactNumber(2_000, localeA);

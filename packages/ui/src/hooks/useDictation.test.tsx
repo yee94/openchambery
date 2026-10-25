@@ -101,7 +101,7 @@ it('cancels capture and fences a late final response on a runtime switch', async
     await act(async () => current.startDictation());
     let confirmation!: Promise<string | null>;
     await act(async () => { confirmation = current.confirmDictation(); });
-    await act(async () => { window.dispatchEvent(new CustomEvent('openchamber:runtime-endpoint-changed')); });
+    await act(async () => { window.dispatchEvent(new CustomEvent('yuri:runtime-endpoint-changed')); });
     await act(async () => { finish({ text: 'old host' }); await confirmation; });
     expect(current.status).toBe('idle');
     expect(mock.sender.cancel).toHaveBeenCalled();
@@ -114,7 +114,7 @@ it('discards failed replay audio when switching Hosts', async () => {
     await act(async () => current.confirmDictation());
     expect(current.status).toBe('failed');
     const cleared = mock.sender.clearAll.mock.calls.length;
-    await act(async () => { window.dispatchEvent(new CustomEvent('openchamber:runtime-endpoint-changed')); });
+    await act(async () => { window.dispatchEvent(new CustomEvent('yuri:runtime-endpoint-changed')); });
     expect(current.status).toBe('idle');
     expect(mock.sender.clearAll.mock.calls.length).toBeGreaterThan(cleared);
     await act(async () => current.retryFailedDictation());

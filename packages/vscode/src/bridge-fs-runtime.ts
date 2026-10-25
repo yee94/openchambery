@@ -64,13 +64,13 @@ type FsExecCommandResult = {
 };
 
 const createGitReadCacheTtlMs = () => {
-  const raw = Number(process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS);
+  const raw = Number(process.env.YURI_GIT_READ_CACHE_TTL_MS);
   if (Number.isFinite(raw) && raw >= 0) return raw;
   return 30 * 1000;
 };
 
 const createGitCheckIgnoreTimeoutMs = () => {
-  const raw = Number(process.env.OPENCHAMBER_GIT_CHECK_IGNORE_TIMEOUT_MS);
+  const raw = Number(process.env.YURI_GIT_CHECK_IGNORE_TIMEOUT_MS);
   if (Number.isFinite(raw) && raw >= 0) return raw;
   return 2500;
 };
@@ -202,7 +202,7 @@ export async function handleFsBridgeMessage(
 
     case 'config:get': {
       const { key } = payload as { key: string };
-      const config = vscode.workspace.getConfiguration('openchamber');
+      const config = vscode.workspace.getConfiguration('yuri');
       const value = config.get(key);
       return { id, type, success: true, data: { value } };
     }

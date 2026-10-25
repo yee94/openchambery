@@ -249,7 +249,7 @@ describe('progressive activity presentation', () => {
     });
 
     test('shimmers only the active title with the info status token', () => {
-        expect(progressiveGroupSource).toContain("? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'");
+        expect(progressiveGroupSource).toContain("? 'animate-text-shimmer text-[var(--status-info)] [--yuri-text-shimmer-base:var(--status-info)]'");
         expect(progressiveGroupSource).toContain(": 'text-foreground/85'");
         expect(progressiveGroupSource).toContain('className="typography-meta shrink-0 tabular-nums text-muted-foreground">{activityDuration}</span>');
     });

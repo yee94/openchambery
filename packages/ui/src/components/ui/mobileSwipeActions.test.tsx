@@ -31,7 +31,7 @@ test('shared swipe reveals actions, coordinates rows, preserves scrolling and pr
     act(() => root.render(<>{['a', 'b'].map(id => <Row key={id} id={id} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} />)}</>));
     const rows = [...container.querySelectorAll('[data-row]')];
     const mains = rows.map(row => row.querySelector('[data-main]')!);
-    const rails = rows.map(row => row.querySelector('.oc-mobile-session-actions')!);
+    const rails = rows.map(row => row.querySelector('.yuri-mobile-session-actions')!);
     rails.forEach(rail => Object.defineProperty(rail, 'offsetWidth', { value: 112 }));
     const swipe = (index: number) => {
       event(mains[index], 'pointerdown', 200);

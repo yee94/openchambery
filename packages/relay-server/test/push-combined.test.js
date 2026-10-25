@@ -55,11 +55,11 @@ const sendBody = (id, tokens, extra = {}) => {
   return { tokens, title, body: extra.body ?? 'session', badge: extra.badge, collapseId: extra.collapseId, env: extra.env, data: extra.data, publicKeyJwk: extra.publicKeyJwk ?? id.publicJwk, ts, sig };
 };
 const completeApnsEnv = (extra = {}) => ({
-  OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID: 'KEYID12345',
-  OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID: 'TEAMID1234',
-  OPENCHAMBER_PUSH_RELAY_APNS_P8: dummyP8,
-  OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID: 'com.yee94.openchamber',
-  OPENCHAMBER_PUSH_RELAY_DATABASE_PATH: ':memory:',
+  YURI_PUSH_RELAY_APNS_KEY_ID: 'KEYID12345',
+  YURI_PUSH_RELAY_APNS_TEAM_ID: 'TEAMID1234',
+  YURI_PUSH_RELAY_APNS_P8: dummyP8,
+  YURI_PUSH_RELAY_APNS_BUNDLE_ID: 'com.yee94.yuri',
+  YURI_PUSH_RELAY_DATABASE_PATH: ':memory:',
   ...extra,
 });
 
@@ -68,9 +68,9 @@ afterEach(async () => {
   await Promise.all(relays.splice(0).map((relay) => relay.stop()));
 });
 
-it('returns null when no OPENCHAMBER_PUSH_RELAY_APNS_ env is set', () => {
+it('returns null when no YURI_PUSH_RELAY_APNS_ env is set', () => {
   expect(createCombinedPushMount({})).toBeNull();
-  expect(createCombinedPushMount({ OPENCHAMBER_PUSH_RELAY_HOST: '0.0.0.0', OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID: '' })).toBeNull();
+  expect(createCombinedPushMount({ YURI_PUSH_RELAY_HOST: '0.0.0.0', YURI_PUSH_RELAY_APNS_KEY_ID: '' })).toBeNull();
 });
 
 it('builds a mount from complete APNs env and throws on partial configuration', () => {
@@ -79,7 +79,7 @@ it('builds a mount from complete APNs env and throws on partial configuration', 
   });
   expect(mount).toMatchObject({ requestHandler: expect.any(Function), start: expect.any(Function), stop: expect.any(Function) });
   mounts.push(mount);
-  expect(() => createCombinedPushMount({ OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID: 'KEYID12345' })).toThrow();
+  expect(() => createCombinedPushMount({ YURI_PUSH_RELAY_APNS_KEY_ID: 'KEYID12345' })).toThrow();
 });
 
 it('serves push routes on the relay port without claiming relay health endpoints', async () => {
@@ -113,7 +113,7 @@ it('serves push routes on the relay port without claiming relay health endpoints
 it('keeps authenticated relay pairing, forwarding and heartbeat responsive while push SQLite is locked', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'push-relay-lock-'));
   const databasePath = path.join(directory, 'tokens.sqlite');
-  const mount = createCombinedPushMount(completeApnsEnv({ OPENCHAMBER_PUSH_RELAY_DATABASE_PATH: databasePath }), { apnsProvider: { send: async () => ({ ok: true }) } });
+  const mount = createCombinedPushMount(completeApnsEnv({ YURI_PUSH_RELAY_DATABASE_PATH: databasePath }), { apnsProvider: { send: async () => ({ ok: true }) } });
   const relay = createPrivateRelayServer({ port: 0, host: '127.0.0.1', requestHandler: mount.requestHandler, limits: { heartbeatMs: 40 } });
   const sockets = [];
   let lock;

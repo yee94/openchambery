@@ -6,14 +6,14 @@ export const createBootstrapRuntime = (dependencies) => {
     registerAuthAndAccessRoutes,
     registerTtsRoutes,
     registerNotificationRoutes,
-    registerOpenChamberRoutes,
+    registerYuriRoutes,
     express,
   } = dependencies;
 
   const setupBaseRoutes = (app, options) => {
     const {
       process,
-      openchamberVersion,
+      yuriVersion,
       runtimeName,
       serverStartedAt,
       gracefulShutdown,
@@ -60,7 +60,7 @@ export const createBootstrapRuntime = (dependencies) => {
       path,
       server,
       __dirname,
-      openchamberDataDir,
+      yuriDataDir,
       fetchFreeZenModels,
       getCachedZenModels,
       setAutoAcceptSession,
@@ -83,7 +83,7 @@ export const createBootstrapRuntime = (dependencies) => {
     registerServerStatusRoutes(app, {
       express,
       process,
-      openchamberVersion,
+      yuriVersion,
       runtimeName,
       serverStartedAt,
       gracefulShutdown,
@@ -148,14 +148,14 @@ export const createBootstrapRuntime = (dependencies) => {
       setAutoAcceptSession,
     });
 
-    registerOpenChamberRoutes(app, {
+    registerYuriRoutes(app, {
       fs,
       os,
       path,
       process,
       server,
       __dirname,
-      openchamberDataDir,
+      yuriDataDir,
       readSettingsFromDiskMigrated,
       persistSettings,
       fetchFreeZenModels,

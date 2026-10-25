@@ -3,9 +3,9 @@ import fsPromises from 'fs/promises';
 import os from 'os';
 import path from 'path';
 
-const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-summary-settings-'));
-const originalDataDir = process.env.OPENCHAMBER_DATA_DIR;
-process.env.OPENCHAMBER_DATA_DIR = tempRoot;
+const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'yuri-summary-settings-'));
+const originalDataDir = process.env.YURI_DATA_DIR;
+process.env.YURI_DATA_DIR = tempRoot;
 
 vi.mock('../opencode/shared.js', () => ({
   readConfigLayers: vi.fn(() => ({ mergedConfig: {} })),
@@ -145,9 +145,9 @@ describe('summary AI settings', () => {
 
   afterAll(async () => {
     if (originalDataDir === undefined) {
-      delete process.env.OPENCHAMBER_DATA_DIR;
+      delete process.env.YURI_DATA_DIR;
     } else {
-      process.env.OPENCHAMBER_DATA_DIR = originalDataDir;
+      process.env.YURI_DATA_DIR = originalDataDir;
     }
     await fsPromises.rm(tempRoot, { recursive: true, force: true });
   });

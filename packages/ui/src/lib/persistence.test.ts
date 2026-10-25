@@ -10,7 +10,7 @@ import { applyPersistedHomeDirectoryToWindow, invalidateSettingsCache, syncDeskt
 import { getRuntimeTransportIdentity } from './runtime-switch';
 
 type TestWindow = {
-  __OPENCHAMBER_HOME__?: string;
+  __YURI_HOME__?: string;
   dispatchEvent: (event: Event) => boolean;
   setTimeout: typeof setTimeout;
   clearTimeout: typeof clearTimeout;
@@ -96,7 +96,7 @@ afterAll(() => {
   if (createdWindow) {
     delete (globalThis as { window?: unknown }).window;
   } else if (typeof window !== 'undefined') {
-    delete getWindow().__OPENCHAMBER_HOME__;
+    delete getWindow().__YURI_HOME__;
   }
   if (createdLocalStorage) {
     delete (globalThis as { localStorage?: unknown }).localStorage;
@@ -105,21 +105,21 @@ afterAll(() => {
 
 describe('applyPersistedHomeDirectoryToWindow', () => {
   beforeEach(() => {
-    delete getWindow().__OPENCHAMBER_HOME__;
+    delete getWindow().__YURI_HOME__;
   });
 
   test('does not overwrite an injected desktop home directory', () => {
-    getWindow().__OPENCHAMBER_HOME__ = '/Users/example';
+    getWindow().__YURI_HOME__ = '/Users/example';
 
     applyPersistedHomeDirectoryToWindow('/Users/example/projects/app');
 
-    expect(getWindow().__OPENCHAMBER_HOME__).toBe('/Users/example');
+    expect(getWindow().__YURI_HOME__).toBe('/Users/example');
   });
 
   test('uses persisted home when no runtime home was injected', () => {
     applyPersistedHomeDirectoryToWindow('/Users/example/projects/app');
 
-    expect(getWindow().__OPENCHAMBER_HOME__).toBe('/Users/example/projects/app');
+    expect(getWindow().__YURI_HOME__).toBe('/Users/example/projects/app');
   });
 });
 

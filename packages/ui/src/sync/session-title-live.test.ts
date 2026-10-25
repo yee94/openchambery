@@ -75,23 +75,23 @@ test('smart-title loading and completion update automatically without clearing e
     handleEvent(directory, { type, properties } as Event, children, routing);
 
   const initialRows = aggregateLiveSessions([store.getState()]);
-  emit('openchamber:session-metadata', { sessionID: session.id, metadata: {
-    openchamber: { titleRefresh: { isGenerating: true } },
+  emit('yuri:session-metadata', { sessionID: session.id, metadata: {
+    yuri: { titleRefresh: { isGenerating: true } },
   } });
-  expect(store.getState().session[0].metadata?.openchamber).toEqual({ titleRefresh: { isGenerating: true } });
+  expect(store.getState().session[0].metadata?.yuri).toEqual({ titleRefresh: { isGenerating: true } });
   expect(store.getState().session_status[session.id]).toBe(busy);
 
   const loadingRows = aggregateLiveSessions([store.getState()]);
   expect(areSessionListsEquivalent(initialRows, loadingRows)).toBe(false);
-  emit('openchamber:session-metadata', { sessionID: session.id, metadata: {
-    openchamber: { titleRefresh: {} },
+  emit('yuri:session-metadata', { sessionID: session.id, metadata: {
+    yuri: { titleRefresh: {} },
   } });
   const completedRows = aggregateLiveSessions([store.getState()]);
   expect(areSessionListsEquivalent(loadingRows, completedRows)).toBe(false);
   expect(store.getState().session_status[session.id]).toBe(busy);
 
   emit('session.updated', { info: { ...session, title: 'Generated title', metadata: {
-    openchamber: { titleRefresh: { lastAutoTitle: 'Generated title' } },
+    yuri: { titleRefresh: { lastAutoTitle: 'Generated title' } },
   } } });
   expect(store.getState().session[0].title).toBe('Generated title');
   expect(store.getState().session_status[session.id]).toBe(busy);
@@ -105,14 +105,14 @@ test('smart-title loading and completion update automatically without clearing e
 
 test('title presentation equality detects failure but ignores recency and unrelated metadata', () => {
   const session = { id: 'ses_title', title: 'Generated title', time: { created: 10, updated: 20 },
-    metadata: { openchamber: { titleRefresh: {} } },
+    metadata: { yuri: { titleRefresh: {} } },
   } as Session;
-  const failed = { ...session, metadata: { openchamber: {
+  const failed = { ...session, metadata: { yuri: {
     titleRefresh: { lastError: 'Title generation failed', failedAt: 30 },
   } } } as Session;
   expect(areSessionListsEquivalent([session], [failed])).toBe(false);
   expect(areSessionListsEquivalent([failed], [session])).toBe(false);
-  const refreshed = { ...session, time: { ...session.time, updated: 40 }, metadata: { openchamber: {
+  const refreshed = { ...session, time: { ...session.time, updated: 40 }, metadata: { yuri: {
     goal: { status: 'active' }, titleRefresh: { activityUpdatedAt: 40, generatedAt: 30 },
   } } } as Session;
   expect(areSessionListsEquivalent([session], [refreshed])).toBe(true);

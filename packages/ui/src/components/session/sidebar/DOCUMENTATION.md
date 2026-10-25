@@ -160,7 +160,7 @@
   background root refresh still wait for registered settings hydration, then
   read the latest persisted project paths so an initially empty renderer store
   cannot release the startup barrier early. After starting the server job, the
-  UI observes SQLite revisions through OpenChamber tip events + GET. When SQLite
+  UI observes SQLite revisions through Yuri tip events + GET. When SQLite
   has rows the startup logo releases as soon as those rows land in the store;
   validation continues with cached rows visible. A first run with an empty index
   waits until hydrate settles and OpenCode init (or the blocking root sync)
@@ -179,7 +179,7 @@
   after the closing body unmounts. Dedicated mobile pages keep their own behavior.
 - Renderer-level worktree catalog reconciliation runs after event-stream ready,
   topology changes, and deduplicated unknown session directories. The sidebar
-  consumes that catalog and retains `oc.worktreeMap` as its cold-start snapshot.
+  consumes that catalog and retains `yuri.worktreeMap` as its cold-start snapshot.
 - Each project menu provides a session-sync action. It refreshes the project's
   root and known worktree directories through the Electron server-owned index
   queue, while Web and VS Code use the bounded SDK refresh fallback.
@@ -318,7 +318,7 @@
 - `hooks/useProjectSessionSelection.ts`: Resolves active/current project-session selection logic and session-directory context.
 - `hooks/useGroupOrdering.ts`: Applies persisted/custom group order with stable fallback ordering; archived groups are reorderable.
 - `hooks/useArchivedAutoFolders.ts`: Maintains archived auto-folder structure and assignment behavior.
-- `hooks/useSidebarPersistence.ts`: Persists sidebar UI state (expanded/collapsed/group order/active session) to instance-scoped storage (`oc.inst.{runtimeKey}.*`) + desktop settings. Project registry order and `projectSortOrder` are Host-authoritative with instance-scoped startup caches. Desktop and mobile project lists use `lib/projectOrder.ts`; manual mode follows the registry and alphabetical modes use a fixed collation locale across devices. Session pin membership is derived from the server session-index snapshot (`pinnedSessionIds` plus in-window `time.pinned`), not localStorage.
+- `hooks/useSidebarPersistence.ts`: Persists sidebar UI state (expanded/collapsed/group order/active session) to instance-scoped storage (`yuri.inst.{runtimeKey}.*`) + desktop settings. Project registry order and `projectSortOrder` are Host-authoritative with instance-scoped startup caches. Desktop and mobile project lists use `lib/projectOrder.ts`; manual mode follows the registry and alphabetical modes use a fixed collation locale across devices. Session pin membership is derived from the server session-index snapshot (`pinnedSessionIds` plus in-window `time.pinned`), not localStorage.
 - `hooks/useProjectRepoStatus.ts`: Tracks per-project git-repo state and root branch metadata.
 - `hooks/useProjectSessionLists.ts`: Reads live and archived project buckets from the shared ownership index.
 - `hooks/useSessionFolderCleanup.ts`: Cleans stale folder session IDs by reconciling known sessions/archived scopes.

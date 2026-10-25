@@ -160,17 +160,17 @@ describe('attachment citations', () => {
         expect(expandImageAttachmentCitations(
             'what is [\u2003image-1.png] vs [image-2.png]',
             [
-                { filename: 'image-1.png', path: '/data/openchamber/prompt-attachments/aa/one.png' },
-                { filename: 'image-2.png', path: '/data/openchamber/prompt-attachments/bb/two.png' },
+                { filename: 'image-1.png', path: '/data/yuri/prompt-attachments/aa/one.png' },
+                { filename: 'image-2.png', path: '/data/yuri/prompt-attachments/bb/two.png' },
             ],
-        )).toBe('what is [/data/openchamber/prompt-attachments/aa/one.png] vs [/data/openchamber/prompt-attachments/bb/two.png]');
+        )).toBe('what is [/data/yuri/prompt-attachments/aa/one.png] vs [/data/yuri/prompt-attachments/bb/two.png]');
     });
 
     test('does not rewrite image citations that are already absolute paths', () => {
         expect(expandImageAttachmentCitations(
-            'see [/data/openchamber/prompt-attachments/aa/one.png]',
-            [{ filename: '/data/openchamber/prompt-attachments/aa/one.png', path: '/other/one.png' }],
-        )).toBe('see [/data/openchamber/prompt-attachments/aa/one.png]');
+            'see [/data/yuri/prompt-attachments/aa/one.png]',
+            [{ filename: '/data/yuri/prompt-attachments/aa/one.png', path: '/other/one.png' }],
+        )).toBe('see [/data/yuri/prompt-attachments/aa/one.png]');
     });
 
     test('classifies code-selection file parts as reference-only display data', () => {

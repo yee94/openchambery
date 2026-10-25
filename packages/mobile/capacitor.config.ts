@@ -1,21 +1,21 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 // OTA channel / shellApiVersion literals must stay in sync with
-// src/openchamber-ota.ts (OPENCHAMBER_OTA_CHANNEL, OPENCHAMBER_SHELL_API_VERSION).
+// src/yuri-ota.ts (YURI_OTA_CHANNEL, YURI_SHELL_API_VERSION).
 // Do not import that module here — Cap CLI loads this file and would execute registerPlugin.
 // OTA channel baked into the shell at build time. Beta builds (TestFlight /
 // sideloaded APK) keep the default; stable store builds pass
-// OPENCHAMBER_OTA_CHANNEL=stable during `mobile:sync`. Keep in sync with
-// packages/mobile/src/openchamber-ota.ts defaults.
-const otaChannel = process.env.OPENCHAMBER_OTA_CHANNEL === 'stable' ? 'stable' : 'beta';
+// YURI_OTA_CHANNEL=stable during `mobile:sync`. Keep in sync with
+// packages/mobile/src/yuri-ota.ts defaults.
+const otaChannel = process.env.YURI_OTA_CHANNEL === 'stable' ? 'stable' : 'beta';
 const config: CapacitorConfig & {
-  OpenChamberOTA: {
+  YuriOTA: {
     channel: string;
     shellApiVersion: number;
   };
 } = {
-  appId: 'com.yee94.openchamber',
-  appName: 'OpenChamber',
+  appId: 'com.yee94.yuri',
+  appName: 'Yuri',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
@@ -32,13 +32,13 @@ const config: CapacitorConfig & {
   // shellApiVersion is the native bridge contract version — bump when any custom
   // Capacitor plugin method surface changes; OTA manifests declare minShellApiVersion
   // and older shells get `install_native_required` instead of a broken bundle.
-  OpenChamberOTA: {
+  YuriOTA: {
     channel: otaChannel,
-    shellApiVersion: 1,
+    shellApiVersion: 2,
   },
   plugins: {
     Keyboard: {
-      // iOS: resize none + JS shell shrink (--oc-kb-layout). Android: adjustNothing +
+      // iOS: resize none + JS shell shrink (--yuri-kb-layout). Android: adjustNothing +
       // pre-focus cached-height composer CSS FLIP; ImeSyncBridge keeps parent
       // padding zero and reports state/settled height. resizeOnFullScreen stays off.
       resize: 'none',
@@ -58,9 +58,8 @@ const config: CapacitorConfig & {
     // Self-hosted Capgo OTA (@capgo/capacitor-updater). Native pods/gradle wiring
     // lands via `bun run mobile:sync` in CI — not checked in from this config alone.
     CapacitorUpdater: {
-      // Override for local/dev self-hosted check endpoints; production default points at
-      // the public update-service OTA check route.
-      updateUrl: process.env.OPENCHAMBER_OTA_UPDATE_URL ?? 'https://openchamber.xiaobe.top/v1/ota/check',
+      // Configure an ownership-verified Yuri endpoint before distributing a native build.
+      updateUrl: process.env.YURI_OTA_UPDATE_URL ?? '',
       // Empty string disables Capgo cloud stats reporting (self-hosted only).
       statsUrl: '',
       defaultChannel: otaChannel,
@@ -76,7 +75,7 @@ const config: CapacitorConfig & {
       autoDeletePrevious: true,
       resetWhenUpdate: true,
       // Optional E2E encryption public key; empty string = unencrypted bundles.
-      publicKey: process.env.OPENCHAMBER_OTA_PUBLIC_KEY ?? '',
+      publicKey: process.env.YURI_OTA_PUBLIC_KEY ?? '',
     },
   },
 };

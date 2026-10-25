@@ -4,7 +4,7 @@ Server-side utility LLM calls (commit messages, session titles, goal audits,
 scheduled-task distill, TTS summaries, PR descriptions) routed through the
 user's connected OpenCode providers. OpenCode uses a "small model" internally
 (titles, summaries) but does not expose it through the SDK or plugins — this
-module replicates the selection as an OpenChamber runtime API and sends every
+module replicates the selection as an Yuri runtime API and sends every
 OpenCode-backed call through the Assistant LLM gateway
 (`llm/completions.js` `createChatCompletion`).
 
@@ -29,7 +29,7 @@ runtime API.
   sidebar index.
 - `resolve.js` — model selection over the connected catalog only, mirroring
   OpenCode's `getSmallModel` chain:
-  0. OpenChamber's own settings override (Settings → Sessions → Small Model):
+  0. Yuri's own settings override (Settings → Sessions → Small Model):
      when `smallModelUseDefault` is `false`, `smallModelOverride`
      (`provider/model`) outranks everything below. Sanitized in
      `settings-helpers.js` (server), `persistence.ts` (client), and
@@ -88,7 +88,7 @@ runtime API.
 
 The LLM gateway checks the model against the connected catalog (`no_provider`
 otherwise) and runs `session.generate` in a throwaway session owned by the
-hidden deny-all `openchamber-text` agent in the shared LLM temp directory
+hidden deny-all `yuri-text` agent in the shared LLM temp directory
 (see `llm/DOCUMENTATION.md`). One model call with the session's provider
 context, no tool loop, no messages written; the session is removed afterwards.
 `restrictToPreferredProvider` forbids resolution from switching away from the

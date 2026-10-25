@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount()); host.remove();
-  document.documentElement.classList.remove('oc-native-app-active');
+  document.documentElement.classList.remove('yuri-native-app-active');
   vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
 });
 const render = async (node: React.ReactNode) => { await act(async () => root.render(node)); };
@@ -133,7 +133,7 @@ describe('Assistant unread UI', () => {
     state.native = true;
     vi.mocked(document.hasFocus).mockReturnValue(false);
     await mountMarker(); await intersect(); expect(state.mark).not.toHaveBeenCalled();
-    await act(async () => document.documentElement.classList.add('oc-native-app-active'));
+    await act(async () => document.documentElement.classList.add('yuri-native-app-active'));
     expect(state.mark).toHaveBeenCalledTimes(1);
   });
 

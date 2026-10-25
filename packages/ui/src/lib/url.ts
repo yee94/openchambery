@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { OpenChamberExternalBrowser } from '@/lib/native-external-browser';
+import { YuriExternalBrowser } from '@/lib/native-external-browser';
 
 type DesktopBridgeGlobal = {
   openExternal?: (url: string) => Promise<unknown>;
@@ -112,9 +112,9 @@ export const openExternalUrl = async (url: string): Promise<boolean> => {
   const normalizedTarget = parsed.toString();
 
   if (Capacitor.getPlatform() === 'android') {
-    if (!Capacitor.isPluginAvailable('OpenChamberExternalBrowser')) return false;
+    if (!Capacitor.isPluginAvailable('YuriExternalBrowser')) return false;
     try {
-      await OpenChamberExternalBrowser.open({ url: normalizedTarget });
+      await YuriExternalBrowser.open({ url: normalizedTarget });
       return true;
     } catch {
       return false;
@@ -131,7 +131,7 @@ export const openExternalUrl = async (url: string): Promise<boolean> => {
     }
   }
 
-  const desktop = (window as unknown as { __OPENCHAMBER_DESKTOP__?: DesktopBridgeGlobal }).__OPENCHAMBER_DESKTOP__;
+  const desktop = (window as unknown as { __YURI_DESKTOP__?: DesktopBridgeGlobal }).__YURI_DESKTOP__;
   if (desktop?.openExternal) {
     try {
       await desktop.openExternal(normalizedTarget);

@@ -677,7 +677,7 @@ describe('parked live edge', () => {
     });
 
     test('the park-end attribute name is the scroller contract', () => {
-        expect(TIMELINE_PARK_END_ATTRIBUTE).toBe('data-oc-timeline-park-end');
+        expect(TIMELINE_PARK_END_ATTRIBUTE).toBe('data-yuri-timeline-park-end');
         const element = document.createElement('div');
         writeTimelineParkEndOffset(element, 416.4);
         expect(element.getAttribute(TIMELINE_PARK_END_ATTRIBUTE)).toBe('416');

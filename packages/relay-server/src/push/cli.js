@@ -25,7 +25,7 @@ export const parsePushRelayArgs = (argv = []) => {
   return parsed;
 };
 
-const helpText = 'Usage: openchamber-push-relay [--host HOST] [--port PORT] [--trust-proxy] [--json] [--quiet]\nEnable --trust-proxy only when public ingress reaches this relay through a trusted reverse proxy.\n';
+const helpText = 'Usage: yuri-push-relay [--host HOST] [--port PORT] [--trust-proxy] [--json] [--quiet]\nEnable --trust-proxy only when public ingress reaches this relay through a trusted reverse proxy.\n';
 const writeJson = (stdout, payload) => stdout.write(`${JSON.stringify(payload)}\n`);
 
 export const runPushRelayCli = async (argv, dependencies = {}) => {

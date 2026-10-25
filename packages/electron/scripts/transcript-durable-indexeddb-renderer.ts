@@ -4,7 +4,7 @@ import type { Message, Part } from "../../ui/src/lib/opencode/v2-types"
 
 type Evidence = { name: string }
 
-const DATABASE_NAME = "openchamber-transcript-durable-evidence"
+const DATABASE_NAME = "yuri-transcript-durable-evidence"
 
 const SCOPE: TranscriptDurableScope = {
   transport: "local",
@@ -127,11 +127,11 @@ const run = async (): Promise<Evidence[]> => {
 
 declare global {
   interface Window {
-    __OPENCHAMBER_TRANSCRIPT_DURABLE_INDEXEDDB_EVIDENCE__?: Promise<{ ok: true; evidence: Evidence[] } | { ok: false; error: string }>
+    __YURI_TRANSCRIPT_DURABLE_INDEXEDDB_EVIDENCE__?: Promise<{ ok: true; evidence: Evidence[] } | { ok: false; error: string }>
   }
 }
 
-window.__OPENCHAMBER_TRANSCRIPT_DURABLE_INDEXEDDB_EVIDENCE__ = run()
+window.__YURI_TRANSCRIPT_DURABLE_INDEXEDDB_EVIDENCE__ = run()
   .then(async (evidence) => {
     try { await deleteTestDatabase() } catch { /* Evidence already recorded destroy; leftover cleanup is best-effort. */ }
     return { ok: true as const, evidence }

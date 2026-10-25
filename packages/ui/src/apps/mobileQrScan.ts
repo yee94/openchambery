@@ -1,6 +1,6 @@
 // Connection payload parsing + native QR scanning for the dedicated mobile app.
 //
-// Pairing v2 links (openchamber://connect?v=2&p=<base64url>) carry a one-time
+// Pairing v2 links (yuri://connect?v=2&p=<base64url>) carry a one-time
 // secret and a list of transport candidates (lan / tunnel / relay); they are
 // redeemed server-side over whichever candidate connects first. We also accept a
 // bare http(s) URL so a QR encoding only the server address works.
@@ -52,7 +52,7 @@ type BarcodeScannerPlugin = {
 };
 
 const BarcodeScanner = registerPlugin<BarcodeScannerPlugin>('BarcodeScanner');
-const BUNDLED_SCANNER_ACTIVE_CLASS = 'oc-barcode-scanner-active';
+const BUNDLED_SCANNER_ACTIVE_CLASS = 'yuri-barcode-scanner-active';
 
 const getScannerPlugin = (): BarcodeScannerPlugin | null => {
   return isQrScanSupported() ? BarcodeScanner : null;
@@ -95,7 +95,7 @@ export const parseConnectionPayload = (raw: string): MobileConnectionPayload | M
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  if (/^openchamber:\/\//i.test(trimmed)) {
+  if (/^yuri:\/\//i.test(trimmed)) {
     const pairing = parsePairingConnectionPayload(trimmed);
     return pairing ? { pairing } : null;
   }
@@ -129,7 +129,7 @@ const mountBundledScannerCancel = (onCancel: () => void): (() => void) => {
   const parent = document.body;
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'oc-barcode-scanner-chrome';
+  button.className = 'yuri-barcode-scanner-chrome';
   button.setAttribute('aria-label', 'Cancel');
   button.textContent = '×';
   button.addEventListener('click', onCancel);

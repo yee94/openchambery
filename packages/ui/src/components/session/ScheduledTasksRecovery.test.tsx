@@ -13,7 +13,7 @@ vi.mock('@/lib/queryRuntime', () => ({
   get queryClient() { return state.client; },
   queryKeys: { runtime: () => ['relay:test'] },
 }));
-vi.mock('@/lib/openchamberEvents', () => ({ subscribeOpenchamberEvents: (listener: typeof state.listener) => {
+vi.mock('@/lib/yuriEvents', () => ({ subscribeYuriEvents: (listener: typeof state.listener) => {
   state.listener = listener;
   return () => { state.listener = null; };
 } }));

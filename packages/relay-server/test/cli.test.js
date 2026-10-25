@@ -15,21 +15,21 @@ afterEach(() => { process.env = { ...baseEnv }; });
 it('gives flags precedence over relay environment configuration', () => {
   const parsed = parseRelayServerArgs(['--host', '0.0.0.0', '--port', '9000', '--path', '/relay', '--trust-proxy']);
   expect(parsed).toMatchObject({ host: '0.0.0.0', port: '9000', path: '/relay', trustProxy: true });
-  expect(buildRelayConfig(parsed, { OPENCHAMBER_RELAY_SERVER_HOST: '127.0.0.2', OPENCHAMBER_RELAY_SERVER_PORT: '8000' })).toMatchObject({ host: '0.0.0.0', port: 9000, path: '/relay', trustProxy: true });
+  expect(buildRelayConfig(parsed, { YURI_RELAY_SERVER_HOST: '127.0.0.2', YURI_RELAY_SERVER_PORT: '8000' })).toMatchObject({ host: '0.0.0.0', port: 9000, path: '/relay', trustProxy: true });
 });
 
 it('validates every exposed limit and URL input', () => {
   const limits = ['MAX_HOSTS', 'MAX_SOCKETS', 'MAX_CONNECTIONS', 'MAX_CLIENTS_PER_HOST', 'MAX_CLIENTS_PER_IP', 'MAX_PENDING_CLIENTS', 'MAX_RAW_SOCKETS', 'MAX_RAW_SOCKETS_PER_IP', 'GRACE_MS', 'TIMESTAMP_SKEW_MS', 'REPLAY_MS', 'MAX_REPLAY_ENTRIES', 'MAX_FRAME_BYTES', 'MAX_QUEUED_BYTES_PER_CONNECTION', 'MAX_GLOBAL_QUEUED_BYTES', 'MAX_ADMISSIONS_PER_IP', 'MAX_HOST_CONTROL_ADMISSIONS_PER_IP', 'MAX_HOST_CONTROL_ADMISSIONS_PER_SERVER', 'HEARTBEAT_MS', 'HANDSHAKE_MS', 'CLOSE_DEADLINE_MS'];
-  for (const key of limits) expect(() => buildRelayConfig({}, { [`OPENCHAMBER_RELAY_SERVER_${key}`]: '0' })).toThrow(`Invalid OPENCHAMBER_RELAY_SERVER_${key}`);
+  for (const key of limits) expect(() => buildRelayConfig({}, { [`YURI_RELAY_SERVER_${key}`]: '0' })).toThrow(`Invalid YURI_RELAY_SERVER_${key}`);
   expect(() => buildRelayConfig({ path: 'ws' }, {})).toThrow('Invalid --path');
   expect(() => buildRelayConfig({ publicUrl: 'https://relay.test/ws' }, {})).toThrow('Invalid --public-url');
-  expect(() => buildRelayConfig({}, { OPENCHAMBER_RELAY_SERVER_REPLAY_MS: '10', OPENCHAMBER_RELAY_SERVER_TIMESTAMP_SKEW_MS: '10' })).toThrow('Invalid OPENCHAMBER_RELAY_SERVER_REPLAY_MS');
+  expect(() => buildRelayConfig({}, { YURI_RELAY_SERVER_REPLAY_MS: '10', YURI_RELAY_SERVER_TIMESTAMP_SKEW_MS: '10' })).toThrow('Invalid YURI_RELAY_SERVER_REPLAY_MS');
   for (const args of [['--unknown'], ['--port'], ['--port', '0'], ['--port', '65536'], ['--path', '/ws?secret=value'], ['--public-url', 'http://relay.test/ws']]) expect(() => buildRelayConfig(parseRelayServerArgs(args), {})).toThrow();
 });
 
 it('uses defaults for blank relay environment values and validates host and public URL relationships', () => {
   const emptyKeys = ['HOST', 'PORT', 'PATH', 'PUBLIC_URL', 'TRUST_PROXY', 'MAX_URL_BYTES', 'MAX_FIELD_BYTES', 'MAX_HOSTS', 'MAX_SOCKETS', 'MAX_CONNECTIONS', 'MAX_CLIENTS_PER_HOST', 'MAX_CLIENTS_PER_IP', 'MAX_PENDING_CLIENTS', 'PENDING_MS', 'MAX_RAW_SOCKETS', 'MAX_RAW_SOCKETS_PER_IP', 'GRACE_MS', 'TIMESTAMP_SKEW_MS', 'REPLAY_MS', 'MAX_REPLAY_ENTRIES', 'MAX_FRAME_BYTES', 'MAX_QUEUED_BYTES_PER_CONNECTION', 'MAX_GLOBAL_QUEUED_BYTES', 'MAX_BUFFERED_AMOUNT', 'MAX_CONTROL_QUEUE_ENTRIES', 'MAX_CONTROL_QUEUED_BYTES', 'PUMP_RETRY_MS', 'HEARTBEAT_MS', 'HANDSHAKE_MS', 'CLOSE_DEADLINE_MS', 'ADMISSION_WINDOW_MS', 'MAX_ADMISSIONS_PER_IP', 'MAX_HOST_CONTROL_ADMISSIONS_PER_IP', 'MAX_HOST_CONTROL_ADMISSIONS_PER_SERVER', 'MAX_ADMISSION_ENTRIES', 'ID_ATTEMPTS'];
-  const emptyEnv = Object.fromEntries(emptyKeys.map((key) => [`OPENCHAMBER_RELAY_SERVER_${key}`, ' \t ' ]));
+  const emptyEnv = Object.fromEntries(emptyKeys.map((key) => [`YURI_RELAY_SERVER_${key}`, ' \t ' ]));
   expect(buildRelayConfig({}, emptyEnv)).toMatchObject({ host: '127.0.0.1', port: 8787, path: '/ws', publicUrl: undefined, trustProxy: false, limits: {} });
   expect(() => buildRelayConfig({ host: 'relay.test/path' }, {})).toThrow('Invalid --host');
   expect(() => buildRelayConfig({ publicUrl: 'wss://relay.test/other' }, {})).toThrow('Invalid --public-url');
@@ -38,17 +38,17 @@ it('uses defaults for blank relay environment values and validates host and publ
 });
 
 it('recognizes the compiled relay executable by its published bin name', () => {
-  expect(isModuleCliExecution('/tmp/openchamber-relay', import.meta.url, (value) => value, 'openchamber-relay')).toBe(true);
-  expect(isModuleCliExecution('/tmp/relay-server', import.meta.url, (value) => value, 'openchamber-relay')).toBe(false);
+  expect(isModuleCliExecution('/tmp/yuri-relay', import.meta.url, (value) => value, 'yuri-relay')).toBe(true);
+  expect(isModuleCliExecution('/tmp/relay-server', import.meta.url, (value) => value, 'yuri-relay')).toBe(false);
 });
 
 it('runs compiled relay help and version from the published bin name', () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-relay-'));
-  const executable = path.join(directory, 'openchamber-relay');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-relay-'));
+  const executable = path.join(directory, 'yuri-relay');
   try {
-    const entry = fileURLToPath(new URL('../bin/openchamber-relay.js', import.meta.url));
+    const entry = fileURLToPath(new URL('../bin/yuri-relay.js', import.meta.url));
     expect(spawnSync('bun', ['build', '--compile', entry, '--outfile', executable], { encoding: 'utf8' }).status).toBe(0);
-    expect(spawnSync(executable, ['--help'], { encoding: 'utf8' })).toMatchObject({ status: 0, stdout: expect.stringContaining('Usage: openchamber-relay') });
+    expect(spawnSync(executable, ['--help'], { encoding: 'utf8' })).toMatchObject({ status: 0, stdout: expect.stringContaining('Usage: yuri-relay') });
     expect(spawnSync(executable, ['--version'], { encoding: 'utf8' })).toMatchObject({ status: 0, stdout: expect.stringMatching(new RegExp(`^${packageManifest.version.replaceAll('.', '\\.')}\\s*$`)) });
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
@@ -56,10 +56,10 @@ it('runs compiled relay help and version from the published bin name', () => {
 });
 
 it('publishes the relay executable as an independent package contract', () => {
-  expect(packageManifest.bin['openchamber-relay']).toBe('./bin/openchamber-relay.js');
+  expect(packageManifest.bin['yuri-relay']).toBe('./bin/yuri-relay.js');
   expect(packageManifest.bin).toEqual({
-    'openchamber-relay': './bin/openchamber-relay.js',
-    'openchamber-push-relay': './bin/openchamber-push-relay.js',
+    'yuri-relay': './bin/yuri-relay.js',
+    'yuri-push-relay': './bin/yuri-push-relay.js',
   });
 });
 

@@ -41,15 +41,15 @@ export function UndoCountdownRing({
 
   return (
     <span
-      className={cn("oc-undo-countdown", className)}
-      style={{ ["--oc-undo-countdown-size" as string]: `${size}px` }}
+      className={cn("yuri-undo-countdown", className)}
+      style={{ ["--yuri-undo-countdown-size" as string]: `${size}px` }}
       aria-hidden="true"
     >
       <svg
         viewBox={`0 0 ${size} ${size}`}
         width={size}
         height={size}
-        className="oc-undo-countdown-svg"
+        className="yuri-undo-countdown-svg"
       >
         <circle
           cx={size / 2}
@@ -72,7 +72,7 @@ export function UndoCountdownRing({
           style={{ transition: `stroke-dashoffset ${durationMs}ms linear` }}
         />
       </svg>
-      <span className="oc-undo-countdown-digit text-current">
+      <span className="yuri-undo-countdown-digit text-current">
         {remainingSeconds}
       </span>
     </span>

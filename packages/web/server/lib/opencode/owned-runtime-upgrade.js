@@ -5,7 +5,7 @@
  * - arbitrary external serve is never upgraded/restarted in-app
  * - official shared service upgrades its selected CLI or its owned cache
  * - managed process using a global CLI is "global-cli" (manual guidance)
- * - managed process using OpenChamber cache under opencode-cli/ is "owned-cache"
+ * - managed process using Yuri cache under opencode-cli/ is "owned-cache"
  * - bundled desktop binary cannot be upgraded separately
  *
  * Shared global CLI upgrades use that installation's official upgrade command.
@@ -21,7 +21,7 @@ import {
 } from './opencode2-pin.js';
 import {
   installedOpenCode2BinaryPath,
-  resolveOpenChamberDataDir,
+  resolveYuriDataDir,
 } from './ensure-cli.js';
 import { evaluateRuntimeContract, normalizeRuntimeVersion } from './runtime-contract.js';
 
@@ -35,7 +35,7 @@ export function isOwnedOpenCodeCachePath(binaryPath, dataDir) {
   if (typeof binaryPath !== 'string' || !binaryPath.trim()) return false;
   const root = typeof dataDir === 'string' && dataDir.trim()
     ? path.resolve(dataDir.trim())
-    : resolveOpenChamberDataDir();
+    : resolveYuriDataDir();
   const cacheRoot = path.resolve(root, 'opencode-cli');
   const resolved = path.resolve(binaryPath.trim());
   const rel = path.relative(cacheRoot, resolved);
@@ -73,7 +73,7 @@ export function classifyRuntimeOwnership(input = {}) {
       supplySource: 'external-serve',
       management: 'manual-external',
       reason: 'external-serve',
-      guidance: 'This is an external OpenCode serve. Restart or upgrade it yourself; OpenChamber will not replace that process.',
+      guidance: 'This is an external OpenCode serve. Restart or upgrade it yourself; Yuri will not replace that process.',
     };
   }
 
@@ -89,7 +89,7 @@ export function classifyRuntimeOwnership(input = {}) {
       supplySource: 'bundled',
       management: 'bundled',
       reason: 'bundled',
-      guidance: 'OpenCode is bundled with OpenChamber Desktop and cannot be upgraded separately from the app.',
+      guidance: 'OpenCode is bundled with Yuri Desktop and cannot be upgraded separately from the app.',
     };
   }
 
@@ -115,7 +115,7 @@ export function classifyRuntimeOwnership(input = {}) {
       supplySource: 'settings',
       management: 'manual-global',
       reason: 'settings-binary',
-      guidance: 'OpenCode is launched from a user-configured binary path. Change or upgrade that binary yourself, or clear the setting to use OpenChamber-managed cache.',
+      guidance: 'OpenCode is launched from a user-configured binary path. Change or upgrade that binary yourself, or clear the setting to use Yuri-managed cache.',
     };
   }
 
@@ -128,7 +128,7 @@ export function classifyRuntimeOwnership(input = {}) {
       supplySource: 'env',
       management: 'manual-global',
       reason: 'env-binary',
-      guidance: 'OpenCode is launched from OPENCODE_BINARY / related env. Upgrade that install yourself, or unset the env to allow OpenChamber-owned cache management.',
+      guidance: 'OpenCode is launched from OPENCODE_BINARY / related env. Upgrade that install yourself, or unset the env to allow Yuri-owned cache management.',
     };
   }
 
@@ -142,7 +142,7 @@ export function classifyRuntimeOwnership(input = {}) {
       supplySource: 'global-cli',
       management: 'manual-global',
       reason: 'global-cli',
-      guidance: 'OpenChamber is using your global OpenCode CLI. Upgrade it with your package manager (for example npm/bun), or install an OpenChamber-owned cache and select that target explicitly.',
+      guidance: 'Yuri is using your global OpenCode CLI. Upgrade it with your package manager (for example npm/bun), or install an Yuri-owned cache and select that target explicitly.',
     };
   }
 
@@ -346,7 +346,7 @@ export function createUpgradeOperationState() {
 }
 
 /**
- * Resolve the on-disk path OpenChamber will use for an owned-cache target.
+ * Resolve the on-disk path Yuri will use for an owned-cache target.
  * @param {string} targetVersion
  * @param {object} [options]
  */

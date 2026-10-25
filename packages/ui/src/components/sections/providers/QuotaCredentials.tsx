@@ -144,27 +144,27 @@ export const QuotaCredentials: React.FC<{ providerId: ProviderId; providerName: 
   );
   return (
     <div data-settings-item={`providers.${providerId}-credentials`}>
-      <SettingsGroup label={providerName} className="oc-settings-detail-group">
+      <SettingsGroup label={providerName} className="yuri-settings-detail-group">
       {providerId === 'opencode-go' && (
         <>
           {connectionQuery.isPending ? (
-            <div className="oc-settings-group-row">
+            <div className="yuri-settings-group-row">
               <p className="typography-meta text-muted-foreground">{t('settings.providers.page.auth.loadingMethods')}</p>
             </div>
           ) : consoleConnected ? (
-            <div className="oc-settings-group-row flex items-center gap-1.5" role="status">
+            <div className="yuri-settings-group-row flex items-center gap-1.5" role="status">
               <Icon name="check" className="h-4 w-4 shrink-0 text-[var(--status-success)]" />
               <p className="min-w-0 typography-ui-label text-foreground">{t('settings.providers.page.openCodeGo.consoleConnected')}</p>
             </div>
           ) : (
             <>
-              <div className="oc-settings-group-row">
+              <div className="yuri-settings-group-row">
                 <p className="typography-meta text-muted-foreground">{t('settings.providers.page.openCodeGo.consoleHint')}</p>
               </div>
               {(consoleMethods.length > 0 ? consoleMethods : [{ id: '', label: undefined }]).map((method) => {
                 const pending = consoleAttempt?.methodID === method.id;
                 return (
-                  <div key={method.id || 'console'} className="oc-settings-group-row">
+                  <div key={method.id || 'console'} className="yuri-settings-group-row">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <p className="min-w-0 typography-ui-label text-foreground">{method.label || t('settings.providers.page.openCodeGo.consoleSignIn')}</p>
                       <div className="flex flex-wrap gap-2">
@@ -237,7 +237,7 @@ export const QuotaCredentials: React.FC<{ providerId: ProviderId; providerName: 
       {providerId === 'ollama-cloud' && field('cookie', t('settings.providers.page.openCodeGo.authCookie'), 'session=...')}
       {providerId === 'cursor' && field('accessToken', t('settings.providers.page.auth.apiKeyLabel'), t('settings.providers.page.auth.apiKeyPlaceholder'))}
       {providerId === 'cursor' && field('refreshToken', t('settings.providers.page.auth.apiKeyLabel'), t('settings.providers.page.auth.apiKeyPlaceholder'))}
-      <div className="oc-settings-group-row flex flex-wrap gap-2">
+      <div className="yuri-settings-group-row flex flex-wrap gap-2">
         <Button size="xs" disabled={busy} onClick={() => request(route, 'PUT', values)}>{status?.configured ? t('settings.providers.page.openCodeGo.replace') : t('settings.providers.page.openCodeGo.save')}</Button>
         {status?.configured && <Button variant="outline" size="xs" disabled={busy} onClick={() => request(`${route}/validate`, 'POST')}>{t('settings.providers.page.openCodeGo.validate')}</Button>}
         {providerId === 'cursor' && <Button variant="outline" size="xs" disabled={busy} onClick={() => request(`${route}/import`, 'POST')}>{t('settings.providers.page.actions.connect')}</Button>}

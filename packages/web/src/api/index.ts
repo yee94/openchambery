@@ -1,11 +1,11 @@
-import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
+import type { RuntimeAPIs } from '@yuri/ui/lib/api/types';
 import {
   createRuntimeUrlResolver,
   getRuntimeUrlResolver,
   setRuntimeUrlResolver,
   type RuntimeUrlResolver,
-} from '@openchamber/ui/lib/runtime-url';
-import { useDirectoryStore } from '@openchamber/ui/stores/useDirectoryStore';
+} from '@yuri/ui/lib/runtime-url';
+import { useDirectoryStore } from '@yuri/ui/stores/useDirectoryStore';
 import { createWebTerminalAPI } from './terminal';
 import { createWebGitAPI } from './git';
 import { createWebFilesAPI } from './files';
@@ -17,7 +17,7 @@ import { createWebPushAPI } from './push';
 import { createWebGitHubAPI } from './github';
 import { createWebClientAuthAPI } from './clientAuth';
 import { createWebConversationsAPI } from './conversations';
-import { createMobileUpdatesAPI } from '@openchamber/ui/lib/mobile-updates/api';
+import { createMobileUpdatesAPI } from '@yuri/ui/lib/mobile-updates/api';
 
 export interface WebAPIsOptions {
   urls?: RuntimeUrlResolver;

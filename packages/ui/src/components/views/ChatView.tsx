@@ -74,8 +74,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ readOnly = false, active = t
 
     return (
         <div
-            className={cn('relative h-full min-h-0 min-w-0', showInline && 'oc-chat-work-status-inline')}
-            style={showInline ? { ['--oc-work-status-reserve' as string]: `${WORK_STATUS_PANEL_WIDTH + WORK_STATUS_SCROLLBAR_LANE}px` } : undefined}
+            className={cn('relative h-full min-h-0 min-w-0', showInline && 'yuri-chat-work-status-inline')}
+            style={showInline ? { ['--yuri-work-status-reserve' as string]: `${WORK_STATUS_PANEL_WIDTH + WORK_STATUS_SCROLLBAR_LANE}px` } : undefined}
         >
             <div className="absolute inset-0 min-h-0 min-w-0">
                 <ChatErrorBoundary sessionId={errorSessionId || undefined}>

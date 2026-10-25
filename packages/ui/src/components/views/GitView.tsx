@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -421,7 +422,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
       setWorktreeBootstrapStatus(status.status);
     });
 
-    // One-shot seed — live updates arrive via openchamber/global WS events.
+    // One-shot seed — live updates arrive via yuri/global WS events.
     // Read back from the store after apply so a delayed pending GET cannot
     // overwrite a newer ready/failed event already accepted by updatedAt order.
     void getGitWorktreeBootstrapStatus(currentDirectory)
@@ -569,7 +570,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
   // Conflict state persistence key
   const conflictStorageKey = React.useMemo(() => {
     if (!currentSessionId) return null;
-    return `openchamber.conflict:${currentSessionId}`;
+    return `yuri.conflict:${currentSessionId}`;
   }, [currentSessionId]);
 
   // Save conflict state to localStorage

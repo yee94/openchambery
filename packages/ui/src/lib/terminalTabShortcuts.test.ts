@@ -7,7 +7,7 @@ import {
 } from './terminalTabShortcuts';
 import { useTerminalStore } from '@/stores/useTerminalStore';
 
-const DIRECTORY = '/tmp/openchamber-terminal-tabs';
+const DIRECTORY = '/tmp/yuri-terminal-tabs';
 
 describe('terminalTabShortcuts', () => {
   beforeEach(() => {

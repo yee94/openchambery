@@ -841,7 +841,7 @@ export type MobileOtaChannelOverride = 'beta' | 'stable';
 export interface MobileUpdatesAPI {
   /**
    * Ask the update service for an OTA / native decision.
-   * `channelOverride` wins over the build-time baked `OpenChamberOTA.channel`
+   * `channelOverride` wins over the build-time baked `YuriOTA.channel`
    * when provided (`override ?? baked`).
    */
   checkForOtaUpdate(options?: {
@@ -1252,7 +1252,7 @@ export interface ClientAuthAPI {
     includeDirect?: boolean;
     // Optional per-link Relay endpoint. The Host switches its Relay transport
     // to this endpoint before returning the candidate. Deployments pinned by
-    // OPENCHAMBER_RELAY_URL keep using the pinned value.
+    // YURI_RELAY_URL keep using the pinned value.
     relayUrl?: string;
   }): Promise<PairingSessionCreateResult>;
   purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult>;
@@ -1419,7 +1419,7 @@ export interface SkillsInstallResponse {
 
 // ============== Conversations Types ==============
 
-// Request wrapper mirrors POST /api/openchamber/conversations body contract.
+// Request wrapper mirrors POST /api/yuri/conversations body contract.
 // model is required; input.type 'prompt' is the only discriminator.
 export interface ConversationCreateWithPromptInput {
   input: { type: 'prompt' };

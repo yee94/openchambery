@@ -37,7 +37,7 @@ const ROOT = path.resolve(__dirname, '../..')
 
 // CI deploys snapshots to Vercel; it is the authoritative OTA origin. The
 // EdgeOne host stays client-readable as a legacy mirror but never as write source.
-const DEFAULT_OTA_BASE = 'https://openchamber-update.vercel.app'
+const DEFAULT_OTA_BASE = ''
 const BUNDLE_ID_PATTERN = /^[0-9a-f]{16}$/
 const ALLOWED_CHANNELS = new Set(['beta', 'stable'])
 
@@ -132,7 +132,8 @@ function parseArgs(argv) {
 function readShellApiVersion() {
   const source = readFileSync(path.join(ROOT, 'packages/mobile/capacitor.config.ts'), 'utf8')
   const match = source.match(/shellApiVersion\s*[:=]\s*(\d+)/)
-  return match ? Number(match[1]) : 1
+  if (!match || Number(match[1]) < 2) throw new Error('Yuri publishing requires native shellApiVersion >= 2')
+  return Number(match[1])
 }
 
 function sha256FileHex(filePath) {
@@ -293,6 +294,7 @@ function resolveMinShellReleaseVersion(previousActive) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const baseUrl = process.env.OTA_BASE_URL || DEFAULT_OTA_BASE
+  if (!baseUrl) throw new Error('Release blocked: configure OTA_BASE_URL with a verified Yuri update origin')
   const rolloutPercent = Number.parseInt(process.env.ROLLOUT_PERCENT ?? '100', 10)
   if (!Number.isInteger(rolloutPercent) || rolloutPercent < 0 || rolloutPercent > 100) {
     throw new Error('ROLLOUT_PERCENT must be an integer from 0 to 100')
@@ -337,6 +339,7 @@ async function main() {
 
   const minShellApiVersion = readShellApiVersion()
   const activeBundle = {
+    applicationId: 'com.yee94.yuri',
     bundleId,
     releaseVersion: args.version,
     url: `/ota/bundles/${bundleId}.zip`,
@@ -366,17 +369,24 @@ async function main() {
   const desktopZip = path.resolve(args.desktopZip)
   const desktopChecksum = sha256FileHex(desktopZip)
   const desktopMetadata = readAssetZipMetadata(desktopZip)
+  if (desktopMetadata.applicationId !== 'dev.yuri.desktop' || desktopMetadata.shellApiVersion !== 2) {
+    throw new Error('Desktop OTA requires dev.yuri.desktop native identity and shellApiVersion 2')
+  }
   if (desktopMetadata.releaseVersion !== args.version) throw new Error('Desktop OTA version must match release version')
   const otherCatalog = await fetchProductionManifest(baseUrl, otherChannel(args.channel))
   const otherRelease = selectOtaMajor(otherCatalog.manifest, releaseMajor)
   const matchingDesktops = [previousActive?.desktop, otherRelease?.activeBundle?.desktop]
-    .filter((d) => d?.shellFingerprint === desktopMetadata.shellFingerprint
+    .filter((d) => d?.applicationId === desktopMetadata.applicationId
+      && d.minShellApiVersion === desktopMetadata.shellApiVersion
+      && d.shellFingerprint === desktopMetadata.shellFingerprint
       && compareReleaseVersions(d.minShellReleaseVersion, args.version) <= 0)
     .sort((a, b) => compareReleaseVersions(a.minShellReleaseVersion, b.minShellReleaseVersion))
   const previousDesktop = matchingDesktops[0]
   const sameShell = Boolean(previousDesktop)
   if (args.desktopOtaOnly && !sameShell) throw new Error('Desktop shell/backend changed: publish a v* installer release first')
   activeBundle.desktop = {
+    applicationId: desktopMetadata.applicationId,
+    minShellApiVersion: desktopMetadata.shellApiVersion,
     bundleId: desktopChecksum.slice(0, 16),
     url: `/ota/bundles/${desktopChecksum.slice(0, 16)}.zip`,
     size: readFileSync(desktopZip).byteLength,

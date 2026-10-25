@@ -66,7 +66,7 @@ export const useSessionDisplayStore = create<SessionDisplayStore>()(
 );
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('openchamber:settings-synced', (event: Event) => {
+  window.addEventListener('yuri:settings-synced', (event: Event) => {
     const settings = (event as CustomEvent<DesktopSettings>).detail;
     if (settings) useSessionDisplayStore.getState().synchronizeFromSettings(settings);
   });

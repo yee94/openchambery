@@ -131,7 +131,7 @@ const installBridge = (): {
   const bridge: NativeRelayAssetBridge = {
     openAsset: async ({ assetId }): Promise<NativeRelayAssetOpenResult> => {
       record.open += 1;
-      return { assetId, url: `openchamber-asset://stream/${assetId}` };
+      return { assetId, url: `yuri-asset://stream/${assetId}` };
     },
     writeChunk: async () => {
       record.writes += 1;
@@ -616,14 +616,14 @@ describe('getAssistantAttachmentBlob', () => {
 });
 
 describe('getAssistantAttachmentDisplay', () => {
-  test('returns openchamber-asset URL via native bridge for verified blob', async () => {
+  test('returns yuri-asset URL via native bridge for verified blob', async () => {
     const { record } = installBridge();
     const bytes = bytesOf('img');
     const descriptor = await descriptorFor(bytes);
     fetchImpl = async () => okBodyResponse(bytes);
 
     const handle = await getAssistantAttachmentDisplay('asst-1', descriptor);
-    expect(handle.url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(handle.url.startsWith('yuri-asset://stream/')).toBe(true);
     expect(record.open).toBe(1);
     expect(isRelayImageDisplayUrlLive(handle.url)).toBe(true);
     handle.release();
@@ -704,7 +704,7 @@ describe('getAssistantAttachmentDisplay', () => {
     expect(p1Failed).toBe(true);
     releaseGate?.();
     const handle = await p2;
-    expect(handle.url.startsWith('openchamber-asset://')).toBe(true);
+    expect(handle.url.startsWith('yuri-asset://')).toBe(true);
     expect(isRelayImageDisplayUrlLive(handle.url)).toBe(true);
     handle.release();
   });
@@ -753,7 +753,7 @@ describe('getAssistantAttachmentDisplay', () => {
     expect(network).toBe(1);
 
     const handle = await getAssistantAttachmentDisplay('asst-1', descriptor);
-    expect(handle.url.startsWith('openchamber-asset://')).toBe(true);
+    expect(handle.url.startsWith('yuri-asset://')).toBe(true);
     expect(network).toBe(2);
     handle.release();
   });
@@ -764,7 +764,7 @@ describe('getAssistantAttachmentDisplay', () => {
       openAsset: async ({ assetId }) => {
         opens += 1;
         if (opens === 1) throw new Error('native-open-failed');
-        return { assetId, url: `openchamber-asset://stream/${assetId}` };
+        return { assetId, url: `yuri-asset://stream/${assetId}` };
       },
       writeChunk: async () => undefined,
       endAsset: async () => undefined,
@@ -790,7 +790,7 @@ describe('getAssistantAttachmentDisplay', () => {
     expect(opens).toBe(1);
 
     const handle = await getAssistantAttachmentDisplay('asst-1', descriptor);
-    expect(handle.url.startsWith('openchamber-asset://')).toBe(true);
+    expect(handle.url.startsWith('yuri-asset://')).toBe(true);
     expect(opens).toBe(2);
     // Retry must not have required a third network download for the same blob.
     expect(fetchCalls.length).toBe(networkAfterSeed);
@@ -851,7 +851,7 @@ describe('getAssistantAttachmentDisplay', () => {
 
     const handle = await getAssistantAttachmentDisplay('asst-1', descriptor);
     expect(network).toBe(2);
-    expect(handle.url.startsWith('openchamber-asset://')).toBe(true);
+    expect(handle.url.startsWith('yuri-asset://')).toBe(true);
     handle.release();
   });
 });

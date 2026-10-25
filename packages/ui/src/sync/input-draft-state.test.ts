@@ -89,11 +89,11 @@ describe("keyed input draft state", () => {
     const storage = new MemoryStorage()
     const sink = createInputDraftMetadataStorageSink(storage as unknown as Storage)
     const draft = { version: 1 as const, key: key("runtime"), revision: 1, text: "disk", attachments: [], syntheticParts: [], mentions: [] }
-    storage.values.set("openchamber_input_draft_metadata_v1", JSON.stringify({ version: 1, drafts: { [draftKeyString(draft.key)]: draft }, tombstones: {}, migration: { complete: true, claimedTransportIdentity: "runtime", captured: true, markerCommitted: true, cleanupComplete: true }, legacy: { entries: {} } }))
+    storage.values.set("yuri_input_draft_metadata_v1", JSON.stringify({ version: 1, drafts: { [draftKeyString(draft.key)]: draft }, tombstones: {}, migration: { complete: true, claimedTransportIdentity: "runtime", captured: true, markerCommitted: true, cleanupComplete: true }, legacy: { entries: {} } }))
     let release: (() => void) | undefined
     const originalRead = sink.read
     sink.read = async (name) => {
-      if (name === "openchamber_input_draft_metadata_v1" && !release) await new Promise<void>((resolve) => { release = resolve })
+      if (name === "yuri_input_draft_metadata_v1" && !release) await new Promise<void>((resolve) => { release = resolve })
       return originalRead(name)
     }
     const store = createInputStore({ sink })
@@ -141,10 +141,10 @@ describe("keyed input draft state", () => {
 
   test("imports legacy sessions once, stages new until claimed, and honors destination and tombstones", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_session", "@src/a.ts hello")
-    storage.values.set("openchamber_chat_confirmed_mentions_session", JSON.stringify(["src/a.ts"]))
-    storage.values.set("openchamber_chat_input_draft_new", "new")
-    storage.values.set("openchamber_chat_confirmed_mentions_new", "{")
+    storage.values.set("yuri_chat_input_draft_session", "@src/a.ts hello")
+    storage.values.set("yuri_chat_confirmed_mentions_session", JSON.stringify(["src/a.ts"]))
+    storage.values.set("yuri_chat_input_draft_new", "new")
+    storage.values.set("yuri_chat_confirmed_mentions_new", "{")
     const store = createInputStore({ sink: createInputDraftMetadataStorageSink(storage as unknown as Storage), blobStore: blobStore(), runtimeCapture: () => ({ transportIdentity: "runtime", generation: 1 }) })
     await store.getState().hydrateDraftMetadata("runtime")
     const imported = store.getState().getDraft(key("runtime"))
@@ -250,11 +250,11 @@ describe("keyed input draft state", () => {
   test("keeps local revision 2 edit ahead of a slow disk revision 100 hydrate", async () => {
     const storage = new MemoryStorage()
     const disk = { version: 1 as const, key: key("runtime"), revision: 100, text: "disk", attachments: [], syntheticParts: [], mentions: [] }
-    storage.values.set("openchamber_input_draft_metadata_v1", JSON.stringify({ version: 1, drafts: { [draftKeyString(disk.key)]: disk }, tombstones: {}, migration: { complete: true, claimedTransportIdentity: "runtime", captured: true, markerCommitted: true, cleanupComplete: true }, legacy: { entries: {} } }))
+    storage.values.set("yuri_input_draft_metadata_v1", JSON.stringify({ version: 1, drafts: { [draftKeyString(disk.key)]: disk }, tombstones: {}, migration: { complete: true, claimedTransportIdentity: "runtime", captured: true, markerCommitted: true, cleanupComplete: true }, legacy: { entries: {} } }))
     const sink = createInputDraftMetadataStorageSink(storage as unknown as Storage)
     const gate = deferred<void>()
     const read = sink.read
-    sink.read = async (name) => { if (name === "openchamber_input_draft_metadata_v1") await gate.promise; return read(name) }
+    sink.read = async (name) => { if (name === "yuri_input_draft_metadata_v1") await gate.promise; return read(name) }
     const store = createInputStore({ sink, runtimeCapture: () => ({ transportIdentity: "runtime", generation: 1 }) })
     const loading = store.getState().hydrateDraftMetadata("runtime")
     await tick()
@@ -268,11 +268,11 @@ describe("keyed input draft state", () => {
   test("keeps a local delete ahead of a slow disk revision 100 hydrate", async () => {
     const storage = new MemoryStorage()
     const disk = { version: 1 as const, key: key("runtime"), revision: 100, text: "disk", attachments: [], syntheticParts: [], mentions: [] }
-    storage.values.set("openchamber_input_draft_metadata_v1", JSON.stringify({ version: 1, drafts: { [draftKeyString(disk.key)]: disk }, tombstones: {}, migration: { complete: true, claimedTransportIdentity: "runtime", captured: true, markerCommitted: true, cleanupComplete: true }, legacy: { entries: {} } }))
+    storage.values.set("yuri_input_draft_metadata_v1", JSON.stringify({ version: 1, drafts: { [draftKeyString(disk.key)]: disk }, tombstones: {}, migration: { complete: true, claimedTransportIdentity: "runtime", captured: true, markerCommitted: true, cleanupComplete: true }, legacy: { entries: {} } }))
     const sink = createInputDraftMetadataStorageSink(storage as unknown as Storage)
     const gate = deferred<void>()
     const read = sink.read
-    sink.read = async (name) => { if (name === "openchamber_input_draft_metadata_v1") await gate.promise; return read(name) }
+    sink.read = async (name) => { if (name === "yuri_input_draft_metadata_v1") await gate.promise; return read(name) }
     const store = createInputStore({ sink, runtimeCapture: () => ({ transportIdentity: "runtime", generation: 1 }) })
     store.getState().setDraftText(key("runtime"), "local")
     const loading = store.getState().hydrateDraftMetadata("runtime")
@@ -290,7 +290,7 @@ describe("keyed input draft state", () => {
     const durableKey = key("runtime", "durable")
     const durableID = draftKeyString(durableKey)
     const durableDraft = { version: 1 as const, key: durableKey, revision: 2, text: "durable", attachments: [], syntheticParts: [], mentions: [] }
-    storage.values.set("openchamber_input_draft_metadata_v1", JSON.stringify({ version: 1, drafts: { [durableID]: durableDraft }, tombstones: { [id]: 100 }, migration: { complete: true, claimedTransportIdentity: "runtime", captured: true, markerCommitted: true, cleanupComplete: true }, legacy: { entries: {} } }))
+    storage.values.set("yuri_input_draft_metadata_v1", JSON.stringify({ version: 1, drafts: { [durableID]: durableDraft }, tombstones: { [id]: 100 }, migration: { complete: true, claimedTransportIdentity: "runtime", captured: true, markerCommitted: true, cleanupComplete: true }, legacy: { entries: {} } }))
     const base = new MemoryInputDraftBlobDriver()
     let transactions = 0
     const driver: InputDraftBlobDriver = { transaction: async <T>(action: (transaction: InputDraftBlobTransaction) => Promise<T>): Promise<T> => { transactions += 1; return base.transaction(action) } }
@@ -304,23 +304,23 @@ describe("keyed input draft state", () => {
     store.getState().setDraftText(durableKey, "memory")
     await store.getState().setDraftPersistenceEnabled(true)
     expect(transactions).toBeGreaterThan(0)
-    const persisted = JSON.parse(storage.values.get("openchamber_input_draft_metadata_v1") ?? "{}")
+    const persisted = JSON.parse(storage.values.get("yuri_input_draft_metadata_v1") ?? "{}")
     expect(persisted.drafts[durableID]?.text).toBe("memory")
     expect(persisted.tombstones[id]).toBe(100)
   })
 
   test("skips hydrate ownership and writeback for a non-active transport", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_session", "legacy")
+    storage.values.set("yuri_chat_input_draft_session", "legacy")
     const store = createInputStore({ sink: createInputDraftMetadataStorageSink(storage as unknown as Storage), blobStore: blobStore(), runtimeCapture: () => ({ transportIdentity: "active", generation: 1 }) })
     await store.getState().hydrateDraftMetadata("stale")
-    expect(storage.values.has("openchamber_input_draft_metadata_v1")).toBe(false)
-    expect(storage.values.has("openchamber_input_draft_metadata_migration_v1")).toBe(false)
+    expect(storage.values.has("yuri_input_draft_metadata_v1")).toBe(false)
+    expect(storage.values.has("yuri_input_draft_metadata_migration_v1")).toBe(false)
   })
 
   test("claims legacy data once across transports and ignores an older same-transport completion", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_session", "legacy")
+    storage.values.set("yuri_chat_input_draft_session", "legacy")
     let capture = { transportIdentity: "one", generation: 1 }
     const store = createInputStore({ sink: createInputDraftMetadataStorageSink(storage as unknown as Storage), blobStore: blobStore(), runtimeCapture: () => capture })
     const first = store.getState().hydrateDraftMetadata("one")
@@ -333,7 +333,7 @@ describe("keyed input draft state", () => {
 
   test("does not revive staged legacy new after hydrate-time claim", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_new", "legacy new")
+    storage.values.set("yuri_chat_input_draft_new", "legacy new")
     const store = createInputStore({ sink: createInputDraftMetadataStorageSink(storage as unknown as Storage), blobStore: blobStore(), runtimeCapture: () => ({ transportIdentity: "runtime", generation: 1 }) })
     await store.getState().hydrateDraftMetadata("runtime")
     await store.getState().claimLegacyNewDraft(key("runtime", "claimed"))

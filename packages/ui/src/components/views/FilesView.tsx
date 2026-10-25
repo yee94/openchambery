@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import React from 'react';
 import { LoadingImage } from '@/components/ui/LoadingImage';
 import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
@@ -315,7 +316,7 @@ const isFileMissingError = (error: unknown): boolean => {
 };
 
 const MAX_VIEW_CHARS = 200_000;
-const FILE_EDITOR_AUTO_SAVE_KEY = 'openchamber:files:auto-save-enabled';
+const FILE_EDITOR_AUTO_SAVE_KEY = 'yuri:files:auto-save-enabled';
 type FileLineEnding = '\n' | '\r\n';
 
 const detectFileLineEnding = (content: string): FileLineEnding => {
@@ -2542,8 +2543,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     }
   }, [canEdit, textViewMode]);
 
-  const MD_VIEWER_MODE_KEY = 'openchamber:files:md-viewer-mode';
-  const HTML_VIEWER_MODE_KEY = 'openchamber:files:html-viewer-mode';
+  const MD_VIEWER_MODE_KEY = 'yuri:files:md-viewer-mode';
+  const HTML_VIEWER_MODE_KEY = 'yuri:files:html-viewer-mode';
   React.useEffect(() => {
     const selectedPath = selectedFile?.path;
     if (!selectedPath) {
@@ -2760,9 +2761,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       applyDefaultFileViewerMode(enabled);
     };
 
-    window.addEventListener('openchamber:file-viewer-preview-mode-changed', handleFileViewerModeChanged);
+    window.addEventListener('yuri:file-viewer-preview-mode-changed', handleFileViewerModeChanged);
     return () => {
-      window.removeEventListener('openchamber:file-viewer-preview-mode-changed', handleFileViewerModeChanged);
+      window.removeEventListener('yuri:file-viewer-preview-mode-changed', handleFileViewerModeChanged);
     };
   }, [openPaths]);
 

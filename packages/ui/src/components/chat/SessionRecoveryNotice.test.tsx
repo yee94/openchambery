@@ -40,7 +40,7 @@ it('renders shutdown confirmation through prolonged connection failure and clear
   await act(async () => store.setState({ connection: 'failed-again' }));
   expect(host.textContent).toContain('Waiting to confirm');
   expect(host.querySelector('.animate-spin')).toBeNull();
-  expect(host.querySelector('use')?.getAttribute('href')).toBe('#oc-restart');
+  expect(host.querySelector('use')?.getAttribute('href')).toBe('#yuri-restart');
   expect(host.querySelector('[data-response-status]')?.getAttribute('data-response-status')).toBe('info');
   fixture.locale = 'zh'; await render();
   expect(host.textContent).toBe('服务重启，等待确认任务状态');
@@ -61,14 +61,14 @@ it('shows only recovery while pending, then a stopped response when confirmed id
   await renderBoth();
   expect(host.querySelectorAll('[role="status"]')).toHaveLength(1);
   expect(host.textContent).toBe('服务重启，等待确认任务状态');
-  expect(host.querySelector('use')?.getAttribute('href')).toBe('#oc-restart');
+  expect(host.querySelector('use')?.getAttribute('href')).toBe('#yuri-restart');
   await renderBoth('historical');
   expect(host.textContent).toContain('本次响应已中断');
   await renderBoth();
   await act(async () => store.setState({ session_execution_recovery: {}, session_status: { same: { type: 'idle' } } }));
   expect(host.textContent).toContain('本次响应已中断');
   expect(host.textContent).not.toContain('等待确认');
-  expect(host.querySelector('use')?.getAttribute('href')).toBe('#oc-pause-circle');
+  expect(host.querySelector('use')?.getAttribute('href')).toBe('#yuri-pause-circle');
   expect(host.querySelector('.animate-spin')).toBeNull();
   await act(async () => store.setState({ session_status: { same: { type: 'retry' } } }));
   expect(host.textContent).toBe('');

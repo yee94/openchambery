@@ -42,7 +42,7 @@ test('backend-bearing OTA activates persistently without startup rollback and re
     const dir = path.join(root, bundle.bundleId);
     await mkdir(path.join(dir, 'desktop-backend/server'), { recursive: true });
     await writeFile(path.join(dir, 'index.html'), 'new UI');
-    await writeFile(path.join(dir, 'desktop-ota.json'), JSON.stringify({ releaseVersion: '2.1.1', backendVersion: '2.1.1' }));
+    await writeFile(path.join(dir, 'desktop-ota.json'), JSON.stringify({ applicationId: 'dev.yuri.desktop', shellApiVersion: 2, releaseVersion: '2.1.1', backendVersion: '2.1.1' }));
     await writeFile(path.join(dir, 'desktop-backend/package.json'), JSON.stringify({ version: '2.1.0' }));
     await writeFile(path.join(dir, 'desktop-backend/server/index.js'), 'export const version = "2.1.1";');
     const options = { directory: root, builtinDirectory: root, nativeVersion: '2.1.0', requireBackend: true };

@@ -313,7 +313,7 @@ export const BehaviorPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="yuri-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
         <div className="space-y-1">
           <h2 className="typography-ui-header font-semibold text-foreground">
             {t('settings.behavior.page.title')}
@@ -343,7 +343,7 @@ export const BehaviorPage: React.FC = () => {
             </div>
           )}
         >
-          <div className="oc-settings-group-row flex flex-col gap-3">
+          <div className="yuri-settings-group-row flex flex-col gap-3">
             <Textarea
               embedded
               value={prompt}
@@ -415,7 +415,7 @@ export const BehaviorPage: React.FC = () => {
             </Select>
           </SettingsRow>
 
-          <div className="oc-settings-group-row">
+          <div className="yuri-settings-group-row">
             <Textarea
               embedded
               value={responseStylePreview}

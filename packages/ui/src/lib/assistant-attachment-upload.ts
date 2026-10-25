@@ -1,7 +1,7 @@
 /**
  * Assistant contact attachment upload (raw bytes via runtimeFetch).
  *
- * PUT /api/openchamber/assistants/:id/contact/attachments/:uploadID
+ * PUT /api/yuri/assistants/:id/contact/attachments/:uploadID
  * Headers: X-Content-SHA256, X-Content-Size, Content-Type, X-Attachment-Filename
  *
  * Response must be a complete server JSON descriptor — empty/HTML/204/partial bodies fail closed.
@@ -167,7 +167,7 @@ export const uploadAssistantAttachment = async (
   let response: Response;
   try {
     response = await runtimeFetch(
-      `/api/openchamber/assistants/${encodeURIComponent(id)}/contact/attachments/${encodeURIComponent(upload)}`,
+      `/api/yuri/assistants/${encodeURIComponent(id)}/contact/attachments/${encodeURIComponent(upload)}`,
       {
         method: 'PUT',
         headers: {

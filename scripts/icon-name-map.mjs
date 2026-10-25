@@ -1,7 +1,7 @@
 /**
- * OpenChamber kebab icon name → Lucide static icon mapping.
+ * Yuri kebab icon name → Lucide static icon mapping.
  *
- * Used by scripts/generate-icon-sprite.mjs. Keep OpenChamber `Icon name="..."`
+ * Used by scripts/generate-icon-sprite.mjs. Keep Yuri `Icon name="..."`
  * stable; only the rendered Lucide glyph changes.
  *
  * `fill: true` marks solid variants (bake fill="currentColor" onto paths).

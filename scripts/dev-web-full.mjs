@@ -12,7 +12,7 @@ function run(label, command, args, options = {}) {
   const child = spawn(command, args, {
     cwd: repoRoot,
     stdio: ['inherit', 'pipe', 'pipe'],
-    env: { ...process.env, OPENCHAMBER_RUNTIME: 'web' },
+    env: { ...process.env, YURI_RUNTIME: 'web' },
     detached: useDetachedChildren,
     ...options,
   });

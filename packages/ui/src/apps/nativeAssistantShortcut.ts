@@ -22,7 +22,7 @@ type NativeAssistantShortcutPlugin = {
   ackAssistantOpen(options: { requestID: string }): Promise<void>;
 };
 
-const OpenChamberShare = registerPlugin<NativeAssistantShortcutPlugin>('OpenChamberShare');
+const YuriShare = registerPlugin<NativeAssistantShortcutPlugin>('YuriShare');
 let nativeAssistantOpenFlight: Promise<boolean> | null = null;
 
 const current = (connectionKey: string, generation: number): boolean =>
@@ -39,12 +39,12 @@ export const openNativeAssistantConversation = (assistantID: string): void => {
 };
 
 const handlePendingNativeAssistantOpenOnce = async (): Promise<boolean> => {
-  const pending = await OpenChamberShare.pendingAssistantOpen().catch(() => null);
+  const pending = await YuriShare.pendingAssistantOpen().catch(() => null);
   const request = pending?.request;
   if (!request) return false;
   const result = await connectMobileShareConnection(request.connectionKey);
   if (result === 'missing') {
-    await OpenChamberShare.ackAssistantOpen({ requestID: request.requestID }).catch(() => undefined);
+    await YuriShare.ackAssistantOpen({ requestID: request.requestID }).catch(() => undefined);
     return true;
   }
   if (result !== 'connected') return true;
@@ -65,11 +65,11 @@ const handlePendingNativeAssistantOpenOnce = async (): Promise<boolean> => {
       || capability.serverInstanceID !== request.serverInstanceID
       || !assistantExists
     ) {
-      await OpenChamberShare.ackAssistantOpen({ requestID: request.requestID });
+      await YuriShare.ackAssistantOpen({ requestID: request.requestID });
       return true;
     }
     openNativeAssistantConversation(request.assistantID);
-    await OpenChamberShare.ackAssistantOpen({ requestID: request.requestID });
+    await YuriShare.ackAssistantOpen({ requestID: request.requestID });
   } catch {
     // Keep the native request durable for a later endpoint/resume retry.
   }

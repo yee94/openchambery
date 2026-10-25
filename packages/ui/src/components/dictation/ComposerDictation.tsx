@@ -136,7 +136,7 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
     const dictationEnabled = useConfigStore((state) => state.dictationEnabled);
     const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
     const dictationShortcut = formatShortcutForDisplay(getEffectiveShortcutCombo('toggle_dictation', shortcutOverrides));
-    // The dictation server (WebSocket + STT worker) lives in the OpenChamber
+    // The dictation server (WebSocket + STT worker) lives in the Yuri
     // web server; the VS Code bridge has no server process for it.
     const [supported] = React.useState(() => !isVSCodeRuntime() && isDictationCaptureSupported());
 
@@ -204,8 +204,8 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
                 void confirmDictation();
             }
         };
-        window.addEventListener('openchamber:dictation-toggle', onToggle);
-        return () => window.removeEventListener('openchamber:dictation-toggle', onToggle);
+        window.addEventListener('yuri:dictation-toggle', onToggle);
+        return () => window.removeEventListener('yuri:dictation-toggle', onToggle);
     }, [supported, dictationEnabled, disabled, startDictation, confirmDictation]);
 
     // While recording: Enter confirms (insert), Escape cancels. Capture-phase
@@ -372,7 +372,7 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
                         // pill → voice morph), its content fades in only after the
                         // shape has grown — otherwise the controls paint clipped
                         // inside the still-small pill.
-                        isMobile && 'oc-composer-morph-content-fade',
+                        isMobile && 'yuri-composer-morph-content-fade',
                     )}
                     style={{
                         borderRadius: radius,

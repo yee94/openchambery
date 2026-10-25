@@ -46,7 +46,7 @@ export function InlineCommentCard({
         render={
           <div
             className={cn(
-              "rounded-lg border shadow-none w-full max-w-[min(100%,calc(var(--oc-context-panel-width,100vw)-var(--oc-editor-gutter-width,0px)))] overflow-hidden transition-all duration-200",
+              "rounded-lg border shadow-none w-full max-w-[min(100%,calc(var(--yuri-context-panel-width,100vw)-var(--yuri-editor-gutter-width,0px)))] overflow-hidden transition-all duration-200",
               className
             )}
             style={{

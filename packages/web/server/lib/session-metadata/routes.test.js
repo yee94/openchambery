@@ -10,7 +10,7 @@ import { createSessionMetadataStore, registerSessionMetadataRoutes } from './rou
 const tempDirs = [];
 
 const makeDataDir = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-metadata-routes-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-metadata-routes-'));
   tempDirs.push(dir);
   return dir;
 };
@@ -41,21 +41,21 @@ describe('registerSessionMetadataRoutes', () => {
     const { app, store, broadcastGlobalUiEvent } = mount();
 
     const first = await request(app)
-      .put('/api/openchamber/sessions/ses_1/metadata')
-      .send({ patch: { openchamber: { assist: { recap: 'a' } } } })
+      .put('/api/yuri/sessions/ses_1/metadata')
+      .send({ patch: { yuri: { assist: { recap: 'a' } } } })
       .expect(200);
-    expect(first.body.metadata).toEqual({ openchamber: { assist: { recap: 'a' } } });
+    expect(first.body.metadata).toEqual({ yuri: { assist: { recap: 'a' } } });
 
     const second = await request(app)
-      .put('/api/openchamber/sessions/ses_1/metadata')
-      .send({ patch: { openchamber: { goal: { status: 'active' } } }, directory: '/repo' })
+      .put('/api/yuri/sessions/ses_1/metadata')
+      .send({ patch: { yuri: { goal: { status: 'active' } } }, directory: '/repo' })
       .expect(200);
     expect(second.body.metadata).toEqual({
-      openchamber: { assist: { recap: 'a' }, goal: { status: 'active', executionGeneration: 0 } },
+      yuri: { assist: { recap: 'a' }, goal: { status: 'active', executionGeneration: 0 } },
     });
     await expect(store.get('ses_1')).resolves.toEqual(second.body.metadata);
     expect(broadcastGlobalUiEvent).toHaveBeenLastCalledWith({
-      type: 'openchamber:session-metadata',
+      type: 'yuri:session-metadata',
       properties: { sessionID: 'ses_1', metadata: second.body.metadata },
     });
   });
@@ -65,15 +65,15 @@ describe('registerSessionMetadataRoutes', () => {
     const { app } = mount({ onMetadataWritten });
 
     await request(app)
-      .put('/api/openchamber/sessions/ses_2/metadata')
-      .send({ patch: { openchamber: { goal: { id: 'g1', status: 'active', objective: 'ship' } } }, directory: '/repo' })
+      .put('/api/yuri/sessions/ses_2/metadata')
+      .send({ patch: { yuri: { goal: { id: 'g1', status: 'active', objective: 'ship' } } }, directory: '/repo' })
       .expect(200);
 
     expect(onMetadataWritten).toHaveBeenCalledWith({
       sessionID: 'ses_2',
       directory: '/repo',
       metadata: {
-        openchamber: {
+        yuri: {
           goal: { id: 'g1', status: 'active', objective: 'ship', executionGeneration: 0 },
         },
       },
@@ -83,19 +83,19 @@ describe('registerSessionMetadataRoutes', () => {
   it('rejects a blank session id and a non-object patch with 400', async () => {
     const { app } = mount();
     await request(app)
-      .put('/api/openchamber/sessions/%20%20/metadata')
+      .put('/api/yuri/sessions/%20%20/metadata')
       .send({ patch: { a: 1 } })
       .expect(400);
     await request(app)
-      .put('/api/openchamber/sessions/ses_1/metadata')
+      .put('/api/yuri/sessions/ses_1/metadata')
       .send({})
       .expect(400);
     await request(app)
-      .put('/api/openchamber/sessions/ses_1/metadata')
+      .put('/api/yuri/sessions/ses_1/metadata')
       .send({ patch: 'nope' })
       .expect(400);
     await request(app)
-      .put('/api/openchamber/sessions/ses_1/metadata')
+      .put('/api/yuri/sessions/ses_1/metadata')
       .send({ patch: ['a'] })
       .expect(400);
   });
@@ -108,7 +108,7 @@ describe('registerSessionMetadataRoutes', () => {
     };
     const { app } = mount({ sessionMetadataStore: store });
     const res = await request(app)
-      .put('/api/openchamber/sessions/ses_1/metadata')
+      .put('/api/yuri/sessions/ses_1/metadata')
       .send({ patch: { a: 1 } })
       .expect(503);
     expect(res.body).toMatchObject({ error: expect.stringMatching(/could not be read/) });
@@ -121,7 +121,7 @@ describe('registerSessionMetadataRoutes', () => {
         title: 'Alpha',
         directory: '/repo',
         time: { created: 1, updated: 2, archived: archivedAt },
-        metadata: { openchamber: { archive: { archivedAt } } },
+        metadata: { yuri: { archive: { archivedAt } } },
       },
     }));
     const { app } = mount({
@@ -129,7 +129,7 @@ describe('registerSessionMetadataRoutes', () => {
     });
 
     const res = await request(app)
-      .put('/api/openchamber/sessions/ses_1/archive')
+      .put('/api/yuri/sessions/ses_1/archive')
       .send({ archivedAt: 99, directory: '/repo' })
       .expect(200);
 
@@ -149,7 +149,7 @@ describe('registerSessionMetadataRoutes', () => {
       sessionArchiveService: { setArchive: vi.fn() },
     });
     await request(app)
-      .put('/api/openchamber/sessions/ses_1/archive')
+      .put('/api/yuri/sessions/ses_1/archive')
       .send({})
       .expect(400);
   });

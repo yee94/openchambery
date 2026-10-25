@@ -7,7 +7,7 @@ import { wrapFetchWithRuntimeContractGate } from './server-opencode-fetch.js';
 
 /**
  * Compatibility client: official 2.x nests exact message lookup under
- * `session.message.get`, while OpenChamber callers still use
+ * `session.message.get`, while Yuri callers still use
  * `session.message(input, requestOptions)`.
  *
  * @typedef {Omit<OpenCodeV2ClientRaw, 'session'> & {

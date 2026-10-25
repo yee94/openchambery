@@ -77,7 +77,7 @@ const installWindow = () => {
 
 describe('deepLinkToNavigationIntent (Ticket 06)', () => {
   test('session deep link maps to session intent (directory not in path)', () => {
-    const dl = parseDeepLink('openchamber://session/abc?directory=/repo');
+    const dl = parseDeepLink('yuri://session/abc?directory=/repo');
     expect(dl).toEqual({ type: 'session', sessionId: 'abc', directory: '/repo' });
     expect(deepLinkToNavigationIntent(dl!)).toEqual({
       type: 'session',
@@ -86,17 +86,17 @@ describe('deepLinkToNavigationIntent (Ticket 06)', () => {
   });
 
   test('new-session and settings map to path intents', () => {
-    expect(deepLinkToNavigationIntent(parseDeepLink('openchamber://new-session')!)).toEqual({
+    expect(deepLinkToNavigationIntent(parseDeepLink('yuri://new-session')!)).toEqual({
       type: 'new-session',
     });
-    expect(deepLinkToNavigationIntent(parseDeepLink('openchamber://settings/providers')!)).toEqual({
+    expect(deepLinkToNavigationIntent(parseDeepLink('yuri://settings/providers')!)).toEqual({
       type: 'settings',
       slug: 'providers',
     });
   });
 
   test('changes maps to git tab with optional file; needs current session', () => {
-    const dl = parseDeepLink('openchamber://changes/src/a.ts?staged=true')!;
+    const dl = parseDeepLink('yuri://changes/src/a.ts?staged=true')!;
     expect(deepLinkToNavigationIntent(dl)).toEqual({
       type: 'session',
       sessionId: '',
@@ -113,21 +113,21 @@ describe('deepLinkToNavigationIntent (Ticket 06)', () => {
   });
 
   test('view files/mcp map; open-project/sessions stay shell-only', () => {
-    expect(deepLinkToNavigationIntent(parseDeepLink('openchamber://view/files')!)).toEqual({
+    expect(deepLinkToNavigationIntent(parseDeepLink('yuri://view/files')!)).toEqual({
       type: 'session',
       sessionId: '',
       tab: 'files',
     });
-    expect(deepLinkToNavigationIntent(parseDeepLink('openchamber://view/mcp')!)).toEqual({
+    expect(deepLinkToNavigationIntent(parseDeepLink('yuri://view/mcp')!)).toEqual({
       type: 'settings',
       slug: 'mcp',
     });
-    expect(deepLinkToNavigationIntent(parseDeepLink('openchamber://open-project?directory=/x')!)).toBeNull();
-    expect(deepLinkToNavigationIntent(parseDeepLink('openchamber://sessions')!)).toBeNull();
+    expect(deepLinkToNavigationIntent(parseDeepLink('yuri://open-project?directory=/x')!)).toBeNull();
+    expect(deepLinkToNavigationIntent(parseDeepLink('yuri://sessions')!)).toBeNull();
   });
 
   test('assistant deep link maps to assistant intent', () => {
-    expect(deepLinkToNavigationIntent(parseDeepLink('openchamber://assistant/asst_1')!)).toEqual({
+    expect(deepLinkToNavigationIntent(parseDeepLink('yuri://assistant/asst_1')!)).toEqual({
       type: 'assistant',
       assistantId: 'asst_1',
     });
@@ -138,7 +138,7 @@ describe('deepLinkToNavigationIntent (Ticket 06)', () => {
     try {
       const router = createAppRouter({ runtime: 'electron' });
       const nav = createAppNavigation(router);
-      const intent = deepLinkToNavigationIntent(parseDeepLink('openchamber://session/from-dl')!);
+      const intent = deepLinkToNavigationIntent(parseDeepLink('yuri://session/from-dl')!);
       await nav.applyIntent(intent!);
       expect(router.state.location.pathname).toBe('/session/from-dl');
       expect(globalThis.window.location.pathname).toBe('/'); // memory

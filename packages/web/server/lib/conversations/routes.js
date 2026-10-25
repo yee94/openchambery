@@ -19,7 +19,7 @@ export const registerConversationRoutes = (app, dependencies) => {
 
   const registry = createOperationRegistry();
 
-  app.post('/api/openchamber/conversations', async (req, res) => {
+  app.post('/api/yuri/conversations', async (req, res) => {
     // Validate input
     const validation = validateConversationInput(req.body);
     if (!validation.valid) {

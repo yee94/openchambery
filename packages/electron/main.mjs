@@ -10,7 +10,10 @@ import { execFile, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { DesktopOta } from './desktop-ota.mjs';
+import { DEEP_LINK_PROTOCOLS, isAppDeepLink } from './deep-link-protocol.mjs';
+import { LEGACY_UI_PROTOCOL, prepareDesktopMigration, migrateDesktopOrigin } from './brand-migration.mjs';
 import { loadDesktopBackend } from './desktop-backend.mjs';
+import { importHostBrandData } from '@yuri/web/server/lib/brand-migration.js';
 import { DesktopInstaller } from './desktop-installer.mjs';
 import electronUpdater from 'electron-updater';
 import { ElectronSshManager, planOpenCodeConfigSync, parseSshCommand } from './ssh-manager.mjs';
@@ -28,7 +31,7 @@ import {
   extractTarGzBuffer,
   finalizeLocalSyncDestination,
   prepareLocalSyncDestination,
-} from '@openchambery/web/server/lib/config-sync/index.js';
+} from '@yuri/web/server/lib/config-sync/index.js';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
@@ -56,23 +59,22 @@ const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
+const isDev = process.env.YURI_ELECTRON_DEV === '1' || !app.isPackaged;
 
-const DEEP_LINK_PROTOCOL = 'openchamber';
-const PACKAGED_APP_USER_MODEL_ID = 'dev.openchamber.desktop';
-const DEV_APP_USER_MODEL_ID = 'dev.openchamber.desktop.dev';
-const PREVIEW_APP_USER_MODEL_ID = 'dev.openchamber.desktop.preview';
+const PACKAGED_APP_USER_MODEL_ID = 'dev.yuri.desktop';
+const DEV_APP_USER_MODEL_ID = 'dev.yuri.desktop.dev';
+const PREVIEW_APP_USER_MODEL_ID = 'dev.yuri.desktop.preview';
 // Build-time define from bundle-main.mjs (defaults to release when undefined).
-const BUILD_TIME_DESKTOP_PROFILE = typeof __OPENCHAMBER_DESKTOP_PROFILE__ === 'string'
-  ? __OPENCHAMBER_DESKTOP_PROFILE__
+const BUILD_TIME_DESKTOP_PROFILE = typeof __YURI_DESKTOP_PROFILE__ === 'string'
+  ? __YURI_DESKTOP_PROFILE__
   : null;
 // Side-by-side preview builds (distinct appId/productName) must not share the
-// production single-instance lock or userData, or they exit(0) while OpenChamber runs.
+// production single-instance lock or userData, or they exit(0) while Yuri runs.
 const resolveDesktopProfileId = () => {
   if (BUILD_TIME_DESKTOP_PROFILE === 'preview' || BUILD_TIME_DESKTOP_PROFILE === 'release') {
     return BUILD_TIME_DESKTOP_PROFILE;
   }
-  const envProfile = String(process.env.OPENCHAMBER_DESKTOP_PROFILE || '').trim().toLowerCase();
+  const envProfile = String(process.env.YURI_DESKTOP_PROFILE || '').trim().toLowerCase();
   if (envProfile === 'preview' || envProfile === 'assistant-preview' || envProfile === 'assistant_preview') {
     return 'preview';
   }
@@ -81,7 +83,7 @@ const resolveDesktopProfileId = () => {
   }
   const initialName = typeof app.getName === 'function' ? app.getName() : '';
   const haystack = `${initialName}\n${process.execPath || ''}`;
-  if (/openchamber[\s-]*preview/i.test(haystack) || /assistant[\s-]*preview/i.test(haystack)) {
+  if (/yuri[\s-]*preview/i.test(haystack) || /assistant[\s-]*preview/i.test(haystack)) {
     return 'preview';
   }
   return 'release';
@@ -155,33 +157,34 @@ const shouldStartInBackground = (loginItemSettings = readLoginItemSettings()) =>
 };
 
 // Set the product name early so electron-log derives its log directory as
-// ~/Library/Logs/OpenChamber/ (not ~/Library/Logs/@openchamber/electron/).
+// ~/Library/Logs/Yuri/ (not ~/Library/Logs/@yuri/electron/).
 // Preview builds keep a distinct name so SingletonLock/userData stay isolated.
-app.setName(isPreviewDesktop ? 'OpenChamber Preview' : 'OpenChamber');
+app.setName(isPreviewDesktop ? 'Yuri Preview' : 'Yuri');
+app.setPath('userData', path.join(app.getPath('appData'), 'Yuri'));
 if (process.platform === 'linux') {
-  app.setDesktopName(isPreviewDesktop ? 'openchamber-preview.desktop' : 'openchamber.desktop');
+  app.setDesktopName(isPreviewDesktop ? 'yuri-preview.desktop' : 'yuri.desktop');
 }
 if (isDev) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'OpenChamber Dev'));
+  app.setPath('userData', path.join(app.getPath('appData'), 'Yuri Dev'));
 } else if (isPreviewDesktop) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'OpenChamber Preview'));
+  app.setPath('userData', path.join(app.getPath('appData'), 'Yuri Preview'));
 }
-// Preview (and dev) must not share release-app OpenChamber state:
-// - OPENCHAMBER_DATA_DIR: assistants.sqlite, settings, relay claim, …
-// - OPENCHAMBER_MANAGED_PROCESS_REGISTRY: managed OpenCode process bookkeeping
+// Preview (and dev) must not share release-app Yuri state:
+// - YURI_DATA_DIR: assistants.sqlite, settings, relay claim, …
+// - YURI_MANAGED_PROCESS_REGISTRY: managed OpenCode process bookkeeping
 //
 // Preview intentionally shares the user's global OpenCode config/session store
 // (~/.config/opencode, ~/.local/share/opencode) so QA can use real sessions and
 // provider auth without a one-time seed copy. Dev still isolates XDG so local
 // HMR work does not write into the user's production OpenCode DB.
 if (isPreviewDesktop || isDev) {
-  const isolatedRoot = path.join(app.getPath('userData'), 'openchamber-data');
-  if (!process.env.OPENCHAMBER_DATA_DIR?.trim()) {
-    process.env.OPENCHAMBER_DATA_DIR = isolatedRoot;
+  const isolatedRoot = path.join(app.getPath('userData'), 'yuri-data');
+  if (!process.env.YURI_DATA_DIR?.trim()) {
+    process.env.YURI_DATA_DIR = isolatedRoot;
   }
-  const dataDir = process.env.OPENCHAMBER_DATA_DIR;
-  if (!process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY?.trim()) {
-    process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY = path.join(dataDir, 'managed-opencode');
+  const dataDir = process.env.YURI_DATA_DIR;
+  if (!process.env.YURI_MANAGED_PROCESS_REGISTRY?.trim()) {
+    process.env.YURI_MANAGED_PROCESS_REGISTRY = path.join(dataDir, 'managed-opencode');
   }
   if (isDev) {
     if (!process.env.XDG_DATA_HOME?.trim()) {
@@ -203,6 +206,7 @@ app.setAppUserModelId(APP_USER_MODEL_ID);
 app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');
 
 protocol.registerSchemesAsPrivileged([
+  { scheme: LEGACY_UI_PROTOCOL, privileges: { standard: true, secure: true, supportFetchAPI: true } },
   {
     scheme: UI_PROTOCOL,
     privileges: {
@@ -223,6 +227,20 @@ if (!app.requestSingleInstanceLock()) {
   // use a separate userData path so they no longer collide with production.
   app.exit(0);
   process.exit(0);
+}
+
+let desktopMigration;
+let desktopMigrationInProgress = false;
+try {
+  desktopMigration = prepareDesktopMigration({
+    appData: app.getPath('appData'), userData: app.getPath('userData'),
+    profile: isDev ? 'dev' : isPreviewDesktop ? 'preview' : 'release',
+    migrateHostData: importHostBrandData,
+  });
+} catch (error) {
+  dialog.showErrorBox('Yuri — data import failed', `${error.message}\nPrevious data is preserved. Close the previous application and restart Yuri to retry.`);
+  app.exit(1);
+  process.exit(1);
 }
 
 try {
@@ -271,13 +289,15 @@ try {
 } catch {
 }
 
-try {
-  if (!app.isDefaultProtocolClient(DEEP_LINK_PROTOCOL)) {
-    app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+for (const scheme of DEEP_LINK_PROTOCOLS) {
+  try {
+    if (!app.isDefaultProtocolClient(scheme)) {
+      app.setAsDefaultProtocolClient(scheme);
+    }
+  } catch (error) {
+    // log.* not yet initialized at this point; fall back to console.
+    console.warn('[electron] failed to register deep-link protocol:', error);
   }
-} catch (error) {
-  // log.* not yet initialized at this point; fall back to console.
-  console.warn('[electron] failed to register deep-link protocol:', error);
 }
 
 const readAppMetadata = () => {
@@ -290,13 +310,13 @@ const readAppMetadata = () => {
     try {
       const raw = fs.readFileSync(candidate, 'utf8');
       const parsed = JSON.parse(raw);
-      if (parsed?.name === '@openchamber/electron' && typeof parsed.version === 'string') {
+      if (parsed?.name === '@yuri/electron' && typeof parsed.version === 'string') {
         return { name: parsed.name, version: parsed.version };
       }
     } catch {
     }
   }
-  return { name: '@openchamber/electron', version: app.getVersion() };
+  return { name: '@yuri/electron', version: app.getVersion() };
 };
 
 const APP_METADATA = readAppMetadata();
@@ -322,13 +342,13 @@ const LOCAL_DESKTOP_CLIENT_DEDUPE_KEY = 'desktop-local';
 // connecting to someone else's server).
 const REMOTE_DESKTOP_CLIENT_KIND = 'desktop';
 const ENV_OVERRIDE_HOST_ID = '__env';
-const GITHUB_REPOSITORY = Object.freeze({ owner: 'yee94', repo: 'openchamber' });
+const GITHUB_REPOSITORY = Object.freeze({ owner: 'yee94', repo: 'yuri' });
 const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY.owner}/${GITHUB_REPOSITORY.repo}`;
 // Fallback release notes: same update-service origin as the desktop feed
 // (deploy-authoritative /CHANGELOG.md), not a GitHub branch-pinned raw URL.
 const GITHUB_BUG_REPORT_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=bug_report.yml`;
 const GITHUB_FEATURE_REQUEST_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=feature_request.yml`;
-const DISCORD_INVITE_URL = 'https://discord.gg/ZYRSdnwwKA';
+const COMMUNITY_URL = `${GITHUB_REPOSITORY_URL}/discussions`;
 const INSTALLED_APPS_CACHE_TTL_SECS = 60 * 60 * 24;
 const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
 
@@ -438,7 +458,7 @@ const shouldHideMainWindowToTray = (browserWindow) => {
   if (process.platform !== 'win32') return false;
   if (!state.trayController) return false;
   if (!browserWindow || browserWindow.isDestroyed()) return false;
-  if (browserWindow.__ocMiniChat === true) return false;
+  if (browserWindow.__yuriMiniChat === true) return false;
   return readSettingsRoot().desktopMinimizeToTrayEnabled === true;
 };
 
@@ -464,7 +484,7 @@ const quitConfirmationMessage = () => {
   if (reasons.length === 0) {
     return 'Background processes (sidecar, SSH sessions) will be stopped.';
   }
-  return `OpenChamberY detected ${reasons.join(', ')}. Quitting now will stop sidecar/background processes and may interrupt pending work.`;
+  return `Yuri detected ${reasons.join(', ')}. Quitting now will stop sidecar/background processes and may interrupt pending work.`;
 };
 
 const shutdownBackgroundServices = () => shutdownInProcessServer();
@@ -558,8 +578,8 @@ const requestQuitWithConfirmation = async () => {
   try {
     const result = await dialog.showMessageBox({
       type: 'warning',
-      title: 'Quit OpenChamberY?',
-      message: 'Quit OpenChamberY?',
+      title: 'Quit Yuri?',
+      message: 'Quit Yuri?',
       detail: quitConfirmationMessage(),
       buttons: ['Quit', 'Cancel'],
       defaultId: 1,
@@ -596,7 +616,7 @@ const refreshQuitRiskFlags = async () => {
   const base = typeof state.sidecarUrl === 'string' ? state.sidecarUrl.trim().replace(/\/$/, '') : '';
   if (!base) return;
 
-  const scheduledUrl = `${base}/api/openchamber/scheduled-tasks/status`;
+  const scheduledUrl = `${base}/api/yuri/scheduled-tasks/status`;
 
   const fetchJson = async (url) => {
     try {
@@ -621,10 +641,10 @@ const refreshQuitRiskFlags = async () => {
 };
 
 const settingsFilePath = () => {
-  if (typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim()) {
-    return path.join(process.env.OPENCHAMBER_DATA_DIR.trim(), 'settings.json');
+  if (typeof process.env.YURI_DATA_DIR === 'string' && process.env.YURI_DATA_DIR.trim()) {
+    return path.join(process.env.YURI_DATA_DIR.trim(), 'settings.json');
   }
-  return path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
+  return path.join(os.homedir(), '.config', 'yuri', 'settings.json');
 };
 
 // Shared process-local settings mutation chain for main, ssh-manager, and the
@@ -661,7 +681,7 @@ const resolveStoredDesktopHost = (hostId) => {
 
 // Stable per-install identifier for this desktop, persisted in settings. Used as
 // the client dedupe key on remote hosts so re-authenticating (e.g. after a login
-// session expires) reuses the same "OpenChamber Desktop" record instead of
+// session expires) reuses the same "Yuri Desktop" record instead of
 // piling up a new one each time. Different desktops get different ids.
 // Display-only device metadata shown in a server's device list ("macOS",
 // app version). Never used for auth decisions.
@@ -1172,8 +1192,8 @@ let desktopUpdateKind = 'ota';
 let desktopOtaReadyTimer = null;
 const resolveWebDistDir = () => desktopOta?.assetDirectory ?? path.join(resourceRoot(), 'web-dist');
 const shouldUsePackagedUi = () => {
-  if (process.env.OPENCHAMBER_ELECTRON_LOAD_SERVER_UI === '1') return false;
-  if (process.env.OPENCHAMBER_ELECTRON_USE_BUNDLED_UI === '1') return true;
+  if (process.env.YURI_ELECTRON_LOAD_SERVER_UI === '1') return false;
+  if (process.env.YURI_ELECTRON_USE_BUNDLED_UI === '1') return true;
   return app.isPackaged;
 };
 const buildPackagedUiUrl = (pathname = '/index.html') => new URL(pathname, `${packagedUiOrigin()}/`).toString();
@@ -1181,7 +1201,7 @@ const buildPackagedUiUrl = (pathname = '/index.html') => new URL(pathname, `${pa
 const injectRuntimeConfigIntoHtml = (html) => {
   const apiBaseUrl = state.apiBaseUrl || state.sidecarUrl || '';
   const localOrigin = state.localOrigin || state.sidecarUrl || '';
-  const initScript = `<script>if(window.__OPENCHAMBER_LOCAL_ORIGIN__===undefined){window.__OPENCHAMBER_LOCAL_ORIGIN__=${JSON.stringify(localOrigin)};}if(window.__OPENCHAMBER_API_BASE_URL__===undefined){window.__OPENCHAMBER_API_BASE_URL__=${JSON.stringify(apiBaseUrl)};}if(window.__OPENCHAMBER_CLIENT_TOKEN__===undefined&&${JSON.stringify(state.clientToken || '')}){window.__OPENCHAMBER_CLIENT_TOKEN__=${JSON.stringify(state.clientToken || '')};}</script>`;
+  const initScript = `<script>if(window.__YURI_LOCAL_ORIGIN__===undefined){window.__YURI_LOCAL_ORIGIN__=${JSON.stringify(localOrigin)};}if(window.__YURI_API_BASE_URL__===undefined){window.__YURI_API_BASE_URL__=${JSON.stringify(apiBaseUrl)};}if(window.__YURI_CLIENT_TOKEN__===undefined&&${JSON.stringify(state.clientToken || '')}){window.__YURI_CLIENT_TOKEN__=${JSON.stringify(state.clientToken || '')};}</script>`;
   if (html.includes('<head>')) return html.replace('<head>', `<head>${initScript}`);
   if (html.includes('</head>')) return html.replace('</head>', `${initScript}</head>`);
   return `${initScript}${html}`;
@@ -1223,7 +1243,7 @@ const registerPackagedUiProtocol = () => {
 };
 
 // Virtual image assets: renderer pushes opaque binary chunks; protocol.handle
-// returns a ReadableStream. Separate scheme from openchamber-ui so the static
+// returns a ReadableStream. Separate scheme from yuri-ui so the static
 // UI handler is untouched. Local-page IPC only (see isLocalSender gates below).
 const virtualAssetRegistry = createVirtualAssetRegistry();
 const imageDiskCache = createImageDiskCache({ directory: path.join(app.getPath('userData'), 'image-cache-v1') });
@@ -1262,7 +1282,7 @@ const emitPreviewGatewayToOwner = (event, detail) => {
     return false;
   }
   try {
-    previewGatewayOwner.send('openchamber:emit', { event, detail });
+    previewGatewayOwner.send('yuri:emit', { event, detail });
     return true;
   } catch {
     return false;
@@ -1277,29 +1297,29 @@ const getOrCreatePreviewLoopbackGateway = () => {
         return false;
       }
       // Never log path/query (tokens). Payload is method + path only.
-      return emitPreviewGatewayToOwner('openchamber:preview-gateway-request', payload);
+      return emitPreviewGatewayToOwner('yuri:preview-gateway-request', payload);
     },
     sendWsOpenToOwner: (payload) => {
       if (!previewGatewayOwner || previewGatewayOwner.isDestroyed()) {
         return false;
       }
       // Never log path/query (tokens).
-      return emitPreviewGatewayToOwner('openchamber:preview-gateway-ws-open', payload);
+      return emitPreviewGatewayToOwner('yuri:preview-gateway-ws-open', payload);
     },
     sendWsMessageToOwner: (payload) => {
       if (!previewGatewayOwner || previewGatewayOwner.isDestroyed()) {
         return false;
       }
-      return emitPreviewGatewayToOwner('openchamber:preview-gateway-ws-message', payload);
+      return emitPreviewGatewayToOwner('yuri:preview-gateway-ws-message', payload);
     },
     sendWsCloseToOwner: (payload) => {
       if (!previewGatewayOwner || previewGatewayOwner.isDestroyed()) {
         return false;
       }
-      return emitPreviewGatewayToOwner('openchamber:preview-gateway-ws-close', payload);
+      return emitPreviewGatewayToOwner('yuri:preview-gateway-ws-close', payload);
     },
     onClientAbort: (requestId) => {
-      emitPreviewGatewayToOwner('openchamber:preview-gateway-abort', { requestId });
+      emitPreviewGatewayToOwner('yuri:preview-gateway-abort', { requestId });
     },
   });
   return previewLoopbackGateway;
@@ -1391,10 +1411,10 @@ const maybeShowNativeNotification = (rawInput, sourceWindow) => {
   // In-process backend notifications belong to the local host, even when the
   // main window is displaying a remote instance. IPC notifications own a window.
   const owner = sourceWindow ?? BrowserWindow.getAllWindows().find((window) =>
-    !window.isDestroyed() && window.__ocMiniChat !== true
-    && !window.__ocRuntimeConfig?.relayHostId
-    && sameOrigin(window.__ocRuntimeConfig?.apiBaseUrl || state.localOrigin, state.sidecarUrl));
-  const ownerRuntime = owner?.__ocRuntimeConfig;
+    !window.isDestroyed() && window.__yuriMiniChat !== true
+    && !window.__yuriRuntimeConfig?.relayHostId
+    && sameOrigin(window.__yuriRuntimeConfig?.apiBaseUrl || state.localOrigin, state.sidecarUrl));
+  const ownerRuntime = owner?.__yuriRuntimeConfig;
   const requireHidden = Boolean(payload.requireHidden ?? payload.require_hidden);
 
   if (requireHidden && isAnyWindowFocused()) {
@@ -1411,7 +1431,7 @@ const maybeShowNativeNotification = (rawInput, sourceWindow) => {
 
   const title = typeof payload.title === 'string' && payload.title.trim()
     ? payload.title.trim()
-    : 'OpenChamberY';
+    : 'Yuri';
   const body = typeof payload.body === 'string' ? payload.body : '';
   const sessionId = typeof payload.sessionId === 'string' && payload.sessionId.trim()
     ? payload.sessionId.trim()
@@ -1434,15 +1454,15 @@ const maybeShowNativeNotification = (rawInput, sourceWindow) => {
   const release = () => { activeNotifications.delete(notification); };
 
   notification.on('click', () => {
-    if (!owner || owner.isDestroyed() || owner.__ocRuntimeConfig !== ownerRuntime) {
+    if (!owner || owner.isDestroyed() || owner.__yuriRuntimeConfig !== ownerRuntime) {
       release();
       return;
     }
     focusForegroundWindow(owner);
     if (assistantID) {
-      emitToWindow(owner, 'openchamber:open-assistant', { assistantID });
+      emitToWindow(owner, 'yuri:open-assistant', { assistantID });
     } else if (sessionId) {
-      emitToWindow(owner, 'openchamber:open-session', { sessionId, directory });
+      emitToWindow(owner, 'yuri:open-session', { sessionId, directory });
     }
     release();
   });
@@ -1543,7 +1563,7 @@ const loadShellEnv = () => {
 };
 
 // Merge the user's login-shell env (PATH, etc.) into this process before we
-import { pathLooksUserConfigured, mergePathValues } from '@openchambery/web/server/lib/opencode/path-utils.js';
+import { pathLooksUserConfigured, mergePathValues } from '@yuri/web/server/lib/opencode/path-utils.js';
 
 // import/start the server in-process. The server and its children (opencode
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar
@@ -1603,36 +1623,36 @@ const spawnLocalServer = async () => {
     chosenPort = await pickUnusedPort(bindHost);
   }
 
-  // The server module reads ENV_DESKTOP_NOTIFY / OPENCHAMBER_DIST_DIR /
-  // OPENCHAMBER_RUNTIME at import time (top-level const), so these must be
+  // The server module reads ENV_DESKTOP_NOTIFY / YURI_DIST_DIR /
+  // YURI_RUNTIME at import time (top-level const), so these must be
   // set before the first import. After this point, the same env is used by
   // both the Electron main and the server running inside it.
-  process.env.OPENCHAMBER_HOST = bindHost;
-  process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_ACTIVE = effectiveLanAccessEnabled ? 'true' : 'false';
+  process.env.YURI_HOST = bindHost;
+  process.env.YURI_DESKTOP_LAN_ACCESS_ACTIVE = effectiveLanAccessEnabled ? 'true' : 'false';
   if (lanAccessBlockedByMissingPassword) {
-    process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_BLOCKED_REASON = 'missing-password';
+    process.env.YURI_DESKTOP_LAN_ACCESS_BLOCKED_REASON = 'missing-password';
   } else {
-    delete process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_BLOCKED_REASON;
+    delete process.env.YURI_DESKTOP_LAN_ACCESS_BLOCKED_REASON;
   }
-  process.env.OPENCHAMBER_DIST_DIR = resolveWebDistDir();
-  process.env.OPENCHAMBER_RUNTIME = 'desktop';
+  process.env.YURI_DIST_DIR = resolveWebDistDir();
+  process.env.YURI_RUNTIME = 'desktop';
   // OpenCode uses process cwd as a fallback directory; app userData would make
   // packaged desktop look like a separate empty workspace.
-  process.env.OPENCHAMBER_OPENCODE_CWD = resolveManagedOpenCodeCwd({
+  process.env.YURI_OPENCODE_CWD = resolveManagedOpenCodeCwd({
     env: process.env,
     homedir: () => os.homedir(),
   });
-  process.env.OPENCHAMBER_DESKTOP_NOTIFY = 'true';
+  process.env.YURI_DESKTOP_NOTIFY = 'true';
   if (desktopUiPassword) {
-    process.env.OPENCHAMBER_UI_PASSWORD = desktopUiPassword;
+    process.env.YURI_UI_PASSWORD = desktopUiPassword;
   } else {
-    delete process.env.OPENCHAMBER_UI_PASSWORD;
+    delete process.env.YURI_UI_PASSWORD;
   }
-  process.env.OPENCHAMBER_SKIP_API_COMPRESSION = process.env.OPENCHAMBER_SKIP_API_COMPRESSION || 'true';
+  process.env.YURI_SKIP_API_COMPRESSION = process.env.YURI_SKIP_API_COMPRESSION || 'true';
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
-  process.env.OPENCHAMBER_DIST_DIR = resolveWebDistDir();
+  process.env.YURI_DIST_DIR = resolveWebDistDir();
   const backend = await getDesktopBackend();
   const { startWebUiServer } = backend;
 
@@ -1727,8 +1747,8 @@ const buildInitScript = (localOrigin, bootOutcome, apiBaseUrl = '', clientToken 
   // Assign each key independently and never clobber values preload already set.
   return [
     '(function(){',
-    'var __oc_set=function(k,v){try{if(window[k]===undefined){window[k]=v;}}catch(_e){}};',
-    `try{var __oc_local=${local};var __oc_api=${apiBase};var __oc_headers=${headers};var __oc_packaged=${packagedOrigin};var __oc_origin=window.location&&window.location.origin||'';var __oc_protocol=window.location&&window.location.protocol||'';var __oc_host=window.location&&window.location.hostname||'';var __oc_is_packaged=__oc_origin===__oc_packaged||__oc_protocol==='openchamber-ui:'||(__oc_protocol==='openchamber-ui:'&&__oc_host==='app');var __oc_is_local=false;try{__oc_is_local=!!(__oc_local&&__oc_origin===new URL(__oc_local).origin);}catch(_l){}__oc_set('__OPENCHAMBER_MACOS_MAJOR__',${macVersion});__oc_set('__OPENCHAMBER_LOCAL_ORIGIN__',__oc_local);__oc_set('__OPENCHAMBER_API_BASE_URL__',__oc_api);if(__oc_is_local||__oc_is_packaged){__oc_set('__OPENCHAMBER_HOME__',${home});__oc_set('__OPENCHAMBER_RUNTIME_HEADERS__',__oc_headers);}if((__oc_is_local||__oc_is_packaged)&&${token}){__oc_set('__OPENCHAMBER_CLIENT_TOKEN__',${token});}var __oc_bo=${outcome};if(__oc_bo){try{window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}catch(_bo){}}}catch(_e){}`,
+    'var __yuri_set=function(k,v){try{if(window[k]===undefined){window[k]=v;}}catch(_e){}};',
+    `try{var __yuri_local=${local};var __yuri_api=${apiBase};var __yuri_headers=${headers};var __yuri_packaged=${packagedOrigin};var __yuri_origin=window.location&&window.location.origin||'';var __yuri_protocol=window.location&&window.location.protocol||'';var __yuri_host=window.location&&window.location.hostname||'';var __yuri_is_packaged=__yuri_origin===__yuri_packaged||__yuri_protocol==='yuri-ui:'||(__yuri_protocol==='yuri-ui:'&&__yuri_host==='app');var __yuri_is_local=false;try{__yuri_is_local=!!(__yuri_local&&__yuri_origin===new URL(__yuri_local).origin);}catch(_l){}__yuri_set('__YURI_MACOS_MAJOR__',${macVersion});__yuri_set('__YURI_LOCAL_ORIGIN__',__yuri_local);__yuri_set('__YURI_API_BASE_URL__',__yuri_api);if(__yuri_is_local||__yuri_is_packaged){__yuri_set('__YURI_HOME__',${home});__yuri_set('__YURI_RUNTIME_HEADERS__',__yuri_headers);}if((__yuri_is_local||__yuri_is_packaged)&&${token}){__yuri_set('__YURI_CLIENT_TOKEN__',${token});}var __yuri_bo=${outcome};if(__yuri_bo){try{window.__YURI_DESKTOP_BOOT_OUTCOME__=__yuri_bo;}catch(_bo){}}}catch(_e){}`,
     '}())',
   ].join('');
 };
@@ -1757,9 +1777,9 @@ const syncWindowInitScriptsFromState = () => {
 
   for (const browserWindow of BrowserWindow.getAllWindows()) {
     if (!browserWindow || browserWindow.isDestroyed()) continue;
-    if (browserWindow.__ocMiniChat === true) {
-      const runtimeConfig = browserWindow.__ocRuntimeConfig || {};
-      browserWindow.__ocInitScript = buildInitScript(
+    if (browserWindow.__yuriMiniChat === true) {
+      const runtimeConfig = browserWindow.__yuriRuntimeConfig || {};
+      browserWindow.__yuriInitScript = buildInitScript(
         localOrigin,
         state.bootOutcome,
         runtimeConfig.apiBaseUrl || state.apiBaseUrl || '',
@@ -1768,18 +1788,18 @@ const syncWindowInitScriptsFromState = () => {
       );
       continue;
     }
-    browserWindow.__ocInitScript = mainScript;
+    browserWindow.__yuriInitScript = mainScript;
   }
 };
 
 /** Resolve the init script that should run for a given window on navigation. */
 const resolveWindowInitScript = (browserWindow) => {
-  if (browserWindow?.__ocMiniChat === true) {
-    return browserWindow.__ocInitScript || state.initScript;
+  if (browserWindow?.__yuriMiniChat === true) {
+    return browserWindow.__yuriInitScript || state.initScript;
   }
   // Prefer process-level state so reloads after desktop_hosts_set (first-launch
   // local choice) never re-inject a stale not-configured boot outcome.
-  return state.initScript || browserWindow?.__ocInitScript || null;
+  return state.initScript || browserWindow?.__yuriInitScript || null;
 };
 
 const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => {
@@ -1872,47 +1892,7 @@ const buildStartupSplashHtml = () => {
   </head>
   <body>
     <div class="stack">
-      <svg width="120" height="120" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenChamberY loading icon">
-        <path d="M50 50 L8.432 26 L8.432 74 L50 98 Z" fill="var(--splash-face-fill)" stroke="var(--splash-stroke)" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M50 50 L39.608 44 L39.608 56 L50 62 Z" fill="var(--splash-cell-fill)" opacity="0.2"/>
-        <path d="M39.608 44 L29.216 38 L29.216 50 L39.608 56 Z" fill="var(--splash-cell-fill)" opacity="0.45"/>
-        <path d="M29.216 38 L18.824 32 L18.824 44 L29.216 50 Z" fill="var(--splash-cell-fill)" opacity="0.15"/>
-        <path d="M18.824 32 L8.432 26 L8.432 38 L18.824 44 Z" fill="var(--splash-cell-fill)" opacity="0.55"/>
-        <path d="M50 62 L39.608 56 L39.608 68 L50 74 Z" fill="var(--splash-cell-fill)" opacity="0.35"/>
-        <path d="M39.608 56 L29.216 50 L29.216 62 L39.608 68 Z" fill="var(--splash-cell-fill)" opacity="0.1"/>
-        <path d="M29.216 50 L18.824 44 L18.824 56 L29.216 62 Z" fill="var(--splash-cell-fill)" opacity="0.5"/>
-        <path d="M18.824 44 L8.432 38 L8.432 50 L18.824 56 Z" fill="var(--splash-cell-fill)" opacity="0.25"/>
-        <path d="M50 74 L39.608 68 L39.608 80 L50 86 Z" fill="var(--splash-cell-fill)" opacity="0.4"/>
-        <path d="M39.608 68 L29.216 62 L29.216 74 L39.608 80 Z" fill="var(--splash-cell-fill)" opacity="0.3"/>
-        <path d="M29.216 62 L18.824 56 L18.824 68 L29.216 74 Z" fill="var(--splash-cell-fill)" opacity="0.45"/>
-        <path d="M18.824 56 L8.432 50 L8.432 62 L18.824 68 Z" fill="var(--splash-cell-fill)" opacity="0.15"/>
-        <path d="M50 86 L39.608 80 L39.608 92 L50 98 Z" fill="var(--splash-cell-fill)" opacity="0.55"/>
-        <path d="M39.608 80 L29.216 74 L29.216 86 L39.608 92 Z" fill="var(--splash-cell-fill)" opacity="0.2"/>
-        <path d="M29.216 74 L18.824 68 L18.824 80 L29.216 86 Z" fill="var(--splash-cell-fill)" opacity="0.35"/>
-        <path d="M18.824 68 L8.432 62 L8.432 74 L18.824 80 Z" fill="var(--splash-cell-fill)" opacity="0.1"/>
-        <path d="M50 50 L91.568 26 L91.568 74 L50 98 Z" fill="var(--splash-face-fill)" stroke="var(--splash-stroke)" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M50 50 L60.392 44 L60.392 56 L50 62 Z" fill="var(--splash-cell-fill)" opacity="0.3"/>
-        <path d="M60.392 44 L70.784 38 L70.784 50 L60.392 56 Z" fill="var(--splash-cell-fill)" opacity="0.15"/>
-        <path d="M70.784 38 L81.176 32 L81.176 44 L70.784 50 Z" fill="var(--splash-cell-fill)" opacity="0.45"/>
-        <path d="M81.176 32 L91.568 26 L91.568 38 L81.176 44 Z" fill="var(--splash-cell-fill)" opacity="0.25"/>
-        <path d="M50 62 L60.392 56 L60.392 68 L50 74 Z" fill="var(--splash-cell-fill)" opacity="0.5"/>
-        <path d="M60.392 56 L70.784 50 L70.784 62 L60.392 68 Z" fill="var(--splash-cell-fill)" opacity="0.35"/>
-        <path d="M70.784 50 L81.176 44 L81.176 56 L70.784 62 Z" fill="var(--splash-cell-fill)" opacity="0.1"/>
-        <path d="M81.176 44 L91.568 38 L91.568 50 L81.176 56 Z" fill="var(--splash-cell-fill)" opacity="0.4"/>
-        <path d="M50 74 L60.392 68 L60.392 80 L50 86 Z" fill="var(--splash-cell-fill)" opacity="0.2"/>
-        <path d="M60.392 68 L70.784 62 L70.784 74 L60.392 80 Z" fill="var(--splash-cell-fill)" opacity="0.55"/>
-        <path d="M70.784 62 L81.176 56 L81.176 68 L70.784 74 Z" fill="var(--splash-cell-fill)" opacity="0.3"/>
-        <path d="M81.176 56 L91.568 50 L91.568 62 L81.176 68 Z" fill="var(--splash-cell-fill)" opacity="0.15"/>
-        <path d="M50 86 L60.392 80 L60.392 92 L50 98 Z" fill="var(--splash-cell-fill)" opacity="0.45"/>
-        <path d="M60.392 80 L70.784 74 L70.784 86 L60.392 92 Z" fill="var(--splash-cell-fill)" opacity="0.25"/>
-        <path d="M70.784 74 L81.176 68 L81.176 80 L70.784 86 Z" fill="var(--splash-cell-fill)" opacity="0.4"/>
-        <path d="M81.176 68 L91.568 62 L91.568 74 L81.176 80 Z" fill="var(--splash-cell-fill)" opacity="0.2"/>
-        <path d="M50 2 L8.432 26 L50 50 L91.568 26 Z" fill="none" stroke="var(--splash-stroke)" stroke-width="2" stroke-linejoin="round"/>
-        <g transform="matrix(0.866, 0.5, -0.866, 0.5, 50, 26) scale(0.75)">
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M-16 -20 L16 -20 L16 20 L-16 20 Z M-8 -12 L-8 12 L8 12 L8 -12 Z" fill="var(--splash-logo-fill)"/>
-          <path d="M-8 -4 L8 -4 L8 12 L-8 12 Z" fill="var(--splash-logo-fill)" fill-opacity="0.4"/>
-        </g>
-      </svg>
+      <img width="120" height="120" alt="Yuri" src="data:image/png;base64,${fs.readFileSync(path.join(resourceRoot(), 'icons/icon.png')).toString('base64')}" />
     </div>
   </body>
   </html>`;
@@ -1982,7 +1962,7 @@ const loginRemoteAndIssueClientToken = async ({ url, password, trustDevice, requ
       password: candidatePassword,
       trustDevice: trustDevice === true,
       issueClientToken: true,
-      clientLabel: 'OpenChamberY Desktop',
+      clientLabel: 'Yuri Desktop',
       ...clientIdentity,
     }),
   });
@@ -2010,7 +1990,7 @@ const loginRemoteAndIssueClientToken = async ({ url, password, trustDevice, requ
       Cookie: cookie,
     },
     body: JSON.stringify({
-      label: 'OpenChamberY Desktop',
+      label: 'Yuri Desktop',
       ...clientIdentity,
     }),
   });
@@ -2025,7 +2005,7 @@ const loginRemoteAndIssueClientToken = async ({ url, password, trustDevice, requ
 const pushBootOutcomeToWindow = (browserWindow, bootOutcome = state.bootOutcome) => {
   if (!browserWindow || browserWindow.isDestroyed()) return;
   try {
-    browserWindow.webContents.send('openchamber:boot-outcome', bootOutcome ?? null);
+    browserWindow.webContents.send('yuri:boot-outcome', bootOutcome ?? null);
   } catch {
     // Window may be mid-teardown.
   }
@@ -2039,7 +2019,7 @@ const pushBootOutcomeToAllWindows = (bootOutcome = state.bootOutcome) => {
 
 const emitToWindow = (browserWindow, event, detail) => {
   if (!browserWindow || browserWindow.isDestroyed()) return;
-  browserWindow.webContents.send('openchamber:emit', { event, detail });
+  browserWindow.webContents.send('yuri:emit', { event, detail });
 };
 
 // Single-main-window semantics: app-level events (deep links,
@@ -2055,7 +2035,7 @@ const resolveMainWindowTarget = () => {
   // broadcasts keep landing on exactly one surface (succession by creation
   // order — BrowserWindow.getAllWindows() returns windows in creation order).
   const successor = BrowserWindow.getAllWindows().find(
-    (window) => !window.isDestroyed() && window.__ocMiniChat !== true,
+    (window) => !window.isDestroyed() && window.__yuriMiniChat !== true,
   );
   state.mainWindow = successor || null;
   return state.mainWindow;
@@ -2073,11 +2053,11 @@ const emitToAllWindows = (event, detail) => {
 // BrowserWindow constructor) because macOS otherwise leaves the material
 // uncomposited on a cold launch until the window gets a state change.
 const hasMultipleAppWindows = () => BrowserWindow.getAllWindows()
-  .filter((window) => !window.isDestroyed() && window.__ocLabel).length > 1;
+  .filter((window) => !window.isDestroyed() && window.__yuriLabel).length > 1;
 
 const applyMacVibrancy = (browserWindow) => {
   if (process.platform !== 'darwin' || !browserWindow || browserWindow.isDestroyed()) return;
-  if (!browserWindow.__ocUseVibrancy || hasMultipleAppWindows()) return;
+  if (!browserWindow.__yuriUseVibrancy || hasMultipleAppWindows()) return;
   try {
     browserWindow.setVibrancy('sidebar');
   } catch {}
@@ -2086,8 +2066,8 @@ const applyMacVibrancy = (browserWindow) => {
 const setMacVibrancyReady = (browserWindow, ready) => {
   if (process.platform !== 'darwin' || !browserWindow || browserWindow.isDestroyed()) return;
   const suppressed = hasMultipleAppWindows();
-  emitToWindow(browserWindow, 'openchamber:vibrancy-ready', {
-    ready: ready && browserWindow.__ocUseVibrancy && !suppressed,
+  emitToWindow(browserWindow, 'yuri:vibrancy-ready', {
+    ready: ready && browserWindow.__yuriUseVibrancy && !suppressed,
     suppressed,
   });
 };
@@ -2118,9 +2098,9 @@ const syncMacWindowVibrancy = () => {
   if (process.platform !== 'darwin') return;
   const suppressed = hasMultipleAppWindows();
   for (const window of BrowserWindow.getAllWindows()) {
-    if (window.isDestroyed() || !window.__ocLabel) continue;
-    if (!suppressed && window.__ocThemeSource) {
-      nativeTheme.themeSource = window.__ocThemeSource;
+    if (window.isDestroyed() || !window.__yuriLabel) continue;
+    if (!suppressed && window.__yuriThemeSource) {
+      nativeTheme.themeSource = window.__yuriThemeSource;
     }
     setMacVibrancyReady(window, false);
     if (suppressed) {
@@ -2129,7 +2109,7 @@ const syncMacWindowVibrancy = () => {
       } catch (error) {
         log.warn('[electron] failed to disable multi-window vibrancy', error);
       }
-    } else if (window.__ocUseVibrancy && window.isVisible() && !window.isMinimized()) {
+    } else if (window.__yuriUseVibrancy && window.isVisible() && !window.isMinimized()) {
       applyMacVibrancy(window);
       scheduleMacVibrancyReady(window);
     }
@@ -2138,7 +2118,7 @@ const syncMacWindowVibrancy = () => {
 
 const trackMacWindowVibrancy = (browserWindow, useVibrancy) => {
   if (process.platform !== 'darwin') return;
-  browserWindow.__ocUseVibrancy = useVibrancy;
+  browserWindow.__yuriUseVibrancy = useVibrancy;
   browserWindow.on('closed', syncMacWindowVibrancy);
   browserWindow.on('show', syncMacWindowVibrancy);
   browserWindow.on('restore', syncMacWindowVibrancy);
@@ -2182,7 +2162,7 @@ const parseDeepLink = (raw) => {
   if (!trimmed) return null;
   try {
     const url = new URL(trimmed);
-    if (url.protocol !== `${DEEP_LINK_PROTOCOL}:`) return null;
+    if (!isAppDeepLink(trimmed)) return null;
     const type = url.hostname;
     if (!type) return null;
     const segments = url.pathname.split('/').filter(Boolean);
@@ -2190,7 +2170,7 @@ const parseDeepLink = (raw) => {
       ? decodeURIComponent(segments.join('/'))
       : '';
     // OpenCode: opencode://new-session?directory=…&prompt=…
-    // OpenChamber keeps the same query shape under openchamber://.
+    // Yuri keeps the same query shape under yuri://.
     const directory = resolveDeepLinkDirectory(url, value);
     const prompt = (url.searchParams.get('prompt') || '').trim();
     return { type, value, directory, prompt, raw: trimmed };
@@ -2213,7 +2193,7 @@ const parseConnectPairingDeepLinkPayload = (raw) => {
   if (typeof raw !== 'string') return null;
   try {
     const url = new URL(raw.trim());
-    if (url.protocol !== `${DEEP_LINK_PROTOCOL}:` || url.hostname !== 'connect') return null;
+    if (!isAppDeepLink(raw) || url.hostname !== 'connect') return null;
     if (url.searchParams.get('v') !== '2') return null;
     const payload = decodeBase64UrlJson(url.searchParams.get('p') || '');
     if (!payload || payload.v !== 2 || typeof payload !== 'object') return null;
@@ -2241,7 +2221,7 @@ const parseConnectPairingDeepLinkPayload = (raw) => {
     return {
       pairingId,
       secret,
-      label: typeof payload.label === 'string' && payload.label.trim() ? payload.label.trim() : 'OpenChamberY',
+      label: typeof payload.label === 'string' && payload.label.trim() ? payload.label.trim() : 'Yuri',
       fingerprint: typeof payload.fingerprint === 'string' && payload.fingerprint.trim() ? payload.fingerprint.trim() : '',
       expiresAt: expiresAt || null,
       candidates: candidates.sort((left, right) => left.priority - right.priority),
@@ -2313,9 +2293,9 @@ const redeemConnectPairingDeepLink = async (payload, serverUrl) => {
     body: JSON.stringify({
       pairingId: payload.pairingId,
       secret: payload.secret,
-      clientLabel: 'OpenChamberY Desktop',
+      clientLabel: 'Yuri Desktop',
       clientKind: 'desktop',
-      deviceName: 'OpenChamberY Desktop',
+      deviceName: 'Yuri Desktop',
       ...desktopDeviceMetadata(),
       dedupeKey: `desktop:${await getOrCreateDesktopInstallId()}`,
     }),
@@ -2375,7 +2355,7 @@ const confirmConnectDeepLink = async (payload) => {
   }
   const options = {
     type: 'warning',
-    title: 'Connect to OpenChamberY server?',
+    title: 'Connect to Yuri server?',
     message: `Connect to "${payload.label}"?`,
     detail:
       `This will add ${payload.serverUrl} as a remote instance and route this app's activity ` +
@@ -2433,13 +2413,13 @@ const dispatchDeepLink = (link) => {
     return;
   }
   if (link.type === 'session' && link.value) {
-    emitToAllWindows('openchamber:open-session', { sessionId: link.value });
+    emitToAllWindows('yuri:open-session', { sessionId: link.value });
     return;
   }
-  // Align with OpenCode: openchamber://new-session?directory=${path}&prompt=…
+  // Align with OpenCode: yuri://new-session?directory=${path}&prompt=…
   // Also accept bare `new` (mobile vocabulary) and path-form fallbacks.
   if (link.type === 'new-session' || link.type === 'new') {
-    emitToAllWindows('openchamber:open-draft-session', {
+    emitToAllWindows('yuri:open-draft-session', {
       directory: link.directory || '',
       projectId: '',
       initialPrompt: link.prompt || '',
@@ -2453,7 +2433,7 @@ const dispatchDeepLink = (link) => {
       log.warn('[electron] open-project deep-link missing directory');
       return;
     }
-    emitToAllWindows('openchamber:open-project', { projectPath });
+    emitToAllWindows('yuri:open-project', { projectPath });
     return;
   }
   if (link.type === 'host' && link.value) {
@@ -2500,7 +2480,7 @@ const handleDeepLinks = (urls) => {
 };
 
 const extractInitialDeepLinks = () =>
-  process.argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`));
+  process.argv.filter(isAppDeepLink);
 
 const dispatchDomEventToWindow = (browserWindow, event, detail) => {
   if (!browserWindow || browserWindow.isDestroyed()) return;
@@ -2523,8 +2503,8 @@ const getMenuTargetWindow = () => {
 
 const dispatchMenuAction = (action) => {
   const target = getMenuTargetWindow();
-  emitToWindow(target, 'openchamber:menu-action', action);
-  dispatchDomEventToWindow(target, 'openchamber:menu-action', action);
+  emitToWindow(target, 'yuri:menu-action', action);
+  dispatchDomEventToWindow(target, 'yuri:menu-action', action);
 };
 
 // Mini-chat draft windows are not deduplicated, so this must reach the renderer
@@ -2532,13 +2512,13 @@ const dispatchMenuAction = (action) => {
 // resolves the active directory/project and opens the window.
 const dispatchOpenMiniChat = (browserWindow) => {
   const target = browserWindow && !browserWindow.isDestroyed() ? browserWindow : getMenuTargetWindow();
-  if (target) emitToWindow(target, 'openchamber:open-mini-chat');
+  if (target) emitToWindow(target, 'yuri:open-mini-chat');
 };
 
 const dispatchCheckForUpdates = () => {
-  emitToAllWindows('openchamber:check-for-updates');
+  emitToAllWindows('yuri:check-for-updates');
   for (const browserWindow of BrowserWindow.getAllWindows()) {
-    dispatchDomEventToWindow(browserWindow, 'openchamber:check-for-updates');
+    dispatchDomEventToWindow(browserWindow, 'yuri:check-for-updates');
   }
 };
 
@@ -2607,7 +2587,7 @@ const getWindowIconPath = () => {
 
 const canUseTitleBarOverlay = (browserWindow) => (
   process.platform === 'win32' &&
-  Boolean(browserWindow?.__ocTitleBarOverlayEnabled) &&
+  Boolean(browserWindow?.__yuriTitleBarOverlayEnabled) &&
   typeof browserWindow.setTitleBarOverlay === 'function' &&
   !browserWindow.isDestroyed()
 );
@@ -2631,7 +2611,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   const autoHidesNativeMenuBar = process.platform !== 'darwin';
   const windowIconPath = getWindowIconPath();
   const options = {
-    title: 'OpenChamberY',
+    title: 'Yuri',
     ...(Number.isFinite(restoredBounds?.x) && Number.isFinite(restoredBounds?.y)
       ? { x: restoredBounds.x, y: restoredBounds.y }
       : {}),
@@ -2655,16 +2635,17 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 17 } : undefined,
     webPreferences: {
       additionalArguments: [
-        `--openchamber-local-origin=${desktopLocalOrigin}`,
-        `--openchamber-api-base-url=${desktopApiBaseUrl}`,
-        `--openchamber-client-token=${desktopClientToken}`,
-        `--openchamber-runtime-headers=${JSON.stringify(desktopRequestHeaders)}`,
-        `--openchamber-home=${desktopHome}`,
-        `--openchamber-macos-major=${desktopMacosMajor}`,
-        `--openchamber-packaged=${app.isPackaged ? '1' : '0'}`,
-        `--openchamber-mac-vibrancy=${useVibrancy ? '1' : '0'}`,
-        `--openchamber-boot-outcome=${JSON.stringify(state.bootOutcome || null)}`,
-        `--openchamber-relay-host-id=${rendererRuntimeConfig.relayHostId || ''}`,
+        `--yuri-application-id=${APP_USER_MODEL_ID}`,
+        `--yuri-local-origin=${desktopLocalOrigin}`,
+        `--yuri-api-base-url=${desktopApiBaseUrl}`,
+        `--yuri-client-token=${desktopClientToken}`,
+        `--yuri-runtime-headers=${JSON.stringify(desktopRequestHeaders)}`,
+        `--yuri-home=${desktopHome}`,
+        `--yuri-macos-major=${desktopMacosMajor}`,
+        `--yuri-packaged=${app.isPackaged ? '1' : '0'}`,
+        `--yuri-mac-vibrancy=${useVibrancy ? '1' : '0'}`,
+        `--yuri-boot-outcome=${JSON.stringify(state.bootOutcome || null)}`,
+        `--yuri-relay-host-id=${rendererRuntimeConfig.relayHostId || ''}`,
       ],
       preload: isDev ? path.join(__dirname, 'preload.mjs') : path.join(app.getAppPath(), 'preload.mjs'),
       backgroundThrottling: false,
@@ -2680,11 +2661,11 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   };
 
   const browserWindow = new BrowserWindow(options);
-  browserWindow.__ocLabel = label || nextWindowLabel();
+  browserWindow.__yuriLabel = label || nextWindowLabel();
   trackMacWindowVibrancy(browserWindow, useVibrancy);
-  browserWindow.__ocRuntimeConfig = { apiBaseUrl: desktopApiBaseUrl, clientToken: desktopClientToken, requestHeaders: desktopRequestHeaders, relayHostId: rendererRuntimeConfig.relayHostId };
-  browserWindow.__ocInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
-  browserWindow.__ocTitleBarOverlayEnabled = titleBarOverlayEnabled;
+  browserWindow.__yuriRuntimeConfig = { apiBaseUrl: desktopApiBaseUrl, clientToken: desktopClientToken, requestHeaders: desktopRequestHeaders, relayHostId: rendererRuntimeConfig.relayHostId };
+  browserWindow.__yuriInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
+  browserWindow.__yuriTitleBarOverlayEnabled = titleBarOverlayEnabled;
 
   browserWindow.webContents.on('console-message', (_event, ...args) => {
     const details = args[0];
@@ -2693,11 +2674,11 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
       : args[1];
     if (typeof message !== 'string') return;
     if (message.includes('[refresh-debug]')) {
-      log.warn(`[renderer:${browserWindow.__ocLabel}] ${message}`);
+      log.warn(`[renderer:${browserWindow.__yuriLabel}] ${message}`);
       return;
     }
     if (isDev && message.includes('[session-load]')) {
-      console.log(`[renderer:${browserWindow.__ocLabel}] ${message}`);
+      console.log(`[renderer:${browserWindow.__yuriLabel}] ${message}`);
     }
   });
 
@@ -2746,16 +2727,16 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
 
   browserWindow.on('resize', () => {
     if (process.platform === 'darwin') {
-      emitToWindow(browserWindow, 'openchamber:window-resized');
+      emitToWindow(browserWindow, 'yuri:window-resized');
     }
     debounceWindowStatePersist(browserWindow, false);
   });
   browserWindow.on('maximize', () => {
-    emitToWindow(browserWindow, 'openchamber:window-maximized-changed', { maximized: true });
+    emitToWindow(browserWindow, 'yuri:window-maximized-changed', { maximized: true });
     debounceWindowStatePersist(browserWindow, false);
   });
   browserWindow.on('unmaximize', () => {
-    emitToWindow(browserWindow, 'openchamber:window-maximized-changed', { maximized: false });
+    emitToWindow(browserWindow, 'yuri:window-maximized-changed', { maximized: false });
     debounceWindowStatePersist(browserWindow, false);
   });
   browserWindow.on('move', () => {
@@ -2846,7 +2827,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
 
   browserWindow.webContents.on('will-navigate', (event, url) => {
     log.warn('[refresh-debug] will-navigate', {
-      window: browserWindow.__ocLabel,
+      window: browserWindow.__yuriLabel,
       protocol: (() => {
         try { return new URL(url).protocol; } catch { return 'invalid'; }
       })(),
@@ -2882,7 +2863,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
 
   browserWindow.webContents.on('did-finish-load', () => {
     log.warn('[refresh-debug] did-finish-load', {
-      window: browserWindow.__ocLabel,
+      window: browserWindow.__yuriLabel,
       url: browserWindow.webContents.getURL(),
     });
     // Navigation/reload resets Chromium zoom — re-apply the session factor.
@@ -2891,14 +2872,14 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   });
   browserWindow.webContents.on('render-process-gone', (_event, details) => {
     log.error('[refresh-debug] render-process-gone', {
-      window: browserWindow.__ocLabel,
+      window: browserWindow.__yuriLabel,
       reason: details.reason,
       exitCode: details.exitCode,
     });
   });
   browserWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     log.error('[refresh-debug] did-fail-load', {
-      window: browserWindow.__ocLabel,
+      window: browserWindow.__yuriLabel,
       errorCode,
       errorDescription,
       protocol: (() => {
@@ -2946,8 +2927,8 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
 
   const mainWindow = state.mainWindow;
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.__ocRuntimeConfig = rendererRuntimeConfig;
-    mainWindow.__ocInitScript = state.initScript;
+    mainWindow.__yuriRuntimeConfig = rendererRuntimeConfig;
+    mainWindow.__yuriInitScript = state.initScript;
     await navigateWindow(mainWindow, url, { allowAbort: true });
     mainWindow.show();
     mainWindow.focus();
@@ -3036,7 +3017,7 @@ const getWindowRuntimeConfig = (browserWindow) => {
     requestHeaders: state.requestHeaders || {},
   };
   if (!browserWindow || browserWindow.isDestroyed()) return fallback;
-  const config = browserWindow.__ocRuntimeConfig;
+  const config = browserWindow.__yuriRuntimeConfig;
   return {
     apiBaseUrl: typeof config?.apiBaseUrl === 'string' ? config.apiBaseUrl : fallback.apiBaseUrl,
     clientToken: typeof config?.clientToken === 'string' ? config.clientToken : fallback.clientToken,
@@ -3072,7 +3053,7 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
   // macOS vibrancy, on by default; users can disable it (Appearance settings).
   const useVibrancy = process.platform === 'darwin' && readSettingsRoot().desktopVibrancy !== false;
   const browserWindow = new BrowserWindow({
-    title: 'OpenChamberY Mini Chat',
+    title: 'Yuri Mini Chat',
     width: MINI_CHAT_WINDOW_WIDTH,
     height: MINI_CHAT_WINDOW_HEIGHT,
     minWidth: MINI_CHAT_MIN_WINDOW_WIDTH,
@@ -3090,13 +3071,14 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
     trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 17 } : undefined,
     webPreferences: {
       additionalArguments: [
-        `--openchamber-local-origin=${desktopLocalOrigin}`,
-        `--openchamber-api-base-url=${desktopApiBaseUrl}`,
-        `--openchamber-client-token=${desktopClientToken}`,
-        `--openchamber-runtime-headers=${JSON.stringify(desktopRequestHeaders)}`,
-        `--openchamber-home=${desktopHome}`,
-        `--openchamber-macos-major=${desktopMacosMajor}`,
-        `--openchamber-packaged=${app.isPackaged ? '1' : '0'}`,
+        `--yuri-application-id=${APP_USER_MODEL_ID}`,
+        `--yuri-local-origin=${desktopLocalOrigin}`,
+        `--yuri-api-base-url=${desktopApiBaseUrl}`,
+        `--yuri-client-token=${desktopClientToken}`,
+        `--yuri-runtime-headers=${JSON.stringify(desktopRequestHeaders)}`,
+        `--yuri-home=${desktopHome}`,
+        `--yuri-macos-major=${desktopMacosMajor}`,
+        `--yuri-packaged=${app.isPackaged ? '1' : '0'}`,
       ],
       preload: isDev ? path.join(__dirname, 'preload.mjs') : path.join(app.getAppPath(), 'preload.mjs'),
       backgroundThrottling: false,
@@ -3107,23 +3089,23 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
       sandbox: false,
     },
   });
-  browserWindow.__ocLabel = nextWindowLabel();
+  browserWindow.__yuriLabel = nextWindowLabel();
   trackMacWindowVibrancy(browserWindow, useVibrancy);
-  browserWindow.__ocRuntimeConfig = effectiveRuntimeConfig;
-  browserWindow.__ocInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
-  browserWindow.__ocMiniChat = true;
-  browserWindow.__ocMiniChatSessionId = sessionWindowKey;
-  browserWindow.__ocPinned = false;
+  browserWindow.__yuriRuntimeConfig = effectiveRuntimeConfig;
+  browserWindow.__yuriInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
+  browserWindow.__yuriMiniChat = true;
+  browserWindow.__yuriMiniChatSessionId = sessionWindowKey;
+  browserWindow.__yuriPinned = false;
 
   if (sessionWindowKey) {
     state.miniChatWindowsBySession.set(sessionWindowKey, browserWindow);
   }
 
   browserWindow.on('closed', () => {
-    if (browserWindow.__ocMiniChatSessionId) {
-      const existing = state.miniChatWindowsBySession.get(browserWindow.__ocMiniChatSessionId);
+    if (browserWindow.__yuriMiniChatSessionId) {
+      const existing = state.miniChatWindowsBySession.get(browserWindow.__yuriMiniChatSessionId);
       if (existing?.id === browserWindow.id) {
-        state.miniChatWindowsBySession.delete(browserWindow.__ocMiniChatSessionId);
+        state.miniChatWindowsBySession.delete(browserWindow.__yuriMiniChatSessionId);
       }
     }
   });
@@ -3176,11 +3158,11 @@ const setMiniChatPinned = (browserWindow, pinned) => {
   if (!browserWindow || browserWindow.isDestroyed()) {
     throw new Error('Window is not available');
   }
-  if (browserWindow.__ocMiniChat !== true) {
+  if (browserWindow.__yuriMiniChat !== true) {
     throw new Error('Pinning is only available for Mini Chat windows');
   }
   const nextPinned = pinned === true;
-  browserWindow.__ocPinned = nextPinned;
+  browserWindow.__yuriPinned = nextPinned;
   if (nextPinned) {
     browserWindow.setAlwaysOnTop(true, 'floating');
   } else {
@@ -3208,8 +3190,8 @@ const resolveMiniChatRuntimeConfig = (browserWindow, args = {}) => {
 };
 
 const resolveInitialUrl = async () => {
-  const hmrApiPort = process.env.OPENCHAMBER_HMR_API_PORT || '3901';
-  const hmrUiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5173';
+  const hmrApiPort = process.env.YURI_HMR_API_PORT || '3901';
+  const hmrUiPort = process.env.YURI_HMR_UI_PORT || '5173';
   const hmrApiUrl = `http://127.0.0.1:${hmrApiPort}`;
   const hmrUiUrl = `http://127.0.0.1:${hmrUiPort}`;
   const localUrl = isDev && await waitForHealth(hmrApiUrl, 5_000, 100)
@@ -3222,7 +3204,7 @@ const resolveInitialUrl = async () => {
     ? hmrUiUrl
     : localUrl;
 
-  // Never store URL.origin for openchamber-ui — it is the string "null".
+  // Never store URL.origin for yuri-ui — it is the string "null".
   state.localUiOrigin = shouldUsePackagedUi()
     ? packagedUiOrigin()
     : (urlIdentityKey(localUiUrl) || new URL(localUiUrl).origin);
@@ -3237,7 +3219,7 @@ const resolveInitialUrl = async () => {
   let requestHeaders = {};
   let remoteProbe = null;
 
-  const envTarget = normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || '');
+  const envTarget = normalizeHostUrl(process.env.YURI_SERVER_URL || '');
   const config = readDesktopHostsConfig();
   if (envTarget) {
     apiBaseUrl = envTarget;
@@ -3281,12 +3263,12 @@ const resolveInitialUrl = async () => {
 const downloadPendingUpdate = async () => {
   if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
   if (state.installingUpdate) throw new Error('An update is already being installed');
-  emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Started', data: {} }));
+  emitToAllWindows('yuri:update-progress', mapUpdaterProgressEvent({ event: 'Started', data: {} }));
   try {
     if (desktopUpdateKind === 'installer') await desktopInstaller.download();
     else await desktopOta.download();
-    emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Finished', data: {} }));
-    emitToAllWindows('openchamber:update-ready', { version: desktopUpdateKind === 'installer' ? desktopInstaller.version : desktopOta.state.queued?.releaseVersion, downloaded: true });
+    emitToAllWindows('yuri:update-progress', mapUpdaterProgressEvent({ event: 'Finished', data: {} }));
+    emitToAllWindows('yuri:update-ready', { version: desktopUpdateKind === 'installer' ? desktopInstaller.version : desktopOta.state.queued?.releaseVersion, downloaded: true });
   } finally { setTaskbarProgress(-1); }
 };
 
@@ -3330,7 +3312,7 @@ const isAppBundleInstalled = async (appName) => Boolean(await resolveAppBundlePa
 const iconToDataUrl = async (iconPath, appName) => {
   if (!iconPath || !(await pathExists(iconPath))) return null;
   const safeName = String(appName || 'app').replace(/[^a-z0-9]/gi, '_');
-  const tempPath = path.join(os.tmpdir(), `openchamber-icon-${safeName}-${Date.now()}.png`);
+  const tempPath = path.join(os.tmpdir(), `yuri-icon-${safeName}-${Date.now()}.png`);
   try {
     await execFileAsync('sips', ['-s', 'format', 'png', '-Z', '32', iconPath, '--out', tempPath], { stdio: 'ignore' });
   } catch {
@@ -3982,7 +3964,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!underHome && !underTmp) {
         throw new Error('File is outside the allowed workspace');
       }
-      const DENIED_SEGMENTS = ['.ssh', '.aws', '.gnupg', '.gpg', '.config/gh', '.config/openchamber/credentials'];
+      const DENIED_SEGMENTS = ['.ssh', '.aws', '.gnupg', '.gpg', '.config/gh', '.config/yuri/credentials'];
       const relFromHome = underHome ? filePath.slice(home.length + 1) : '';
       const relNormalized = relFromHome.split(path.sep).join('/');
       if (DENIED_SEGMENTS.some((segment) => relNormalized === segment || relNormalized.startsWith(`${segment}/`))) {
@@ -4237,7 +4219,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
           : await buildInstalledApps(Array.isArray(args.apps) ? args.apps : []);
         await fsp.mkdir(path.dirname(cachePath), { recursive: true });
         await fsp.writeFile(cachePath, JSON.stringify({ updatedAt: now, apps }, null, 2));
-        emitToAllWindows('openchamber:installed-apps-updated', apps);
+        emitToAllWindows('yuri:installed-apps-updated', apps);
       };
       if (process.platform !== 'darwin' && process.platform !== 'win32') {
         return { apps: [], hasCache: false, isCacheStale: false, supported: false };
@@ -4258,7 +4240,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const nextConfigInput = args.input || args.config || {};
       await writeDesktopHostsConfig(nextConfigInput);
       const updatedConfig = readDesktopHostsConfig();
-      const envTarget = normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || '');
+      const envTarget = normalizeHostUrl(process.env.YURI_SERVER_URL || '');
       if (Object.prototype.hasOwnProperty.call(nextConfigInput, 'localClientToken') && isLocalRuntimeUrl(state.apiBaseUrl || state.sidecarUrl || state.localOrigin || '')) {
         state.clientToken = readDesktopLocalClientToken();
       }
@@ -4329,7 +4311,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       } else {
         nativeTheme.themeSource = 'system';
       }
-      browserWindow.__ocThemeSource = nativeTheme.themeSource;
+      browserWindow.__yuriThemeSource = nativeTheme.themeSource;
       if (canUseTitleBarOverlay(browserWindow)) {
         const useDark = nativeTheme.shouldUseDarkColors;
         browserWindow.setTitleBarOverlay({
@@ -4365,6 +4347,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     }
 
     case 'desktop_check_for_updates': {
+      if (isPreviewDesktop) throw new Error('Preview uses a separate application identity; install Preview updates manually');
       if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
       if (state.installingUpdate) throw new Error('An update is already being installed');
       desktopInstaller.assertIdle();
@@ -4543,7 +4526,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return setMiniChatPinned(browserWindow, args.pinned === true);
 
     case 'desktop_get_window_pinned':
-      return { pinned: Boolean(browserWindow?.__ocPinned) };
+      return { pinned: Boolean(browserWindow?.__yuriPinned) };
 
     case 'desktop_focus_main_window': {
       const sessionId = typeof args.sessionId === 'string' ? args.sessionId.trim() : '';
@@ -4566,9 +4549,9 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       state.mainWindow.show();
       state.mainWindow.focus();
       if (sessionId) {
-        emitToWindow(state.mainWindow, 'openchamber:open-session', { sessionId, directory });
+        emitToWindow(state.mainWindow, 'yuri:open-session', { sessionId, directory });
       } else if (mode === 'draft') {
-        emitToWindow(state.mainWindow, 'openchamber:open-draft-session', { directory, projectId });
+        emitToWindow(state.mainWindow, 'yuri:open-draft-session', { directory, projectId });
       }
       return { focused: true };
     }
@@ -4839,7 +4822,7 @@ const buildMacMenu = () => {
     {
       label: app.name,
       submenu: [
-        { label: labels.aboutOpenChamber, click: () => dispatchAction('about') },
+        { label: labels.aboutYuri, click: () => dispatchAction('about') },
         {
           label: labels.checkForUpdates,
           click: () => dispatchCheckForUpdates(),
@@ -4945,7 +4928,7 @@ const buildMacMenu = () => {
         { label: labels.reportABug, click: () => shell.openExternal(GITHUB_BUG_REPORT_URL) },
         { label: labels.requestAFeature, click: () => shell.openExternal(GITHUB_FEATURE_REQUEST_URL) },
         { type: 'separator' },
-        { label: labels.joinDiscord, click: () => shell.openExternal(DISCORD_INVITE_URL) },
+        { label: labels.help, click: () => shell.openExternal(COMMUNITY_URL) },
       ],
     },
   ]);
@@ -4957,9 +4940,9 @@ const buildAutoHiddenMenu = () => {
 
   return Menu.buildFromTemplate([
     {
-      label: 'OpenChamberY',
+      label: 'Yuri',
       submenu: [
-        { label: labels.aboutOpenChamber, click: () => dispatchAction('about') },
+        { label: labels.aboutYuri, click: () => dispatchAction('about') },
         {
           label: labels.checkForUpdates,
           click: () => dispatchCheckForUpdates(),
@@ -5064,7 +5047,7 @@ const buildAutoHiddenMenu = () => {
         { label: labels.reportABug, click: () => shell.openExternal(GITHUB_BUG_REPORT_URL) },
         { label: labels.requestAFeature, click: () => shell.openExternal(GITHUB_FEATURE_REQUEST_URL) },
         { type: 'separator' },
-        { label: labels.joinDiscord, click: () => shell.openExternal(DISCORD_INVITE_URL) },
+        { label: labels.help, click: () => shell.openExternal(COMMUNITY_URL) },
       ],
     },
   ]);
@@ -5090,7 +5073,7 @@ const setupDockMenu = () => {
       label: labels.newSession,
       click: () => {
         void withMainWindow((target) => {
-          emitToWindow(target, 'openchamber:open-draft-session', { directory: '', projectId: '' });
+          emitToWindow(target, 'yuri:open-draft-session', { directory: '', projectId: '' });
         });
       },
     },
@@ -5181,7 +5164,7 @@ const isLocalSender = (webContents) => {
   }
 };
 
-ipcMain.handle('openchamber:invoke', async (event, command, args) => {
+ipcMain.handle('yuri:invoke', async (event, command, args) => {
   if (!isLocalSender(event.sender) && !isRemoteIpcCommandAllowed(command, args)) {
     log.warn(`[ipc] rejected ${command} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
     throw new Error('IPC not available for this origin');
@@ -5190,7 +5173,7 @@ ipcMain.handle('openchamber:invoke', async (event, command, args) => {
   return handleInvoke(browserWindow, command, args);
 });
 
-ipcMain.handle('openchamber:dialog:open', async (event, options) => {
+ipcMain.handle('yuri:dialog:open', async (event, options) => {
   // Native file dialogs expose absolute local paths; never grant to remote.
   if (!isLocalSender(event.sender)) {
     log.warn(`[ipc] rejected dialog:open from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
@@ -5239,7 +5222,7 @@ ipcMain.handle('openchamber:dialog:open', async (event, options) => {
   return result.filePaths[0] || null;
 });
 
-ipcMain.handle('openchamber:file:grant-existing', async (event, filePath) => {
+ipcMain.handle('yuri:file:grant-existing', async (event, filePath) => {
   if (!isLocalSender(event.sender)) {
     log.warn(`[ipc] rejected file:grant-existing from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
     throw new Error('IPC not available for this origin');
@@ -5267,7 +5250,7 @@ const requireLocalAssetSender = (event, label) => {
   }
 };
 
-ipcMain.handle('openchamber:asset:create', async (event, payload) => {
+ipcMain.handle('yuri:asset:create', async (event, payload) => {
   requireLocalAssetSender(event, 'asset:create');
   return virtualAssetRegistry.create({
     mimeType: payload?.mimeType,
@@ -5275,7 +5258,7 @@ ipcMain.handle('openchamber:asset:create', async (event, payload) => {
 });
 
 const imageCacheOwners = new WeakSet();
-ipcMain.handle('openchamber:image-cache:acquire', async (event, payload) => {
+ipcMain.handle('yuri:image-cache:acquire', async (event, payload) => {
   requireLocalAssetSender(event, 'image-cache:acquire');
   const owner = event.sender;
   if (!imageCacheOwners.has(owner)) {
@@ -5289,39 +5272,39 @@ ipcMain.handle('openchamber:image-cache:acquire', async (event, payload) => {
   }
   return imageDiskCache.acquire(owner.id, payload || {});
 });
-ipcMain.handle('openchamber:image-cache:append', (event, payload) => {
+ipcMain.handle('yuri:image-cache:append', (event, payload) => {
   requireLocalAssetSender(event, 'image-cache:append');
   return imageDiskCache.append(event.sender.id, payload?.leaseId, payload?.chunk);
 });
-ipcMain.handle('openchamber:image-cache:commit', (event, payload) => {
+ipcMain.handle('yuri:image-cache:commit', (event, payload) => {
   requireLocalAssetSender(event, 'image-cache:commit');
   return imageDiskCache.commit(event.sender.id, payload?.leaseId, payload?.mime);
 });
-ipcMain.handle('openchamber:image-cache:release', (event, payload) => {
+ipcMain.handle('yuri:image-cache:release', (event, payload) => {
   requireLocalAssetSender(event, 'image-cache:release');
   return imageDiskCache.release(event.sender.id, payload?.leaseId);
 });
 
-ipcMain.handle('openchamber:asset:push', async (event, payload) => {
+ipcMain.handle('yuri:asset:push', async (event, payload) => {
   requireLocalAssetSender(event, 'asset:push');
   const assetId = typeof payload?.assetId === 'string' ? payload.assetId : '';
   return virtualAssetRegistry.push(assetId, payload?.chunk);
 });
 
-ipcMain.handle('openchamber:asset:finish', async (event, payload) => {
+ipcMain.handle('yuri:asset:finish', async (event, payload) => {
   requireLocalAssetSender(event, 'asset:finish');
   const assetId = typeof payload?.assetId === 'string' ? payload.assetId : '';
   return virtualAssetRegistry.finish(assetId);
 });
 
-ipcMain.handle('openchamber:asset:cancel', async (event, payload) => {
+ipcMain.handle('yuri:asset:cancel', async (event, payload) => {
   requireLocalAssetSender(event, 'asset:cancel');
   const assetId = typeof payload?.assetId === 'string' ? payload.assetId : '';
   return virtualAssetRegistry.cancel(assetId);
 });
 
 // Preview loopback gateway — local UI only. Separate channels (not on
-// COMMANDS_SAFE_FOR_REMOTE / openchamber:invoke). Main is a dumb HTTP/WS pipe.
+// COMMANDS_SAFE_FOR_REMOTE / yuri:invoke). Main is a dumb HTTP/WS pipe.
 const requireLocalPreviewGatewaySender = (event, label) => {
   if (!isLocalSender(event.sender)) {
     log.warn(`[ipc] rejected ${label} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
@@ -5336,7 +5319,7 @@ const requirePreviewGatewayOwner = (event, label) => {
   }
 };
 
-ipcMain.handle('openchamber:preview-gateway:ensure', async (event) => {
+ipcMain.handle('yuri:preview-gateway:ensure', async (event) => {
   requireLocalPreviewGatewaySender(event, 'preview-gateway:ensure');
   const gateway = getOrCreatePreviewLoopbackGateway();
   bindPreviewGatewayOwner(event.sender);
@@ -5345,7 +5328,7 @@ ipcMain.handle('openchamber:preview-gateway:ensure', async (event) => {
   return { origin: started.origin };
 });
 
-ipcMain.handle('openchamber:preview-gateway:release', async (event) => {
+ipcMain.handle('yuri:preview-gateway:release', async (event) => {
   requireLocalPreviewGatewaySender(event, 'preview-gateway:release');
   if (previewGatewayOwner && previewGatewayOwner === event.sender) {
     clearPreviewGatewayOwner(event.sender);
@@ -5353,7 +5336,7 @@ ipcMain.handle('openchamber:preview-gateway:release', async (event) => {
   return { ok: true };
 });
 
-ipcMain.handle('openchamber:preview-gateway:begin', async (event, payload) => {
+ipcMain.handle('yuri:preview-gateway:begin', async (event, payload) => {
   requirePreviewGatewayOwner(event, 'preview-gateway:begin');
   const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
   return getOrCreatePreviewLoopbackGateway().begin(requestId, {
@@ -5362,25 +5345,25 @@ ipcMain.handle('openchamber:preview-gateway:begin', async (event, payload) => {
   });
 });
 
-ipcMain.handle('openchamber:preview-gateway:push', async (event, payload) => {
+ipcMain.handle('yuri:preview-gateway:push', async (event, payload) => {
   requirePreviewGatewayOwner(event, 'preview-gateway:push');
   const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
   return getOrCreatePreviewLoopbackGateway().push(requestId, payload?.chunk);
 });
 
-ipcMain.handle('openchamber:preview-gateway:end', async (event, payload) => {
+ipcMain.handle('yuri:preview-gateway:end', async (event, payload) => {
   requirePreviewGatewayOwner(event, 'preview-gateway:end');
   const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
   return getOrCreatePreviewLoopbackGateway().end(requestId);
 });
 
-ipcMain.handle('openchamber:preview-gateway:abort', async (event, payload) => {
+ipcMain.handle('yuri:preview-gateway:abort', async (event, payload) => {
   requirePreviewGatewayOwner(event, 'preview-gateway:abort');
   const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
   return getOrCreatePreviewLoopbackGateway().abort(requestId);
 });
 
-ipcMain.handle('openchamber:preview-gateway:ws-opened', async (event, payload) => {
+ipcMain.handle('yuri:preview-gateway:ws-opened', async (event, payload) => {
   requirePreviewGatewayOwner(event, 'preview-gateway:ws-opened');
   const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
   return getOrCreatePreviewLoopbackGateway().wsOpened(requestId, {
@@ -5388,7 +5371,7 @@ ipcMain.handle('openchamber:preview-gateway:ws-opened', async (event, payload) =
   });
 });
 
-ipcMain.handle('openchamber:preview-gateway:ws-send', async (event, payload) => {
+ipcMain.handle('yuri:preview-gateway:ws-send', async (event, payload) => {
   requirePreviewGatewayOwner(event, 'preview-gateway:ws-send');
   const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
   return getOrCreatePreviewLoopbackGateway().wsSend(
@@ -5398,7 +5381,7 @@ ipcMain.handle('openchamber:preview-gateway:ws-send', async (event, payload) => 
   );
 });
 
-ipcMain.handle('openchamber:preview-gateway:ws-close', async (event, payload) => {
+ipcMain.handle('yuri:preview-gateway:ws-close', async (event, payload) => {
   requirePreviewGatewayOwner(event, 'preview-gateway:ws-close');
   const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
   return getOrCreatePreviewLoopbackGateway().wsClose(requestId, {
@@ -5522,7 +5505,7 @@ const focusMainWindowWithSession = async (sessionId, directory) => {
     state.mainWindow.show();
     state.mainWindow.focus();
     if (sessionId) {
-      emitToWindow(state.mainWindow, 'openchamber:open-session', { sessionId, directory: directory || '' });
+      emitToWindow(state.mainWindow, 'yuri:open-session', { sessionId, directory: directory || '' });
     }
     return;
   }
@@ -5543,7 +5526,7 @@ const dispatchTrayAction = async (action) => {
     const target = (state.mainWindow && !state.mainWindow.isDestroyed())
       ? state.mainWindow
       : await revealMainWindow();
-    emitToWindow(target, 'openchamber:tray-action', action);
+    emitToWindow(target, 'yuri:tray-action', action);
     return;
   }
 
@@ -5561,11 +5544,11 @@ const dispatchTrayAction = async (action) => {
   // the main window.
   if (action.type === 'focus-session') {
     const surface = resolveTraySurface();
-    if (surface && surface.__ocMiniChat === true && action.sessionId) {
+    if (surface && surface.__yuriMiniChat === true && action.sessionId) {
       if (surface.isMinimized()) surface.restore();
       surface.show();
       surface.focus();
-      emitToWindow(surface, 'openchamber:open-session', {
+      emitToWindow(surface, 'yuri:open-session', {
         sessionId: action.sessionId,
         directory: action.directory || '',
       });
@@ -5579,12 +5562,13 @@ const dispatchTrayAction = async (action) => {
   if (!target || target.isDestroyed()) return;
 
   if (action.type === 'new-session') {
-    emitToWindow(target, 'openchamber:open-draft-session', { directory: '', projectId: '' });
+    emitToWindow(target, 'yuri:open-draft-session', { directory: '', projectId: '' });
   }
   // show-main-window: revealing the window above is the whole action.
 };
 
 app.on('window-all-closed', () => {
+  if (desktopMigrationInProgress) return;
   if (process.platform === 'darwin' && !state.quitRequested) {
     return;
   }
@@ -5632,7 +5616,7 @@ app.on('before-quit', (event) => {
 
 app.on('second-instance', (_event, argv) => {
   const urls = Array.isArray(argv)
-    ? argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`))
+    ? argv.filter(isAppDeepLink)
     : [];
   if (urls.length > 0) handleDeepLinks(urls);
   if (!initialStartupComplete) return;
@@ -5651,7 +5635,7 @@ app.on('open-url', (event, url) => {
     void openMainWindow();
   } else {
     // Bring the app forward when an external opener (e.g. Raycast
-    // `open "openchamber://new-session?directory=…"`) hands us a deep link.
+    // `open "yuri://new-session?directory=…"`) hands us a deep link.
     focusForegroundWindow();
   }
 });
@@ -5678,6 +5662,15 @@ app.on('activate', async () => {
 });
 
 app.whenReady().then(async () => {
+  try {
+    desktopMigrationInProgress = true;
+    await migrateDesktopOrigin(desktopMigration, { BrowserWindow, session });
+  } catch (error) {
+    dialog.showErrorBox('Yuri — data import failed', `${error.message}\nPrevious data is preserved. Close the previous application and restart Yuri to retry.`);
+    throw error;
+  } finally {
+    desktopMigrationInProgress = false;
+  }
   const loginItemSettings = readLoginItemSettings();
   const isBackgroundStart = shouldStartInBackground(loginItemSettings);
   log.info('[electron] app starting', {
@@ -5690,12 +5683,12 @@ app.whenReady().then(async () => {
     loginItemSettings,
   });
   nativeTheme.themeSource = readThemeSource();
-  if (app.isPackaged) {
+  if (app.isPackaged && !isPreviewDesktop) {
     electronUpdater.autoUpdater.logger = log;
     desktopInstaller = new DesktopInstaller(electronUpdater.autoUpdater, {
       onProgress: (progress) => {
         setTaskbarProgress(progress.percent / 100);
-        emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Progress', data: { downloaded: progress.transferred, total: progress.total } }));
+        emitToAllWindows('yuri:update-progress', mapUpdaterProgressEvent({ event: 'Progress', data: { downloaded: progress.transferred, total: progress.total } }));
       },
       onError: (error) => log.error('[electron] installer update failed', error),
     });
@@ -5706,7 +5699,7 @@ app.whenReady().then(async () => {
       requireBackend: true,
       onProgress: (progress) => {
         setTaskbarProgress(progress.downloaded / progress.total);
-        emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Progress', data: progress }));
+        emitToAllWindows('yuri:update-progress', mapUpdaterProgressEvent({ event: 'Progress', data: progress }));
       },
     });
     await desktopOta.initialize({ activateQueued: !isBackgroundStart });
@@ -5767,7 +5760,7 @@ app.whenReady().then(async () => {
   // Notify renderer on OS wake-from-sleep so the SSE event pipeline can
   // reconnect immediately instead of waiting for the heartbeat watchdog.
   powerMonitor.on('resume', () => {
-    emitToAllWindows('openchamber:system-resume', { timestamp: Date.now() });
+    emitToAllWindows('yuri:system-resume', { timestamp: Date.now() });
   });
 }).catch((error) => {
   log.error('[electron] startup failed:', error);

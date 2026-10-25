@@ -197,7 +197,7 @@ async function runHarness() {
     finalProgress,
     expectedMinProgress: outerTravel / surfaceHeight * 0.9,
     geometryReadsDuringDrag: geometryReads,
-    styleLeft: Boolean(doc.querySelector('style[data-oc-sheet-overscroll]')),
+    styleLeft: Boolean(doc.querySelector('style[data-yuri-sheet-overscroll]')),
   };
 }
 
@@ -211,7 +211,7 @@ async function runHarness() {
 <html>
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head>
 <body style="margin:0;background:#111">
-  <div data-oc-motion-id="chrome-overscroll" id="surface"
+  <div data-yuri-motion-id="chrome-overscroll" id="surface"
     style="position:fixed;left:0;right:0;bottom:0;height:640px;display:flex;flex-direction:column;background:#222">
     <iframe id="frame" style="flex:1;border:0;width:100%;background:#0b3d0b"
       srcdoc="<!doctype html><html><body style='margin:0;height:2400px;background:#0b3d0b'>

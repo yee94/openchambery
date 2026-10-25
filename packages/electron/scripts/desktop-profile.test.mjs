@@ -18,15 +18,15 @@ describe('desktop-profile', () => {
   });
 
   it('accepts preview and historical assistant-preview aliases', () => {
-    assert.equal(normalizeDesktopProfileId({ OPENCHAMBER_DESKTOP_PROFILE: 'preview' }), 'preview');
-    assert.equal(normalizeDesktopProfileId({ OPENCHAMBER_DESKTOP_PROFILE: 'assistant-preview' }), 'preview');
-    assert.equal(resolveDesktopProfile({ OPENCHAMBER_DESKTOP_PROFILE: 'PREVIEW' }).productName, 'OpenChamber Preview');
+    assert.equal(normalizeDesktopProfileId({ YURI_DESKTOP_PROFILE: 'preview' }), 'preview');
+    assert.equal(normalizeDesktopProfileId({ YURI_DESKTOP_PROFILE: 'assistant-preview' }), 'preview');
+    assert.equal(resolveDesktopProfile({ YURI_DESKTOP_PROFILE: 'PREVIEW' }).productName, 'Yuri Preview');
   });
 
   it('rejects unknown profiles instead of silently falling back', () => {
     assert.throws(
-      () => normalizeDesktopProfileId({ OPENCHAMBER_DESKTOP_PROFILE: 'nightly' }),
-      /Unknown OPENCHAMBER_DESKTOP_PROFILE/,
+      () => normalizeDesktopProfileId({ YURI_DESKTOP_PROFILE: 'nightly' }),
+      /Unknown YURI_DESKTOP_PROFILE/,
     );
   });
 
@@ -42,28 +42,28 @@ describe('desktop-profile', () => {
 
   it('emits electron-builder overrides only for preview', () => {
     const args = electronBuilderArgsForProfile(DESKTOP_PROFILES.preview);
-    assert.ok(args.some((arg) => arg.includes('dev.openchamber.desktop.preview')));
-    assert.ok(args.some((arg) => arg.includes('OpenChamber Preview')));
+    assert.ok(args.some((arg) => arg.includes('dev.yuri.desktop.preview')));
+    assert.ok(args.some((arg) => arg.includes('Yuri Preview')));
     assert.ok(args.some((arg) => arg.includes('dist-preview')));
     assert.ok(args.some((arg) => arg.includes('preview-icon.icns')));
-    assert.ok(args.some((arg) => arg.includes('openchamber-preview')));
+    assert.ok(args.some((arg) => arg.includes('yuri-preview')));
   });
 
   it('detects packaged preview identity from product name or exec path', () => {
     assert.equal(detectRuntimeDesktopProfileId({
       env: {},
-      productName: 'OpenChamber Preview',
-      execPath: '/Apps/OpenChamber.app/Contents/MacOS/OpenChamber',
+      productName: 'Yuri Preview',
+      execPath: '/Apps/Yuri.app/Contents/MacOS/Yuri',
     }), 'preview');
     assert.equal(detectRuntimeDesktopProfileId({
       env: {},
-      productName: 'OpenChamber',
-      execPath: '/tmp/OpenChamber Preview.app/Contents/MacOS/OpenChamber Preview',
+      productName: 'Yuri',
+      execPath: '/tmp/Yuri Preview.app/Contents/MacOS/Yuri Preview',
     }), 'preview');
     assert.equal(detectRuntimeDesktopProfileId({
       env: {},
-      productName: 'OpenChamber',
-      execPath: '/Applications/OpenChamber.app/Contents/MacOS/OpenChamber',
+      productName: 'Yuri',
+      execPath: '/Applications/Yuri.app/Contents/MacOS/Yuri',
     }), 'release');
     assert.equal(detectRuntimeDesktopProfileId({ buildTimeProfile: 'preview' }), 'preview');
   });

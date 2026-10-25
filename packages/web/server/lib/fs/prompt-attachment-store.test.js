@@ -53,7 +53,7 @@ describe('prompt-attachment-store', () => {
     })).rejects.toThrow();
     expect(remove).toHaveBeenCalledOnce();
     const dir = remove.mock.calls[0][0];
-    expect(path.basename(dir)).toMatch(/^openchamber-prompt-/);
+    expect(path.basename(dir)).toMatch(/^yuri-prompt-/);
     expect(fs.existsSync(dir)).toBe(false);
   });
 

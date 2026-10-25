@@ -655,7 +655,7 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
     expect(draft.session.map((s) => s.id)).toEqual(before)
   })
 
-  test("openchamber:session-metadata hides a system-owned session from the live list", () => {
+  test("yuri:session-metadata hides a system-owned session from the live list", () => {
     const draft = directoryState()
     const session = {
       id: "ses_sched",
@@ -670,16 +670,16 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
     expect(draft.session.some((s) => s.id === "ses_sched")).toBe(true)
 
     expect(applyDirectoryEvent(draft, {
-      type: "openchamber:session-metadata",
+      type: "yuri:session-metadata",
       properties: {
         sessionID: "ses_sched",
-        metadata: { openchamber: { scheduledTask: { taskID: "task_1" } } },
+        metadata: { yuri: { scheduledTask: { taskID: "task_1" } } },
       },
     } as Event)).toBe(true)
     expect(draft.session.some((s) => s.id === "ses_sched")).toBe(false)
   })
 
-  test("openchamber:session-metadata keeps a visible session and replaces metadata", () => {
+  test("yuri:session-metadata keeps a visible session and replaces metadata", () => {
     const draft = directoryState()
     const session = {
       id: "ses_1",
@@ -693,14 +693,14 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
     } as Event)).toBe(true)
 
     expect(applyDirectoryEvent(draft, {
-      type: "openchamber:session-metadata",
+      type: "yuri:session-metadata",
       properties: {
         sessionID: "ses_1",
-        metadata: { openchamber: { goal: { id: "g1" } } },
+        metadata: { yuri: { goal: { id: "g1" } } },
       },
     } as Event)).toBe(true)
     expect(draft.session.find((s) => s.id === "ses_1")?.metadata).toEqual({
-      openchamber: { goal: { id: "g1" } },
+      yuri: { goal: { id: "g1" } },
     })
   })
 

@@ -101,7 +101,7 @@ export async function fetchMagpieQuotas({ directory, manualURL = '', refresh = f
   if (manualURL) {
     const baseURL = magpieBaseURL(manualURL);
     candidates.push({ id: hash(`${baseURL}\nmanual`), name: 'Magpie', baseURL, explicit: true,
-      headers: { Accept: 'application/json', ...(process.env.OPENCHAMBER_MAGPIE_API_KEY ? { Authorization: `Bearer ${process.env.OPENCHAMBER_MAGPIE_API_KEY}` } : {}) } });
+      headers: { Accept: 'application/json', ...(process.env.YURI_MAGPIE_API_KEY ? { Authorization: `Bearer ${process.env.YURI_MAGPIE_API_KEY}` } : {}) } });
   }
   for (const url of local.urls) {
     let baseURL;

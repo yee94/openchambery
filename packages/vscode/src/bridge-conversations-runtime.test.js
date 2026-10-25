@@ -1,13 +1,14 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { sdkClient, make, ClientError } = vi.hoisted(() => {
 const sdkClient = {
   session: {
-    create: mock(),
-    prompt: mock(),
+    create: vi.fn(),
+    prompt: vi.fn(),
   },
 };
 
-const make = mock(() => sdkClient);
+const make = vi.fn(() => sdkClient);
 
 class ClientError extends Error {
   constructor(reason, options) {
@@ -16,10 +17,12 @@ class ClientError extends Error {
     this.reason = reason;
   }
 }
+return { sdkClient, make, ClientError };
+});
 
 // No setSessionActivityPhase import — VS Code does not manually mark activity
 
-mock.module('@opencode/client', () => ({ OpenCode: { make }, ClientError }));
+vi.mock('@opencode/client', () => ({ OpenCode: { make }, ClientError }));
 
 const { handleConversationsBridgeMessage, resetVSCodeRegistry } = await import(
   './bridge-conversations-runtime'

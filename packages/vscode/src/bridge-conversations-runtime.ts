@@ -3,7 +3,7 @@ import type { JsonValue, SessionInfo } from '@opencode/client';
 import type { BridgeContext, BridgeResponse } from './bridge';
 
 // =========================================================================
-// Inline types: mirror @openchamber/ui/lib/api/types exactly by re-using
+// Inline types: mirror @yuri/ui/lib/api/types exactly by re-using
 // the SDK-native types that the shared contract now aliases. This avoids
 // cross-package transitive path-alias issues while keeping type fidelity.
 // Keep in sync with:

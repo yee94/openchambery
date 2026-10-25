@@ -1,12 +1,12 @@
-:is(.oc-mobile-composer, .oc-hold-to-talk-container)[data-hold-to-talk-empty="true"] textarea,
-:is(.oc-mobile-composer, .oc-hold-to-talk-container)[data-hold-to-talk-empty="true"] textarea::placeholder,
-:is(.oc-mobile-composer, .oc-hold-to-talk-container)[data-hold-to-talk-empty="true"] [data-oc-composer-compact-surface] {
+:is(.yuri-mobile-composer, .yuri-hold-to-talk-container)[data-hold-to-talk-empty="true"] textarea,
+:is(.yuri-mobile-composer, .yuri-hold-to-talk-container)[data-hold-to-talk-empty="true"] textarea::placeholder,
+:is(.yuri-mobile-composer, .yuri-hold-to-talk-container)[data-hold-to-talk-empty="true"] [data-yuri-composer-compact-surface] {
     touch-action: none;
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
 }
-.oc-speech-overlay {
+.yuri-speech-overlay {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
@@ -17,28 +17,28 @@
     pointer-events: none;
     color: var(--surface-foreground);
     background: linear-gradient(180deg, color-mix(in srgb, var(--surface-foreground) 94%, transparent), color-mix(in srgb, var(--surface-foreground) 82%, transparent) 30%, color-mix(in srgb, var(--surface-foreground) 48%, transparent) 50%, color-mix(in srgb, var(--surface-foreground) 82%, transparent) 70%, color-mix(in srgb, var(--surface-foreground) 94%, transparent));
-    animation: oc-speech-in 240ms ease-out both;
+    animation: yuri-speech-in 240ms ease-out both;
 }
-.oc-speech-light-field { position: absolute; inset: 0 0 auto; height: 48vh; min-height: 210px; overflow: hidden; }
-.oc-speech-reactor { position: absolute; --speech-color: var(--surface-background); transform-origin: 50% 26%; opacity: .28; }
-.oc-speech-light { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 26%, color-mix(in srgb, var(--speech-color) 40%, transparent), color-mix(in srgb, var(--speech-color) 14%, transparent) 30%, transparent 74%); animation: oc-speech-flow 7s ease-in-out infinite; }
-.oc-speech-reactor--ice { top: -40px; left: -8%; width: 90%; height: 190px; }
-.oc-speech-reactor--lilac { top: -30px; right: -8%; width: 90%; height: 180px; }
-.oc-speech-reactor--lilac .oc-speech-light { animation-duration: 8s; animation-delay: -2s; }
-.oc-speech-reactor--mint, .oc-speech-reactor--blush { display: none; }
-.oc-speech-reactor--mid { top: -22px; left: 10%; width: 80%; height: 175px; opacity: .2; }
-.oc-speech-reactor--core { top: -46px; left: -8%; width: 116%; height: 250px; transform: scale(calc(.74 + var(--speech-energy) * .84)); opacity: calc(.1 + var(--speech-energy) * .78); transition: transform 100ms ease-out, opacity 100ms ease-out; }
-.oc-speech-reactor--core .oc-speech-light { animation: none; }
-.oc-speech-content {
+.yuri-speech-light-field { position: absolute; inset: 0 0 auto; height: 48vh; min-height: 210px; overflow: hidden; }
+.yuri-speech-reactor { position: absolute; --speech-color: var(--surface-background); transform-origin: 50% 26%; opacity: .28; }
+.yuri-speech-light { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 26%, color-mix(in srgb, var(--speech-color) 40%, transparent), color-mix(in srgb, var(--speech-color) 14%, transparent) 30%, transparent 74%); animation: yuri-speech-flow 7s ease-in-out infinite; }
+.yuri-speech-reactor--ice { top: -40px; left: -8%; width: 90%; height: 190px; }
+.yuri-speech-reactor--lilac { top: -30px; right: -8%; width: 90%; height: 180px; }
+.yuri-speech-reactor--lilac .yuri-speech-light { animation-duration: 8s; animation-delay: -2s; }
+.yuri-speech-reactor--mint, .yuri-speech-reactor--blush { display: none; }
+.yuri-speech-reactor--mid { top: -22px; left: 10%; width: 80%; height: 175px; opacity: .2; }
+.yuri-speech-reactor--core { top: -46px; left: -8%; width: 116%; height: 250px; transform: scale(calc(.74 + var(--speech-energy) * .84)); opacity: calc(.1 + var(--speech-energy) * .78); transition: transform 100ms ease-out, opacity 100ms ease-out; }
+.yuri-speech-reactor--core .yuri-speech-light { animation: none; }
+.yuri-speech-content {
     position: absolute;
     top: calc(max(env(safe-area-inset-top), 20px) + 68px);
     left: 32px;
     right: 32px;
     text-align: center;
     color: var(--surface-background);
-    animation: oc-speech-content-in 500ms cubic-bezier(.2,.8,.25,1) both;
+    animation: yuri-speech-content-in 500ms cubic-bezier(.2,.8,.25,1) both;
 }
-.oc-speech-caption {
+.yuri-speech-caption {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -50,48 +50,48 @@
     font-weight: 620;
     line-height: 1.8;
     letter-spacing: .25px;
-    animation: oc-speech-breathe 2.4s ease-in-out infinite;
+    animation: yuri-speech-breathe 2.4s ease-in-out infinite;
 }
-.oc-speech-caption > * { flex-shrink: 0; }
-.oc-speech-overlay[data-error="true"] { pointer-events: auto; touch-action: none; }
-.oc-speech-content[data-starting="true"] {
+.yuri-speech-caption > * { flex-shrink: 0; }
+.yuri-speech-overlay[data-error="true"] { pointer-events: auto; touch-action: none; }
+.yuri-speech-content[data-starting="true"] {
     animation: none;
 }
-.oc-speech-content[data-starting="true"] .oc-speech-caption {
+.yuri-speech-content[data-starting="true"] .yuri-speech-caption {
     align-items: center;
     justify-content: center;
     max-height: none;
     overflow: visible;
     animation: none;
 }
-.oc-speech-loading { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 26px; }
-.oc-speech-loading > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: oc-speech-dot 1050ms ease-in-out infinite; }
-.oc-speech-loading > span:nth-child(2) { animation-delay: 150ms; }
-.oc-speech-loading > span:nth-child(3) { animation-delay: 300ms; }
-.oc-speech-error { color: var(--status-error); animation: none; }
-.oc-speech-interim { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 58%, transparent); text-underline-offset: 4px; }
-.oc-speech-gesture-stage { position: absolute; inset: auto 0 0; --speech-stage-bottom: calc(env(safe-area-inset-bottom) + 32px); padding-bottom: var(--speech-stage-bottom); background: linear-gradient(transparent calc(100% - var(--speech-stage-bottom)), color-mix(in srgb, var(--surface-background) 72%, var(--surface-foreground)) 0); }
-.oc-speech-gesture-surfaces { position: relative; }
-.oc-speech-target-glass { position: absolute; inset: 0; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
-.oc-speech-geometry { position: relative; display: block; width: 100%; height: auto; overflow: visible; }
-.oc-speech-target {
+.yuri-speech-loading { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 26px; }
+.yuri-speech-loading > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: yuri-speech-dot 1050ms ease-in-out infinite; }
+.yuri-speech-loading > span:nth-child(2) { animation-delay: 150ms; }
+.yuri-speech-loading > span:nth-child(3) { animation-delay: 300ms; }
+.yuri-speech-error { color: var(--status-error); animation: none; }
+.yuri-speech-interim { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 58%, transparent); text-underline-offset: 4px; }
+.yuri-speech-gesture-stage { position: absolute; inset: auto 0 0; --speech-stage-bottom: calc(env(safe-area-inset-bottom) + 32px); padding-bottom: var(--speech-stage-bottom); background: linear-gradient(transparent calc(100% - var(--speech-stage-bottom)), color-mix(in srgb, var(--surface-background) 72%, var(--surface-foreground)) 0); }
+.yuri-speech-gesture-surfaces { position: relative; }
+.yuri-speech-target-glass { position: absolute; inset: 0; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.yuri-speech-geometry { position: relative; display: block; width: 100%; height: auto; overflow: visible; }
+.yuri-speech-target {
     font-size: 20px;
     font-weight: 600;
     opacity: 1;
 }
-.oc-speech-target path { fill: color-mix(in srgb, var(--surface-background) 12%, var(--surface-foreground)); transition: fill 180ms ease; }
-.oc-speech-target text { fill: var(--surface-background); }
-.oc-speech-target[data-active="true"] path { fill: color-mix(in srgb, var(--surface-background) 40%, var(--surface-foreground)); }
-.oc-speech-hold-arc {
+.yuri-speech-target path { fill: color-mix(in srgb, var(--surface-background) 12%, var(--surface-foreground)); transition: fill 180ms ease; }
+.yuri-speech-target text { fill: var(--surface-background); }
+.yuri-speech-target[data-active="true"] path { fill: color-mix(in srgb, var(--surface-background) 40%, var(--surface-foreground)); }
+.yuri-speech-hold-arc {
     stroke: color-mix(in srgb, var(--surface-background) 65%, var(--surface-foreground));
     stroke-width: 4px;
 }
-.oc-speech-arc-top { stop-color: color-mix(in srgb, var(--surface-background) 55%, var(--surface-foreground)); }
-.oc-speech-arc-bottom { stop-color: color-mix(in srgb, var(--surface-background) 72%, var(--surface-foreground)); }
-.oc-mobile-composer:is([data-dictation-hint="recording"], [data-dictation-hint="cancelling"], [data-dictation-hint="editing"]) :is(.oc-mobile-composer-surface, .oc-mobile-composer-compact-layer) { opacity: 0; }
-@keyframes oc-speech-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes oc-speech-dot { 0%, 70%, 100% { transform: scale(.65); } 35% { transform: scale(1.25); } }
-@keyframes oc-speech-content-in { from { opacity: 0; transform: translateY(-7px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes oc-speech-flow { 0%, 100% { opacity: .65; transform: translateY(-3px); } 50% { opacity: .85; transform: translateY(5px); } }
-@keyframes oc-speech-breathe { 0%, 100% { opacity: .84; } 50% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .oc-speech-overlay, .oc-speech-overlay * { animation: none; transition: none; } }
+.yuri-speech-arc-top { stop-color: color-mix(in srgb, var(--surface-background) 55%, var(--surface-foreground)); }
+.yuri-speech-arc-bottom { stop-color: color-mix(in srgb, var(--surface-background) 72%, var(--surface-foreground)); }
+.yuri-mobile-composer:is([data-dictation-hint="recording"], [data-dictation-hint="cancelling"], [data-dictation-hint="editing"]) :is(.yuri-mobile-composer-surface, .yuri-mobile-composer-compact-layer) { opacity: 0; }
+@keyframes yuri-speech-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes yuri-speech-dot { 0%, 70%, 100% { transform: scale(.65); } 35% { transform: scale(1.25); } }
+@keyframes yuri-speech-content-in { from { opacity: 0; transform: translateY(-7px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes yuri-speech-flow { 0%, 100% { opacity: .65; transform: translateY(-3px); } 50% { opacity: .85; transform: translateY(5px); } }
+@keyframes yuri-speech-breathe { 0%, 100% { opacity: .84; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .yuri-speech-overlay, .yuri-speech-overlay * { animation: none; transition: none; } }

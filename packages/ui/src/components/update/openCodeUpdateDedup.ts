@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 /**
  * Pure decision helpers for the OpenCode update toast and PWA install toast.
  *
@@ -62,7 +63,7 @@ export const shouldShowOpenCodeUpdateToast = (
 };
 
 /**
- * Coerces the `detail.version` carried by an `openchamber:opencode-update-available`
+ * Coerces the `detail.version` carried by an `yuri:opencode-update-available`
  * CustomEvent into a trimmed string, or returns `''` when the payload is
  * missing or shaped unexpectedly.
  *

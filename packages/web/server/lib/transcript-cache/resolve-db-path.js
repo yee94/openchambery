@@ -29,7 +29,7 @@ const normalizeTranscriptCacheDbPath = (value) => {
  *
  * Default is null: ordinary remote Web servers must not persist conversation
  * bodies. Only an explicit `transcriptCacheDbPath` or
- * `OPENCHAMBER_TRANSCRIPT_CACHE_DB_PATH` enables the local acceleration cache.
+ * `YURI_TRANSCRIPT_CACHE_DB_PATH` enables the local acceleration cache.
  *
  * @param {object} [options]
  * @param {string|null|undefined} options.transcriptCacheDbPath
@@ -41,7 +41,7 @@ export const resolveTranscriptCacheDbPath = ({ transcriptCacheDbPath } = {}, env
   if (typeof transcriptCacheDbPath === 'string' && transcriptCacheDbPath.trim()) {
     return normalizeTranscriptCacheDbPath(transcriptCacheDbPath);
   }
-  const fromEnv = env?.OPENCHAMBER_TRANSCRIPT_CACHE_DB_PATH;
+  const fromEnv = env?.YURI_TRANSCRIPT_CACHE_DB_PATH;
   if (typeof fromEnv === 'string' && fromEnv.trim()) return normalizeTranscriptCacheDbPath(fromEnv);
   return null;
 };

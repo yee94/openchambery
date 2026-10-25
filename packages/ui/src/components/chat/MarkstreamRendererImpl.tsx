@@ -63,10 +63,10 @@ interface MarkstreamRendererProps {
 
 const markdownContentClassName = (variant: MarkdownVariant): string =>
   variant === 'tool'
-    ? 'markdown-content markdown-tool oc-markstream-host'
+    ? 'markdown-content markdown-tool yuri-markstream-host'
     : variant === 'reasoning'
-      ? 'markdown-content markdown-reasoning oc-markstream-host'
-      : 'markdown-content leading-relaxed oc-markstream-host';
+      ? 'markdown-content markdown-reasoning yuri-markstream-host'
+      : 'markdown-content leading-relaxed yuri-markstream-host';
 
 const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
   content,
@@ -84,7 +84,7 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
   const { editor, runtime } = useRuntimeAPIs();
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const customId = part?.id ? `oc-ms-${part.id}` : `oc-ms-${messageId}`;
+  const customId = part?.id ? `yuri-ms-${part.id}` : `yuri-ms-${messageId}`;
   const cacheKey = markdownHeightCacheKey(content, `markstream:${variant}`);
   const recordHeight = !isStreaming;
   const fileReferencesEnabled = enableFileReferences && !isStreaming;
@@ -154,8 +154,8 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
       className={cn('relative break-words w-full min-w-0', markdownContentClassName(variant), className)}
       data-markdown-ready="true"
       data-markdown-hydration="ready"
-      data-oc-markdown-engine="markstream"
-      data-oc-markstream-virtual="off"
+      data-yuri-markdown-engine="markstream"
+      data-yuri-markstream-virtual="off"
     >
       <MarkstreamHostContext.Provider value={hostContext}>
         <MarkstreamFileReferenceProvider

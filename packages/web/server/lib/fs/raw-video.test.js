@@ -9,7 +9,7 @@ const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 
 test('raw video supports first-byte probing, tail seeking, HEAD and unsatisfiable ranges', async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'oc-video-range-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-video-range-'));
   cleanups.push(() => fs.rm(directory, { recursive: true, force: true }));
   const file = path.join(directory, 'clip.mov');
   await fs.writeFile(file, Buffer.from('0123456789'));
@@ -17,7 +17,7 @@ test('raw video supports first-byte probing, tail seeking, HEAD and unsatisfiabl
   registerFsRoutes({ get: (route, handler) => { if (route === '/api/fs/raw') app.get(route, handler); }, post() {}, put() {} }, {
     os, path, fsPromises: fs, spawn() {}, crypto: globalThis.crypto,
     normalizeDirectoryPath: value => value, resolveProjectDirectory: async () => ({ directory }),
-    buildAugmentedPath: () => '', resolveGitBinaryForSpawn: () => 'git', openchamberUserConfigRoot: directory,
+    buildAugmentedPath: () => '', resolveGitBinaryForSpawn: () => 'git', yuriUserConfigRoot: directory,
   });
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));

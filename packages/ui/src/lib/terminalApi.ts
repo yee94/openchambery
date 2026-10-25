@@ -87,7 +87,7 @@ const WS_SEND_WAIT_MS = 1200;
 const WS_RECONNECT_JITTER_MS = 250;
 const WS_KEEPALIVE_INTERVAL_MS = 20000;
 const WS_CONNECT_TIMEOUT_MS = 5000;
-const GLOBAL_TERMINAL_TRANSPORT_STATE_KEY = '__openchamberTerminalTransportState';
+const GLOBAL_TERMINAL_TRANSPORT_STATE_KEY = '__yuriTerminalTransportState';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -1042,7 +1042,7 @@ export function connectTerminalStream(
 ): () => void {
   const globalState = getTerminalTransportGlobalState();
   // A restored terminal session has no in-memory create response/capabilities
-  // yet. Current OpenChamber servers expose the default WS endpoint, so use it
+  // yet. Current Yuri servers expose the default WS endpoint, so use it
   // for that cold-start path. An explicit non-WS capability keeps SSE fallback.
   if (globalState.streamCapability && !isWsTransportSupported(globalState.streamCapability)) {
     return connectTerminalStreamViaSse(sessionId, onEvent, onError, options);

@@ -26,12 +26,12 @@ test.each(['visibility', 'pageshow', 'resume', 'combined'] as const)('%s repairs
   const signals: AbortSignal[] = [];
   const encoder = new TextEncoder();
   state.fetch.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === '/api/openchamber/events') {
+    if (path === '/api/yuri/events') {
       signals.push(init!.signal as AbortSignal);
       return new Response(new ReadableStream<Uint8Array>({
         start(controller) {
           streams.push(controller);
-          controller.enqueue(encoder.encode('data: {"type":"openchamber:event-stream-ready"}\n\n'));
+          controller.enqueue(encoder.encode('data: {"type":"yuri:event-stream-ready"}\n\n'));
         },
       }), { headers: { 'content-type': 'text/event-stream' } });
     }
@@ -46,13 +46,13 @@ test.each(['visibility', 'pageshow', 'resume', 'combined'] as const)('%s repairs
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
   document.dispatchEvent(new Event('visibilitychange'));
   status = 'success';
-  streams[0].enqueue(encoder.encode('data: {"type":"openchamber:heartbeat"}\n\n'));
+  streams[0].enqueue(encoder.encode('data: {"type":"yuri:heartbeat"}\n\n'));
   await flush();
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
   await act(async () => {
     if (trigger === 'visibility' || trigger === 'combined') document.dispatchEvent(new Event('visibilitychange'));
     if (trigger === 'pageshow' || trigger === 'combined') window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
-    if (trigger === 'resume' || trigger === 'combined') window.dispatchEvent(new Event('openchamber:system-resume'));
+    if (trigger === 'resume' || trigger === 'combined') window.dispatchEvent(new Event('yuri:system-resume'));
   });
   await flush();
   expect(host.querySelector('svg.animate-spin')).toBeNull();
@@ -67,7 +67,7 @@ test.each(['visibility', 'pageshow', 'resume', 'combined'] as const)('%s repairs
   expect(streams).toHaveLength(count);
   await act(async () => root!.unmount());
   root = undefined;
-  window.dispatchEvent(new Event('openchamber:system-resume'));
+  window.dispatchEvent(new Event('yuri:system-resume'));
   await flush();
   expect(streams).toHaveLength(count);
   expect(signals.at(-1)?.aborted).toBe(true);

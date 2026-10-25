@@ -28,9 +28,9 @@ describe('static routes runtime', () => {
     const response = await request(app).get('/sessions/abc').set('Accept', 'text/html');
 
     expect(response.status).toBe(200);
-    expect(response.text).toContain('OpenChamber is running in headless mode');
-    expect(response.text).toContain('Open it from the OpenChamber desktop or mobile app');
-    expect(response.text).toContain('openchamber connect-url --help');
+    expect(response.text).toContain('Yuri is running in headless mode');
+    expect(response.text).toContain('Open it from the Yuri desktop or mobile app');
+    expect(response.text).toContain('yuri connect-url --help');
     expect(response.text).toContain('Copy command');
   });
 
@@ -44,7 +44,7 @@ describe('static routes runtime', () => {
     expect(response.body).toEqual({
       ok: true,
       mode: 'api-only',
-      message: 'OpenChamber is running in API-only mode',
+      message: 'Yuri is running in API-only mode',
     });
   });
 
@@ -56,22 +56,22 @@ describe('static routes runtime', () => {
     const auth = await request(app).get('/auth/session');
     const health = await request(app).get('/health');
 
-    expect(api.body).not.toEqual({ ok: true, mode: 'api-only', message: 'OpenChamber is running in API-only mode' });
-    expect(auth.body).not.toEqual({ ok: true, mode: 'api-only', message: 'OpenChamber is running in API-only mode' });
-    expect(health.body).not.toEqual({ ok: true, mode: 'api-only', message: 'OpenChamber is running in API-only mode' });
+    expect(api.body).not.toEqual({ ok: true, mode: 'api-only', message: 'Yuri is running in API-only mode' });
+    expect(auth.body).not.toEqual({ ok: true, mode: 'api-only', message: 'Yuri is running in API-only mode' });
+    expect(health.body).not.toEqual({ ok: true, mode: 'api-only', message: 'Yuri is running in API-only mode' });
   });
 
   it('serves index.html for deep links when dist lives under a dot directory', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-static-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-static-'));
     const distPath = path.join(root, '.bun', 'install', 'dist');
     fs.mkdirSync(distPath, { recursive: true });
-    fs.writeFileSync(path.join(distPath, 'index.html'), '<!doctype html><title>OpenChamber</title>');
+    fs.writeFileSync(path.join(distPath, 'index.html'), '<!doctype html><title>Yuri</title>');
     try {
       const app = express();
       createStaticRoutesRuntime({
         fs,
         path,
-        process: { env: { OPENCHAMBER_DIST_DIR: distPath } },
+        process: { env: { YURI_DIST_DIR: distPath } },
         __dirname: '/server',
         express,
         resolveProjectDirectory: () => '',
@@ -85,7 +85,7 @@ describe('static routes runtime', () => {
       const response = await request(app).get('/session/ses_abc');
 
       expect(response.status).toBe(200);
-      expect(response.text).toContain('<title>OpenChamber</title>');
+      expect(response.text).toContain('<title>Yuri</title>');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

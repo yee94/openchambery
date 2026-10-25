@@ -186,18 +186,18 @@ export function resolveForkMessageId(
 
 async function markForkSessionAsLatest(session: Session, directory: string): Promise<Session> {
   const metadata = getSessionMetadata(session)
-  const openchamber = metadata.openchamber && typeof metadata.openchamber === "object"
-    ? metadata.openchamber as Record<string, unknown>
+  const yuri = metadata.yuri && typeof metadata.yuri === "object"
+    ? metadata.yuri as Record<string, unknown>
     : {}
-  const titleRefresh = openchamber.titleRefresh && typeof openchamber.titleRefresh === "object"
-    ? openchamber.titleRefresh as Record<string, unknown>
+  const titleRefresh = yuri.titleRefresh && typeof yuri.titleRefresh === "object"
+    ? yuri.titleRefresh as Record<string, unknown>
     : {}
 
   return opencodeClient.updateSession(session.id, {
     metadata: {
       ...metadata,
-      openchamber: {
-        ...openchamber,
+      yuri: {
+        ...yuri,
         titleRefresh: {
           ...titleRefresh,
           activityUpdatedAt: Date.now(),
@@ -1011,7 +1011,7 @@ export async function createSession(
       registerSessionDirectory(session.id, sessionDirectory)
     }
     useSessionUIStore.getState().setCurrentSession(session.id, sessionDirectory)
-    useSessionUIStore.getState().markSessionAsOpenChamberCreated(session.id)
+    useSessionUIStore.getState().markSessionAsYuriCreated(session.id)
     useGlobalSessionsStore.getState().upsertSession(session)
     return session
   } catch (error) {
@@ -1389,7 +1389,7 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
   const activityUpdatedAt = current ? getSessionActivityUpdatedAt(current) : 0
   await opencodeClient.updateSession(sessionId, {
     metadata: {
-      openchamber: {
+      yuri: {
         titleAuthority: { sessionID: sessionId, title, revision: createUuid(), source: "manual" },
         titleRefresh: {
           activityUpdatedAt,
@@ -1408,25 +1408,25 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
 
 /**
  * Force server-side smart title generation for a session.
- * Writes `metadata.openchamber.titleRefresh.requestedAt`; the session-title
+ * Writes `metadata.yuri.titleRefresh.requestedAt`; the session-title
  * runtime picks that up and regenerates the title from recent messages.
  */
 export async function requestSessionSmartTitle(sessionId: string): Promise<void> {
   const sessionDirectory = getSessionDirectory(sessionId)
   const current = getGlobalSessionSnapshot(sessionId)
   const metadata = (current as Session & { metadata?: Record<string, unknown> } | null)?.metadata ?? {}
-  const openchamber = metadata.openchamber && typeof metadata.openchamber === "object"
-    ? metadata.openchamber as Record<string, unknown>
+  const yuri = metadata.yuri && typeof metadata.yuri === "object"
+    ? metadata.yuri as Record<string, unknown>
     : {}
-  const titleRefresh = openchamber.titleRefresh && typeof openchamber.titleRefresh === "object"
-    ? openchamber.titleRefresh as Record<string, unknown>
+  const titleRefresh = yuri.titleRefresh && typeof yuri.titleRefresh === "object"
+    ? yuri.titleRefresh as Record<string, unknown>
     : {}
   const lastAutoTitle = typeof current?.title === "string" && current.title.trim()
     ? current.title.trim()
     : (typeof titleRefresh.lastAutoTitle === "string" ? titleRefresh.lastAutoTitle : undefined)
   const session = await opencodeClient.updateSession(sessionId, {
     metadata: {
-      openchamber: {
+      yuri: {
         titleRefresh: {
           ...(lastAutoTitle ? { lastAutoTitle } : {}),
           requestedAt: Date.now(),
@@ -1919,12 +1919,12 @@ export function optimisticInsertUserMessage(input: {
         id: typeof part.id === "string" && part.id ? part.id : ascendingId("prt"),
         messageID: input.messageID,
         sessionID: input.sessionId,
-        __openchamberOptimistic: true,
+        __yuriOptimistic: true,
       } as unknown as Part))
-    : [{ id: ascendingId("prt"), type: "text", text: input.content, messageID: input.messageID, sessionID: input.sessionId, __openchamberOptimistic: true } as unknown as Part]
+    : [{ id: ascendingId("prt"), type: "text", text: input.content, messageID: input.messageID, sessionID: input.sessionId, __yuriOptimistic: true } as unknown as Part]
   if (!input.parts && input.files) {
     for (const f of input.files) {
-      optimisticParts.push({ id: ascendingId("prt"), messageID: input.messageID, sessionID: input.sessionId, type: "file", mime: f.mime, url: f.url, filename: f.filename, __openchamberOptimistic: true } as unknown as Part)
+      optimisticParts.push({ id: ascendingId("prt"), messageID: input.messageID, sessionID: input.sessionId, type: "file", mime: f.mime, url: f.url, filename: f.filename, __yuriOptimistic: true } as unknown as Part)
     }
   }
 

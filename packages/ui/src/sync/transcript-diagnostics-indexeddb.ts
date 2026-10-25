@@ -1,10 +1,11 @@
+import { migrateBrandIndexedDB } from '@/lib/brand-storage-migration';
 import {
   TRANSCRIPT_DIAGNOSTICS_LIMIT,
   type TranscriptDiagnosticsEvent,
   type TranscriptDiagnosticsSink,
 } from "./transcript-diagnostics"
 
-const DATABASE_NAME = "openchamber-transcript-diagnostics"
+const DATABASE_NAME = "yuri-transcript-diagnostics"
 const STORE_NAME = "events"
 const DATABASE_VERSION = 1
 
@@ -43,7 +44,7 @@ const wrapRequest = <V>(request: IDBRequest<V>, transaction?: IDBTransaction): P
   })
 
 const openDatabaseOnce = (name: string): Promise<IDBDatabase> =>
-  new Promise((resolve, reject) => {
+  migrateBrandIndexedDB(name).then(() => new Promise<IDBDatabase>((resolve, reject) => {
     if (!globalThis.indexedDB) {
       reject(new Error("IndexedDB unavailable"))
       return
@@ -78,7 +79,7 @@ const openDatabaseOnce = (name: string): Promise<IDBDatabase> =>
     request.onerror = fail
     // Blocked is not the same as error; do not touch request.error while pending.
     request.onblocked = fail
-  })
+  }))
 
 /**
  * IndexedDB ring-buffer driver with connection reuse and coalesced appends.

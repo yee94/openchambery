@@ -1,6 +1,6 @@
 // Empty tail the transcript keeps below its newest message.
 //
-// Not the same thing as `--oc-chat-foot-inset`, which reserves the bottom
+// Not the same thing as `--yuri-chat-foot-inset`, which reserves the bottom
 // chrome the Composer actually occupies (input, queued messages, changes /
 // tasks strip). This spacer sits on top of that reservation and is the
 // breathing room itself: without it the newest message ends exactly where the
@@ -27,7 +27,7 @@ export const CHAT_TAIL_SPACER_DESKTOP_HEIGHT = `${CHAT_TAIL_SPACER_DESKTOP_VH}vh
  * viewport moves with the keyboard and the browser chrome, and a tail that
  * breathes with it changes the at-bottom band under the reader.
  *
- * The composer page-background fade (`.oc-mobile-composer::after`, 2.75rem)
+ * The composer page-background fade (`.yuri-mobile-composer::after`, 2.75rem)
  * paints above the input and eats the bottom of this tail. 80px left the
  * newest lines inside that mask once the queue or changes strip outgrew the
  * fixed foot inset. Keep enough room that those lines sit clear of the fade.
@@ -45,7 +45,7 @@ export const CHAT_TAIL_SPACER_MOBILE_HEIGHT = `${CHAT_TAIL_SPACER_MOBILE_PX}px`;
  * the reservation has to be part of this measured spacer instead.
  */
 export const CHAT_TAIL_SPACER_MOBILE_WITH_FOOT_INSET_HEIGHT =
-    `calc(${CHAT_TAIL_SPACER_MOBILE_HEIGHT} + var(--oc-chat-foot-inset))`;
+    `calc(${CHAT_TAIL_SPACER_MOBILE_HEIGHT} + var(--yuri-chat-foot-inset))`;
 
 /**
  * Distance from the live edge that still counts as being at the bottom.

@@ -422,7 +422,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   // hasn't seen this id yet (sub-render latency between when a session
   // is created and when the SSE-driven aggregate picks it up).
   const resolvedSession = liveSessionById.get(session.id) ?? session;
-  const isAssistantSession = Boolean((resolvedSession as Session & { metadata?: { openchamber?: { assistant?: unknown } } }).metadata?.openchamber?.assistant);
+  const isAssistantSession = Boolean((resolvedSession as Session & { metadata?: { yuri?: { assistant?: unknown } } }).metadata?.yuri?.assistant);
 
   const sessionDirectory =
     normalizePath((session as Session & { directory?: string | null }).directory ?? null)
@@ -496,7 +496,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const sessionChangeCounts = formatSessionChangeCounts(readSessionChangeSummary(resolvedSession));
   const titleRefreshMetadata = (resolvedSession as Session & {
     metadata?: {
-      openchamber?: {
+      yuri?: {
         titleRefresh?: {
           isGenerating?: unknown;
           lastError?: unknown;
@@ -504,7 +504,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
         };
       };
     };
-  }).metadata?.openchamber?.titleRefresh;
+  }).metadata?.yuri?.titleRefresh;
   const titleGenerationError = typeof titleRefreshMetadata?.lastError === 'string'
     ? titleRefreshMetadata.lastError
     : null;
@@ -769,7 +769,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const handleOpenInEditorClick = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    void runtimeApis?.vscode?.executeCommand('openchamber.openSessionInEditor', session.id, sessionTitle);
+    void runtimeApis?.vscode?.executeCommand('yuri.openSessionInEditor', session.id, sessionTitle);
   });
 
   const handleRowSelect = useEvent((event?: React.MouseEvent<HTMLButtonElement>) => {

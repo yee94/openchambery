@@ -1,7 +1,8 @@
+import '@/lib/brand-storage-bootstrap';
 import { DRAFT_COMPOSER_REFERENCE_LIMITS, parseDraftComposerDocument, type DraftComposerDocument, type DraftComposerReference } from "./input-draft-types"
 
-const V2_TYPE = "openchamber-composer-reference-draft"
-const V1_TYPE = "openchamber-pasted-text-draft"
+const V2_TYPE = "yuri-composer-reference-draft"
+const V1_TYPE = "yuri-pasted-text-draft"
 
 const codePointCount = (text: string): number => Array.from(text).length
 const isPlainObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
@@ -31,11 +32,11 @@ export const parseLegacyDraftComposerDocument = (serialized: string): DraftCompo
   try {
     const parsed: unknown = JSON.parse(serialized)
     if (!isPlainObject(parsed) || typeof parsed.text !== "string") return { text: serialized, references: [] }
-    if (parsed.type === V2_TYPE) {
+    if (parsed.type === V2_TYPE || parsed.type === 'openchamber-composer-reference-draft') {
       const document = parsed.version === 2 ? parseDraftComposerDocument(parsed.text, parsed.references) : undefined
       return document ?? { text: parsed.text, references: [] }
     }
-    if (parsed.type === V1_TYPE) {
+    if (parsed.type === V1_TYPE || parsed.type === 'openchamber-pasted-text-draft') {
       const references = parsed.version === 1 && Array.isArray(parsed.references) ? legacyPasteReferences(parsed.text, parsed.references) : []
       return parseDraftComposerDocument(parsed.text, references) ?? { text: parsed.text, references: [] }
     }

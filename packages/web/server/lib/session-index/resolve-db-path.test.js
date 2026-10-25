@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveSessionIndexDbPath } from './resolve-db-path.js';
 
 describe('resolveSessionIndexDbPath', () => {
-  const dataDir = '/home/user/.config/openchamber';
+  const dataDir = '/home/user/.config/yuri';
   const defaultExpect = path.join(dataDir, 'session-index.sqlite');
 
   it('returns default path when options are empty', () => {

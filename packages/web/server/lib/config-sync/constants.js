@@ -18,9 +18,9 @@ export const OPENCODE_CONFIG_SYNC_ALLOWLIST = {
   ],
 };
 
-export const OPENCODE_CONFIG_SYNC_BACKUP_DIR = '.openchamber.sync-backup';
+export const OPENCODE_CONFIG_SYNC_BACKUP_DIR = '.yuri.sync-backup';
 /** Backup root for `$HOME/.agents` (outside `~/.agents` so rm -rf does not eat it). */
-export const OPENCODE_AGENTS_SYNC_BACKUP_DIR = '.openchamber.sync-backup-agents';
+export const OPENCODE_AGENTS_SYNC_BACKUP_DIR = '.yuri.sync-backup-agents';
 
 export const OPENCODE_AGENTS_ROOT_PROBE_MARKER = '__AGENTS_ROOT__';
 

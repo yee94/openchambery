@@ -53,7 +53,7 @@ const ProviderSettingsSection = ({
 }: ProviderSettingsSectionProps) => (
   <div data-settings-item={itemId}>
     <SettingsGroup
-      className="oc-settings-detail-group"
+      className="yuri-settings-detail-group"
       label={action ? (
         <div className="flex min-w-0 items-center justify-between gap-2">
           <div className="min-w-0">{label}</div>
@@ -62,7 +62,7 @@ const ProviderSettingsSection = ({
       ) : label}
       description={description}
     >
-      {rows ? children : <div className="oc-settings-group-row">{children}</div>}
+      {rows ? children : <div className="yuri-settings-group-row">{children}</div>}
     </SettingsGroup>
   </div>
 );
@@ -313,7 +313,7 @@ const ProvidersPageContent: React.FC = () => {
 
     const loadSources = async () => {
       try {
-        // OpenChamber-only metadata endpoint: the SDK exposes provider data but
+        // Yuri-only metadata endpoint: the SDK exposes provider data but
         // not local auth/source-file provenance used by this settings UI.
         const response = await runtimeFetch(`/api/provider/${encodeURIComponent(selectedProviderId)}/source`, {
           method: 'GET',
@@ -516,7 +516,7 @@ const ProvidersPageContent: React.FC = () => {
   if (isAddMode) {
     return (
       <ScrollableOverlay outerClassName="h-full" className="w-full">
-        <div className="oc-settings-section-stack mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+        <div className="yuri-settings-section-stack mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
           <div data-settings-item="providers.connect">
             <h1 className="typography-ui-header font-semibold text-foreground">{t('settings.providers.page.connect.title')}</h1>
           </div>
@@ -617,7 +617,7 @@ const ProvidersPageContent: React.FC = () => {
               ) : (
                 <>
                   <SettingsRow
-                    className="oc-settings-split-row-stacked"
+                    className="yuri-settings-split-row-stacked"
                     label={(
                       <span className="flex items-center gap-1.5">
                         {t('settings.providers.page.auth.apiKeyLabel')}
@@ -632,7 +632,7 @@ const ProvidersPageContent: React.FC = () => {
                       </span>
                     )}
                   >
-                    <div className="oc-settings-value-inline">
+                    <div className="yuri-settings-value-inline">
                       <Input
                         type="password"
                         value={apiKeyInputs[candidateProviderId] ?? ''}
@@ -643,7 +643,7 @@ const ProvidersPageContent: React.FC = () => {
                           }))
                         }
                         placeholder={t('settings.providers.page.auth.apiKeyPlaceholder')}
-                        className="oc-settings-value-inline-input font-mono text-xs"
+                        className="yuri-settings-value-inline-input font-mono text-xs"
                       />
                       <Button
                         size="xs"
@@ -668,7 +668,7 @@ const ProvidersPageContent: React.FC = () => {
                     }
 
                      return (
-                       <div className="oc-settings-group-row space-y-4">
+                       <div className="yuri-settings-group-row space-y-4">
                         {candidateOAuthMethods.map(({ method, methodIndex }, index) => {
                           const methodLabel = method.label || method.name || t('settings.providers.page.auth.oauthMethodFallback', { index: String(index + 1) });
                           const codeKey = `${candidateProviderId}:${methodIndex}`;
@@ -791,7 +791,7 @@ const ProvidersPageContent: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="oc-settings-section-stack mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="yuri-settings-section-stack mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -833,7 +833,7 @@ const ProvidersPageContent: React.FC = () => {
             ) : (
               <>
                   <SettingsRow
-                    className="oc-settings-split-row-stacked"
+                    className="yuri-settings-split-row-stacked"
                     label={(
                       <span className="flex items-center gap-1.5">
                         {t('settings.providers.page.auth.apiKeyLabel')}
@@ -848,7 +848,7 @@ const ProvidersPageContent: React.FC = () => {
                       </span>
                     )}
                   >
-                    <div className="oc-settings-value-inline">
+                    <div className="yuri-settings-value-inline">
                       <Input
                         type="password"
                         value={apiKeyInputs[selectedProvider.id] ?? ''}
@@ -859,7 +859,7 @@ const ProvidersPageContent: React.FC = () => {
                           }))
                         }
                         placeholder={t('settings.providers.page.auth.apiKeyPlaceholder')}
-                        className="oc-settings-value-inline-input font-mono text-xs"
+                        className="yuri-settings-value-inline-input font-mono text-xs"
                       />
                       <Button
                         size="xs"
@@ -873,7 +873,7 @@ const ProvidersPageContent: React.FC = () => {
                   </SettingsRow>
 
                 {oauthAuthMethods.length > 0 && (
-                  <div className="oc-settings-group-row space-y-4">
+                  <div className="yuri-settings-group-row space-y-4">
                     {oauthAuthMethods.map(({ method, methodIndex }, index) => {
                       const methodLabel = method.label || method.name || t('settings.providers.page.auth.oauthMethodFallback', { index: String(index + 1) });
                       const codeKey = `${selectedProvider.id}:${methodIndex}`;

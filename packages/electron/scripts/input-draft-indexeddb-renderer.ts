@@ -17,7 +17,7 @@ const reference = (occurrence: string): DraftAttachmentReference => ({
 })
 
 const deleteTestDatabase = (): Promise<void> => new Promise((resolve, reject) => {
-  const request = indexedDB.deleteDatabase("openchamber-input-drafts")
+  const request = indexedDB.deleteDatabase("yuri-input-drafts")
   request.onsuccess = () => resolve()
   request.onerror = () => reject(request.error ?? new DOMException("Database cleanup failed", "UnknownError"))
   request.onblocked = () => reject(new DOMException("Database cleanup blocked", "InvalidStateError"))
@@ -27,7 +27,8 @@ const run = async (): Promise<Evidence[]> => {
   const evidence: Evidence[] = []
   const store = createInputDraftBlobStore()
 
-  expect((await store.put("commit", "https://example.test/commit")).ok, "normal put failed")
+  const initialPut = await store.put("commit", "https://example.test/commit")
+  expect(initialPut.ok, `normal put failed: ${initialPut.ok ? '' : JSON.stringify(initialPut.error)}`)
   const committed = await store.read("commit")
   expect(committed.ok && committed.value === "https://example.test/commit", "normal read returned an unexpected value")
   evidence.push({ name: "commit/read" })
@@ -129,11 +130,11 @@ const run = async (): Promise<Evidence[]> => {
 
 declare global {
   interface Window {
-    __OPENCHAMBER_INPUT_DRAFT_INDEXEDDB_EVIDENCE__?: Promise<{ ok: true; evidence: Evidence[] } | { ok: false; error: string }>
+    __YURI_INPUT_DRAFT_INDEXEDDB_EVIDENCE__?: Promise<{ ok: true; evidence: Evidence[] } | { ok: false; error: string }>
   }
 }
 
-window.__OPENCHAMBER_INPUT_DRAFT_INDEXEDDB_EVIDENCE__ = run()
+window.__YURI_INPUT_DRAFT_INDEXEDDB_EVIDENCE__ = run()
   .then(async (evidence) => {
     await deleteTestDatabase()
     return { ok: true as const, evidence }

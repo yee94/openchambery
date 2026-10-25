@@ -18,7 +18,7 @@
 
 import { projectMessageSummaryDiffCounts } from '../event-stream/diff-summary.js';
 
-const ASSISTANT_SESSION_DIVIDER_PREFIX = 'oc_asst_session_divider:';
+const ASSISTANT_SESSION_DIVIDER_PREFIX = 'yuri_asst_session_divider:';
 
 const DEFAULT_MAX_SCAN_PAGES = 50;
 const DEFAULT_MAX_SCAN_MESSAGES = 5000;
@@ -40,7 +40,8 @@ const hasPartType = (parts, type) =>
 
 const isHostedSessionDivider = (record) => {
   const id = record?.info?.id ?? record?.id;
-  return typeof id === 'string' && id.startsWith(ASSISTANT_SESSION_DIVIDER_PREFIX);
+  // Historical transcript IDs are user data; accept the old prefix during Yuri 2.x.
+  return typeof id === 'string' && (id.startsWith(ASSISTANT_SESSION_DIVIDER_PREFIX) || id.startsWith('oc_asst_session_divider:'));
 };
 
 /**

@@ -1,4 +1,4 @@
-.oc-composer-tooltip[data-slot="tooltip-content"] {
+.yuri-composer-tooltip[data-slot="tooltip-content"] {
   background: var(--foreground);
   color: var(--background);
   border: 0;
@@ -11,35 +11,35 @@
   opacity: 1;
   scale: 1;
 }
-.oc-composer-tooltip[data-slot="tooltip-content"] > svg {
+.yuri-composer-tooltip[data-slot="tooltip-content"] > svg {
   fill: var(--foreground);
 }
 
 @layer base {
   :root {
     color-scheme: light;
-    --oc-safe-area-top: 0px;
-    --oc-safe-area-right: 0px;
-    --oc-safe-area-bottom: 0px;
-    --oc-safe-area-bottom-visual: 0px;
-    --oc-safe-area-left: 0px;
-    --oc-header-height: 56px;
-    --oc-visual-viewport-offset-top: 0px;
-    --oc-visual-viewport-height: 100dvh;
-    --oc-wco-left-inset: 0px;
-    --oc-wco-right-inset: 0px;
-    --oc-wco-titlebar-height: 0px;
+    --yuri-safe-area-top: 0px;
+    --yuri-safe-area-right: 0px;
+    --yuri-safe-area-bottom: 0px;
+    --yuri-safe-area-bottom-visual: 0px;
+    --yuri-safe-area-left: 0px;
+    --yuri-header-height: 56px;
+    --yuri-visual-viewport-offset-top: 0px;
+    --yuri-visual-viewport-height: 100dvh;
+    --yuri-wco-left-inset: 0px;
+    --yuri-wco-right-inset: 0px;
+    --yuri-wco-titlebar-height: 0px;
     --ui-regular-font-weight: 400;
     --voice-active-fill: #38CD80;
-    --oc-scrollbar-thumb: oklch(0.32 0.03 50 / 0.4);
-    --oc-scrollbar-thumb-hover: oklch(0.32 0.03 50 / 0.6);
+    --yuri-scrollbar-thumb: oklch(0.32 0.03 50 / 0.4);
+    --yuri-scrollbar-thumb-hover: oklch(0.32 0.03 50 / 0.6);
     /* User density setting (useUIStore.applyPadding writes this name).
        --padding-scale stacks it with --dpt-n so every Tailwind spacing
        utility (p, py, gap, size classes) rides the physical design-pt scale
        on Capacitor (iOS 10/9, Android physical × 0.95/0.9 cap 0.95).
        Desktop (--dpt-n = 1) stays pixel-identical.
        Lengths cannot multiply lengths, hence the unitless --dpt-n twin.
-       Fixed-rem geometry (--oc-mobile-dock-height, --oc-settings-row-min-height,
+       Fixed-rem geometry (--yuri-mobile-dock-height, --yuri-settings-row-min-height,
        --form-control-height, touch min 36px) intentionally does NOT ride this
        so control heights, touch targets, and keyboard choreography stay
        stable while page padding and gaps scale. */
@@ -200,9 +200,9 @@
     background-color: var(--background) !important;
   }
 
-  :root.desktop-runtime[data-oc-vibrancy],
-  :root.desktop-runtime[data-oc-vibrancy] body,
-  :root.desktop-runtime[data-oc-vibrancy] #root {
+  :root.desktop-runtime[data-yuri-vibrancy],
+  :root.desktop-runtime[data-yuri-vibrancy] body,
+  :root.desktop-runtime[data-yuri-vibrancy] #root {
     background: transparent !important;
     background-color: transparent !important;
   }
@@ -444,7 +444,7 @@
 
 /* Agent color system using theme variables */
 @layer components {
-  .oc-dictation-caret {
+  .yuri-dictation-caret {
     position: relative;
     display: inline-block;
     width: 0;
@@ -452,14 +452,14 @@
     pointer-events: none;
   }
 
-  .oc-dictation-caret::after,
-  .oc-dictation-caret-trail {
+  .yuri-dictation-caret::after,
+  .yuri-dictation-caret-trail {
     position: absolute;
     bottom: -0.15em;
     height: 1.15em;
   }
 
-  .oc-dictation-caret::after {
+  .yuri-dictation-caret::after {
     content: '';
     left: 0;
     width: 2px;
@@ -467,7 +467,7 @@
     background: var(--voice-active-fill);
   }
 
-  .oc-dictation-caret-trail {
+  .yuri-dictation-caret-trail {
     left: -0.7em;
     width: 0.7em;
     border-radius: 2px;
@@ -478,12 +478,12 @@
   }
 
   @media (prefers-reduced-motion: no-preference) {
-    .oc-dictation-caret-trail {
-      animation: oc-dictation-caret-trail 1600ms linear;
+    .yuri-dictation-caret-trail {
+      animation: yuri-dictation-caret-trail 1600ms linear;
     }
   }
 
-  @keyframes oc-dictation-caret-trail {
+  @keyframes yuri-dictation-caret-trail {
     0% { opacity: 0; transform: scaleX(0.8); }
     5% { opacity: 0.6; transform: scaleX(1); }
     25% { opacity: 0.45; transform: scaleX(1); }
@@ -563,14 +563,14 @@
    * Dark: selection-derived fill so elevated≈muted palettes still contrast.
    * Prefer this class over ad-hoc bg-[var(--surface-elevated)] shadow-sm dark:shadow-none.
    */
-  .oc-segmented-selected-pill {
+  .yuri-segmented-selected-pill {
     background: var(--surface-elevated);
     color: var(--surface-elevated-foreground, var(--foreground));
     /* Matches Tailwind shadow-sm: soft elevation, no outline. */
     box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--surface-foreground) 8%, transparent);
   }
 
-  .dark .oc-segmented-selected-pill {
+  .dark .yuri-segmented-selected-pill {
     background: color-mix(
       in srgb,
       var(--interactive-selection-foreground) 16%,
@@ -585,16 +585,16 @@
    * Layout chrome dividers (left/right sidebars, header/content split).
    * Prefer these over ad-hoc border-border/* so width + opacity stay one token.
    */
-  .oc-layout-divider-t {
+  .yuri-layout-divider-t {
     border-top: var(--layout-chrome-divider-width) solid var(--layout-chrome-divider);
   }
-  .oc-layout-divider-r {
+  .yuri-layout-divider-r {
     border-right: var(--layout-chrome-divider-width) solid var(--layout-chrome-divider);
   }
-  .oc-layout-divider-b {
+  .yuri-layout-divider-b {
     border-bottom: var(--layout-chrome-divider-width) solid var(--layout-chrome-divider);
   }
-  .oc-layout-divider-l {
+  .yuri-layout-divider-l {
     border-left: var(--layout-chrome-divider-width) solid var(--layout-chrome-divider);
   }
 }

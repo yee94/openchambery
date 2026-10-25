@@ -1,5 +1,5 @@
 /**
- * OpenChamber Host turn-page API for session message windows.
+ * Yuri Host turn-page API for session message windows.
  *
  * Used for initial/recovery/materialize tails (no `before`) and for
  * prepend/loadMore (`before` + purpose prepend). One Host request returns up
@@ -7,7 +7,7 @@
  *
  * Upstream OpenCode message `scanLimit` is a **Host-local** concern (server
  * calls OpenCode on loopback). Clients omit it by default; the Host applies
- * `_inner_scanLimit` (env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT` or 100).
+ * `_inner_scanLimit` (env `YURI_SESSION_TURN_SCAN_LIMIT` or 100).
  * Optional `scanLimit` remains an explicit client override only.
  */
 
@@ -178,14 +178,14 @@ function assertSessionTurnPage(payload: unknown, requestedTurns: number): Sessio
 }
 
 /**
- * GET `/api/openchamber/sessions/:sessionID/messages`
+ * GET `/api/yuri/sessions/:sessionID/messages`
  * query: directory, turns, before?, scanLimit? (optional override only)
  */
 export async function fetchSessionTurnPage(
   input: FetchSessionTurnPageInput,
 ): Promise<SessionTurnPage> {
   const turns = input.turns ?? getHistorySessionTurnLimit()
-  const path = `/api/openchamber/sessions/${encodeURIComponent(input.sessionID)}/messages`
+  const path = `/api/yuri/sessions/${encodeURIComponent(input.sessionID)}/messages`
   const query: Record<string, string> = {
     directory: input.directory,
     turns: String(turns),

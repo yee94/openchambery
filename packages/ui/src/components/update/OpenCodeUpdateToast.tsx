@@ -34,7 +34,7 @@ export const OpenCodeUpdateToast: React.FC = () => {
     setCheckEnabled(true);
   }), [showOpenCodeUpdateNotifications]);
   const update = useQuery({ ...openCodeUpdateQueryOptions(transport, generation), enabled: showOpenCodeUpdateNotifications && checkEnabled });
-  useEventListener('openchamber:opencode-update-available', (event: Event) => {
+  useEventListener('yuri:opencode-update-available', (event: Event) => {
     if (showOpenCodeUpdateNotifications && resolveOpenCodeUpdateVersion((event as CustomEvent<unknown>).detail)) void update.refetch();
   });
   const dismissedKey = `${UPDATE_TOAST_DISMISSED_VERSION_KEY}:${transport}`;

@@ -32,9 +32,9 @@ export const isLoopbackBindHost = (host) => {
 export const isNetworkExposedBindHost = (host) => !isLoopbackBindHost(host);
 
 export const isUnsafeUnauthenticatedLanAllowed = (env = process.env) =>
-  env?.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN === 'true';
+  env?.YURI_ALLOW_UNAUTHENTICATED_LAN === 'true';
 
 export const getUnauthenticatedLanErrorMessage = (host) =>
-  `OpenChamber refuses to bind to ${host || 'a network-exposed host'} without UI authentication. `
-  + 'Set --ui-password or OPENCHAMBER_UI_PASSWORD before exposing it over LAN, '
-  + 'or set OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN=true to accept the risk.';
+  `Yuri refuses to bind to ${host || 'a network-exposed host'} without UI authentication. `
+  + 'Set --ui-password or YURI_UI_PASSWORD before exposing it over LAN, '
+  + 'or set YURI_ALLOW_UNAUTHENTICATED_LAN=true to accept the risk.';

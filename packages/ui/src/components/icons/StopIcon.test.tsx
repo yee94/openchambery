@@ -23,7 +23,7 @@ describe('StopIcon', () => {
     expect(html).toContain('rounded-[20%]');
     expect(html).toContain('bg-current');
     expect(html).not.toContain('rounded-[28%]');
-    expect(html).not.toContain('#oc-time');
+    expect(html).not.toContain('#yuri-time');
   });
 
   test('is decorative so the owning button keeps the accessible name', () => {
@@ -49,14 +49,14 @@ describe('SendCircleIcon', () => {
     expect(html).toContain('rounded-full');
     expect(html).toContain('bg-foreground');
     expect(html).toContain('text-background');
-    expect(html).toContain('#oc-arrow-up');
-    expect(html).not.toContain('#oc-send-plane-2');
+    expect(html).toContain('#yuri-arrow-up');
+    expect(html).not.toContain('#yuri-send-plane-2');
   });
 
   test('spins a loader while a send is in flight', () => {
     const html = renderToString(<SendCircleIcon spinning />);
 
-    expect(html).toContain('#oc-loader-4');
+    expect(html).toContain('#yuri-loader-4');
     expect(html).toContain('animate-spin');
   });
 
@@ -74,7 +74,7 @@ describe('SendCircleIcon', () => {
 describe('compact composer concentric circle', () => {
   test('keeps the 24px expanded glyph concentric in the pill cap', () => {
     expect(mobileCss).toContain('inset: 0 0.625rem');
-    expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--sending');
+    expect(chatInputSource).toContain('yuri-mobile-composer-compact-chrome--sending');
     expect(chatInputSource).toContain("compactCircleButtonClass = cn(");
   });
 });

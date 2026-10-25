@@ -14,10 +14,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-const OPENCHAMBER_SETTINGS_FILE = path.join(
-  process.env.OPENCHAMBER_DATA_DIR
-    ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-    : path.join(os.homedir(), '.config', 'openchamber'),
+const YURI_SETTINGS_FILE = path.join(
+  process.env.YURI_DATA_DIR
+    ? path.resolve(process.env.YURI_DATA_DIR)
+    : path.join(os.homedir(), '.config', 'yuri'),
   'settings.json',
 );
 
@@ -51,7 +51,7 @@ const MULTI_RUN_GROUP = /^g[1-9]\d*$/;
 // when background generation is off.
 const isSessionTitleRefreshEnabled = () => {
   try {
-    const raw = fs.readFileSync(OPENCHAMBER_SETTINGS_FILE, 'utf8');
+    const raw = fs.readFileSync(YURI_SETTINGS_FILE, 'utf8');
     const settings = JSON.parse(raw);
     return settings?.sessionTitleRefreshEnabled !== false;
   } catch {
@@ -153,25 +153,25 @@ const extractSessionStatus = (payload) => {
 
 /** System sessions keep fixed titles; metadata is the only ownership signal. */
 export const isSystemOwnedSession = (sessionOrInfo) => {
-  const openchamber = sessionOrInfo?.metadata?.openchamber;
-  if (!openchamber || typeof openchamber !== 'object') return false;
-  if (openchamber.assigned?.from === 'contact') return false;
-  if (typeof openchamber.assistant?.assistantID === 'string' && openchamber.assistant.assistantID) return true;
-  if (typeof openchamber.scheduledTask?.taskID === 'string' && openchamber.scheduledTask.taskID) return true;
-  if (typeof openchamber.smallModel?.purpose === 'string' && openchamber.smallModel.purpose) return true;
-  if (typeof openchamber.llm?.purpose === 'string' && openchamber.llm.purpose) return true;
+  const yuri = sessionOrInfo?.metadata?.yuri;
+  if (!yuri || typeof yuri !== 'object') return false;
+  if (yuri.assigned?.from === 'contact') return false;
+  if (typeof yuri.assistant?.assistantID === 'string' && yuri.assistant.assistantID) return true;
+  if (typeof yuri.scheduledTask?.taskID === 'string' && yuri.scheduledTask.taskID) return true;
+  if (typeof yuri.smallModel?.purpose === 'string' && yuri.smallModel.purpose) return true;
+  if (typeof yuri.llm?.purpose === 'string' && yuri.llm.purpose) return true;
   return false;
 };
 
 const extractTitleRefreshRequest = (payload) => {
-  if (!payload || (payload.type !== 'session.updated' && payload.type !== 'openchamber:session-metadata')) return null;
+  if (!payload || (payload.type !== 'session.updated' && payload.type !== 'yuri:session-metadata')) return null;
   const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-  const info = payload.type === 'openchamber:session-metadata'
+  const info = payload.type === 'yuri:session-metadata'
     ? { id: properties.sessionID, metadata: properties.metadata }
     : (properties.info && typeof properties.info === 'object' ? properties.info : {});
   if (isSystemOwnedSession(info)) return null;
   const sessionId = typeof info.id === 'string' ? info.id.trim() : '';
-  const titleRefresh = info.metadata?.openchamber?.titleRefresh;
+  const titleRefresh = info.metadata?.yuri?.titleRefresh;
   const requestedAt = titleRefresh?.requestedAt;
   if (titleRefresh?.isGenerating === true) return null;
   if (!sessionId || typeof requestedAt !== 'number' || !Number.isFinite(requestedAt)) return null;
@@ -300,15 +300,15 @@ const cleanGeneratedTitle = (raw) => {
 
 const readTitleRefreshMeta = (session) => {
   const metadata = session?.metadata && typeof session.metadata === 'object' ? session.metadata : {};
-  const openchamber = metadata.openchamber && typeof metadata.openchamber === 'object'
-    ? metadata.openchamber
+  const yuri = metadata.yuri && typeof metadata.yuri === 'object'
+    ? metadata.yuri
     : {};
-  const titleRefresh = openchamber.titleRefresh && typeof openchamber.titleRefresh === 'object'
-    ? openchamber.titleRefresh
+  const titleRefresh = yuri.titleRefresh && typeof yuri.titleRefresh === 'object'
+    ? yuri.titleRefresh
     : {};
   return {
     metadata,
-    openchamber,
+    yuri,
     titleRefresh,
     lastAutoTitle: typeof titleRefresh.lastAutoTitle === 'string' ? titleRefresh.lastAutoTitle : '',
     generatedAt: typeof titleRefresh.generatedAt === 'number' ? titleRefresh.generatedAt : 0,
@@ -476,7 +476,7 @@ export const createSessionTitleRuntime = ({
       method: 'PATCH',
       body: {
         metadata: {
-          openchamber: {
+          yuri: {
             titleRefresh: {
               isGenerating: null,
               ...(forcedRefreshes.has(sessionId) ? {} : { requestedAt: null }),
@@ -497,7 +497,7 @@ export const createSessionTitleRuntime = ({
       method: 'PATCH',
       body: {
         metadata: {
-          openchamber: {
+          yuri: {
             titleRefresh: {
               lastError: error instanceof Error ? error.message : String(error),
               failedAt: now(),
@@ -575,7 +575,7 @@ export const createSessionTitleRuntime = ({
         method: 'PATCH',
         body: {
           metadata: {
-            openchamber: {
+            yuri: {
               titleRefresh: {
                 activityUpdatedAt,
                 ...(admittedFork ? { forkFirstSendSessionID: sessionId } : {}),
@@ -618,7 +618,7 @@ export const createSessionTitleRuntime = ({
 
     const currentTitle = typeof session.title === 'string' ? session.title : '';
     if (looksLikeMultiRunSessionTitle(currentTitle)) return;
-    const authority = session.metadata?.openchamber?.titleAuthority;
+    const authority = session.metadata?.yuri?.titleAuthority;
     if (!forceRefresh && authority?.sessionID === sessionId && authority.source === 'manual') return;
 
     const meta = readTitleRefreshMeta(session);
@@ -676,7 +676,7 @@ export const createSessionTitleRuntime = ({
       method: 'PATCH',
       body: {
         metadata: {
-          openchamber: {
+          yuri: {
             titleRefresh: {
               isGenerating: true,
               lastError: null,
@@ -760,10 +760,10 @@ export const createSessionTitleRuntime = ({
       method: 'PATCH',
       body: {
         title: nextTitle,
-        expectedTitleRevision: session.metadata?.openchamber?.titleAuthority?.sessionID === sessionId
-          ? session.metadata.openchamber.titleAuthority.revision : null,
+        expectedTitleRevision: session.metadata?.yuri?.titleAuthority?.sessionID === sessionId
+          ? session.metadata.yuri.titleAuthority.revision : null,
         metadata: {
-          openchamber: {
+          yuri: {
             titleRefresh: {
               lastAutoTitle: nextTitle,
               forMessageID: lastAssistantId || latestAssistantId || '',

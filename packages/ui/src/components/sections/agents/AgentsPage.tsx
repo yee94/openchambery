@@ -642,7 +642,7 @@ export const AgentsPage: React.FC = () => {
   if (!selectedAgentName) {
     return (
       <ScrollableOverlay outerClassName="h-full" className="w-full">
-        <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+        <div className="yuri-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
           <SavedPermissionsSection />
           <div className="flex h-full items-center justify-center">
             <div className="text-center text-muted-foreground">
@@ -658,7 +658,7 @@ export const AgentsPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="yuri-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         <SavedPermissionsSection />
 
@@ -743,7 +743,7 @@ export const AgentsPage: React.FC = () => {
               </SettingsRow>
             )}
 
-            <SettingsRow label={t('settings.common.field.description')} className="oc-settings-split-row-stacked">
+            <SettingsRow label={t('settings.common.field.description')} className="yuri-settings-split-row-stacked">
                 <Textarea
                   embedded
                   value={description}
@@ -756,7 +756,7 @@ export const AgentsPage: React.FC = () => {
 
             <SettingsRow
               itemId="agents.mode"
-              className="oc-settings-agents-mode-row"
+              className="yuri-settings-agents-mode-row"
               label={(
                 <div className="flex items-center gap-1.5">
                   <span>{t('settings.agents.page.field.mode')}</span>
@@ -821,7 +821,7 @@ export const AgentsPage: React.FC = () => {
                       setModel('');
                     }
                   }}
-                  className="oc-settings-inline-value"
+                  className="yuri-settings-inline-value"
                 />
             </SettingsRow>
         </SettingsGroup>
@@ -829,7 +829,7 @@ export const AgentsPage: React.FC = () => {
         <SettingsField
           itemId="agents.system-prompt"
           label={t('settings.agents.page.section.systemPrompt')}
-          className="oc-settings-split-row-stacked"
+          className="yuri-settings-split-row-stacked"
         >
             <Textarea
               embedded

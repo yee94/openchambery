@@ -1,6 +1,6 @@
 /** @typedef {string | URL} UrlLike */
 
-export const UI_PROTOCOL = 'openchamber-ui';
+export const UI_PROTOCOL = 'yuri-ui';
 
 export const packagedUiOrigin = () => `${UI_PROTOCOL}://app`;
 
@@ -8,8 +8,8 @@ export const packagedUiOrigin = () => `${UI_PROTOCOL}://app`;
  * Stable identity for navigation / origin checks.
  *
  * Chromium and Node report `URL.origin === "null"` (string) for many custom
- * schemes, including openchamber-ui://. Comparing origins then fails forever
- * (`"null" !== "openchamber-ui://app"`), which blocked packaged-UI reloads after
+ * schemes, including yuri-ui://. Comparing origins then fails forever
+ * (`"null" !== "yuri-ui://app"`), which blocked packaged-UI reloads after
  * first-launch onboarding and left the chooser stuck.
  *
  * @param {UrlLike | null | undefined} raw

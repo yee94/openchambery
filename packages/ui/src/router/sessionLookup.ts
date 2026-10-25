@@ -56,7 +56,7 @@ const inflightById = new Map<string, Promise<SessionLookupResult | null>>();
 /**
  * Full deep-link resolution:
  * 1. memory lists (sync)
- * 2. GET /api/openchamber/session-index/session/:id
+ * 2. GET /api/yuri/session-index/session/:id
  * 3. optional OpenCode session.get with current directory (last resort)
  *
  * Concurrent callers for the same id share one in-flight promise.

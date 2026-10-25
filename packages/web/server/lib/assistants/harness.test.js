@@ -23,7 +23,7 @@ describe('createContactStreamFn', () => {
     const onBubbleDelta = vi.fn();
     const completion = vi.fn(async ({ onTextDelta }) => {
       onTextDelta('Private reasoning');
-      return { text: '```openchamber-final\n{"status":"complete","text":"已完成。"}\n```' };
+      return { text: '```yuri-final\n{"status":"complete","text":"已完成。"}\n```' };
     });
     const result = await runContactTurn({
       assistant: { providerID: 'p', modelID: 'm', variant: 'high' },
@@ -39,8 +39,8 @@ describe('createContactStreamFn', () => {
     let release;
     const gate = new Promise((resolve) => { release = resolve })
     const onBubbleDelta = vi.fn()
-    const prefix = '```openchamber-message\n{"text":"我先检查配置，再保存这次修改。"}\n```\n'
-    const tool = '```openchamber-tool\n{"name":"read","arguments":{"path":"config.json"}}\n```'
+    const prefix = '```yuri-message\n{"text":"我先检查配置，再保存这次修改。"}\n```\n'
+    const tool = '```yuri-tool\n{"name":"read","arguments":{"path":"config.json"}}\n```'
     const createChatCompletion = vi.fn(async ({ onTextDelta }) => {
       for (const char of prefix) onTextDelta(char)
       await gate
@@ -48,7 +48,7 @@ describe('createContactStreamFn', () => {
       return { text: prefix + tool }
     })
     const stream = createContactStreamFn(createChatCompletion, { onBubbleDelta })(
-      { name: 'p/m', id: 'm', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'p/m', id: 'm', provider: 'yuri', api: 'openai-completions' },
       { messages: [], tools: [{ name: 'read' }] },
     )
     try {
@@ -65,11 +65,11 @@ describe('createContactStreamFn', () => {
     const onBubbleDelta = vi.fn()
     const controller = new AbortController()
     const stream = createContactStreamFn(async ({ onTextDelta }) => {
-      onTextDelta('Private reasoning\n```openchamber-message\n{"text":"not public"}\n```')
+      onTextDelta('Private reasoning\n```yuri-message\n{"text":"not public"}\n```')
       controller.abort()
       return { text: '' }
     }, { onBubbleDelta, signal: controller.signal })(
-      { name: 'p/m', id: 'm', provider: 'openchamber', api: 'openai-completions' }, { messages: [] },
+      { name: 'p/m', id: 'm', provider: 'yuri', api: 'openai-completions' }, { messages: [] },
     )
     await stream.result()
     expect(onBubbleDelta).not.toHaveBeenCalled()
@@ -81,12 +81,12 @@ describe('createContactStreamFn', () => {
       currentAssistant: { id: 'a', name: 'Config' },
     })
     const completion = vi.fn(async ({ body }) => {
-      const result = body.messages.find((m) => m.content.includes('OpenChamber tool result name=update_default_prompt'))
+      const result = body.messages.find((m) => m.content.includes('Yuri tool result name=update_default_prompt'))
       if (result) {
         expect(result.content).toContain('Default prompt saved.')
-        return { text: '```openchamber-final\n{"status":"complete","text":"提示词已保存，接下来的对话会按这个设置回复。"}\n```' }
+        return { text: '```yuri-final\n{"status":"complete","text":"提示词已保存，接下来的对话会按这个设置回复。"}\n```' }
       }
-      return { text: '```openchamber-message\n{"text":"我来保存这个默认提示词。"}\n```\n```openchamber-tool\n{"name":"update_default_prompt","arguments":{"prompt":"简洁回复"}}\n```' }
+      return { text: '```yuri-message\n{"text":"我来保存这个默认提示词。"}\n```\n```yuri-tool\n{"name":"update_default_prompt","arguments":{"prompt":"简洁回复"}}\n```' }
     })
     const onBubbleDelta = vi.fn()
     const result = await runContactTurn({
@@ -102,14 +102,14 @@ describe('createContactStreamFn', () => {
   it('preserves a published message on abort and suppresses later public records and tools', async () => {
     const controller = new AbortController()
     const onBubbleDelta = vi.fn()
-    const prefix = '```openchamber-message\n{"text":"我先确认设置。"}\n```\n'
+    const prefix = '```yuri-message\n{"text":"我先确认设置。"}\n```\n'
     const stream = createContactStreamFn(async ({ onTextDelta }) => {
       onTextDelta(prefix)
       controller.abort()
-      onTextDelta('```openchamber-message\n{"text":"这条迟到消息应丢弃。"}\n```')
-      return { text: prefix + '```openchamber-tool\n{"name":"write","arguments":{"path":"x","content":"y"}}\n```' }
+      onTextDelta('```yuri-message\n{"text":"这条迟到消息应丢弃。"}\n```')
+      return { text: prefix + '```yuri-tool\n{"name":"write","arguments":{"path":"x","content":"y"}}\n```' }
     }, { onBubbleDelta, signal: controller.signal })(
-      { name: 'p/m', id: 'm', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'p/m', id: 'm', provider: 'yuri', api: 'openai-completions' },
       { messages: [], tools: [{ name: 'write' }] },
     )
     expect((await stream.result()).stopReason).toBe('aborted')
@@ -118,12 +118,12 @@ describe('createContactStreamFn', () => {
 
   it('recovers an incomplete streamed message from the final response without duplicate delivery', async () => {
     const onBubbleDelta = vi.fn()
-    const prefix = '```openchamber-message\n{"text":"先确认一下。"}\n```\n'
+    const prefix = '```yuri-message\n{"text":"先确认一下。"}\n```\n'
     const stream = createContactStreamFn(async ({ onTextDelta }) => {
       onTextDelta(prefix.slice(0, 30))
       return { text: prefix + '结果已确认。' }
     }, { onBubbleDelta })(
-      { name: 'p/m', id: 'm', provider: 'openchamber', api: 'openai-completions' }, { messages: [] },
+      { name: 'p/m', id: 'm', provider: 'yuri', api: 'openai-completions' }, { messages: [] },
     )
     expect((await stream.result()).stopReason).toBe('stop')
     expect(onBubbleDelta.mock.calls).toEqual([[0, '先确认一下。', true], [1, '结果已确认。', true]])
@@ -132,10 +132,10 @@ describe('createContactStreamFn', () => {
   it('preserves delivered public messages across a protocol correction without replaying rejected prose', async () => {
     const onBubbleDelta = vi.fn()
     const completion = vi.fn()
-      .mockResolvedValueOnce({ text: '```openchamber-message\n{"text":"我先检查配置。"}\n```\nI need to plan privately.' })
-      .mockResolvedValueOnce({ text: '```openchamber-final\n{"status":"blocked","text":"请提供配置文件位置。"}\n```' })
+      .mockResolvedValueOnce({ text: '```yuri-message\n{"text":"我先检查配置。"}\n```\nI need to plan privately.' })
+      .mockResolvedValueOnce({ text: '```yuri-final\n{"status":"blocked","text":"请提供配置文件位置。"}\n```' })
     const stream = createContactStreamFn(completion, { onBubbleDelta })(
-      { name: 'p/m', id: 'm', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'p/m', id: 'm', provider: 'yuri', api: 'openai-completions' },
       { messages: [], tools: [{ name: 'read' }] },
     )
     const result = await stream.result()
@@ -147,12 +147,12 @@ describe('createContactStreamFn', () => {
 
   it.each(['{"text":42}', '{"text":""}', '{"text":"unterminated'])('rejects malformed public messages without exposing their records: %s', async (json) => {
     const onBubbleDelta = vi.fn()
-    const text = '```openchamber-message\n' + json + '\n```'
+    const text = '```yuri-message\n' + json + '\n```'
     const stream = createContactStreamFn(async ({ onTextDelta }) => {
       onTextDelta(text)
       return { text }
     }, { onBubbleDelta })(
-      { name: 'p/m', id: 'm', provider: 'openchamber', api: 'openai-completions' }, { messages: [] },
+      { name: 'p/m', id: 'm', provider: 'yuri', api: 'openai-completions' }, { messages: [] },
     )
     expect((await stream.result()).stopReason).toBe('error')
     expect(onBubbleDelta).not.toHaveBeenCalled()
@@ -162,7 +162,7 @@ describe('createContactStreamFn', () => {
     const clearContactMemory = vi.fn(async () => ({ reset: true, memoryCleared: true }))
     const onBubbleDelta = vi.fn()
     const createChatCompletion = vi.fn()
-      .mockResolvedValueOnce({ text: '```openchamber-tool\n{"name":"new_conversation","arguments":{}}\n```' })
+      .mockResolvedValueOnce({ text: '```yuri-tool\n{"name":"new_conversation","arguments":{}}\n```' })
       .mockRejectedValueOnce(new Error('model unavailable'))
     await expect(runContactTurn({
       assistant: { providerID: 'p', modelID: 'm', variant: 'high' }, history: [], userText: '清除记忆',
@@ -175,7 +175,7 @@ describe('createContactStreamFn', () => {
   })
 
   it('runs managed contact lookups from the user home with the coordination policy', async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-contact-home-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-contact-home-'))
     const homeSpy = vi.spyOn(os, 'homedir').mockReturnValue(home)
     fs.writeFileSync(path.join(home, 'example-config.txt'), 'configured value')
     const createChatCompletion = vi.fn(async ({ body }) => {
@@ -189,9 +189,9 @@ describe('createContactStreamFn', () => {
       const result = body.messages.find((message) => typeof message.content === 'string' && message.content.includes('tool result name=read'))
       if (result) {
         expect(result.content).toContain('configured value')
-        return { completion: { choices: [{ message: { content: '```openchamber-final\n{"status":"complete","text":"configured value"}\n```' } }] } }
+        return { completion: { choices: [{ message: { content: '```yuri-final\n{"status":"complete","text":"configured value"}\n```' } }] } }
       }
-      return { completion: { choices: [{ message: { content: '```openchamber-tool\n{"name":"read","arguments":{"path":"example-config.txt"}}\n```' } }] } }
+      return { completion: { choices: [{ message: { content: '```yuri-tool\n{"name":"read","arguments":{"path":"example-config.txt"}}\n```' } }] } }
     })
     try {
       const result = await runContactTurn({
@@ -213,7 +213,7 @@ describe('createContactStreamFn', () => {
     const streamFn = createContactStreamFn(createChatCompletion)
     const events = []
     const stream = streamFn(
-      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'yuri', api: 'openai-completions' },
       { messages: [{ role: 'user', content: 'hello', timestamp: 1 }] },
     )
     for await (const event of stream) events.push(event)
@@ -238,7 +238,7 @@ describe('createContactStreamFn', () => {
     const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' }
     const streamFn = createContactStreamFn(createChatCompletion, { pendingFileParts: [image, file] })
     const stream = streamFn(
-      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'yuri', api: 'openai-completions' },
       { messages: [{ role: 'user', content: 'look', timestamp: 1 }] },
     )
     for await (const event of stream) void event
@@ -280,7 +280,7 @@ describe('createContactStreamFn', () => {
       completion: {
         choices: [{
           message: {
-            content: 'On it.\n\n```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login"}}\n```',
+            content: 'On it.\n\n```yuri-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login"}}\n```',
           },
         }],
       },
@@ -288,7 +288,7 @@ describe('createContactStreamFn', () => {
     const streamFn = createContactStreamFn(createChatCompletion)
     const events = []
     const stream = streamFn(
-      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'yuri', api: 'openai-completions' },
       {
         messages: [{ role: 'user', content: 'assign login', timestamp: 1 }],
         tools: [{ name: 'assign_session' }],
@@ -306,14 +306,14 @@ describe('createContactStreamFn', () => {
         completion: {
           choices: [{
             message: {
-              content: `\`\`\`openchamber-tool\n${JSON.stringify({ name, arguments: { sessionID: 'ses_1' } })}\n\`\`\``,
+              content: `\`\`\`yuri-tool\n${JSON.stringify({ name, arguments: { sessionID: 'ses_1' } })}\n\`\`\``,
             },
           }],
         },
       }))
       const events = []
       const stream = createContactStreamFn(createChatCompletion)(
-        { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+        { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'yuri', api: 'openai-completions' },
         {
           messages: [{ role: 'user', content: name, timestamp: 1 }],
           tools: [{ name }],
@@ -396,7 +396,7 @@ describe('createContactStreamFn', () => {
     const streamFn = createContactStreamFn(createChatCompletion)
     const events = []
     const stream = streamFn(
-      { name: 'opencode-go/deepseek-v4-flash', id: 'deepseek-v4-flash', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'opencode-go/deepseek-v4-flash', id: 'deepseek-v4-flash', provider: 'yuri', api: 'openai-completions' },
       {
         messages: [{ role: 'user', content: '新建助理 FlowNL', timestamp: 1 }],
         tools: [{ name: 'create_assistant' }],
@@ -422,7 +422,7 @@ describe('createContactStreamFn', () => {
       globalEventHub: hub,
     })
     const stream = streamFn(
-      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'yuri', api: 'openai-completions' },
       { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] },
     )
     for await (const event of stream) void event
@@ -437,12 +437,12 @@ describe('createContactStreamFn', () => {
     const bubbleDeltas = []
     const createChatCompletion = vi.fn(async ({ onTextDelta }) => {
       onTextDelta?.('On it.\n\n')
-      onTextDelta?.('```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"x"}}\n```')
+      onTextDelta?.('```yuri-tool\n{"name":"assign_session","arguments":{"prompt":"x"}}\n```')
       return {
         completion: {
           choices: [{
             message: {
-              content: 'On it.\n\n```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"x"}}\n```',
+              content: 'On it.\n\n```yuri-tool\n{"name":"assign_session","arguments":{"prompt":"x"}}\n```',
             },
           }],
         },
@@ -452,14 +452,14 @@ describe('createContactStreamFn', () => {
       onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
     })
     const stream = streamFn(
-      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'yuri', api: 'openai-completions' },
       {
         messages: [{ role: 'user', content: 'assign', timestamp: 1 }],
         tools: [{ name: 'assign_session' }],
       },
     )
     for await (const event of stream) void event
-    const leaked = bubbleDeltas.some((item) => item.delta.includes('openchamber-tool') || item.delta.includes('assign_session'))
+    const leaked = bubbleDeltas.some((item) => item.delta.includes('yuri-tool') || item.delta.includes('assign_session'))
     expect(leaked).toBe(false)
     expect(bubbleDeltas).toEqual([{ index: 0, delta: 'On it.', done: true }])
   })
@@ -473,7 +473,7 @@ describe('createContactStreamFn', () => {
       onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
     })
     const stream = streamFn(
-      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'yuri', api: 'openai-completions' },
       { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] },
     )
     for await (const event of stream) void event
@@ -510,7 +510,7 @@ describe('createContactStreamFn', () => {
     ]
     expect(projectStreamedContactTurnBubbles(priorTurn, 0)).toEqual(['Preamble A'])
     const stream = streamFn(
-      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'yuri', api: 'openai-completions' },
       { messages: priorTurn },
     )
     for await (const event of stream) void event
@@ -523,12 +523,12 @@ describe('createContactStreamFn', () => {
 
 describe('runContactTurn', () => {
   it('does not execute a late tool response or retry after user cancellation', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-abort-tool-'))
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-abort-tool-'))
     const controller = new AbortController()
     const createChatCompletion = vi.fn(async ({ signal }) => {
       expect(signal).toBe(controller.signal)
       controller.abort()
-      return { text: '```openchamber-tool\n{"name":"write","arguments":{"path":"late.txt","content":"must not happen"}}\n```' }
+      return { text: '```yuri-tool\n{"name":"write","arguments":{"path":"late.txt","content":"must not happen"}}\n```' }
     })
     try {
       await expect(runContactTurn({
@@ -541,13 +541,13 @@ describe('runContactTurn', () => {
   })
 
   it('writes protocol examples as data and does not re-execute a tool while correcting its final answer', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-protocol-data-'))
-    const example = '```openchamber-final\n{"status":"complete","text":"example"}\n```'
-    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```'
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-protocol-data-'))
+    const example = '```yuri-final\n{"status":"complete","text":"example"}\n```'
+    const fence = (name, args) => '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```'
     const replies = [
       [fence('write', { path: 'example.md', content: example }), fence('bash', { command: 'printf x >> count.txt' })].join('\n\n'),
       '现在我会完成。',
-      '```openchamber-final\n' + JSON.stringify({ status: 'complete', text: example }) + '\n```',
+      '```yuri-final\n' + JSON.stringify({ status: 'complete', text: example }) + '\n```',
     ]
     const createChatCompletion = vi.fn(async () => ({ text: replies.shift() || '' }))
     try {
@@ -569,16 +569,16 @@ describe('runContactTurn', () => {
   })
 
   it('continues a skill task after progress text and executes every coding call in order', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-skill-loop-'))
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-skill-loop-'))
     const skillPath = '.agents/skills/note/SKILL.md'
     fs.mkdirSync(path.dirname(path.join(workspace, skillPath)), { recursive: true })
     fs.writeFileSync(path.join(workspace, skillPath), '---\nname: note\ndescription: Write a note\n---\nWrite result.txt then read it to verify.\n')
-    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```'
+    const fence = (name, args) => '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```'
     const replies = [
       fence('read', { path: skillPath }),
       '我先按流程写入，然后验证。',
       [fence('write', { path: 'result.txt', content: 'verified note' }), fence('read', { path: 'result.txt' })].join('\n\n'),
-      '```openchamber-final\n{"status":"complete","text":"已写入并验证。"}\n```',
+      '```yuri-final\n{"status":"complete","text":"已写入并验证。"}\n```',
     ]
     const onBubbleDelta = vi.fn()
     const createChatCompletion = vi.fn(async () => ({ completion: { choices: [{ message: { content: replies.shift() || '' } }] } }))
@@ -606,7 +606,7 @@ describe('runContactTurn', () => {
   })
 
   it('fails boundedly instead of completing a workspace task on repeated progress text', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-skill-stall-'))
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-skill-stall-'))
     const createChatCompletion = vi.fn(async () => ({ text: '我先确认文件在哪里。' }))
     const onBubbleDelta = vi.fn()
     try {
@@ -622,8 +622,8 @@ describe('runContactTurn', () => {
   })
 
   it('allows an explicit blocked answer without inventing another tool operation', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-skill-blocked-'))
-    const createChatCompletion = vi.fn(async () => ({ text: '```openchamber-final\n{"status":"blocked","text":"缺少要记录的内容，请提供正文。"}\n```' }))
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-skill-blocked-'))
+    const createChatCompletion = vi.fn(async () => ({ text: '```yuri-final\n{"status":"blocked","text":"缺少要记录的内容，请提供正文。"}\n```' }))
     try {
       const result = await runContactTurn({
         assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
@@ -637,10 +637,10 @@ describe('runContactTurn', () => {
   })
 
   it('rejects a batch containing a terminal contact operation before running any tool', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-contact-batch-'))
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-contact-batch-'))
     const assignWork = vi.fn(async () => ({ sessionID: 'ses_once', directory: workspace, title: 'Work', status: 'busy' }))
-    const assign = '```openchamber-tool\n' + JSON.stringify({ name: 'assign_session', arguments: { projectPath: workspace, prompt: 'Work' } }) + '\n```'
-    const replies = [assign + '\n```openchamber-tool\n{"name":"write","arguments":{"path":"unexpected.txt","content":"bad"}}\n```', assign, '任务已经交给工作会话。']
+    const assign = '```yuri-tool\n' + JSON.stringify({ name: 'assign_session', arguments: { projectPath: workspace, prompt: 'Work' } }) + '\n```'
+    const replies = [assign + '\n```yuri-tool\n{"name":"write","arguments":{"path":"unexpected.txt","content":"bad"}}\n```', assign, '任务已经交给工作会话。']
     const createChatCompletion = vi.fn(async () => ({ text: replies.shift() || '' }))
     try {
       const result = await runContactTurn({
@@ -657,7 +657,7 @@ describe('runContactTurn', () => {
   })
 
   it('keeps all twelve tools and assigns a session after reading a skill', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-contact-mixed-'))
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-contact-mixed-'))
     const home = path.join(workspace, 'home')
     const skillDir = path.join(workspace, '.agents', 'skills', 'docs')
     fs.mkdirSync(skillDir, { recursive: true })
@@ -665,9 +665,9 @@ describe('runContactTurn', () => {
     const assignWork = vi.fn(async () => ({ sessionID: 'ses_mixed', directory: workspace, title: 'Fix', status: 'busy' }))
     const tools = createContactTools({ assignWork })
     const replies = [
-      '```openchamber-tool\n{"name":"read","arguments":{"path":".agents/skills/docs/SKILL.md"}}\n```',
+      '```yuri-tool\n{"name":"read","arguments":{"path":".agents/skills/docs/SKILL.md"}}\n```',
       'Only documentation search is available.',
-      `\`\`\`openchamber-tool\n${JSON.stringify({ name: 'assign_session', arguments: { prompt: 'Fix the issue', projectPath: workspace } })}\n\`\`\``,
+      `\`\`\`yuri-tool\n${JSON.stringify({ name: 'assign_session', arguments: { prompt: 'Fix the issue', projectPath: workspace } })}\n\`\`\``,
       'Session opened.',
     ]
     let call = 0
@@ -725,7 +725,7 @@ describe('runContactTurn', () => {
         completion: {
           choices: [{
             message: {
-              content: '```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login","projectPath":"/repo"}}\n```',
+              content: '```yuri-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login","projectPath":"/repo"}}\n```',
             },
           }],
         },
@@ -772,7 +772,7 @@ describe('runContactTurn', () => {
           completion: {
             choices: [{
               message: {
-                content: '```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix","projectPath":"/repo"}}\n```',
+                content: '```yuri-tool\n{"name":"assign_session","arguments":{"prompt":"Fix","projectPath":"/repo"}}\n```',
               },
             }],
           },
@@ -783,7 +783,7 @@ describe('runContactTurn', () => {
           completion: {
             choices: [{
               message: {
-                content: '```openchamber-tool\n{"name":"list_projects","arguments":{"query":"repo"}}\n```',
+                content: '```yuri-tool\n{"name":"list_projects","arguments":{"query":"repo"}}\n```',
               },
             }],
           },
@@ -794,7 +794,7 @@ describe('runContactTurn', () => {
         completion: {
           choices: [{
             message: {
-              content: '```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix again","projectPath":"/repo"}}\n```',
+              content: '```yuri-tool\n{"name":"assign_session","arguments":{"prompt":"Fix again","projectPath":"/repo"}}\n```',
             },
           }],
         },
@@ -866,8 +866,8 @@ describe('runContactTurn', () => {
   })
 
   it('applies workspace, defaultPrompt, pi tools, and merged .agents/.claude skills', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-ws-'))
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-home-'))
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-assistant-ws-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-assistant-home-'))
     const skill = path.join(workspace, '.agents', 'skills', 'project-skill')
     const claude = path.join(workspace, '.claude', 'skills', 'claude-skill')
     const globalAgents = path.join(home, '.agents', 'skills', 'global-skill')
@@ -952,8 +952,8 @@ describe('runContactTurn', () => {
   })
 
   it('executes bash pwd in the assistant workspace', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-pwd-'))
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-pwd-home-'))
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-assistant-pwd-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-assistant-pwd-home-'))
     let calls = 0
     const createChatCompletion = vi.fn(async ({ body }) => {
       calls += 1
@@ -961,14 +961,14 @@ describe('runContactTurn', () => {
         return {
           completion: {
             choices: [{
-              message: { content: '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```' },
+              message: { content: '```yuri-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```' },
             }],
           },
         }
       }
       const last = body.messages.at(-1)
       const content = typeof last?.content === 'string' ? last.content : ''
-      return { completion: { choices: [{ message: { content: '```openchamber-final\n' + JSON.stringify({ status: 'complete', text: content || 'done' }) + '\n```' } }] } }
+      return { completion: { choices: [{ message: { content: '```yuri-final\n' + JSON.stringify({ status: 'complete', text: content || 'done' }) + '\n```' } }] } }
     })
     try {
       const result = await runContactTurn({
@@ -992,7 +992,7 @@ describe('runContactTurn', () => {
     }
   })
 
-  it('attaches OpenChamber tools only and collects session cards from tool results', async () => {
+  it('attaches Yuri tools only and collects session cards from tool results', async () => {
     const assignTool = {
       name: 'assign_session',
       label: 'Assign session',
@@ -1045,7 +1045,7 @@ describe('runContactTurn', () => {
       userText: 'assign login',
       createChatCompletion: vi.fn(async () => ({ text: '任务已安排。' })),
       tools: [assignTool, { name: 'bash', execute: vi.fn() }],
-      projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' }],
+      projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'Yuri Yee' }],
       AgentImpl,
     })
     // Keep assistant spoken/confirm text; do not paint English assign toolText.
@@ -1063,7 +1063,7 @@ describe('runContactTurn', () => {
           {
             role: 'assistant',
             content: [
-              { type: 'text', text: 'Let me think — I should match openchamber yee and call assign_session.' },
+              { type: 'text', text: 'Let me think — I should match yuri yee and call assign_session.' },
               { type: 'toolCall', id: 'call_1', name: 'assign_session', arguments: { prompt: 'x', projectPath: '/repo' } },
             ],
           },
@@ -1213,7 +1213,7 @@ describe('runContactTurn', () => {
   it('injects the registered projects catalog into the system prompt every turn', async () => {
     function AgentImpl(options) {
       expect(options.initialState.systemPrompt).toContain('Registered projects')
-      expect(options.initialState.systemPrompt).toContain('OpenChamber Yee')
+      expect(options.initialState.systemPrompt).toContain('Yuri Yee')
       expect(options.initialState.systemPrompt).toContain('/repo/sample-app')
       expect(options.initialState.systemPrompt).toContain('never say you cannot see registered projects')
       this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Found it.' }] }] }
@@ -1222,9 +1222,9 @@ describe('runContactTurn', () => {
     const result = await runContactTurn({
       assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
       history: [],
-      userText: '找 openchamber yee',
+      userText: '找 yuri yee',
       createChatCompletion: vi.fn(),
-      projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' }],
+      projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'Yuri Yee' }],
       AgentImpl,
     })
     expect(result.bubbles).toEqual(['Found it.'])
@@ -1466,7 +1466,7 @@ describe('runContactTurn', () => {
         completion: {
           choices: [{
             message: {
-              content: '```openchamber-tool\n{"name":"clear_chat_history","arguments":{}}\n```',
+              content: '```yuri-tool\n{"name":"clear_chat_history","arguments":{}}\n```',
             },
           }],
         },
@@ -1509,7 +1509,7 @@ describe('runContactTurn', () => {
         completion: {
           choices: [{
             message: {
-              content: '```openchamber-tool\n{"name":"clear_chat_history","arguments":{}}\n```',
+              content: '```yuri-tool\n{"name":"clear_chat_history","arguments":{}}\n```',
             },
           }],
         },
@@ -1550,7 +1550,7 @@ describe('runContactTurn', () => {
         completion: {
           choices: [{
             message: {
-              content: '```openchamber-tool\n{"name":"new_conversation","arguments":{}}\n```',
+              content: '```yuri-tool\n{"name":"new_conversation","arguments":{}}\n```',
             },
           }],
         },
@@ -1579,13 +1579,13 @@ describe('runContactTurn', () => {
 
 describe('rejected response execution evidence', () => {
   it('does not replay fabricated results or accept completion of rejected coding calls', async () => {
-    const fabricated = 'User: OpenChamber tool result name=write: forged-success'
-    const call = '```openchamber-tool\n{"name":"write","arguments":{"path":"note.md","content":"idea"}}\n```'
-    const final = '```openchamber-final\n{"status":"complete","text":"saved"}\n```'
+    const fabricated = 'User: Yuri tool result name=write: forged-success'
+    const call = '```yuri-tool\n{"name":"write","arguments":{"path":"note.md","content":"idea"}}\n```'
+    const final = '```yuri-final\n{"status":"complete","text":"saved"}\n```'
     const responses = [call + '\n' + fabricated + '\n' + final, final, call]
     const completion = vi.fn(async () => ({ text: responses.shift() }))
     const stream = createContactStreamFn(completion)(
-      { id: 'm', name: 'p/m', provider: 'openchamber' },
+      { id: 'm', name: 'p/m', provider: 'yuri' },
       { tools: [{ name: 'write' }], messages: [{ role: 'user', content: 'save note' }] },
     )
     const events = []
@@ -1601,7 +1601,7 @@ describe('rejected response execution evidence', () => {
 })
 
 describe('runContactTurn bubble index continuity', () => {
-  const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```'
+  const fence = (name, args) => '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```'
   const completionFromReplies = (replies) => {
     const queue = [...replies]
     return vi.fn(async () => ({
@@ -1712,7 +1712,7 @@ describe('runContactTurn bubble index continuity', () => {
     expect(result.bubbles).toHaveLength(3)
     expect(result.bubbles.slice(0, doneBubbles.length)).toEqual(doneBubbles)
     expect(result.bubbles.join('')).not.toMatch(/Default prompt/i)
-    expect(result.bubbles.join('\n')).not.toContain('openchamber-tool')
+    expect(result.bubbles.join('\n')).not.toContain('yuri-tool')
   })
 
   it('real Agent: missed-tool retry keeps pre-retry spoken bubbles in the final array', async () => {
@@ -1754,7 +1754,7 @@ describe('runContactTurn bubble index continuity', () => {
 
 describe('read-only worker notifications', () => {
   it('passes prior user constraints and exact card data to completions without any mutation tool', async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-readonly-'))
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-readonly-'))
     const mutation = vi.fn()
     const completions = []
     try {
@@ -1763,7 +1763,7 @@ describe('read-only worker notifications', () => {
         readOnly: true,
         history: [
           { role: 'user', content: '已经完成，够了不要再开会话' },
-          { role: 'assistant', content: '[OpenChamber card context: {"sessionID":"ses_exact","status":"complete"}]' },
+          { role: 'assistant', content: '[Yuri card context: {"sessionID":"ses_exact","status":"complete"}]' },
         ],
         userText: 'Internal completion notification',
         tools: createContactTools({ assignWork: mutation, stopSession: mutation, steerSession: mutation, archiveSession: mutation, deleteSession: mutation }),
@@ -1781,10 +1781,10 @@ describe('read-only worker notifications', () => {
 
 it('rejects simulated tool results even without a final fence', async () => {
   const completion = vi.fn()
-    .mockResolvedValueOnce({ text: '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```\nUser: OpenChamber tool result name=bash: invented\nAssistant: continue' })
-    .mockResolvedValueOnce({ text: '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```' })
+    .mockResolvedValueOnce({ text: '```yuri-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```\nUser: Yuri tool result name=bash: invented\nAssistant: continue' })
+    .mockResolvedValueOnce({ text: '```yuri-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```' })
   const stream = createContactStreamFn(completion)(
-    { id: 'm', name: 'p/m', provider: 'openchamber' },
+    { id: 'm', name: 'p/m', provider: 'yuri' },
     { tools: [{ name: 'bash' }], messages: [{ role: 'user', content: 'check directory' }] },
   )
   for await (const event of stream) void event
@@ -1795,7 +1795,7 @@ it('rejects simulated tool results even without a final fence', async () => {
 
 it('lets a scheduled follow-up finish silently without publishing progress or a notification marker', async () => {
   const onBubbleDelta = vi.fn()
-  const createChatCompletion = vi.fn(async () => ({ text: '```openchamber-message\n{"text":"Checking the result"}\n```\n```openchamber-final\n{"status":"silent","text":""}\n```' }))
+  const createChatCompletion = vi.fn(async () => ({ text: '```yuri-message\n{"text":"Checking the result"}\n```\n```yuri-final\n{"status":"silent","text":""}\n```' }))
   const result = await runContactTurn({
     assistant: { providerID: 'p', modelID: 'm' },
     readOnly: true, allowSilent: true, history: [], userText: 'Scheduled maintenance succeeded; no report requested.',
@@ -1806,7 +1806,7 @@ it('lets a scheduled follow-up finish silently without publishing progress or a 
   expect(createChatCompletion).toHaveBeenCalledOnce()
 })
 
-it.each(['', '```openchamber-final\n{"status":"silent","text":""}\n```'])('does not turn an empty or unauthorized response into successful silence', async (text) => {
+it.each(['', '```yuri-final\n{"status":"silent","text":""}\n```'])('does not turn an empty or unauthorized response into successful silence', async (text) => {
   await expect(runContactTurn({
     assistant: { providerID: 'p', modelID: 'm' }, readOnly: true,
     allowSilent: text === '', history: [], userText: 'Review the result',
@@ -1816,7 +1816,7 @@ it.each(['', '```openchamber-final\n{"status":"silent","text":""}\n```'])('does 
 
 it('rejects a background model attempt to restart a session before executing its tool', async () => {
   const assignWork = vi.fn()
-  const createChatCompletion = vi.fn(async () => ({ text: '```openchamber-tool\n{"name":"assign_session","arguments":{"sessionID":"ses_completed","prompt":"restart"}}\n```' }))
+  const createChatCompletion = vi.fn(async () => ({ text: '```yuri-tool\n{"name":"assign_session","arguments":{"sessionID":"ses_completed","prompt":"restart"}}\n```' }))
   await expect(runContactTurn({
     assistant: { providerID: 'p', modelID: 'm' },
     readOnly: true, history: [], userText: 'Worker finished',
@@ -1834,7 +1834,7 @@ it('allows read_session during read-only turns and delivers actual referenced me
     history: [], userText: 'Summarize @session:ses_ref', tools: createContactTools({ readSession }),
     createChatCompletion: async (input) => {
       calls += 1
-      if (calls === 1) return { text: '```openchamber-tool\n{"name":"read_session","arguments":{"sessionID":"ses_ref","limit":5}}\n```' }
+      if (calls === 1) return { text: '```yuri-tool\n{"name":"read_session","arguments":{"sessionID":"ses_ref","limit":5}}\n```' }
       expect(JSON.stringify(input)).toContain('quoted context')
       return { text: '已读取引用内容。' }
     },

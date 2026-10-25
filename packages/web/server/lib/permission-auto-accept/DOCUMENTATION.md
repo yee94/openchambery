@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This module owns the authoritative permission auto-accept policy for web, desktop, and mobile runtimes. Policy is persisted in OpenChamber settings so permission handling survives UI disconnects and server restarts.
+This module owns the authoritative permission auto-accept policy for web, desktop, and mobile runtimes. Policy is persisted in Yuri settings so permission handling survives UI disconnects and server restarts.
 
 ## Policy
 
@@ -21,7 +21,7 @@ A failed settings load fails closed and does not approve. A failed pending-permi
 - `GET /api/permission-auto-accept`
 - `PUT /api/permission-auto-accept/sessions/:sessionId`
 
-These are normal authenticated OpenChamber runtime routes. They must not be added to browser URL-token allowlists.
+These are normal authenticated Yuri runtime routes. They must not be added to browser URL-token allowlists.
 
 ## UI ownership
 
@@ -36,6 +36,6 @@ VS Code retains its foreground-only implementation because it does not run the w
 `runtime.test.js` covers restart persistence, nearest explicit subagent inheritance, missing-lineage lookup, retry/deduplication, and reconnect reconciliation. `packages/ui/src/components/chat/permissionAutoAccept.test.ts` covers permission configuration normalization and visibility decisions.
 
 ```sh
-bunx vitest run --project @openchamber/web packages/web/server/lib/permission-auto-accept/runtime.test.js
-bunx vitest run --project @openchamber/ui packages/ui/src/components/chat/permissionAutoAccept.test.ts
+bunx vitest run --project @yuri/web packages/web/server/lib/permission-auto-accept/runtime.test.js
+bunx vitest run --project @yuri/ui packages/ui/src/components/chat/permissionAutoAccept.test.ts
 ```

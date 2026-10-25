@@ -48,7 +48,7 @@ describe('sessionTurnChangesQueries', () => {
     ]);
   });
 
-  test('uses OpenChamber changes route on success and passes signal', async () => {
+  test('uses Yuri changes route on success and passes signal', async () => {
     const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
     const signal = new AbortController().signal;
     runtimeFetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
@@ -64,7 +64,7 @@ describe('sessionTurnChangesQueries', () => {
 
     expect(result).toEqual({ diff: { file: 'a.ts', patch: '@@ host @@' } });
     expect(runtimeFetchMock).toHaveBeenCalledWith(
-      '/api/openchamber/sessions/ses_1/changes',
+      '/api/yuri/sessions/ses_1/changes',
       expect.objectContaining({
         method: 'GET',
         signal,

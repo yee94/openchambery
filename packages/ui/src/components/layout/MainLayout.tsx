@@ -524,7 +524,7 @@ export const MainLayout: React.FC = () => {
                     {isSettingsDialogOpen && (
                         <div
                             className="absolute inset-0 z-10 bg-background"
-                            style={{ paddingTop: 'var(--oc-safe-area-top, 0px)' }}
+                            style={{ paddingTop: 'var(--yuri-safe-area-top, 0px)' }}
                         >
                             <ErrorBoundary>
                                 <React.Suspense fallback={null}>
@@ -569,7 +569,7 @@ export const MainLayout: React.FC = () => {
                                 <>
                                     <Header />
                                     <div className="relative flex flex-1 min-h-0 overflow-hidden bg-background" data-page-scroll-lock="true">
-                                <div className="relative flex flex-1 min-w-0 flex-col overflow-hidden oc-layout-divider-t bg-background" data-page-scroll-lock="true">
+                                <div className="relative flex flex-1 min-w-0 flex-col overflow-hidden yuri-layout-divider-t bg-background" data-page-scroll-lock="true">
                                     <div className="flex flex-1 min-h-0 overflow-hidden" data-page-scroll-lock="true">
                                         <div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden" data-page-scroll-lock="true" data-chat-area>
                                             <main className="flex-1 overflow-hidden bg-background relative" data-page-scroll-lock="true">
@@ -599,7 +599,7 @@ export const MainLayout: React.FC = () => {
                                 </div>
                                 <RightSidebar
                                     isOpen={isRightSidebarOpen}
-                                    className="bg-background oc-layout-divider-t"
+                                    className="bg-background yuri-layout-divider-t"
                                 >
                                     <ErrorBoundary><RightSidebarTabs /></ErrorBoundary>
                                 </RightSidebar>

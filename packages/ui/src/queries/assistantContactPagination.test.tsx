@@ -43,9 +43,9 @@ vi.mock('@/lib/runtime-switch', () => ({
   subscribeRuntimeEndpointChanged: () => () => undefined,
 }))
 vi.mock('@/lib/session-startup-barrier', () => ({ waitForSessionStartupBarrier: async () => undefined }))
-vi.mock('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: () => () => undefined,
-  getLatestOpenchamberEventRevision: () => undefined,
+vi.mock('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: () => () => undefined,
+  getLatestYuriEventRevision: () => undefined,
 }))
 vi.mock('@/lib/queryRuntime', () => ({
   get queryClient() { return hoisted.getQueryClient() },

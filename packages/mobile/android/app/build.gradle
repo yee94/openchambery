@@ -1,23 +1,20 @@
 apply plugin: 'com.android.application'
 
-def ciVersionCode = System.getenv('OPENCHAMBER_ANDROID_VERSION_CODE')
-def ciVersionName = System.getenv('OPENCHAMBER_ANDROID_VERSION_NAME')
-def ciKeystorePath = System.getenv('OPENCHAMBER_ANDROID_KEYSTORE_PATH')
-def ciKeystorePassword = System.getenv('OPENCHAMBER_ANDROID_KEYSTORE_PASSWORD')
-def ciKeyAlias = System.getenv('OPENCHAMBER_ANDROID_KEY_ALIAS')
-def ciKeyPassword = System.getenv('OPENCHAMBER_ANDROID_KEY_PASSWORD')
+def ciVersionCode = System.getenv('YURI_ANDROID_VERSION_CODE')
+def ciVersionName = System.getenv('YURI_ANDROID_VERSION_NAME')
+def ciKeystorePath = System.getenv('YURI_ANDROID_KEYSTORE_PATH')
+def ciKeystorePassword = System.getenv('YURI_ANDROID_KEYSTORE_PASSWORD')
+def ciKeyAlias = System.getenv('YURI_ANDROID_KEY_ALIAS')
+def ciKeyPassword = System.getenv('YURI_ANDROID_KEY_PASSWORD')
 def hasCiSigning = ciKeystorePath && ciKeystorePassword && ciKeyAlias && ciKeyPassword
 
 android {
-    // Java/R class namespace stays upstream-compatible; Play/install identity is
-    // applicationId below (aligned with iOS PRODUCT_BUNDLE_IDENTIFIER).
-    namespace "com.openchamber.app"
+    // Java/R namespace is independent from the install identity below.
+    namespace "com.yuri.app"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        // Fork identity: must not share applicationId with upstream
-        // openchamber/openchamber (also com.openchamber.app) — different signing
-        // keys make sidegrade installs fail with "package incompatible".
-        applicationId "com.yee94.openchamber"
+        // New application identity: existing installs retain their own sandbox.
+        applicationId "com.yee94.yuri"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode ciVersionCode ? ciVersionCode.toInteger() : 1
@@ -44,8 +41,8 @@ android {
         debug {
             applicationIdSuffix ".debug"
             versionNameSuffix "-debug"
-            resValue "string", "app_name", "OpenChamber Debug"
-            resValue "string", "title_activity_main", "OpenChamber Debug"
+            resValue "string", "app_name", "Yuri Debug"
+            resValue "string", "title_activity_main", "Yuri Debug"
         }
         release {
             if (hasCiSigning) {

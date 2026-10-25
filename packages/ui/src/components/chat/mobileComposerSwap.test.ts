@@ -153,7 +153,7 @@ describe('mobileComposerSwap', () => {
         expect(tracking.phase).toBe('tracking');
         expect(tracking.progress).toBe(0.5);
         publishComposerSwap(scope, tracking, first);
-        expect(scope.dataset.ocComposerSwapPhase).toBe('tracking');
+        expect(scope.dataset.yuriComposerSwapPhase).toBe('tracking');
 
         const order: string[] = [];
         const dataset: Record<string, string> = {};
@@ -179,7 +179,7 @@ describe('mobileComposerSwap', () => {
         const published = publishComposerSwap(orderedScope, tracking);
         order.length = 0;
         publishComposerSwap(orderedScope, applyComposerSwapCommit(tracking), published);
-        expect(order[0]).toBe('ocComposerSwapPhase:snapping');
+        expect(order[0]).toBe('yuriComposerSwapPhase:snapping');
         expect(order.indexOf('flush')).toBeLessThan(order.indexOf('progress:1'));
     });
 
@@ -190,12 +190,12 @@ describe('mobileComposerSwap', () => {
         );
         publishComposerSwap(scope, compact);
         expect(scope.style.getPropertyValue(COMPOSER_SWAP_CSS_VAR)).toBe('1');
-        expect(scope.dataset.ocComposerSwapRest).toBe('compact');
+        expect(scope.dataset.yuriComposerSwapRest).toBe('compact');
 
         clearComposerSwap(scope);
         expect(scope.style.getPropertyValue(COMPOSER_SWAP_CSS_VAR)).toBe('');
-        expect(scope.dataset.ocComposerSwapPhase).toBeUndefined();
-        expect(scope.dataset.ocComposerSwapRest).toBeUndefined();
+        expect(scope.dataset.yuriComposerSwapPhase).toBeUndefined();
+        expect(scope.dataset.yuriComposerSwapRest).toBeUndefined();
     });
 
     test('force expand works from compact', () => {
@@ -358,7 +358,7 @@ describe('mobileComposerSwap', () => {
         const far = publishNativeComposerDock(scope, 260);
         expect(far).toMatchObject({ progress: '1', rest: 'away' });
         expect(scope.style.getPropertyValue(NATIVE_COMPOSER_DOCK_CSS_VAR)).toBe('1');
-        expect(scope.dataset.ocNativeComposerDock).toBe('away');
+        expect(scope.dataset.yuriNativeComposerDock).toBe('away');
 
         // Approaching the edge stays hidden — a short downward scroll must not
         // fade the strip in before the viewport is actually at the bottom.
@@ -376,7 +376,7 @@ describe('mobileComposerSwap', () => {
 
         clearComposerSwap(scope);
         expect(scope.style.getPropertyValue(NATIVE_COMPOSER_DOCK_CSS_VAR)).toBe('');
-        expect(scope.dataset.ocNativeComposerDock).toBeUndefined();
+        expect(scope.dataset.yuriNativeComposerDock).toBeUndefined();
     });
 
     test('distanceFromBottomOf never goes negative', () => {

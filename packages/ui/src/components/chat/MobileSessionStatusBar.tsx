@@ -1095,7 +1095,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       sessionIds: [sessionId],
       message: t('sessions.sidebar.session.archive.success'),
       undoLabel: t('sessions.sidebar.undo'),
-      settingsLabel: t('settings.openchamber.archivedSessions.actions.view'),
+      settingsLabel: t('settings.yuri.archivedSessions.actions.view'),
       undoFailedMessage: t('sessions.sidebar.session.archive.undoFailed'),
     });
   }, [archiveSession, t]);

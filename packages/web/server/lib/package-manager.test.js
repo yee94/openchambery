@@ -42,6 +42,7 @@ describe('checkForUpdates', () => {
   let originalFetch;
 
   beforeEach(() => {
+    vi.stubEnv('YURI_UPDATE_API_URL', 'https://updates.example.net/v1/update/check');
     fetchMock = createFetchMock();
     originalFetch = globalThis.fetch;
     globalThis.fetch = fetchMock;
@@ -56,7 +57,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=true when both API and npm confirm a newer version', async () => {
     fetchMock
-      .when('openchamber-update.vercel.app', {
+      .when('updates.example.net', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -86,7 +87,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when API claims update but npm has same version', async () => {
     fetchMock
-      .when('openchamber-update.vercel.app', {
+      .when('updates.example.net', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -108,7 +109,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when npm only has a prerelease of the current version', async () => {
     fetchMock
-      .when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')))
+      .when('updates.example.net', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', {
         ok: true,
         json: async () => ({
@@ -123,7 +124,7 @@ describe('checkForUpdates', () => {
 
   it('accepts electron desktop update claims without npm cross-checking', async () => {
     fetchMock
-      .when('openchamber-update.vercel.app', {
+      .when('updates.example.net', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -144,7 +145,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when API claims update but npm is behind', async () => {
     fetchMock
-      .when('openchamber-update.vercel.app', {
+      .when('updates.example.net', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -167,7 +168,7 @@ describe('checkForUpdates', () => {
   // --- Scenario: API says no update, npm agrees ---
 
   it('returns available=false when API says no update and versions match', async () => {
-    fetchMock.when('openchamber-update.vercel.app', {
+    fetchMock.when('updates.example.net', {
       ok: true,
       json: async () => ({
         latestVersion: '1.9.10',
@@ -184,7 +185,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=true from npm fallback when API is unreachable and npm has newer version', async () => {
     fetchMock
-      .when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')))
+      .when('updates.example.net', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', {
         ok: true,
         json: async () => ({
@@ -204,7 +205,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false from npm fallback when API is unreachable and versions match', async () => {
     fetchMock
-      .when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')))
+      .when('updates.example.net', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', {
         ok: true,
         json: async () => ({
@@ -221,7 +222,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when API returns non-ok status and versions match on npm', async () => {
     fetchMock
-      .when('openchamber-update.vercel.app', {
+      .when('updates.example.net', {
         ok: false,
         status: 500,
         json: async () => ({}),
@@ -242,7 +243,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when both sources are unreachable', async () => {
     fetchMock
-      .when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')))
+      .when('updates.example.net', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', Promise.reject(new Error('Registry unreachable')));
 
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
@@ -253,14 +254,14 @@ describe('checkForUpdates', () => {
   // --- Mobile (Capacitor / Android) via the shared update API ---
 
   it('mobile: returns available=true with the API-provided APK asset', async () => {
-    fetchMock.when('openchamber-update.vercel.app', {
+    fetchMock.when('updates.example.net', {
       ok: true,
       json: async () => ({
         latestVersion: '1.11.0',
         updateAvailable: true,
         releaseNotes: '## [1.11.0] - 2026-06-01\n\n- Fixes for Android',
-        releaseNotesUrl: 'https://github.com/yee94/openchamber/releases/tag/v1.11.0',
-        downloadUrl: 'https://github.com/yee94/openchamber/releases/download/v1.11.0/app-release.apk',
+        releaseNotesUrl: 'https://github.com/yee94/yuri/releases/tag/v1.11.0',
+        downloadUrl: 'https://github.com/yee94/yuri/releases/download/v1.11.0/app-release.apk',
       }),
     });
 
@@ -272,13 +273,13 @@ describe('checkForUpdates', () => {
 
     expect(result.available).toBe(true);
     expect(result.version).toBe('1.11.0');
-    expect(result.downloadUrl).toBe('https://github.com/yee94/openchamber/releases/download/v1.11.0/app-release.apk');
-    expect(result.releaseUrl).toBe('https://github.com/yee94/openchamber/releases/tag/v1.11.0');
+    expect(result.downloadUrl).toBe('https://github.com/yee94/yuri/releases/download/v1.11.0/app-release.apk');
+    expect(result.releaseUrl).toBe('https://github.com/yee94/yuri/releases/tag/v1.11.0');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('mobile: returns available=false when the update API reports the same version', async () => {
-    fetchMock.when('openchamber-update.vercel.app', {
+    fetchMock.when('updates.example.net', {
       ok: true,
       json: async () => ({
         latestVersion: '1.10.5',
@@ -296,7 +297,7 @@ describe('checkForUpdates', () => {
   });
 
   it('mobile: returns available=false with error when the update API is unreachable', async () => {
-    fetchMock.when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')));
+    fetchMock.when('updates.example.net', Promise.reject(new Error('Network error')));
 
     const result = await checkForUpdates({
       appType: 'mobile-capacitor',
@@ -308,14 +309,14 @@ describe('checkForUpdates', () => {
     expect(result.error).toBe('Unable to check for mobile updates');
   });
 
-  it('mobile: uses the configured update service before Vercel and GitHub', async () => {
-    vi.stubEnv('OPENCHAMBER_UPDATE_API_URL', 'https://updates.example.com/v1/update/check');
+  it('mobile: uses the configured update service before GitHub', async () => {
+    vi.stubEnv('YURI_UPDATE_API_URL', 'https://updates.example.com/v1/update/check');
     fetchMock.when('updates.example.com', {
       ok: true,
       json: async () => ({
         latestVersion: '1.16.104',
         updateAvailable: true,
-        downloadUrl: 'https://github.com/yee94/openchamber/releases/download/v1.16.104/app-release.apk',
+        downloadUrl: 'https://github.com/yee94/yuri/releases/download/v1.16.104/app-release.apk',
       }),
     });
 
@@ -331,14 +332,13 @@ describe('checkForUpdates', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('updates.example.com');
   });
 
-  it('mobile: falls through the configured service and Vercel to GitHub releases', async () => {
-    vi.stubEnv('OPENCHAMBER_UPDATE_API_URL', 'https://updates.example.com/v1/update/check');
+  it('mobile: falls through the configured service to GitHub releases', async () => {
+    vi.stubEnv('YURI_UPDATE_API_URL', 'https://updates.example.com/v1/update/check');
     fetchMock
       .when('updates.example.com', Promise.reject(new Error('EdgeOne unreachable')))
-      .when('openchamber-update.vercel.app', Promise.reject(new Error('Vercel unreachable')))
-      .when('github.com/yee94/openchamber/releases/latest', {
+      .when('github.com/yee94/yuri/releases/latest', {
         ok: true,
-        url: 'https://github.com/yee94/openchamber/releases/tag/v1.16.104',
+        url: 'https://github.com/yee94/yuri/releases/tag/v1.16.104',
       });
 
     const result = await checkForUpdates({
@@ -349,17 +349,17 @@ describe('checkForUpdates', () => {
 
     expect(result.available).toBe(true);
     expect(result.version).toBe('1.16.104');
-    expect(result.downloadUrl).toBe('https://github.com/yee94/openchamber/releases/download/v1.16.104/app-release.apk');
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.downloadUrl).toBe('https://github.com/yee94/yuri/releases/download/v1.16.104/app-release.apk');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('mobile: falls back to the release page when the update API omits a download URL', async () => {
-    fetchMock.when('openchamber-update.vercel.app', {
+    fetchMock.when('updates.example.net', {
       ok: true,
       json: async () => ({
         latestVersion: '1.11.0',
         updateAvailable: true,
-        releaseNotesUrl: 'https://github.com/yee94/openchamber/releases/tag/v1.11.0',
+        releaseNotesUrl: 'https://github.com/yee94/yuri/releases/tag/v1.11.0',
       }),
     });
 
@@ -371,7 +371,7 @@ describe('checkForUpdates', () => {
 
     expect(result.available).toBe(true);
     expect(result.version).toBe('1.11.0');
-    expect(result.downloadUrl).toBe('https://github.com/yee94/openchamber/releases/tag/v1.11.0');
+    expect(result.downloadUrl).toBe('https://github.com/yee94/yuri/releases/tag/v1.11.0');
   });
 
   it('mobile: returns available=false when currentVersion is unknown', async () => {

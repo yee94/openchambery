@@ -339,12 +339,12 @@ describe('assignSession', () => {
       directory: fs.realpathSync(project),
       title: 'Login',
       metadata: {
-        openchamber: {
+        yuri: {
           assigned: { from: 'contact', assistantID: 'asst_1', name: 'Ada' },
         },
       },
     }));
-    expect(createSession.mock.calls[0][0].metadata.openchamber.assistant).toBeUndefined();
+    expect(createSession.mock.calls[0][0].metadata.yuri.assistant).toBeUndefined();
     expect(promptExisting).toHaveBeenCalledWith(expect.objectContaining({
       sessionID: 'ses_worker',
       directory: fs.realpathSync(project),

@@ -40,7 +40,7 @@ import type { OpenCodeManager } from './opencode';
 const tempRoots: string[] = [];
 
 const makeDataRoot = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-vscode-session-meta-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-vscode-session-meta-'));
   tempRoots.push(dir);
   return dir;
 };
@@ -177,7 +177,7 @@ describe('session metadata Host archive runtime', () => {
 
     const archived = await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_1/archive',
+      '/yuri/sessions/ses_1/archive',
       undefined,
       encodeBody({ archivedAt: 1_700_000_000_123, directory: '/repo' }),
     );
@@ -186,7 +186,7 @@ describe('session metadata Host archive runtime', () => {
     const patchCall = fetchMock.mock.calls.find((call) => (call[1] as RequestInit | undefined)?.method === 'PATCH');
     assert.ok(patchCall);
     const patchBody = JSON.parse(String((patchCall![1] as RequestInit).body));
-    assert.equal(patchBody.metadata.openchamber.archive.archivedAt, 1_700_000_000_123);
+    assert.equal(patchBody.metadata.yuri.archive.archivedAt, 1_700_000_000_123);
     assert.equal(patchBody.title, undefined);
     // First call must have used the real v2 URL + auth.
     {
@@ -204,8 +204,8 @@ describe('session metadata Host archive runtime', () => {
     assert.equal(archivedBody.session.time.created, 100);
     assert.equal(archivedBody.session.time.updated, 200);
     assert.deepEqual(
-      (archivedBody.session.metadata as { openchamber: { archive: { archivedAt: number } } })
-        .openchamber.archive,
+      (archivedBody.session.metadata as { yuri: { archive: { archivedAt: number } } })
+        .yuri.archive,
       { archivedAt: 1_700_000_000_123 },
     );
     assert.ok(archivedBody.index == null || archivedBody.index.ok === true);
@@ -260,7 +260,7 @@ describe('session metadata Host archive runtime', () => {
 
     const unarchived = await tryHandleSessionMetadataProxy(
       'PUT',
-      '/api/openchamber/sessions/ses_1/archive',
+      '/api/yuri/sessions/ses_1/archive',
       undefined,
       encodeBody({ archivedAt: 0 }),
     );
@@ -301,7 +301,7 @@ describe('session metadata Host archive runtime', () => {
     await awaitStoreReady();
     await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_2/archive',
+      '/yuri/sessions/ses_2/archive',
       undefined,
       encodeBody({ archivedAt: 99 }),
     );
@@ -440,7 +440,7 @@ describe('session metadata Host archive runtime', () => {
     );
     const missing = await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_missing/archive',
+      '/yuri/sessions/ses_missing/archive',
       undefined,
       encodeBody({ archivedAt: 1 }),
     );
@@ -459,7 +459,7 @@ describe('session metadata Host archive runtime', () => {
     );
     const mismatch = await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_1/archive',
+      '/yuri/sessions/ses_1/archive',
       undefined,
       encodeBody({ archivedAt: 1, directory: '/repo-b' }),
     );
@@ -481,7 +481,7 @@ describe('session metadata Host archive runtime', () => {
     );
     const idMismatch = await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_1/archive',
+      '/yuri/sessions/ses_1/archive',
       undefined,
       encodeBody({ archivedAt: 1 }),
     );
@@ -490,7 +490,7 @@ describe('session metadata Host archive runtime', () => {
 
     const badBody = await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_1/archive',
+      '/yuri/sessions/ses_1/archive',
       undefined,
       encodeBody({}),
     );
@@ -517,7 +517,7 @@ describe('session metadata Host archive runtime', () => {
     const genA = __getSessionMetadataRuntimeGenerationForTests();
     await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_shared/archive',
+      '/yuri/sessions/ses_shared/archive',
       undefined,
       encodeBody({ archivedAt: 111 }),
     );
@@ -585,14 +585,14 @@ describe('session metadata Host archive runtime', () => {
     await awaitStoreReady();
     await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_del/archive',
+      '/yuri/sessions/ses_del/archive',
       undefined,
       encodeBody({ archivedAt: 42 }),
     );
     const store = __getSessionMetadataStoreForTests();
     assert.ok(store);
     await assert.deepEqual(await store!.get('ses_del'), {
-      openchamber: { archive: { archivedAt: 42 } },
+      yuri: { archive: { archivedAt: 42 } },
     });
 
     assert.equal(resolveDeletedSessionId({
@@ -630,18 +630,18 @@ describe('session metadata Host archive runtime', () => {
     await awaitStoreReady();
     await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_m/archive',
+      '/yuri/sessions/ses_m/archive',
       undefined,
       encodeBody({ archivedAt: 77 }),
     );
 
     const meta = await tryHandleSessionMetadataProxy(
       'PUT',
-      '/openchamber/sessions/ses_m/metadata',
+      '/yuri/sessions/ses_m/metadata',
       undefined,
       encodeBody({
         patch: {
-          openchamber: {
+          yuri: {
             goal: { status: 'active' },
             archive: { archivedAt: 1 },
           },
@@ -650,10 +650,10 @@ describe('session metadata Host archive runtime', () => {
     );
     assert.equal(meta?.status, 200);
     const body = parseBody(meta) as {
-      metadata: { openchamber: { goal: unknown; archive: { archivedAt: number } } };
+      metadata: { yuri: { goal: unknown; archive: { archivedAt: number } } };
     };
-    assert.deepEqual(body.metadata.openchamber.goal, { status: 'active' });
-    assert.equal(body.metadata.openchamber.archive.archivedAt, 77);
+    assert.deepEqual(body.metadata.yuri.goal, { status: 'active' });
+    assert.equal(body.metadata.yuri.archive.archivedAt, 77);
   });
 
   test('injectHostSseEvent fans out to registered emitters', () => {

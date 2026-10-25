@@ -1,8 +1,8 @@
-# OpenChamber Agent Guide
+# Yuri Agent Guide
 
 ## Purpose
 
-OpenChamber provides shared web, desktop, VS Code, hosted-mobile, and native-mobile UI surfaces for OpenCode.
+Yuri provides shared web, desktop, VS Code, hosted-mobile, and native-mobile UI surfaces for OpenCode.
 
 This file contains only always-on repository rules and routing. Detailed workflows belong to project skills and module documentation.
 
@@ -20,21 +20,21 @@ If these sources materially conflict, stop and resolve the conflict instead of s
 ## Runtime Boundaries
 
 - `packages/ui`: shared React UI, state, sync, and runtime contracts.
-- `packages/web`: web surfaces, OpenChamber server, managed/external OpenCode lifecycle, and CLI.
+- `packages/web`: web surfaces, Yuri server, managed/external OpenCode lifecycle, and CLI.
 - `packages/electron`: native desktop shell and privileged Electron boundary.
 - `packages/vscode`: extension host, webview, and runtime bridge.
-- `packages/mobile`: Capacitor iOS/Android shell; bundles the mobile web surface and connects to an existing OpenChamber server.
+- `packages/mobile`: Capacitor iOS/Android shell; bundles the mobile web surface and connects to an existing Yuri server.
 - `packages/docs`: product documentation; not a Bun workspace.
 
-Shared UI calls official OpenCode APIs through `@opencode-ai/sdk/v2`. OpenChamber-owned capabilities use `RuntimeAPIs`, `runtimeFetch`, and shared browser/realtime transport helpers. Server-side upstream integrations may use their owning runtime modules.
+Shared UI calls official OpenCode APIs through `@opencode-ai/sdk/v2`. Yuri-owned capabilities use `RuntimeAPIs`, `runtimeFetch`, and shared browser/realtime transport helpers. Server-side upstream integrations may use their owning runtime modules.
 
-Electron starts the OpenChamber backend in-process, never as a sidecar. Development may load loopback/HMR UI; packaged builds load staged assets through `openchamber-ui://` while the loopback server remains the API backend. Keep domain backends in web/runtime modules unless behavior is inherently native.
+Electron starts the Yuri backend in-process, never as a sidecar. Development may load loopback/HMR UI; packaged builds load staged assets through `yuri-ui://` while the loopback server remains the API backend. Keep domain backends in web/runtime modules unless behavior is inherently native.
 
 Shared contracts must define intentional behavior for every applicable runtime: web, desktop, VS Code, hosted mobile, and Capacitor mobile.
 
-Desktop release work belongs in `packages/electron/`. Electron owns windows, menus, dialogs, notifications, updater, deep links, runtime host switching, local IPC gates, and SSH management. The desktop runtime imports `@openchambery/web/server/index.js` and starts the web server in-process through `startWebUiServer`; notifications flow through the injected `onDesktopNotification` callback.
+Desktop release work belongs in `packages/electron/`. Electron owns windows, menus, dialogs, notifications, updater, deep links, runtime host switching, local IPC gates, and SSH management. The desktop runtime imports `@yuri/web/server/index.js` and starts the web server in-process through `startWebUiServer`; notifications flow through the injected `onDesktopNotification` callback.
 
-Release artifacts and repository links use `yee94/openchamber`. Electron is the desktop release target; use `bun run electron:build` for the current platform and `bun run release:test` for the release smoke build. Ship or update a version: default `v*` (desktop + APK + same-version OTA) so first-time downloaders have installers. TestFlight follows the mobile plan mode, not the tag: native-mode betas and stable upload iOS (beta internal-only, stable external group); web-only (`mode: ota`) betas skip iOS. The in-app minNativeBuild floor (one-tap OTA vs reinstall) rises only on native mode. `mobile-beta/v*` only for explicit mobile-web-only OTA with no installers and no iOS. See `docs/RELEASING.md` § 先选产物. Agent GitHub releases follow `docs/RELEASING.md` and `.opencode/commands/release.md`. Semver prereleases (`X.Y.Z-beta.N` / any version with `-`) must publish as GitHub prereleases and must never enter the stable auto-update feed (`/releases/latest`, Vercel `/desktop/latest*.yml`, or `deploy/update-service/release-manifest.json`). Every OTA publish must pass `scripts/mobile-ota/verify-detectability.mjs` on both Vercel and EdgeOne, including the iOS Capgo builtin marketing-version profile (`currentBundleId` = stripped `1.18.2`); beta-channel checks use the running web bundle version, never the store/TestFlight marketing version.
+Release artifacts and repository links use `yee94/yuri`. Electron is the desktop release target; use `bun run electron:build` for the current platform and `bun run release:test` for the release smoke build. Ship or update a version: default `v*` (desktop + APK + same-version OTA) so first-time downloaders have installers. TestFlight follows the mobile plan mode, not the tag: native-mode betas and stable upload iOS (beta internal-only, stable external group); web-only (`mode: ota`) betas skip iOS. The in-app minNativeBuild floor (one-tap OTA vs reinstall) rises only on native mode. `mobile-beta/v*` only for explicit mobile-web-only OTA with no installers and no iOS. See `docs/RELEASING.md` § 先选产物. Agent GitHub releases follow `docs/RELEASING.md` and `.opencode/commands/release.md`. Semver prereleases (`X.Y.Z-beta.N` / any version with `-`) must publish as GitHub prereleases and must never enter the stable auto-update feed (`/releases/latest`, Vercel `/desktop/latest*.yml`, or `deploy/update-service/release-manifest.json`). Every OTA publish must pass `scripts/mobile-ota/verify-detectability.mjs` on both Vercel and EdgeOne, including the iOS Capgo builtin marketing-version profile (`currentBundleId` = stripped `1.18.2`); beta-channel checks use the running web bundle version, never the store/TestFlight marketing version.
 
 ## Native Module Runtime
 
@@ -43,6 +43,8 @@ Release artifacts and repository links use `yee94/openchamber`. Electron is the 
 - Electron packages rebuild native modules against Electron through `packages/electron/scripts/rebuild-native.mjs`. A later Web API development launch restores the Node-compatible `better-sqlite3` binding automatically.
 
 ## Always-On Constraints
+
+- Yuri publishing is blocked until the identity, signing, update-origin, and native-install evidence in `docs/YURI_MIGRATION.md` is complete. `yee94/yuri`, `@yuri`, `yee94.yuri`, and `com.yee94.yuri` are candidate identities, not verified external resources. Release jobs require `YURI_RELEASE_IDENTITIES_VERIFIED=true`; the first migration release includes native installers.
 
 - Do not modify `../opencode`; it is a separate repository.
 - Do not run git or GitHub commands unless the user explicitly asks.
@@ -109,7 +111,7 @@ Project skills live under `.agents/skills/*/SKILL.md`. Before editing, load ever
 
 | Trigger | Required skill |
 |---|---|
-| Any source, dependency, export, build-config, generated-asset, package-contract, or module-ownership change | `openchamber-change-discipline` |
+| Any source, dependency, export, build-config, generated-asset, package-contract, or module-ownership change | `yuri-change-discipline` |
 | CLI commands, prompts, terminal output, non-TTY, `--quiet`, or `--json` behavior | `clack-cli-patterns` |
 | Shared UI data access, React Hooks, `@tanstack/react-query`, query keys/cache/invalidation, `@reactuses/core`, browser Hooks, OpenCode SDK, `RuntimeAPIs`, runtime fetch/auth/URLs, bridges/proxies, runtime switching, or server API routes | `ui-api-decoupling` |
 | Electron main/preload, IPC, native UI, updater, deep links, SSH, packaging, or child processes | `desktop-shell` |
@@ -133,11 +135,11 @@ Workspace tests run on Vitest 4 (`vitest.config.ts` `projects`). Do not use `bun
 |---|---|
 | `bun run test` | Every workspace package `test` script |
 | `bun run test:vitest` | All Vitest projects (`ensure-node-better-sqlite3` first) |
-| `bun run test:ui` | `@openchamber/ui` |
+| `bun run test:ui` | `@yuri/ui` |
 | `bunx vitest run --project <name> <file>` | One project, optional file |
 | `bun run --cwd packages/<pkg> test` | That package only |
 
-Project names: `@openchamber/ui`, `@openchamber/web`, `openchamber-vscode`, `@openchamber/electron`, `@openchamber/mobile`, `@openchamber/relay-server`, `@openchamber/update-service`.
+Project names: `@yuri/ui`, `@yuri/web`, `yuri-vscode`, `@yuri/electron`, `@yuri/mobile`, `@yuri/relay-server`, `@yuri/update-service`.
 
 - New tests import from `vitest`. `bun:test` still works through `scripts/test/bun-test-shim.ts`; module mocks that must beat static imports use `vi.hoisted` + `vi.mock`, not `mock.module`.
 - `packages/ui` uses `happy-dom`. Do not read local files with `new URL(..., import.meta.url)` (not a `file:` URL); use `path.join(path.dirname(fileURLToPath(import.meta.url)), ...)`.
@@ -145,6 +147,8 @@ Project names: `@openchamber/ui`, `@openchamber/web`, `openchamber-vscode`, `@op
 - Electron IndexedDB evidence tests spawn a real Electron window: `bun run --cwd packages/electron test:input-draft-indexeddb` / `test:transcript-durable-indexeddb`. Skip them unless that surface changed.
 
 ## Validation
+
+- Legacy identity changes must pass `bun run check:legacy-brand`. Follow `docs/LEGACY_BRAND_AUDIT.md` when updating the exact-line exception inventory; normal product defaults and writes are not migration exceptions.
 
 - Use `package.json` scripts as the command source of truth.
 - Prefer focused Vitest files for the touched surface, then the owning package `test` script when the contract is broader.

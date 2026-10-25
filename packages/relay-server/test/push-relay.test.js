@@ -572,7 +572,7 @@ it('uses liveactivity APNs topic and headers without alert or collapse id', asyn
   };
   const server = createPushRelayServer({
     host: '127.0.0.1', port: 0, databasePath: ':memory:',
-    apns: { keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.openchamber.app' },
+    apns: { keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.yuri.app' },
     http2,
   });
   servers.push(server);
@@ -583,7 +583,7 @@ it('uses liveactivity APNs topic and headers without alert or collapse id', asyn
   expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: liveRegisterBody(id, token) })).toMatchObject({ status: 200 });
   expect(await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token], { event: 'end', dismissalDate: 1_700_000_200 }) })).toMatchObject({ status: 200 });
   expect(calls).toHaveLength(1);
-  expect(calls[0].headers['apns-topic']).toBe('com.openchamber.app.push-type.liveactivity');
+  expect(calls[0].headers['apns-topic']).toBe('com.yuri.app.push-type.liveactivity');
   expect(calls[0].headers['apns-push-type']).toBe('liveactivity');
   expect(calls[0].headers['apns-priority']).toBe('10');
   expect(calls[0].headers['apns-collapse-id']).toBeUndefined();

@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { useUIStore } from '@/stores/useUIStore';
 
 export interface AppearancePreferences {

@@ -16,25 +16,25 @@ describe('resolveLiveActivityRefreshIntervalMs', () => {
   it('defaults to 30s', () => {
     expect(resolveLiveActivityRefreshIntervalMs({})).toBe(LIVE_ACTIVITY_REFRESH_DEFAULT_INTERVAL_MS);
     expect(resolveLiveActivityRefreshIntervalMs({
-      OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: '  ',
+      YURI_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: '  ',
     })).toBe(LIVE_ACTIVITY_REFRESH_DEFAULT_INTERVAL_MS);
   });
 
   it('honours explicit overrides including disable', () => {
     expect(resolveLiveActivityRefreshIntervalMs({
-      OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: '45000',
+      YURI_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: '45000',
     })).toBe(45_000);
     expect(resolveLiveActivityRefreshIntervalMs({
-      OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: '0',
+      YURI_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: '0',
     })).toBe(0);
   });
 
   it('falls back to the default for invalid values', () => {
     expect(resolveLiveActivityRefreshIntervalMs({
-      OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: 'abc',
+      YURI_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: 'abc',
     })).toBe(LIVE_ACTIVITY_REFRESH_DEFAULT_INTERVAL_MS);
     expect(resolveLiveActivityRefreshIntervalMs({
-      OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: '-5',
+      YURI_LIVE_ACTIVITY_REFRESH_INTERVAL_MS: '-5',
     })).toBe(LIVE_ACTIVITY_REFRESH_DEFAULT_INTERVAL_MS);
   });
 });

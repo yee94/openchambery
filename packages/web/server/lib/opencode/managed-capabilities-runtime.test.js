@@ -15,7 +15,7 @@ describe('managed OpenCode capabilities runtime', () => {
   });
 
   it('publishes resources and authorizes only the active loopback child', async () => {
-    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-capabilities-'));
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-capabilities-'));
     let childPid = 44;
     const runtime = createManagedCapabilitiesRuntime({ dataDir, version: 'test', getManagedChildPid: () => childPid, isManagedChildAlive: (pid) => pid === 44 });
     try {
@@ -26,8 +26,8 @@ describe('managed OpenCode capabilities runtime', () => {
       expect(childEnv.OPENCODE_CONFIG_CONTENT).toContain('scheduled-task.mjs');
       expect(JSON.parse(childEnv.OPENCODE_CONFIG_CONTENT).plugin).toContain(path.join(dataDir, 'managed-opencode-capabilities', 'v2-plugin-host-shim'));
       expect(JSON.parse(childEnv.OPENCODE_CONFIG_CONTENT).instructions[0]).toMatch(/^\//);
-      expect(childEnv.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_PATH).toBe(MANAGED_SCHEDULED_TASK_TOOL_PATH);
-      expect(childEnv.OPENCHAMBER_SCHEDULED_TASK_TOKEN_HEADER).toBe(MANAGED_SCHEDULED_TASK_TOKEN_HEADER);
+      expect(childEnv.YURI_SCHEDULED_TASK_BRIDGE_PATH).toBe(MANAGED_SCHEDULED_TASK_TOOL_PATH);
+      expect(childEnv.YURI_SCHEDULED_TASK_TOKEN_HEADER).toBe(MANAGED_SCHEDULED_TASK_TOKEN_HEADER);
       await expect(fs.access(path.join(dataDir, 'managed-opencode-capabilities', identity.version, 'scheduled-task.mjs'))).resolves.toBeUndefined();
       const request = { method: 'POST', path: MANAGED_SCHEDULED_TASK_TOOL_PATH, socket: { remoteAddress: '127.0.0.1' }, headers: { [MANAGED_SCHEDULED_TASK_TOKEN_HEADER]: identity.token } };
       expect(runtime.authorizeManagedOpenCodeBridgeRequest(request)).toBe(true);
@@ -42,8 +42,8 @@ describe('managed OpenCode capabilities runtime', () => {
   });
 
   it('uses a distinct material version and directory when capability source changes', async () => {
-    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-capabilities-'));
-    const resourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-capability-source-'));
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-capabilities-'));
+    const resourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-capability-source-'));
     try {
       await fs.copyFile(new URL('./managed-capabilities/scheduled-task.js', import.meta.url), path.join(resourceDir, 'scheduled-task.js'));
       await fs.writeFile(path.join(resourceDir, 'scheduled-task-instructions.md'), 'first');
@@ -71,10 +71,10 @@ describe('scheduled_task plugin', () => {
   afterEach(() => { process.env = { ...originalEnv }; vi.restoreAllMocks(); });
 
   it('uses the legacy args map, mutates config, and forwards the canonical envelope', async () => {
-    process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_ORIGIN = 'http://127.0.0.1:3000';
-    process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_PATH = MANAGED_SCHEDULED_TASK_TOOL_PATH;
-    process.env.OPENCHAMBER_SCHEDULED_TASK_TOKEN_HEADER = MANAGED_SCHEDULED_TASK_TOKEN_HEADER;
-    process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_TOKEN = crypto.randomBytes(32).toString('hex');
+    process.env.YURI_SCHEDULED_TASK_BRIDGE_ORIGIN = 'http://127.0.0.1:3000';
+    process.env.YURI_SCHEDULED_TASK_BRIDGE_PATH = MANAGED_SCHEDULED_TASK_TOOL_PATH;
+    process.env.YURI_SCHEDULED_TASK_TOKEN_HEADER = MANAGED_SCHEDULED_TASK_TOKEN_HEADER;
+    process.env.YURI_SCHEDULED_TASK_BRIDGE_TOKEN = crypto.randomBytes(32).toString('hex');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     const plugin = await scheduledTaskPlugin();
     expect(plugin.tool.scheduled_task.args).toMatchObject({ request: { type: 'object', oneOf: expect.any(Array) } });
@@ -109,14 +109,14 @@ describe('scheduled_task plugin', () => {
     await plugin.tool.scheduled_task.execute({ request: { operation: 'create', name: 'later', enabled: true, schedule: { kind: 'daily', time: '09:00' }, execution: { prompt: 'remind me' } } }, context);
     expect(ask).toHaveBeenCalledWith(expect.objectContaining({ permission: 'scheduled_task', patterns: ['create'], always: ['create'] }));
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ operation: 'create', context: { sessionID: 'ses_1', messageID: 'msg_1', directory: '/repo', worktree: '/repo', agent: 'build' }, input: { name: 'later', enabled: true, schedule: { kind: 'daily', time: '09:00' }, execution: { prompt: 'remind me' } } });
-    expect(fetchMock.mock.calls[1][1].headers[MANAGED_SCHEDULED_TASK_TOKEN_HEADER]).toBe(process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_TOKEN);
+    expect(fetchMock.mock.calls[1][1].headers[MANAGED_SCHEDULED_TASK_TOKEN_HEADER]).toBe(process.env.YURI_SCHEDULED_TASK_BRIDGE_TOKEN);
   });
 
   it('returns only the bridge safe error field', async () => {
-    process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_ORIGIN = 'http://127.0.0.1:3000';
-    process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_PATH = MANAGED_SCHEDULED_TASK_TOOL_PATH;
-    process.env.OPENCHAMBER_SCHEDULED_TASK_TOKEN_HEADER = MANAGED_SCHEDULED_TASK_TOKEN_HEADER;
-    process.env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_TOKEN = crypto.randomBytes(32).toString('hex');
+    process.env.YURI_SCHEDULED_TASK_BRIDGE_ORIGIN = 'http://127.0.0.1:3000';
+    process.env.YURI_SCHEDULED_TASK_BRIDGE_PATH = MANAGED_SCHEDULED_TASK_TOOL_PATH;
+    process.env.YURI_SCHEDULED_TASK_TOKEN_HEADER = MANAGED_SCHEDULED_TASK_TOKEN_HEADER;
+    process.env.YURI_SCHEDULED_TASK_BRIDGE_TOKEN = crypto.randomBytes(32).toString('hex');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: 'Task is invalid', internal: 'sensitive response content' }), { status: 400 }));
     const plugin = await scheduledTaskPlugin();
     await expect(plugin.tool.scheduled_task.execute({ request: { operation: 'list' } }, { ask: vi.fn() })).rejects.toThrow('400: Task is invalid');

@@ -87,7 +87,7 @@ describe('listGlobalSessionPages', () => {
               title: 'Alpha',
               time: { created: 1, updated: 2 },
               metadata: {
-                openchamber: {
+                yuri: {
                   kind: 'review',
                   originalSessionID: 'ses_original',
                 },
@@ -116,7 +116,7 @@ describe('listGlobalSessionPages', () => {
     }
 
     expect(session.metadata).toEqual({
-      openchamber: {
+      yuri: {
         kind: 'review',
         originalSessionID: 'ses_original',
       },
@@ -157,45 +157,45 @@ describe('listGlobalSessionPages', () => {
   test('hides system sessions by metadata and keeps ordinary sessions visible', () => {
     expect(isVisibleGlobalSession({
       title: '[Assistant] Ops',
-      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'Ops' } } },
+      metadata: { yuri: { assistant: { assistantID: 'assistant_1', name: 'Ops' } } },
     } as never)).toBe(false)
     expect(isVisibleGlobalSession({
       title: 'Nightly build',
-      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+      metadata: { yuri: { scheduledTask: { taskID: 'task_1' } } },
     } as never)).toBe(false)
     expect(isVisibleGlobalSession({
       title: 'Title refresh helper',
-      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+      metadata: { yuri: { smallModel: { purpose: 'session-title' } } },
     } as never)).toBe(false)
     expect(isVisibleGlobalSession({
-      title: '[openchamber-llm] generate',
-      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+      title: '[yuri-llm] generate',
+      metadata: { yuri: { llm: { purpose: 'chat-completions' } } },
     } as never)).toBe(false)
     expect(isVisibleGlobalSession({
       title: 'Assistant without an ownership ID',
-      metadata: { openchamber: { assistant: { name: 'no-id' } } },
+      metadata: { yuri: { assistant: { name: 'no-id' } } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({
       title: 'Looks like small model',
-      metadata: { openchamber: { smallModel: { purpose: '' } } },
+      metadata: { yuri: { smallModel: { purpose: '' } } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({
       title: 'Looks like llm',
-      metadata: { openchamber: { llm: { purpose: '' } } },
+      metadata: { yuri: { llm: { purpose: '' } } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({
       title: 'Ordinary chat',
-      metadata: { openchamber: { kind: 'review' } },
+      metadata: { yuri: { kind: 'review' } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({ title: 'smartfetch-secondary' } as never)).toBe(false)
     expect(isVisibleGlobalSession({
       title: 'Login',
-      metadata: { openchamber: { assigned: { from: 'contact', assistantID: 'assistant_1' } } },
+      metadata: { yuri: { assigned: { from: 'contact', assistantID: 'assistant_1' } } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({
       title: 'Login',
       metadata: {
-        openchamber: {
+        yuri: {
           assistant: { assistantID: 'assistant_1', name: 'Ops' },
           assigned: { from: 'contact' },
         },
@@ -203,7 +203,7 @@ describe('listGlobalSessionPages', () => {
     } as never)).toBe(true)
   })
 
-  test.each(['[Scheduled]', '[Assistant]', '[openchamber-llm]'])('hides reserved background tag %s without metadata', (tag) => {
+  test.each(['[Scheduled]', '[Assistant]', '[yuri-llm]'])('hides reserved background tag %s without metadata', (tag) => {
     expect(isVisibleGlobalSession({ title: `${tag} Background run` } as never)).toBe(false)
     expect(isVisibleGlobalSession({ title: tag } as never)).toBe(false)
     expect(isVisibleGlobalSession({ title: `Discuss ${tag}` } as never)).toBe(true)

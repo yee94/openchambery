@@ -1,6 +1,7 @@
+import { migrateBrandIndexedDB } from '@/lib/brand-storage-migration';
 import { draftAttachmentRefID, isDurableURL, type DraftAttachmentOwner, type DraftAttachmentReference } from "./input-draft-types"
 
-const DATABASE_NAME = "openchamber-input-drafts"
+const DATABASE_NAME = "yuri-input-drafts"
 const DATABASE_VERSION = 1
 const BLOBS_STORE = "blobs"
 const BLOB_REFS_STORE = "blobRefs"
@@ -229,7 +230,7 @@ export const createIndexedDBInputDraftBlobDriver = (): InputDraftBlobDriver => (
   },
 })
 
-const openDatabase = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
+const openDatabase = (): Promise<IDBDatabase> => migrateBrandIndexedDB(DATABASE_NAME).then(() => new Promise<IDBDatabase>((resolve, reject) => {
   if (!globalThis.indexedDB) { reject(new Failure("database-unavailable")); return }
   const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION)
   let settled = false
@@ -248,4 +249,4 @@ const openDatabase = (): Promise<IDBDatabase> => new Promise((resolve, reject) =
   }
   request.onerror = fail
   request.onblocked = fail
-})
+}))

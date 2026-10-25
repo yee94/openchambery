@@ -47,7 +47,7 @@ export const LatticeOrb: React.FC<{
                 {cells.map(({ x, y, isCenter, delay }) => (
                     <span
                         key={`${x}-${y}`}
-                        className="oc-lattice-orb-dot absolute block rounded-full bg-current"
+                        className="yuri-lattice-orb-dot absolute block rounded-full bg-current"
                         data-center={isCenter ? 'true' : undefined}
                         style={{
                             left: GRID_OFFSET + x * PITCH,

@@ -172,7 +172,7 @@ export function GlobalConfigPage() {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="oc-settings-page-content mx-auto w-full max-w-4xl p-3 sm:p-6 sm:pt-8">
+      <div className="yuri-settings-page-content mx-auto w-full max-w-4xl p-3 sm:p-6 sm:pt-8">
         <SettingsGroup
           itemId="global-config.editor"
           label={t('settings.globalConfig.title')}

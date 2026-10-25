@@ -375,7 +375,7 @@ test('observer applies a newer snapshot after a tip without re-waiting mid-apply
 });
 
 test('observer recovers when a tip is dropped after the stable GET and before wait registers', async () => {
-  // Missed-wakeup regression: shared openchamberEvents can deliver DELETE tips
+  // Missed-wakeup regression: shared yuriEvents can deliver DELETE tips
   // while no queue waiter is subscribed. First wait returns timeout (tip lost);
   // the next lead GET must clear the reconciling/sending row permanently.
   const cache = new Map<string, unknown>();

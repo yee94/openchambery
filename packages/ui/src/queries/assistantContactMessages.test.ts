@@ -404,7 +404,7 @@ describe('assistantContactMessages merge', () => {
   test('visible part and loaded read position use full keyset + per-part settle rules', () => {
     expect(isContactVisiblePart({ type: 'text', text: 'hi' })).toBe(true)
     expect(isContactVisiblePart({ type: 'text', text: '  ' })).toBe(false)
-    expect(isContactVisiblePart({ type: 'text', text: 'oc.settle.complete' })).toBe(false)
+    expect(isContactVisiblePart({ type: 'text', text: 'yuri.settle.complete' })).toBe(false)
     expect(isContactVisiblePart({ type: 'file' })).toBe(true)
 
     const assistant = {
@@ -448,10 +448,10 @@ describe('assistantContactMessages merge', () => {
       assistantID: 'asst_1',
       messageID: 'mix',
       parts: [
-        { type: 'text', text: 'oc.settle.complete' },
+        { type: 'text', text: 'yuri.settle.complete' },
         { type: 'text', text: 'spoken' },
       ],
-      text: 'oc.settle.completespoken',
+      text: 'yuri.settle.completespoken',
     })
     expect(getLoadedAssistantReadPosition(assistant, {
       generation: 0,
@@ -459,11 +459,11 @@ describe('assistantContactMessages merge', () => {
     })).toEqual({ generation: 0, ordinal: 7, messageID: 'mix' })
     expect(getLoadedAssistantReadPosition(assistant, {
       generation: 0,
-      messages: [msg(8, 'oc.settle.error', {
+      messages: [msg(8, 'yuri.settle.error', {
         role: 'assistant',
         assistantID: 'asst_1',
         messageID: 'settle',
-        parts: [{ type: 'text', text: 'oc.settle.error' }],
+        parts: [{ type: 'text', text: 'yuri.settle.error' }],
       })],
     })).toBeNull()
   })

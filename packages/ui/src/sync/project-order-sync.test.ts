@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { OpenChamberEvent } from '@/lib/openchamberEvents';
+import type { YuriEvent } from '@/lib/yuriEvents';
 import { switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { queryClient } from '@/lib/queryRuntime';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -9,14 +9,14 @@ import { sortProjectEntries } from '@/lib/projectOrder';
 import { mountProjectOrderSync } from './project-order-sync';
 
 const mocks = vi.hoisted(() => ({
-  listeners: new Set<(event: OpenChamberEvent) => void>(),
+  listeners: new Set<(event: YuriEvent) => void>(),
   fetch: vi.fn(),
   save: vi.fn(async () => undefined),
   wait: vi.fn(async (_transport: string): Promise<void> => undefined),
   invalidate: vi.fn(),
 }));
-vi.mock('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: (listener: (event: OpenChamberEvent) => void) => {
+vi.mock('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: (listener: (event: YuriEvent) => void) => {
     mocks.listeners.add(listener);
     return () => mocks.listeners.delete(listener);
   },

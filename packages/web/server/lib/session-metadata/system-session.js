@@ -19,7 +19,7 @@ export const buildScheduledTaskMetadata = ({ projectID, taskID, runID, name } = 
     throw new Error('scheduled-task metadata requires taskID');
   }
   return {
-    openchamber: {
+    yuri: {
       scheduledTask: {
         taskID: id,
         ...(nonEmpty(projectID) ? { projectID: nonEmpty(projectID) } : {}),
@@ -33,7 +33,7 @@ export const buildScheduledTaskMetadata = ({ projectID, taskID, runID, name } = 
 export const buildLlmSessionMetadata = (purpose = LLM_SESSION_PURPOSE) => {
   const resolved = nonEmpty(purpose) || LLM_SESSION_PURPOSE;
   return {
-    openchamber: {
+    yuri: {
       llm: { purpose: resolved },
     },
   };
@@ -45,7 +45,7 @@ export const buildAssistantSessionMetadata = ({ assistantID, name } = {}) => {
     throw new Error('assistant session metadata requires assistantID');
   }
   return {
-    openchamber: {
+    yuri: {
       assistant: {
         assistantID: id,
         ...(nonEmpty(name) ? { name: nonEmpty(name) } : {}),

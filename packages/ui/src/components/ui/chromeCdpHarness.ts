@@ -37,24 +37,24 @@ export const resolveChrome = (): string | null => {
 };
 
 export const evidenceRoot = (): string => {
-  const fromEnv = process.env.OPENCHAMBER_TEST_EVIDENCE_DIR?.trim();
+  const fromEnv = process.env.YURI_TEST_EVIDENCE_DIR?.trim();
   if (fromEnv) {
     mkdirSync(fromEnv, { recursive: true });
     return fromEnv;
   }
-  return mkdtempSync(join(tmpdir(), 'oc-openchamber-evidence-'));
+  return mkdtempSync(join(tmpdir(), 'yuri-yuri-evidence-'));
 };
 
 export const keepEvidence = (): boolean => (
-  process.env.OPENCHAMBER_TEST_KEEP_EVIDENCE === '1'
-  || process.env.OPENCHAMBER_TEST_KEEP_EVIDENCE === 'true'
-  || Boolean(process.env.OPENCHAMBER_TEST_EVIDENCE_DIR?.trim())
+  process.env.YURI_TEST_KEEP_EVIDENCE === '1'
+  || process.env.YURI_TEST_KEEP_EVIDENCE === 'true'
+  || Boolean(process.env.YURI_TEST_EVIDENCE_DIR?.trim())
 );
 
 export const compileProductionCssAsync = async (uiSrcDir: string): Promise<string> => {
   // Runner lives in OS tmp; bun resolves deps from cwd=packages/ui.
   const uiPkg = join(uiSrcDir, '..');
-  const runnerDir = mkdtempSync(join(tmpdir(), 'oc-css-compile-'));
+  const runnerDir = mkdtempSync(join(tmpdir(), 'yuri-css-compile-'));
   const runnerPath = join(runnerDir, 'compile.mjs');
   const outPath = join(runnerDir, 'out.css');
   const entry = join(uiSrcDir, 'index.css');
@@ -168,7 +168,7 @@ export const openChromeSession = async (opts?: {
 
   const width = opts?.width ?? 390;
   const height = opts?.height ?? 844;
-  const userDataDir = mkdtempSync(join(tmpdir(), 'oc-chrome-profile-'));
+  const userDataDir = mkdtempSync(join(tmpdir(), 'yuri-chrome-profile-'));
   const portFile = join(userDataDir, 'DevToolsActivePort');
 
   let chrome: ChildProcess;

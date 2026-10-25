@@ -3,14 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const previousDataDir = process.env.OPENCHAMBER_DATA_DIR;
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ui-auth-test-'));
-process.env.OPENCHAMBER_DATA_DIR = dataDir;
+const previousDataDir = process.env.YURI_DATA_DIR;
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-ui-auth-test-'));
+process.env.YURI_DATA_DIR = dataDir;
 
 afterAll(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
-  if (previousDataDir === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
-  else process.env.OPENCHAMBER_DATA_DIR = previousDataDir;
+  if (previousDataDir === undefined) delete process.env.YURI_DATA_DIR;
+  else process.env.YURI_DATA_DIR = previousDataDir;
 });
 
 const loadCreateUiAuth = async () => {
@@ -61,7 +61,7 @@ describe('isUrlAuthWebSocketPath', () => {
     expect(isUrlAuthWebSocketPath('/api/dictation/ws')).toBe(true);
     expect(isUrlAuthWebSocketPath('/api/event/ws')).toBe(true);
     expect(isUrlAuthWebSocketPath('/api/global/event/ws')).toBe(true);
-    expect(isUrlAuthWebSocketPath('/api/openchamber/realtime-proxy/ws')).toBe(true);
+    expect(isUrlAuthWebSocketPath('/api/yuri/realtime-proxy/ws')).toBe(true);
     expect(isUrlAuthWebSocketPath('/api/evil/ws')).toBe(false);
     expect(isUrlAuthWebSocketPath('/api/preview/proxy')).toBe(false);
     expect(isUrlAuthWebSocketPath('/api/session')).toBe(false);
@@ -117,7 +117,7 @@ describe('ui auth client credential seam', () => {
     const loginRes = createResponse();
     await auth.handleSessionCreate(loginReq, loginRes);
     const sessionCookie = String(loginRes.getHeader('set-cookie') || '').split(';', 1)[0];
-    expect(sessionCookie.startsWith('oc_ui_session=')).toBe(true);
+    expect(sessionCookie.startsWith('yuri_ui_session=')).toBe(true);
 
     const sessionReq = { method: 'GET', path: '/api/client-auth/clients', headers: { cookie: sessionCookie } };
     const sessionRes = createResponse();
@@ -178,7 +178,7 @@ describe('ui auth client credential seam', () => {
       },
     });
 
-    const oldQueryReq = { method: 'GET', path: '/api/config/settings', url: '/api/config/settings?oc_client_token=client-token', headers: { accept: 'application/json' } };
+    const oldQueryReq = { method: 'GET', path: '/api/config/settings', url: '/api/config/settings?yuri_client_token=client-token', headers: { accept: 'application/json' } };
     const oldQueryRes = createResponse();
     let oldQueryCalled = false;
     await auth.requireAuth(oldQueryReq, oldQueryRes, () => {
@@ -191,12 +191,12 @@ describe('ui auth client credential seam', () => {
     const mintRes = createResponse();
     await auth.handleUrlAuthToken(mintReq, mintRes);
     expect(typeof mintRes.body.token).toBe('string');
-    expect(mintRes.body.token.startsWith('oc_url_')).toBe(true);
+    expect(mintRes.body.token.startsWith('yuri_url_')).toBe(true);
     expect(mintRes.body.expiresAt).toBeGreaterThan(Date.now());
     expect(mintRes.getHeader('cache-control')).toBe('no-store');
 
     const urlToken = mintRes.body.token;
-    const urlReq = { method: 'GET', path: '/api/fs/raw', url: `/api/fs/raw?path=%2Ftmp%2Fimage.png&oc_url_token=${encodeURIComponent(urlToken)}`, headers: {} };
+    const urlReq = { method: 'GET', path: '/api/fs/raw', url: `/api/fs/raw?path=%2Ftmp%2Fimage.png&yuri_url_token=${encodeURIComponent(urlToken)}`, headers: {} };
     const urlRes = createResponse();
     let urlCalled = false;
     await auth.requireAuth(urlReq, urlRes, () => {
@@ -206,7 +206,7 @@ describe('ui auth client credential seam', () => {
     expect(await auth.ensureSessionToken(urlReq, urlRes)).toBe('client:device-1');
     expect(await auth.resolveAuthContext(urlReq, urlRes, { allowUrlToken: false })).toBe(null);
 
-    const serveReq = { method: 'GET', path: '/api/fs/serve/tmp/index.html', url: `/api/fs/serve/tmp/index.html?oc_url_token=${encodeURIComponent(urlToken)}`, headers: {} };
+    const serveReq = { method: 'GET', path: '/api/fs/serve/tmp/index.html', url: `/api/fs/serve/tmp/index.html?yuri_url_token=${encodeURIComponent(urlToken)}`, headers: {} };
     const serveRes = createResponse();
     let serveCalled = false;
     await auth.requireAuth(serveReq, serveRes, () => {
@@ -214,7 +214,7 @@ describe('ui auth client credential seam', () => {
     });
     expect(serveCalled).toBe(true);
 
-    const absoluteServeReq = { method: 'GET', path: '/api/fs/serve/Users/test/project/preview-test.html', url: `/api/fs/serve/Users/test/project/preview-test.html?oc_url_token=${encodeURIComponent(urlToken)}`, headers: {} };
+    const absoluteServeReq = { method: 'GET', path: '/api/fs/serve/Users/test/project/preview-test.html', url: `/api/fs/serve/Users/test/project/preview-test.html?yuri_url_token=${encodeURIComponent(urlToken)}`, headers: {} };
     const absoluteServeRes = createResponse();
     let absoluteServeCalled = false;
     await auth.requireAuth(absoluteServeReq, absoluteServeRes, () => {
@@ -226,8 +226,8 @@ describe('ui auth client credential seam', () => {
       method: 'GET',
       baseUrl: '/api',
       path: '/fs/serve/Users/test/project/preview-test.html',
-      originalUrl: `/api/fs/serve/Users/test/project/preview-test.html?oc_url_token=${encodeURIComponent(urlToken)}`,
-      url: `/fs/serve/Users/test/project/preview-test.html?oc_url_token=${encodeURIComponent(urlToken)}`,
+      originalUrl: `/api/fs/serve/Users/test/project/preview-test.html?yuri_url_token=${encodeURIComponent(urlToken)}`,
+      url: `/fs/serve/Users/test/project/preview-test.html?yuri_url_token=${encodeURIComponent(urlToken)}`,
       headers: {},
     };
     const mountedServeRes = createResponse();
@@ -240,7 +240,7 @@ describe('ui auth client credential seam', () => {
     const dictationWsReq = {
       method: 'GET',
       path: '/api/dictation/ws',
-      url: `/api/dictation/ws?oc_url_token=${encodeURIComponent(urlToken)}`,
+      url: `/api/dictation/ws?yuri_url_token=${encodeURIComponent(urlToken)}`,
       headers: { upgrade: 'websocket' },
     };
     expect(await auth.ensureSessionToken(dictationWsReq, null)).toBe('client:device-1');
@@ -248,7 +248,7 @@ describe('ui auth client credential seam', () => {
     const dictationHttpReq = {
       method: 'GET',
       path: '/api/dictation/ws',
-      url: `/api/dictation/ws?oc_url_token=${encodeURIComponent(urlToken)}`,
+      url: `/api/dictation/ws?yuri_url_token=${encodeURIComponent(urlToken)}`,
       headers: { accept: 'application/json' },
     };
     const dictationHttpRes = createResponse();
@@ -259,7 +259,7 @@ describe('ui auth client credential seam', () => {
     expect(dictationHttpCalled).toBe(false);
     expect(dictationHttpRes.statusCode).toBe(401);
 
-    const arbitraryGetReq = { method: 'GET', path: '/api/config/settings', url: `/api/config/settings?oc_url_token=${encodeURIComponent(urlToken)}`, headers: { accept: 'application/json' } };
+    const arbitraryGetReq = { method: 'GET', path: '/api/config/settings', url: `/api/config/settings?yuri_url_token=${encodeURIComponent(urlToken)}`, headers: { accept: 'application/json' } };
     const arbitraryGetRes = createResponse();
     let arbitraryGetCalled = false;
     await auth.requireAuth(arbitraryGetReq, arbitraryGetRes, () => {
@@ -269,7 +269,7 @@ describe('ui auth client credential seam', () => {
     expect(arbitraryGetRes.statusCode).toBe(401);
 
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
-      const writeReq = { method, path: '/api/fs/raw', url: `/api/fs/raw?path=%2Ftmp%2Fimage.png&oc_url_token=${encodeURIComponent(urlToken)}`, headers: { accept: 'application/json' } };
+      const writeReq = { method, path: '/api/fs/raw', url: `/api/fs/raw?path=%2Ftmp%2Fimage.png&yuri_url_token=${encodeURIComponent(urlToken)}`, headers: { accept: 'application/json' } };
       const writeRes = createResponse();
       let writeCalled = false;
       await auth.requireAuth(writeReq, writeRes, () => {
@@ -336,7 +336,7 @@ describe('ui auth client credential seam', () => {
       body: {
         password: 'secret',
         issueClientToken: true,
-        clientLabel: 'OpenChamber Desktop',
+        clientLabel: 'Yuri Desktop',
       },
     };
     const res = createResponse();
@@ -344,7 +344,7 @@ describe('ui auth client credential seam', () => {
     await auth.handleSessionCreate(req, res);
 
     expect(res.body.clientToken).toBe('client-token');
-    expect(createClientInput.label).toBe('OpenChamber Desktop');
+    expect(createClientInput.label).toBe('Yuri Desktop');
     const expiresAt = Date.parse(createClientInput.expiresAt);
     expect(expiresAt).toBeGreaterThanOrEqual(before + 122_000);
     expect(expiresAt).toBeLessThanOrEqual(Date.now() + 124_000);

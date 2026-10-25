@@ -308,7 +308,7 @@ function preferExistingFullOverIncomingSlim(
 }
 
 function isUnconfirmedOptimisticPart(part: Part): boolean {
-  return (part as { __openchamberOptimistic?: unknown }).__openchamberOptimistic === true
+  return (part as { __yuriOptimistic?: unknown }).__yuriOptimistic === true
 }
 
 function hasUnconfirmedOptimisticPart(parts: readonly Part[] | undefined): boolean {

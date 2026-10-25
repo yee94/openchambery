@@ -51,7 +51,7 @@ const setWorktreeBootstrapState = (directory, status, error = null) => {
   }
   try {
     worktreeBootstrapStatusBroadcaster({
-      type: 'openchamber:worktree-bootstrap-status',
+      type: 'yuri:worktree-bootstrap-status',
       properties: {
         directory: key,
         status: next.status,
@@ -182,7 +182,7 @@ const resolveGitBinary = () => {
     return resolvedGitBinary;
   }
 
-  const explicit = [process.env.GIT_BINARY, process.env.OPENCHAMBER_GIT_BINARY]
+  const explicit = [process.env.GIT_BINARY, process.env.YURI_GIT_BINARY]
     .map((value) => (typeof value === 'string' ? value.trim() : ''))
     .filter(Boolean);
   for (const candidate of explicit) {
@@ -1095,9 +1095,11 @@ export async function computeIntegratePlan(input = {}) {
 }
 
 const createIntegrateTempWorktree = async (repoRoot, targetBranch) => {
-  const tmpParent = path.join(os.homedir(), '.config', 'openchamber', 'tmp');
+  const tmpParent = path.join(process.env.YURI_DATA_DIR
+    ? path.resolve(process.env.YURI_DATA_DIR)
+    : path.join(os.homedir(), '.config', 'yuri'), 'tmp');
   await fsp.mkdir(tmpParent, { recursive: true });
-  const tmpDir = await fsp.mkdtemp(path.join(tmpParent, 'oc-integrate-'));
+  const tmpDir = await fsp.mkdtemp(path.join(tmpParent, 'yuri-integrate-'));
   try {
     await runGitCommandOrThrow(repoRoot, ['worktree', 'add', '--force', tmpDir, targetBranch], 'Failed to create temp worktree');
     return tmpDir;
@@ -1408,7 +1410,7 @@ const resolveCandidateDirectory = async (worktreeRoot, preferredName, explicitBr
       return { name, directory, branch: explicitBranchName };
     }
 
-    const branch = `openchamber/${name}`;
+    const branch = `yuri/${name}`;
     const branchRef = `refs/heads/${branch}`;
     const branchExists = await runGitCommand(primaryWorktree, ['show-ref', '--verify', '--quiet', branchRef]);
     if (branchExists.success) {
@@ -2672,7 +2674,7 @@ const extractPatchTargetPath = (patch) => {
 
 const writeTempPatchFile = async (patch) => {
   const tmpDir = os.tmpdir();
-  const tmpPath = path.join(tmpDir, `openchamber-hunk-${Date.now()}-${Math.random().toString(36).slice(2)}.patch`);
+  const tmpPath = path.join(tmpDir, `yuri-hunk-${Date.now()}-${Math.random().toString(36).slice(2)}.patch`);
   await fsp.writeFile(tmpPath, patch, 'utf8');
   return tmpPath;
 };
@@ -2818,7 +2820,7 @@ export async function stashPush(directory, options = {}) {
   const { git } = await createRepositoryGitContext(directory);
   const message = typeof options.message === 'string' && options.message.trim()
     ? options.message.trim()
-    : `OpenChamber stash ${new Date().toISOString()}`;
+    : `Yuri stash ${new Date().toISOString()}`;
   const output = await git.raw(['stash', 'push', '--include-untracked', '-m', message]);
   return {
     success: true,

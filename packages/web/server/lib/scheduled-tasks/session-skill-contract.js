@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
-export const SCHEDULED_TASK_SKILL_PATH = '/api/openchamber/session-skills/scheduled-task';
-export const SCHEDULED_TASK_SKILL_KEY = 'openchamber.scheduled-task';
+export const SCHEDULED_TASK_SKILL_PATH = '/api/yuri/session-skills/scheduled-task';
+export const SCHEDULED_TASK_SKILL_KEY = 'yuri.scheduled-task';
 
 // The shared service credential is already owned by the local OS user. It is
 // accepted only on this bridge, never as browser/client authentication.

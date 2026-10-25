@@ -32,7 +32,7 @@ export const registerConfigSyncRoutes = (app, deps = {}) => {
     });
   };
 
-  app.post('/api/openchamber/config-sync/probe', express?.json?.({ limit: '1mb' }) || ((req, _res, next) => next()), async (req, res) => {
+  app.post('/api/yuri/config-sync/probe', express?.json?.({ limit: '1mb' }) || ((req, _res, next) => next()), async (req, res) => {
     try {
       const plan = req.body?.plan && typeof req.body.plan === 'object' ? req.body.plan : {};
       const result = await receiver.probe(plan);
@@ -42,7 +42,7 @@ export const registerConfigSyncRoutes = (app, deps = {}) => {
     }
   });
 
-  app.post('/api/openchamber/config-sync/prepare', express?.json?.({ limit: '1mb' }) || ((req, _res, next) => next()), async (req, res) => {
+  app.post('/api/yuri/config-sync/prepare', express?.json?.({ limit: '1mb' }) || ((req, _res, next) => next()), async (req, res) => {
     try {
       const plan = req.body?.plan && typeof req.body.plan === 'object' ? req.body.plan : null;
       const syncRunId = typeof req.body?.syncRunId === 'string' ? req.body.syncRunId.trim() : '';
@@ -56,7 +56,7 @@ export const registerConfigSyncRoutes = (app, deps = {}) => {
     }
   });
 
-  app.put('/api/openchamber/config-sync/put/:kind', async (req, res) => {
+  app.put('/api/yuri/config-sync/put/:kind', async (req, res) => {
     try {
       const kind = String(req.params.kind || '').trim();
       const syncRunId = typeof req.query.syncRunId === 'string' ? req.query.syncRunId.trim() : '';
@@ -70,27 +70,27 @@ export const registerConfigSyncRoutes = (app, deps = {}) => {
     }
   });
 
-  app.get('/api/openchamber/config-sync/magpie/inventory', async (_req, res) => {
+  app.get('/api/yuri/config-sync/magpie/inventory', async (_req, res) => {
     try { res.json({ magpie: await receiver.magpieInventory() }); }
     catch (error) { sendError(res, error); }
   });
 
-  app.put('/api/openchamber/config-sync/magpie', async (req, res) => {
+  app.put('/api/yuri/config-sync/magpie', async (req, res) => {
     try { res.json(await receiver.importMagpie(req)); }
     catch (error) { sendError(res, error); }
   });
 
-  app.get('/api/openchamber/config-sync/credentials/inventory', async (_req, res) => {
+  app.get('/api/yuri/config-sync/credentials/inventory', async (_req, res) => {
     try { res.json({ providerCredentials: await receiver.credentialInventory() }); }
     catch (error) { sendError(res, error); }
   });
 
-  app.put('/api/openchamber/config-sync/credentials', async (req, res) => {
+  app.put('/api/yuri/config-sync/credentials', async (req, res) => {
     try { res.json(await receiver.importCredentials(req)); }
     catch (error) { sendError(res, error); }
   });
 
-  app.get('/api/openchamber/config-sync/download/:kind', async (req, res) => {
+  app.get('/api/yuri/config-sync/download/:kind', async (req, res) => {
     try {
       const kind = String(req.params.kind || '').trim();
       const buffer = await receiver.download({ kind });
@@ -103,7 +103,7 @@ export const registerConfigSyncRoutes = (app, deps = {}) => {
     }
   });
 
-  app.post('/api/openchamber/config-sync/finalize', express?.json?.({ limit: '64kb' }) || ((req, _res, next) => next()), async (req, res) => {
+  app.post('/api/yuri/config-sync/finalize', express?.json?.({ limit: '64kb' }) || ((req, _res, next) => next()), async (req, res) => {
     try {
       const syncRunId = typeof req.body?.syncRunId === 'string' ? req.body.syncRunId.trim() : '';
       if (!syncRunId) {
@@ -116,7 +116,7 @@ export const registerConfigSyncRoutes = (app, deps = {}) => {
     }
   });
 
-  app.post('/api/openchamber/config-sync/abort', express?.json?.({ limit: '64kb' }) || ((req, _res, next) => next()), async (req, res) => {
+  app.post('/api/yuri/config-sync/abort', express?.json?.({ limit: '64kb' }) || ((req, _res, next) => next()), async (req, res) => {
     try {
       const syncRunId = typeof req.body?.syncRunId === 'string' ? req.body.syncRunId.trim() : '';
       res.json(receiver.abort({ syncRunId: syncRunId || undefined }));

@@ -61,7 +61,7 @@ const buildFixtureHtml = (opts: {
        </div>`;
 
   return `<!doctype html>
-<html class="device-mobile oc-capacitor-app mobile-pointer" style="color-scheme: light;">
+<html class="device-mobile yuri-capacitor-app mobile-pointer" style="color-scheme: light;">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -72,14 +72,14 @@ ${opts.compiledCss}
     /* Tokens only — no pad/hide/body::after overrides of production rules. */
     :root {
       --background: #f8f7f3;
-      --oc-app-bottom-safe: ${opts.safePadPx}px;
-      --oc-safe-area-bottom: ${opts.safePadPx}px;
+      --yuri-app-bottom-safe: ${opts.safePadPx}px;
+      --yuri-safe-area-bottom: ${opts.safePadPx}px;
       --safe-area-inset-bottom: ${opts.safePadPx}px;
-      --oc-safe-area-bottom-visual: ${opts.safePadPx}px;
+      --yuri-safe-area-bottom-visual: ${opts.safePadPx}px;
     }
     html, body { margin: 0; width: 100%; height: 100%; background: #111; }
     /* Open bottom sheet fills the emulated mobile viewport. */
-    [data-oc-motion-id] {
+    [data-yuri-motion-id] {
       position: fixed !important;
       left: 0; right: 0; bottom: 0; top: auto;
       height: 720px;
@@ -97,11 +97,11 @@ ${opts.compiledCss}
 </head>
 <body>
   <div
-    class="oc-mobile-window-motion oc-mobile-window-motion-active"
+    class="yuri-mobile-window-motion yuri-mobile-window-motion-active"
     data-mobile-overlay-active="${overlayActive}"
     role="dialog"${inertAttr}
   >
-    <div class="${opts.surfaceClass}" data-oc-motion-id="mobile-direct-file" data-testid="sheet">
+    <div class="${opts.surfaceClass}" data-yuri-motion-id="mobile-direct-file" data-testid="sheet">
       <div class="flex min-h-0 flex-1 flex-col">
         <div class="${opts.bodyClass}" data-page-scroll-lock="true" data-testid="sheet-body">
           <div class="flex h-full min-h-0 flex-col overflow-hidden bg-background">
@@ -120,7 +120,7 @@ ${opts.compiledCss}
 };
 
 const measureScript = `(() => {
-  const sheet = document.querySelector('[data-oc-motion-id]');
+  const sheet = document.querySelector('[data-yuri-motion-id]');
   const body = document.querySelector('[data-testid="sheet-body"]');
   const iframe = document.querySelector('[data-testid="html-iframe"]');
   const viewer = document.querySelector('[data-testid="html-viewer"]');
@@ -163,7 +163,7 @@ const measureScript = `(() => {
     displayModeStandalone: matchMedia('(display-mode: standalone)').matches,
     surfaceClassName: sheet.className,
     hasPwaOverlayPanel: sheet.classList.contains('pwa-overlay-panel'),
-    appBottomSafe: getComputedStyle(document.documentElement).getPropertyValue('--oc-app-bottom-safe').trim(),
+    appBottomSafe: getComputedStyle(document.documentElement).getPropertyValue('--yuri-app-bottom-safe').trim(),
   };
 })()`;
 
@@ -203,9 +203,9 @@ describe('MobileFilesSurface HTML preview production layout', () => {
   test('source contracts: markers, no negative margin, structural body::after hide', () => {
     expect(filesSurfaceSource).toContain('data-mobile-html-preview');
     expect(filesSurfaceSource).toContain('data-mobile-html-fullscreen');
-    expect(filesSurfaceSource).not.toContain('oc-html-file-preview-open');
+    expect(filesSurfaceSource).not.toContain('yuri-html-file-preview-open');
     expect(filesSurfaceSource).not.toMatch(/mb-\[calc\(-1\*max\(0\.5rem/);
-    expect(mobileCssSource).toContain('[data-oc-motion-id]:has([data-mobile-html-preview="true"])');
+    expect(mobileCssSource).toContain('[data-yuri-motion-id]:has([data-mobile-html-preview="true"])');
     expect(mobileCssSource).toContain('[data-mobile-overlay-active="true"]:not([inert])');
     expect(mobileCssSource).toContain('@media (display-mode: standalone)');
     expect(mobileCssSource).toMatch(/display-mode:\s*standalone[\s\S]*data-mobile-html-preview/);
@@ -228,7 +228,7 @@ describe('MobileFilesSurface HTML preview production layout', () => {
       );
 
       const surfaceClass = [
-        'oc-mobile-floating-shell',
+        'yuri-mobile-floating-shell',
         getMobileWindowMotionSurfaceLayout('sheet', 'bottom'),
       ].join(' ');
       const bodyClass = 'flex min-h-0 flex-1 flex-col overflow-hidden';

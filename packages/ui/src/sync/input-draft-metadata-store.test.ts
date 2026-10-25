@@ -31,14 +31,14 @@ describe("input draft metadata store", () => {
 
   test("reads text-only, mentions-only, new, and malformed legacy entries", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_session", "text")
-    storage.values.set("openchamber_chat_confirmed_mentions_mentions", JSON.stringify(["one", 2]))
-    storage.values.set("openchamber_chat_input_draft_new", "new text")
-    storage.values.set("openchamber_chat_confirmed_mentions_new", "{")
+    storage.values.set("yuri_chat_input_draft_session", "text")
+    storage.values.set("yuri_chat_confirmed_mentions_mentions", JSON.stringify(["one", 2]))
+    storage.values.set("yuri_chat_input_draft_new", "new text")
+    storage.values.set("yuri_chat_confirmed_mentions_new", "{")
     expect(await readLegacyInputDrafts(sinkFor(storage))).toEqual({ ok: true, value: [
-      { suffix: "session", text: "text", mentions: [], keys: ["openchamber_chat_input_draft_session"] },
-      { suffix: "mentions", text: "", mentions: ["one"], keys: ["openchamber_chat_confirmed_mentions_mentions"] },
-      { suffix: "new", text: "new text", mentions: [], keys: ["openchamber_chat_input_draft_new", "openchamber_chat_confirmed_mentions_new"] },
+      { suffix: "session", text: "text", mentions: [], keys: ["yuri_chat_input_draft_session"] },
+      { suffix: "mentions", text: "", mentions: ["one"], keys: ["yuri_chat_confirmed_mentions_mentions"] },
+      { suffix: "new", text: "new text", mentions: [], keys: ["yuri_chat_input_draft_new", "yuri_chat_confirmed_mentions_new"] },
     ] })
   })
 
@@ -68,7 +68,7 @@ describe("input draft metadata store", () => {
 
   test("claims one transport across concurrent migrations and preserves durable staging", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_session", "draft")
+    storage.values.set("yuri_chat_input_draft_session", "draft")
     const sink = sinkFor(storage)
     const [first, second] = await Promise.all([migrateLegacyInputDraftMetadata(sink, "one"), migrateLegacyInputDraftMetadata(sink, "two")])
     expect(first.ok && first.value.migration.claimedTransportIdentity).toBe("one")
@@ -78,7 +78,7 @@ describe("input draft metadata store", () => {
 
   test("uses a matching marker without rewriting and retries partial cleanup", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_session", "draft")
+    storage.values.set("yuri_chat_input_draft_session", "draft")
     const sink = sinkFor(storage)
     storage.failRemove = true
     expect(await migrateLegacyInputDraftMetadata(sink, "runtime")).toEqual({ ok: false, error: { code: "unavailable" } })
@@ -96,24 +96,24 @@ describe("input draft metadata store", () => {
 
   test("retains legacy keys when marker persistence fails", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_session", "draft")
+    storage.values.set("yuri_chat_input_draft_session", "draft")
     const sink = sinkFor(storage)
     const originalWrite = sink.write
     sink.write = async (key, value) => key === INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY ? { ok: false, error: { code: "quota" } } : originalWrite(key, value)
     expect(await migrateLegacyInputDraftMetadata(sink, "runtime")).toEqual({ ok: false, error: { code: "quota" } })
-    expect(storage.values.get("openchamber_chat_input_draft_session")).toBe("draft")
+    expect(storage.values.get("yuri_chat_input_draft_session")).toBe("draft")
   })
 
   test("hydrates legacy staging read-only, then completes after persistence resumes", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_session", "draft")
+    storage.values.set("yuri_chat_input_draft_session", "draft")
     const sink = sinkFor(storage)
     const readonly = await migrateLegacyInputDraftMetadata(sink, "runtime", { persistenceEnabled: false })
     expect(readonly.ok && readonly.value.legacy.entries.session?.text).toBe("draft")
     expect(storage.writes).toEqual([])
     expect(storage.removes).toEqual([])
     expect((await migrateLegacyInputDraftMetadata(sink, "runtime")).ok).toBe(true)
-    expect(storage.values.has("openchamber_chat_input_draft_session")).toBe(false)
+    expect(storage.values.has("yuri_chat_input_draft_session")).toBe(false)
   })
 
   test("rejects corrupt migration markers", async () => {
@@ -127,34 +127,34 @@ describe("input draft metadata store", () => {
   test("repairs a valid mismatched marker from the durable staged claim before cleanup", async () => {
     const storage = new MemoryStorage()
     const sink = sinkFor(storage)
-    const staged = { ...snapshot(), migration: { complete: false, claimedTransportIdentity: "captured-runtime", captured: true, markerCommitted: false, cleanupComplete: false }, legacy: { entries: { session: { suffix: "session", text: "draft", mentions: [], keys: ["openchamber_chat_input_draft_session"] } } } }
+    const staged = { ...snapshot(), migration: { complete: false, claimedTransportIdentity: "captured-runtime", captured: true, markerCommitted: false, cleanupComplete: false }, legacy: { entries: { session: { suffix: "session", text: "draft", mentions: [], keys: ["yuri_chat_input_draft_session"] } } } }
     expect(await writeInputDraftMetadataSnapshot(sink, staged)).toEqual({ ok: true, value: undefined })
     storage.values.set(INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY, JSON.stringify({ version: 1, claimedTransportIdentity: "switched-runtime" }))
-    storage.values.set("openchamber_chat_input_draft_session", "draft")
+    storage.values.set("yuri_chat_input_draft_session", "draft")
 
     const migrated = await migrateLegacyInputDraftMetadata(sink, "switched-runtime")
 
     expect(migrated.ok && migrated.value.migration).toEqual({ complete: true, claimedTransportIdentity: "captured-runtime", captured: true, markerCommitted: true, cleanupComplete: true })
     expect(JSON.parse(storage.values.get(INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY)!)).toEqual({ version: 1, claimedTransportIdentity: "captured-runtime" })
-    expect(storage.values.has("openchamber_chat_input_draft_session")).toBe(false)
+    expect(storage.values.has("yuri_chat_input_draft_session")).toBe(false)
   })
 
   test("preserves staged legacy keys when mismatched marker repair fails", async () => {
     const storage = new MemoryStorage()
     const sink = sinkFor(storage)
-    const staged = { ...snapshot(), migration: { complete: false, claimedTransportIdentity: "captured-runtime", captured: true, markerCommitted: false, cleanupComplete: false }, legacy: { entries: { session: { suffix: "session", text: "draft", mentions: [], keys: ["openchamber_chat_input_draft_session"] } } } }
+    const staged = { ...snapshot(), migration: { complete: false, claimedTransportIdentity: "captured-runtime", captured: true, markerCommitted: false, cleanupComplete: false }, legacy: { entries: { session: { suffix: "session", text: "draft", mentions: [], keys: ["yuri_chat_input_draft_session"] } } } }
     expect(await writeInputDraftMetadataSnapshot(sink, staged)).toEqual({ ok: true, value: undefined })
     storage.values.set(INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY, JSON.stringify({ version: 1, claimedTransportIdentity: "switched-runtime" }))
-    storage.values.set("openchamber_chat_input_draft_session", "draft")
+    storage.values.set("yuri_chat_input_draft_session", "draft")
     storage.failWrite = true
 
     expect(await migrateLegacyInputDraftMetadata(sink, "switched-runtime")).toEqual({ ok: false, error: { code: "quota" } })
-    expect(storage.values.get("openchamber_chat_input_draft_session")).toBe("draft")
+    expect(storage.values.get("yuri_chat_input_draft_session")).toBe("draft")
   })
 
   test("quiesces entered work and keeps disabled migration read-only", async () => {
     const storage = new MemoryStorage()
-    storage.values.set("openchamber_chat_input_draft_session", "draft")
+    storage.values.set("yuri_chat_input_draft_session", "draft")
     const sink = sinkFor(storage)
     let release: (() => void) | undefined
     const write = sink.write

@@ -18,9 +18,9 @@ export const resolveSharedServiceRegistrationPath = (envLike = process.env, home
   return path.join(stateHome, 'opencode', 'service.json');
 };
 
-/** `OPENCHAMBER_OPENCODE_SHARED_SERVICE=0` opts back into a private managed `opencode serve`. */
+/** `YURI_OPENCODE_SHARED_SERVICE=0` opts back into a private managed `opencode serve`. */
 export const isSharedServiceEnabled = (envLike = process.env) => {
-  const raw = String(envLike.OPENCHAMBER_OPENCODE_SHARED_SERVICE ?? '').trim().toLowerCase();
+  const raw = String(envLike.YURI_OPENCODE_SHARED_SERVICE ?? '').trim().toLowerCase();
   return raw !== '0' && raw !== 'false' && raw !== 'off';
 };
 
@@ -57,16 +57,16 @@ export const readSharedServiceRegistration = async ({ file = resolveSharedServic
 };
 
 /**
- * Environment inherited by a service OpenChamber starts. The service outlives
- * OpenChamber and passes its env to every tool, so OpenChamber credentials
- * (`OPENCHAMBER_*`, the managed-serve password) never travel with it; the
+ * Environment inherited by a service Yuri starts. The service outlives
+ * Yuri and passes its env to every tool, so Yuri credentials
+ * (`YURI_*`, the managed-serve password) never travel with it; the
  * service owns its own persistent password.
  */
 export const buildSharedServiceStartEnv = (baseEnv = {}) => {
   const env = {};
   for (const [key, value] of Object.entries(baseEnv)) {
     if (typeof value !== 'string') continue;
-    if (key.startsWith('OPENCHAMBER_')) continue;
+    if (key.startsWith('YURI_')) continue;
     if (key === 'OPENCODE_SERVER_PASSWORD' || key === 'OPENCODE_PASSWORD') continue;
     env[key] = value;
   }

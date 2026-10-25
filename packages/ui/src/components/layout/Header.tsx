@@ -732,7 +732,7 @@ export const Header: React.FC<HeaderProps> = ({
       return null;
     }
 
-    const injected = (window as unknown as { __OPENCHAMBER_MACOS_MAJOR__?: unknown }).__OPENCHAMBER_MACOS_MAJOR__;
+    const injected = (window as unknown as { __YURI_MACOS_MAJOR__?: unknown }).__YURI_MACOS_MAJOR__;
     if (typeof injected === 'number' && Number.isFinite(injected) && injected > 0) {
       return injected;
     }
@@ -845,7 +845,7 @@ export const Header: React.FC<HeaderProps> = ({
         return;
       }
       const cfg = await desktopHostsGet();
-      const localOrigin = window.__OPENCHAMBER_LOCAL_ORIGIN__ || window.location.origin;
+      const localOrigin = window.__YURI_LOCAL_ORIGIN__ || window.location.origin;
       const runtimeApiBaseUrl = getRuntimeApiBaseUrl();
 
       if (runtimeApiBaseUrl && locationMatchesHost(runtimeApiBaseUrl, localOrigin)) {
@@ -893,7 +893,7 @@ export const Header: React.FC<HeaderProps> = ({
     setRemoteUpdateError(null);
     try {
       const params = new URLSearchParams({ appType: 'web', instanceMode: 'remote' });
-      const response = await runtimeFetch(`/api/openchamber/update-check?${params.toString()}`, {
+      const response = await runtimeFetch(`/api/yuri/update-check?${params.toString()}`, {
         method: 'GET',
         headers: { Accept: 'application/json' },
       });
@@ -1123,7 +1123,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const currentSessionTitle = React.useMemo(() => {
     if (!currentSessionId) {
-      return activeProjectLabel ?? 'OpenChamberY';
+      return activeProjectLabel ?? 'Yuri';
     }
     const trimmedTitle = currentSession?.title?.trim();
     return trimmedTitle && trimmedTitle.length > 0 ? trimmedTitle : 'Untitled Session';
@@ -1360,16 +1360,16 @@ export const Header: React.FC<HeaderProps> = ({
   // traffic lights / window-controls-overlay). When the sidebar is open this
   // space is owned by the sidebar's top strip instead, so the header drops back
   // to its normal content padding. The full value is published as
-  // `--oc-titlebar-left-inset` so the sidebar strip can mirror it.
+  // `--yuri-titlebar-left-inset` so the sidebar strip can mirror it.
   const titlebarLeftInset = React.useMemo(() => {
     if (isDesktopApp && isMacPlatform && !isDesktopWindowFullscreen) {
       return '5.5rem';
     }
     if (isTabletStandalonePwa) {
-      return 'max(calc(0.75rem + var(--oc-wco-left-inset, 0px)), 5.5rem)';
+      return 'max(calc(0.75rem + var(--yuri-wco-left-inset, 0px)), 5.5rem)';
     }
     if ((!isDesktopApp || usesFramelessChrome) && !isVSCode) {
-      return 'calc(0.75rem + var(--oc-wco-left-inset, 0px))';
+      return 'calc(0.75rem + var(--yuri-wco-left-inset, 0px))';
     }
     return '0.75rem';
   }, [isDesktopApp, isDesktopWindowFullscreen, isMacPlatform, isTabletStandalonePwa, isVSCode, usesFramelessChrome]);
@@ -1378,7 +1378,7 @@ export const Header: React.FC<HeaderProps> = ({
     if (typeof document === 'undefined') {
       return;
     }
-    document.documentElement.style.setProperty('--oc-titlebar-left-inset', titlebarLeftInset);
+    document.documentElement.style.setProperty('--yuri-titlebar-left-inset', titlebarLeftInset);
   }, [titlebarLeftInset]);
 
   // Space reserved on the header's left for the persistent overlay when the
@@ -1388,10 +1388,10 @@ export const Header: React.FC<HeaderProps> = ({
   // a no-drag carve under the control cluster. Both animate so the session title
   // slides in/out in lockstep with the sidebar. When the sidebar is open the
   // overlay is over the sidebar, so the header only keeps normal content padding.
-  const headerInsetSpacerWidth = isSidebarOpen ? '0.75rem' : 'var(--oc-titlebar-left-inset, 0.75rem)';
+  const headerInsetSpacerWidth = isSidebarOpen ? '0.75rem' : 'var(--yuri-titlebar-left-inset, 0.75rem)';
   const headerControlsSpacerWidth = isSidebarOpen
     ? '0px'
-    : 'calc(var(--oc-titlebar-controls-width, 5.5rem) + 0.5rem)';
+    : 'calc(var(--yuri-titlebar-controls-width, 5.5rem) + 0.5rem)';
 
   useEffect(() => {
     if (!isDesktopApp || !isMacPlatform) {
@@ -1419,11 +1419,11 @@ export const Header: React.FC<HeaderProps> = ({
     };
 
     void syncFullscreenState();
-    window.addEventListener('openchamber:window-resized', onResize);
+    window.addEventListener('yuri:window-resized', onResize);
 
     return () => {
       disposed = true;
-      window.removeEventListener('openchamber:window-resized', onResize);
+      window.removeEventListener('yuri:window-resized', onResize);
     };
   }, [isDesktopApp, isMacPlatform]);
 
@@ -1448,9 +1448,9 @@ export const Header: React.FC<HeaderProps> = ({
     return {
       // Left inset is handled by the no-drag spacer (see renderDesktop); only
       // the right inset / titlebar height are owned by the window-controls overlay.
-      paddingRight: 'calc(0.75rem + var(--oc-wco-right-inset, 0px))',
-      minHeight: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
-      height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
+      paddingRight: 'calc(0.75rem + var(--yuri-wco-right-inset, 0px))',
+      minHeight: 'max(3rem, var(--yuri-wco-titlebar-height, 0px))',
+      height: 'max(3rem, var(--yuri-wco-titlebar-height, 0px))',
     };
   }, [isDesktopApp, isVSCode, usesFramelessChrome]);
 
@@ -1461,7 +1461,7 @@ export const Header: React.FC<HeaderProps> = ({
 
     const height = headerRef.current?.getBoundingClientRect().height;
     if (height) {
-      document.documentElement.style.setProperty('--oc-header-height', `${height}px`);
+      document.documentElement.style.setProperty('--yuri-header-height', `${height}px`);
     }
   }, []);
 
@@ -2140,7 +2140,7 @@ export const Header: React.FC<HeaderProps> = ({
               <DropdownMenuContent
                 align="end"
                 sideOffset={0}
-                positionerClassName="!fixed !bottom-0 !left-0 !right-0 !top-[var(--oc-header-height,56px)] !transform-none"
+                positionerClassName="!fixed !bottom-0 !left-0 !right-0 !top-[var(--yuri-header-height,56px)] !transform-none"
                 className="h-full w-screen max-h-none rounded-none border-0 p-0 pt-1 overflow-hidden"
               >
                 <div className="flex h-full flex-col bg-[var(--surface-elevated)]">
@@ -2411,7 +2411,7 @@ export const Header: React.FC<HeaderProps> = ({
     // Mobile keeps a full-width divider. On desktop the divider lives on the chat
     // content wrapper instead, so it doesn't run between the header and the right
     // sidebar (they read as one continuous surface).
-    isMobile && 'oc-layout-divider-b'
+    isMobile && 'yuri-layout-divider-b'
   );
 
   return (

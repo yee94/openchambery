@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { isNormalizedPreviewProxyPath, resolveRelayPreviewFrameSrc } from './relay-preview-frame-src';
 
 describe('resolveRelayPreviewFrameSrc', () => {
-  const authenticated = '/api/preview/proxy/abc123/index.html?oc_preview_token=p&oc_url_token=u#top';
-  const absoluteAuthenticated = 'https://host.example/api/preview/proxy/abc123/?oc_preview_token=p&oc_url_token=u';
+  const authenticated = '/api/preview/proxy/abc123/index.html?yuri_preview_token=p&yuri_url_token=u#top';
+  const absoluteAuthenticated = 'https://host.example/api/preview/proxy/abc123/?yuri_preview_token=p&yuri_url_token=u';
 
   it('returns authenticated asset unchanged when relay is inactive', () => {
     expect(resolveRelayPreviewFrameSrc({
@@ -38,7 +38,7 @@ describe('resolveRelayPreviewFrameSrc', () => {
       relayActive: true,
       gatewayOrigin: 'http://127.0.0.1:54321',
       authenticatedAssetUrl: authenticated,
-    })).toBe('http://127.0.0.1:54321/api/preview/proxy/abc123/index.html?oc_preview_token=p&oc_url_token=u#top');
+    })).toBe('http://127.0.0.1:54321/api/preview/proxy/abc123/index.html?yuri_preview_token=p&yuri_url_token=u#top');
   });
 
   it('rewrites absolute authenticated asset onto gateway origin under relay', () => {
@@ -46,7 +46,7 @@ describe('resolveRelayPreviewFrameSrc', () => {
       relayActive: true,
       gatewayOrigin: 'http://127.0.0.1:54321',
       authenticatedAssetUrl: absoluteAuthenticated,
-    })).toBe('http://127.0.0.1:54321/api/preview/proxy/abc123/?oc_preview_token=p&oc_url_token=u');
+    })).toBe('http://127.0.0.1:54321/api/preview/proxy/abc123/?yuri_preview_token=p&yuri_url_token=u');
   });
 
   it('rejects non-loopback gateway origins', () => {
@@ -70,7 +70,7 @@ describe('resolveRelayPreviewFrameSrc', () => {
 describe('isNormalizedPreviewProxyPath', () => {
   it('accepts preview proxy paths and rejects traversal', () => {
     expect(isNormalizedPreviewProxyPath('/api/preview/proxy/abc123/')).toBe(true);
-    expect(isNormalizedPreviewProxyPath('/api/preview/proxy/abc123/?oc_preview_token=x')).toBe(true);
+    expect(isNormalizedPreviewProxyPath('/api/preview/proxy/abc123/?yuri_preview_token=x')).toBe(true);
     expect(isNormalizedPreviewProxyPath('/api/preview/proxy/../session')).toBe(false);
     expect(isNormalizedPreviewProxyPath('/api/preview/proxy/%2e%2e/session')).toBe(false);
     expect(isNormalizedPreviewProxyPath('/api/preview/proxy/../../api/session')).toBe(false);

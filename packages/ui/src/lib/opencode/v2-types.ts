@@ -77,7 +77,7 @@ export type {
 };
 
 /**
- * Real v2 client from `OpenCode.make(...)`, plus OpenChamber's callable
+ * Real v2 client from `OpenCode.make(...)`, plus Yuri's callable
  * `session.message(input)` shim over official nested `session.message.get`.
  */
 export type V2Client = Omit<RawOpenCodeClient, "session"> & {

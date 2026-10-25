@@ -1,7 +1,7 @@
 import { buildLocalUrl } from './cli-network.js';
 import { getInstanceFilePath, readInstanceOptions } from './cli-process.js';
 
-const UI_SESSION_COOKIE_NAME = 'oc_ui_session';
+const UI_SESSION_COOKIE_NAME = 'yuri_ui_session';
 
 function extractUiSessionCookie(response) {
   const setCookie = response?.headers?.get?.('set-cookie');

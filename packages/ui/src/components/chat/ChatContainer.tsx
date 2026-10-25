@@ -165,7 +165,7 @@ const EMPTY_PENDING_USER_MESSAGES: readonly PendingUserMessagePresentation[] = [
 // Stable empty snapshot for the zustand form selector (see sessionForms below).
 const EMPTY_SESSION_FORMS: import('@/sync/session-form-api').SessionFormInfo[] = [];
 const IDLE_SESSION_STATUS = { type: 'idle' as const };
-const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
+const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'yuri:chat-force-scroll-bottom';
 /** useEventListener attaches to window when target is null — pass a no-op getter instead. */
 const NO_EVENT_TARGET = () => undefined;
 const DEFAULT_RETRY_MESSAGE = 'Quota limit reached. Retrying automatically.';
@@ -374,7 +374,7 @@ const ChatViewport = React.memo(({
         <div className="absolute inset-x-0 top-0 z-20 pointer-events-none" role="status" aria-live="polite">
             <div className="chat-column flex items-center justify-center gap-1.5 pt-3 pb-1">
                 <span
-                    className="oc-mobile-glass-control flex size-8 items-center justify-center rounded-full text-[var(--surface-mutedForeground)]"
+                    className="yuri-mobile-glass-control flex size-8 items-center justify-center rounded-full text-[var(--surface-mutedForeground)]"
                     aria-label={t('chat.history.loadingMore')}
                 >
                     <Icon name="loader-4" className="size-4 animate-spin" aria-hidden="true" />
@@ -538,7 +538,7 @@ const ChatViewport = React.memo(({
                     data-scroll-shadow="true"
                     data-scrollbar="chat"
                 >
-                    <div className={cn('oc-chat-scroll-content relative z-0 min-h-full', isMobile && 'chat-scroll-foot-inset')}>
+                    <div className={cn('yuri-chat-scroll-content relative z-0 min-h-full', isMobile && 'chat-scroll-foot-inset')}>
                         {mobileLoadOlderControl}
                         {desktopHistoryStatus}
                         <MessageList
@@ -1266,7 +1266,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             return;
         }
         const data = event.data as { type?: unknown; payload?: { allowPromptingSubagentSessions?: unknown } };
-        if (data?.type !== 'openchamber:chat-settings-sync'
+        if (data?.type !== 'yuri:chat-settings-sync'
             || typeof data.payload?.allowPromptingSubagentSessions !== 'boolean') {
             return;
         }
@@ -1285,18 +1285,18 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     useMount(() => {
         if (!isEmbeddedChatFrame) return;
         const scopedWindow = window as typeof window & {
-            __openchamberApplyChatSettingsSync?: (payload: { allowPromptingSubagentSessions: boolean }) => void;
+            __yuriApplyChatSettingsSync?: (payload: { allowPromptingSubagentSessions: boolean }) => void;
         };
-        scopedWindow.__openchamberApplyChatSettingsSync = applyEmbeddedChatSettingsSync;
-        window.parent.postMessage({ type: 'openchamber:chat-settings-request' }, window.location.origin);
+        scopedWindow.__yuriApplyChatSettingsSync = applyEmbeddedChatSettingsSync;
+        window.parent.postMessage({ type: 'yuri:chat-settings-request' }, window.location.origin);
     });
     useUnmount(() => {
         if (typeof window === 'undefined') return;
         const scopedWindow = window as typeof window & {
-            __openchamberApplyChatSettingsSync?: (payload: { allowPromptingSubagentSessions: boolean }) => void;
+            __yuriApplyChatSettingsSync?: (payload: { allowPromptingSubagentSessions: boolean }) => void;
         };
-        if (scopedWindow.__openchamberApplyChatSettingsSync === applyEmbeddedChatSettingsSync) {
-            delete scopedWindow.__openchamberApplyChatSettingsSync;
+        if (scopedWindow.__yuriApplyChatSettingsSync === applyEmbeddedChatSettingsSync) {
+            delete scopedWindow.__yuriApplyChatSettingsSync;
         }
     });
 
@@ -1900,7 +1900,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 		if ((draftSubmitting || draftEstablishing) && draftPendingMessage) {
 			const draftViewportKey = `draft:${newSessionDraft.draftID ?? 'pending'}`;
 			return (
-				<div ref={composerSwapScopeRef} className={cn('relative flex h-full flex-col bg-background', isMobile && 'oc-chat-composer-swap-scope')}>
+				<div ref={composerSwapScopeRef} className={cn('relative flex h-full flex-col bg-background', isMobile && 'yuri-chat-composer-swap-scope')}>
 					<ChatViewport
 						timelineHistoryAnchorToken={timelineHistoryAnchorToken}
 						key={draftViewportKey}
@@ -1949,7 +1949,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 					<div
 						className={cn(
 							'invisible pointer-events-none relative z-10',
-							isMobile && 'oc-mobile-composer-foot oc-mobile-composer-foot--overlay',
+							isMobile && 'yuri-mobile-composer-foot yuri-mobile-composer-foot--overlay',
 							isDesktopExpandedInput
 								? 'absolute inset-0 bg-background'
 								: 'bg-background',
@@ -1984,7 +1984,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 		return (
 			<div className="relative flex h-full flex-col bg-background">
 				{useCompactDraftLayout && !isDesktopExpandedInput ? (
-					<div className="oc-draft-center flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
+					<div className="yuri-draft-center flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
 						<h1 className="text-balance text-3xl font-normal tracking-tight text-foreground">
 							{renderDraftTitle(
 								draftProjectLabel
@@ -1995,14 +1995,14 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						</h1>
 						<DraftPresetChips
 							onSubmit={(text) => useInputStore.getState().requestPresetSubmit(text)}
-							className="oc-draft-starters mt-8 max-w-md"
+							className="yuri-draft-starters mt-8 max-w-md"
 						/>
 					</div>
 				) : null}
 				<div
 					className={cn(
 						'relative z-10 flex min-h-0',
-						isMobile && 'oc-mobile-composer-foot',
+						isMobile && 'yuri-mobile-composer-foot',
 						isDesktopExpandedInput
 							? 'flex-1 bg-background'
 							: useCompactDraftLayout
@@ -2065,7 +2065,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 					key="composer-foot"
 					className={cn(
 						'relative z-10',
-						isMobile && 'oc-mobile-composer-foot',
+						isMobile && 'yuri-mobile-composer-foot',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
 							: 'bg-background',
@@ -2079,7 +2079,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 
 	if (isSessionHydrating) {
 		return (
-			<div ref={composerSwapScopeRef} className={cn('relative flex flex-col h-full bg-background', isMobile && 'oc-chat-composer-swap-scope')}>
+			<div ref={composerSwapScopeRef} className={cn('relative flex flex-col h-full bg-background', isMobile && 'yuri-chat-composer-swap-scope')}>
 				{returnToParentButton}
 				<div
 					className={cn(
@@ -2123,7 +2123,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                     key="composer-foot"
                     className={cn(
                         'relative z-10',
-                        isMobile && 'oc-mobile-composer-foot oc-mobile-composer-foot--overlay',
+                        isMobile && 'yuri-mobile-composer-foot yuri-mobile-composer-foot--overlay',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
 							: 'bg-background'
@@ -2161,7 +2161,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                     key="composer-foot"
                     className={cn(
                         'relative z-10',
-                        isMobile && 'oc-mobile-composer-foot',
+                        isMobile && 'yuri-mobile-composer-foot',
 					isDesktopExpandedInput
 						? 'flex-1 min-h-0 bg-background'
 						: 'bg-background'
@@ -2174,7 +2174,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }
 
 	return (
-		<div ref={composerSwapScopeRef} className={cn('relative flex flex-col h-full bg-background', isMobile && 'oc-chat-composer-swap-scope')}>
+		<div ref={composerSwapScopeRef} className={cn('relative flex flex-col h-full bg-background', isMobile && 'yuri-chat-composer-swap-scope')}>
 			{warning ? (
 				<div className="shrink-0 border-b border-border bg-[var(--status-warning-background)] px-4 py-2.5 typography-meta text-[var(--status-warning-foreground)]">
 					{warning}
@@ -2223,7 +2223,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 key="composer-foot"
                 className={cn(
                     'relative z-10',
-                    isMobile && 'oc-mobile-composer-foot oc-mobile-composer-foot--overlay',
+                    isMobile && 'yuri-mobile-composer-foot yuri-mobile-composer-foot--overlay',
                     isDesktopExpandedInput
                         ? 'flex-1 min-h-0 bg-background'
                         : 'bg-background'

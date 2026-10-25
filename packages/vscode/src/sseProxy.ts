@@ -121,7 +121,7 @@ type OpenCodeSsePathname = '/api/event' | '/api/global/event';
  * forms and restore the `/api` prefix before joining the sidecar origin.
  */
 const normalizeSsePath = (path: string): { pathname: OpenCodeSsePathname; searchParams: URLSearchParams; directory: string | null } => {
-  const parsed = new URL(path, 'https://openchamber.invalid');
+  const parsed = new URL(path, 'https://yuri.invalid');
   const raw = parsed.pathname.replace(/\/+$/, '') || '/';
   const pathname: OpenCodeSsePathname =
     raw === '/api/global/event' || raw === '/global/event'
@@ -143,7 +143,7 @@ const createSseUrl = (baseUrl: string, pathname: OpenCodeSsePathname, searchPara
   const base = `${baseUrl.replace(/\/+$/, '')}/`;
   const url = new URL(pathname.replace(/^\/+/, ''), base);
   for (const [key, value] of searchParams) {
-    // OpenChamber-only projection control — never forward to OpenCode.
+    // Yuri-only projection control — never forward to OpenCode.
     if (key === 'includeReasoning') continue;
     url.searchParams.append(key, value);
   }
@@ -177,7 +177,7 @@ const fetchSseResponse = async (
     throw new Error('OpenCode API URL not available');
   }
 
-  // Strip OpenChamber-only includeReasoning before upstream OpenCode fetch.
+  // Strip Yuri-only includeReasoning before upstream OpenCode fetch.
   const upstreamPath = stripIncludeReasoningParam(path);
   const { pathname, searchParams, directory } = normalizeSsePath(upstreamPath);
   const resolvedDirectory = directory || resolveDefaultDirectory(manager);

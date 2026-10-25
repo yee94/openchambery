@@ -1,14 +1,14 @@
 /**
  * Desktop packaging profiles.
  *
- * Default / CI / release: OPENCHAMBER_DESKTOP_PROFILE unset or "release"
- * Local side-by-side QA: OPENCHAMBER_DESKTOP_PROFILE=preview
+ * Default / CI / release: YURI_DESKTOP_PROFILE unset or "release"
+ * Local side-by-side QA: YURI_DESKTOP_PROFILE=preview
  *
  * Preview is intentionally opt-in so normal electron-builder / GitHub release
  * flows keep production appId, productName, icons, and dist/ output.
  */
 
-export const DESKTOP_PROFILE_ENV = 'OPENCHAMBER_DESKTOP_PROFILE';
+export const DESKTOP_PROFILE_ENV = 'YURI_DESKTOP_PROFILE';
 
 /** @typedef {'release' | 'preview'} DesktopProfileId */
 
@@ -29,12 +29,12 @@ export const DESKTOP_PROFILE_ENV = 'OPENCHAMBER_DESKTOP_PROFILE';
 export const DESKTOP_PROFILES = Object.freeze({
   release: Object.freeze({
     id: 'release',
-    appId: 'dev.openchamber.desktop',
-    productName: 'OpenChamber',
-    appUserModelId: 'dev.openchamber.desktop',
-    userDataDirName: 'OpenChamber',
-    linuxDesktopName: 'openchamber.desktop',
-    linuxExecutableName: 'openchamber',
+    appId: 'dev.yuri.desktop',
+    productName: 'Yuri',
+    appUserModelId: 'dev.yuri.desktop',
+    userDataDirName: 'Yuri',
+    linuxDesktopName: 'yuri.desktop',
+    linuxExecutableName: 'yuri',
     outputDir: 'dist',
     icons: Object.freeze({
       mac: 'resources/icons/icon.icns',
@@ -46,12 +46,12 @@ export const DESKTOP_PROFILES = Object.freeze({
   }),
   preview: Object.freeze({
     id: 'preview',
-    appId: 'dev.openchamber.desktop.preview',
-    productName: 'OpenChamber Preview',
-    appUserModelId: 'dev.openchamber.desktop.preview',
-    userDataDirName: 'OpenChamber Preview',
-    linuxDesktopName: 'openchamber-preview.desktop',
-    linuxExecutableName: 'openchamber-preview',
+    appId: 'dev.yuri.desktop.preview',
+    productName: 'Yuri Preview',
+    appUserModelId: 'dev.yuri.desktop.preview',
+    userDataDirName: 'Yuri Preview',
+    linuxDesktopName: 'yuri-preview.desktop',
+    linuxExecutableName: 'yuri-preview',
     outputDir: 'dist-preview',
     icons: Object.freeze({
       mac: 'resources/icons/preview-icon.icns',
@@ -108,7 +108,7 @@ export const detectRuntimeDesktopProfileId = ({
     }
   }
   const haystack = `${productName}\n${execPath}`;
-  if (/openchamber[\s-]*preview/i.test(haystack) || /assistant[\s-]*preview/i.test(haystack)) {
+  if (/yuri[\s-]*preview/i.test(haystack) || /assistant[\s-]*preview/i.test(haystack)) {
     return 'preview';
   }
   return 'release';
@@ -137,7 +137,7 @@ export const electronBuilderArgsForProfile = (profile) => {
     `-c.linux.icon=${profile.icons.linux}`,
     `-c.linux.executableName=${profile.linuxExecutableName}`,
     `-c.linux.desktop.entry.Name=${profile.productName}`,
-    `-c.linux.desktop.entry.Comment=Preview desktop runtime for OpenChamber`,
+    `-c.linux.desktop.entry.Comment=Preview desktop runtime for Yuri`,
     `-c.linux.desktop.entry.Icon=${profile.linuxExecutableName}`,
     `-c.linux.desktop.entry.StartupWMClass=${profile.linuxExecutableName}`,
     `-c.nsis.installerIcon=${profile.icons.win}`,

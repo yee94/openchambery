@@ -53,7 +53,7 @@ export const rewriteGeometryToPaddingScale = (value) => {
 };
 
 const plugin = () => ({
-  postcssPlugin: 'openchamber-dpt-font-size',
+  postcssPlugin: 'yuri-dpt-font-size',
   Declaration(decl) {
     if (!shouldRewriteProp(decl.prop)) return;
     const rewrite = isTypographyProp(decl.prop)

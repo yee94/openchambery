@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const makeDataDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-record-'));
+const makeDataDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-record-'));
 
 describe('OpenCode session record ownership', () => {
   it('keeps title and archive on the OpenCode record across archive and restore', async () => {
@@ -23,7 +23,7 @@ describe('OpenCode session record ownership', () => {
       ['ses_1', {
         id: 'ses_1',
         title: 'Keep me',
-        metadata: { openchamber: { goal: { status: 'active' }, assistant: { assistantID: 'ast_1' } } },
+        metadata: { yuri: { goal: { status: 'active' }, assistant: { assistantID: 'ast_1' } } },
         time: { created: 1, updated: 2 },
       }],
     ]);
@@ -51,17 +51,17 @@ describe('OpenCode session record ownership', () => {
     expect(archived.session.title).toBe('Keep me');
     expect(archived.session.time.archived).toBe(50);
     expect(records.get('ses_1').title).toBe('Keep me');
-    expect(records.get('ses_1').metadata.openchamber.archive.archivedAt).toBe(50);
-    expect(records.get('ses_1').metadata.openchamber.goal.status).toBe('active');
-    expect(records.get('ses_1').metadata.openchamber.assistant.assistantID).toBe('ast_1');
-    expect(writes.at(-1).metadata.openchamber.assistant.assistantID).toBe('ast_1');
+    expect(records.get('ses_1').metadata.yuri.archive.archivedAt).toBe(50);
+    expect(records.get('ses_1').metadata.yuri.goal.status).toBe('active');
+    expect(records.get('ses_1').metadata.yuri.assistant.assistantID).toBe('ast_1');
+    expect(writes.at(-1).metadata.yuri.assistant.assistantID).toBe('ast_1');
 
     const restored = await archive.setArchive({ sessionID: 'ses_1', archivedAt: 0 });
     expect(restored.session.title).toBe('Keep me');
     expect(restored.session.time.archived).toBeUndefined();
     expect(records.get('ses_1').title).toBe('Keep me');
-    expect(records.get('ses_1').metadata.openchamber.archive.archivedAt).toBe(0);
-    expect(records.get('ses_1').metadata.openchamber.goal.status).toBe('active');
+    expect(records.get('ses_1').metadata.yuri.archive.archivedAt).toBe(0);
+    expect(records.get('ses_1').metadata.yuri.goal.status).toBe('active');
 
     const restarted = createSessionMetadataStore({
       dataDir: makeDataDir(),
@@ -69,7 +69,7 @@ describe('OpenCode session record ownership', () => {
       recordWriter: async () => undefined,
     });
     await expect(restarted.get('ses_1')).resolves.toMatchObject({
-      openchamber: {
+      yuri: {
         archive: { archivedAt: 0 },
         goal: { status: 'active' },
         assistant: { assistantID: 'ast_1' },
@@ -86,7 +86,7 @@ describe('OpenCode session record ownership', () => {
       {
         id: 'ses_1',
         title: 'Still here',
-        metadata: { openchamber: { archive: { archivedAt: 9 } } },
+        metadata: { yuri: { archive: { archivedAt: 9 } } },
         time: { created: 1, updated: 2 },
       },
       { id: 'ses_2', title: 'Also here', time: { created: 1, updated: 2 } },
@@ -106,7 +106,7 @@ describe('OpenCode session record ownership', () => {
   it('does not treat a failed side-store load as an authoritative empty migration', async () => {
     const writes = [];
     const records = {
-      ses_1: { id: 'ses_1', title: 'Stay', metadata: { openchamber: { goal: { id: 'g1' } } } },
+      ses_1: { id: 'ses_1', title: 'Stay', metadata: { yuri: { goal: { id: 'g1' } } } },
     };
     const result = await migrateLoadedSideStore({
       loadResult: { ok: false, entries: {} },
@@ -120,18 +120,18 @@ describe('OpenCode session record ownership', () => {
     expect(result.status).toBe('unavailable');
     expect(writes).toEqual([]);
     expect(records.ses_1.title).toBe('Stay');
-    expect(records.ses_1.metadata.openchamber.goal.id).toBe('g1');
+    expect(records.ses_1.metadata.yuri.goal.id).toBe('g1');
   });
 
   it('keeps other sessions when one migration write fails', async () => {
     const records = {
       ses_ok: { id: 'ses_ok', title: 'Ok', metadata: {} },
-      ses_bad: { id: 'ses_bad', title: 'Bad', metadata: { openchamber: { llm: { purpose: 'keep' } } } },
+      ses_bad: { id: 'ses_bad', title: 'Bad', metadata: { yuri: { llm: { purpose: 'keep' } } } },
       ses_only_opencode: { id: 'ses_only_opencode', title: 'Stay', metadata: { fromOpenCode: true } },
     };
     const side = {
-      ses_ok: { openchamber: { goal: { id: 'g1' } } },
-      ses_bad: { openchamber: { assistant: { assistantID: 'ast_1' } } },
+      ses_ok: { yuri: { goal: { id: 'g1' } } },
+      ses_bad: { yuri: { assistant: { assistantID: 'ast_1' } } },
     };
 
     const result = await migrateLoadedSideStore({
@@ -146,26 +146,26 @@ describe('OpenCode session record ownership', () => {
     expect(result.status).toBe('partial');
     expect(result.migrated).toEqual(['ses_ok']);
     expect(result.failed).toEqual([{ id: 'ses_bad', error: 'write failed' }]);
-    expect(records.ses_ok.metadata.openchamber.goal.id).toBe('g1');
+    expect(records.ses_ok.metadata.yuri.goal.id).toBe('g1');
     expect(records.ses_ok.title).toBe('Ok');
     expect(records.ses_bad.title).toBe('Bad');
-    expect(records.ses_bad.metadata.openchamber.llm.purpose).toBe('keep');
-    expect(records.ses_bad.metadata.openchamber.assistant).toBeUndefined();
+    expect(records.ses_bad.metadata.yuri.llm.purpose).toBe('keep');
+    expect(records.ses_bad.metadata.yuri.assistant).toBeUndefined();
     expect(records.ses_only_opencode).toEqual({
       id: 'ses_only_opencode',
       title: 'Stay',
       metadata: { fromOpenCode: true },
     });
-    expect(side.ses_bad.openchamber.assistant.assistantID).toBe('ast_1');
+    expect(side.ses_bad.yuri.assistant.assistantID).toBe('ast_1');
   });
 
   it('fills side-store gaps without letting an empty side row wipe OpenCode fields', () => {
     expect(mergeOwnedMetadata(
-      { openchamber: { goal: { status: 'paused' } }, fromOpenCode: true },
-      { openchamber: { goal: { id: 'g1' }, archive: { archivedAt: 4 } } },
+      { yuri: { goal: { status: 'paused' } }, fromOpenCode: true },
+      { yuri: { goal: { id: 'g1' }, archive: { archivedAt: 4 } } },
     )).toEqual({
       fromOpenCode: true,
-      openchamber: { goal: { id: 'g1', status: 'paused' }, archive: { archivedAt: 4 } },
+      yuri: { goal: { id: 'g1', status: 'paused' }, archive: { archivedAt: 4 } },
     });
     expect(mergeOwnedMetadata({ keep: true }, {})).toEqual({ keep: true });
     expect(mergeOwnedMetadata({ keep: true }, null)).toEqual({ keep: true });
@@ -174,7 +174,7 @@ describe('OpenCode session record ownership', () => {
   it('throws when the installed client has no session.update instead of writing nothing', async () => {
     await expect(writeSessionRecordViaClient({ session: {} }, {
       sessionID: 'ses_1',
-      metadata: { openchamber: { archive: { archivedAt: 1 } } },
+      metadata: { yuri: { archive: { archivedAt: 1 } } },
     })).rejects.toThrow(/session\.update is unavailable/);
   });
 
@@ -182,11 +182,11 @@ describe('OpenCode session record ownership', () => {
     const update = vi.fn(async () => undefined);
     await writeSessionRecordViaClient({ session: { update } }, {
       sessionID: 'ses_1',
-      metadata: { openchamber: { archive: { archivedAt: 3 } } },
+      metadata: { yuri: { archive: { archivedAt: 3 } } },
     });
     expect(update).toHaveBeenCalledWith({
       sessionID: 'ses_1',
-      metadata: { openchamber: { archive: { archivedAt: 3 } } },
+      metadata: { yuri: { archive: { archivedAt: 3 } } },
     }, undefined);
     expect(update.mock.calls[0][0].title).toBeUndefined();
   });
@@ -232,11 +232,11 @@ describe('OpenCode session record ownership', () => {
     await expect(client.read('ses_down')).rejects.toThrow(/503/);
     await client.write({
       sessionID: 'ses_ok',
-      metadata: { openchamber: { archive: { archivedAt: 8 } } },
+      metadata: { yuri: { archive: { archivedAt: 8 } } },
     });
 
     const patch = calls.find((call) => call.method === 'PATCH');
-    expect(patch.body).toEqual({ metadata: { openchamber: { archive: { archivedAt: 8 } } } });
+    expect(patch.body).toEqual({ metadata: { yuri: { archive: { archivedAt: 8 } } } });
     expect(patch.body.title).toBeUndefined();
   });
 });

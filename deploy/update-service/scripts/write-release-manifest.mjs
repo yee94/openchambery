@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const manifestPath = path.join(projectRoot, 'release-manifest.json');
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const RELEASES_URL = 'https://github.com/yee94/openchamber/releases';
+const RELEASES_URL = 'https://github.com/yee94/yuri/releases';
 const version = String(process.argv[2] || '').trim().replace(/^v/, '');
 
 if (!VERSION_PATTERN.test(version)) {

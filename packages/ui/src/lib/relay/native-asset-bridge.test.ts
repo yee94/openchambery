@@ -52,11 +52,11 @@ describe('resolveNativeRelayAssetBridge', () => {
 
     const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
     const runtimeWindow = {
-      __OPENCHAMBER_DESKTOP__: {
+      __YURI_DESKTOP__: {
         virtualAsset: {
           create: async (options: { mimeType?: string }) => {
             created.push(options);
-            return { assetId: 'electron-id-1', url: 'openchamber-asset://stream/electron-id-1', mimeType: options.mimeType };
+            return { assetId: 'electron-id-1', url: 'yuri-asset://stream/electron-id-1', mimeType: options.mimeType };
           },
           push: async (assetId: string, chunk: Uint8Array) => {
             pushes.push({ assetId, bytes: chunk.byteLength });
@@ -81,7 +81,7 @@ describe('resolveNativeRelayAssetBridge', () => {
       const opened = await bridge!.openAsset({ assetId: 'suggested', mimeType: 'image/png' });
       expect(opened).toEqual({
         assetId: 'electron-id-1',
-        url: 'openchamber-asset://stream/electron-id-1',
+        url: 'yuri-asset://stream/electron-id-1',
       });
       expect(created).toEqual([{ mimeType: 'image/png' }]);
 

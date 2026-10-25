@@ -23,14 +23,14 @@ describe('SettingsGroup', () => {
       </SettingsGroup>,
     );
 
-    expect(markup).toContain('class="oc-settings-group"');
-    expect(markup).toContain('class="oc-settings-group-card"');
-    expect(markup).toContain('data-settings-item="provider-group" class="oc-settings-group-card"');
-    expect(markup).toContain('oc-settings-group-row oc-settings-split-row');
+    expect(markup).toContain('class="yuri-settings-group"');
+    expect(markup).toContain('class="yuri-settings-group-card"');
+    expect(markup).toContain('data-settings-item="provider-group" class="yuri-settings-group-card"');
+    expect(markup).toContain('yuri-settings-group-row yuri-settings-split-row');
     expect(markup).toContain('data-settings-label-script="latin"');
     expect(markup).toContain('data-settings-item="provider"');
     expect(markup).toContain('data-settings-value=""');
-    expect(markup).toContain('oc-settings-group-description');
+    expect(markup).toContain('yuri-settings-group-description');
     expect(markup).toContain('Appears under the card');
   });
 
@@ -55,11 +55,11 @@ describe('SettingsGroup', () => {
       </SettingsField>,
     );
 
-    const cardStart = markup.indexOf('oc-settings-group-card');
+    const cardStart = markup.indexOf('yuri-settings-group-card');
     expect(cardStart).toBeGreaterThan(-1);
     expect(markup.indexOf('Sidebar brand', cardStart)).toBeGreaterThan(cardStart);
     expect(markup.indexOf('Shown in the desktop sidebar.', cardStart)).toBeGreaterThan(cardStart);
-    expect(markup).not.toContain('oc-settings-group-label');
+    expect(markup).not.toContain('yuri-settings-group-label');
   });
 
   test('places long single-field helper text below the card when requested', () => {
@@ -73,7 +73,7 @@ describe('SettingsGroup', () => {
       </SettingsField>,
     );
 
-    const cardEnd = markup.indexOf('</div><p class="oc-settings-group-description');
+    const cardEnd = markup.indexOf('</div><p class="yuri-settings-group-description');
     expect(cardEnd).toBeGreaterThan(-1);
     expect(markup.indexOf('A longer explanation', cardEnd)).toBeGreaterThan(cardEnd);
   });
@@ -92,7 +92,7 @@ describe('SettingsGroup', () => {
       </SettingsGroup>,
     );
 
-    expect(markup).toContain('oc-settings-group-row');
+    expect(markup).toContain('yuri-settings-group-row');
     expect(markup).toContain('typography-ui-label');
     expect(markup).toContain('typography-meta');
     expect(markup).toContain('data-settings-item="notifications.delivery"');

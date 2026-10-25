@@ -9,7 +9,7 @@ vi.mock('@/lib/runtime-switch', () => ({
   getRuntimeGeneration: () => runtime.generation,
 }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: request }));
-vi.mock('@/lib/openchamberEvents', () => ({ subscribeOpenchamberEvents: vi.fn(() => () => {}) }));
+vi.mock('@/lib/yuriEvents', () => ({ subscribeYuriEvents: vi.fn(() => () => {}) }));
 vi.mock('@/lib/queryRuntime', async () => {
   const { QueryClient } = await import('@tanstack/react-query');
   return { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) };

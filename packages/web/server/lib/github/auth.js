@@ -2,15 +2,14 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
-  ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-  : path.join(os.homedir(), '.config', 'openchamber');
+const YURI_DATA_DIR = process.env.YURI_DATA_DIR
+  ? path.resolve(process.env.YURI_DATA_DIR)
+  : path.join(os.homedir(), '.config', 'yuri');
 
-const STORAGE_DIR = OPENCHAMBER_DATA_DIR;
+const STORAGE_DIR = YURI_DATA_DIR;
 const STORAGE_FILE = path.join(STORAGE_DIR, 'github-auth.json');
-const SETTINGS_FILE = path.join(OPENCHAMBER_DATA_DIR, 'settings.json');
+const SETTINGS_FILE = path.join(YURI_DATA_DIR, 'settings.json');
 
-const DEFAULT_GITHUB_CLIENT_ID = 'Ov23lizomPOC3eFYo56r';
 const DEFAULT_GITHUB_SCOPES = 'repo read:org workflow read:user user:email';
 export const GH_CLI_ACCOUNT_ID = 'gh-cli';
 
@@ -45,7 +44,7 @@ function readJsonFile() {
 function writeJsonFile(payload) {
   ensureStorageDir();
 
-  // Atomic write so multiple OpenChamber instances can safely share the same file.
+  // Atomic write so multiple Yuri instances can safely share the same file.
   const tmpFile = `${STORAGE_FILE}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2), 'utf8');
   try {
@@ -299,7 +298,7 @@ export function clearGitHubAuth() {
 }
 
 export function getGitHubClientId() {
-  const raw = process.env.OPENCHAMBER_GITHUB_CLIENT_ID;
+  const raw = process.env.YURI_GITHUB_CLIENT_ID;
   const clientId = typeof raw === 'string' ? raw.trim() : '';
   if (clientId) return clientId;
 
@@ -313,11 +312,11 @@ export function getGitHubClientId() {
     // ignore
   }
 
-  return DEFAULT_GITHUB_CLIENT_ID;
+  return '';
 }
 
 export function getGitHubScopes() {
-  const raw = process.env.OPENCHAMBER_GITHUB_SCOPES;
+  const raw = process.env.YURI_GITHUB_SCOPES;
   const fromEnv = typeof raw === 'string' ? raw.trim() : '';
   if (fromEnv) return fromEnv;
 

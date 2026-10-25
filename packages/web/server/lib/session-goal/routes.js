@@ -69,7 +69,7 @@ const buildActiveGoalRecord = ({
   };
 };
 
-// OpenChamber-owned routes for file-backed goal objectives, keyed by session
+// Yuri-owned routes for file-backed goal objectives, keyed by session
 // id (one goal per session; a new goal overwrites the old file). The UI
 // writes the objective file before stamping the goal metadata (which only
 // carries an `objectiveFile: true` flag), reads it back for display, and
@@ -92,9 +92,9 @@ export function registerSessionGoalRoutes(app, deps = {}) {
       const metadata = persisted
         && typeof persisted === 'object'
         && !Array.isArray(persisted)
-        && persisted.openchamber
+        && persisted.yuri
         ? persisted
-        : { openchamber: { goal } };
+        : { yuri: { goal } };
       onGoalPersisted({ sessionID, directory: directory || '', metadata });
     } catch (error) {
       console.warn('[session-goal] onGoalPersisted failed:', error?.message || error);
@@ -199,7 +199,7 @@ export function registerSessionGoalRoutes(app, deps = {}) {
       return;
     }
 
-    const currentGoal = metadata?.openchamber?.goal;
+    const currentGoal = metadata?.yuri?.goal;
     if (!currentGoal || typeof currentGoal !== 'object') {
       res.status(404).json({ error: 'goal not found', operation: 'resume' });
       return;

@@ -25,6 +25,15 @@ jobs:
     outputs:
       archive_name: ${{ steps.archive.outputs.archive_name }}
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -38,7 +47,7 @@ jobs:
         id: archive
         run: |
           mkdir -p artifacts
-          ARCHIVE_NAME="openchamber-docs-source-${GITHUB_SHA::8}.tar.gz"
+          ARCHIVE_NAME="yuri-docs-source-${GITHUB_SHA::8}.tar.gz"
           tar -czf "artifacts/${ARCHIVE_NAME}" -C packages/docs .
           echo "archive_name=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
 
@@ -58,15 +67,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Trigger openchamber-website docs sync (optional)
+      - name: Trigger yuri-website docs sync (optional)
         if: ${{ github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
         env:
-          WEBSITE_REPO: openchamber/openchamber-website
-          WEBSITE_TOKEN: ${{ secrets.OPENCHAMBER_WEBSITE_REPO_TOKEN }}
+          WEBSITE_REPO: yuri/yuri-website
+          WEBSITE_TOKEN: ${{ secrets.YURI_WEBSITE_REPO_TOKEN }}
           SOURCE_REF: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
         run: |
           if [ -z "$WEBSITE_TOKEN" ]; then
-            echo "OPENCHAMBER_WEBSITE_REPO_TOKEN not set; skip dispatch."
+            echo "YURI_WEBSITE_REPO_TOKEN not set; skip dispatch."
             exit 0
           fi
 

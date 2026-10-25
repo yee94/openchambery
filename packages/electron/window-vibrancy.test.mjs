@@ -20,7 +20,7 @@ const setup = () => {
     + '\nglobalThis.track = trackMacWindowVibrancy; globalThis.present = presentBrowserWindow;', context);
   const create = (enabled = true, labeled = true) => {
     const window = Object.assign(new EventEmitter(), {
-      __ocLabel: labeled ? `window-${windows.length}` : undefined,
+      __yuriLabel: labeled ? `window-${windows.length}` : undefined,
       isDestroyed: vi.fn(() => false), isVisible: vi.fn(() => true),
       isMinimized: vi.fn(() => false), setVibrancy: vi.fn(),
       show: vi.fn(), focus: vi.fn(),
@@ -56,7 +56,7 @@ test('opening a second app window disables both, including pending ready callbac
 test('closing back to one restores enabled vibrancy, but only after minimized window restores', () => {
   const { create, close, lastState, nativeTheme } = setup();
   const first = create();
-  first.__ocThemeSource = 'light';
+  first.__yuriThemeSource = 'light';
   const second = create();
   nativeTheme.themeSource = 'dark';
   first.isMinimized.mockReturnValue(true);

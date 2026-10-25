@@ -1,15 +1,15 @@
 {
-  "name": "openchamber",
-  "displayName": "OpenChamber",
+  "name": "yuri",
+  "displayName": "Yuri",
   "description": "%extension.description%",
   "version": "2.1.10-beta.11",
-  "publisher": "fedaykindev",
+  "publisher": "yee94",
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/yee94/openchamber.git"
+    "url": "https://github.com/yee94/yuri.git"
   },
-  "qna": "https://discord.gg/ZYRSdnwwKA",
+  "qna": "https://github.com/yee94/yuri/discussions",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
@@ -29,39 +29,44 @@
     "groq",
     "assistant",
     "opencode",
-    "openchamber"
+    "yuri"
   ],
   "icon": "assets/app-icon.png",
   "main": "./dist/extension.js",
   "l10n": "./l10n",
   "activationEvents": [
-    "onCommand:openchamber.openSidebar",
-    "onCommand:openchamber.attachExplorerToChat",
-    "onView:openchamber.chatView"
+    "onCommand:yuri.openSidebar",
+    "onCommand:yuri.attachExplorerToChat",
+    "onView:yuri.chatView"
   ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "openchamber",
-          "title": "OpenChamber",
+          "id": "yuri",
+          "title": "Yuri",
           "icon": "assets/icon.svg"
         }
       ]
     },
     "views": {
-      "openchamber": [
+      "yuri": [
         {
           "type": "webview",
-          "id": "openchamber.chatView",
+          "id": "yuri.chatView",
           "name": "%views.chat.name%"
         }
       ]
     },
     "commands": [
       {
-        "command": "openchamber.openSidebar",
-        "category": "OpenChamber",
+        "command": "yuri.importLegacyConfiguration",
+        "category": "Yuri",
+        "title": "%command.importLegacyConfiguration.title%"
+      },
+      {
+        "command": "yuri.openSidebar",
+        "category": "Yuri",
         "title": "%command.openSidebar.title%",
         "icon": {
           "light": "assets/icon.svg",
@@ -69,35 +74,35 @@
         }
       },
       {
-        "command": "openchamber.focusChat",
-        "category": "OpenChamber",
+        "command": "yuri.focusChat",
+        "category": "Yuri",
         "title": "%command.focusChat.title%"
       },
       {
-        "command": "openchamber.restartApi",
-        "category": "OpenChamber",
+        "command": "yuri.restartApi",
+        "category": "Yuri",
         "title": "%command.restartApi.title%"
       },
       {
-        "command": "openchamber.showOpenCodeStatus",
-        "category": "OpenChamber",
+        "command": "yuri.showOpenCodeStatus",
+        "category": "Yuri",
         "title": "%command.showOpenCodeStatus.title%"
       },
       {
-        "command": "openchamber.openAgentManager",
-        "category": "OpenChamber",
+        "command": "yuri.openAgentManager",
+        "category": "Yuri",
         "title": "%command.openAgentManager.title%",
         "icon": "$(circuit-board)"
       },
       {
-        "command": "openchamber.openActiveSessionInEditor",
-        "category": "OpenChamber",
+        "command": "yuri.openActiveSessionInEditor",
+        "category": "Yuri",
         "title": "%command.openActiveSessionInEditor.title%",
         "icon": "$(link-external)"
       },
       {
-        "command": "openchamber.openNewSessionInEditor",
-        "category": "OpenChamber",
+        "command": "yuri.openNewSessionInEditor",
+        "category": "Yuri",
         "title": "%command.openNewSessionInEditor.title%",
         "icon": {
           "light": "assets/icon.svg",
@@ -105,113 +110,113 @@
         }
       },
       {
-        "command": "openchamber.openCurrentOrNewSessionInEditor",
-        "category": "OpenChamber",
+        "command": "yuri.openCurrentOrNewSessionInEditor",
+        "category": "Yuri",
         "title": "%command.openCurrentOrNewSessionInEditor.title%",
         "icon": "$(link-external)"
       },
       {
-        "command": "openchamber.addToContext",
-        "category": "OpenChamber",
+        "command": "yuri.addToContext",
+        "category": "Yuri",
         "title": "%command.addToContext.title%"
       },
       {
-        "command": "openchamber.explain",
-        "category": "OpenChamber",
+        "command": "yuri.explain",
+        "category": "Yuri",
         "title": "%command.explain.title%"
       },
       {
-        "command": "openchamber.improveCode",
-        "category": "OpenChamber",
+        "command": "yuri.improveCode",
+        "category": "Yuri",
         "title": "%command.improveCode.title%"
       },
       {
-        "command": "openchamber.newSession",
-        "category": "OpenChamber",
+        "command": "yuri.newSession",
+        "category": "Yuri",
         "title": "%command.newSession.title%",
         "icon": "$(add)"
       },
       {
-        "command": "openchamber.showSettings",
-        "category": "OpenChamber",
+        "command": "yuri.showSettings",
+        "category": "Yuri",
         "title": "%command.showSettings.title%",
         "icon": "$(settings-gear)"
       },
       {
-        "command": "openchamber.attachExplorerToChat",
-        "category": "OpenChamber",
+        "command": "yuri.attachExplorerToChat",
+        "category": "Yuri",
         "title": "%command.attachExplorerToChat.title%"
       }
     ],
     "submenus": [
       {
-        "id": "openchamber.submenu",
-        "label": "OpenChamber"
+        "id": "yuri.submenu",
+        "label": "Yuri"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "submenu": "openchamber.submenu",
+          "submenu": "yuri.submenu",
           "group": "navigation"
         }
       ],
       "explorer/context": [
         {
-          "command": "openchamber.attachExplorerToChat",
+          "command": "yuri.attachExplorerToChat",
           "when": "resourceScheme == file && explorerResourceIsFolder == false",
           "group": "navigation@50"
         }
       ],
       "editor/title": [
         {
-          "command": "openchamber.openNewSessionInEditor",
+          "command": "yuri.openNewSessionInEditor",
           "group": "navigation@1"
         }
       ],
       "view/title": [
         {
-          "command": "openchamber.newSession",
-          "when": "view == openchamber.chatView",
+          "command": "yuri.newSession",
+          "when": "view == yuri.chatView",
           "group": "navigation@1"
         },
         {
-          "command": "openchamber.openCurrentOrNewSessionInEditor",
-          "when": "view == openchamber.chatView",
+          "command": "yuri.openCurrentOrNewSessionInEditor",
+          "when": "view == yuri.chatView",
           "group": "navigation@2"
         },
         {
-          "command": "openchamber.openAgentManager",
-          "when": "view == openchamber.chatView",
+          "command": "yuri.openAgentManager",
+          "when": "view == yuri.chatView",
           "group": "navigation@3"
         },
         {
-          "command": "openchamber.showSettings",
-          "when": "view == openchamber.chatView",
+          "command": "yuri.showSettings",
+          "when": "view == yuri.chatView",
           "group": "navigation@4"
         }
       ],
-      "openchamber.submenu": [
+      "yuri.submenu": [
         {
-          "command": "openchamber.explain"
+          "command": "yuri.explain"
         },
         {
-          "command": "openchamber.improveCode"
+          "command": "yuri.improveCode"
         },
         {
-          "command": "openchamber.addToContext"
+          "command": "yuri.addToContext"
         }
       ]
     },
     "configuration": {
-      "title": "OpenChamber",
+      "title": "Yuri",
       "properties": {
-        "openchamber.apiUrl": {
+        "yuri.apiUrl": {
           "type": "string",
           "default": "",
           "description": "%configuration.apiUrl.description%"
         },
-        "openchamber.opencodeBinary": {
+        "yuri.opencodeBinary": {
           "type": "string",
           "default": "",
           "description": "%configuration.opencodeBinary.description%"
@@ -247,7 +252,7 @@
     "vite": "^8.2.0"
   },
   "dependencies": {
-    "@openchamber/ui": "workspace:*",
+    "@yuri/ui": "workspace:*",
     "@opencode/client": "2.0.23",
     "@opencode/schema": "2.0.23",
     "adm-zip": "^0.5.16",

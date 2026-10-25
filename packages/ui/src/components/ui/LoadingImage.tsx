@@ -22,7 +22,7 @@ function ImagePresentation({ resourceError, fill, contentFrame, onLoad, onError,
   }, []);
   return (
     <span
-      className="oc-image-frame"
+      className="yuri-image-frame"
       data-image-state={phase}
       data-image-fill={fill || undefined}
       data-image-content={contentFrame ? (isMobile ? 'mobile' : 'desktop') : undefined}
@@ -41,7 +41,7 @@ function ImagePresentation({ resourceError, fill, contentFrame, onLoad, onError,
         }}
       />
       {phase === 'loading' && <ImageLoadingPlaceholder />}
-      {phase === 'error' && <span className="oc-image-error" role="status">{t('chat.fileAttachment.image.loadFailed')}</span>}
+      {phase === 'error' && <span className="yuri-image-error" role="status">{t('chat.fileAttachment.image.loadFailed')}</span>}
     </span>
   );
 }

@@ -1,3 +1,4 @@
+import '@/lib/brand-storage-bootstrap';
 import { useConfigStore } from '@/stores/useConfigStore';
 
 export function useOpenCodeReadiness() {

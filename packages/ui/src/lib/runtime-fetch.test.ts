@@ -53,10 +53,10 @@ describe('buildRuntimeFetchUrl', () => {
       configureRuntimeUrlResolver({ apiBaseUrl: 'https://api.example' });
       Object.defineProperty(globalThis, 'window', {
         configurable: true,
-        value: { location: { origin: 'openchamber-ui://app', href: 'openchamber-ui://app/index.html' } },
+        value: { location: { origin: 'yuri-ui://app', href: 'yuri-ui://app/index.html' } },
       });
 
-      expect(buildRuntimeFetchUrl('openchamber-ui://app/api/config/settings')).toBe('https://api.example/api/config/settings');
+      expect(buildRuntimeFetchUrl('yuri-ui://app/api/config/settings')).toBe('https://api.example/api/config/settings');
       expect(buildRuntimeFetchUrl('https://external.example/api/config/settings')).toBe('https://external.example/api/config/settings');
     } finally {
       setRuntimeUrlResolver(previous);
@@ -75,17 +75,17 @@ describe('runtime request priority', () => {
       setRuntimeInteractiveSessionRequestId('ses_1');
       expect(getRuntimeRequestPriority('GET', 'http://127.0.0.1:57123/api/session/ses_1?directory=%2Frepo')).toBe('high');
       expect(getRuntimeRequestPriority('GET', 'http://127.0.0.1:57123/api/session/ses_1/message?limit=30')).toBe('high');
-      // OpenChamber turn-page (prepend/loadMore) for the selected session is high.
+      // Yuri turn-page (prepend/loadMore) for the selected session is high.
       expect(
         getRuntimeRequestPriority(
           'GET',
-          'http://127.0.0.1:57123/api/openchamber/sessions/ses_1/messages?directory=%2Frepo&before=msg_1&turns=3&scanLimit=100',
+          'http://127.0.0.1:57123/api/yuri/sessions/ses_1/messages?directory=%2Frepo&before=msg_1&turns=3&scanLimit=100',
         ),
       ).toBe('high');
       expect(
         getRuntimeRequestPriority(
           'GET',
-          'http://127.0.0.1:57123/api/openchamber/sessions/ses%2Fa%20b/messages?directory=%2Frepo&turns=3&scanLimit=100',
+          'http://127.0.0.1:57123/api/yuri/sessions/ses%2Fa%20b/messages?directory=%2Frepo&turns=3&scanLimit=100',
         ),
       ).toBe(undefined); // not the interactive session id
 
@@ -107,13 +107,13 @@ describe('runtime request priority', () => {
       expect(
         getRuntimeRequestPriority(
           'GET',
-          `http://127.0.0.1:57123/api/openchamber/sessions/${encodeURIComponent('ses/a b')}/messages?directory=%2Frepo&turns=3&scanLimit=100`,
+          `http://127.0.0.1:57123/api/yuri/sessions/${encodeURIComponent('ses/a b')}/messages?directory=%2Frepo&turns=3&scanLimit=100`,
         ),
       ).toBe('high');
       expect(
         getRuntimeRequestPriority(
           'GET',
-          'http://127.0.0.1:57123/api/openchamber/sessions/ses_other/messages?directory=%2Frepo&turns=3&scanLimit=100',
+          'http://127.0.0.1:57123/api/yuri/sessions/ses_other/messages?directory=%2Frepo&turns=3&scanLimit=100',
         ),
       ).toBe(undefined);
     } finally {
@@ -127,7 +127,7 @@ describe('runtime request priority', () => {
     expect(getRuntimeRequestPriority('GET', '/api/config/providers?directory=%2Frepo')).toBe('low');
     expect(getRuntimeRequestPriority('GET', '/api/git/status?directory=%2Frepo')).toBe('low');
     expect(getRuntimeRequestPriority('GET', '/api/quota/usage')).toBe('low');
-    expect(getRuntimeRequestPriority('GET', '/api/openchamber/session-index')).toBe('low');
+    expect(getRuntimeRequestPriority('GET', '/api/yuri/session-index')).toBe('low');
     expect(getRuntimeRequestPriority('POST', '/api/session/ses_1/message')).toBe(undefined);
     expect(getRuntimeRequestPriority('GET', 'https://external.example/api/session/ses_1/message')).toBe(undefined);
   });
@@ -157,10 +157,10 @@ describe('runtime request priority', () => {
         return new Response(JSON.stringify({}), { status: 200 });
       }) as typeof fetch;
 
-      await runtimeFetch('/api/openchamber/session-index', { method: 'GET' });
+      await runtimeFetch('/api/yuri/session-index', { method: 'GET' });
 
       expect(calls).toHaveLength(1);
-      expect(calls[0].url).toContain('/api/openchamber/session-index');
+      expect(calls[0].url).toContain('/api/yuri/session-index');
       expect(calls[0].priority).toBe('low');
     } finally {
       setRuntimeUrlResolver(previous);
@@ -758,10 +758,10 @@ describe('runtimeFetch reasoning projection query', () => {
 
       await runtimeFetch('/api/session/ses_1/message', { method: 'GET', query: { directory: '/repo' } });
       await runtimeFetch('/api/session/ses_1/message/msg_1', { method: 'GET' });
-      await runtimeFetch('/api/openchamber/sessions/ses_1/messages', { method: 'GET', query: { turns: 3 } });
-      await runtimeFetch('/api/openchamber/sessions/ses_1/messages/reconcile', { method: 'GET' });
-      await runtimeFetch('/api/openchamber/transcript-cache/session', { method: 'GET' });
-      await runtimeFetch('/api/openchamber/transcript-cache/message', { method: 'GET' });
+      await runtimeFetch('/api/yuri/sessions/ses_1/messages', { method: 'GET', query: { turns: 3 } });
+      await runtimeFetch('/api/yuri/sessions/ses_1/messages/reconcile', { method: 'GET' });
+      await runtimeFetch('/api/yuri/transcript-cache/session', { method: 'GET' });
+      await runtimeFetch('/api/yuri/transcript-cache/message', { method: 'GET' });
       await runtimeFetch('/api/global/event', { method: 'GET' });
       await runtimeFetch('/api/event', { method: 'GET' });
       await runtimeFetch('/api/session/ses_1/context', { method: 'GET' });
@@ -879,9 +879,9 @@ describe('runtimeFetch reasoning projection query', () => {
       Object.defineProperty(globalThis, 'window', {
         configurable: true,
         value: {
-          location: { origin: 'null', href: 'openchamber-ui://app/index.html' },
-          __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:57123',
-          __OPENCHAMBER_API_BASE_URL__: 'http://127.0.0.1:57123',
+          location: { origin: 'null', href: 'yuri-ui://app/index.html' },
+          __YURI_LOCAL_ORIGIN__: 'http://127.0.0.1:57123',
+          __YURI_API_BASE_URL__: 'http://127.0.0.1:57123',
         },
       });
 
@@ -941,7 +941,7 @@ describe('runtimeFetch reasoning projection query', () => {
     const endpoints = [
       { name: 'exact message', path: '/api/session/ses_1/message/msg_1?directory=%2Frepo' },
       { name: 'message list', path: '/api/session/ses_1/message?directory=%2Frepo&limit=30' },
-      { name: 'turn-page reconcile', path: '/api/openchamber/sessions/ses_1/messages/reconcile?directory=%2Frepo' },
+      { name: 'turn-page reconcile', path: '/api/yuri/sessions/ses_1/messages/reconcile?directory=%2Frepo' },
       { name: 'global event SSE', path: '/api/global/event' },
     ] as const;
 

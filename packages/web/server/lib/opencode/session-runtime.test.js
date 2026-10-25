@@ -61,7 +61,7 @@ describe('session runtime', () => {
     runtime.markSessionViewed('session-1', 'client-1');
 
     expect(events).toContainEqual({
-      type: 'openchamber:session-status',
+      type: 'yuri:session-status',
       properties: expect.objectContaining({
         sessionID: 'session-1',
         status: 'idle',
@@ -69,7 +69,7 @@ describe('session runtime', () => {
       }),
     });
     expect(events.at(-1)).toEqual({
-      type: 'openchamber:session-status',
+      type: 'yuri:session-status',
       properties: {
         sessionID: 'session-1',
         status: 'idle',
@@ -104,7 +104,7 @@ describe('session runtime', () => {
     });
 
     expect(events).toContainEqual({
-      type: 'openchamber:session-status',
+      type: 'yuri:session-status',
       properties: expect.objectContaining({
         sessionID: 'legacy-session-1',
         status: 'busy',
@@ -136,7 +136,7 @@ describe('session runtime', () => {
     });
 
     expect(events).toContainEqual({
-      type: 'openchamber:session-status',
+      type: 'yuri:session-status',
       properties: expect.objectContaining({
         sessionID: 'native-session-1',
         status: 'busy',
@@ -178,7 +178,7 @@ describe('session runtime', () => {
       });
 
       const activityPhases = () => events
-        .filter((event) => event.type === 'openchamber:session-activity')
+        .filter((event) => event.type === 'yuri:session-activity')
         .map((event) => event.properties.phase);
 
       expect(activityPhases()).toEqual(['busy', 'cooldown']);

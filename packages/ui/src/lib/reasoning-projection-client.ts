@@ -1,5 +1,5 @@
 /**
- * Leaf client flag for OpenChamber reasoning projection (`includeReasoning`).
+ * Leaf client flag for Yuri reasoning projection (`includeReasoning`).
  *
  * No store/React imports — runtime-fetch, event-pipeline, and the transcript
  * adapter read this module. `useUIStore` lifecycle (initial / persist hydrate /

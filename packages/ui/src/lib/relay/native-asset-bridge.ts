@@ -8,10 +8,10 @@
  * Native shells may install a compatible object on globalThis under
  * NATIVE_RELAY_ASSET_BRIDGE_KEY. When absent, resolveNativeRelayAssetBridge()
  * also adapts the existing Electron desktop virtualAsset API and the Capacitor
- * OpenChamberVirtualAsset plugin — without importing electron/ or mobile/ packages.
+ * YuriVirtualAsset plugin — without importing electron/ or mobile/ packages.
  */
 
-export const NATIVE_RELAY_ASSET_BRIDGE_KEY = '__openchamberNativeRelayAssetBridge' as const;
+export const NATIVE_RELAY_ASSET_BRIDGE_KEY = '__yuriNativeRelayAssetBridge' as const;
 
 export type NativeRelayAssetOpenOptions = {
   /**
@@ -169,8 +169,8 @@ const adaptCapacitorVirtualAsset = (plugin: CapacitorVirtualAssetPlugin): Native
 const readDesktopVirtualAsset = (): DesktopVirtualAssetApi | null => {
   if (typeof window === 'undefined') return null;
   const desktop = (window as unknown as {
-    __OPENCHAMBER_DESKTOP__?: { virtualAsset?: Partial<DesktopVirtualAssetApi> };
-  }).__OPENCHAMBER_DESKTOP__;
+    __YURI_DESKTOP__?: { virtualAsset?: Partial<DesktopVirtualAssetApi> };
+  }).__YURI_DESKTOP__;
   const api = desktop?.virtualAsset;
   if (
     !api
@@ -196,7 +196,7 @@ const loadCapacitorVirtualAssetPlugin = async (): Promise<CapacitorVirtualAssetP
   }
 
   // Prefer the already-registered plugin instance when present (no import needed).
-  const existing = cap.Plugins?.OpenChamberVirtualAsset;
+  const existing = cap.Plugins?.YuriVirtualAsset;
   if (
     existing
     && typeof existing === 'object'
@@ -211,7 +211,7 @@ const loadCapacitorVirtualAssetPlugin = async (): Promise<CapacitorVirtualAssetP
   // Lazy registerPlugin — same pattern as other mobile UI bridges.
   try {
     const { registerPlugin } = await import('@capacitor/core');
-    const plugin = registerPlugin<CapacitorVirtualAssetPlugin>('OpenChamberVirtualAsset');
+    const plugin = registerPlugin<CapacitorVirtualAssetPlugin>('YuriVirtualAsset');
     if (
       isFunction(plugin.create)
       && isFunction(plugin.append)
@@ -230,7 +230,7 @@ const loadCapacitorVirtualAssetPlugin = async (): Promise<CapacitorVirtualAssetP
  * Resolve the active native bridge:
  * 1. Explicit global install (NATIVE_RELAY_ASSET_BRIDGE_KEY)
  * 2. Electron local-page virtualAsset API
- * 3. Capacitor OpenChamberVirtualAsset plugin
+ * 3. Capacitor YuriVirtualAsset plugin
  */
 export const resolveNativeRelayAssetBridge = async (): Promise<NativeRelayAssetBridge | null> => {
   const installed = getNativeRelayAssetBridge();
@@ -262,8 +262,8 @@ type NativeImageCacheBridge = {
 export const getNativeImageCacheBridge = (): NativeImageCacheBridge | null => {
   if (typeof window === 'undefined') return null;
   const api = (window as unknown as {
-    __OPENCHAMBER_DESKTOP__?: { imageCache?: NativeImageCacheBridge };
-  }).__OPENCHAMBER_DESKTOP__?.imageCache;
+    __YURI_DESKTOP__?: { imageCache?: NativeImageCacheBridge };
+  }).__YURI_DESKTOP__?.imageCache;
   return api && isFunction(api.acquire) && isFunction(api.append) && isFunction(api.commit) && isFunction(api.release)
     ? api : null;
 };

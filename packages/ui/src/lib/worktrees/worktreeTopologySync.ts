@@ -1,5 +1,5 @@
 import { isVSCodeRuntime } from '@/lib/desktop';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeYuriEvents } from '@/lib/yuriEvents';
 import { getRuntimeGeneration, isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { syncGlobalSessionsForDirectories, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
@@ -260,7 +260,7 @@ export const startWorktreeTopologySync = (): (() => void) => {
         if (state.activeSessions === previous.activeSessions && state.cachedDirectories === previous.cachedDirectories) return;
         listener();
       }),
-      subscribeEvents: subscribeOpenchamberEvents,
+      subscribeEvents: subscribeYuriEvents,
       subscribeRuntime: (listener) => subscribeRuntimeEndpointChanged((detail) => listener(isRuntimeEndpointIdentityChange(detail))),
       generation: getRuntimeGeneration,
       setTimer: (handler, timeout) => globalThis.setTimeout(handler, timeout),

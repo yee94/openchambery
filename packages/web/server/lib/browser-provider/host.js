@@ -24,7 +24,7 @@ import {
 } from './contract.js';
 
 const catalogUnavailable = () => new BrowserProviderError(
-  'OpenChamber could not read the browser provider catalog, so the action was not run. Try again.',
+  'Yuri could not read the browser provider catalog, so the action was not run. Try again.',
   { code: 'CATALOG_UNAVAILABLE', status: 503 },
 );
 

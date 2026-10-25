@@ -15,7 +15,7 @@ import { restoreWebviewZoomFactor } from '@/lib/webviewZoom';
 import { startWorktreeTopologySync } from '@/lib/worktrees/worktreeTopologySync';
 import { mountSpeechSettingsSync } from '@/sync/speech-settings-sync';
 
-const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
+const MINI_CHAT_PRESENCE_CHANNEL = 'yuri:mini-chat-presence';
 
 type MiniChatPresenceMessage = {
   type?: string;

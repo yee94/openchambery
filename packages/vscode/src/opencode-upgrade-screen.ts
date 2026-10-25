@@ -8,7 +8,7 @@ import type { OpenCodeManager } from './opencode';
 
 type DebugInfo = ReturnType<OpenCodeManager['getDebugInfo']>;
 
-const externalGuidance = 'This is an external OpenCode serve. Upgrade it yourself; OpenChamberY will not replace that process.';
+const externalGuidance = 'This is an external OpenCode serve. Upgrade it yourself; Yuri will not replace that process.';
 
 export const compatibilityFromDebugInfo = (
   info: Partial<DebugInfo> | null | undefined,

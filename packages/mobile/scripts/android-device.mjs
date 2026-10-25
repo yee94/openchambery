@@ -12,9 +12,9 @@ import { fileURLToPath } from 'node:url';
 const mobileRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const APK_PATH = join(mobileRoot, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
 // Matches android/app/build.gradle applicationId + debug.applicationIdSuffix ".debug".
-// Activity class package stays com.openchamber.app (namespace); only applicationId changes.
-const APP_ID = 'com.yee94.openchamber.debug';
-const LAUNCH_ACTIVITY = `${APP_ID}/com.openchamber.app.MainActivity`;
+// Activity class package stays com.yuri.app (namespace); only applicationId changes.
+const APP_ID = 'com.yee94.yuri.debug';
+const LAUNCH_ACTIVITY = `${APP_ID}/com.yuri.app.MainActivity`;
 
 const adb = (args, { capture = false, allowFail = false } = {}) => {
   const result = spawnSync('adb', args, { stdio: capture ? 'pipe' : 'inherit', encoding: 'utf8' });

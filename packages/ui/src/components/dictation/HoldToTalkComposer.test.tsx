@@ -63,7 +63,7 @@ it('shows the overlay and a loading indicator while iOS opens the microphone', a
     speech.isStarting = true;
     await render();
     await pointer('pointerdown');
-    expect(document.querySelector('.oc-speech-overlay')).not.toBeNull();
+    expect(document.querySelector('.yuri-speech-overlay')).not.toBeNull();
     expect(document.querySelector('[role="status"]')?.textContent).toBe('');
     expect(document.querySelector('[data-dictation-loading]')).not.toBeNull();
     expect((document.querySelector('[data-dictation-loading]') as HTMLElement).style.width).toBe('72px');
@@ -83,7 +83,7 @@ it('arms left cancellation, ignores another pointer and discards on release', as
     expect(onHintChange).toHaveBeenLastCalledWith('editing');
     await pointer('pointermove', 100);
     expect(onHintChange).toHaveBeenLastCalledWith('cancelling');
-    expect(document.querySelector('.oc-speech-target--cancel')?.getAttribute('data-active')).toBe('true');
+    expect(document.querySelector('.yuri-speech-target--cancel')?.getAttribute('data-active')).toBe('true');
     await pointer('pointerup', 100);
     expect(speech.cancelDictation).toHaveBeenCalledTimes(1);
     expect(speech.confirmDictation).not.toHaveBeenCalled();
@@ -117,8 +117,8 @@ it('provides haptics only when entering a target or returning to the center', as
 it('upper-right slide sends only on release', async () => {
     await pointer('pointerdown'); await pointer('pointermove', 290, 1, 100);
     expect(onHintChange).toHaveBeenLastCalledWith('recording');
-    expect(document.querySelector('.oc-speech-target--send')?.getAttribute('data-active')).toBe('true');
-    expect(document.querySelector('.oc-speech-target--send')?.textContent).toContain('chat.dictation.send');
+    expect(document.querySelector('.yuri-speech-target--send')?.getAttribute('data-active')).toBe('true');
+    expect(document.querySelector('.yuri-speech-target--send')?.textContent).toContain('chat.dictation.send');
     expect(speech.confirmDictation).not.toHaveBeenCalled();
     await pointer('pointerup', 290);
     expect(speech.confirmDictation).toHaveBeenCalledTimes(1);
@@ -130,7 +130,7 @@ it('upper-right slide sends only on release', async () => {
 
 it('activates the half under the finger when entering the bottom targets', async () => {
     await pointer('pointerdown');
-    const targets = document.querySelector('.oc-speech-targets')!;
+    const targets = document.querySelector('.yuri-speech-targets')!;
     vi.spyOn(targets, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 400, 80));
     await pointer('pointermove', 230, 1, 140);
     expect(onHintChange).toHaveBeenLastCalledWith('recording');
@@ -162,12 +162,12 @@ it('replaces live captions before release without sending', async () => {
     await pointer('pointerdown'); speech.status = 'recording';
     speech.partialTranscript = '今天'; await render();
     speech.partialTranscript = '今天天气很好'; await render();
-    expect(document.querySelector('.oc-speech-interim')?.textContent).toBe('今天天气很好');
+    expect(document.querySelector('.yuri-speech-interim')?.textContent).toBe('今天天气很好');
     expect(speech.confirmDictation).not.toHaveBeenCalled();
 });
 
 it('leaves the original composer intact and a short tap focuses typing without recording', async () => {
-    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(document.querySelector('.yuri-speech-overlay')).toBeNull();
     await act(async () => button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, isPrimary: true, button: 0, clientY: 200 })));
     await pointer('pointerup');
     expect(document.activeElement).toBe(button);
@@ -236,7 +236,7 @@ it('does not start capture when typing or paste fills the input during the hold 
 
 it('blocks selection of compact placeholder text but leaves toolbar controls alone', async () => {
     const compact = document.createElement('div');
-    compact.setAttribute('data-oc-composer-compact-surface', 'true');
+    compact.setAttribute('data-yuri-composer-compact-surface', 'true');
     const placeholder = document.createElement('span');
     placeholder.textContent = '输入消息，按住转文字';
     const attach = document.createElement('button');
@@ -334,13 +334,13 @@ it.each(['idle', 'recording', 'failed'])('dismisses a %s error on release withou
     if (status === 'recording') expect(speech.cancelDictation).toHaveBeenCalledTimes(1);
     else expect(speech.discardFailedDictation).toHaveBeenCalledTimes(1);
     await render();
-    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(document.querySelector('.yuri-speech-overlay')).toBeNull();
 });
 
 it('does not reopen the overlay for an error arriving after release', async () => {
     speech.error = 'Microphone unavailable';
     await render();
-    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(document.querySelector('.yuri-speech-overlay')).toBeNull();
 });
 
 it.each(['send', 'edit'])('shows loading on %s release until finalization completes', async (intent) => {
@@ -352,18 +352,18 @@ it.each(['send', 'edit'])('shows loading on %s release until finalization comple
     await render();
     if (intent === 'send') await pointer('pointermove', 290);
     await pointer('pointerup');
-    expect(document.querySelector('.oc-speech-overlay [data-dictation-loading]')).not.toBeNull();
+    expect(document.querySelector('.yuri-speech-overlay [data-dictation-loading]')).not.toBeNull();
     expect((document.querySelector('[data-dictation-loading]') as HTMLElement).style.width).toBe('72px');
-    expect(document.querySelector('.oc-speech-gesture-stage')).toBeNull();
+    expect(document.querySelector('.yuri-speech-gesture-stage')).toBeNull();
     expect(onRelease).toHaveBeenCalledExactlyOnceWith('待整理的文字');
     expect(onHintChange).toHaveBeenLastCalledWith('processing');
     speech.status = 'uploading';
     await render();
-    expect(document.querySelector('.oc-speech-overlay [data-dictation-loading]')).not.toBeNull();
+    expect(document.querySelector('.yuri-speech-overlay [data-dictation-loading]')).not.toBeNull();
     await act(async () => window.dispatchEvent(new Event('blur')));
     expect(speech.cancelDictation).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain('chat.dictation.cancel');
     await act(async () => finish());
-    expect(document.querySelector('.oc-speech-overlay')).toBeNull();
+    expect(document.querySelector('.yuri-speech-overlay')).toBeNull();
     expect(onHintChange).toHaveBeenLastCalledWith(null);
 });

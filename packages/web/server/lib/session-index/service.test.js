@@ -10,7 +10,7 @@ import { applySessionIndexEvent } from './event-ingest.js';
 const tempDirectories = [];
 
 const createService = (runtimeRef) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-session-index-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-session-index-'));
   tempDirectories.push(directory);
   return createSessionIndexService({
     dbPath: path.join(directory, 'session-index.sqlite'),
@@ -50,7 +50,7 @@ describe('Electron session index', () => {
       expect(snapshot.directories).toHaveLength(1);
       expect(snapshot.directories[0].sessions).toHaveLength(20);
       expect(snapshot.directories[0].sessions[0]).toMatchObject({ id: 'duplicate', title: 'Newer title', hasChildren: true,
-        metadata: { openchamber: { titleRefresh: { activityUpdatedAt: 80 }, sessionStatus: { type: 'busy' } } } });
+        metadata: { yuri: { titleRefresh: { activityUpdatedAt: 80 }, sessionStatus: { type: 'busy' } } } });
       expect(snapshot.pinnedSessionIds).toContain('alias-1');
       reopened.remove('child');
       expect(reopened.findBySessionId('duplicate').hasChildren).toBe(false);
@@ -95,7 +95,7 @@ describe('Electron session index', () => {
       expect(service.snapshot().directories[0].sessions.find((row) => row.id === 'ses_alias')).toMatchObject({
         directory: real,
         time: { pinned: 5 },
-        metadata: { openchamber: { titleRefresh: { activityUpdatedAt: 40 }, sessionStatus: { type: 'busy' } } },
+        metadata: { yuri: { titleRefresh: { activityUpdatedAt: 40 }, sessionStatus: { type: 'busy' } } },
       });
       applySessionIndexEvent(service, { type: 'session.updated', properties: { info: session('ses_live', 50, alias) } });
       expect(service.snapshot().directories[0]).toMatchObject({ directory: real });
@@ -108,7 +108,7 @@ describe('Electron session index', () => {
   it('excludes tagged background runs before retention and ignores their activity/status events', () => {
     const service = createService({ value: 'http://runtime-a.test' });
     const ordinary = Array.from({ length: 20 }, (_, i) => session(`ses_visible_${i}`, 100 - i));
-    const background = ['[Scheduled]', '[Assistant]', '[openchamber-llm]'].map((tag, i) => ({
+    const background = ['[Scheduled]', '[Assistant]', '[yuri-llm]'].map((tag, i) => ({
       ...session(`ses_background_${i}`, 200 + i), title: `${tag} Background run`,
     }));
     service.replaceDirectory({ directory: '/repo', sessions: [...background, ...ordinary], now: 500 });
@@ -196,7 +196,7 @@ describe('Electron session index', () => {
     expect(service.upsertAndReportChange(session('ses_move', 10, '/old'), 40)).toBe(false);
     const rows = service.snapshot().directories.flatMap((item) => item.sessions);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ id: 'ses_move', directory: '/new', metadata: { openchamber: { sessionStatus: { type: 'retry' } } } });
+    expect(rows[0]).toMatchObject({ id: 'ses_move', directory: '/new', metadata: { yuri: { sessionStatus: { type: 'retry' } } } });
     expect(service.snapshot().pinnedSessionIds).toContain('ses_move');
     runtimeRef.value = 'http://runtime-b.test';
     expect(service.upsert(session('ses_move', 1, '/old'))).toBe(true);
@@ -245,19 +245,19 @@ describe('Electron session index', () => {
     const service = createService(runtimeRef);
     const assistantSession = {
       ...session('ses_assistant', 100),
-      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
+      metadata: { yuri: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
     };
     const scheduledSession = {
       ...session('ses_scheduled', 99),
-      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+      metadata: { yuri: { scheduledTask: { taskID: 'task_1' } } },
     };
     const smallModelSession = {
       ...session('ses_small_model', 97),
-      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+      metadata: { yuri: { smallModel: { purpose: 'session-title' } } },
     };
     const llmSession = {
       ...session('ses_llm', 96),
-      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+      metadata: { yuri: { llm: { purpose: 'chat-completions' } } },
     };
     const ordinary = session('ses_ordinary', 98);
 
@@ -283,7 +283,7 @@ describe('Electron session index', () => {
     const worker = {
       ...session('ses_worker', 100),
       metadata: {
-        openchamber: {
+        yuri: {
           assigned: { from: 'contact', assistantID: 'assistant_1', name: 'A' },
         },
       },
@@ -291,7 +291,7 @@ describe('Electron session index', () => {
     const legacyWorker = {
       ...session('ses_legacy_worker', 99),
       metadata: {
-        openchamber: {
+        yuri: {
           assistant: { assistantID: 'assistant_1', name: 'A' },
           assigned: { from: 'contact' },
         },
@@ -299,7 +299,7 @@ describe('Electron session index', () => {
     };
     const hiddenBinding = {
       ...session('ses_binding', 98),
-      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
+      metadata: { yuri: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
     };
     service.replaceDirectory({
       directory: '/repo',
@@ -391,7 +391,7 @@ describe('Electron session index', () => {
     const sessions = service.snapshot().directories[0].sessions;
     expect(sessions.map((item) => item.id)).toEqual(['ses_active', 'ses_newer']);
     expect(sessions[0].time.updated).toBe(10);
-    expect(sessions[0].metadata.openchamber.titleRefresh.activityUpdatedAt).toBe(30);
+    expect(sessions[0].metadata.yuri.titleRefresh.activityUpdatedAt).toBe(30);
     service.close();
   });
 
@@ -404,7 +404,7 @@ describe('Electron session index', () => {
 
     const stored = service.snapshot().directories[0].sessions[0];
     expect(stored.time.updated).toBe(20);
-    expect(stored.metadata.openchamber.titleRefresh.activityUpdatedAt).toBe(10);
+    expect(stored.metadata.yuri.titleRefresh.activityUpdatedAt).toBe(10);
     service.close();
   });
 
@@ -449,8 +449,8 @@ describe('Electron session index', () => {
     expect(service.updateStatus('ses_a', 'idle', 10)).toBe(false);
 
     const stored = service.snapshot().directories[0].sessions[0];
-    expect(stored.metadata.openchamber.sessionStatus).toEqual({ type: 'busy', changedAt: 20 });
-    expect(stored.metadata.openchamber.titleRefresh.activityUpdatedAt).toBe(10);
+    expect(stored.metadata.yuri.sessionStatus).toEqual({ type: 'busy', changedAt: 20 });
+    expect(stored.metadata.yuri.titleRefresh.activityUpdatedAt).toBe(10);
     service.close();
   });
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, mock, test } from 'bun:test';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import type { Part } from './v2-types';
 
 type ConfigEntry = { type: 'document'; info: Record<string, unknown> };
@@ -44,7 +44,7 @@ const sessionGenerateMock = mock(async (...args: unknown[]) => {
 const sessionDiffSdkCalls: unknown[][] = [];
 const constructorConfigs: unknown[] = [];
 
-mock.module('@opencode/client', () => ({
+vi.doMock('@opencode/client', () => ({
   OpenCode: {
     make: mock((config: unknown) => {
       sdkClientConfigs.push(config);
@@ -173,8 +173,8 @@ type UploadResult = {
 }
 const uploadPromptAttachmentResults: Array<UploadResult | Promise<UploadResult>> = [];
 const defaultUploadResult = (mime: string): UploadResult => ({
-  path: '/data/openchamber/prompt-attachments/ab/uploaded.bin',
-  url: 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin',
+  path: '/data/yuri/prompt-attachments/ab/uploaded.bin',
+  url: 'file:///data/yuri/prompt-attachments/ab/uploaded.bin',
   mime,
   size: 4,
   sha256: 'deadbeef',
@@ -785,7 +785,7 @@ describe('opencodeClient prompt retry behavior', () => {
 
     expect(uploadPromptAttachmentCalls).toHaveLength(1);
     const body = readPromptRequestBody();
-    expect(body.files?.some((file) => file.uri === 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin' && file.name === 'photo.png')).toBe(true);
+    expect(body.files?.some((file) => file.uri === 'file:///data/yuri/prompt-attachments/ab/uploaded.bin' && file.name === 'photo.png')).toBe(true);
     expect(body.files?.some((file) => file.uri?.startsWith('data:'))).toBe(false);
   });
 
@@ -818,8 +818,8 @@ describe('opencodeClient prompt retry behavior', () => {
     });
 
     const body = readPromptRequestBody();
-    expect(body.text).toBe('[/data/openchamber/prompt-attachments/ab/uploaded.bin] what is this');
-    expect(body.files?.some((file) => file.uri === 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin')).toBe(true);
+    expect(body.text).toBe('[/data/yuri/prompt-attachments/ab/uploaded.bin] what is this');
+    expect(body.files?.some((file) => file.uri === 'file:///data/yuri/prompt-attachments/ab/uploaded.bin')).toBe(true);
   });
 
   test('discards send when runtime generation advances during attachment upload', async () => {
@@ -1024,7 +1024,7 @@ describe('opencodeClient updateSession Host archive facade', () => {
         title: 'Archived',
         location: { directory: '/repo/app' },
         time: { created: 1, updated: 2, archived: 99 },
-        metadata: { openchamber: { archive: { archivedAt: 99 } } },
+        metadata: { yuri: { archive: { archivedAt: 99 } } },
       },
     }), { headers: { 'Content-Type': 'application/json' } }));
 
@@ -1037,10 +1037,10 @@ describe('opencodeClient updateSession Host archive facade', () => {
     expect(session.id).toBe('ses_1');
     expect(session.directory).toBe('/repo/app');
     expect(session.time?.archived).toBe(99);
-    expect(session.metadata).toEqual({ openchamber: { archive: { archivedAt: 99 } } });
+    expect(session.metadata).toEqual({ yuri: { archive: { archivedAt: 99 } } });
 
     const [url, init] = healthFetchCalls.at(-1) as [string, RequestInit];
-    expect(url).toContain('/openchamber/sessions/ses_1/archive');
+    expect(url).toContain('/yuri/sessions/ses_1/archive');
     expect(init.method).toBe('PUT');
     expect(JSON.parse(String(init.body))).toEqual({ archivedAt: 99, directory: '/repo/app' });
   });
@@ -1051,7 +1051,7 @@ describe('opencodeClient updateSession Host archive facade', () => {
         id: 'ses_1',
         location: { directory: '/repo' },
         time: { created: 1, updated: 2 },
-        metadata: { openchamber: { archive: { archivedAt: 0 } } },
+        metadata: { yuri: { archive: { archivedAt: 0 } } },
       },
     }), { headers: { 'Content-Type': 'application/json' } }));
 

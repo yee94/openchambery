@@ -26,7 +26,7 @@ import {
 const tempDirs = [];
 
 const makeTempDir = async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'oc-config-sync-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'yuri-config-sync-'));
   tempDirs.push(dir);
   return dir;
 };
@@ -45,12 +45,12 @@ describe('config-sync contract', () => {
   });
 
   it('gates SSH targets by capability derived from managed mode', () => {
-    const managed = createSshSyncTarget('abc', { remoteOpenchamber: { mode: 'managed' } });
+    const managed = createSshSyncTarget('abc', { remoteYuri: { mode: 'managed' } });
     expect(managed.id).toBe('ssh:abc');
     expect(managed.capabilities.posixShell).toBe(true);
     assertTargetCapability(managed, 'posixShell');
 
-    const plain = createSshSyncTarget('abc', { remoteOpenchamber: { mode: 'external' } });
+    const plain = createSshSyncTarget('abc', { remoteYuri: { mode: 'external' } });
     expect(plain.capabilities.posixShell).toBe(false);
     expect(() => assertTargetCapability(plain, 'posixShell')).toThrow(/posixShell/);
   });

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 /**
  * Contract for `sessionTurnChangesRoute.ts`.
  *
- * Webview local route for GET `/api/openchamber/sessions/:id/changes`:
+ * Webview local route for GET `/api/yuri/sessions/:id/changes`:
  * - identify path ahead of generic OpenCode proxy
  * - parse query (messageID, directory, optional file)
  * - dispatch `api:session-turn-changes` bridge
@@ -25,12 +25,12 @@ const createBridgeRecorder = (impl?: (type: string, payload?: unknown) => Promis
 };
 
 describe('isSessionTurnChangesRoute', () => {
-  test('identifies only openchamber session changes routes', async () => {
+  test('identifies only yuri session changes routes', async () => {
     const { isSessionTurnChangesRoute } = await loadRoute();
-    expect(isSessionTurnChangesRoute('/api/openchamber/sessions/ses_1/changes')).toBe(true);
-    expect(isSessionTurnChangesRoute('/api/openchamber/sessions/ses_1/changes/')).toBe(true);
-    expect(isSessionTurnChangesRoute('/api/openchamber/sessions/ses_1/messages')).toBe(false);
-    expect(isSessionTurnChangesRoute('/api/openchamber/sessions//changes')).toBe(false);
+    expect(isSessionTurnChangesRoute('/api/yuri/sessions/ses_1/changes')).toBe(true);
+    expect(isSessionTurnChangesRoute('/api/yuri/sessions/ses_1/changes/')).toBe(true);
+    expect(isSessionTurnChangesRoute('/api/yuri/sessions/ses_1/messages')).toBe(false);
+    expect(isSessionTurnChangesRoute('/api/yuri/sessions//changes')).toBe(false);
     expect(isSessionTurnChangesRoute('/session/ses_1/diff')).toBe(false);
   });
 });
@@ -39,7 +39,7 @@ describe('parseSessionTurnChangesQuery', () => {
   test('extracts sessionID, messageID, directory, and optional file', async () => {
     const { parseSessionTurnChangesQuery } = await loadRoute();
     const parsed = parseSessionTurnChangesQuery(
-      '/api/openchamber/sessions/ses_abc/changes',
+      '/api/yuri/sessions/ses_abc/changes',
       new URLSearchParams({
         messageID: 'msg_1',
         directory: '/repo a',
@@ -58,7 +58,7 @@ describe('parseSessionTurnChangesQuery', () => {
   test('rejects missing messageID', async () => {
     const { parseSessionTurnChangesQuery } = await loadRoute();
     const parsed = parseSessionTurnChangesQuery(
-      '/api/openchamber/sessions/ses_1/changes',
+      '/api/yuri/sessions/ses_1/changes',
       new URLSearchParams({ directory: '/repo' }),
     );
     expect(parsed.ok).toBe(false);
@@ -68,7 +68,7 @@ describe('parseSessionTurnChangesQuery', () => {
   test('rejects control characters in file', async () => {
     const { parseSessionTurnChangesQuery } = await loadRoute();
     const parsed = parseSessionTurnChangesQuery(
-      '/api/openchamber/sessions/ses_1/changes',
+      '/api/yuri/sessions/ses_1/changes',
       new URLSearchParams({ messageID: 'msg_1', file: 'a\u0000.ts' }),
     );
     expect(parsed.ok).toBe(false);
@@ -78,7 +78,7 @@ describe('parseSessionTurnChangesQuery', () => {
   test('rejects DEL (0x7f) in file with 400 invalid_file', async () => {
     const { parseSessionTurnChangesQuery } = await loadRoute();
     const parsed = parseSessionTurnChangesQuery(
-      '/api/openchamber/sessions/ses_1/changes',
+      '/api/yuri/sessions/ses_1/changes',
       new URLSearchParams({ messageID: 'msg_1', file: `a${String.fromCharCode(0x7f)}.ts` }),
     );
     expect(parsed.ok).toBe(false);
@@ -98,7 +98,7 @@ describe('handleSessionTurnChangesRoute', () => {
 
     const response = await handleSessionTurnChangesRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/changes',
+      pathname: '/api/yuri/sessions/ses_1/changes',
       searchParams: new URLSearchParams({
         messageID: 'msg_1',
         directory: '/repo',
@@ -129,7 +129,7 @@ describe('handleSessionTurnChangesRoute', () => {
 
     const response = await handleSessionTurnChangesRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/changes',
+      pathname: '/api/yuri/sessions/ses_1/changes',
       searchParams: new URLSearchParams({
         messageID: 'msg_1',
         file: 'src/a.ts',
@@ -149,7 +149,7 @@ describe('handleSessionTurnChangesRoute', () => {
     const { calls, sendBridgeMessage } = createBridgeRecorder();
     const response = await handleSessionTurnChangesRoute({
       method: 'POST',
-      pathname: '/api/openchamber/sessions/ses_1/changes',
+      pathname: '/api/yuri/sessions/ses_1/changes',
       searchParams: new URLSearchParams({ messageID: 'msg_1' }),
       sendBridgeMessage,
     });
@@ -168,7 +168,7 @@ describe('handleSessionTurnChangesRoute', () => {
     });
     const response = await handleSessionTurnChangesRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/changes',
+      pathname: '/api/yuri/sessions/ses_1/changes',
       searchParams: new URLSearchParams({ messageID: 'msg_1', file: 'missing.ts' }),
       sendBridgeMessage,
     });
@@ -206,7 +206,7 @@ describe('handleSessionTurnChangesRoute', () => {
       });
       const response = await handleSessionTurnChangesRoute({
         method: 'GET',
-        pathname: '/api/openchamber/sessions/ses_1/changes',
+        pathname: '/api/yuri/sessions/ses_1/changes',
         searchParams: new URLSearchParams({ messageID: 'msg_1' }),
         sendBridgeMessage,
       });
@@ -225,7 +225,7 @@ describe('handleSessionTurnChangesRoute', () => {
     });
     const response = await handleSessionTurnChangesRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/changes',
+      pathname: '/api/yuri/sessions/ses_1/changes',
       searchParams: new URLSearchParams({ messageID: 'msg_1' }),
       sendBridgeMessage,
     });
@@ -241,7 +241,7 @@ describe('handleSessionTurnChangesRoute', () => {
     });
     const messageOnlyResponse = await handleSessionTurnChangesRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/changes',
+      pathname: '/api/yuri/sessions/ses_1/changes',
       searchParams: new URLSearchParams({ messageID: 'msg_1', file: 'missing.ts' }),
       sendBridgeMessage: messageOnly.sendBridgeMessage,
     });
@@ -258,7 +258,7 @@ describe('handleSessionTurnChangesRoute', () => {
     });
     const unknownResponse = await handleSessionTurnChangesRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/changes',
+      pathname: '/api/yuri/sessions/ses_1/changes',
       searchParams: new URLSearchParams({ messageID: 'msg_1' }),
       sendBridgeMessage: unknownCode.sendBridgeMessage,
     });
@@ -274,7 +274,7 @@ describe('handleSessionTurnChangesRoute', () => {
     const { calls, sendBridgeMessage } = createBridgeRecorder();
     const response = await handleSessionTurnChangesRoute({
       method: 'GET',
-      pathname: '/api/openchamber/sessions/ses_1/changes',
+      pathname: '/api/yuri/sessions/ses_1/changes',
       searchParams: new URLSearchParams({
         messageID: 'msg_1',
         file: `evil${String.fromCharCode(0x7f)}.ts`,

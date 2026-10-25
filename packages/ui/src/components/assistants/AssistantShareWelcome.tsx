@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/i18n';
 
-const ASSISTANT_SHARE_WELCOME_STORAGE_KEY = 'openchamber:assistant-share-welcome:v1';
+const ASSISTANT_SHARE_WELCOME_STORAGE_KEY = 'yuri:assistant-share-welcome:v1';
 
 const shareExamples = [
   { image: iosShareSheetImage, titleKey: 'assistants.shareWelcome.example.chat.title', descriptionKey: 'assistants.shareWelcome.example.chat.description' },

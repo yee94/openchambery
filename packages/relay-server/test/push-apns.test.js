@@ -52,7 +52,7 @@ it('reuses one http2 session per environment, caches JWT for 50 minutes, and ret
     else respond(listeners, 200);
   });
   const provider = createApnsProvider({
-    keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.openchamber.app',
+    keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.yuri.app',
     http2, clock: { now: () => now, setTimeout, clearTimeout },
   });
   const payload = { aps: { alert: { title: 't' } } };
@@ -60,7 +60,7 @@ it('reuses one http2 session per environment, caches JWT for 50 minutes, and ret
   expect(http2.sessions).toHaveLength(1);
   expect(calls).toHaveLength(2);
   expect(calls[0].authorization).not.toBe(calls[1].authorization);
-  expect(calls[0]['apns-topic']).toBe('com.openchamber.app');
+  expect(calls[0]['apns-topic']).toBe('com.yuri.app');
   const firstJwt = calls[1].authorization;
   now += 29 * 60 * 1000;
   expect(await provider.send({ token: 'b'.repeat(64), env: 'sandbox', payload })).toMatchObject({ ok: true });
@@ -95,7 +95,7 @@ it('returns drop for dead tokens and 410, but not for 429 or transport failure',
     }
     respond(listeners, next.status, next.body);
   });
-  const provider = createApnsProvider({ keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.openchamber.app', http2 });
+  const provider = createApnsProvider({ keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.yuri.app', http2 });
   const payload = { aps: { alert: { title: 't' } } };
   expect(await provider.send({ token: 'a'.repeat(64), env: 'sandbox', payload })).toEqual({ ok: false, drop: true });
   expect(await provider.send({ token: 'b'.repeat(64), env: 'sandbox', payload })).toEqual({ ok: false, drop: true });
@@ -124,7 +124,7 @@ it('rebuilds the session after request open errors and does not retry uncertain 
     }
     return client;
   };
-  const provider = createApnsProvider({ keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.openchamber.app', http2 });
+  const provider = createApnsProvider({ keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.yuri.app', http2 });
   const payload = { aps: { alert: { title: 't' } } };
   expect(await provider.send({ token: 'a'.repeat(64), env: 'sandbox', payload })).toEqual({ ok: false, drop: undefined });
   expect(calls).toBe(0);

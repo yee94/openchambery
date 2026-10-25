@@ -3,7 +3,7 @@ import { replaceEqualDeep, useQuery } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryRuntime';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeYuriEvents } from '@/lib/yuriEvents';
 import { isVSCodeRuntime } from '@/lib/desktop';
 
 export type SessionOrderSnapshot = {
@@ -78,7 +78,7 @@ export const useSessionOrderQuery = () => {
   const query = useQuery({ ...sessionOrderQueryOptions(transport), enabled });
   React.useEffect(() => {
     if (!enabled) return;
-    return subscribeOpenchamberEvents((event) => {
+    return subscribeYuriEvents((event) => {
       if (transport !== getRuntimeTransportIdentity()) return;
       if (event.type === 'session-order-changed' || event.type === 'event-stream-ready') {
         void queryClient.invalidateQueries({ queryKey: key(transport), exact: true });

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { RuntimeUrlQuery, RuntimeUrlResolver } from '@openchamber/ui/lib/runtime-url';
+import type { RuntimeUrlQuery, RuntimeUrlResolver } from '@yuri/ui/lib/runtime-url';
 
 const runtimeFetchMock = vi.fn();
 
-vi.mock('@openchamber/ui/lib/runtime-fetch', () => ({
+vi.mock('@yuri/ui/lib/runtime-fetch', () => ({
   runtimeFetch: runtimeFetchMock,
 }));
 
@@ -65,7 +65,7 @@ describe('createWebFilesAPI', () => {
     const api = createWebFilesAPI({ urls, getDirectory: () => '/current-workspace' });
 
     runtimeFetchMock.mockResolvedValueOnce(new Response('', {
-      headers: { 'x-openchamber-file-exists': 'false' },
+      headers: { 'x-yuri-file-exists': 'false' },
     }));
     await expect(api.readFile?.('/current-workspace/missing.txt', { optional: true, directory: '/worktree-a' }))
       .resolves.toEqual({ content: '', path: '/current-workspace/missing.txt', exists: false });
@@ -77,7 +77,7 @@ describe('createWebFilesAPI', () => {
     });
 
     runtimeFetchMock.mockResolvedValueOnce(new Response('', {
-      headers: { 'x-openchamber-file-exists': 'true' },
+      headers: { 'x-yuri-file-exists': 'true' },
     }));
     await expect(api.readFile?.('/current-workspace/empty.txt', { optional: true }))
       .resolves.toEqual({ content: '', path: '/current-workspace/empty.txt', exists: true });

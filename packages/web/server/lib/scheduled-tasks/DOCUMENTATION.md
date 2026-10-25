@@ -1,13 +1,13 @@
 # Scheduled Tasks module
 
-Server-owned scheduled task runtime and routes for OpenChamber-only automation.
+Server-owned scheduled task runtime and routes for Yuri-only automation.
 
 ## Scope
 
 - Per-project scheduled task persistence is owned by `packages/web/server/lib/projects/project-config.js`.
 - Runtime orchestration and execution is owned by this module.
 - Durable run history is owned by an independent SQLite store in this module.
-- This module is OpenChamber feature logic; it is intentionally separate from OpenCode proxy/runtime internals.
+- This module is Yuri feature logic; it is intentionally separate from OpenCode proxy/runtime internals.
 - Prompt and goal execution preserve hash-prefixed text literally; no snippet discovery or expansion occurs before dispatch.
 
 ## Assistant result handoff
@@ -40,7 +40,7 @@ pushes during crashes/concurrent Hosts. Result review is read-only.
 `session-skill.js` intercepts new `POST /api/session` admissions on a Host using
 the local official shared OpenCode service. It preserves the official `{ data }`
 HTTP envelope and uses the official client to create the session and put one
-`openchamber.scheduled-task` instruction entry. This is an on-demand built-in
+`yuri.scheduled-task` instruction entry. This is an on-demand built-in
 workflow, not a globally installed native `skill` registration: the entry names
 one `describe` command; its result supplies `SESSION_SKILL.md` and bound
 create/list commands. No repository/global OpenCode files are modified. Existing
@@ -89,7 +89,7 @@ model defaults, denied origins/credentials, preflight failures and rollback.
   - Timer scheduling and queueing
   - Concurrency controls
   - Session create → goal/prompt/command execution
-  - Emits OpenChamber task-run events
+  - Emits Yuri task-run events
   - Isolates project sync failures, retries each failed project up to three times,
     and clears pending retries during shutdown
   - Injects `runHistoryStore` to persist every actual run
@@ -99,7 +99,7 @@ model defaults, denied origins/credentials, preflight failures and rollback.
   - Keyset-paginated list of run records
   - Preserves `running` rows on open; repairs legacy synthetic restart errors
     with attached sessions back to pending reconciliation
-  - Scheduled runs claim `(project_id, task_id, slot_at)` so multiple OpenChamber
+  - Scheduled runs claim `(project_id, task_id, slot_at)` so multiple Yuri
     processes sharing a data dir cannot occupy the same fire slot
 
 - `packages/web/server/lib/scheduled-tasks/routes.js`
@@ -107,7 +107,7 @@ model defaults, denied origins/credentials, preflight failures and rollback.
   - Global run history list endpoint
   - Project scheduled task CRUD endpoints
   - Manual run endpoint
-  - OpenChamber events SSE stream endpoint (`GET /api/openchamber/events`): 25s
+  - Yuri events SSE stream endpoint (`GET /api/yuri/events`): 25s
     heartbeat interval unchanged; half-open clients that stay paused across two
     consecutive heartbeat cycles are destroyed and removed from the client set
     (idempotent cleanup). SSE is best-effort; authoritative data is HTTP pull.
@@ -256,14 +256,14 @@ finalized history (including later chat continuation) is never reopened.
 
 - `registerScheduledTaskRoutes(app, dependencies)`
 - Registers:
-  - `GET /api/openchamber/scheduled-tasks`
-  - `GET /api/openchamber/scheduled-task-runs`
+  - `GET /api/yuri/scheduled-tasks`
+  - `GET /api/yuri/scheduled-task-runs`
   - `GET /api/projects/:projectId/scheduled-tasks`
   - `PUT /api/projects/:projectId/scheduled-tasks` — body must be `{ task }`. A bare task, `{ tasks: [] }`, or `{ task: [] }` is HTTP 400 with `expected` describing that envelope. After the project and goal checks, creates, provider/model changes, and disabled→enabled transitions load the connected catalog for `project.path` through `loadConnectedCatalog` / `isConnectedModel` (`ModelInfo.id`, not the internal `modelID`). An unconnected model is HTTP 400 and is not written. Catalog failure is HTTP 503 and is not written. Renames and disables that keep the stored provider/model are allowed when the catalog is down. The route passes the pre-read existence, provider, model, and enabled snapshot into the project-config write lock; a mismatch is HTTP 409 and is not written. Scheduler sync failure does not roll back a committed write. `GET /api/config/catalog/providers` remains HTTP 502 when its upstream catalog fails.
   - `DELETE /api/projects/:projectId/scheduled-tasks/:taskId`
   - `POST /api/projects/:projectId/scheduled-tasks/:taskId/run`
-  - `GET /api/openchamber/scheduled-tasks/status`
-  - `GET /api/openchamber/events`
+  - `GET /api/yuri/scheduled-tasks/status`
+  - `GET /api/yuri/events`
 
 Dependencies include optional `runHistoryStore` for the history list route.
 `buildOpenCodeUrl` and `getOpenCodeAuthHeaders` are read at request time to
@@ -272,7 +272,7 @@ build the catalog client. Callers that do not pass an `expected` snapshot to
 
 ## Global task list contract
 
-`GET /api/openchamber/scheduled-tasks` reads configured projects through
+`GET /api/yuri/scheduled-tasks` reads configured projects through
 `readSettingsFromDiskMigrated()` and `sanitizeProjects(settings.projects)`, then
 loads each project with `projectConfigRuntime.listScheduledTasks(project.id)`.
 
@@ -284,7 +284,7 @@ failure preserves tasks from completed projects and adds that project ID to
 
 ## Run history API
 
-`GET /api/openchamber/scheduled-task-runs?before=&limit=&projectId=&taskId=`
+`GET /api/yuri/scheduled-task-runs?before=&limit=&projectId=&taskId=`
 
 - Success: `{ runs, nextCursor, complete }` where `runs` is an array,
   `nextCursor` is `string | null`, and `complete` is a boolean
@@ -311,7 +311,7 @@ Every actual run (timer or manual):
    queue only) must not fire it.
 4. Create an OpenCode session with:
    - title: `[Scheduled] ${taskName} yyyy-LL-dd HH:mm` (total length ≤ 120)
-   - metadata: `openchamber.scheduledTask = { projectID, taskID, runID, name }`
+   - metadata: `yuri.scheduledTask = { projectID, taskID, runID, name }`
     - SDK/HTTP calls receive `{ signal }` as the second request-options argument
       (`client.session.create(params, { signal })`, same for `prompt` /
       `command` / `command.list`; raw `fetch` for goal PATCH
@@ -384,7 +384,7 @@ Every actual run (timer or manual):
      association still lives in the history table; history rows are not
      rewritten after finalize.
 
-SSE events keep the existing `openchamber:scheduled-task-ran` shape.
+SSE events keep the existing `yuri:scheduled-task-ran` shape.
 
 ### Session create delivery
 
@@ -461,7 +461,7 @@ Observer failures are logged and must not throw out of the event bus.
 
 Session goal Host state is advertised by
 `packages/web/server/lib/session-goal/capability.js` as `{ supported: true }`.
-Goal records live in the OpenChamber session-metadata store (same seam as
+Goal records live in the Yuri session-metadata store (same seam as
 manual UI / `session-goal` runtime). Scheduled runs inject
 `persistSessionGoal`, `readSessionMetadata`, and optional `onGoalPersisted`
 from `server/index.js`.
@@ -510,5 +510,5 @@ attach/finalize may still write after `stop()`, and
 `startWebUiServer().stop({ exitProcess: false })` must be able to restart in the
 same process without reopening a closed SQLite handle. Store `close()` remains
 for isolated tests and any process-final owner that truly owns process exit.
-Server wiring stores the SQLite file under `OPENCHAMBER_DATA_DIR` as
+Server wiring stores the SQLite file under `YURI_DATA_DIR` as
 `scheduled-task-runs.sqlite`.

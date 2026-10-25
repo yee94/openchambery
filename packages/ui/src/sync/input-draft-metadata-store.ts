@@ -1,9 +1,10 @@
+import '@/lib/brand-storage-bootstrap';
 import { draftKeyString, parseDraftRecord, type DraftRecord } from "./input-draft-types"
 
-export const INPUT_DRAFT_METADATA_SNAPSHOT_KEY = "openchamber_input_draft_metadata_v1"
-export const INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY = "openchamber_input_draft_metadata_migration_v1"
-const LEGACY_DRAFT_PREFIX = "openchamber_chat_input_draft_"
-const LEGACY_MENTIONS_PREFIX = "openchamber_chat_confirmed_mentions_"
+export const INPUT_DRAFT_METADATA_SNAPSHOT_KEY = "yuri_input_draft_metadata_v1"
+export const INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY = "yuri_input_draft_metadata_migration_v1"
+const LEGACY_DRAFT_PREFIX = "yuri_chat_input_draft_"
+const LEGACY_MENTIONS_PREFIX = "yuri_chat_confirmed_mentions_"
 
 export type InputDraftMetadataErrorCode = "unavailable" | "quota" | "corrupt" | "serialization" | "cancelled"
 export type InputDraftMetadataResult<T> = { ok: true; value: T } | { ok: false; error: { code: InputDraftMetadataErrorCode } }

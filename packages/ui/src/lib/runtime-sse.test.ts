@@ -25,7 +25,7 @@ describe('consumeRuntimeSse', () => {
     const relay = {
       fetch: async (input: string | URL | Request, init?: RequestInit) => {
         calls.push({ path: String(input), init });
-        return response(['data: {"type":"openchamber:message-queue-changed","properties":{"revision":8,"occurredAt":10}}\n\n']);
+        return response(['data: {"type":"yuri:message-queue-changed","properties":{"revision":8,"occurredAt":10}}\n\n']);
       },
       openWebSocket: () => { throw new Error('unused'); },
       getStatus: () => ({ state: 'connected' as const }),
@@ -37,17 +37,17 @@ describe('consumeRuntimeSse', () => {
 
     try {
       adoptRelayTunnel({ relayUrl: 'wss://relay.example', serverId: 'server-a', hostEncPubJwk: {} }, relay);
-      await consumeRuntimeSse('/api/openchamber/events', {
+      await consumeRuntimeSse('/api/yuri/events', {
         signal: controller.signal,
         onMessage: (data) => messages.push(data),
       });
 
       expect(calls).toHaveLength(1);
-      expect(calls[0].path).toBe('/api/openchamber/events');
+      expect(calls[0].path).toBe('/api/yuri/events');
       expect(calls[0].init?.method).toBe('GET');
       expect(new Headers(calls[0].init?.headers).get('accept')).toBe('text/event-stream');
       expect(calls[0].init?.signal).toBe(controller.signal);
-      expect(messages).toEqual(['{"type":"openchamber:message-queue-changed","properties":{"revision":8,"occurredAt":10}}']);
+      expect(messages).toEqual(['{"type":"yuri:message-queue-changed","properties":{"revision":8,"occurredAt":10}}']);
     } finally {
       deactivateRelayTunnel();
     }
@@ -56,7 +56,7 @@ describe('consumeRuntimeSse', () => {
   test('parses UTF-8, CR/LF/CRLF including split CR, multi-line data, comments, and BOM', async () => {
     const activity: number[] = [];
     const messages: string[] = [];
-    await consumeRuntimeSse('/api/openchamber/events', {
+    await consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => response([
         '\uFEFF: ping\r', '\ndata: 你\r\n', 'data: second\r', '\n\r', '\n',
       ]),
@@ -69,7 +69,7 @@ describe('consumeRuntimeSse', () => {
 
   test('drops an unterminated EOF event and ignores unknown fields', async () => {
     const messages: string[] = [];
-    await consumeRuntimeSse('/api/openchamber/events', {
+    await consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => response(['event: note\nunknown: value\ndata: complete\n\ndata: dropped']),
       onMessage: (data) => messages.push(data),
     });
@@ -79,18 +79,18 @@ describe('consumeRuntimeSse', () => {
   test('rejects oversized buffered lines and events', async () => {
     const exactBoundary = 'x'.repeat(1024 * 1024);
     const messages: string[] = [];
-    await consumeRuntimeSse('/api/openchamber/events', {
+    await consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => response([`data: ${exactBoundary}\n\n`]),
       onMessage: (data) => messages.push(data),
     });
     expect(messages).toEqual([exactBoundary]);
-    await expect(consumeRuntimeSse('/api/openchamber/events', {
+    await expect(consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => response([`data: ${'x'.repeat(1024 * 1024 + 1)}\n\n`]),
     })).rejects.toThrow('SSE response exceeds buffer limit');
-    await expect(consumeRuntimeSse('/api/openchamber/events', {
+    await expect(consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => response([`data: ${'x'.repeat(600 * 1024)}\ndata: ${'y'.repeat(600 * 1024)}\n\n`]),
     })).rejects.toThrow('SSE response exceeds buffer limit');
-    await expect(consumeRuntimeSse('/api/openchamber/events', {
+    await expect(consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => response([`data: ${exactBoundary}\nunknown`]),
     })).rejects.toThrow('SSE response exceeds buffer limit');
   });
@@ -98,7 +98,7 @@ describe('consumeRuntimeSse', () => {
   test('treats a data field without a colon as an empty data line at the byte boundary', async () => {
     const prefix = 'x'.repeat(1024 * 1024 - 1);
     const messages: string[] = [];
-    await consumeRuntimeSse('/api/openchamber/events', {
+    await consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => response([`data: ${prefix}\ndata\n\n`]),
       onMessage: (data) => messages.push(data),
     });
@@ -114,20 +114,20 @@ describe('consumeRuntimeSse', () => {
       { response: response([], {}, new Error('sensitive reader detail')) },
     ];
     for (const entry of cases) {
-      await expect(consumeRuntimeSse('/api/openchamber/events', { fetch: async () => entry.response })).rejects.toThrow(/^SSE /);
+      await expect(consumeRuntimeSse('/api/yuri/events', { fetch: async () => entry.response })).rejects.toThrow(/^SSE /);
     }
   });
 
   test('cancels invalid response bodies before surfacing a stable error', async () => {
     let cancelled = 0;
     const body = new ReadableStream<Uint8Array>({ cancel: () => { cancelled += 1; } });
-    await expect(consumeRuntimeSse('/api/openchamber/events', {
+    await expect(consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => new Response(body, { status: 401, headers: { 'content-type': 'text/event-stream' } }),
     })).rejects.toThrow('SSE response failed');
     expect(cancelled).toBe(1);
 
     const wrongTypeBody = new ReadableStream<Uint8Array>({ cancel: () => { cancelled += 1; } });
-    await expect(consumeRuntimeSse('/api/openchamber/events', {
+    await expect(consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => new Response(wrongTypeBody, { status: 200, headers: { 'content-type': 'application/json' } }),
     })).rejects.toThrow('SSE response has invalid content type');
     expect(cancelled).toBe(2);
@@ -136,7 +136,7 @@ describe('consumeRuntimeSse', () => {
       start(controller) { controller.close(); },
       cancel: () => { cancelled += 1; },
     });
-    await consumeRuntimeSse('/api/openchamber/events', {
+    await consumeRuntimeSse('/api/yuri/events', {
       fetch: async () => new Response(normalBody, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
     });
     expect(cancelled).toBe(2);
@@ -159,21 +159,21 @@ describe('consumeRuntimeSse', () => {
     };
 
     const parser = createResponse(async () => ({ done: false, value: encoder.encode(`data: ${'x'.repeat(1024 * 1024 + 1)}\n`) }));
-    await expect(consumeRuntimeSse('/api/openchamber/events', { fetch: async () => parser.fake })).rejects.toThrow('SSE response exceeds buffer limit');
+    await expect(consumeRuntimeSse('/api/yuri/events', { fetch: async () => parser.fake })).rejects.toThrow('SSE response exceeds buffer limit');
     expect(parser.cancelled()).toBe(1);
 
     const read = createResponse(async () => { throw new Error('sensitive read'); });
-    await expect(consumeRuntimeSse('/api/openchamber/events', { fetch: async () => read.fake })).rejects.toThrow('SSE response read failed');
+    await expect(consumeRuntimeSse('/api/yuri/events', { fetch: async () => read.fake })).rejects.toThrow('SSE response read failed');
     expect(read.cancelled()).toBe(1);
 
     const callback = createResponse(async () => ({ done: false, value: encoder.encode('data: callback\n\n') }));
-    await expect(consumeRuntimeSse('/api/openchamber/events', { fetch: async () => callback.fake, onMessage: () => { throw new Error('consumer detail'); } })).rejects.toThrow('SSE response read failed');
+    await expect(consumeRuntimeSse('/api/yuri/events', { fetch: async () => callback.fake, onMessage: () => { throw new Error('consumer detail'); } })).rejects.toThrow('SSE response read failed');
     expect(callback.cancelled()).toBe(1);
 
     const controller = new AbortController();
     const aborted = createResponse(async () => { throw new DOMException('aborted', 'AbortError'); });
     controller.abort();
-    await expect(consumeRuntimeSse('/api/openchamber/events', { signal: controller.signal, fetch: async () => aborted.fake })).rejects.toThrow('aborted');
+    await expect(consumeRuntimeSse('/api/yuri/events', { signal: controller.signal, fetch: async () => aborted.fake })).rejects.toThrow('aborted');
     expect(aborted.cancelled()).toBe(1);
   });
 });

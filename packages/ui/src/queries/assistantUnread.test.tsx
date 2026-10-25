@@ -19,8 +19,8 @@ vi.mock('@/lib/runtime-switch', () => ({
 }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: state.fetch }));
 vi.mock('@/lib/queryRuntime', () => ({ get queryClient() { return state.client; } }));
-vi.mock('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: (listener: (event: { type: string; revision?: number }) => void) => {
+vi.mock('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: (listener: (event: { type: string; revision?: number }) => void) => {
     state.listeners.add(listener);
     return () => state.listeners.delete(listener);
   },
@@ -63,15 +63,15 @@ describe('Assistant shared read contract', () => {
   });
 
   test('reports the loaded visible ordinal while snapshot tip is ahead; skips internal and streaming tails', () => {
-    const page = { generation: 0, messages: [row(4), row(5, 'oc.settle.done'), { ...row(6), status: 'streaming' }] };
+    const page = { generation: 0, messages: [row(4), row(5, 'yuri.settle.done'), { ...row(6), status: 'streaming' }] };
     expect(getLoadedAssistantReadPosition(assistant(), page)).toEqual(position(4));
     expect(getLoadedAssistantReadPosition(assistant(), { ...page, messages: [row(7)] })).toEqual(position(7));
     expect(getLoadedAssistantReadPosition(assistant(), { ...page, messages: [{ ...row(7), role: 'peer' }] })).toEqual(position(7));
     // Per-part: settle beside spoken body still qualifies as the loaded cursor.
     const mixed = {
       ...row(8),
-      parts: [{ type: 'text' as const, text: 'oc.settle.complete' }, { type: 'text' as const, text: 'spoken' }],
-      text: 'oc.settle.completespoken',
+      parts: [{ type: 'text' as const, text: 'yuri.settle.complete' }, { type: 'text' as const, text: 'spoken' }],
+      text: 'yuri.settle.completespoken',
     };
     expect(getLoadedAssistantReadPosition(assistant(), { generation: 0, messages: [mixed] })).toEqual(position(8));
   });
@@ -96,7 +96,7 @@ describe('Assistant shared read contract', () => {
     state.fetch.mockResolvedValue(response({ ...assistantContractFixtures.contactReadResponse, assistantID: 'a/b' }));
     await markAssistantContactRead('a/b', position(4));
     const [url, init] = state.fetch.mock.calls[0];
-    expect(url).toBe('/api/openchamber/assistants/a%2Fb/contact/read');
+    expect(url).toBe('/api/yuri/assistants/a%2Fb/contact/read');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual(position(4));
     expect(init.signal).toBeInstanceOf(AbortSignal);
@@ -160,7 +160,7 @@ describe('Assistant shared read contract', () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
     expect(host.textContent).toBe('33');
-    expect(state.fetch.mock.calls.every(([url]) => url === '/api/openchamber/assistants/snapshot')).toBe(true);
+    expect(state.fetch.mock.calls.every(([url]) => url === '/api/yuri/assistants/snapshot')).toBe(true);
 
     snapshot = { ...snapshot, revision: 12, assistants: [assistant('a', 2), assistant('b', 3)] };
     state.fetch.mockImplementation((url: string) => {

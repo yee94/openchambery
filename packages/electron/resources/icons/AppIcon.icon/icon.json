@@ -1,112 +1,32 @@
 {
-  "fill-specializations" : [
-    {
-      "value" : "system-dark"
-    },
-    {
-      "appearance" : "light",
-      "value" : "system-dark"
-    },
-    {
-      "appearance" : "dark",
-      "value" : "system-dark"
-    },
-    {
-      "appearance" : "tinted",
-      "value" : "system-dark"
-    }
-  ],
-  "groups" : [
-    {
-      "layers" : [
-        {
-          "glass-specializations" : [
-            {
-              "value" : true
-            },
-            {
-              "appearance" : "light",
-              "value" : true
-            },
-            {
-              "appearance" : "dark",
-              "value" : true
-            },
-            {
-              "appearance" : "tinted",
-              "value" : true
-            }
-          ],
-          "image-name" : "app-icon-glyph-dark 4.png",
-          "name" : "app-icon-glyph-dark 4",
-          "opacity-specializations" : [
-            {
-              "value" : 1
-            },
-            {
-              "appearance" : "light",
-              "value" : 1
-            },
-            {
-              "appearance" : "dark",
-              "value" : 1
-            },
-            {
-              "appearance" : "tinted",
-              "value" : 1
-            }
-          ],
-          "position-specializations" : [
-            {
-              "idiom" : "square",
-              "value" : {
-                "scale" : 1.15,
-                "translation-in-points" : [
-                  -0.6499999999998636,
-                  -3.25
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "blend-mode" : "normal",
-          "hidden" : true,
-          "image-name" : "app-icon-glyph-light 2.png",
-          "name" : "app-icon-glyph-light 2",
-          "opacity-specializations" : [
-            {
-              "value" : 0
-            },
-            {
-              "appearance" : "light",
-              "value" : 0
-            },
-            {
-              "appearance" : "dark",
-              "value" : 0
-            },
-            {
-              "appearance" : "tinted",
-              "value" : 0
-            }
-          ]
-        }
-      ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+  "fill": { "solid": "gray:0.12,1" },
+  "groups": [{
+    "layers": [
+      {
+        "image-name": "yuri-dark.png",
+        "name": "Yuri dark",
+        "glass": false,
+        "opacity-specializations": [
+          { "value": 1 },
+          { "appearance": "light", "value": 0 },
+          { "appearance": "dark", "value": 1 },
+          { "appearance": "tinted", "value": 1 }
+        ]
       },
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.5
+      {
+        "image-name": "yuri-light.png",
+        "name": "Yuri light",
+        "glass": false,
+        "opacity-specializations": [
+          { "value": 0 },
+          { "appearance": "light", "value": 1 },
+          { "appearance": "dark", "value": 0 },
+          { "appearance": "tinted", "value": 0 }
+        ]
       }
-    }
-  ],
-  "supported-platforms" : {
-    "circles" : [
-      "watchOS"
     ],
-    "squares" : "shared"
-  }
+    "shadow": { "kind": "neutral", "opacity": 0 },
+    "translucency": { "enabled": false, "value": 0 }
+  }],
+  "supported-platforms": { "squares": "shared" }
 }

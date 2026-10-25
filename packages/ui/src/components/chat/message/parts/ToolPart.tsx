@@ -2647,7 +2647,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                     className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap animate-text-shimmer')}
                                     style={{
                                         color: 'var(--tools-title)',
-                                        ['--oc-text-shimmer-base' as string]: 'var(--tools-title)',
+                                        ['--yuri-text-shimmer-base' as string]: 'var(--tools-title)',
                                     }}
                                     title={taskTitle}
                                 >
@@ -2690,7 +2690,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                         taskBusy
                                             ? {
                                                 // Same sweep as WorkingPlaceholder / thinking labels.
-                                                ['--oc-text-shimmer-base' as string]: 'var(--surface-muted-foreground)',
+                                                ['--yuri-text-shimmer-base' as string]: 'var(--surface-muted-foreground)',
                                             }
                                             : { color: 'var(--tools-description)', opacity: 0.8 }
                                     }

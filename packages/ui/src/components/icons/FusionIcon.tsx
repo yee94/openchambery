@@ -14,7 +14,7 @@ export function FusionIcon(props: SVGProps<SVGSVGElement>) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      className={['oc-icon', className].filter(Boolean).join(' ')}
+      className={['yuri-icon', className].filter(Boolean).join(' ')}
       {...rest}
     >
       <path d="M12 4.5v6.25M12 10.75v3.5M12 10.75H7.25A3.25 3.25 0 0 0 4 14v1.25M12 10.75h4.75A3.25 3.25 0 0 1 20 14v1.25" />

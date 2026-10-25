@@ -38,14 +38,14 @@ const serverMessage = (messageID: string, text: string): AssistantContactMessage
 
 describe('contactOptimisticTurns', () => {
   test('appends an optimistic user bubble with text and file previews until the server id arrives', () => {
-    const turn = createContactOptimisticTurn('asst_1', 'oc_contact_local', [
+    const turn = createContactOptimisticTurn('asst_1', 'yuri_contact_local', [
       { type: 'text', text: 'see this' },
       { type: 'file', mime: 'image/png', url: 'data:image/png;base64,eA==', filename: 'shot.png' },
     ], 42)
     const merged = mergeContactTranscript([], [turn], 'asst_1')
     expect(merged).toHaveLength(1)
     expect(merged[0]).toMatchObject({
-      messageID: 'oc_contact_local',
+      messageID: 'yuri_contact_local',
       role: 'user',
       status: 'sending',
       text: 'see this',
@@ -53,14 +53,14 @@ describe('contactOptimisticTurns', () => {
     })
     expect(merged[0].parts).toEqual(turn.parts)
 
-    const authoritative = [serverMessage('oc_contact_local', 'see this')]
+    const authoritative = [serverMessage('yuri_contact_local', 'see this')]
     expect(mergeContactTranscript(authoritative, [turn], 'asst_1')).toBe(authoritative)
     expect(reconcileContactOptimisticTurns([turn], authoritative)).toEqual([])
     expect(scopeContactOptimisticTurns([turn], 'asst_2')).toEqual([])
   })
 
   test('shows the sending marker only before admission and keeps processing separate from the user row', () => {
-    const sendingTurn = createContactOptimisticTurn('asst_1', 'oc_contact_local', [{ type: 'text', text: 'hello' }], 42)
+    const sendingTurn = createContactOptimisticTurn('asst_1', 'yuri_contact_local', [{ type: 'text', text: 'hello' }], 42)
     const admittedTurn = markContactOptimisticAdmitted([sendingTurn], sendingTurn.messageID)
     const processing = admitContactTurnPreview([], 'asst_1', sendingTurn.messageID, 43)
 
@@ -83,18 +83,18 @@ describe('contactOptimisticTurns', () => {
   })
 
   test('appends real deltas by bubble index, freezes done bubbles, and reconciles after turn end plus authority', () => {
-    let previews = admitContactTurnPreview([], 'asst_1', 'oc_contact_local', 42)
+    let previews = admitContactTurnPreview([], 'asst_1', 'yuri_contact_local', 42)
     previews = applyContactBubbleDelta(previews, {
-      assistantID: 'asst_1', turnID: 'oc_contact_local', bubbleIndex: 0, delta: 'Hel', done: false, occurredAt: 43,
+      assistantID: 'asst_1', turnID: 'yuri_contact_local', bubbleIndex: 0, delta: 'Hel', done: false, occurredAt: 43,
     })
     previews = applyContactBubbleDelta(previews, {
-      assistantID: 'asst_1', turnID: 'oc_contact_local', bubbleIndex: 0, delta: 'lo', done: true, occurredAt: 44,
+      assistantID: 'asst_1', turnID: 'yuri_contact_local', bubbleIndex: 0, delta: 'lo', done: true, occurredAt: 44,
     })
     previews = applyContactBubbleDelta(previews, {
-      assistantID: 'asst_1', turnID: 'oc_contact_local', bubbleIndex: 0, delta: ' ignored', done: true, occurredAt: 45,
+      assistantID: 'asst_1', turnID: 'yuri_contact_local', bubbleIndex: 0, delta: ' ignored', done: true, occurredAt: 45,
     })
     previews = applyContactBubbleDelta(previews, {
-      assistantID: 'asst_1', turnID: 'oc_contact_local', bubbleIndex: 1, delta: 'Next', done: false, occurredAt: 46,
+      assistantID: 'asst_1', turnID: 'yuri_contact_local', bubbleIndex: 1, delta: 'Next', done: false, occurredAt: 46,
     })
     expect(previews[0]).toMatchObject({
       status: 'streaming',
@@ -103,25 +103,25 @@ describe('contactOptimisticTurns', () => {
         { bubbleIndex: 1, text: 'Next', done: false },
       ],
     })
-    const merged = mergeContactTranscript([serverMessage('oc_contact_local', 'hello')], [], 'asst_1', previews)
+    const merged = mergeContactTranscript([serverMessage('yuri_contact_local', 'hello')], [], 'asst_1', previews)
     expect(merged.slice(1).map((message) => ({ text: message.text, status: message.status }))).toEqual([
       { text: 'Hello', status: 'complete' },
       { text: 'Next', status: 'streaming' },
       { text: '', status: 'admitted' },
     ])
-    expect(merged[merged.length - 1]?.messageID).toBe('oc_contact_local:preview:admitted')
+    expect(merged[merged.length - 1]?.messageID).toBe('yuri_contact_local:preview:admitted')
 
     const authoritativeAssistant: AssistantContactMessage = {
       ...serverMessage('assistant_bubble_1', 'Hello'),
       role: 'assistant',
-      turnID: 'oc_contact_local',
+      turnID: 'yuri_contact_local',
     }
     expect(reconcileContactTurnPreviews(previews, [authoritativeAssistant])).toBe(previews)
     const complete = endContactTurnPreview(previews, {
-      assistantID: 'asst_1', turnID: 'oc_contact_local', status: 'complete', occurredAt: 47,
+      assistantID: 'asst_1', turnID: 'yuri_contact_local', status: 'complete', occurredAt: 47,
     })
     expect(contactTurnPreviewWorking(complete)).toBe(false)
-    expect(mergeContactTranscript([serverMessage('oc_contact_local', 'hello')], [], 'asst_1', complete).slice(1).map((message) => message.status)).toEqual([
+    expect(mergeContactTranscript([serverMessage('yuri_contact_local', 'hello')], [], 'asst_1', complete).slice(1).map((message) => message.status)).toEqual([
       'complete',
       'streaming',
     ])
@@ -130,7 +130,7 @@ describe('contactOptimisticTurns', () => {
 
   test('marks a turn-end error as failed and stops processing', () => {
     const failed = endContactTurnPreview([], {
-      assistantID: 'asst_1', turnID: 'oc_contact_local', status: 'error', error: 'upstream failed', occurredAt: 50,
+      assistantID: 'asst_1', turnID: 'yuri_contact_local', status: 'error', error: 'upstream failed', occurredAt: 50,
     })
     expect(failed[0]).toMatchObject({ status: 'failed', error: 'upstream failed' })
     expect(contactTurnPreviewWorking(failed)).toBe(false)
@@ -277,17 +277,17 @@ describe('contactOptimisticTurns', () => {
   })
 
   test('keeps a failed turn and prefers the server error.message', () => {
-    const turn = createContactOptimisticTurn('asst_1', 'oc_contact_local', [
+    const turn = createContactOptimisticTurn('asst_1', 'yuri_contact_local', [
       { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
     ])
-    const failed = markContactOptimisticFailed([turn], 'oc_contact_local', 'generate timed out')
+    const failed = markContactOptimisticFailed([turn], 'yuri_contact_local', 'generate timed out')
     expect(failed[0]).toMatchObject({
-      messageID: 'oc_contact_local',
+      messageID: 'yuri_contact_local',
       status: 'failed',
       error: 'generate timed out',
     })
     expect(mergeContactTranscript([], failed, 'asst_1')[0]).toMatchObject({
-      messageID: 'oc_contact_local',
+      messageID: 'yuri_contact_local',
       status: 'failed',
     })
     expect(contactSendErrorMessage(
@@ -321,11 +321,11 @@ describe('contactOptimisticTurns', () => {
       attachments: [{ mime: 'image/png', url: 'data:image/png;base64,eA==', name: 'shot.png' }],
       assistantID: 'asst_1',
     }
-    const first = beginContactComposerSubmit({ ...input, createMessageID: () => 'oc_contact_1' })
-    const second = beginContactComposerSubmit({ ...input, createMessageID: () => 'oc_contact_2' })
+    const first = beginContactComposerSubmit({ ...input, createMessageID: () => 'yuri_contact_1' })
+    const second = beginContactComposerSubmit({ ...input, createMessageID: () => 'yuri_contact_2' })
     expect(first.ok).toBe(true)
     if (first.ok) {
-      expect(first.messageID).toBe('oc_contact_1')
+      expect(first.messageID).toBe('yuri_contact_1')
       expect(first.parts).toEqual([
         { type: 'text', text: '乐观发图' },
         { type: 'file', mime: 'image/png', url: 'data:image/png;base64,eA==', filename: 'shot.png' },
@@ -342,7 +342,7 @@ describe('contactOptimisticTurns', () => {
       text: 'second',
       attachments: [],
       assistantID: 'asst_1',
-      createMessageID: () => 'oc_contact_2',
+      createMessageID: () => 'yuri_contact_2',
     })
     expect(blocked).toEqual({ ok: false })
     expect(gate.tryAcquire()).toBe(true)

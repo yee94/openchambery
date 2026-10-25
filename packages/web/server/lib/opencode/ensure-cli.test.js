@@ -7,7 +7,7 @@ import {
   ensurePinnedOpenCode2Cli,
   installedOpenCode2BinaryPath,
   isOpenCode2AutoInstallEnabled,
-  resolveOpenChamberDataDir,
+  resolveYuriDataDir,
   upgradeSelectedOpenCodeCli,
 } from './ensure-cli.js';
 
@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe('ensurePinnedOpenCode2Cli', () => {
   it('runs upgrade through the selected launch target and preserves its CLI entry path', async () => {
-    const dir = createTempDir('openchamber-upgrade-cli-');
+    const dir = createTempDir('yuri-upgrade-cli-');
     const script = path.join(dir, 'cli.cjs');
     const output = path.join(dir, 'invocation.json');
     fs.writeFileSync(script, 'require("node:fs").writeFileSync(process.env.RESULT_FILE, JSON.stringify(process.argv.slice(2)))');
@@ -89,7 +89,7 @@ describe('ensurePinnedOpenCode2Cli', () => {
   });
 
   it('installs the pin only when no usable 2.x binary is present', async () => {
-    const dataDir = createTempDir('openchamber-ensure-cli-');
+    const dataDir = createTempDir('yuri-ensure-cli-');
     const installed = path.join(dataDir, 'opencode-cli', PINNED_OPENCODE2_VERSION, 'opencode');
     let installedOnce = false;
     const result = await ensurePinnedOpenCode2Cli({
@@ -115,7 +115,7 @@ describe('ensurePinnedOpenCode2Cli', () => {
   });
 
   it('reuses a cached pin without downloading', async () => {
-    const dataDir = createTempDir('openchamber-ensure-cached-');
+    const dataDir = createTempDir('yuri-ensure-cached-');
     const cached = installedOpenCode2BinaryPath(PINNED_OPENCODE2_VERSION, { dataDir, platform: 'linux' });
     const result = await ensurePinnedOpenCode2Cli({
       pin: PINNED_OPENCODE2_VERSION,
@@ -135,18 +135,18 @@ describe('ensurePinnedOpenCode2Cli', () => {
     await expect(ensurePinnedOpenCode2Cli({
       pin: PINNED_OPENCODE2_VERSION,
       autoInstall: false,
-      dataDir: createTempDir('openchamber-ensure-disabled-'),
+      dataDir: createTempDir('yuri-ensure-disabled-'),
       readVersion: () => '',
     })).rejects.toMatchObject({ code: 'OPENCODE_CLI_MISSING' });
   });
 
-  it('treats OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0 as disabled', () => {
-    expect(isOpenCode2AutoInstallEnabled({ OPENCHAMBER_OPENCODE2_AUTO_INSTALL: '0' })).toBe(false);
+  it('treats YURI_OPENCODE2_AUTO_INSTALL=0 as disabled', () => {
+    expect(isOpenCode2AutoInstallEnabled({ YURI_OPENCODE2_AUTO_INSTALL: '0' })).toBe(false);
     expect(isOpenCode2AutoInstallEnabled({})).toBe(true);
   });
 
-  it('resolves the OpenChamber data dir from OPENCHAMBER_DATA_DIR', () => {
-    const dataDir = createTempDir('openchamber-data-dir-');
-    expect(resolveOpenChamberDataDir({ OPENCHAMBER_DATA_DIR: dataDir })).toBe(path.resolve(dataDir));
+  it('resolves the Yuri data dir from YURI_DATA_DIR', () => {
+    const dataDir = createTempDir('yuri-data-dir-');
+    expect(resolveYuriDataDir({ YURI_DATA_DIR: dataDir })).toBe(path.resolve(dataDir));
   });
 });

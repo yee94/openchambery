@@ -61,13 +61,13 @@ describe('computeDesignPtScale', () => {
   });
 
   test('Android ignores the previous 0.95 cache key so the lift is not written back', () => {
-    window.localStorage.setItem('openchamber.designPtScale.v7', '0.95');
+    window.localStorage.setItem('yuri.designPtScale.v7', '0.95');
     (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor = {
       getPlatform: () => 'android',
     };
     expect(readCachedDesignPtScale()).toBe(0.98);
     (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor = undefined;
-    window.localStorage.removeItem('openchamber.designPtScale.v7');
+    window.localStorage.removeItem('yuri.designPtScale.v7');
   });
 
   test('iOS cache restore always uses 10/9, not a stale 1.0', () => {

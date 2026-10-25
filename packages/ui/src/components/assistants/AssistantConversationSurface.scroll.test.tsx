@@ -48,8 +48,8 @@ vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 vi.mock('@/lib/i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }));
-vi.mock('@/lib/openchamberEvents', () => ({
-  subscribeOpenchamberEvents: (handler: (event: Record<string, unknown>) => void) => {
+vi.mock('@/lib/yuriEvents', () => ({
+  subscribeYuriEvents: (handler: (event: Record<string, unknown>) => void) => {
     contactEvents.handler = handler;
     return () => { contactEvents.handler = null; };
   },
@@ -460,10 +460,10 @@ describe('AssistantConversationSurface scroll ownership', () => {
   });
   test('equivalent polled attachment descriptors reuse the display lease and release on removal', async () => {
     const part = { type: 'file' as const, attachmentID: 'attachment-a', sha256: 'a'.repeat(64), size: 3, mime: 'image/png', filename: 'shot.png' };
-    attachmentIO.display.mockResolvedValue({ url: 'openchamber-asset://image', release: attachmentIO.release });
+    attachmentIO.display.mockResolvedValue({ url: 'yuri-asset://image', release: attachmentIO.release });
     const { root, host } = await mountSurface();
     await act(async () => root.render(<AssistantContactAttachment assistantID="assistant-a" part={part} />));
-    expect(host.querySelector('img')?.getAttribute('src')).toBe('openchamber-asset://image');
+    expect(host.querySelector('img')?.getAttribute('src')).toBe('yuri-asset://image');
     for (let index = 0; index < 20; index += 1) {
       await act(async () => root.render(<AssistantContactAttachment assistantID="assistant-a" part={{ ...part }} />));
     }
@@ -518,14 +518,14 @@ describe('AssistantConversationSurface scroll ownership', () => {
   });
 
   test('inline attachment images open the shared viewer on activation for cached and legacy parts', async () => {
-    attachmentIO.display.mockResolvedValue({ url: 'openchamber-asset://shot', release: attachmentIO.release });
+    attachmentIO.display.mockResolvedValue({ url: 'yuri-asset://shot', release: attachmentIO.release });
     contactQueryState.imageFilePart = 'cached';
     const { root, host } = await mountSurface();
     const cached = host.querySelector<HTMLImageElement>('img[data-assistant-contact-image]')!;
-    expect(cached.getAttribute('src')).toBe('openchamber-asset://shot');
+    expect(cached.getAttribute('src')).toBe('yuri-asset://shot');
     expect(cached.getAttribute('role')).toBe('button');
     await act(async () => { cached.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(host.querySelector('[data-test-preview-dialog]')?.getAttribute('data-image')).toBe('openchamber-asset://shot');
+    expect(host.querySelector('[data-test-preview-dialog]')?.getAttribute('data-image')).toBe('yuri-asset://shot');
     await act(async () => root.render(null));
 
     contactQueryState.imageFilePart = 'legacy';

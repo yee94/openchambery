@@ -10,7 +10,7 @@ async function source(path) {
 
 test('Android saveFile stages a cache file and never persists dataBase64', async () => {
   const [android, readme, docs] = await Promise.all([
-    source('android/app/src/main/java/com/openchamber/app/OpenChamberMediaPlugin.java'),
+    source('android/app/src/main/java/com/yuri/app/YuriMediaPlugin.java'),
     source('README.md'),
     source('../ui/src/sync/DOCUMENTATION.md'),
   ]);

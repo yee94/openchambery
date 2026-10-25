@@ -1322,7 +1322,7 @@ const estimateLlmChars = (item) => {
 
 const toLlmHistoryItem = (message) => {
   const files = message.parts.filter((part) => part.type === 'file');
-  const cards = message.parts.filter((part) => part.type === 'card').map((part) => `[OpenChamber card context: ${JSON.stringify(part)}]`);
+  const cards = message.parts.filter((part) => part.type === 'card').map((part) => `[Yuri card context: ${JSON.stringify(part)}]`);
   const content = [message.text.trim() || (files.length > 0 ? '[attachment]' : ''), ...cards].filter(Boolean).join('\n');
   return files.length > 0 ? { role: message.role, content, parts: files } : { role: message.role, content };
 };

@@ -29,9 +29,9 @@ const ICON_BUTTON_CLASS =
  * Rendered exactly once as an absolutely-positioned overlay above both the
  * sidebar and the header, so native titlebar controls stay fixed while the
  * sidebar animates open or closed — the panels slide *underneath* the control
- * cluster instead. Its height tracks `--oc-header-height` and its left padding
- * clears the OS window controls via `--oc-titlebar-left-inset`. The cluster's
- * measured width is published as `--oc-titlebar-controls-width` so the header
+ * cluster instead. Its height tracks `--yuri-header-height` and its left padding
+ * clears the OS window controls via `--yuri-titlebar-left-inset`. The cluster's
+ * measured width is published as `--yuri-titlebar-controls-width` so the header
  * can reserve matching space when the sidebar is collapsed.
  */
 export const TitlebarLeftControls: React.FC = () => {
@@ -74,7 +74,7 @@ export const TitlebarLeftControls: React.FC = () => {
 
     const publishWidth = () => {
       const width = node.getBoundingClientRect().width;
-      document.documentElement.style.setProperty('--oc-titlebar-controls-width', `${Math.round(width)}px`);
+      document.documentElement.style.setProperty('--yuri-titlebar-controls-width', `${Math.round(width)}px`);
     };
 
     publishWidth();
@@ -97,8 +97,8 @@ export const TitlebarLeftControls: React.FC = () => {
     <div
       className="app-region-no-drag absolute left-0 top-0 z-30 flex select-none items-center pr-2"
       style={{
-        height: 'var(--oc-header-height, 3rem)',
-        paddingLeft: 'var(--oc-titlebar-left-inset, 0.75rem)',
+        height: 'var(--yuri-header-height, 3rem)',
+        paddingLeft: 'var(--yuri-titlebar-left-inset, 0.75rem)',
         width: usesWebSidebarHeader && isSidebarOpen ? `${sidebarWidth || 260}px` : undefined,
       }}
     >

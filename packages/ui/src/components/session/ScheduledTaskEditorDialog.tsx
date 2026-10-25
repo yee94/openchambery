@@ -39,8 +39,8 @@ import { isValidCronExpression, getNextRuns, CRON_EXAMPLES } from '@/lib/cron';
 const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6] as const;
 
 const FORM_CONTROL_CLASS = '!h-9 !min-h-9 w-full min-w-0 rounded-full border-0 bg-[var(--surface-elevated)] px-3 py-1 ring-1 ring-inset ring-border/60 transition-[background-color,box-shadow] duration-150 ease-out hover:[&:not(:focus)]:bg-[var(--surface-subtle)] hover:[&:not(:focus)]:ring-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] data-[popup-open]:bg-[var(--surface-subtle)] data-[popup-open]:shadow-sm motion-reduce:transition-none';
-const PANEL_CONTROL_CLASS = 'oc-settings-inline-value';
-const PANEL_ROW_CLASS = `oc-settings-split-row ${groupedCardRowClassName}`;
+const PANEL_CONTROL_CLASS = 'yuri-settings-inline-value';
+const PANEL_ROW_CLASS = `yuri-settings-split-row ${groupedCardRowClassName}`;
 const MOBILE_PANEL_CONTROL_CLASS = PANEL_CONTROL_CLASS;
 const MOBILE_PANEL_ROW_CLASS = PANEL_ROW_CLASS;
 
@@ -658,7 +658,7 @@ const CronScheduleSection: React.FC<{
         <FieldLabel htmlFor="sched-cron" required>{t('sessions.scheduledTasks.editor.cronExpression.label')}</FieldLabel>
         <div
           data-settings-value={groupedPanel ? '' : undefined}
-          className={cn('min-w-0', groupedPanel && 'oc-settings-split-row-control flex-wrap')}
+          className={cn('min-w-0', groupedPanel && 'yuri-settings-split-row-control flex-wrap')}
         >
           <Input
             id="sched-cron"
@@ -679,7 +679,7 @@ const CronScheduleSection: React.FC<{
       </div>
 
       {nextRuns.length > 0 ? (
-        <div className={cn('flex flex-col gap-1', groupedPanel && [rowClassName, 'oc-scheduled-task-detail-row'])}>
+        <div className={cn('flex flex-col gap-1', groupedPanel && [rowClassName, 'yuri-scheduled-task-detail-row'])}>
           <span className="typography-meta text-muted-foreground">{t('sessions.scheduledTasks.editor.cronExpression.nextRuns')}</span>
           <span
             data-settings-value={groupedPanel ? '' : undefined}
@@ -690,7 +690,7 @@ const CronScheduleSection: React.FC<{
         </div>
       ) : null}
 
-      <div className={cn('flex flex-col gap-1', groupedPanel && [rowClassName, 'oc-scheduled-task-detail-row'])}>
+      <div className={cn('flex flex-col gap-1', groupedPanel && [rowClassName, 'yuri-scheduled-task-detail-row'])}>
         <span className="typography-meta text-muted-foreground">{t('sessions.scheduledTasks.editor.cronExpression.examples')}</span>
         <div
           data-settings-value={groupedPanel ? '' : undefined}
@@ -1212,8 +1212,8 @@ export function ScheduledTaskEditorDialog(props: {
 
   const formBody = (
     <div className={cn(
-      'oc-settings-workspace oc-settings-page-content oc-scheduled-task-form',
-      isMobile ? 'oc-settings-workspace-mobile' : 'oc-settings-workspace-desktop',
+      'yuri-settings-workspace yuri-settings-page-content yuri-scheduled-task-form',
+      isMobile ? 'yuri-settings-workspace-mobile' : 'yuri-settings-workspace-desktop',
     )}>
       <div className={cn('flex flex-col gap-1', (desktopPanel || mobileTab) && 'hidden')}>
         <FieldLabel htmlFor="sched-name" required>{t('sessions.scheduledTasks.editor.taskName.label')}</FieldLabel>
@@ -1225,11 +1225,11 @@ export function ScheduledTaskEditorDialog(props: {
           maxLength={80}
           required
           aria-invalid={!draft.name.trim()}
-          className="oc-scheduled-task-title w-full"
+          className="yuri-scheduled-task-title w-full"
         />
       </div>
 
-      <div className={cn('flex flex-col gap-3 border-t border-border/40 pt-5', groupedPanel && 'oc-settings-group order-4 animate-in fade-in slide-in-from-right-1 border-0 pt-0 duration-200 [animation-delay:80ms] [animation-fill-mode:both] motion-reduce:animate-none')}>
+      <div className={cn('flex flex-col gap-3 border-t border-border/40 pt-5', groupedPanel && 'yuri-settings-group order-4 animate-in fade-in slide-in-from-right-1 border-0 pt-0 duration-200 [animation-delay:80ms] [animation-fill-mode:both] motion-reduce:animate-none')}>
         {groupedPanel ? (
           <h3 className={groupedSectionTitleClassName}>
             {t('sessions.scheduledTasks.editor.panel.frequency')}
@@ -1241,7 +1241,7 @@ export function ScheduledTaskEditorDialog(props: {
             <FieldLabel>{t('sessions.scheduledTasks.editor.scheduleType.label')}</FieldLabel>
             <div
               data-settings-value={groupedPanel ? '' : undefined}
-              className={cn(groupedPanel && 'oc-settings-split-row-control')}
+              className={cn(groupedPanel && 'yuri-settings-split-row-control')}
             >
               <Select
                 value={draft.schedule.kind}
@@ -1287,7 +1287,7 @@ export function ScheduledTaskEditorDialog(props: {
             <div className={cn('grid grid-cols-1 gap-x-4 gap-y-3', groupedPanel && 'flex flex-col gap-0', !isMobile && !groupedPanel && 'sm:grid-cols-2')}>
               <div className={cn('flex min-w-0 flex-col gap-1', groupedPanel && panelRowClassName)} ref={datePickerRef}>
                 <FieldLabel>{t('sessions.scheduledTasks.editor.date.label')}</FieldLabel>
-                <div data-settings-value={groupedPanel ? '' : undefined} className={cn('relative', groupedPanel && 'oc-settings-split-row-control')}>
+                <div data-settings-value={groupedPanel ? '' : undefined} className={cn('relative', groupedPanel && 'yuri-settings-split-row-control')}>
                   <button
                     type="button"
                     className={cn(!groupedPanel && FORM_CONTROL_CLASS, 'flex items-center justify-between gap-2 text-left', groupedPanel && [panelControlClassName, 'w-full'])}
@@ -1399,11 +1399,11 @@ export function ScheduledTaskEditorDialog(props: {
                 <FieldLabel>{t('sessions.scheduledTasks.editor.time.label')}</FieldLabel>
                 <div
                   data-settings-value={groupedPanel ? '' : undefined}
-                  className={cn(groupedPanel && 'oc-settings-split-row-control')}
+                  className={cn(groupedPanel && 'yuri-settings-split-row-control')}
                 >
                   <TimePill
                     value={draft.schedule.onceTime}
-                    className={cn(groupedPanel && 'oc-settings-inline-value w-fit min-w-0 justify-end')}
+                    className={cn(groupedPanel && 'yuri-settings-inline-value w-fit min-w-0 justify-end')}
                     use24Hour={use24Hour}
                     hourAriaLabel={t('sessions.scheduledTasks.editor.time.hourAria')}
                     minuteAriaLabel={t('sessions.scheduledTasks.editor.time.minuteAria')}
@@ -1421,9 +1421,9 @@ export function ScheduledTaskEditorDialog(props: {
           ) : (
             <div className={cn('grid grid-cols-1 gap-x-4 gap-y-3', groupedPanel && 'flex flex-col gap-0', !isMobile && !groupedPanel && 'sm:grid-cols-2')}>
               {draft.schedule.kind === 'weekly' ? (
-                <div className={cn('flex flex-col gap-1', groupedPanel && [groupedCardRowClassName, 'oc-settings-split-row'], !isMobile && !groupedPanel && 'sm:col-span-2')}>
+                <div className={cn('flex flex-col gap-1', groupedPanel && [groupedCardRowClassName, 'yuri-settings-split-row'], !isMobile && !groupedPanel && 'sm:col-span-2')}>
                   <FieldLabel>{t('sessions.scheduledTasks.editor.weekdays.label')}</FieldLabel>
-                  <div data-settings-value={groupedPanel ? '' : undefined} className={cn('flex flex-wrap gap-x-3 gap-y-2', groupedPanel && 'oc-settings-split-row-control justify-end')}>
+                  <div data-settings-value={groupedPanel ? '' : undefined} className={cn('flex flex-wrap gap-x-3 gap-y-2', groupedPanel && 'yuri-settings-split-row-control justify-end')}>
                     {orderedWeekdays.map((weekday) => {
                       const checked = draft.schedule.weekdays.includes(weekday.value);
                       return (
@@ -1453,14 +1453,14 @@ export function ScheduledTaskEditorDialog(props: {
                 <FieldLabel>{t('sessions.scheduledTasks.editor.times.label')}</FieldLabel>
                 <div
                   data-settings-value={groupedPanel ? '' : undefined}
-                  className={cn(groupedPanel ? 'oc-settings-split-row-control relative flex-wrap justify-end' : 'contents')}
+                  className={cn(groupedPanel ? 'yuri-settings-split-row-control relative flex-wrap justify-end' : 'contents')}
                 >
                 <div className={cn('flex flex-col gap-2', groupedPanel && 'flex-row flex-wrap justify-end transition-[padding] motion-reduce:transition-none', desktopPanel && 'group-hover:pr-8')}>
                   {draft.schedule.times.map((time, index) => (
                     <div key={index} className="flex min-w-0 items-center gap-2">
                       <TimePill
                         value={time}
-                        className={cn(groupedPanel && 'oc-settings-inline-value w-fit min-w-0')}
+                        className={cn(groupedPanel && 'yuri-settings-inline-value w-fit min-w-0')}
                         use24Hour={use24Hour}
                         hourAriaLabel={t('sessions.scheduledTasks.editor.time.hourAria')}
                         minuteAriaLabel={t('sessions.scheduledTasks.editor.time.minuteAria')}
@@ -1505,7 +1505,7 @@ export function ScheduledTaskEditorDialog(props: {
       </div>
 
       <div className={cn('flex flex-col gap-3 border-t border-border/40 pt-5', groupedPanel && 'contents')}>
-        <div className={cn(groupedPanel ? 'oc-settings-group order-2' : 'contents')}>
+        <div className={cn(groupedPanel ? 'yuri-settings-group order-2' : 'contents')}>
           {groupedPanel ? (
             <h3 className={groupedSectionTitleClassName}>
               {t('sessions.scheduledTasks.editor.panel.details')}
@@ -1517,7 +1517,7 @@ export function ScheduledTaskEditorDialog(props: {
                 <FieldLabel>{t('sessions.scheduledTasks.dialog.project.label')}</FieldLabel>
                 <div
                   data-settings-value={groupedPanel ? '' : undefined}
-                  className={cn(groupedPanel && 'oc-settings-split-row-control')}
+                  className={cn(groupedPanel && 'yuri-settings-split-row-control')}
                 >
                   <Select value={projectID} disabled={!onProjectChange} onValueChange={onProjectChange}>
                     <SelectTrigger className={cn(!groupedPanel && FORM_CONTROL_CLASS, groupedPanel && panelControlClassName)}>
@@ -1538,7 +1538,7 @@ export function ScheduledTaskEditorDialog(props: {
               <FieldLabel required>{t('sessions.scheduledTasks.editor.model.label')}</FieldLabel>
               <div
                 data-settings-value={groupedPanel ? '' : undefined}
-                className={cn(groupedPanel && 'oc-settings-split-row-control')}
+                className={cn(groupedPanel && 'yuri-settings-split-row-control')}
               >
                 <ModelSelector
                   providerId={draft.execution.providerID}
@@ -1563,7 +1563,7 @@ export function ScheduledTaskEditorDialog(props: {
             {groupedPanel ? (
               <div className={panelRowClassName}>
                 <FieldLabel>{t('sessions.scheduledTasks.editor.agent.label')}</FieldLabel>
-                <div data-settings-value="" className="oc-settings-split-row-control">
+                <div data-settings-value="" className="yuri-settings-split-row-control">
                   <AgentSelector
                     agentName={draft.execution.agent}
                     className={cn(panelControlClassName, '[&>div]:min-w-0 [&>div]:flex-1 [&_span]:truncate')}
@@ -1580,7 +1580,7 @@ export function ScheduledTaskEditorDialog(props: {
             {groupedPanel ? (
               <label className={cn(panelRowClassName, 'cursor-pointer')}>
                 <span className="typography-ui-label text-foreground">{t('sessions.scheduledTasks.editor.goal.label')}</span>
-                <span data-settings-value="" className="oc-settings-split-row-control">
+                <span data-settings-value="" className="yuri-settings-split-row-control">
                   <Checkbox
                     checked={draft.execution.goalEnabled}
                     onChange={(goalEnabled) => setDraft((prev) => ({
@@ -1849,7 +1849,7 @@ export function ScheduledTaskEditorDialog(props: {
             maxLength={80}
             required
             aria-invalid={!draft.name.trim()}
-            className="oc-scheduled-task-title mt-1 !h-9 !min-h-9 border-0 bg-transparent px-0 text-lg font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
+            className="yuri-scheduled-task-title mt-1 !h-9 !min-h-9 border-0 bg-transparent px-0 text-lg font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
           />
         </header>
         <ScrollShadow className="min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable]" size={64} hideTopShadow>
@@ -1911,7 +1911,7 @@ export function ScheduledTaskEditorDialog(props: {
             editorOverflowMenu ? <React.Fragment key="more">{editorOverflowMenu}</React.Fragment> : null,
           ]}
         />
-        <div className="oc-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pt-4">
+        <div className="yuri-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[var(--yuri-mobile-page-inline-inset)] pt-4">
           <div className="mb-5 flex items-center gap-4">
             <Input
               value={draft.name}
@@ -1921,7 +1921,7 @@ export function ScheduledTaskEditorDialog(props: {
               maxLength={80}
               required
               aria-invalid={!draft.name.trim()}
-              className="oc-scheduled-task-title oc-mobile-detail-editor-title min-w-0 flex-1 !h-auto min-h-0 border-0 bg-transparent px-0 py-0 text-xl font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
+              className="yuri-scheduled-task-title yuri-mobile-detail-editor-title min-w-0 flex-1 !h-auto min-h-0 border-0 bg-transparent px-0 py-0 text-xl font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
             />
             <Switch
               checked={draft.enabled}

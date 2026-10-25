@@ -1,0 +1,935 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "kind": "content",
+      "path": "packages/electron/deep-link-protocol.mjs",
+      "line": "export const DEEP_LINK_PROTOCOLS = Object.freeze(['yuri', 'openchamber', 'openchambery']);",
+      "count": 1,
+      "category": "legacy-deep-link-input",
+      "reason": "User-requested compatibility for historical external links; only Yuri links are generated",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove aliases only after an explicit decision to end support for historical external links"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/deep-link-protocol.test.mjs",
+      "line": "  it.each(['yuri', 'openchamber', 'openchambery'])('admits %s without rewriting route, scope or payload', (scheme) => {",
+      "count": 1,
+      "category": "legacy-deep-link-test",
+      "reason": "Verify each required external scheme is accepted without changing opaque payloads",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Retire with the corresponding external link alias support"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/package.json",
+      "line": "        \"openchamber\",",
+      "count": 1,
+      "category": "legacy-deep-link-registration",
+      "reason": "Register historical external links with the OS so they can launch Yuri",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove only when historical external links are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/package.json",
+      "line": "        \"openchambery\"",
+      "count": 1,
+      "category": "legacy-deep-link-registration",
+      "reason": "Register the second historical external scheme with the OS",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove only when historical external links are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/android/app/src/main/AndroidManifest.xml",
+      "line": "                <data android:scheme=\"openchamber\" />",
+      "count": 1,
+      "category": "legacy-deep-link-registration",
+      "reason": "Android browsable intent receiver for historical links; new links remain Yuri",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Remove only when historical external links are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/android/app/src/main/AndroidManifest.xml",
+      "line": "                <data android:scheme=\"openchambery\" />",
+      "count": 1,
+      "category": "legacy-deep-link-registration",
+      "reason": "Android browsable intent receiver for the second historical scheme",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Remove only when historical external links are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/ios/App/App/Info.plist",
+      "line": "\t\t\t\t<string>openchamber</string>",
+      "count": 1,
+      "category": "legacy-deep-link-registration",
+      "reason": "iOS launch-service registration for historical external links",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Remove only when historical external links are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/ios/App/App/Info.plist",
+      "line": "\t\t\t\t<string>openchambery</string>",
+      "count": 1,
+      "category": "legacy-deep-link-registration",
+      "reason": "iOS launch-service registration for the second historical scheme",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Remove only when historical external links are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/README.md",
+      "line": "New links use `yuri://`. Packaged OS registration and runtime handlers also accept `openchamber://` and `openchambery://` as receive-only aliases, including cold-start arguments, second-instance arguments and macOS `open-url`. They share the same route handling and pairing-v2 validation; payloads are not rewritten, expired pairing secrets stay invalid, and retired v1 credential links remain rejected. An updated installer is required to register schemes; UI OTA alone cannot do this. When old and new applications coexist, the OS/default-app selection determines the recipient of a legacy scheme.",
+      "count": 1,
+      "category": "legacy-deep-link-guide",
+      "reason": "Document user-requested input compatibility and native installation requirements",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Retire with the corresponding external link alias support"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/README.md",
+      "line": "- They also register `openchamber://` and `openchambery://` as receive-only aliases. Old links use the same route and pairing validation; all newly generated links remain `yuri://`. Scheme compatibility does not revive expired pairing secrets or the retired v1 credential-in-URL format. Installing the updated native shell is required; OTA cannot register OS schemes. If both applications remain installed, the OS/default-app selection determines which application opens an old-scheme link.",
+      "count": 1,
+      "category": "legacy-deep-link-guide",
+      "reason": "Document mobile scheme alias behavior without changing pairing or generated URLs",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Retire with the corresponding external link alias support"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/BRAND-MIGRATION.md",
+      "line": "| `server/lib/brand-migration-desktop.integration.test.js`, old profile fixtures | `OpenChamber`, `openchamber-data` | Exercise the actual desktop coordinator's isolated Host callback and release-profile exclusion |",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document the exact historical profiles covered by the desktop-to-Host integration regression",
+      "owner": "Host and Desktop runtime owners",
+      "exitCondition": "Remove together with desktop legacy Host import support"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/brand-migration-desktop.integration.test.js",
+      "line": "  const sourceRoot = path.join(appData, `OpenChamber${suffix}`, 'openchamber-data');",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Exercise real legacy Preview and Dev Host roots through the desktop coordinator and Host importer",
+      "owner": "Host and Desktop runtime owners",
+      "exitCondition": "Remove together with desktop legacy Host import support"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/brand-migration-desktop.integration.test.js",
+      "line": "    const release = path.join(f.appData, 'OpenChamber', 'openchamber-data');",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify Preview and Dev import never consumes the separate release Host profile",
+      "owner": "Host and Desktop runtime owners",
+      "exitCondition": "Remove together with desktop legacy Host import support"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.mjs",
+      "line": "  const hostSource = path.join(source, 'openchamber-data');",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Locate the legacy desktop-isolated Host root for the explicit Host importer",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove when legacy desktop Host import support ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.test.mjs",
+      "line": "  fs.mkdirSync(path.join(source, 'openchamber-data'));",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Seed the historical desktop-isolated Host directory",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove together with legacy desktop Host import"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.test.mjs",
+      "line": "  expect(roots).toEqual({ sourceRoot: path.join(source, 'openchamber-data'), targetRoot: path.join(target, 'yuri-data') });",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify the old Host root reaches the importer with the exact new destination",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove together with legacy desktop Host import"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/scripts/brand-migration-evidence.mjs",
+      "line": "        const req = indexedDB.open((seed ? 'openchamber' : 'yuri') + '-' + kind, !seed && kind === 'higher' ? 4 : 3);",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Seed real legacy and independently existing current IndexedDB databases at different versions",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove together with legacy desktop origin import"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/scripts/brand-migration-evidence.mjs",
+      "line": "      localStorage.setItem('openchamber-projects:https%3A%2F%2Fopenchamber.example', 'url-scope');",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Seed a historical key whose URL must not be renamed during import",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove together with legacy desktop origin import"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/scripts/brand-migration-evidence.mjs",
+      "line": "      localStorage.setItem('oc.rt.b3BlbmNoYW1iZXI.openchamber-projects:opaque-openchamber', 'opaque-scope');",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Seed a historical key with opaque runtime and instance scope that must remain unchanged",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove together with legacy desktop origin import"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/scripts/brand-migration-evidence.mjs",
+      "line": "      result.url = localStorage.getItem('yuri-projects:https%3A%2F%2Fopenchamber.example');",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify the migrated key still uses the original server URL",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove together with legacy desktop origin import"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/scripts/brand-migration-evidence.mjs",
+      "line": "      result.opaque = localStorage.getItem('yuri.rt.b3BlbmNoYW1iZXI.yuri-projects:opaque-openchamber');",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify migration preserves opaque scope identity byte for byte",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove together with legacy desktop origin import"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/ssh-manager.mjs",
+      "line": "    const { remoteOpenchamber, ...current } = instance;",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Extract the historical SSH configuration field only at the read boundary",
+      "owner": "Desktop SSH owner",
+      "exitCondition": "Remove when persisted legacy SSH configurations are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/ssh-manager.mjs",
+      "line": "    const { openchamberPassword, ...auth } = instance.auth || {};",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Read historical SSH authentication configuration without retaining the old output field",
+      "owner": "Desktop SSH owner",
+      "exitCondition": "Remove when persisted legacy SSH configurations are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/ssh-manager.mjs",
+      "line": "      remoteYuri: Object.hasOwn(current, 'remoteYuri') ? current.remoteYuri : remoteOpenchamber,",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Prefer explicit current SSH settings while converting the historical field",
+      "owner": "Desktop SSH owner",
+      "exitCondition": "Remove when persisted legacy SSH configurations are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/ssh-manager.mjs",
+      "line": "      auth: { ...auth, ...(Object.hasOwn(auth, 'yuriPassword') ? {} : openchamberPassword ? { yuriPassword: openchamberPassword } : {}) },",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Convert the historical authentication option only when the current option is absent",
+      "owner": "Desktop SSH owner",
+      "exitCondition": "Remove when persisted legacy SSH configurations are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/ssh-manager.test.mjs",
+      "line": "    const old = { id: 'ssh-legacy', sshCommand: 'ssh host.example', remoteOpenchamber: { mode: 'external', preferredPort: 4312, relayHost: false }, auth: { openchamberPassword: { enabled: true, store: 'never' } } };",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Exercise persisted legacy SSH fields and preserve connection options",
+      "owner": "Desktop SSH owner",
+      "exitCondition": "Remove together with legacy SSH configuration conversion"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/ssh-manager.test.mjs",
+      "line": "    expect(persisted).not.toHaveProperty('remoteOpenchamber');",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Assert newly persisted SSH configurations no longer write the old field",
+      "owner": "Desktop SSH owner",
+      "exitCondition": "Remove together with legacy SSH configuration conversion"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/ssh-manager.test.mjs",
+      "line": "    expect(persisted.auth).not.toHaveProperty('openchamberPassword');",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Assert newly persisted SSH authentication options no longer write the old field",
+      "owner": "Desktop SSH owner",
+      "exitCondition": "Remove together with legacy SSH configuration conversion"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/README.md",
+      "line": "`OpenChamber` / `OpenChamberY` profile. Multiple legacy candidates require the user",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Identify the exact legacy desktop profiles that may be imported",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove when legacy desktop profile import support ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/README.md",
+      "line": "sandboxed, preload-free windows open the snapshot's `openchamber-ui://app` origin",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Explain the isolated legacy-origin data export used during migration",
+      "owner": "Desktop runtime owner",
+      "exitCondition": "Remove when legacy desktop origin import support ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/messages/inlineMessageLinks.ts",
+      "line": "    const prefix = [SKILL_LINK_PREFIX, '#openchamber-skill:'].find((candidate) => href?.startsWith(candidate));",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Read skill references in existing persisted message content without rewriting user messages",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove only when legacy persisted message references no longer need rendering"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/messages/inlineMessageLinks.ts",
+      "line": "    const prefix = [AGENT_LINK_PREFIX, '#openchamber-agent:'].find((candidate) => href?.startsWith(candidate));",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Read agent references in existing persisted message content without rewriting user messages",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove only when legacy persisted message references no longer need rendering"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/sync/input-draft-composer-parser.ts",
+      "line": "    if (parsed.type === V2_TYPE || parsed.type === 'openchamber-composer-reference-draft') {",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Decode historical draft reference payloads while new drafts use the Yuri type",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove after supported historical drafts have an explicit conversion path"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/sync/input-draft-composer-parser.ts",
+      "line": "    if (parsed.type === V1_TYPE || parsed.type === 'openchamber-pasted-text-draft') {",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Decode historical pasted-text draft payloads while new drafts use the Yuri type",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove after supported historical drafts have an explicit conversion path"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/sync/input-draft-composer-parser.test.ts",
+      "line": "    expect(parseLegacyDraftComposerDocument(v1.replace('yuri-pasted-text-draft', 'openchamber-pasted-text-draft'))).toEqual(parseLegacyDraftComposerDocument(v1))",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify historical and current pasted-text drafts preserve the same observable document",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove together with historical pasted-text draft decoding"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/sync/input-draft-composer-parser.test.ts",
+      "line": "    expect(parseLegacyDraftComposerDocument(v2.replace('yuri-composer-reference-draft', 'openchamber-composer-reference-draft'))).toEqual(parseLegacyDraftComposerDocument(v2))",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify historical and current reference drafts preserve the same observable document",
+      "owner": "Shared UI runtime owner",
+      "exitCondition": "Remove together with historical reference draft decoding"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/BRAND-MIGRATION.md",
+      "line": "| `server/lib/session-metadata/session-projection.js`, owned metadata normalizer | `metadata.openchamber` | Read existing OpenCode session metadata only when the new namespace is absent; preserve the source |",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document the authoritative-new-state precedence for historical session metadata",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove together with historical session metadata reads"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/BRAND-MIGRATION.md",
+      "line": "| `server/lib/session-metadata/session-projection.test.js`, legacy namespace fixture | `openchamber` | Verify old archive/goal visibility and authoritative new state without mutating old records |",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document regression coverage for existing archive and goal metadata",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove together with historical session metadata reads"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/session-metadata/session-projection.js",
+      "line": "  const legacy = metadata.openchamber;",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Read historical session metadata only when the Yuri namespace is absent",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove when all supported historical session metadata has a conversion path"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/session-metadata/session-projection.test.js",
+      "line": "    const session = { id: 'ses_migrated', metadata: { openchamber: legacy }, time: {} };",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Exercise real historical archive and goal metadata projection",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove together with historical session metadata reads"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/session-metadata/session-projection.test.js",
+      "line": "    expect(projected.metadata.openchamber).toBe(legacy);",
+      "count": 1,
+      "category": "migration-test",
+      "reason": "Verify projection preserves the historical record rather than mutating user data",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove together with historical session metadata reads"
+    },
+    {
+      "kind": "content",
+      "path": "LICENSE",
+      "line": "Copyright (c) 2025 Bohdan Triapitsyn",
+      "count": 1,
+      "category": "license",
+      "reason": "MIT copyright notice required by the original license",
+      "owner": "Legal / repository maintainer",
+      "exitCondition": "Retain while the covered work is distributed"
+    },
+    {
+      "kind": "content",
+      "path": "packages/vscode/LICENSE",
+      "line": "Copyright (c) 2024 OpenChamber contributors",
+      "count": 1,
+      "category": "license",
+      "reason": "Original extension copyright notice",
+      "owner": "Legal / extension maintainer",
+      "exitCondition": "Retain while the covered work is distributed"
+    },
+    {
+      "kind": "content",
+      "path": "packages/vscode/src/brand-migration.ts",
+      "line": "export const LEGACY_CONFIGURATION_SECTION = 'openchamber';",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Read the old public configuration namespace during explicit import",
+      "owner": "VS Code runtime owner",
+      "exitCondition": "Remove when the supported explicit legacy configuration import window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/vscode/MIGRATION.md",
+      "line": "2. Run **Yuri: Import Legacy Configuration**. This explicit command reads only `openchamber.apiUrl` and `openchamber.opencodeBinary` from VS Code's public configuration API. It copies each key's winning explicit workspace/global value to the corresponding Yuri key at the same scope. Any explicit Yuri value, including empty strings, wins. Source values are never removed; invalid values and failed writes are reported, independent successes remain, and retry is idempotent.",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document exact old configuration, extension identity and Host data import source",
+      "owner": "VS Code runtime owner",
+      "exitCondition": "Remove when the legacy extension migration window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/vscode/MIGRATION.md",
+      "line": "The previous extension is `fedaykindev.openchamber`; keep its private storage backup for recovery. Session history belongs to OpenCode and remains available when reconnecting to the same engine and project. This does not imply recovery of unsent drafts, webview attachments, private settings, panel state or archive metadata stored only under the previous extension identity. Save/export those from the old installation before uninstalling. No automatic private-state import is currently provided; keep the old installation available until those items have been recovered manually.",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document exact old configuration, extension identity and Host data import source",
+      "owner": "VS Code runtime owner",
+      "exitCondition": "Remove when the legacy extension migration window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/vscode/MIGRATION.md",
+      "line": "Shared Host files under `~/.config/openchamber` are a separate migration owned by the Host. Use that documented migration before relying on the shared settings file in `~/.config/yuri`; do not overwrite a populated Yuri directory or copy a live SQLite database. This extension's configuration command does not migrate those files.",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document exact old configuration, extension identity and Host data import source",
+      "owner": "VS Code runtime owner",
+      "exitCondition": "Remove when the legacy extension migration window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.mjs",
+      "line": "export const LEGACY_UI_PROTOCOL = 'openchamber-ui';",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Discover legacy userData/process names and export the old browser origin into the new origin",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove after the supported legacy desktop import window closes and migration evidence is archived"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.mjs",
+      "line": "const LEGACY_NAMES = ['OpenChamber', 'OpenChamberY'];",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Discover legacy userData/process names and export the old browser origin into the new origin",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove after the supported legacy desktop import window closes and migration evidence is archived"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.mjs",
+      "line": "  if (commands.split('\\n').some((line) => /(?:^|[/\\\\])openchamber(?:y)?(?:[ -](?:preview|prev|dev))?(?:\\.exe|\\.app(?:[/\\\\].*)?)?$/i.test(line.trim()))) {",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Discover legacy userData/process names and export the old browser origin into the new origin",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove after the supported legacy desktop import window closes and migration evidence is archived"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.mjs",
+      "line": "    for (const brand of ['openchambery', 'openchamber']) {",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Discover legacy userData/process names and export the old browser origin into the new origin",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove after the supported legacy desktop import window closes and migration evidence is archived"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.mjs",
+      "line": "  const page = (req) => req.url === 'openchamber-ui://app/' || req.url === 'yuri-ui://app/'",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Discover legacy userData/process names and export the old browser origin into the new origin",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove after the supported legacy desktop import window closes and migration evidence is archived"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.mjs",
+      "line": "    await Promise.all(windows.map((window, index) => window.loadURL(index ? 'yuri-ui://app/' : 'openchamber-ui://app/')));",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Discover legacy userData/process names and export the old browser origin into the new origin",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove after the supported legacy desktop import window closes and migration evidence is archived"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/brand-migration.test.mjs",
+      "line": "  const source = path.join(root, 'OpenChamber');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Real filesystem migration regression fixture",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove with the corresponding legacy desktop importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/scripts/brand-migration-evidence.mjs",
+      "line": "const legacy = path.join(root, 'OpenChamber');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Real Electron old-origin localStorage/IndexedDB evidence and user-text preservation assertions",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove with the corresponding old-origin importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/scripts/brand-migration-evidence.mjs",
+      "line": "      localStorage.setItem('openchamber-settings', JSON.stringify({ text: 'user OpenChamber text stays unchanged' }));",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Real Electron old-origin localStorage/IndexedDB evidence and user-text preservation assertions",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove with the corresponding old-origin importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/scripts/brand-migration-evidence.mjs",
+      "line": "      const req = indexedDB.open('openchamber-drafts', 3);",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Real Electron old-origin localStorage/IndexedDB evidence and user-text preservation assertions",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove with the corresponding old-origin importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/electron/scripts/brand-migration-evidence.mjs",
+      "line": "    assert.match(result.settings, /user OpenChamber text stays unchanged/);",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Real Electron old-origin localStorage/IndexedDB evidence and user-text preservation assertions",
+      "owner": "Electron runtime owner",
+      "exitCondition": "Remove with the corresponding old-origin importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/brand-migration.js",
+      "line": "const LEGACY_ROOT_NAMES = ['openchamber', 'openchambery'];",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Read legacy default data roots during resource-journal migration",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove after the supported legacy Host import window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/brand-migration.test.js",
+      "line": "  const old = path.join(home, '.config', 'openchamber');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Real disk legacy-root migration fixture",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove with the legacy Host importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/opencode/core-routes.js",
+      "line": "  app.use('/api/openchamber', (_req, res) => {",
+      "count": 1,
+      "category": "retired-protocol-gate",
+      "reason": "Reject the retired API prefix with HTTP 426 rather than serving incompatible UI/proxy responses",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove after the mixed-version support window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/opencode/core-routes.test.js",
+      "line": "    const response = await request(app).get('/api/openchamber/relay/status').expect(426);",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Assert HTTP 426 for retired API requests",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove with the retired API rejection gate"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/BRAND-MIGRATION.md",
+      "line": "| `server/lib/brand-migration.js`, `LEGACY_ROOT_NAMES` | `openchamber`, `openchambery` | Read-only default-root discovery and resource journals |",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document exact legacy data-root and retired-route exceptions",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove alongside the documented import and rejection paths"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/BRAND-MIGRATION.md",
+      "line": "| `server/lib/brand-migration.test.js`, fixture root | `openchamber` | Real disk migration regression coverage |",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document exact legacy data-root and retired-route exceptions",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove alongside the documented import and rejection paths"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/BRAND-MIGRATION.md",
+      "line": "| `server/lib/opencode/core-routes.js`, retired-route gate | `/api/openchamber` | Return HTTP 426 with `YURI_CLIENT_UPGRADE_REQUIRED`, never serve SPA/proxy success to old clients |",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document exact legacy data-root and retired-route exceptions",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove alongside the documented import and rejection paths"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/BRAND-MIGRATION.md",
+      "line": "| `server/lib/opencode/core-routes.test.js`, retired-route request | `/api/openchamber/relay/status` | Exercise the HTTP 426 mixed-version boundary |",
+      "count": 1,
+      "category": "migration-guide",
+      "reason": "Document exact legacy data-root and retired-route exceptions",
+      "owner": "Host runtime owner",
+      "exitCondition": "Remove alongside the documented import and rejection paths"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/README.md",
+      "line": "| `com.yee94.openchamber` | `com.yee94.yuri` |",
+      "count": 1,
+      "category": "identity-map",
+      "reason": "Record exact old-to-new native identity mapping for independent new installs",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Archive when supported legacy native migration ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/README.md",
+      "line": "| `com.yee94.openchamber.debug` | `com.yee94.yuri.debug` |",
+      "count": 1,
+      "category": "identity-map",
+      "reason": "Record exact old-to-new native identity mapping for independent new installs",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Archive when supported legacy native migration ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/README.md",
+      "line": "| `group.com.yee94.openchamber` | `group.com.yee94.yuri` |",
+      "count": 1,
+      "category": "identity-map",
+      "reason": "Record exact old-to-new native identity mapping for independent new installs",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Archive when supported legacy native migration ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/README.md",
+      "line": "| `com.yee94.openchamber.OpenChamberWidget` | `com.yee94.yuri.YuriWidget` |",
+      "count": 1,
+      "category": "identity-map",
+      "reason": "Record exact old-to-new native identity mapping for independent new installs",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Archive when supported legacy native migration ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/README.md",
+      "line": "| `com.yee94.openchamber.OpenChamberShareExtension` | `com.yee94.yuri.YuriShareExtension` |",
+      "count": 1,
+      "category": "identity-map",
+      "reason": "Record exact old-to-new native identity mapping for independent new installs",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Archive when supported legacy native migration ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/README.md",
+      "line": "| `com.yee94.openchamber.OpenChamberNotificationService` | `com.yee94.yuri.YuriNotificationService` |",
+      "count": 1,
+      "category": "identity-map",
+      "reason": "Record exact old-to-new native identity mapping for independent new installs",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Archive when supported legacy native migration ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/mobile/README.md",
+      "line": "| Java namespace `com.openchamber.app` | `com.yuri.app` |",
+      "count": 1,
+      "category": "identity-map",
+      "reason": "Record exact old-to-new native identity mapping for independent new installs",
+      "owner": "Mobile runtime owner",
+      "exitCondition": "Archive when supported legacy native migration ends"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/apps/deepLinks.ts",
+      "line": "  if (![`${DEEP_LINK_SCHEME}:`, 'openchamber:', 'openchambery:'].includes(url.protocol)) {",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Accept legacy deep-link schemes only through the common parser",
+      "owner": "Shared UI owner",
+      "exitCondition": "Remove after the supported old-link migration window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/apps/deepLinks.test.ts",
+      "line": "    for (const scheme of ['openchamber', 'openchambery']) {",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify legacy deep-link parsing through the unified parser",
+      "owner": "Shared UI owner",
+      "exitCondition": "Remove with legacy scheme parsing"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/connectionPayload.ts",
+      "line": "  if (question === -1 || !/^(?:yuri|openchamber|openchambery):\\/\\/connect\\/?$/i.test(trimmed.slice(0, question))) return null;",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Parse legacy pairing schemes while retaining existing Host identity and one-time-token checks",
+      "owner": "Shared UI owner",
+      "exitCondition": "Remove after the supported old pairing-link window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/connectionPayload.ts",
+      "line": "    if (['yuri:', 'openchamber:', 'openchambery:'].includes(url.protocol) && url.hostname === 'connect') {",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Parse legacy pairing schemes while retaining existing Host identity and one-time-token checks",
+      "owner": "Shared UI owner",
+      "exitCondition": "Remove after the supported old pairing-link window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.ts",
+      "line": "const LEGACY_BRANDS = ['openchambery', 'openchamber'] as const;",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Map old storage key prefixes only during explicit import",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove after the supported browser storage import window closes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    const draft = JSON.stringify({ text: 'OpenChamber notes', attachment: 'file:///repo/openchamber.png' });",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    const storage = storageFor({ openchamber_input_draft_metadata_v1: draft, 'oc.rt.aG9zdA.openchamber-brand': 'custom' });",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    expect(storage.getItem('openchamber_input_draft_metadata_v1')).toBe(draft);",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    const storage = storageFor({ 'openchamber-settings': 'old', 'yuri-settings': 'new' });",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    expect(storage.getItem('openchamber-settings')).toBe('old');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    const storage = storageFor({ 'openchamber-draft': '{malformed but recoverable', 'oc.sessions.order': '[1]' });",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    expect(storage.getItem('openchamber-draft')).toBe('{malformed but recoverable');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    const storage = storageFor({ 'openchamber-brand': 'custom' });",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    expect(migratedStorageKey('other.openchamber')).toBe('other.openchamber');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.test.ts",
+      "line": "    expect(migratedStorageKey('oc.inst.openchamber.projects')).toBe('yuri.inst.openchamber.projects');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Verify old keys, unchanged user content, preservation and new-data priority",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy browser storage importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.chrome.test.ts",
+      "line": "      const legacy = await open('openchamber-input-drafts');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Real browser IndexedDB legacy-data evidence",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy IndexedDB importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.chrome.test.ts",
+      "line": "      const legacy2 = await open('openchamber-transcript-durable');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Real browser IndexedDB legacy-data evidence",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy IndexedDB importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.chrome.test.ts",
+      "line": "      const freshLegacy = (await indexedDB.databases()).some(db => db.name === 'openchamber-assistant-attachments');",
+      "count": 1,
+      "category": "migration-fixture",
+      "reason": "Real browser IndexedDB legacy-data evidence",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove with the legacy IndexedDB importer"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/theme/themes/index.ts",
+      "line": "    id === 'openchamber-light' ? 'yuri-light' :",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Map only the two known legacy built-in theme IDs",
+      "owner": "Shared UI theme owner",
+      "exitCondition": "Remove when persisted old theme choices are no longer supported"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/theme/themes/index.ts",
+      "line": "    id === 'openchamber-dark' ? 'yuri-dark' :",
+      "count": 1,
+      "category": "migration-read",
+      "reason": "Map only the two known legacy built-in theme IDs",
+      "owner": "Shared UI theme owner",
+      "exitCondition": "Remove when persisted old theme choices are no longer supported"
+    }
+  ]
+}

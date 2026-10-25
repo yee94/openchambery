@@ -29,7 +29,7 @@ import { isVSCodeRuntime } from '@/lib/desktop';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { NewWorktreeDialog } from './NewWorktreeDialog';
 import { ScheduledTasksDialog } from './ScheduledTasksDialog';
-import { ArchivedSessionsDialog } from '@/components/sections/openchamber/ArchivedSessionsDialog';
+import { ArchivedSessionsDialog } from '@/components/sections/yuri/ArchivedSessionsDialog';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { SidebarMaintenance } from './sidebar/SidebarMaintenance';
@@ -103,7 +103,7 @@ import {
 } from "./sidebar/sidebarVisualSelection";
 import { useRuntimeAPIs } from "@/hooks/useRuntimeAPIs";
 import { useGitHubAuthQuery } from "@/queries/githubAuthQueries";
-import { subscribeOpenchamberEvents } from "@/lib/openchamberEvents";
+import { subscribeYuriEvents } from "@/lib/yuriEvents";
 import {
   announceSessionSwitchIntent,
   getSessionSwitchIntent,
@@ -126,17 +126,17 @@ import {
   publishSidebarNumberedNavigation,
 } from "@/sync/sidebar-numbered-navigation";
 
-const PROJECT_COLLAPSE_STORAGE_KEY = "oc.sessions.projectCollapse";
-const GROUP_ORDER_STORAGE_KEY = "oc.sessions.groupOrder";
-const GROUP_COLLAPSE_STORAGE_KEY = "oc.sessions.groupCollapse";
-const PROJECT_ACTIVE_SESSION_STORAGE_KEY = "oc.sessions.activeSessionByProject";
+const PROJECT_COLLAPSE_STORAGE_KEY = "yuri.sessions.projectCollapse";
+const GROUP_ORDER_STORAGE_KEY = "yuri.sessions.groupOrder";
+const GROUP_COLLAPSE_STORAGE_KEY = "yuri.sessions.groupCollapse";
+const PROJECT_ACTIVE_SESSION_STORAGE_KEY = "yuri.sessions.activeSessionByProject";
 // v2 key holds composite "${renderContext}:${active|archived}:${sessionId}"
 // entries so the same session in different render contexts (e.g. "Recent"
 // and a project's root) has independent expand state. v1 held bare session
 // ids; useSidebarPersistence migrates v1 data on first read by fanning each
 // id into all four context combinations.
-const SESSION_EXPANDED_STORAGE_KEY = "oc.sessions.expandedParents.v2";
-const LEGACY_SESSION_EXPANDED_STORAGE_KEY = "oc.sessions.expandedParents";
+const SESSION_EXPANDED_STORAGE_KEY = "yuri.sessions.expandedParents.v2";
+const LEGACY_SESSION_EXPANDED_STORAGE_KEY = "yuri.sessions.expandedParents";
 
 const instanceSafeStorage = createInstanceScopedStorageAdapter(getDeferredSafeStorage());
 
@@ -507,7 +507,7 @@ export const SessionSidebar = React.memo(function SessionSidebar({
   );
   // The sidebar tree's +-buttons (project / group / folder) open a draft but,
   // unlike selecting an existing session, don't navigate. VS Code's compact view
-  // is driven by the openchamber:navigate event, so switch to chat explicitly
+  // is driven by the yuri:navigate event, so switch to chat explicitly
   // (a no-op in the expanded side-by-side layout, which is always showing chat).
   const openNewSessionDraftFromTree = useEvent<
     typeof openNewSessionDraft
@@ -516,7 +516,7 @@ export const SessionSidebar = React.memo(function SessionSidebar({
       openNewSessionDraft(options);
       if (isVSCode) {
         window.dispatchEvent(
-          new CustomEvent("openchamber:navigate", { detail: { view: "chat" } }),
+          new CustomEvent("yuri:navigate", { detail: { view: "chat" } }),
         );
       }
     },
@@ -595,7 +595,7 @@ export const SessionSidebar = React.memo(function SessionSidebar({
 
   React.useEffect(() => {
     let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
-    const unsubscribe = subscribeOpenchamberEvents((event) => {
+    const unsubscribe = subscribeYuriEvents((event) => {
       if (event.type !== "scheduled-task-ran") {
         return;
       }
@@ -2593,7 +2593,7 @@ export const SessionSidebar = React.memo(function SessionSidebar({
     <div
       ref={sessionSearchContainerRef}
       className={cn(
-        "oc-session-sidebar relative flex h-full flex-col text-foreground overflow-x-hidden",
+        "yuri-session-sidebar relative flex h-full flex-col text-foreground overflow-x-hidden",
         mobileVariant ? "" : "bg-transparent",
       )}
     >

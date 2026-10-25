@@ -11,9 +11,9 @@ const createRuntime = (env = {}) => createHmrStateRuntime({
 
 describe('hmr state runtime', () => {
   it('uses configured OpenCode cwd when provided', () => {
-    const runtime = createRuntime({ OPENCHAMBER_OPENCODE_CWD: '/tmp/openchamber-data' });
+    const runtime = createRuntime({ YURI_OPENCODE_CWD: '/tmp/yuri-data' });
 
-    expect(runtime.getOrCreateHmrState().openCodeWorkingDirectory).toBe('/tmp/openchamber-data');
+    expect(runtime.getOrCreateHmrState().openCodeWorkingDirectory).toBe('/tmp/yuri-data');
   });
 
   it('falls back to home directory without configured OpenCode cwd', () => {

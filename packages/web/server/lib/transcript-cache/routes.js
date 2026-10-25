@@ -15,7 +15,7 @@ import {
   parseTranscriptCacheUpsert,
 } from './service.js';
 
-export const TRANSCRIPT_CACHE_ROUTE_PREFIX = '/api/openchamber/transcript-cache';
+export const TRANSCRIPT_CACHE_ROUTE_PREFIX = '/api/yuri/transcript-cache';
 
 const unsupported = (res) => res.status(501).json({ error: 'Transcript cache is unavailable for this runtime' });
 

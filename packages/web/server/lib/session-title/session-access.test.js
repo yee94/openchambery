@@ -13,7 +13,7 @@ beforeEach(() => { vi.resetAllMocks(); vi.useFakeTimers(); });
 afterEach(() => { for (const access of accesses.splice(0)) access.stop(); vi.useRealTimers(); });
 
 function fixture() {
-  let metadata = { openchamber: {
+  let metadata = { yuri: {
     goal: { status: 'active' },
     titleRefresh: { isGenerating: true, requestedAt: 1000, lastError: 'old failure', failedAt: 1 },
   } };
@@ -46,12 +46,12 @@ it('publishes the full authoritative title row and clears Host loading without o
   const f = fixture();
   await f.access.update('ses_title', '/repo', {
     title: 'Updated title',
-    metadata: { openchamber: { goal: { status: 'stale' }, titleRefresh: {
+    metadata: { yuri: { goal: { status: 'stale' }, titleRefresh: {
       lastAutoTitle: 'Updated title', isGenerating: null, requestedAt: null, lastError: null, failedAt: null,
     } } },
   });
   expect(api.session.update.mock.calls[0][0]).toEqual({ sessionID: 'ses_title', title: 'Updated title' });
-  expect(f.metadata()).toEqual({ openchamber: {
+  expect(f.metadata()).toEqual({ yuri: {
     goal: { status: 'active' }, titleRefresh: { lastAutoTitle: 'Updated title' },
     titleAuthority: { sessionID: 'ses_title', title: 'Updated title', revision: expect.any(String), source: 'summary' },
   } });
@@ -102,10 +102,10 @@ it('projects only the bounded newest message page in conversation order', async 
 
 it('publishes a full loading row before the new session exists in client catalogs', async () => {
   const f = fixture();
-  await f.access.update('ses_title', '/repo', { metadata: { openchamber: { titleRefresh: { isGenerating: true } } } });
+  await f.access.update('ses_title', '/repo', { metadata: { yuri: { titleRefresh: { isGenerating: true } } } });
   expect(f.publish).toHaveBeenCalledWith(expect.objectContaining({
     id: 'ses_title', directory: '/repo', metadata: expect.objectContaining({
-      openchamber: expect.objectContaining({ titleRefresh: expect.objectContaining({ isGenerating: true }) }),
+      yuri: expect.objectContaining({ titleRefresh: expect.objectContaining({ isGenerating: true }) }),
     }),
   }), '/repo');
   expect(api.session.update).not.toHaveBeenCalled();
@@ -115,9 +115,9 @@ it('reports a failed upstream title write without projecting or retrying the fai
   const f = fixture();
   api.session.update.mockRejectedValue(new Error('offline'));
   await expect(f.access.update('ses_title', '/repo', {
-    title: 'Failed', metadata: { openchamber: { titleRefresh: { lastAutoTitle: 'Failed' } } },
+    title: 'Failed', metadata: { yuri: { titleRefresh: { lastAutoTitle: 'Failed' } } },
   })).rejects.toThrow('offline');
-  expect(f.metadata().openchamber.titleAuthority.title).toBe('Failed');
+  expect(f.metadata().yuri.titleAuthority.title).toBe('Failed');
   expect(f.publish).not.toHaveBeenCalled();
   await vi.runAllTimersAsync();
   expect(api.session.update).toHaveBeenCalledTimes(1);
@@ -137,20 +137,20 @@ it('reads a later OpenCode rename without rewriting it to the previous summary',
 it('rejects stale generation after a manual rename', async () => {
   const f = fixture();
   await f.access.update('ses_title', '/repo', { title: 'Summary' });
-  const previous = f.metadata().openchamber.titleAuthority.revision;
-  await f.persist('ses_title', { openchamber: { titleAuthority: {
+  const previous = f.metadata().yuri.titleAuthority.revision;
+  await f.persist('ses_title', { yuri: { titleAuthority: {
     sessionID: 'ses_title', title: 'Manual', revision: 'manual-1', source: 'manual',
   } } });
   await api.session.update({ sessionID: 'ses_title', title: 'Manual' });
   await f.access.update('ses_title', '/repo', { title: 'Late summary', expectedTitleRevision: previous });
   await vi.runAllTimersAsync();
   expect(f.session.title).toBe('Manual');
-  expect(f.metadata().openchamber.titleAuthority.source).toBe('manual');
+  expect(f.metadata().yuri.titleAuthority.source).toBe('manual');
 });
 
 it('ignores persisted title choices on a fresh access instance', async () => {
   const f = fixture();
-  await f.persist('ses_title', { openchamber: { titleAuthority: {
+  await f.persist('ses_title', { yuri: { titleAuthority: {
     sessionID: 'ses_title', title: 'Durable', revision: 'saved', source: 'summary',
   } } });
   expect((await f.access.get('ses_title')).title).toBe('Updated title');
@@ -160,7 +160,7 @@ it('ignores persisted title choices on a fresh access instance', async () => {
 
 it('does not adopt inherited fork authority or legacy lastAutoTitle as a lock', async () => {
   const f = fixture();
-  await f.persist('ses_title', { openchamber: {
+  await f.persist('ses_title', { yuri: {
     titleRefresh: { lastAutoTitle: 'Old summary' },
     titleAuthority: { sessionID: 'ses_parent', title: 'Parent', revision: 'parent' },
   } });
@@ -180,7 +180,7 @@ it('does not write a title if durable authority persistence fails', async () => 
 
 it('preserves authoritative deletion instead of serving a stored title', async () => {
   const f = fixture();
-  await f.persist('ses_title', { openchamber: { titleAuthority: {
+  await f.persist('ses_title', { yuri: { titleAuthority: {
     sessionID: 'ses_title', title: 'Durable', revision: 'saved',
   } } });
   api.session.get.mockRejectedValue(Object.assign(new Error('deleted'), { status: 404 }));
@@ -192,7 +192,7 @@ it('preserves authoritative deletion instead of serving a stored title', async (
 
 it('propagates failed authoritative reads without falling back to a stored title', async () => {
   const f = fixture();
-  await f.persist('ses_title', { openchamber: { titleAuthority: {
+  await f.persist('ses_title', { yuri: { titleAuthority: {
     sessionID: 'ses_title', title: 'Durable', revision: 'saved',
   } } });
   api.session.get.mockRejectedValue(new Error('offline'));

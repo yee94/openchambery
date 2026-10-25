@@ -20,10 +20,10 @@ const ScrollToBottomButton: React.FC<ScrollToBottomButtonProps> = ({ visible, on
         <div
             className={cn(
                 placement === 'default' && 'absolute left-1/2 bottom-full mb-2 -translate-x-1/2',
-                // Expanded: CSS sets bottom to --oc-chat-foot-inset; mb-2 is the original gap.
-                placement === 'expanded' && 'absolute left-1/2 -translate-x-1/2 oc-scroll-to-bottom--expanded mb-2',
+                // Expanded: CSS sets bottom to --yuri-chat-foot-inset; mb-2 is the original gap.
+                placement === 'expanded' && 'absolute left-1/2 -translate-x-1/2 yuri-scroll-to-bottom--expanded mb-2',
                 // Compact: sits inside the pill trailing cluster (right side).
-                placement === 'compact' && 'oc-scroll-to-bottom--compact relative shrink-0',
+                placement === 'compact' && 'yuri-scroll-to-bottom--compact relative shrink-0',
                 visible
                     ? cn(
                         'pointer-events-auto',
@@ -32,7 +32,7 @@ const ScrollToBottomButton: React.FC<ScrollToBottomButtonProps> = ({ visible, on
                     : cn(
                         // Hide instantly — no fade / slide / scale.
                         'opacity-0 pointer-events-none',
-                        placement === 'expanded' && 'oc-scroll-to-bottom--hidden',
+                        placement === 'expanded' && 'yuri-scroll-to-bottom--hidden',
                     ),
             )}
         >

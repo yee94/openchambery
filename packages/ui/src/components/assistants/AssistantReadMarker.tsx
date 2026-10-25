@@ -16,7 +16,7 @@ export function AssistantReadMarker({ assistantID, position }: { assistantID: st
     if (!node || !intersecting.current || request.current.busy || request.current.done || Date.now() < request.current.retryAt) return;
     if (runtime.transport !== getRuntimeTransportIdentity() || runtime.generation !== getRuntimeGeneration()) return;
     if (document.visibilityState !== 'visible') return;
-    if (isCapacitorApp() ? !document.documentElement.classList.contains('oc-native-app-active') : !document.hasFocus()) return;
+    if (isCapacitorApp() ? !document.documentElement.classList.contains('yuri-native-app-active') : !document.hasFocus()) return;
     if (node.parentElement?.closest('[inert], [aria-hidden="true"]')) return;
     const scroller = node.closest<HTMLElement>('[data-assistant-contact-transcript]');
     if (!scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2) return;

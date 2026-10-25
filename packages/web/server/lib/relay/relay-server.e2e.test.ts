@@ -166,7 +166,7 @@ const startOrigin = async () => {
   registerFsRoutes({ get: (route: string, handler: express.RequestHandler) => { if (route === '/api/fs/raw') rawFiles.get(route, handler); }, post() {}, put() {} }, {
     fsPromises, os, path, spawn, crypto: globalThis.crypto, normalizeDirectoryPath: (value: string) => value,
     resolveProjectDirectory: async () => ({ directory: mediaDirectory }), buildAugmentedPath: () => '',
-    resolveGitBinaryForSpawn: () => 'git', openchamberUserConfigRoot: mediaDirectory,
+    resolveGitBinaryForSpawn: () => 'git', yuriUserConfigRoot: mediaDirectory,
   });
   const bearerRequests: string[] = [];
   const observedOrigins: string[] = [];
@@ -206,7 +206,7 @@ const startOrigin = async () => {
         res.write('data: {"type":"session.execution.started","data":{"sessionID":"ses_relay"}}\n\n');
         await wait(70);
         broadcast({ type: 'session.updated', properties: { info: { id: 'ses_relay', title: 'Relay title', time: { created: 1, updated: 2 } } } }, { directory: '/repo' });
-        broadcast({ type: 'openchamber:session-metadata', properties: { sessionID: 'ses_relay', metadata: { openchamber: { titleRefresh: { isGenerating: false } } } } }, { directory: '/repo' });
+        broadcast({ type: 'yuri:session-metadata', properties: { sessionID: 'ses_relay', metadata: { yuri: { titleRefresh: { isGenerating: false } } } } }, { directory: '/repo' });
         await wait(70);
         res.end();
         return;
@@ -226,7 +226,7 @@ const startOrigin = async () => {
       if (pathname === '/api/e2e/http' && req.method === 'POST') {
         await uiAuth.requireAuth(req, res, async () => {
           bearerRequests.push(String(req.headers.authorization ?? ''));
-          res.json({ body: await readBody(req), hasRelayConnection: Boolean(req.headers['x-openchamber-relay-connection']) });
+          res.json({ body: await readBody(req), hasRelayConnection: Boolean(req.headers['x-yuri-relay-connection']) });
         });
         return;
       }
@@ -237,7 +237,7 @@ const startOrigin = async () => {
       if (pathname === '/api/agent' && req.method === 'GET') {
         await uiAuth.requireAuth(req, res, () => {
           const directory = new URL(req.url ?? '/', 'http://origin').searchParams.get('location[directory]');
-          if (directory !== '/remote/worktrees/project/feature' || !req.headers['x-openchamber-relay-connection']) {
+          if (directory !== '/remote/worktrees/project/feature' || !req.headers['x-yuri-relay-connection']) {
             res.status(404).json({ _tag: 'LocationNotFoundError', location: { directory }, message: `Location not found: ${directory}` });
             return;
           }
@@ -249,7 +249,7 @@ const startOrigin = async () => {
         await uiAuth.requireAuth(req, res, () => {
           const filePath = new URL(req.url ?? '/', 'http://origin').searchParams.get('path');
           if (filePath === videoPath) { rawFiles(req, rawRes); return; }
-          if (filePath !== '/remote/icons-zoom.png' || !req.headers['x-openchamber-relay-connection']) {
+          if (filePath !== '/remote/icons-zoom.png' || !req.headers['x-yuri-relay-connection']) {
             res.status(404).end(); return;
           }
           res.writeHead(200, { 'content-type': 'image/png' });
@@ -396,9 +396,9 @@ describe('private relay compiled-process boundary', () => {
   afterEach(async () => { try { await cleanup?.(); } finally { cleanup = undefined; vi.unstubAllEnvs(); } });
 
   it('carries authenticated HTTP, SSE, URL-token WebSocket, restart recovery, and cleanup across compiled Relay', { timeout: 60_000 }, async () => {
-    const temp = await mkdtemp(path.join(os.tmpdir(), 'openchamber-relay-e2e-'));
-    vi.stubEnv('OPENCHAMBER_DATA_DIR', path.join(temp, 'host-data'));
-    const binary = path.join(temp, 'openchamber-relay');
+    const temp = await mkdtemp(path.join(os.tmpdir(), 'yuri-relay-e2e-'));
+    vi.stubEnv('YURI_DATA_DIR', path.join(temp, 'host-data'));
+    const binary = path.join(temp, 'yuri-relay');
     let relay: Awaited<ReturnType<typeof startCompiledRelay>> | undefined;
     let origin: Awaited<ReturnType<typeof startOrigin>> | undefined = undefined;
     let host: ReturnType<typeof startRelayHost> | undefined = undefined;
@@ -409,7 +409,7 @@ describe('private relay compiled-process boundary', () => {
       const failed = results.find((result) => result.status === 'rejected');
       if (failed?.status === 'rejected') throw failed.reason;
     };
-    const relayEntrypoint = fileURLToPath(new URL('../../../../relay-server/bin/openchamber-relay.js', import.meta.url));
+    const relayEntrypoint = fileURLToPath(new URL('../../../../relay-server/bin/yuri-relay.js', import.meta.url));
     const compile = spawn('bun', ['build', '--compile', relayEntrypoint, '--outfile', binary], { stdio: ['ignore', 'pipe', 'pipe'] });
     let compileStderr = '';
     compile.stderr?.on('data', (chunk: Buffer | string) => {
@@ -480,14 +480,14 @@ describe('private relay compiled-process boundary', () => {
     const hostEvents = await client.fetch('/api/event', { headers: { authorization: 'Bearer client-token' } });
     expect(hostEvents.status).toBe(200);
     const frames = (await hostEvents.text()).trim().split('\n\n').map((block) => JSON.parse(block.slice(6)));
-    expect(frames.map((frame) => (frame.payload ?? frame).type)).toEqual(['session.execution.started', 'session.updated', 'openchamber:session-metadata']);
+    expect(frames.map((frame) => (frame.payload ?? frame).type)).toEqual(['session.execution.started', 'session.updated', 'yuri:session-metadata']);
     expect(frames[1]).toMatchObject({ directory: '/repo', payload: { properties: { info: { title: 'Relay title' } } } });
     await eventually(() => origin!.getHostSubscriptions() === 0, 'closed Relay SSE leaked Host subscriber');
 
     const tokenResponse = await client.fetch('/auth/url-token', { method: 'POST', headers: { authorization: 'Bearer client-token' } });
     const { token } = await tokenResponse.json() as { token: string };
-    expect(token.startsWith('oc_url_')).toBe(true);
-    const socket = client.openWebSocket(`/api/terminal/ws?oc_url_token=${encodeURIComponent(token)}`);
+    expect(token.startsWith('yuri_url_')).toBe(true);
+    const socket = client.openWebSocket(`/api/terminal/ws?yuri_url_token=${encodeURIComponent(token)}`);
     await waitSocketOpen(socket);
     const messages: Array<string | ArrayBuffer> = [];
     const received = new Promise<void>((resolve) => {
@@ -606,7 +606,7 @@ describe('private relay compiled-process boundary', () => {
       let ended = false;
       let released = false;
       Object.assign(globalThis, { [NATIVE_RELAY_ASSET_BRIDGE_KEY]: {
-        openAsset: async ({ assetId }: { assetId: string }) => ({ assetId, url: `openchamber-asset://v/${assetId}` }),
+        openAsset: async ({ assetId }: { assetId: string }) => ({ assetId, url: `yuri-asset://v/${assetId}` }),
         writeChunk: async (_id: string, bytes: Uint8Array) => { received.push(bytes.slice()); },
         endAsset: async () => { ended = true; },
         abortAsset: async () => {},
@@ -619,7 +619,7 @@ describe('private relay compiled-process boundary', () => {
         ended = false;
         released = false;
         const image = await acquireRuntimeImage('/remote/icons-zoom.png', new AbortController().signal, intent);
-        expect(image.url).toMatch(/^openchamber-asset:\/\/v\//);
+        expect(image.url).toMatch(/^yuri-asset:\/\/v\//);
         await eventually(() => ended, 'relay image did not finish writing to native bridge');
         expect(Buffer.concat(received)).toEqual(previewPng);
         const savedImage = await readRelayImageDisplayBlob(image.url);

@@ -1,4 +1,4 @@
-# OpenChamber patch: ghostty-web@0.4.0
+# Yuri patch: ghostty-web@0.4.0
 #
 # What:
 #   - reject invalid / surrogate code points before String.fromCodePoint (avoids

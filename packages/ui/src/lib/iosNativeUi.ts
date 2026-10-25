@@ -1,9 +1,10 @@
+import '@/lib/brand-storage-bootstrap';
 import { create } from 'zustand';
 
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
 /** Persist on as `'1'`. Missing / any other value keeps the WebView default. */
-export const IOS_NATIVE_UI_STORAGE_KEY = 'openchamber.iosNativeUi';
+export const IOS_NATIVE_UI_STORAGE_KEY = 'yuri.iosNativeUi';
 
 export const readStoredIosNativeUiEnabled = (): boolean => {
   if (typeof window === 'undefined') return false;

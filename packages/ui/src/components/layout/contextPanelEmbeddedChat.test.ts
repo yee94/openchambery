@@ -57,15 +57,15 @@ describe('embedded session chat visibility handshake', () => {
     // Child requests after mounting its listener; parent replies with visibility.
     // Renaming either string without updating both sides reintroduces the stuck
     // #initial-loading race on iframe open.
-    expect(EMBEDDED_SESSION_CHAT_VISIBILITY_EVENT).toBe('openchamber:embedded-visibility');
-    expect(EMBEDDED_SESSION_CHAT_VISIBILITY_REQUEST_EVENT).toBe('openchamber:embedded-visibility-request');
+    expect(EMBEDDED_SESSION_CHAT_VISIBILITY_EVENT).toBe('yuri:embedded-visibility');
+    expect(EMBEDDED_SESSION_CHAT_VISIBILITY_REQUEST_EVENT).toBe('yuri:embedded-visibility-request');
   });
 });
 
 describe('embedded session chat URL', () => {
   test('identifies only the session-chat panel URL', () => {
-    expect(isEmbeddedSessionChatSearch('?ocPanel=session-chat&sessionId=ses_1')).toBe(true);
-    expect(isEmbeddedSessionChatSearch('?ocPanel=preview')).toBe(false);
+    expect(isEmbeddedSessionChatSearch('?yuriPanel=session-chat&sessionId=ses_1')).toBe(true);
+    expect(isEmbeddedSessionChatSearch('?yuriPanel=preview')).toBe(false);
     expect(isEmbeddedSessionChatSearch('')).toBe(false);
   });
 
@@ -80,7 +80,7 @@ describe('embedded session chat URL', () => {
     });
 
     const url = new URL(src);
-    expect(url.searchParams.get('ocPanel')).toBe('session-chat');
+    expect(url.searchParams.get('yuriPanel')).toBe('session-chat');
     expect(url.searchParams.get('surface')).toBe('desktop');
     expect(url.searchParams.get('themeMode')).toBe('system');
     expect(url.searchParams.get('themeVariant')).toBe('dark');
@@ -129,7 +129,7 @@ describe('embedded session chat URL', () => {
 
 describe('isEmbeddedSessionChat', () => {
   test('is true only for the session-chat panel search param', () => {
-    installWindowLocation('http://127.0.0.1:5173/app?ocPanel=session-chat&sessionId=ses_1');
+    installWindowLocation('http://127.0.0.1:5173/app?yuriPanel=session-chat&sessionId=ses_1');
     resetEmbeddedSessionChatCache();
     expect(isEmbeddedSessionChat()).toBe(true);
 
@@ -147,7 +147,7 @@ describe('isEmbeddedSessionChat', () => {
     // global — it never changes. The embedded iframe's identity is equally
     // fixed at mount (the parent builds the src); caching the first read
     // makes detection just as stable, surviving any URL rewrite.
-    installWindowLocation('http://127.0.0.1:5173/app?ocPanel=session-chat&sessionId=ses_1');
+    installWindowLocation('http://127.0.0.1:5173/app?yuriPanel=session-chat&sessionId=ses_1');
     resetEmbeddedSessionChatCache();
 
     // First read: caches true.
@@ -165,7 +165,7 @@ describe('isEmbeddedSessionChat', () => {
 
 describe('getEmbeddedSessionChatOriginSessionId', () => {
   test('returns the URL sessionId when embedded', () => {
-    installWindowLocation('http://127.0.0.1:5173/app?ocPanel=session-chat&sessionId=ses_child&directory=%2Frepo');
+    installWindowLocation('http://127.0.0.1:5173/app?yuriPanel=session-chat&sessionId=ses_child&directory=%2Frepo');
     resetEmbeddedSessionChatCache();
     expect(getEmbeddedSessionChatOriginSessionId()).toBe('ses_child');
   });
@@ -181,13 +181,13 @@ describe('getEmbeddedSessionChatOriginSessionId', () => {
   });
 
   test('returns null when embedded URL is missing sessionId param', () => {
-    installWindowLocation('http://127.0.0.1:5173/app?ocPanel=session-chat&directory=%2Frepo');
+    installWindowLocation('http://127.0.0.1:5173/app?yuriPanel=session-chat&directory=%2Frepo');
     resetEmbeddedSessionChatCache();
     expect(getEmbeddedSessionChatOriginSessionId()).toBeNull();
   });
 
   test('trims whitespace', () => {
-    installWindowLocation('http://127.0.0.1:5173/app?ocPanel=session-chat&sessionId=%20%20ses_child%20%20');
+    installWindowLocation('http://127.0.0.1:5173/app?yuriPanel=session-chat&sessionId=%20%20ses_child%20%20');
     resetEmbeddedSessionChatCache();
     expect(getEmbeddedSessionChatOriginSessionId()).toBe('ses_child');
   });

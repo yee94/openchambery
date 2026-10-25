@@ -21,7 +21,7 @@ let app;
 const save = (patch) => request(app).put('/api/voice/settings').send(patch).expect(200);
 beforeEach(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), 'saved-speech-'));
-  vi.stubEnv('OPENCHAMBER_DATA_DIR', directory);
+  vi.stubEnv('YURI_DATA_DIR', directory);
   vi.clearAllMocks();
   app = express();
   app.use(express.json());

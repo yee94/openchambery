@@ -99,6 +99,15 @@ jobs:
       build_number: ${{ steps.version.outputs.build_number }}
       release_tag: ${{ steps.version.outputs.release_tag }}
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
 
       - name: Resolve version values
@@ -146,6 +155,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
@@ -170,17 +188,17 @@ jobs:
             echo "ANDROID_KEYSTORE_BASE64 secret is required."
             exit 1
           fi
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/openchamber-release.keystore"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/yuri-release.keystore"
 
       - name: Build signed Android release
         env:
-          OPENCHAMBER_ANDROID_VERSION_CODE: ${{ needs.resolve-version.outputs.build_number }}
-          OPENCHAMBER_ANDROID_VERSION_NAME: ${{ needs.resolve-version.outputs.version_name }}
-          OPENCHAMBER_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/openchamber-release.keystore
-          OPENCHAMBER_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          OPENCHAMBER_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          OPENCHAMBER_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          OPENCHAMBER_OTA_CHANNEL: ${{ inputs.ota_channel }}
+          YURI_ANDROID_VERSION_CODE: ${{ needs.resolve-version.outputs.build_number }}
+          YURI_ANDROID_VERSION_NAME: ${{ needs.resolve-version.outputs.version_name }}
+          YURI_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/yuri-release.keystore
+          YURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          YURI_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          YURI_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          YURI_OTA_CHANNEL: ${{ inputs.ota_channel }}
         run: |
           bun run mobile:sync
           ./packages/mobile/android/gradlew -p packages/mobile/android bundleRelease assembleRelease
@@ -188,7 +206,7 @@ jobs:
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openchamber-android-${{ needs.resolve-version.outputs.version_name }}-${{ needs.resolve-version.outputs.build_number }}
+          name: yuri-android-${{ needs.resolve-version.outputs.version_name }}-${{ needs.resolve-version.outputs.build_number }}
           path: |
             packages/mobile/android/app/build/outputs/bundle/release/*.aab
             packages/mobile/android/app/build/outputs/apk/release/*.apk
@@ -205,8 +223,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          cp app/build/outputs/bundle/release/*.aab "release-assets/OpenChamber-${VERSION_NAME}-${BUILD_NUMBER}-android.aab"
-          cp app/build/outputs/apk/release/*.apk "release-assets/OpenChamber-${VERSION_NAME}-${BUILD_NUMBER}-android.apk"
+          cp app/build/outputs/bundle/release/*.aab "release-assets/Yuri-${VERSION_NAME}-${BUILD_NUMBER}-android.aab"
+          cp app/build/outputs/apk/release/*.apk "release-assets/Yuri-${VERSION_NAME}-${BUILD_NUMBER}-android.apk"
           files=(
             app/build/outputs/bundle/release/*.aab
             app/build/outputs/apk/release/*.apk
@@ -221,6 +239,15 @@ jobs:
     runs-on: macos-26
     needs: resolve-version
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
@@ -260,10 +287,10 @@ jobs:
           security import "$cert_path" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
           security list-keychain -d user -s "$keychain_path"
 
-          app_profile="$RUNNER_TEMP/openchamber-app.mobileprovision"
-          widget_profile="$RUNNER_TEMP/openchamber-widget.mobileprovision"
-          nse_profile="$RUNNER_TEMP/openchamber-notification-service.mobileprovision"
-          share_profile="$RUNNER_TEMP/openchamber-share-extension.mobileprovision"
+          app_profile="$RUNNER_TEMP/yuri-app.mobileprovision"
+          widget_profile="$RUNNER_TEMP/yuri-widget.mobileprovision"
+          nse_profile="$RUNNER_TEMP/yuri-notification-service.mobileprovision"
+          share_profile="$RUNNER_TEMP/yuri-share-extension.mobileprovision"
           printf '%s' "$IOS_APP_PROFILE_BASE64" | base64 -D > "$app_profile"
           printf '%s' "$IOS_WIDGET_PROFILE_BASE64" | base64 -D > "$widget_profile"
           printf '%s' "$IOS_NSE_PROFILE_BASE64" | base64 -D > "$nse_profile"
@@ -288,7 +315,7 @@ jobs:
 
       - name: Prepare mobile assets
         env:
-          OPENCHAMBER_OTA_CHANNEL: ${{ inputs.ota_channel }}
+          YURI_OTA_CHANNEL: ${{ inputs.ota_channel }}
         run: bun run mobile:sync
 
       - name: Set TestFlight entitlement and versions
@@ -315,22 +342,22 @@ jobs:
           const releaseBlockPattern = /\n\t\t[^\n]+ \/\* Release \*\/ = \{\n\t\t\tisa = XCBuildConfiguration;[\s\S]*?\n\t\t\tname = Release;\n\t\t\};/g;
           const replacements = [
             {
-              bundle: 'com.yee94.openchamber',
+              bundle: 'com.yee94.yuri',
               profile: process.env.IOS_APP_PROFILE_NAME,
               uuid: process.env.IOS_APP_PROFILE_UUID,
             },
             {
-              bundle: 'com.yee94.openchamber.OpenChamberWidget',
+              bundle: 'com.yee94.yuri.YuriWidget',
               profile: process.env.IOS_WIDGET_PROFILE_NAME,
               uuid: process.env.IOS_WIDGET_PROFILE_UUID,
             },
             {
-              bundle: 'com.yee94.openchamber.OpenChamberNotificationService',
+              bundle: 'com.yee94.yuri.YuriNotificationService',
               profile: process.env.IOS_NSE_PROFILE_NAME,
               uuid: process.env.IOS_NSE_PROFILE_UUID,
             },
             {
-              bundle: 'com.yee94.openchamber.OpenChamberShareExtension',
+              bundle: 'com.yee94.yuri.YuriShareExtension',
               profile: process.env.IOS_SHARE_PROFILE_NAME,
               uuid: process.env.IOS_SHARE_PROFILE_UUID,
             },
@@ -373,7 +400,7 @@ jobs:
             -scheme App \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/OpenChamber.xcarchive" \
+            -archivePath "$RUNNER_TEMP/Yuri.xcarchive" \
             "OTHER_CODE_SIGN_FLAGS=--keychain $RUNNER_TEMP/app-signing.keychain-db"
         working-directory: ${{ env.IOS_PROJECT_DIR }}
 
@@ -407,13 +434,13 @@ jobs:
             <string>manual</string>
             <key>provisioningProfiles</key>
             <dict>
-              <key>com.yee94.openchamber</key>
+              <key>com.yee94.yuri</key>
               <string>$IOS_APP_PROFILE_NAME</string>
-              <key>com.yee94.openchamber.OpenChamberWidget</key>
+              <key>com.yee94.yuri.YuriWidget</key>
               <string>$IOS_WIDGET_PROFILE_NAME</string>
-              <key>com.yee94.openchamber.OpenChamberNotificationService</key>
+              <key>com.yee94.yuri.YuriNotificationService</key>
               <string>$IOS_NSE_PROFILE_NAME</string>
-              <key>com.yee94.openchamber.OpenChamberShareExtension</key>
+              <key>com.yee94.yuri.YuriShareExtension</key>
               <string>$IOS_SHARE_PROFILE_NAME</string>
             </dict>
             <key>uploadSymbols</key>
@@ -422,16 +449,16 @@ jobs:
           </plist>
           PLIST
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/OpenChamber.xcarchive" \
-            -exportPath "$RUNNER_TEMP/OpenChamberExport" \
+            -archivePath "$RUNNER_TEMP/Yuri.xcarchive" \
+            -exportPath "$RUNNER_TEMP/YuriExport" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
         working-directory: ${{ env.IOS_PROJECT_DIR }}
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openchamber-ios-${{ needs.resolve-version.outputs.version_name }}-${{ needs.resolve-version.outputs.build_number }}
-          path: ${{ runner.temp }}/OpenChamberExport/*.ipa
+          name: yuri-ios-${{ needs.resolve-version.outputs.version_name }}-${{ needs.resolve-version.outputs.build_number }}
+          path: ${{ runner.temp }}/YuriExport/*.ipa
           if-no-files-found: error
 
       - name: Upload to TestFlight
@@ -448,7 +475,7 @@ jobs:
           ln -sf "$key_path" "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
           xcrun altool --upload-app \
             --type ios \
-            --file "$RUNNER_TEMP/OpenChamberExport/App.ipa" \
+            --file "$RUNNER_TEMP/YuriExport/App.ipa" \
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
 
@@ -459,7 +486,7 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY_PATH: ${{ runner.temp }}/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8
-          TESTFLIGHT_BUNDLE_ID: com.yee94.openchamber
+          TESTFLIGHT_BUNDLE_ID: com.yee94.yuri
           TESTFLIGHT_BUILD_NUMBER: ${{ needs.resolve-version.outputs.build_number }}
           TESTFLIGHT_EXTERNAL_BETA_GROUP_ID: ${{ vars.TESTFLIGHT_EXTERNAL_BETA_GROUP_ID }}
         run: node scripts/publish-testflight-external-build.mjs

@@ -35,7 +35,7 @@ export class DesktopInstaller {
       this.updater.allowPrerelease = channel === 'beta';
       this.updater.allowDowngrade = rollback;
       this.updater.setFeedURL({ provider: 'generic', channel: 'full',
-        url: `https://github.com/yee94/openchamber/releases/download/v${version}/`,
+        url: `https://github.com/yee94/yuri/releases/download/v${version}/`,
         useMultipleRangeRequest: false });
       const result = await this.updater.checkForUpdates();
       if (result?.updateInfo?.version !== version) throw new Error('Installer metadata does not match the selected release');

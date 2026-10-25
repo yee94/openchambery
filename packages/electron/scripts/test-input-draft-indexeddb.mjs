@@ -10,7 +10,7 @@ const electronHarness = path.join(packageRoot, "scripts/input-draft-indexeddb-el
 const electronBinary = path.join(packageRoot, "node_modules/.bin/electron")
 
 export async function runIndexedDbEvidence() {
-  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openchamber-input-draft-indexeddb-"))
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "yuri-input-draft-indexeddb-"))
   const fixtureDirectory = path.join(temporaryRoot, "fixture")
   const userDataDirectory = path.join(temporaryRoot, "user-data")
 

@@ -1,5 +1,5 @@
 /**
- * WebSocket client for the OpenChamber dictation endpoint (/api/dictation/ws).
+ * WebSocket client for the Yuri dictation endpoint (/api/dictation/ws).
  *
  * One shared client per app. The socket is opened lazily when a dictation
  * starts and closed after an idle delay. URLs are resolved at connect time via
@@ -101,7 +101,7 @@ export class DictationClient {
         }
 
         // A WebSocket upgrade can't carry an Authorization header, so it
-        // authenticates via the oc_url_token query param. Mint/await a valid
+        // authenticates via the yuri_url_token query param. Mint/await a valid
         // token BEFORE connecting — the sync getter returns "" while the token
         // is unminted or inside its expiry skew, and the server would reject
         // the upgrade with 401.
@@ -486,7 +486,7 @@ export class DictationClient {
 export const dictationClient = new DictationClient();
 
 if (typeof window !== 'undefined') {
-    window.addEventListener('openchamber:runtime-endpoint-changed', () => {
+    window.addEventListener('yuri:runtime-endpoint-changed', () => {
         // Drop the socket so the next dictation reconnects to the new runtime.
         dictationClient.cancelAllForRuntimeSwitch();
     });

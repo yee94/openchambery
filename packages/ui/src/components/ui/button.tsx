@@ -54,7 +54,7 @@ const buttonVariants = cva(
         outline:
           "bg-[var(--surface-elevated)] text-foreground border border-border/60 hover:bg-interactive-hover hover:text-foreground",
         mobileGlass:
-          "oc-mobile-floating-action text-foreground hover:brightness-105 active:bg-interactive-active focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]",
+          "yuri-mobile-floating-action text-foreground hover:brightness-105 active:bg-interactive-active focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]",
         // Flat chip for "one-of-N" toggles. Unselected: hairline border + hover
         // fill. Selected (aria-pressed): same tinted palette as the default
         // button (pale primary fill + primary text + soft primary border).

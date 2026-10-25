@@ -30,9 +30,9 @@ describe('/btw composer contract', () => {
     expect(getLocalChatCommand('/btw why', 'shell')).toBeNull();
     expect(consumesImmediateCommandText('/btw', 'normal')).toBe(false);
     expect(preservesComposerResources('/btw why', 'normal')).toBe(true);
-    expect(shouldSubmitCommandOnSelection({ name: 'btw', source: 'openchamber', isBuiltIn: true }, true)).toBe(true);
+    expect(shouldSubmitCommandOnSelection({ name: 'btw', source: 'yuri', isBuiltIn: true }, true)).toBe(true);
     const autocomplete = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'CommandAutocomplete.tsx'), 'utf8');
-    expect(autocomplete).toContain("id: 'openchamber:btw'");
+    expect(autocomplete).toContain("id: 'yuri:btw'");
   });
 
   test.each(['/btw', '/BTW  ', '/\u2003btw\n'])('bare %s only opens the side conversation', (text) => {

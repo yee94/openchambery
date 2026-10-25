@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 
 const BOOTSTRAP_TOKEN_COOKIE_SAFE_BYTES = 32;
-const TUNNEL_SESSION_COOKIE_NAME = 'oc_tunnel_session';
+const TUNNEL_SESSION_COOKIE_NAME = 'yuri_tunnel_session';
 
 const CONNECT_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
 const CONNECT_RATE_LIMIT_LOCK_MS = 10 * 60 * 1000;

@@ -1,6 +1,6 @@
 # Settings Form Design Specification
 
-This document is the visual and structural contract for every OpenChamber
+This document is the visual and structural contract for every Yuri
 Settings surface. It applies to desktop, hosted mobile, Capacitor mobile, VS
 Code, and Electron. A feature must not create a second Settings recipe for one
 runtime.
@@ -46,8 +46,8 @@ Every ordinary setting uses one of these structures:
   nested checkbox.
 - Rows must be direct children of the grouped card. A semantic `radiogroup`
   wrapper may contain standard rows when required for accessibility.
-- Pages and nested collections use `oc-settings-page-content` or
-  `oc-settings-section-stack`. They must not substitute local `space-y-*`,
+- Pages and nested collections use `yuri-settings-page-content` or
+  `yuri-settings-section-stack`. They must not substitute local `space-y-*`,
   `mb-*`, or padding recipes for sibling Settings groups.
 
 ## Typography hierarchy
@@ -55,9 +55,9 @@ Every ordinary setting uses one of these structures:
 | Role | Token / owner | Mobile | Desktop |
 |---|---|---:|---:|
 | Secondary-page title | `MobileDetailNavigation` | shared navigation title | owning desktop pane |
-| Section label outside a card | `--oc-settings-section-title-*` | 12px / 16px, normal | base UI label / form line-height, normal |
-| Field label and value | `--oc-settings-row-label-*` | base UI label / form line-height | same |
-| Helper or description | `--oc-settings-row-meta-*` | form helper size / line-height | same |
+| Section label outside a card | `--yuri-settings-section-title-*` | 12px / 16px, normal | base UI label / form line-height, normal |
+| Field label and value | `--yuri-settings-row-label-*` | base UI label / form line-height | same |
+| Helper or description | `--yuri-settings-row-meta-*` | form helper size / line-height | same |
 
 Page code must not apply `typography-ui-header` to a Settings section label.
 It must not override the responsive section-label size or weight. Short helper
@@ -70,16 +70,16 @@ All measurements come from the Settings workspace tokens:
 
 | Concern | Token | Current contract |
 |---|---|---:|
-| Card radius | `--oc-settings-group-radius` | 16px |
-| Section label to card | `--oc-settings-section-gap` | 8px |
-| Card to next card | `--oc-settings-section-stack-gap` | 20px |
-| Row minimum height | `--oc-settings-row-min-height` | 52px |
-| Row horizontal inset | `--oc-settings-row-inset` | 14px |
-| Row vertical padding | `--oc-settings-row-block-padding` | 11px |
-| Row divider | `--oc-settings-row-divider` | one semantic 1px divider |
+| Card radius | `--yuri-settings-group-radius` | 16px |
+| Section label to card | `--yuri-settings-section-gap` | 8px |
+| Card to next card | `--yuri-settings-section-stack-gap` | 20px |
+| Row minimum height | `--yuri-settings-row-min-height` | 52px |
+| Row horizontal inset | `--yuri-settings-row-inset` | 14px |
+| Row vertical padding | `--yuri-settings-row-block-padding` | 11px |
+| Row divider | `--yuri-settings-row-divider` | one semantic 1px divider |
 
-The group card uses `--oc-settings-group-background`,
-`--oc-settings-group-border`, and no shadow. Individual pages must not add a
+The group card uses `--yuri-settings-group-background`,
+`--yuri-settings-group-border`, and no shadow. Individual pages must not add a
 different border, radius, shadow, row height, or group gap. Conditional rows do
 not change the spacing before or after their group.
 
@@ -90,14 +90,14 @@ not change the spacing before or after their group.
 - A short description is smaller muted copy directly below that field label.
 - A long or wrapping description is smaller muted copy below the card.
 - Stable values occupy the right column and align to the right.
-- Select, Input, NumberInput, and custom `oc-settings-inline-value` triggers
+- Select, Input, NumberInput, and custom `yuri-settings-inline-value` triggers
   reserve a transparent border at rest. Hover, popup-open, and focus reveal the
   border without changing geometry.
 - The desktop value column, including adjacent reset actions, is capped by
-  `--oc-settings-desktop-value-max-width`. Mobile uses the same semantic row
+  `--yuri-settings-desktop-value-max-width`. Mobile uses the same semantic row
   and keeps compact controls beside their labels through the shared responsive grid.
 - Complex collections and editors that cannot fit in a compact value column
-  add `oc-settings-split-row-stacked` to `SettingsRow`. On narrow/mobile
+  add `yuri-settings-split-row-stacked` to `SettingsRow`. On narrow/mobile
   surfaces the label occupies the first line and the complete control receives
   the full card width; the generic mobile two-column rule must not override
   this layout.
@@ -139,7 +139,7 @@ placement still follow this specification.
   `page-content` stages. Feature pages must not own a competing mobile detail
   flag, history entry, back button, or duplicated mobile-only editor.
 - Split-page collections use `SettingsSidebarLayout` or the same
-  `oc-settings-page-content` contract as their single scroll root. The mobile
+  `yuri-settings-page-content` contract as their single scroll root. The mobile
   Settings shell owns the horizontal page gutter, so collection pages must not
   add a second mobile `px-*` layer. Summary controls and collection sections
   are `SettingsGroup` cards; the shared `MobileDetailNavigation` is the only
@@ -150,7 +150,7 @@ placement still follow this specification.
 - Settings may scroll as a page, but feature code must not pin a local title or
   search surface unless the owning navigation component explicitly requires it.
 - A viewport-fixed secondary surface that escapes its parent page gutter must
-  own exactly one `--oc-mobile-page-inline-inset` at its scrolling body
+  own exactly one `--yuri-mobile-page-inline-inset` at its scrolling body
   boundary. Its header aligns to that token, and descendants must not add
   another page-level inset. Bottom actions use the shared
   `MobileFloatingBottomBar` rather than a page-specific full-width footer, so
@@ -167,7 +167,7 @@ placement still follow this specification.
   option groups, and Boolean controls inline: label on the left, content-sized
   value on the right. The value footprint is capped at 60% of the card width
   (up to 20rem); long labels wrap within the remaining space. Only explicit
-  `oc-settings-split-row-stacked` editors and collections use a full-width line.
+  `yuri-settings-split-row-stacked` editors and collections use a full-width line.
   Container width, not viewport width, determines the compact layout.
 - About version and export rows keep content-sized labels and right-aligned
   values on one line at every width. Action containers use the full row width

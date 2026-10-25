@@ -58,6 +58,15 @@ jobs:
       # minShellReleaseVersion floor raise in mobile-native-targets.
       plan_mode: ${{ steps.mobile_plan.outputs.mode }}
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           # mobile-release-plan diffs against the latest v* tag.
@@ -152,7 +161,7 @@ jobs:
           prerelease: ${{ steps.get_version.outputs.is_prerelease == 'true' }}
           generate_release_notes: false
           body_path: artifacts/release-notes.md
-          name: OpenChamber v${{ steps.get_version.outputs.version }}
+          name: Yuri v${{ steps.get_version.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -160,7 +169,7 @@ jobs:
     needs: create-release
     # Self-hosted by default: tag releases have no inputs, so they use the
     # self-hosted labels; manual runs can fall back to the hosted runner.
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.macos_runner == 'github-hosted' && matrix.runner || fromJSON('["self-hosted","macOS","ARM64","openchamber-macos"]') }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.macos_runner == 'github-hosted' && matrix.runner || fromJSON('["self-hosted","macOS","ARM64","yuri-macos"]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -170,6 +179,15 @@ jobs:
             platform: darwin-aarch64
             runner: macos-26
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup bun
@@ -297,6 +315,15 @@ jobs:
             target: x86_64-pc-windows-msvc
             platform: win32-x64
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup bun
@@ -385,6 +412,15 @@ jobs:
             artifact_arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup bun
@@ -398,11 +434,11 @@ jobs:
       - name: Verify native Linux architecture
         env:
           EXPECTED_HOST_ARCH: ${{ matrix.host_arch }}
-          OPENCHAMBER_TARGET_ARCH: ${{ matrix.arch }}
+          YURI_TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           test "$(uname -m)" = "$EXPECTED_HOST_ARCH"
-          test "$(node -p 'process.arch')" = "$OPENCHAMBER_TARGET_ARCH"
+          test "$(node -p 'process.arch')" = "$YURI_TARGET_ARCH"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -431,7 +467,7 @@ jobs:
       - name: Build and package Linux AppImage
         working-directory: packages/electron
         env:
-          OPENCHAMBER_TARGET_ARCH: ${{ matrix.arch }}
+          YURI_TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           bun run build:web-assets
@@ -449,7 +485,7 @@ jobs:
         with:
           name: linux-release-${{ matrix.arch }}
           path: |
-            packages/electron/dist/OpenChamber-${{ needs.create-release.outputs.version }}-linux-${{ matrix.artifact_arch }}.AppImage
+            packages/electron/dist/Yuri-${{ needs.create-release.outputs.version }}-linux-${{ matrix.artifact_arch }}.AppImage
             packages/electron/dist/full-linux*.yml
           if-no-files-found: error
           retention-days: 1
@@ -458,6 +494,15 @@ jobs:
     needs: [create-release, build-desktop-electron-linux]
     runs-on: ubuntu-latest
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Download x64 Linux release files
@@ -479,8 +524,8 @@ jobs:
           tag_name: v${{ needs.create-release.outputs.version }}
           draft: true
           files: |
-            artifacts/x64/OpenChamber-${{ needs.create-release.outputs.version }}-linux-x86_64.AppImage
-            artifacts/arm64/OpenChamber-${{ needs.create-release.outputs.version }}-linux-arm64.AppImage
+            artifacts/x64/Yuri-${{ needs.create-release.outputs.version }}-linux-x86_64.AppImage
+            artifacts/arm64/Yuri-${{ needs.create-release.outputs.version }}-linux-arm64.AppImage
             artifacts/x64/full-linux.yml
             artifacts/arm64/full-linux-arm64.yml
         env:
@@ -518,10 +563,20 @@ jobs:
       group: mobile-ota-production
       cancel-in-progress: false
     env:
-      OTA_BASE_URL: https://openchamber-update.vercel.app
-      MOBILE_APP_ID: com.yee94.openchamber
+      OTA_BASE_URL: ${{ vars.YURI_OTA_BASE_URL }}
+      OTA_DETECTABILITY_BASES: ${{ vars.YURI_OTA_DETECTABILITY_BASES }}
+      MOBILE_APP_ID: com.yee94.yuri
       MAX_BUNDLE_BYTES: 25165824
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
@@ -550,7 +605,7 @@ jobs:
         run: |
           set -euo pipefail
           DIST="dist"
-          ZIP_NAME="openchamber-${VERSION}.zip"
+          ZIP_NAME="yuri-${VERSION}.zip"
           ZIP_PATH="$RUNNER_TEMP/$ZIP_NAME"
           ZIP_JSON="$(npx --yes @capgo/cli@8.45.1 bundle zip "$MOBILE_APP_ID" \
             --package-json "$PWD/package.json" \
@@ -830,6 +885,15 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
     runs-on: ubuntu-latest
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup bun
@@ -847,7 +911,7 @@ jobs:
       - name: Build web package
         run: bun run build:web
 
-      - name: Publish @openchambery/web and @openchambery/relay-server
+      - name: Publish @yuri/web and @yuri/relay-server
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           IS_PRERELEASE: ${{ needs.create-release.outputs.is_prerelease }}
@@ -903,6 +967,15 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       DISCORD_UPDATE_ROLE_ID: ${{ secrets.DISCORD_UPDATE_ROLE_ID }}
     steps:
+      - name: Require verified Yuri publishing identities
+        shell: bash
+        env:
+          YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
+        run: |
+          if [ "$YURI_RELEASE_IDENTITIES_VERIFIED" != "true" ]; then
+            echo "Release blocked: complete docs/YURI_MIGRATION.md ownership checks first." >&2
+            exit 1
+          fi
       - name: Checkout main for update manifest publication
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -929,7 +1002,7 @@ jobs:
           const response = await fetch(`https://api.github.com/repos/${repo}/releases/${releaseId}`, { headers });
           if (!response.ok) throw new Error(`Failed to list release assets: ${response.status} ${await response.text()}`);
           const release = await response.json();
-          const stale = new RegExp(`^OpenChamber-${version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)-android\\.(apk|aab)$`);
+          const stale = new RegExp(`^Yuri-${version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)-android\\.(apk|aab)$`);
           for (const asset of release.assets) {
             const match = asset.name.match(stale);
             if (!match || match[1] === buildNumber) continue;
@@ -964,19 +1037,19 @@ jobs:
             GITHUB_TOKEN: token,
           } = process.env;
           const expected = [
-            `OpenChamber-${version}-mac-arm64.dmg`,
-            `OpenChamber-${version}-mac-arm64.zip`,
-            `OpenChamber-${version}-win-x64.exe`,
-            `OpenChamber-${version}-linux-x86_64.AppImage`,
-            `OpenChamber-${version}-linux-arm64.AppImage`,
+            `Yuri-${version}-mac-arm64.dmg`,
+            `Yuri-${version}-mac-arm64.zip`,
+            `Yuri-${version}-win-x64.exe`,
+            `Yuri-${version}-linux-x86_64.AppImage`,
+            `Yuri-${version}-linux-arm64.AppImage`,
             'full.yml',
             'full-mac.yml',
             'full-linux.yml',
             'full-linux-arm64.yml',
             'app-release.aab',
             'app-release.apk',
-            `OpenChamber-${version}-${buildNumber}-android.aab`,
-            `OpenChamber-${version}-${buildNumber}-android.apk`,
+            `Yuri-${version}-${buildNumber}-android.aab`,
+            `Yuri-${version}-${buildNumber}-android.apk`,
           ];
           const response = await fetch(`https://api.github.com/repos/${repo}/releases/${releaseId}`, {
             headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
@@ -1085,11 +1158,11 @@ jobs:
             }
 
             const release = await releaseRes.json();
-            const description = (release.body || `OpenChamber ${tag} released.`).slice(0, 4096);
+            const description = (release.body || `Yuri ${tag} released.`).slice(0, 4096);
             const mention = updateRoleId ? `<@&${updateRoleId}>` : '';
 
             const payload = {
-              username: 'OpenChamber Releases',
+              username: 'Yuri Releases',
               ...(mention ? { content: mention } : {}),
               ...(updateRoleId
                 ? {
@@ -1100,11 +1173,11 @@ jobs:
                 : {}),
               embeds: [
                 {
-                  title: release.name || `OpenChamber ${tag}`,
+                  title: release.name || `Yuri ${tag}`,
                   url: release.html_url,
                   description,
                   color: 2105893,
-                  footer: { text: 'OpenChamber Changelog' },
+                  footer: { text: 'Yuri Changelog' },
                 },
               ],
             };
@@ -1125,14 +1198,14 @@ jobs:
           });
           NODE
 
-      - name: Trigger openchamber-website site refresh (optional)
+      - name: Trigger yuri-website site refresh (optional)
         env:
-          WEBSITE_REPO: openchamber/openchamber-website
-          WEBSITE_TOKEN: ${{ secrets.OPENCHAMBER_WEBSITE_REPO_TOKEN }}
+          WEBSITE_REPO: yuri/yuri-website
+          WEBSITE_TOKEN: ${{ secrets.YURI_WEBSITE_REPO_TOKEN }}
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           if [ -z "$WEBSITE_TOKEN" ]; then
-            echo "OPENCHAMBER_WEBSITE_REPO_TOKEN not set; skip site refresh dispatch."
+            echo "YURI_WEBSITE_REPO_TOKEN not set; skip site refresh dispatch."
             exit 0
           fi
 

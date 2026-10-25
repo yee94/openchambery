@@ -31,7 +31,7 @@ const prohibitedValues = [
   { label: 'private domain', value: ['yee', 'e.wang'].join('') },
   { label: 'personal Docker namespace', value: ['xiao', 'be/'].join('') },
   { label: 'personal machine path', value: ['/users/', 'yee/'].join('') },
-  { label: 'personal fork name', value: ['openchamber-', 'yee'].join('') },
+  { label: 'personal fork name', value: ['yuri-', 'yee'].join('') },
 ];
 
 const filesIn = async (directory) => {

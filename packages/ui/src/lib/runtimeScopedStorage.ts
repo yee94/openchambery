@@ -1,10 +1,11 @@
+import '@/lib/brand-storage-bootstrap';
 import type { PersistStorage, StateStorage, StorageValue } from 'zustand/middleware';
 import { isDesktopLocalOriginActive, isDesktopShell } from '@/lib/desktop';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 
 /**
- * Packaged Electron multi-window shares one UI origin (`openchamber-ui://`) while
+ * Packaged Electron multi-window shares one UI origin (`yuri-ui://`) while
  * each window may target a different runtime host. Appearance keys that live in
  * localStorage must therefore be transport-scoped so local prefs never leak into
  * a remote window (and vice versa).
@@ -14,7 +15,7 @@ import { getSafeStorage } from '@/stores/utils/safeStorage';
  * migration step. Remote packaged windows never fall back to the shared bucket.
  */
 
-const SCOPE_PREFIX = 'oc.rt.';
+const SCOPE_PREFIX = 'yuri.rt.';
 
 const encodeTransport = (transport: string): string => {
   // Keep keys short and storage-safe; transport fingerprints may contain `:`, `/`, `{`.
@@ -55,8 +56,8 @@ export const mayReadLegacyUnscopedStorage = (): boolean => {
   // Preload globals can be immutable and keep the startup loopback after a
   // Host switch. Only the live desktop runtime can authorize legacy fallback.
   if (isDesktopShell()) return isDesktopLocalOriginActive();
-  const api = (window as typeof window & { __OPENCHAMBER_API_BASE_URL__?: string }).__OPENCHAMBER_API_BASE_URL__;
-  const local = (window as typeof window & { __OPENCHAMBER_LOCAL_ORIGIN__?: string }).__OPENCHAMBER_LOCAL_ORIGIN__;
+  const api = (window as typeof window & { __YURI_API_BASE_URL__?: string }).__YURI_API_BASE_URL__;
+  const local = (window as typeof window & { __YURI_LOCAL_ORIGIN__?: string }).__YURI_LOCAL_ORIGIN__;
   // Multi-host desktop signal: only same-origin API vs local origin may inherit
   // the unscoped legacy bucket. Remote packaged windows must not.
   if (typeof api === 'string' && api.trim() && typeof local === 'string' && local.trim()) {

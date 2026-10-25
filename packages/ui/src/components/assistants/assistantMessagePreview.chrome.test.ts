@@ -12,12 +12,12 @@ test.skipIf(!resolveChrome())('assistant previews truncate long Chinese and Engl
   const texts = ['最新消息内容预览'.repeat(60), 'UnbrokenEnglishMessage'.repeat(24)];
   // Geometry fixture uses the production list classes and actual shared preview class.
   writeFileSync(htmlPath, `<!doctype html><html class="mobile-pointer"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><main class="w-full min-w-0 p-4">${texts.map((text) => `
-    <div class="oc-mobile-floating-surface oc-mobile-assistant-card-shell">
-      <button type="button" class="oc-mobile-assistant-card">
+    <div class="yuri-mobile-floating-surface yuri-mobile-assistant-card-shell">
+      <button type="button" class="yuri-mobile-assistant-card">
         <span class="size-10 shrink-0" aria-hidden="true"></span>
-        <span class="oc-mobile-assistant-card-content min-w-0 flex-1">
-          <span class="oc-mobile-assistant-name block truncate">Assistant</span>
-          <span data-preview class="oc-mobile-assistant-summary ${ASSISTANT_MESSAGE_PREVIEW_CLASS}">${text}</span>
+        <span class="yuri-mobile-assistant-card-content min-w-0 flex-1">
+          <span class="yuri-mobile-assistant-name block truncate">Assistant</span>
+          <span data-preview class="yuri-mobile-assistant-summary ${ASSISTANT_MESSAGE_PREVIEW_CLASS}">${text}</span>
         </span>
       </button>
     </div>

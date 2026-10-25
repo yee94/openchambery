@@ -9,7 +9,7 @@ import path from 'node:path';
 
 // Opt-in, isolated real V2 server. No user config, credentials, model calls,
 // shared service registration, or npm plugin installs are used.
-test.skipIf(!process.env.OPENCHAMBER_TEST_OPENCODE_BINARY)('V2 applies credentials, global config and plugin changes in the same process', async () => {
+test.skipIf(!process.env.YURI_TEST_OPENCODE_BINARY)('V2 applies credentials, global config and plugin changes in the same process', async () => {
   const temporary = path.join(os.tmpdir(), 'opencode');
   await fs.mkdir(temporary, { recursive: true });
   const root = await fs.mkdtemp(path.join(temporary, 'config-hot-reload-'));
@@ -18,7 +18,7 @@ test.skipIf(!process.env.OPENCHAMBER_TEST_OPENCODE_BINARY)('V2 applies credentia
   await fs.mkdir(config, { recursive: true });
   await fs.mkdir(directory, { recursive: true });
   const password = randomBytes(24).toString('hex');
-  const child = spawn(process.env.OPENCHAMBER_TEST_OPENCODE_BINARY, ['serve', '--hostname', '127.0.0.1', '--port', '0'], {
+  const child = spawn(process.env.YURI_TEST_OPENCODE_BINARY, ['serve', '--hostname', '127.0.0.1', '--port', '0'], {
     cwd: directory,
     env: {
       PATH: process.env.PATH,

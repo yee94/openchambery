@@ -44,7 +44,7 @@ export const mergeManagedOpenCodeConfig = ({ configContent, pluginUrl, instructi
 };
 
 export const createManagedCapabilitiesRuntime = ({
-  dataDir = process.env.OPENCHAMBER_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'openchamber'),
+  dataDir = process.env.YURI_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'yuri'),
   version = '1',
   fsLike = fs,
   cryptoLike = crypto,
@@ -144,10 +144,10 @@ export const createManagedCapabilitiesRuntime = ({
     return {
       ...baseEnv,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(merged),
-      OPENCHAMBER_SCHEDULED_TASK_BRIDGE_ORIGIN: bridgeOrigin,
-      OPENCHAMBER_SCHEDULED_TASK_BRIDGE_PATH: MANAGED_SCHEDULED_TASK_TOOL_PATH,
-      OPENCHAMBER_SCHEDULED_TASK_TOKEN_HEADER: MANAGED_SCHEDULED_TASK_TOKEN_HEADER,
-      OPENCHAMBER_SCHEDULED_TASK_BRIDGE_TOKEN: token,
+      YURI_SCHEDULED_TASK_BRIDGE_ORIGIN: bridgeOrigin,
+      YURI_SCHEDULED_TASK_BRIDGE_PATH: MANAGED_SCHEDULED_TASK_TOOL_PATH,
+      YURI_SCHEDULED_TASK_TOKEN_HEADER: MANAGED_SCHEDULED_TASK_TOKEN_HEADER,
+      YURI_SCHEDULED_TASK_BRIDGE_TOKEN: token,
     };
   };
 

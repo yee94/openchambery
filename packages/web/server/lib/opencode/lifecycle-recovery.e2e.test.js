@@ -19,7 +19,7 @@ const basicAuth = `Basic ${Buffer.from(`opencode:${FAKE_PASSWORD}`, 'utf8').toSt
 const ISOLATION_KEYS = [
   'HOME', 'USERPROFILE', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME',
   'OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'OPENCODE_CONFIG_CONTENT',
-  'OPENCHAMBER_DATA_DIR', 'OPENCHAMBER_MANAGED_PROCESS_REGISTRY',
+  'YURI_DATA_DIR', 'YURI_MANAGED_PROCESS_REGISTRY',
   'OPENCODE_BINARY', 'OPENCODE_PASSWORD', 'OPENCODE_SERVER_PASSWORD',
   'FIXTURE_CONTROL_FILE', 'FIXTURE_LOG_FILE',
 ];
@@ -154,7 +154,7 @@ const spawnCount = () => readLog().filter((entry) => entry.event === 'spawn').le
 const writeControl = (value) => fsSync.writeFileSync(controlFile, JSON.stringify(value));
 
 async function installIsolation() {
-  isolationRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-lifecycle-recovery-'));
+  isolationRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-lifecycle-recovery-'));
   const home = path.join(isolationRoot, 'home');
   const registry = path.join(isolationRoot, 'registry');
   const workdir = path.join(isolationRoot, 'workdir');
@@ -174,8 +174,8 @@ async function installIsolation() {
   process.env.OPENCODE_CONFIG_DIR = path.join(isolationRoot, 'opencode-config');
   delete process.env.OPENCODE_CONFIG;
   delete process.env.OPENCODE_CONFIG_CONTENT;
-  process.env.OPENCHAMBER_DATA_DIR = path.join(isolationRoot, 'data');
-  process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY = registry;
+  process.env.YURI_DATA_DIR = path.join(isolationRoot, 'data');
+  process.env.YURI_MANAGED_PROCESS_REGISTRY = registry;
   process.env.OPENCODE_BINARY = fixturePath;
   process.env.OPENCODE_PASSWORD = FAKE_PASSWORD;
   process.env.OPENCODE_SERVER_PASSWORD = FAKE_PASSWORD;
@@ -183,7 +183,7 @@ async function installIsolation() {
   process.env.FIXTURE_LOG_FILE = logFile;
   await Promise.all([
     process.env.XDG_DATA_HOME, process.env.XDG_CONFIG_HOME, process.env.XDG_CACHE_HOME,
-    process.env.XDG_STATE_HOME, process.env.OPENCODE_CONFIG_DIR, process.env.OPENCHAMBER_DATA_DIR,
+    process.env.XDG_STATE_HOME, process.env.OPENCODE_CONFIG_DIR, process.env.YURI_DATA_DIR,
   ].map((dir) => fs.mkdir(dir, { recursive: true })));
   if (path.resolve(process.env.HOME) === realHome) throw new Error('HOME is not isolated');
   return workdir;

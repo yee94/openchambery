@@ -95,7 +95,7 @@ const toNavigationUrl = (rawUrl: string): string => {
 
 const getLocalOrigin = (): string => {
   if (typeof window === 'undefined') return '';
-  return window.__OPENCHAMBER_LOCAL_ORIGIN__ || window.location.origin;
+  return window.__YURI_LOCAL_ORIGIN__ || window.location.origin;
 };
 
 const getLocalClientToken = async (): Promise<string> => {
@@ -287,7 +287,7 @@ const resolveCurrentHost = (hosts: DesktopHost[]) => {
     return { id: match.id, label: match.label, url: normalizeHostUrl(match.url) || match.url };
   }
 
-  if (currentHref.startsWith('openchamber-ui://')) {
+  if (currentHref.startsWith('yuri-ui://')) {
     return { id: LOCAL_HOST_ID, label: 'Local', url: normalizedLocal };
   }
 
@@ -1226,7 +1226,7 @@ export function DesktopHostSwitcherInline() {
         type="button"
         variant="ghost"
         size="sm"
-        data-oc-host-switcher
+        data-yuri-host-switcher
         className="w-full justify-center"
         onClick={() => setOpen(true)}
       >

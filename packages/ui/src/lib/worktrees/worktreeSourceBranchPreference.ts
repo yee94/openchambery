@@ -1,4 +1,4 @@
-export const LAST_WORKTREE_SOURCE_BRANCH_KEY = 'oc:lastWorktreeSourceBranch';
+export const LAST_WORKTREE_SOURCE_BRANCH_KEY = 'yuri:lastWorktreeSourceBranch';
 
 export interface WorktreeSourceBranchPreferenceArgs {
   branches: readonly string[];

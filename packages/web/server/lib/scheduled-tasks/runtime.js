@@ -378,7 +378,7 @@ const listLatestMessages = async (client, sessionID, requestOptions) => {
 const extractGoalFromSession = (session) => {
   const metadata = session?.metadata;
   if (!metadata || typeof metadata !== 'object') return null;
-  const namespace = metadata.openchamber;
+  const namespace = metadata.yuri;
   if (!namespace || typeof namespace !== 'object') return null;
   const goal = namespace.goal;
   if (!goal || typeof goal !== 'object') return null;
@@ -446,7 +446,7 @@ const snapshotSessionOutcome = async ({
       return null;
     };
 
-    // Prefer Host store: OpenCode session.get cannot see openchamber.goal.
+    // Prefer Host store: OpenCode session.get cannot see yuri.goal.
     if (typeof readSessionMetadata === 'function') {
       try {
         const metadata = await readSessionMetadata(sessionID);
@@ -880,7 +880,7 @@ export const createScheduledTasksRuntime = (deps) => {
 
   // Scheduled goal runs: write the file-backed objective, then persist a
   // trackable goal record into the Host session-metadata store (same seam as
-  // manual UI goals). OpenCode SessionInfo has no openchamber.goal channel.
+  // manual UI goals). OpenCode SessionInfo has no yuri.goal channel.
   const createTaskGoal = async ({
     sessionID,
     projectPath,
@@ -892,7 +892,7 @@ export const createScheduledTasksRuntime = (deps) => {
       throw new Error('session goal persist is not configured');
     }
     // File-backed objective keyed by session id: the full expanded prompt
-    // lives under the OpenChamber data dir. If the file write fails, fall
+    // lives under the Yuri data dir. If the file write fails, fall
     // back to an inline objective so parseGoalMetadata still accepts the
     // record. Oversized prompts are distilled into audit criteria by the
     // small model; on distill failure a head+tail excerpt keeps intent.
@@ -985,13 +985,13 @@ export const createScheduledTasksRuntime = (deps) => {
     if (typeof onGoalPersisted === 'function') {
       try {
         // Prefer full metadata when the seam returns the store object; otherwise
-        // synthesize the openchamber.goal shape the session-goal loop expects.
+        // synthesize the yuri.goal shape the session-goal loop expects.
         const metadata = persisted
           && typeof persisted === 'object'
           && !Array.isArray(persisted)
-          && persisted.openchamber
+          && persisted.yuri
           ? persisted
-          : { openchamber: { goal } };
+          : { yuri: { goal } };
         onGoalPersisted({
           sessionID,
           directory: projectPath,

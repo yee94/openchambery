@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { vi } from 'vitest';
 
 type PermissionV2Fixture = {
   id: string;
@@ -71,7 +72,7 @@ const createV2ClientMock = mock(() => ({
 
 (mock as unknown as { restore?: () => void }).restore?.();
 
-mock.module('@opencode/client', () => ({
+vi.doMock('@opencode/client', () => ({
   OpenCode: {
     make: createV2ClientMock,
   },

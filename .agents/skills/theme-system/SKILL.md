@@ -1,13 +1,13 @@
 ---
 name: theme-system
-description: Use when creating or modifying OpenChamber UI components, styling, colors, buttons, visual states, themes, or icons.
+description: Use when creating or modifying Yuri UI components, styling, colors, buttons, visual states, themes, or icons.
 ---
 
 # Theme System
 
 ## Core Rules
 
-- Use semantic OpenChamber theme tokens; never hardcode hex colors or generic Tailwind palette colors.
+- Use semantic Yuri theme tokens; never hardcode hex colors or generic Tailwind palette colors.
 - Use shared UI primitives before introducing feature-local controls.
 - Use the shared `Button`; do not create button wrappers such as `ButtonSmall` or `ButtonLarge`.
 - Use the sprite-based `Icon`; never import icons directly from `@remixicon/react`.
@@ -72,7 +72,7 @@ Use `IconName` for icon values stored in arrays, objects, state, or config. `Ico
 
 ## Mobile / touch sizing trap
 
-`useUIStore.isMobile` (React layout) is **not** the same as `html.mobile-pointer` (global CSS). Under `mobile-pointer`, `packages/ui/src/styles/mobile.css` forces generic `button` / `[role="button"]` to **min 36×36**. Compact Tailwind sizes (`h-6`, `w-3`, …) are overridden unless the surface has an opt-out next to the existing exceptions (`.oc-tool-row`, `.composer-mobile-actions`, `[data-message-action-group]`, `.oc-composer-queue`).
+`useUIStore.isMobile` (React layout) is **not** the same as `html.mobile-pointer` (global CSS). Under `mobile-pointer`, `packages/ui/src/styles/mobile.css` forces generic `button` / `[role="button"]` to **min 36×36**. Compact Tailwind sizes (`h-6`, `w-3`, …) are overridden unless the surface has an opt-out next to the existing exceptions (`.yuri-tool-row`, `.composer-mobile-actions`, `[data-message-action-group]`, `.yuri-composer-queue`).
 
 DevTools inspect open/close can flip `(pointer: coarse)` / `(hover: none)` and toggle `mobile-pointer` while `isMobile` stays true — that is why spacing can look normal only while inspecting. Full contract: `packages/ui/src/styles/DOCUMENTATION.md`.
 

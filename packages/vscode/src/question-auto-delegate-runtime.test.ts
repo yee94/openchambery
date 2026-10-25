@@ -160,7 +160,7 @@ afterEach(() => {
 describe('VS Code question auto-delegate host authority', () => {
   test.each(['http://opencode.test', 'http://opencode.test/api'])('native form auto-reply uses the V2 API from %s', async (baseUrl) => {
     vi.useFakeTimers();
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-qad-v2-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-qad-v2-'));
     __setQuestionAutoDelegateSettingsPathForTests(path.join(dir, 'settings.json'));
     const form = {
       id: 'frm_native', sessionID: 'ses_native', title: 'Choose', metadata: { kind: 'question' },
@@ -488,7 +488,7 @@ describe('VS Code question auto-delegate tip + disconnect retention', () => {
     for (const bucket of tips) {
       assert.equal(bucket.length, 1);
       const msg = bucket[0] as { type?: string; properties?: { epoch?: string; revision?: number } };
-      assert.equal(msg.type, 'openchamber:question-auto-delegate-changed');
+      assert.equal(msg.type, 'yuri:question-auto-delegate-changed');
       assert.equal(msg.properties?.epoch, 'epoch-tip');
       assert.equal(msg.properties?.revision, 7);
     }
@@ -667,7 +667,7 @@ describe('VS Code question auto-delegate tip + disconnect retention', () => {
 
 describe('VS Code question auto-delegate settings read gate', () => {
   const makeTempSettingsDir = (): string =>
-    fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-qad-settings-'));
+    fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-qad-settings-'));
 
   test('absent settings file defaults enabled true (ENOENT only)', async () => {
     const dir = makeTempSettingsDir();
