@@ -12,7 +12,6 @@ import type { PermissionRequest } from '@/types/permission';
 import type { QuestionRequest } from '@/types/question';
 
 import { ChatInput } from './ChatInput';
-import { ImageSaveActionsHost } from './ImageSaveActionsHost';
 import type { ChatInputSurface } from './chatInputSurface';
 import {
     resolveChatContainerHostFeatures,
@@ -2155,7 +2154,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						{!isMobile && !isDesktopExpandedInput ? <DesktopComposerEdgeFade /> : null}
 						{promptSurface}
 					</div>
-					<ImageSaveActionsHost />
 				</div>
 			);
 		}
@@ -2366,7 +2364,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 				>
                     {promptSurface}
 				</div>
-                <ImageSaveActionsHost />
             </div>
         );
     }
@@ -2448,7 +2445,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 {promptSurface}
             </div>
 
-            <ImageSaveActionsHost />
 
             <TimelineDialog
                 open={isTimelineDialogOpen}

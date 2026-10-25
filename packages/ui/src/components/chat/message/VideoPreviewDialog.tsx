@@ -1,15 +1,11 @@
 import React from 'react';
-import { useEvent } from '@reactuses/core';
 import { useQuery } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/icon/Icon';
-import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { openNativeVideoSource } from '@/lib/native-video';
 import { resolveImageSource, needsRuntimeImageStream, useRuntimeTransportIdentity } from '../imageSource';
-import { openImageSaveActions } from '../imageSaveActionsBus';
+import { MediaSaveButton } from './MediaSaveButton';
 import { PreviewCloseButton } from './MediaPreviewOverlay';
 import type { ToolPopupContent } from './types';
 
@@ -64,13 +60,6 @@ export function VideoPreviewDialog({ video, onClose, isMobile }: {
   const source = needsBlob ? (activeNative?.url || (objectUrl?.blob === resource.data ? objectUrl?.url : '')) : resolved.source;
   const [failedSource, setFailedSource] = React.useState<string>();
   const failed = activeNative?.error || resource.isError || Boolean(source && failedSource === source);
-  const press = React.useMemo(() => createMobileLongPressController(), []);
-  React.useEffect(() => () => press.reset(), [press, video.url]);
-  const save = useEvent(() => {
-    openImageSaveActions({ kind: 'video', sourceUrl: video.url, displayUrl: activeNative?.url ? undefined : source,
-      filename: video.filename, mimeType: video.mimeType, effectiveDirectory: directory,
-      prefetchedBlob: resource.data });
-  });
 
   return <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
     <PreviewCloseButton onClose={onClose} isMobile={isMobile} />
@@ -79,20 +68,10 @@ export function VideoPreviewDialog({ video, onClose, isMobile }: {
     {source && <video key={source} src={source} controls playsInline preload="metadata"
       aria-label={video.filename} className="max-h-[80dvh] w-full max-w-5xl object-contain"
       onError={() => setFailedSource(source)}
-      onContextMenu={(event) => { event.preventDefault(); press.openFromContextMenu(video.url, save); }}
-      onPointerDown={(event) => {
-        if (!event.isPrimary) { press.reset(); return; }
-        if (event.button !== 0) return;
-        press.start({ pointerId: event.pointerId, key: video.url, clientX: event.clientX, clientY: event.clientY, onTrigger: save });
-      }}
-      onPointerMove={(event) => press.move(event.pointerId, event.clientX, event.clientY)}
-      onPointerUp={(event) => press.end(event.pointerId)}
-      onPointerCancel={(event) => press.cancel(event.pointerId)}
-      onPointerLeave={(event) => press.cancel(event.pointerId)}
-      onClickCapture={(event) => { if (press.consumeClick(video.url)) { event.preventDefault(); event.stopPropagation(); } }}
+      controlsList="nodownload" onContextMenu={(event) => event.preventDefault()}
     />}
-    <Button variant="secondary" size="sm" onClick={save}>
-      <Icon name="download" className="size-4" />{t('filesView.editor.saveFile')}
-    </Button>
+    <MediaSaveButton key={sourceKey} target={{ kind: 'video', sourceUrl: video.url,
+      displayUrl: activeNative?.url ? undefined : source, filename: video.filename,
+      mimeType: video.mimeType, effectiveDirectory: directory, prefetchedBlob: resource.data }} />
   </div>;
 }

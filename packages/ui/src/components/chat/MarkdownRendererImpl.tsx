@@ -41,8 +41,6 @@ import {
 import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMermaidViewers } from './markdown/mermaidViewer';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { resolveStreamingRenderCadence } from './streamingRenderCadence';
-import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
-import { openImageSaveActions } from './imageSaveActionsBus';
 import { fetchRuntimeImageObjectUrl, needsRuntimeImageStream, releaseRuntimeImageObjectUrl, resolveImageSource } from './imageSource';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import {
@@ -323,32 +321,11 @@ const useMarkdownImageInteractions = ({
       openImage(image);
     };
 
-    const openSaveForImage = (image: HTMLImageElement) => {
-      const source = getMarkdownImageSource(image);
-      if (!source) return;
-      openImageSaveActions({
-        sourceUrl: source,
-        displayUrl: image.currentSrc || image.src || undefined,
-        filename: image.alt || source,
-        effectiveDirectory,
-      });
-    };
-
-    const longPress = createMobileLongPressController();
-    const imagePressKey = (image: HTMLImageElement): string => (
-      getMarkdownImageSource(image) || image.src || 'markdown-image'
-    );
-
     const handleClick = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
       const image = target.closest<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR);
       if (!image) return;
-      if (longPress.consumeClick(imagePressKey(image))) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
       event.preventDefault();
       event.stopPropagation();
       activateImage(image);
@@ -361,29 +338,6 @@ const useMarkdownImageInteractions = ({
       event.stopPropagation();
       activateImage(target);
     };
-    const handlePointerDown = (event: PointerEvent) => {
-      if (event.pointerType === 'mouse' && event.button !== 0) return;
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const image = target.closest<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR);
-      if (!image) return;
-      longPress.start({
-        pointerId: event.pointerId,
-        key: imagePressKey(image),
-        clientX: event.clientX,
-        clientY: event.clientY,
-        onTrigger: () => openSaveForImage(image),
-      });
-    };
-    const handlePointerMove = (event: PointerEvent) => {
-      longPress.move(event.pointerId, event.clientX, event.clientY);
-    };
-    const handlePointerUp = (event: PointerEvent) => {
-      longPress.end(event.pointerId);
-    };
-    const handlePointerCancel = (event: PointerEvent) => {
-      longPress.cancel(event.pointerId);
-    };
     const handleContextMenu = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -391,7 +345,6 @@ const useMarkdownImageInteractions = ({
       if (!image) return;
       event.preventDefault();
       event.stopPropagation();
-      longPress.openFromContextMenu(imagePressKey(image), () => openSaveForImage(image));
     };
 
     const handleImageLoad = (event: Event) => {
@@ -411,23 +364,14 @@ const useMarkdownImageInteractions = ({
     container.addEventListener('error', handleImageError, true);
     container.addEventListener('click', handleClick);
     container.addEventListener('keydown', handleKeyDown);
-    container.addEventListener('pointerdown', handlePointerDown);
-    container.addEventListener('pointermove', handlePointerMove);
-    container.addEventListener('pointerup', handlePointerUp);
-    container.addEventListener('pointercancel', handlePointerCancel);
     container.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
       reconcileRef.current = () => {};
-      longPress.reset();
       container.removeEventListener('load', handleImageLoad, true);
       container.removeEventListener('error', handleImageError, true);
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
-      container.removeEventListener('pointerdown', handlePointerDown);
-      container.removeEventListener('pointermove', handlePointerMove);
-      container.removeEventListener('pointerup', handlePointerUp);
-      container.removeEventListener('pointercancel', handlePointerCancel);
       container.removeEventListener('contextmenu', handleContextMenu);
       // A StrictMode effect replay tears down and restores this effect in the
       // same task. Keep the virtual URL through that replay so Chromium never

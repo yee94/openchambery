@@ -188,8 +188,8 @@ describe('image source contracts', () => {
     expect(imageHook).toContain('const ensureImageState = (image: HTMLImageElement)');
     expect(imageHook).toContain('images.set(image, state)');
     expect(imageHook).toContain('reconcileRef.current = (root)');
-    expect(imageHook).toContain('openImageSaveActions');
-    expect(imageHook).toContain('createMobileLongPressController');
+    expect(imageHook).not.toContain('openImageSaveActions');
+    expect(imageHook).not.toContain('createMobileLongPressController');
     const imageReconcileStart = imageHook.indexOf('reconcileRef.current = (root)');
     const imageReconcileEnd = imageHook.indexOf('const activateImage', imageReconcileStart);
     const imageReconcile = imageHook.slice(imageReconcileStart, imageReconcileEnd);
@@ -271,9 +271,9 @@ describe('image source contracts', () => {
     expect(viewerSource).toMatch(/closeImageViewerAfterMobileTap\(point, \(\) => onOpenChange\(false\)\);\s*return;/);
   });
 
-  test('keeps image save actions available through long press and context menu', () => {
-    expect(dialogSource).toContain('openImageSaveActions');
-    expect(dialogSource).toContain('IMAGE_VIEWER_LONG_PRESS_MS');
+  test('keeps image saving in the fullscreen control without long-press actions', () => {
+    expect(dialogSource).toContain('MediaSaveButton');
+    expect(dialogSource).not.toContain('IMAGE_VIEWER_LONG_PRESS_MS');
     expect(dialogSource).toContain('onContextMenu={handleContextMenu}');
   });
 });

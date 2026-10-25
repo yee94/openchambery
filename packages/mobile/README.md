@@ -54,6 +54,18 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - **Android:** `MainActivity` registers the plugin; on load it installs a `BridgeWebViewClient` subclass that intercepts `openchamber-asset://` and returns a streaming `WebResourceResponse` backed by a thread-safe blocking `InputStream` (responses include `X-Content-Type-Options: nosniff`). One reader per asset; a second `openStream` is rejected.
 - **Limits (both platforms):** 120s idle TTL, 16 concurrent assets, 32 MiB per asset, 4 MiB unread queue backpressure (append waits up to 15s), cancel/finish/close and expiry free all queues. Native code never receives host paths, relay credentials, or tunnel keys — only opaque ids and bytes.
 
+## Native Image Save Compatibility
+
+`OpenChamberMedia.saveImage` detects WebP from its ImageIO type and normalizes it
+to PNG before handing its UIImage to Photos. UIKit can display WebP but Photos
+rejects the retained WebP encoding with `PHPhotosErrorDomain 3302`, even with
+add-only permission granted. Other decoded formats keep their existing path.
+This fix requires a native iOS build. The opt-in
+`test/media-save-ios.test.mjs` compiles the production plugin and writes a neutral
+WebP fixture to a simulator's Photos library. Run it with `OC_IOS_TEST_DEVICE`
+(a booted simulator UDID) and `OC_IOS_TEST_PRODUCTS` (the simulator build's
+`Debug-iphonesimulator` products directory); without both it is skipped.
+
 ## Native Video Range Bridge
 
 - iOS registers `OpenChamberVideo` (`create`, `respond`, `release`, `request` events).

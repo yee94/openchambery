@@ -196,9 +196,11 @@ export const saveImageToDevice = async (
   signal?: AbortSignal,
 ): Promise<ImageSaveResult> => {
   const { blob, filename, mimeType } = await materializeImageBlob(target, signal);
+  signal?.throwIfAborted();
 
   if (isNativeMediaAvailable()) {
     const dataBase64 = await blobToBase64(blob);
+    signal?.throwIfAborted();
     if (target.kind === 'video') {
       const result = await OpenChamberMedia.saveFile({ dataBase64, mimeType, filename });
       if (result?.cancelled) throw new DOMException('Save cancelled', 'AbortError');

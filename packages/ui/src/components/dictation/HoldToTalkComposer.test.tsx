@@ -9,6 +9,8 @@ const speech = vi.hoisted(() => ({
     discardFailedDictation: vi.fn(), retryFailedDictation: vi.fn(), acceptPartialTranscript: vi.fn(),
 }));
 const transcript = vi.hoisted(() => ({ deliver: (_text: string) => {} }));
+const haptic = vi.hoisted(() => vi.fn());
+vi.mock('@/hooks/streamingHaptics', () => ({ triggerMobileHaptic: haptic }));
 vi.mock('@/hooks/useDictation', () => ({ useDictation: (options: { onTranscript: (text: string) => void }) => { transcript.deliver = options.onTranscript; return speech; } }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
@@ -92,6 +94,24 @@ it('allows moving back to center to keep the recording', async () => {
     await pointer('pointerdown'); await pointer('pointermove', 100); await pointer('pointermove', 180);
     await pointer('pointerup', 180);
     expect(speech.confirmDictation).toHaveBeenCalledTimes(1);
+});
+
+it('provides haptics only when entering a target or returning to the center', async () => {
+    await pointer('pointerdown');
+    expect(haptic).not.toHaveBeenCalled();
+    await pointer('pointermove', 100, 2);
+    expect(haptic).not.toHaveBeenCalled();
+    await pointer('pointermove', 100);
+    for (let i = 0; i < 50; i++) await pointer('pointermove', 100 - i);
+    expect(haptic).toHaveBeenCalledExactlyOnceWith('medium', { bypassCadence: true });
+    await pointer('pointermove', 200);
+    expect(haptic).toHaveBeenNthCalledWith(2, 'light', { bypassCadence: true });
+    await pointer('pointermove', 290);
+    expect(haptic).toHaveBeenNthCalledWith(3, 'medium', { bypassCadence: true });
+    await pointer('pointermove', 200);
+    expect(haptic).toHaveBeenNthCalledWith(4, 'light', { bypassCadence: true });
+    await pointer('pointerup');
+    expect(haptic).toHaveBeenCalledTimes(4);
 });
 
 it('upper-right slide sends only on release', async () => {

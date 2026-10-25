@@ -79,9 +79,9 @@
     font-weight: 600;
     opacity: 1;
 }
-.oc-speech-target path { fill: color-mix(in srgb, var(--surface-background) 12%, transparent); transition: fill 180ms ease; }
+.oc-speech-target path { fill: color-mix(in srgb, var(--surface-background) 12%, var(--surface-foreground)); transition: fill 180ms ease; }
 .oc-speech-target text { fill: var(--surface-background); }
-.oc-speech-target[data-active="true"] path { fill: color-mix(in srgb, var(--surface-background) 40%, transparent); }
+.oc-speech-target[data-active="true"] path { fill: color-mix(in srgb, var(--surface-background) 40%, var(--surface-foreground)); }
 .oc-speech-hold-arc {
     stroke: color-mix(in srgb, var(--surface-background) 65%, var(--surface-foreground));
     stroke-width: 4px;

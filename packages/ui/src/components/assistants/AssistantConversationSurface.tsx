@@ -637,13 +637,17 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       }
                       if (part.type === 'text' && (part.text.trim() || message.status === 'streaming')) {
                         const useMarkdown = !isUser
+                        // Only a standalone inline image gets media chrome; prose and
+                        // ambiguous Markdown keep the ordinary text-bubble spacing.
+                        const imageOnly = useMarkdown && /^!\[(?:\\.|[^\]\\\n])*\]\(\s*(?:<[^>\n]+>|[^\s()]+)(?:\s+"[^"\n]*")?\s*\)$/.test(part.text.trim())
                         return (
                           <div
                             key={`${renderKey}:text:${index}`}
                             aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
                             data-assistant-contact-text=""
                             className={cn(
-                              'min-w-0 max-w-full [overflow-wrap:anywhere] rounded-[1.35rem] px-4 py-2.5 typography-markdown leading-6',
+                              'min-w-0 max-w-full [overflow-wrap:anywhere] rounded-[1.35rem] typography-markdown leading-6',
+                              imageOnly ? 'p-0' : 'px-4 py-2.5',
                               useMarkdown ? null : 'whitespace-pre-wrap',
                               isUser
                                 ? 'rounded-[1.15rem] rounded-br-lg bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]'

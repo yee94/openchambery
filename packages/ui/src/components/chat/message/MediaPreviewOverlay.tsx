@@ -76,7 +76,7 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
     if (!open || closed || typeof document === 'undefined') return null;
     return createPortal(<div ref={viewerRef} role="dialog" aria-modal="true" aria-label={title}
         data-media-preview={kind} data-page-scroll-lock="true" tabIndex={-1}
-        className="fixed inset-0 z-[80] overflow-hidden select-none"
+        className="fixed inset-0 z-[80] overflow-hidden select-none [-webkit-touch-callout:none]"
         style={{
             backgroundColor: isMobile ? 'var(--oc-media-preview-background)' : `color-mix(in srgb, var(--oc-media-preview-background) ${kind === 'mermaid' ? 90 : 70}%, transparent)`,
             color: 'var(--oc-media-preview-foreground)',

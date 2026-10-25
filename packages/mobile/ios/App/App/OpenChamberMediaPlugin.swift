@@ -40,9 +40,20 @@ class OpenChamberMediaPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Image exceeds maximum size")
             return
         }
-        guard let image = UIImage(data: data) else {
+        guard var image = UIImage(data: data) else {
             call.reject("Could not decode image")
             return
+        }
+
+        // UIImage can display WebP while retaining its original encoding, which
+        // Photos rejects with PHPhotosErrorDomain 3302. Normalize only that format.
+        if let source = CGImageSourceCreateWithData(data as CFData, nil),
+           CGImageSourceGetType(source) as String? == UTType.webP.identifier {
+            guard let png = image.pngData(), let normalized = UIImage(data: png) else {
+                call.reject("Could not encode image for Photos")
+                return
+            }
+            image = normalized
         }
 
         ensureAddOnlyAuthorization { [weak self] granted, errorMessage in
