@@ -181,6 +181,7 @@ class OpenChamberBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(OpenChamberNavigationPlugin())
         bridge?.registerPluginInstance(OpenChamberVirtualAssetPlugin())
         bridge?.registerPluginInstance(OpenChamberMediaPlugin())
+        bridge?.registerPluginInstance(OpenChamberVideoPlugin())
         bridge?.registerPluginInstance(OpenChamberPhysicalScalePlugin())
         bridge?.registerPluginInstance(OpenChamberComposerPlugin())
         bridge?.registerPluginInstance(OpenChamberTabBarPlugin())

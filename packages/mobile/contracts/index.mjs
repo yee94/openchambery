@@ -6,11 +6,13 @@ import { openChamberNavigationContract } from './openchamber-navigation.mjs'
 import { openChamberShareContract } from './openchamber-share.mjs'
 import { openChamberTabBarContract } from './openchamber-tab-bar.mjs'
 import { openChamberVirtualAssetContract } from './openchamber-virtual-asset.mjs'
+import { openChamberVideoContract } from './openchamber-video.mjs'
 
 /** All custom native bridge contracts checked by mobile-release-plan. */
 export const mobileBridgeContracts = [
   openChamberShareContract,
   openChamberVirtualAssetContract,
+  openChamberVideoContract,
   openChamberMediaContract,
   openChamberHapticsContract,
   openChamberNavigationContract,
@@ -28,4 +30,5 @@ export {
   openChamberShareContract,
   openChamberTabBarContract,
   openChamberVirtualAssetContract,
+  openChamberVideoContract,
 }

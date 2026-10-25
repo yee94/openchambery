@@ -119,13 +119,27 @@ preview open and restores its modal ownership.
 Video attachments and Markdown video-file links open the same overlay with a
 native `video controls playsInline` player; there is no third-party player or
 autoplay. The player offers long-press/context-menu and a visible save button.
-HTTP/data/blob sources play directly. Runtime paths use an abortable, runtime-keyed
-query and a temporary blob URL released on close; these files must finish loading
-before playback (no adaptive/range streaming in this minimal integration).
+HTTP/data/blob sources play directly. iOS shells with `OpenChamberVideo` give the
+native player an opaque loopback HTTP URL. Its Range reads pass through
+`native-video.ts` → `runtimeFetch` → the existing direct/Relay transport, capped at
+1 MiB per request. Seek/disconnect and preview/runtime teardown abort the request
+and release the native lease. Host `/api/fs/raw` must support 206/Content-Range;
+an old Host that ignores Range fails without downloading the entire file.
+Other runtimes and older iOS shells retain an abortable, runtime-keyed query and a
+temporary blob URL released on close (full download before playback).
 Codec support follows the browser/WebView. Save reuses loaded bytes when available.
 Web/Electron download the original file; Capacitor video save uses the existing
 system document picker, while image save still writes Photos. VS Code local video
 save uses `files.downloadFile`; nonlocal video save reports unsupported failure.
+
+Native image display URLs are one-use streams, not reusable download URLs.
+`relay-image-stream.readRelayImageDisplayBlob` retrieves the verified backing Blob
+or reloads its canonical runtime path under the same transport identity. Backing
+Blob references follow the existing display lease/TTL and 32 MiB per-image bound;
+they are not a separate cache. Runtime-file saves fetch original bytes directly,
+without opening another native display stream. Electron's reusable disk-asset
+URLs retain their ordinary fetch path. Save never fetches the iOS video loopback
+URL as a whole-file download; it uses the canonical source.
 
 `message/mediaPreviewTransition` animates loaded image previews through one temporary,
 fixed, paint-contained crop frame and one image. Thumbnail `object-fit`, percentage

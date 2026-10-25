@@ -4,11 +4,10 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { isCapacitorApp } from '@/lib/platform';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { readRelayImageDisplayBlob } from '@/lib/relay/relay-image-stream';
 
 import {
-  fetchRuntimeImageObjectUrl,
   needsRuntimeImageStream,
-  releaseRuntimeImageObjectUrl,
   resolveImageSource,
 } from './imageSource';
 
@@ -98,6 +97,11 @@ const downloadBlob = (blob: Blob, filename: string): void => {
 };
 
 const fetchBlobFromUrl = async (url: string, signal?: AbortSignal): Promise<Blob> => {
+  if (url.startsWith('openchamber-asset:')) {
+    const original = await readRelayImageDisplayBlob(url, signal);
+    if (original) return original;
+    if (isCapacitorApp()) throw new Error('Image display stream is no longer available');
+  }
   const response = await (/^\/api(?=\/|[?#]|$)/.test(url)
     ? runtimeFetch(url, { signal, cache: 'no-store' })
     : fetch(url, { signal, cache: 'no-store' }));
@@ -111,15 +115,9 @@ const materializeFromRuntimePath = async (
   path: string,
   signal?: AbortSignal,
 ): Promise<Blob> => {
-  let objectUrl = '';
-  try {
-    objectUrl = await fetchRuntimeImageObjectUrl(path, signal ?? new AbortController().signal);
-    return await fetchBlobFromUrl(objectUrl, signal);
-  } finally {
-    if (objectUrl) {
-      releaseRuntimeImageObjectUrl(objectUrl);
-    }
-  }
+  const response = await runtimeFetch('/api/fs/raw', { query: { path }, signal });
+  if (!response.ok) throw new Error(`Image source request failed (${response.status})`);
+  return response.blob();
 };
 
 export const materializeImageBlob = async (
@@ -141,6 +139,7 @@ export const materializeImageBlob = async (
     try {
       blob = await fetchBlobFromUrl(displayUrl, signal);
     } catch {
+      signal?.throwIfAborted();
       blob = null;
     }
   }
@@ -156,26 +155,7 @@ export const materializeImageBlob = async (
     } else {
       const resolved = resolveImageSource(source, effectiveDirectory);
       if (needsRuntimeImageStream(resolved)) {
-        if (target.kind === 'video') {
-          const response = await runtimeFetch('/api/fs/raw', { query: { path: resolved.path }, signal });
-          if (!response.ok) throw new Error(`Media request failed (${response.status})`);
-          blob = await response.blob();
-        } else {
-          try {
-            blob = await materializeFromRuntimePath(resolved.path, signal);
-          } catch {
-            const response = await runtimeFetch('/api/fs/raw', {
-              method: 'GET',
-              cache: 'no-store',
-              query: { path: resolved.path },
-              signal,
-            });
-            if (!response.ok) {
-              throw new Error(`Image source request failed with status ${response.status}`);
-            }
-            blob = await response.blob();
-          }
-        }
+        blob = await materializeFromRuntimePath(resolved.path, signal);
       } else {
         blob = await fetchBlobFromUrl(resolved.source, signal);
       }

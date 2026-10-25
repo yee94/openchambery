@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.5] - 2026-10-25
+
+### 改进
+
+- iOS 原生端新增本机视频服务：WebView 通过仅监听回环地址的端口按字节范围读取视频，支持拖动进度；渲染进程只传不透明 ID，路径、鉴权与中继仍由前端负责，单次读取量有上限。
+- 运行时视频流在桌面中继下支持分段读取，长视频不再整段下载后才能播放。
+
 ## [2.1.10-beta.4] - 2026-10-25
 
 ### 改进

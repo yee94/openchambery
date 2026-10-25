@@ -54,6 +54,29 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - **Android:** `MainActivity` registers the plugin; on load it installs a `BridgeWebViewClient` subclass that intercepts `openchamber-asset://` and returns a streaming `WebResourceResponse` backed by a thread-safe blocking `InputStream` (responses include `X-Content-Type-Options: nosniff`). One reader per asset; a second `openStream` is rejected.
 - **Limits (both platforms):** 120s idle TTL, 16 concurrent assets, 32 MiB per asset, 4 MiB unread queue backpressure (append waits up to 15s), cancel/finish/close and expiry free all queues. Native code never receives host paths, relay credentials, or tunnel keys — only opaque ids and bytes.
 
+## Native Video Range Bridge
+
+- iOS registers `OpenChamberVideo` (`create`, `respond`, `release`, `request` events).
+  `OpenChamberVideoServer` binds an ephemeral **IPv4 loopback-only** HTTP listener
+  for each opaque video lease. WebKit/AVFoundation use ordinary HTTP byte ranges;
+  the image-only, one-reader `openchamber-asset` scheme is not reused for video.
+- The renderer alone keeps the canonical remote path and credentials. It handles
+  events through `runtimeFetch`, so the same authenticated requests travel over
+  LAN or encrypted Relay. Native receives only opaque IDs, MIME, range metadata
+  and base64 bytes. The Host must include the `/api/fs/raw` Range implementation.
+- At most two leases and eight pending requests per lease; headers are limited
+  to 16 KiB, range bodies to 1 MiB, pending requests to 30 seconds. Seek/disconnect
+  aborts the corresponding Relay request. Closing the preview or changing runtime
+  releases listeners, native sockets and pending controllers. HEAD size is derived
+  from Content-Range because Relay deliberately strips Content-Length.
+- This requires a **new iOS native build and updated Host**. Android, browsers,
+  desktop and older iOS shells retain the full-blob fallback. No third-party
+  player, transcoder or relay protocol change is introduced.
+- `test/video-server.test.mjs` compiles the production Swift server on macOS,
+  exercises real HTTP Range/HEAD/cancellation, and decodes/seeks a generated H.264
+  movie with AVFoundation. Device-specific WebKit/Photos permission behavior still
+  requires iOS device validation.
+
 ## Native HEIC Transcode
 
 - `OpenChamberMedia.transcode({ data, mime, quality? })` converts HEIC/HEIF image bytes to JPEG on a background queue. Shared UI discovers the method through `convertHeicToJpegViaNative` (`packages/ui/src/lib/native-image-transcode.ts`) and falls back to JS when native is absent or rejects.
