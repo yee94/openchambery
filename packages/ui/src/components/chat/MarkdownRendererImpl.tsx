@@ -41,7 +41,7 @@ import {
 import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMermaidViewers } from './markdown/mermaidViewer';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { resolveStreamingRenderCadence } from './streamingRenderCadence';
-import { fetchRuntimeImageObjectUrl, needsRuntimeImageStream, releaseRuntimeImageObjectUrl, resolveImageSource } from './imageSource';
+import { acquireMarkdownImage, needsRuntimeImageStream, resolveImageSource } from './imageSource';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import {
   FILE_REFERENCE_OPEN_TITLE,
@@ -143,6 +143,7 @@ type RelayImageState = {
   key: string;
   controller?: AbortController;
   objectUrl?: string;
+  release?: () => void;
 };
 
 const useMarkdownImageInteractions = ({
@@ -180,9 +181,7 @@ const useMarkdownImageInteractions = ({
     if (!imagePreviewEnabled) {
       for (const [image, state] of images) {
         state.controller?.abort();
-        if (state.objectUrl) {
-          releaseRuntimeImageObjectUrl(state.objectUrl);
-        }
+        state.release?.();
         images.delete(image);
       }
       return;
@@ -208,7 +207,7 @@ const useMarkdownImageInteractions = ({
         content: '',
         metadata: { tool: 'image-preview', filename },
         previewSource: image,
-        image: { url: selectedSource, filename, gallery, index: Math.max(0, galleryIndex) },
+        image: { url: selectedSource, filename, gallery, index: Math.max(0, galleryIndex), directory: effectiveDirectory },
       });
     };
 
@@ -219,9 +218,7 @@ const useMarkdownImageInteractions = ({
       const state = images.get(image);
       if (!state) return;
       state.controller?.abort();
-      if (state.objectUrl) {
-        releaseRuntimeImageObjectUrl(state.objectUrl);
-      }
+      state.release?.();
       images.delete(image);
     };
 
@@ -268,8 +265,8 @@ const useMarkdownImageInteractions = ({
       state.controller = controller;
       image.setAttribute('data-md-image-state', 'loading');
       image.setAttribute('aria-busy', 'true');
-      void fetchRuntimeImageObjectUrl(resolved.path, controller.signal)
-        .then((objectUrl) => {
+      void acquireMarkdownImage(resolved.path, controller.signal)
+        .then((lease) => {
           const latest = images.get(image);
           if (
             !latest
@@ -277,12 +274,13 @@ const useMarkdownImageInteractions = ({
             || latest.controller !== controller
             || controller.signal.aborted
           ) {
-            releaseRuntimeImageObjectUrl(objectUrl);
+            lease.release();
             return;
           }
           latest.controller = undefined;
-          latest.objectUrl = objectUrl;
-          image.src = objectUrl;
+          latest.objectUrl = lease.url;
+          latest.release = lease.release;
+          image.src = lease.url;
         })
         .catch(() => {
           const latest = images.get(image);

@@ -578,13 +578,25 @@ export const streamRelayImageDisplayUrl = async (
     signal,
   });
 
+  return streamRelayImageResponse(response, signal, transportIdentity, path);
+};
+
+/** Materialize a runtime-owned response; each native reader receives its own one-use URL. */
+export const streamRelayImageResponse = async (
+  response: Response,
+  signal: AbortSignal,
+  transportIdentity: string,
+  sourcePath?: string,
+): Promise<string> => {
+  ensureTransportCleanup();
+
   if (!response.ok) {
     throw new Error(`Image source request failed with status ${response.status}`);
   }
 
   const bridge = await resolveNativeRelayAssetBridge();
   if (bridge) {
-    return streamToNativeBridge(bridge, response, signal, transportIdentity, path);
+    return streamToNativeBridge(bridge, response, signal, transportIdentity, sourcePath ?? '');
   }
   return bufferToBlobUrl(response, signal, transportIdentity);
 };

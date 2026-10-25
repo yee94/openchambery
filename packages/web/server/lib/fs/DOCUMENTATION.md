@@ -13,7 +13,7 @@ Own filesystem API behavior for the web server runtime, including file operation
     - `GET /api/fs/home`
     - `POST /api/fs/mkdir`
     - `GET /api/fs/read`
-    - `GET /api/fs/stat` (includes an `isBinary` classification from an 8 KiB file sample)
+    - `GET /api/fs/stat` (includes an `isBinary` classification from an 8 KiB file sample). Opt-in `fingerprint=true` returns content `sha256` for files up to 32 MiB, after the existing read policy and realpath checks. `image-fingerprint.js` owns a bounded 128-path memo keyed by device/inode/size/mtimeNs/ctimeNs; hashing uses serialized 256 KiB reads and rejects mutation during the read. Same-size writes restoring mtime still change ctime. Responses are `no-store`; callers must authorize/stat again before using durable bytes. Hashing is local filesystem work, not a second network body download. VS Code reuses this helper after its own path authorization.
     - `GET /api/fs/raw`
     - `GET /api/fs/serve/:path(*)`
     - `POST /api/fs/write`
@@ -35,6 +35,9 @@ Own filesystem API behavior for the web server runtime, including file operation
 - `index.js` no longer owns FS route handlers or FS exec job state.
 
 ## Notes for contributors
+- Stat includes `mimeType` and `filename`; opt-in SHA-256 is omitted above 32 MiB rather than rejecting otherwise valid files. Empty files can be fingerprinted.
+- `/api/fs/serve` retains its original URL/body/MIME and relative-resource behavior. After existing authorization it emits `Cache-Control: private, no-cache`, `Vary: Authorization, Cookie`, and a weak size/mtime/ctime ETag; `sendFile` streams the body and handles conditional requests. This is browser-private revalidation, not a durable-cache guarantee. Tests cover relative CSS/JS, 304, updates and deletion.
+- `/api/fs/raw` also streams non-video bodies above 32 MiB. Client complete-body persistence is bounded independently; cold Range responses are not published as complete entries.
 - `/api/fs/raw` serves video MIME types (MP4/M4V/MOV/WebM/OGV) using Express's
   streamed `sendFile` after the existing path authorization/realpath checks.
   Explicit Range requests and HEAD use the same path: 206/Content-Range,

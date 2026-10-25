@@ -94,7 +94,7 @@ const MESSAGE_FOOTER_ROW_CLASS = 'mt-1.5 mb-0.5 flex flex-wrap items-center gap-
 const MESSAGE_FOOTER_ROW_MOBILE_CLASS = 'mt-3 mb-0.5 flex flex-wrap items-center gap-3 -ml-[5px]';
 const MESSAGE_ACTION_GROUP_CLASS = 'flex items-center gap-2';
 /** Duration / timestamp — 与操作图标同色；字略小，行高贴齐图标高度保持垂直对齐. */
-const MESSAGE_FOOTER_META_GROUP_CLASS = 'flex min-w-0 flex-1 flex-wrap items-center gap-2 text-muted-foreground';
+const MESSAGE_FOOTER_META_GROUP_CLASS = 'flex w-max max-w-full flex-none flex-wrap items-center gap-2 text-muted-foreground';
 const MESSAGE_FOOTER_META_TEXT_CLASS =
   'h-3.5 items-center gap-1 text-[11px] leading-none tabular-nums text-muted-foreground';
 const MESSAGE_FOOTER_META_CLASS = `inline-flex ${MESSAGE_FOOTER_META_TEXT_CLASS}`;

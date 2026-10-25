@@ -234,6 +234,9 @@ const imageCacheApi = isLocalPage ? {
   append: (leaseId, chunk) => ipcRenderer.invoke('openchamber:image-cache:append', { leaseId, chunk }),
   commit: (leaseId, mime) => ipcRenderer.invoke('openchamber:image-cache:commit', { leaseId, mime }),
   release: (leaseId) => ipcRenderer.invoke('openchamber:image-cache:release', { leaseId }),
+  clear: () => ipcRenderer.invoke('openchamber:image-cache:clear'),
+  fileResources: true,
+  lookup: (input) => ipcRenderer.invoke('openchamber:image-cache:lookup', input),
 } : undefined;
 
 // Preview loopback gateway — local packaged/HMR UI only. Unauthenticated

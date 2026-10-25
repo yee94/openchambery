@@ -111,7 +111,7 @@ const MobileUsageLimits: React.FC<{
                 {group.providerName}
               </span>
               {group.status && group.rows.length === 0 ? (
-                <span className="shrink-0 truncate typography-micro text-muted-foreground">
+                <span className="min-w-0 max-w-[60%] truncate typography-micro text-muted-foreground">
                   {group.status}
                 </span>
               ) : null}
@@ -133,10 +133,10 @@ const MobileUsageLimits: React.FC<{
                           {row.subtitle ? `${row.subtitle} · ${row.label}` : row.label}
                         </span>
                         {resetLabel ? (
-                          <span className="shrink-0 truncate typography-micro text-muted-foreground/70">{resetLabel}</span>
+                          <span className="min-w-0 truncate typography-micro text-muted-foreground/70">{resetLabel}</span>
                         ) : null}
                       </span>
-                      <span className={cn('shrink-0 typography-ui-label font-semibold tabular-nums', getWindowValueClass(row.window))}>
+                      <span className={cn('min-w-0 max-w-[60%] shrink-0 truncate typography-ui-label font-semibold tabular-nums', getWindowValueClass(row.window))}>
                         {metricLabel === '-' ? '' : metricLabel}
                       </span>
                     </div>
@@ -145,7 +145,7 @@ const MobileUsageLimits: React.FC<{
               </div>
             ) : null}
             {group.status && group.rows.length > 0 ? (
-              <div className="mt-1.5 typography-micro text-muted-foreground">{group.status}</div>
+              <div className="mt-1.5 truncate typography-micro text-muted-foreground" title={group.status}>{group.status}</div>
             ) : null}
           </div>
         ))}
@@ -224,7 +224,7 @@ const SessionMetadataOverlay: React.FC<{
         role="dialog"
         aria-label={t('mobile.header.openMetadataAria')}
         className={cn(
-          'pointer-events-auto absolute inset-x-3 top-[calc(var(--oc-safe-area-top,0px)+var(--oc-mobile-detail-navigation-height,3.5rem)+0.5rem)] overflow-y-auto overscroll-contain rounded-[20px] oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent p-2 will-change-transform',
+          'pointer-events-auto absolute inset-x-3 top-[calc(var(--oc-safe-area-top,0px)+var(--oc-mobile-detail-navigation-height,3.5rem)+0.5rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-[20px] oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent p-2 will-change-transform',
           isExiting && 'pointer-events-none',
         )}
         style={{

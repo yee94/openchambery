@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createImageFingerprintReader } from './image-fingerprint.js';
 import { createRealpathCache } from '../path-realpath-cache.js';
 import nodeFsPromises from 'node:fs/promises';
 import nodePath from 'node:path';
@@ -17,6 +18,7 @@ const EXEC_JOB_TTL_MS = 30 * 60 * 1000;
 const OUTSIDE_FILE_GRANT_TTL_MS = 10 * 60 * 1000;
 
 const outsideFileGrants = new Map();
+const readImageFingerprint = createImageFingerprintReader(nodeFsPromises);
 
 const pruneOutsideFileGrants = () => {
   const now = Date.now();
@@ -745,7 +747,11 @@ export const registerFsRoutes = (app, dependencies) => {
       }
 
       const isBinary = await isBinaryFile(canonicalPath, fsPromises);
-      return res.json({ path: canonicalPath, isFile: true, size: stats.size, mtimeMs: stats.mtimeMs, isBinary });
+      const sha256 = req.query.fingerprint === 'true' && stats.size <= 32 * 1024 * 1024 ? await readImageFingerprint(canonicalPath) : undefined;
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json({ path: canonicalPath, isFile: true, size: stats.size, mtimeMs: stats.mtimeMs, isBinary,
+        mimeType: FILE_MIME_MAP[path.extname(canonicalPath).toLowerCase()] || 'application/octet-stream', filename: path.basename(canonicalPath),
+        ...(sha256 ? { sha256 } : {}) });
     } catch (error) {
       const err = error;
       if (err && typeof err === 'object' && err.code === 'ENOENT') {
@@ -895,7 +901,7 @@ export const registerFsRoutes = (app, dependencies) => {
         '.webm': 'video/webm',
         '.ogv': 'video/ogg',
       };
-      const mimeType = mimeMap[ext] || 'application/octet-stream';
+      const mimeType = mimeMap[ext] || FILE_MIME_MAP[ext] || 'application/octet-stream';
 
       const download = req.query.download === 'true';
       if (download) {
@@ -913,7 +919,7 @@ export const registerFsRoutes = (app, dependencies) => {
       if (resolved.granted) {
         res.setHeader('Referrer-Policy', 'no-referrer');
       }
-      if (mimeType.startsWith('video/') || req.headers?.range || req.method === 'HEAD') {
+      if (stats.size > 32 * 1024 * 1024 || mimeType.startsWith('video/') || req.headers?.range || req.method === 'HEAD') {
         // Path authorization above remains authoritative; Express owns range parsing,
         // 206/416, stream backpressure and cancellation when the player seeks away.
         return res.type(mimeType).sendFile(canonicalPath, { acceptRanges: true, dotfiles: 'allow', cacheControl: false });
@@ -977,10 +983,14 @@ export const registerFsRoutes = (app, dependencies) => {
 
       const ext = path.extname(canonicalPath).toLowerCase();
       const mimeType = FILE_MIME_MAP[ext] || 'application/octet-stream';
-      const content = await fsPromises.readFile(canonicalPath);
-      res.setHeader('Cache-Control', 'no-store');
+      // Revalidate after the read policy above, including cookie/bearer changes.
+      // This is browser-private HTTP reuse, not the client's durable file store.
+      res.setHeader('Cache-Control', 'private, no-cache');
+      res.vary('Authorization');
+      res.vary('Cookie');
+      res.setHeader('ETag', `W/"${stats.size}-${stats.mtimeMs}-${stats.ctimeMs}"`);
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      return res.type(mimeType).send(content);
+      return res.type(mimeType).sendFile(canonicalPath, { acceptRanges: true, dotfiles: 'allow', cacheControl: false });
     } catch (error) {
       const err = error;
       if (err && typeof err === 'object' && err.code === 'ENOENT') {

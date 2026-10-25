@@ -70,6 +70,8 @@ Each upstream provider gets a namespaced `magpie:<source>:<provider>` result, in
 `usage.accounts` retains separate account windows, errors and reading timestamps. `usage.windows`
 is the account-keyed projection for existing header/mobile/tray consumers. Compact surfaces display
 `window.label` rather than the account-bearing key; account detail remains on the full Usage page.
+The known ZCode gift-plan sign-in hint is retained only in account details: upstream serializes
+it as a zero-usage window without its internal `Aside` marker, but it is not a quota metric.
 Opening a usage menu checks the full refresh timestamp, not whether any results exist: a discovered
 Magpie snapshot must not suppress the initial built-in provider fetch. Percentages, balance
 labels, unlimited windows and absolute reset timestamps are preserved. Window duration remains unknown

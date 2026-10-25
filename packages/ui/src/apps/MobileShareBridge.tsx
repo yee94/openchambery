@@ -82,10 +82,10 @@ const stagedImageBlob = async (attachment: NativeShareAttachment): Promise<Blob>
   if (!stagedPath) throw new Error('staged_file_unavailable');
   const source = /^(?:data:|https?:|content:|file:)/i.test(stagedPath) ? stagedPath : `file://${stagedPath}`;
   const url = /^(?:data:|https?:)/i.test(source) ? source : Capacitor.convertFileSrc(source);
-  return await fetch(url).then((response) => {
+  return importFileResource(() => fetch(url).then((response) => {
     if (!response.ok) throw new Error('staged_file_unavailable');
     return response.blob();
-  });
+  }));
 };
 
 const imageDataUrl = async (attachment: NativeShareAttachment): Promise<string> => {
@@ -411,3 +411,4 @@ export const MobileShareBridge: React.FC = () => {
   }, []);
   return <MobileShareRecipientPicker draft={draft} entries={entries} busy={selectedDraftID === draft?.draftID} onSelect={selectRecipient} onCancel={cancelRecipientSelection} />;
 };
+import { importFileResource } from '@/lib/runtime-file-resource';

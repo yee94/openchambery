@@ -146,6 +146,7 @@ export const uploadAssistantAttachment = async (
   uploadID: string,
   signal?: AbortSignal,
 ): Promise<AssistantAttachmentDescriptor> => {
+  const remember = captureFileResourceWriter();
   const id = typeof assistantID === 'string' ? assistantID.trim() : '';
   const upload = typeof uploadID === 'string' ? uploadID.trim() : '';
   if (!id || !upload) {
@@ -217,7 +218,9 @@ export const uploadAssistantAttachment = async (
     throw new AssistantAttachmentUploadError(response.status, 'integrity', 'Attachment upload response was not valid JSON');
   }
 
-  return parseAssistantAttachmentDescriptor(payload, { sha256, size: body.size, mime });
+  const descriptor = parseAssistantAttachmentDescriptor(payload, { sha256, size: body.size, mime });
+  await remember(body, sha256);
+  return descriptor;
 };
 
 /** Type guard for frozen descriptors (DB / network). Does not enforce the 25 MiB upload cap. */
@@ -229,3 +232,4 @@ export const isAssistantAttachmentDescriptor = (value: unknown): value is Assist
     return false;
   }
 };
+import { captureFileResourceWriter } from './runtime-file-resource';

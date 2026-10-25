@@ -9,6 +9,7 @@ import { useMarkdownHydrationEnabled } from './markdown/markdownHydrationContext
 import { MarkdownLoadingPlaceholder } from './markdown/MarkdownLoadingSkeleton';
 import { markdownHeightCacheKey, recallMarkdownHeight } from './markdown/markdownHeightCache';
 import { isVideoSource } from './video';
+import { resolveEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 
 // Thin lazy wrapper around the MarkdownRenderer implementation.
 // The full implementation (marked + Shiki highlighting + KaTeX + morphdom
@@ -100,7 +101,7 @@ export const MarkdownRenderer: React.FC<React.ComponentPropsWithoutRef<typeof Ma
     event.preventDefault();
     event.stopPropagation();
     const filename = anchor?.textContent?.trim() || url.split(/[/?#]/).filter(Boolean).pop() || url;
-    props.onShowPopup({ open: true, title: filename, content: '', video: { url, filename } });
+    props.onShowPopup({ open: true, title: filename, content: '', video: { url, filename, directory: resolveEffectiveDirectory() ?? '' } });
   }}>{renderer}</div>;
 };
 

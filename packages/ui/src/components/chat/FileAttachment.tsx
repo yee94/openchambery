@@ -197,6 +197,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
       },
       image: {
         url: imageUrl,
+        directory: effectiveDirectory,
         mimeType: file.mimeType,
         filename: displayName,
         size: file.size,
@@ -1062,6 +1063,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
       },
       image: {
         url: file.url,
+        directory: effectiveDirectory,
         mimeType: file.mimeType,
         filename,
         size: file.size,
@@ -1092,7 +1094,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
                   <TooltipTrigger asChild>
                     {file.url && isVideoSource(file.url, file.mime) ? (
                       <Button variant="secondary" size="sm" onClick={() => onShowPopup?.({
-                        open: true, title: fileName, content: '', video: { url: file.url!, mimeType: file.mime, filename: fileName },
+                        open: true, title: fileName, content: '', video: { url: file.url!, mimeType: file.mime, filename: fileName, directory: effectiveDirectory },
                       })}>{fileName}</Button>
                     ) : githubLinkKind && file.url ? (
                       <button
@@ -1281,6 +1283,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
                       content: '',
                       image: {
                         url: file.url,
+                        directory: effectiveDirectory,
                         mimeType: file.mime,
                         filename: fileName,
                       },

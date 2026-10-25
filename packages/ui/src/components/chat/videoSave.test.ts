@@ -1,14 +1,15 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { materializeImageBlob, saveImageToDevice } from './imageSave';
 
-const mocks = vi.hoisted(() => ({ saveFile: vi.fn(), saveImage: vi.fn(), fetch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ saveFile: vi.fn(), saveImage: vi.fn(), fetch: vi.fn(), size: 0 }));
+vi.mock('@/contexts/runtimeAPIRegistry', () => ({ getRegisteredRuntimeAPIs: () => mocks.size ? { files: { statFile: async () => ({ isFile: true, size: mocks.size, mtimeMs: 1 }) } } : null }));
 vi.mock('@capacitor/core', () => ({
   Capacitor: { isPluginAvailable: () => true },
   registerPlugin: () => ({ saveFile: mocks.saveFile, saveImage: mocks.saveImage }),
 }));
 vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => true }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: mocks.fetch }));
-afterEach(() => vi.clearAllMocks());
+afterEach(() => { vi.clearAllMocks(); mocks.size = 0; });
 
 test('native video save preserves original bytes and uses the document picker, not Photos image decoding', async () => {
   mocks.saveFile.mockResolvedValue({ cancelled: false });
@@ -47,4 +48,19 @@ test('video save reports byte percentages over a full Range response before nati
   expect(progress).toHaveBeenLastCalledWith(100);
   expect(mocks.fetch).toHaveBeenCalledWith('/api/fs/raw', expect.objectContaining({ headers: { Range: 'bytes=0-' } }));
   expect(mocks.saveFile).toHaveBeenCalledWith(expect.objectContaining({ dataBase64: 'AQIDBA==' }));
+});
+
+test('native export above the cache budget preserves the compatibility path and every byte', async () => {
+  mocks.size = 33 * 1024 * 1024;
+  const bytes = new Uint8Array(mocks.size); bytes[0] = 7; bytes[bytes.length - 1] = 9;
+  mocks.fetch.mockResolvedValue(new Response(bytes, { headers: { 'content-type': 'video/mp4', 'content-length': String(bytes.length) } }));
+  mocks.saveFile.mockImplementation(async ({ dataBase64, filename, mimeType }) => {
+    const decoded = Buffer.from(dataBase64, 'base64');
+    expect(decoded.length).toBe(bytes.length); expect(decoded[0]).toBe(7); expect(decoded.at(-1)).toBe(9);
+    expect(filename).toBe('large.mp4'); expect(mimeType).toBe('video/mp4');
+    return { cancelled: false };
+  });
+  await expect(saveImageToDevice({ kind: 'video', sourceUrl: '/workspace/large.mp4', filename: 'large.mp4' })).resolves.toBe('saved');
+  expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  expect(mocks.saveFile).toHaveBeenCalledTimes(1);
 });
