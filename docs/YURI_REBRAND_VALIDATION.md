@@ -18,6 +18,16 @@
 
 ## 已验证
 
+### 主干 beta.14 合并与欢迎页
+
+- 合入主干 `e51cc69e4`，保留新的历史连接流程与统一文件缓存；新缓存库继续使用 Yuri 命名并接入 copy-only 迁移。
+- 欢迎页左上角使用选定的雕刻衬线 SVG 字标，中间使用 vector-B 人物侧影；字标生成脚本同步 UI 资源，母版与 UI SVG 字节一致。
+- 全 workspace 类型检查、101 项缓存与迁移定向测试通过，包括真实 Chrome IndexedDB 与 Electron 缓存协议；欢迎页改造后的 UI 类型检查及定向 ESLint 通过。
+- Web 生产构建通过。旧名审计为 95 处批准命中、0 未批准、0 失效；diff whitespace 检查通过。
+- 浏览器在模拟原生 shell 环境下验证浅/深主题、左上字标、中央人物与连接弹层；320px 宽度无横向溢出。截图位于 `.scratch/yuri-rebrand/welcome-{light,dark}.png`。此验证不等于原生设备运行验收。
+- dead-code 已执行并检查：1060 unused files、750 exports、604 exported types、6 duplicate exports；新字标组件未被报告为未使用。
+- 合并后全仓回归：1183 文件通过、12 跳过；11758 用例通过、56 跳过，唯一失败为 FS stat 测试未包含主干新增的 `mimeType`/`filename` 响应字段。核对接口文档后补齐精确断言，该文件 31 项复测通过；未再次运行全仓测试。
+
 | 范围 | 结果 |
 | --- | --- |
 | 最终全仓测试 | `bun run test:vitest` 退出码 0；1179 文件通过、12 文件跳过；11685 用例通过、56 跳过；耗时 492.08 秒 |
@@ -53,6 +63,6 @@
 - npm scope、仓库、VS Code publisher、应用身份、签名和外部服务控制权。
 - 真机 APNs/通知点击、原生跨应用沙箱数据恢复、实际 VS Code 安装和生产更新可检测性。
 - Windows/Linux 安装运行、发布签名和所有平台新旧应用并存的最终人工验收。
-- 未进行远端发布、部署、Git 提交或推送。
+- 未进行远端发布、部署或推送；本地已有 rebrand 检查点提交，主干合并在本地分支完成。
 
 移动端详细证据见 [`packages/mobile/REBRAND-VALIDATION.md`](../packages/mobile/REBRAND-VALIDATION.md)，扩展迁移与验证见 [`packages/vscode/MIGRATION.md`](../packages/vscode/MIGRATION.md)。本地测试日志和截图位于 Git 忽略的 `.scratch/yuri-rebrand/`，不会自动随分支提交。

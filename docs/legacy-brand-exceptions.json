@@ -3,6 +3,26 @@
   "exceptions": [
     {
       "kind": "content",
+      "path": "packages/ui/src/lib/assistant-attachment-cache.ts",
+      "line": "    for (const name of ['yuri-assistant-attachments', 'openchamber-assistant-attachments', 'openchambery-assistant-attachments']) {",
+      "count": 1,
+      "category": "legacy-cache-retirement",
+      "reason": "Delete disposable retired Assistant body caches only; never create, read or write these legacy databases",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Remove when retirement of historical Assistant caches is no longer required"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/brand-storage-migration.chrome.test.ts",
+      "line": "        const request = indexedDB.open('openchamber-runtime-images', 1);",
+      "count": 1,
+      "category": "legacy-storage-migration-test",
+      "reason": "Seed historical two-store image cache to verify atomic retry, byte preservation and no resurrection after clearing Yuri data",
+      "owner": "Shared UI storage owner",
+      "exitCondition": "Retire with same-origin legacy image cache migration"
+    },
+    {
+      "kind": "content",
       "path": "packages/electron/deep-link-protocol.mjs",
       "line": "export const DEEP_LINK_PROTOCOLS = Object.freeze(['yuri', 'openchamber', 'openchambery']);",
       "count": 1,

@@ -1,5 +1,6 @@
 import { normalize } from 'pathe';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { captureFileResourceWriter } from '@/lib/runtime-file-resource';
 
 export class PromptAttachmentUploadError extends Error {
   readonly status: number;
@@ -127,6 +128,7 @@ export const needsPromptAttachmentUpload = (url: string): boolean =>
 export const uploadPromptAttachmentBytes = async (
   input: { body: Blob; mime: string; filename?: string; signal?: AbortSignal },
 ): Promise<PromptAttachmentUploadResult> => {
+  const remember = captureFileResourceWriter();
   const mime = input.mime || input.body.type || 'application/octet-stream';
   const body = input.body.type === mime ? input.body : new Blob([input.body], { type: mime });
   if (!Number.isSafeInteger(body.size) || body.size < 0) {
@@ -158,5 +160,6 @@ export const uploadPromptAttachmentBytes = async (
   if (result.size !== body.size) {
     throw new PromptAttachmentUploadError(response.status, 'unavailable');
   }
+  await remember(body, result.sha256);
   return { ...result, mime };
 };

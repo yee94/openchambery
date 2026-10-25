@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeUrlQuery, RuntimeUrlResolver } from '@yuri/ui/lib/runtime-url';
 
 const runtimeFetchMock = vi.fn();
+const downloadMock = vi.fn();
+const readMock = vi.fn();
+vi.mock('@yuri/ui/lib/runtime-file-resource', () => ({ readRuntimeFile: readMock }));
+vi.mock('@yuri/ui/lib/runtime-file-download', () => ({ downloadRuntimeFile: downloadMock }));
 
 vi.mock('@yuri/ui/lib/runtime-fetch', () => ({
   runtimeFetch: runtimeFetchMock,
@@ -37,27 +41,20 @@ describe('createWebFilesAPI', () => {
       headers: { 'x-opencode-directory': '/worktree-a' },
     });
 
-    runtimeFetchMock.mockResolvedValueOnce(new Response('content'));
+    readMock.mockResolvedValueOnce(new Response('content'));
     await api.readFile?.('/worktree-b/file.txt', { directory: '/worktree-a' });
 
-    expect(runtimeFetchMock).toHaveBeenLastCalledWith('/api/fs/read', {
-      query: new URLSearchParams({ path: '/worktree-b/file.txt' }),
-      cache: 'default',
-      headers: { 'x-opencode-directory': '/worktree-a' },
-    });
+    expect(readMock).toHaveBeenLastCalledWith({ path: '/worktree-b/file.txt', directory: '/worktree-a' });
   });
 
   it('sends the workspace directory header for downloads', async () => {
     const { createWebFilesAPI } = await import('./files');
     const api = createWebFilesAPI({ urls, getDirectory: () => '/current-workspace' });
 
-    runtimeFetchMock.mockResolvedValueOnce(new Response('', { status: 500 }));
+    downloadMock.mockRejectedValueOnce(new Error('Download failed'));
     await expect(api.downloadFile?.('/current-workspace/file.txt')).rejects.toThrow('Download failed');
 
-    expect(runtimeFetchMock).toHaveBeenLastCalledWith('/api/fs/raw', {
-      query: { path: '/current-workspace/file.txt', download: true },
-      headers: { 'x-opencode-directory': '/current-workspace' },
-    });
+    expect(downloadMock).toHaveBeenLastCalledWith({ path: '/current-workspace/file.txt', directory: '/current-workspace' });
   });
 
   it('parses optional read existence headers and disables caching', async () => {

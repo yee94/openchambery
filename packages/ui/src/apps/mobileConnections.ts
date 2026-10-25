@@ -594,6 +594,7 @@ const writeConnections = (connections: MobileSavedConnection[]): void => {
     window.localStorage.setItem(MOBILE_CONNECTIONS_STORAGE_KEY, JSON.stringify(serialized));
   } catch (error) {
     console.warn('[mobile-storage] failed to persist connection metadata', error);
+    throw error;
   }
 };
 
@@ -606,6 +607,7 @@ const upsertConnectionInList = (
     clientToken?: string;
     hasToken?: boolean;
   },
+  markUsed = true,
 ): MobileSavedConnection[] => {
   const existing = connections.find((item) => connectionDraftsMatch(item, draft));
   const native = isCapacitorApp();
@@ -613,7 +615,7 @@ const upsertConnectionInList = (
     id: draft.id || existing?.id || createUuid(),
     label: draft.label,
     candidates: draft.candidates,
-    lastUsedAt: Date.now(),
+    lastUsedAt: markUsed ? Date.now() : existing?.lastUsedAt ?? 0,
     ...(native
       ? { hasToken: draft.hasToken ?? (Boolean(draft.clientToken) || existing?.hasToken || false) }
       : { clientToken: draft.clientToken ?? existing?.clientToken, hasToken: Boolean(draft.clientToken ?? existing?.clientToken) }),
@@ -621,7 +623,7 @@ const upsertConnectionInList = (
   return [
     next,
     ...connections.filter((item) => item.id !== next.id && !connectionDraftsMatch(item, draft)),
-  ].slice(0, MOBILE_CONNECTIONS_LIMIT);
+  ].sort((a, b) => b.lastUsedAt - a.lastUsedAt).slice(0, MOBILE_CONNECTIONS_LIMIT);
 };
 
 // ---------------------------------------------------------------------------
@@ -791,10 +793,16 @@ export const deleteMobileConnection = async (id: string): Promise<MobileSavedCon
   if (removed && isCapacitorApp()) await deleteSecureToken(secureTokenKeyOf(removed));
   if (removed) {
     const connectionKey = secureTokenKeyOf(removed);
-    const { useAssistantUIStore } = await import('@/stores/useAssistantUIStore');
-    useAssistantUIStore.getState().removeCatalogPartition(connectionKey);
-    const { publishNativeAssistantCatalog } = await import('./MobileShareBridge');
-    await publishNativeAssistantCatalog().catch(() => undefined);
+    // Metadata deletion has committed; auxiliary catalog cleanup cannot restore
+    // the forgotten connection or make callers retain a now-stale row.
+    try {
+      const { useAssistantUIStore } = await import('@/stores/useAssistantUIStore');
+      useAssistantUIStore.getState().removeCatalogPartition(connectionKey);
+      const { publishNativeAssistantCatalog } = await import('./MobileShareBridge');
+      await publishNativeAssistantCatalog().catch(() => undefined);
+    } catch {
+      console.warn('[mobile-storage] connection catalog cleanup failed');
+    }
   }
   return next;
 };
@@ -1362,6 +1370,7 @@ export type UseMobileConnection = {
   submitPassword: (password: string) => Promise<void>;
   cancelPassword: () => void;
   saveConnection: (input: MobileConnectInput) => Promise<MobileSavedConnection | null>;
+  renameConnection: (id: string, label: string) => Promise<MobileSavedConnection | null>;
   removeConnection: (id: string) => Promise<MobileSavedConnection | null>;
   subscribeConnected: (listener: () => void) => () => void;
   setError: (message: string | null) => void;
@@ -1372,11 +1381,12 @@ export type UseMobileConnection = {
 export const useMobileConnection = (onConnected: () => void): UseMobileConnection => {
   const { t } = useI18n();
   const [connections, setConnections] = React.useState<MobileSavedConnection[]>(() => readConnections());
-  const [busyOperation, setBusyOperation] = React.useState<'connect' | 'password' | 'pairing' | null>(null);
+  const [busyOperation, setBusyOperation] = React.useState<'connect' | 'password' | 'pairing' | 'metadata' | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [pendingConnection, setPendingConnection] = React.useState<MobilePendingConnection | null>(null);
   const connectionsRef = React.useRef(connections);
-  const busyRef = React.useRef<'connect' | 'password' | 'pairing' | null>(null);
+  const connectionsRevisionRef = React.useRef(0);
+  const busyRef = React.useRef<'connect' | 'password' | 'pairing' | 'metadata' | null>(null);
   const connectedListenersRef = React.useRef(new Set<() => void>());
 
   const notifyConnected = useEvent(() => {
@@ -1390,29 +1400,35 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
   });
 
   const applyConnections = useEvent((next: MobileSavedConnection[]) => {
+    connectionsRevisionRef.current += 1;
     connectionsRef.current = next;
     setConnections(next);
   });
 
-  const beginBusy = useEvent((operation: 'connect' | 'password' | 'pairing') => {
+  const beginBusy = useEvent((operation: 'connect' | 'password' | 'pairing' | 'metadata') => {
     busyRef.current = operation;
     setBusyOperation(operation);
   });
 
-  const endBusy = useEvent((operation: 'connect' | 'password' | 'pairing') => {
+  const endBusy = useEvent((operation: 'connect' | 'password' | 'pairing' | 'metadata') => {
     if (busyRef.current !== operation) return;
     busyRef.current = null;
     setBusyOperation(null);
   });
 
+  const reportStorageError = useEvent(() => setError(t('mobile.connect.history.updateFailed')));
+
   // Refresh from storage on mount (runs the legacy-token migration too).
   React.useEffect(() => {
     let disposed = false;
+    const revision = connectionsRevisionRef.current;
     void loadMobileConnections().then((loaded) => {
-      if (!disposed) applyConnections(loaded);
+      if (!disposed && connectionsRevisionRef.current === revision) applyConnections(loaded);
+    }).catch(() => {
+      if (!disposed) reportStorageError();
     });
     return () => { disposed = true; };
-  }, [applyConnections]);
+  }, [applyConnections, reportStorageError]);
 
   // Persist metadata for a connection and reflect it in state immediately.
   const persistMetadata = useEvent((draft: {
@@ -1420,14 +1436,15 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
     label: string;
     candidates: MobileTransportCandidate[];
     clientToken?: string;
-  }) => {
-    const next = upsertConnectionInList(connectionsRef.current, draft);
-    applyConnections(next);
+  }, markUsed = true) => {
+    const next = upsertConnectionInList(connectionsRef.current, draft, markUsed);
     writeConnections(next);
+    applyConnections(next);
     return next;
   });
 
   const connect = useEvent(async (input: MobileConnectInput) => {
+    if (busyRef.current) return;
     setError(null);
     beginBusy('connect');
     try {
@@ -1466,7 +1483,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
         return;
       }
       if (result.status === 'needs-login') {
-        persistMetadata({ id: saved?.id, label, candidates });
+        persistMetadata({ id: saved?.id, label, candidates }, false);
         setPendingConnection({
           id: saved?.id ?? createUuid(),
           label,
@@ -1495,7 +1512,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
   });
 
   const redeemPairingConnection = useEvent(async (payload: PairingConnectionPayload) => {
-    if (busyRef.current === 'pairing') return;
+    if (busyRef.current) return;
     setError(null);
     beginBusy('pairing');
     const deviceCandidates = pairingCandidatesToMobile(payload.candidates);
@@ -1579,7 +1596,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
   });
 
   const submitPassword = useEvent(async (password: string) => {
-    if (!pendingConnection || !password.trim() || busyRef.current === 'password') return;
+    if (!pendingConnection || !password.trim() || busyRef.current) return;
     setError(null);
     beginBusy('password');
     const { id, label, candidates } = pendingConnection;
@@ -1662,55 +1679,94 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
   });
 
   const saveConnection = useEvent(async (input: MobileConnectInput): Promise<MobileSavedConnection | null> => {
-    setError(null);
-    let candidates = buildCandidatesFromInput(input);
-    const existing = input.id ? connectionsRef.current.find((connection) => connection.id === input.id) ?? null : null;
-    if (existing) {
-      // EDIT must never silently drop transports the form does not show. The
-      // form carries one URL, but a paired device also has a relay candidate
-      // (whose identity derives the Keychain token key) and possibly https
-      // tunnel candidates. Same merge policy as the background candidate
-      // refresh: the typed URL replaces the http:// (LAN-class) directs;
-      // https:// directs and the relay candidate are preserved. Dropping the
-      // relay here used to change the token key and orphan the stored token.
-      const inputDirects = candidates.filter((c): c is Extract<MobileTransportCandidate, { kind: 'direct' }> => c.kind === 'direct');
-      const preservedHttps = directCandidates(existing).filter(
-        (c) => c.url.startsWith('https://') && !inputDirects.some((n) => isSameConnectionUrl(n.url, c.url)),
-      );
-      const relay = relayCandidateOf(existing);
-      candidates = [...inputDirects, ...preservedHttps, ...(relay ? [{ kind: 'relay' as const, relay }] : [])];
-    }
-    if (candidates.length === 0) {
-      setError(t('mobile.connect.error.urlRequired'));
-      return null;
-    }
-    const clientToken = input.clientToken?.trim() || undefined;
-    const label = input.label?.trim() || getConnectionLabel(connectionDisplayUrl({ candidates }));
-    // Awaited token writes so "Save" truly persisted the secret before returning.
-    if (isCapacitorApp()) {
-      const nextKey = secureTokenKeyOf({ candidates });
-      if (clientToken) {
-        await writeSecureToken(nextKey, clientToken);
-      } else if (existing?.hasToken) {
-        // No new token typed but the edit changed the token key (e.g. a
-        // direct-only instance got a new URL): move the stored token to the
-        // new key instead of leaving it stranded under the old one.
-        const previousKey = secureTokenKeyOf(existing);
-        if (previousKey && nextKey && previousKey !== nextKey) {
-          const storedToken = await readSecureToken(previousKey);
-          if (storedToken) await writeSecureToken(nextKey, storedToken);
+    if (busyRef.current) return null;
+    beginBusy('metadata');
+    try {
+      setError(null);
+      let candidates = buildCandidatesFromInput(input);
+      const existing = input.id ? connectionsRef.current.find((connection) => connection.id === input.id) ?? null : null;
+      if (existing) {
+        // EDIT must never silently drop transports the form does not show. The
+        // form carries one URL, but a paired device also has a relay candidate
+        // (whose identity derives the Keychain token key) and possibly https
+        // tunnel candidates. Same merge policy as the background candidate
+        // refresh: the typed URL replaces the http:// (LAN-class) directs;
+        // https:// directs and the relay candidate are preserved. Dropping the
+        // relay here used to change the token key and orphan the stored token.
+        const inputDirects = candidates.filter((c): c is Extract<MobileTransportCandidate, { kind: 'direct' }> => c.kind === 'direct');
+        const preservedHttps = directCandidates(existing).filter(
+          (c) => c.url.startsWith('https://') && !inputDirects.some((n) => isSameConnectionUrl(n.url, c.url)),
+        );
+        const relay = relayCandidateOf(existing);
+        candidates = [...inputDirects, ...preservedHttps, ...(relay ? [{ kind: 'relay' as const, relay }] : [])];
+      }
+      if (candidates.length === 0) {
+        setError(t('mobile.connect.error.urlRequired'));
+        return null;
+      }
+      const clientToken = input.clientToken?.trim() || undefined;
+      const label = input.label?.trim() || getConnectionLabel(connectionDisplayUrl({ candidates }));
+      // Awaited token writes so "Save" truly persisted the secret before returning.
+      if (isCapacitorApp()) {
+        const nextKey = secureTokenKeyOf({ candidates });
+        if (clientToken) {
+          await writeSecureToken(nextKey, clientToken);
+        } else if (existing?.hasToken) {
+          // No new token typed but the edit changed the token key (e.g. a
+          // direct-only instance got a new URL): move the stored token to the
+          // new key instead of leaving it stranded under the old one.
+          const previousKey = secureTokenKeyOf(existing);
+          if (previousKey && nextKey && previousKey !== nextKey) {
+            const storedToken = await readSecureToken(previousKey);
+            if (storedToken) await writeSecureToken(nextKey, storedToken);
+          }
         }
       }
+      const next = persistMetadata({ id: input.id, label, candidates, clientToken }, false);
+      return next.find((connection) => candidateSetsMatch(connection.candidates, candidates)) ?? null;
+    } catch {
+      setError(t('mobile.connect.history.updateFailed'));
+      return null;
+    } finally {
+      endBusy('metadata');
     }
-    const next = persistMetadata({ id: input.id, label, candidates, clientToken });
-    return next.find((connection) => candidateSetsMatch(connection.candidates, candidates)) ?? null;
+  });
+
+  const renameConnection = useEvent(async (id: string, label: string): Promise<MobileSavedConnection | null> => {
+    if (busyRef.current || !label.trim()) return null;
+    const existing = connectionsRef.current.find((connection) => connection.id === id);
+    if (!existing) return null;
+    beginBusy('metadata');
+    setError(null);
+    try {
+      const renamed = { ...existing, label: label.trim() };
+      const next = connectionsRef.current.map((connection) => connection.id === id ? renamed : connection);
+      writeConnections(next);
+      applyConnections(next);
+      return renamed;
+    } catch {
+      setError(t('mobile.connect.history.updateFailed'));
+      return null;
+    } finally {
+      endBusy('metadata');
+    }
   });
 
   const removeConnection = useEvent(async (id: string): Promise<MobileSavedConnection | null> => {
-    const removed = connectionsRef.current.find((connection) => connection.id === id) ?? null;
-    const next = await deleteMobileConnection(id);
-    applyConnections(next);
-    return removed;
+    if (busyRef.current) return null;
+    beginBusy('metadata');
+    setError(null);
+    try {
+      const removed = connectionsRef.current.find((connection) => connection.id === id) ?? null;
+      const next = await deleteMobileConnection(id);
+      applyConnections(next);
+      return removed;
+    } catch {
+      setError(t('mobile.connect.history.updateFailed'));
+      return null;
+    } finally {
+      endBusy('metadata');
+    }
   });
 
   return {
@@ -1724,6 +1780,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
     submitPassword,
     cancelPassword,
     saveConnection,
+    renameConnection,
     removeConnection,
     subscribeConnected,
     setError,

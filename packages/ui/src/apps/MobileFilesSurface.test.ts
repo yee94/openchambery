@@ -16,7 +16,7 @@ describe('MobileFilesSurface html preview', () => {
 
   test('loads html through runtimeFetch on relay instead of iframe src', () => {
     expect(source).toContain('isRelayModeActive()');
-    expect(source).toContain('runtimeFetch(toFsServeRoutePath(path))');
+    expect(source).toContain('readRuntimeFile({ path })');
     expect(source).toContain('srcDoc={relay ? relaySrcDoc : undefined}');
   });
 

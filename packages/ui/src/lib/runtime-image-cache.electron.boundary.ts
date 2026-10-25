@@ -1,8 +1,12 @@
 export const getRuntimeTransportIdentity = () => 'direct:benchmark';
 export const getRuntimeGeneration = () => 0;
+export const getRuntimeKey = () => 'image-evidence-host';
 export const subscribeRuntimeEndpointChanged = () => () => {};
 export const getRuntimeAuthGeneration = () => 0;
 export const getRuntimeBearerTokenSync = () => 'benchmark-only';
+export const getRuntimeExtraHeadersSync = () => ({});
+export const getRuntimeUrlAuthTokenSync = () => '';
+export const getLocalRuntimeUrlAuthTokenSync = () => '';
 export const subscribeRuntimeAuthGeneration = () => () => {};
 export const runtimeFetch = (route: string, options: { query?: Record<string, string>; signal?: AbortSignal } = {}) => {
   const url = new URL(route, location.origin);

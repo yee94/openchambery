@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('__YURI_DESKTOP__', {
     append: (leaseId, bytes) => ipcRenderer.invoke('cache:append', leaseId, bytes),
     commit: (leaseId, mime) => ipcRenderer.invoke('cache:commit', leaseId, mime),
     release: (leaseId) => ipcRenderer.invoke('cache:release', leaseId),
+    clear: () => ipcRenderer.invoke('cache:clear'),
   },
   virtualAsset: {
     create: (input) => ipcRenderer.invoke('stream:create', input),

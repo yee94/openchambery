@@ -38,11 +38,28 @@ test('an aborted read cancels the reader without reporting completion', async ()
     expect(progress).not.toHaveBeenCalledWith(100);
 });
 
-test('truncated and partial-range responses cannot be saved as complete downloads', async () => {
-    const progress = vi.fn();
+test.each([true, false])('truncated and partial-range responses cannot be saved as complete downloads (progress=%s)', async (withProgress) => {
+    const progress = withProgress ? vi.fn() : undefined;
     await expect(readDownloadBlob(new Response('ab', { headers: { 'content-length': '8' } }), undefined, progress)).rejects.toThrow('Truncated');
     await expect(readDownloadBlob(new Response('ab', { headers: { 'content-range': 'bytes 0-1/8' } }), undefined, progress)).rejects.toThrow('Incomplete');
-    expect(progress).not.toHaveBeenCalledWith(100);
+    if (progress) expect(progress).not.toHaveBeenCalledWith(100);
+});
+
+test('a complete range without progress preserves bytes and MIME', async () => {
+    const blob = await readDownloadBlob(new Response('abcd', {
+        status: 206, headers: { 'content-range': 'bytes 0-3/4', 'content-type': 'video/mp4' },
+    }));
+    expect(await blob.text()).toBe('abcd');
+    expect(blob.type).toBe('video/mp4');
+});
+
+test('a no-progress materialization aborted before completion is not returned', async () => {
+    const controller = new AbortController();
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const pending = readDownloadBlob(new Response(new ReadableStream({ start(value) { stream = value; } })), controller.signal);
+    controller.abort();
+    stream.close();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
 });
 
 test('small chunks only publish changed integer percentages', async () => {

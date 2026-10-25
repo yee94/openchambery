@@ -1,6 +1,8 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { runtimeFetch, type RuntimeFetchOptions } from './runtime-fetch';
+import { readRuntimeFile } from './runtime-file-resource';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from './runtime-switch';
+import { subscribeRuntimeAuthGeneration } from './runtime-auth';
 
 export const VIDEO_RANGE_BYTES = 1024 * 1024;
 type VideoRequest = { assetId: string; requestId: string; range?: string; method: string; cancelled?: boolean };
@@ -37,7 +39,7 @@ const base64 = (bytes: Uint8Array): string => {
 
 export async function openNativeVideoSource(
   route: string,
-  options: Pick<RuntimeFetchOptions, 'query'>,
+  options: Pick<RuntimeFetchOptions, 'query' | 'headers'>,
   signal: AbortSignal,
 ): Promise<{ url: string; release: () => Promise<void> } | null> {
   if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'ios' || !Capacitor.isPluginAvailable('YuriVideo')) return null;
@@ -46,10 +48,12 @@ export async function openNativeVideoSource(
   const requests = new Map<string, AbortController>();
   let disposed = false;
   let unsubscribe = () => {};
+  let unsubscribeAuth = () => {};
   const release = async () => {
     if (disposed) return;
     disposed = true;
     unsubscribe();
+    unsubscribeAuth();
     signal.removeEventListener('abort', onAbort);
     for (const controller of requests.values()) controller.abort();
     requests.clear();
@@ -66,7 +70,15 @@ export async function openNativeVideoSource(
     try {
       if (identity !== getRuntimeTransportIdentity() || signal.aborted) throw new Error('Video runtime changed');
       const range = request.method === 'HEAD' ? 'bytes=0-0' : boundedRange(request.range);
-      response = await runtimeFetch(route, { ...options, headers: { Range: range }, signal: controller.signal });
+      const query = new URLSearchParams(route.split('?')[1] ?? '');
+      const supplied = options.query instanceof URLSearchParams ? options.query : new URLSearchParams(options.query as Record<string, string> | undefined);
+      supplied.forEach((value, key) => query.set(key, value));
+      const path = query.get('path');
+      response = route.split('?')[0] === '/api/fs/raw' && path
+        ? await readRuntimeFile({ path, range, signal: controller.signal,
+          directory: new Headers(options.headers).get('x-opencode-directory') ?? query.get('directory') ?? undefined,
+          allowOutsideWorkspace: query.get('allowOutsideWorkspace') === 'true', outsideFileGrant: query.get('outsideFileGrant') ?? undefined })
+        : await runtimeFetch(route, { ...options, headers: { Range: range }, signal: controller.signal });
       const contentRange = response.headers.get('content-range') || '';
       if (response.status === 416 && /^bytes \*\/\d+$/.test(contentRange)) {
         await plugin.respond({ requestId: request.requestId, status: 416, contentRange, dataBase64: '' });
@@ -109,6 +121,7 @@ export async function openNativeVideoSource(
   const listener = await plugin.addListener('request', event => { void respond(event); });
   signal.addEventListener('abort', onAbort, { once: true });
   unsubscribe = subscribeRuntimeEndpointChanged(onAbort);
+  unsubscribeAuth = subscribeRuntimeAuthGeneration(onAbort);
   try {
     signal.throwIfAborted();
     const { url } = await plugin.create({ assetId });

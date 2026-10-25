@@ -1,5 +1,11 @@
 # Assistant UI
 
+## File resource ownership
+
+`assistant-attachment-cache.ts` is a descriptor/error/display adapter over `runtime-file-resource.ts`. Its former independent body LRU and Assistant body databases (both Yuri and legacy brand namespaces) are retired; disposable bodies are deleted without blocking operations and are never imported into the shared store. The shared file owner verifies size/SHA-256 and owns singleflight, retention budgets, persistence and independent cancellation. Display URL leases and pending UI state remain in the Assistant adapter. Bearer descriptors can persist in the shared store; cookie-only descriptor reads retain their previous process-local authorization behavior. Captured scope/bearer tags allow explicit forget to remove the matching durable bytes, while runtime switches preserve durable partitions. Auth changes cancel live reads. The existing descriptor/upload limits and error codes remain protocol rules, not cache-budget rules.
+
+Confirmed Assistant uploads seed the shared content owner after the real PUT and descriptor validation. Native incoming shares import staged local bytes once; forwarding/sending still performs the actual destination operation. Cross-consumer tests cover imported bytes → file reads → descriptor reads without another source transfer, persistent A→B→A recovery, failed writes, integrity checks and cancellation of one concurrent reader.
+
 ## Video and fullscreen save
 
 Contact video attachments open the shared native-video preview. Descriptor-backed

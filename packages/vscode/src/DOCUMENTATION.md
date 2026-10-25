@@ -15,6 +15,10 @@ Reasoning projection supports native v2 list/context `{ data }` envelopes, assis
 
 Keep `bridge.ts` as a thin orchestration layer that delegates message handling to cohesive domain runtimes while preserving API behavior.
 
+File stat bridges accept opt-in `fingerprint: true` (HTTP proxy: `fingerprint=true`) and return content SHA-256 using the Web-owned `fs/image-fingerprint.js` helper after the existing local read-path policy. Shared image leases use that fingerprint for bounded IndexedDB persistence and deduplication without session IDs. Normal file-stat consumers do not pay the hashing cost.
+
+Files above 32 MiB omit the optional fingerprint. Non-optional webview text reads use the shared `runtime-file-resource` owner and existing raw proxy; optional reads keep the bridge's missing-file semantics. Downloads use `downloadRuntimeFile`, which owns source reuse and browser download initiation. Optional binary readers are selected inside the shared owner. Authorization remains in the bridge/runtime. Oversized files remain readable/downloadable but uncached; direct downloads may return a browser URL while Relay retains the compatible Blob path.
+
 Standalone webviews explicitly return 501 for the Host-owned `/api/sessions/:id/delivery` projection. Shared UI then reads the native OpenCode inbox and compaction projection; admitted steer rows remain visible without local queue history. Host-backed web/Electron/mobile clients use the server-owned delivery projection.
 
 The webview's ordinary completion notifications share the dependency-free `web/server/lib/notifications/family-completion-gate.js` with Host notifications. SDK `session.active` plus `session.get` ancestry must confirm the entire root family idle before delivery. Starts/terminal events drive the barrier; a bounded pending-only retry handles failed reads or missed events. The existing child/system-session suppression and notification settings apply at delivery. Runtime switches reset pending/dedup state, and webview unload disposes the barrier. See the Notifications module documentation for the complete contract.

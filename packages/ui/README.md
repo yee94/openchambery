@@ -73,6 +73,13 @@ These defaults are not a configured or verified release service.
 use the final approved vector geometry. The mark stays black or white; theme
 containers own backgrounds. Animation honors reduced motion.
 
+`src/components/ui/YuriWordmark.tsx` renders the approved sculpted-serif wordmark
+from `src/assets/brand/yuri-wordmark.svg` as a current-color mask. The disconnected
+welcome page places it in a safe-area-aware top-left header; the portrait remains
+the central decorative mark. `assets/brand/yuri/build_wordmark.py` regenerates the
+master artwork and synchronizes this bundled SVG. The welcome's connection/history
+actions retain their existing shared sheet and modal behavior.
+
 ## Validation
 
 Use `bun run --cwd packages/ui type-check`, `lint`, and `test`.

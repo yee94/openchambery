@@ -7,6 +7,8 @@ import type {
 } from '@yuri/ui/lib/api/types';
 
 import { sendBridgeMessage, sendBridgeMessageWithOptions } from './bridge';
+import { readRuntimeFile } from '@yuri/ui/lib/runtime-file-resource';
+import { downloadRuntimeFile } from '@yuri/ui/lib/runtime-file-download';
 
 const normalizePath = (value: string): string => value.replace(/\\/g, '/');
 
@@ -71,14 +73,15 @@ export const createVSCodeFilesAPI = (): FilesAPI => ({
     };
   },
 
-  async statFile(path: string): Promise<{ path: string; isFile: boolean; size: number; mtimeMs?: number; isBinary?: boolean }> {
+  async statFile(path: string, options): Promise<{ path: string; isFile: boolean; size: number; mtimeMs?: number; isBinary?: boolean; sha256?: string }> {
     const target = normalizePath(path);
-    const data = await sendBridgeMessage<{ path?: string; isFile?: boolean; size?: number; mtimeMs?: number; isBinary?: boolean }>('api:fs:stat', { path: target });
+    const data = await sendBridgeMessage<{ path?: string; isFile?: boolean; size?: number; mtimeMs?: number; isBinary?: boolean; sha256?: string }>('api:fs:stat', { path: target, ...(options?.fingerprint ? { fingerprint: true } : {}) });
     return {
       path: typeof data?.path === 'string' ? normalizePath(data.path) : target,
       isFile: Boolean(data?.isFile),
       size: typeof data?.size === 'number' ? data.size : 0,
       mtimeMs: typeof data?.mtimeMs === 'number' ? data.mtimeMs : undefined,
+      sha256: typeof data?.sha256 === 'string' ? data.sha256 : undefined,
       isBinary: typeof data?.isBinary === 'boolean' ? data.isBinary : undefined,
     };
   },
@@ -99,6 +102,10 @@ export const createVSCodeFilesAPI = (): FilesAPI => ({
 
   async readFile(path: string, options): Promise<{ content: string; path: string; exists?: boolean }> {
     const target = normalizePath(path);
+    if (!options?.optional) {
+      const response = await readRuntimeFile({ path: target, ...options });
+      return { content: await response.text(), path: target, exists: true };
+    }
     const data = await sendBridgeMessage<{ content: string; path: string; exists?: boolean }>('api:fs:read', {
       path: target,
       optional: options?.optional,
@@ -143,12 +150,6 @@ export const createVSCodeFilesAPI = (): FilesAPI => ({
 
   async downloadFile(path: string): Promise<void> {
     const target = normalizePath(path);
-    const url = `/api/fs/raw?path=${encodeURIComponent(target)}&download=true`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = target.split('/').pop() || 'file';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    await downloadRuntimeFile({ path: target });
   },
 });

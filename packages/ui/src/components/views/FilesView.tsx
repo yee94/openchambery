@@ -4,6 +4,7 @@ import { LoadingImage } from '@/components/ui/LoadingImage';
 import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
 import { useEvent } from '@reactuses/core';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { directFileResource, readRuntimeFile } from '@/lib/runtime-file-resource';
 
 import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -51,7 +52,6 @@ import { useDeviceInfo } from '@/lib/device';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { cn, getModifierLabel, getRevealLabelKey, hasModifier } from '@/lib/utils';
 import { getLanguageFromExtension, getImageMimeType, isDrawioFile, isHtmlFile, isImageFile, isPdfFile } from '@/lib/toolHelpers';
-import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { acquireRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken, subscribeRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
@@ -3162,12 +3162,12 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         : desktopImageSrc)
       : (isSelectedSvg
         ? `data:${getImageMimeType(selectedFile.path)};utf8,${encodeURIComponent(fileContent)}`
-        : imageAssetAuthReadyKey === imageAssetAuthKey ? getRuntimeUrlResolver().authenticatedAsset('/api/fs/raw', {
+         : imageAssetAuthReadyKey === imageAssetAuthKey ? directFileResource('/api/fs/raw', {
           path: selectedFile.path,
           allowOutsideWorkspace: selectedFileReadOptions.allowOutsideWorkspace ? 'true' : undefined,
           outsideFileGrant: selectedFileReadOptions.outsideFileGrant,
           directory: root || undefined,
-        }) : ''))
+         }).url : ''))
     : '';
 
   const openSelectedImagePreview = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
@@ -3226,12 +3226,12 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   }, [imagePreviewNonce, imageSrc, openSelectedImagePreview, t]);
 
   const pdfSrc = selectedFile?.path && isSelectedPdf && pdfAssetAuthReadyKey === pdfAssetAuthKey
-    ? getRuntimeUrlResolver().authenticatedAsset('/api/fs/raw', {
+    ? directFileResource('/api/fs/raw', {
       path: selectedFile.path,
       allowOutsideWorkspace: selectedFileReadOptions.allowOutsideWorkspace ? 'true' : undefined,
       outsideFileGrant: selectedFileReadOptions.outsideFileGrant,
       directory: root || undefined,
-    })
+    }).url
     : '';
 
   const renderPdfPreview = React.useCallback((file: FileNode) => (
@@ -3265,17 +3265,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         desktopImageBlobUrlRef.current = '';
       }
 
-      const srcPromise = files.readFileBinary
-        ? files.readFileBinary(selectedFile.path, selectedFileReadOptions).then((result) => result.dataUrl)
-        : (async () => {
-          const response = await runtimeFetch('/api/fs/raw', {
-            query: {
-              path: selectedFile.path,
-              allowOutsideWorkspace: selectedFileReadOptions.allowOutsideWorkspace ? 'true' : undefined,
-              outsideFileGrant: selectedFileReadOptions.outsideFileGrant,
-              directory: root || undefined,
-            },
-          });
+      const srcPromise = (async () => {
+          const response = await readRuntimeFile({ path: selectedFile.path, ...selectedFileReadOptions, directory: root || undefined, signal: imageReadController.signal });
           if (!response.ok) {
             throw new Error(t('filesView.error.readFileFailed'));
           }
@@ -3314,10 +3305,12 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         });
     };
 
+    const imageReadController = new AbortController();
     void resolveDesktopImage();
 
     return () => {
       cancelled = true;
+      imageReadController.abort();
     };
   }, [files, isSelectedImage, isSelectedSvg, root, runtime.isDesktop, selectedFile?.path, selectedFileReadOptions, t]);
 
@@ -4109,7 +4102,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
                 key={htmlPreviewNonce}
                 src={!htmlPreviewUsesInlineDocument && htmlAssetAuthReadyKey === htmlAssetAuthKey ? (() => {
                   const encoded = selectedFile.path.split('/').map((segment) => encodeURIComponent(segment)).join('/');
-                  return getRuntimeUrlResolver().authenticatedAsset(`/api/fs/serve${encoded.startsWith('/') ? encoded : `/${encoded}`}`);
+                  return directFileResource(`/api/fs/serve${encoded.startsWith('/') ? encoded : `/${encoded}`}`).url;
                 })() : undefined}
                 srcDoc={htmlPreviewUsesInlineDocument ? (() => {
                   if (!runtime.isVSCode) return fileContent;

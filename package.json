@@ -1,6 +1,6 @@
 {
   "name": "yuri-monorepo",
-  "version": "2.1.10-beta.11",
+  "version": "2.1.10-beta.14",
   "description": "Yuri monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",

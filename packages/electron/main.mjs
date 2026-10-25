@@ -5258,18 +5258,28 @@ ipcMain.handle('yuri:asset:create', async (event, payload) => {
 });
 
 const imageCacheOwners = new WeakSet();
+const registerFileCacheOwner = (owner) => {
+  if (imageCacheOwners.has(owner)) return;
+  imageCacheOwners.add(owner);
+  const release = () => { void imageDiskCache.releaseOwner(owner.id).catch(() => {}); };
+  owner.once('destroyed', release);
+  owner.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) release();
+  });
+};
+ipcMain.handle('yuri:image-cache:lookup', (event, payload) => {
+  requireLocalAssetSender(event, 'image-cache:lookup');
+  registerFileCacheOwner(event.sender);
+  return imageDiskCache.lookup(event.sender.id, payload || {});
+});
+ipcMain.handle('yuri:image-cache:clear', (event) => {
+  requireLocalAssetSender(event, 'image-cache:clear');
+  return imageDiskCache.clear();
+});
 ipcMain.handle('yuri:image-cache:acquire', async (event, payload) => {
   requireLocalAssetSender(event, 'image-cache:acquire');
   const owner = event.sender;
-  if (!imageCacheOwners.has(owner)) {
-    imageCacheOwners.add(owner);
-    const ownerId = owner.id;
-    const release = () => { void imageDiskCache.releaseOwner(ownerId).catch(() => {}); };
-    owner.once('destroyed', release);
-    owner.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-      if (isMainFrame && !isInPlace) release();
-    });
-  }
+  registerFileCacheOwner(owner);
   return imageDiskCache.acquire(owner.id, payload || {});
 });
 ipcMain.handle('yuri:image-cache:append', (event, payload) => {

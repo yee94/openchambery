@@ -114,6 +114,9 @@ def main():
         lockup = render_lockup(data, mark_shapes, 680, rgb)
         board.alpha_composite(lockup, (x, 610 + (390 - lockup.height) // 2))
     board.convert("RGB").save(OUT / "yuri-wordmark-board.png")
+    ui_wordmark = OUT.parents[2] / "packages/ui/src/assets/brand/yuri-wordmark.svg"
+    if ui_wordmark.parent.is_dir():
+        ui_wordmark.write_bytes((OUT / "yuri-wordmark-current.svg").read_bytes())
     contours = sum(len(shapes) for shapes in data["letters"].values())
     print(f"Exported Yuri: {len(data['letters'])} letter groups, {contours} contours, viewBox {width} × {height}")
 

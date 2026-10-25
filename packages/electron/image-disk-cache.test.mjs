@@ -58,3 +58,39 @@ test('rejects foreign leases, invalid keys, oversized chunks and incomplete comm
   await cache.release(1, lease.leaseId);
   expect(await cache.stats()).toEqual({ entries: 0, bytes: 0, leases: 0 });
 });
+
+test('auth purge removes complete and incomplete entries across restart', async () => {
+  const { cache, directory } = await setup();
+  const image = await write(cache, 'a'.repeat(64));
+  await cache.acquire(1, { key: 'b'.repeat(64), size: 3 });
+  await cache.clear();
+  expect(await cache.stats()).toEqual({ entries: 0, bytes: 0, leases: 0 });
+  expect((await cache.handleRequest(new Request(image.url))).status).toBe(404);
+  const restarted = createImageDiskCache({ directory });
+  expect((await restarted.acquire(1, { key: 'a'.repeat(64), size: 3 })).hit).toBe(false);
+  await restarted.releaseOwner(1);
+});
+
+test('generic MIME survives restart and cached protocol implements seek, suffix, HEAD and 416', async () => {
+  const { cache, directory } = await setup();
+  const key = 'd'.repeat(64);
+  const lease = await cache.acquire(1, { key, size: 10 });
+  await cache.append(1, lease.leaseId, new TextEncoder().encode('0123456789'));
+  await cache.commit(1, lease.leaseId, 'video/mp4');
+  await cache.releaseOwner(1);
+  const restarted = createImageDiskCache({ directory });
+  const hit = await restarted.lookup(2, { key, size: 10 });
+  expect(hit.hit).toBe(true);
+  for (const [range, body, contentRange] of [['bytes=0-1', '01', 'bytes 0-1/10'], ['bytes=7-', '789', 'bytes 7-9/10'], ['bytes=-3', '789', 'bytes 7-9/10']]) {
+    const response = await restarted.handleRequest(new Request(hit.url, { headers: { Range: range } }));
+    expect(response.status).toBe(206);
+    expect(response.headers.get('content-type')).toBe('video/mp4');
+    expect(response.headers.get('content-range')).toBe(contentRange);
+    expect(await response.text()).toBe(body);
+  }
+  const head = await restarted.handleRequest(new Request(hit.url, { method: 'HEAD' }));
+  expect(head.headers.get('content-length')).toBe('10');
+  expect(await head.text()).toBe('');
+  expect((await restarted.handleRequest(new Request(hit.url, { headers: { Range: 'bytes=20-' } }))).status).toBe(416);
+  await restarted.releaseOwner(2);
+});

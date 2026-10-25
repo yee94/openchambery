@@ -49,6 +49,9 @@ export function projectMagpieQuotas(payload, source, now = Date.now()) {
         label: w.name, disablePace: true,
       };
       account.windows[`${i}:${w.name}`] = window;
+      // Magpie serializes this informational window as used: 0 without its
+      // internal Aside flag. Keep it in details, not the compact quota projection.
+      if (q.provider === 'zcode' && w.name === "ZCode gift plans (-Trial models) need ZCode's sign-in") continue;
       const label = `${account.name} · ${w.name}`;
       const key = Object.hasOwn(result.usage.windows, label) ? `${label} (${result.usage.accounts.length + 1}.${i + 1})` : label;
       result.usage.windows[key] = window;

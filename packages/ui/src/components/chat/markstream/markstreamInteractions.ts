@@ -60,6 +60,7 @@ export const handleMarkstreamPointerEvent = (
       previewSource: image,
       image: {
         url: selectedSource,
+        ...(options.effectiveDirectory ? { directory: options.effectiveDirectory } : {}),
         filename: image.alt || selectedSource,
         gallery,
         index: galleryIndex >= 0 ? galleryIndex : 0,

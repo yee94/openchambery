@@ -16,9 +16,11 @@ export interface ToolPopupContent {
     diffHunks?: Array<Record<string, unknown>>;
     metadata?: Record<string, unknown>;
     previewSource?: HTMLElement;
-    video?: { url: string; mimeType?: string; filename?: string };
+    video?: { url: string; mimeType?: string; filename?: string; directory?: string };
     image?: {
         url: string;
+        /** Originating session/worktree directory, captured when the gallery opens. */
+        directory?: string;
         mimeType?: string;
         filename?: string;
         size?: number;

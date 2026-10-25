@@ -60,3 +60,60 @@ test.skipIf(!resolveChrome())('real IndexedDB preserves blobs, retries aborted c
     rmSync(work, { recursive: true, force: true });
   }
 }, 120_000);
+
+test.skipIf(!resolveChrome())('runtime file store retries failed brand copy and preserves committed clear across restart', async () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const migration = stripTypeScriptTypes(readFileSync(join(here, 'brand-storage-migration.ts'), 'utf8'), { mode: 'strip' }).replace(/\bexport\s+/g, '');
+  const store = stripTypeScriptTypes(readFileSync(join(here, 'runtime-file-store.ts'), 'utf8'), { mode: 'strip' })
+    .replace(/^import .*brand-storage-migration.*;$/m, '').replace(/\bexport\s+/g, '');
+  const work = mkdtempSync(join(evidenceRoot(), 'brand-file-store-'));
+  const file = join(work, 'index.html');
+  writeFileSync(file, '<!doctype html><title>Yuri file store migration</title>');
+  const browser = await openChromeSession({ width: 800, height: 600 });
+  try {
+    const page = await openPageSession(browser, { width: 800, height: 600, standalone: false });
+    await page.navigateFile(file);
+    const result = await page.evaluate(`(async () => {
+      ${migration}
+      ${store}
+      const legacy = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('openchamber-runtime-images', 1);
+        request.onupgradeneeded = () => {
+          request.result.createObjectStore('meta', { keyPath: 'key' });
+          request.result.createObjectStore('bytes');
+        };
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = legacy.transaction(['meta', 'bytes'], 'readwrite');
+        tx.objectStore('meta').put({ key: 'opaque', size: 3, mime: 'image/png', used: 1, tags: ['scope'] });
+        tx.objectStore('bytes').put(new Uint8Array([1, 2, 3]).buffer, 'opaque');
+        tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+      });
+      const add = IDBObjectStore.prototype.add;
+      IDBObjectStore.prototype.add = function(...args) { this.transaction.abort(); return add.apply(this, args); };
+      let failed = false;
+      try { await runtimeFileStore.read('opaque', new AbortController().signal); } catch { failed = true; }
+      IDBObjectStore.prototype.add = add;
+      const recovered = await runtimeFileStore.read('opaque', new AbortController().signal);
+      await runtimeFileStore.clearTag('scope');
+      flights.clear();
+      const afterClear = await runtimeFileStore.read('opaque', new AbortController().signal);
+      const retained = await new Promise((resolve, reject) => {
+        const tx = legacy.transaction('bytes', 'readonly');
+        const request = tx.objectStore('bytes').get('opaque');
+        tx.oncomplete = () => resolve(Array.from(new Uint8Array(request.result)));
+        tx.onabort = () => reject(tx.error);
+      });
+      await runtimeFileStore.write('new', new Blob(['fresh']), new AbortController().signal);
+      const fresh = await runtimeFileStore.read('new', new AbortController().signal);
+      legacy.close();
+      return { failed, recovered: Array.from(new Uint8Array(await recovered.arrayBuffer())), mime: recovered.type,
+        afterClear, retained, fresh: await fresh.text() };
+    })()`);
+    expect(result).toEqual({ failed: true, recovered: [1, 2, 3], mime: 'image/png', afterClear: null, retained: [1, 2, 3], fresh: 'fresh' });
+  } finally {
+    await browser.close();
+    rmSync(work, { recursive: true, force: true });
+  }
+}, 120_000);

@@ -3,10 +3,11 @@ import { createReadStream } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { normalizeImageMimeType } from './virtual-asset-protocol.mjs';
 
 const KEY = /^[a-f0-9]{64}$/;
-const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 256 * 1024 * 1024;
+const normalizeFileMime = (value) => typeof value === 'string' && value.length <= 512
+  && /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+(?:;[^\r\n]*)?$/.test(value.trim()) ? value.trim() : null;
 
 /** Disk owns bytes; leases and active protocol readers pin entries against LRU eviction. */
 export function createImageDiskCache({ directory, maxBytes = 256 * 1024 * 1024, maxEntries = 128 }) {
@@ -44,7 +45,7 @@ export function createImageDiskCache({ directory, maxBytes = 256 * 1024 * 1024, 
       try {
         const meta = JSON.parse(await fs.readFile(file(key, 'json'), 'utf8'));
         const stat = await fs.stat(file(key, 'bin'));
-        if (!normalizeImageMimeType(meta.mime) || !Number.isSafeInteger(meta.size)
+        if (!normalizeFileMime(meta.mime) || !Number.isSafeInteger(meta.size)
           || meta.size <= 0 || meta.size > MAX_IMAGE_BYTES || stat.size !== meta.size) throw new Error('Invalid cached image');
         entries.set(key, { key, id: randomUUID(), mime: meta.mime, size: meta.size,
           used: stat.mtimeMs, ready: true, refs: 0, readers: 0 });
@@ -80,6 +81,17 @@ export function createImageDiskCache({ directory, maxBytes = 256 * 1024 * 1024, 
     else if (lease.entry.ready) await fs.utimes(file(lease.entry.key, 'bin'), new Date(), new Date()).catch(() => {});
   };
   return {
+    lookup: (owner, { key, size }) => serial(async () => {
+      const entry = entries.get(key);
+      if (!entry?.ready || entry.size !== size) return null;
+      const stat = await fs.stat(file(key, 'bin')).catch(() => null);
+      if (!stat || stat.size !== size) return null;
+      const leaseId = randomUUID();
+      entry.refs += 1;
+      entry.used = Date.now();
+      leases.set(leaseId, { owner, entry });
+      return { leaseId, url: `yuri-asset://cache/${entry.id}`, hit: true };
+    }),
     acquire: (owner, { key, size }) => serial(async () => {
       if (!KEY.test(key) || !Number.isSafeInteger(size) || size <= 0 || size > MAX_IMAGE_BYTES) throw new Error('Invalid image descriptor');
       let entry = entries.get(key);
@@ -115,7 +127,7 @@ export function createImageDiskCache({ directory, maxBytes = 256 * 1024 * 1024, 
     }),
     commit: (owner, leaseId, mime) => serial(async () => {
       const entry = owned(owner, leaseId);
-      const normalized = normalizeImageMimeType(mime);
+      const normalized = normalizeFileMime(mime);
       if (entry.ready || !normalized || entry.written !== entry.size) throw new Error('Incomplete or invalid image');
       await fs.writeFile(file(entry.key, 'tmp'), JSON.stringify({ mime: normalized, size: entry.size }), { mode: 0o600 });
       await fs.rename(file(entry.key, 'part'), file(entry.key, 'bin'));
@@ -131,6 +143,10 @@ export function createImageDiskCache({ directory, maxBytes = 256 * 1024 * 1024, 
     releaseOwner: (owner) => serial(async () => {
       for (const [id, lease] of leases) if (lease.owner === owner) await releaseLease(id);
     }),
+    clear: () => serial(async () => {
+      leases.clear();
+      for (const entry of [...entries.values()]) await remove(entry);
+    }),
     handleRequest: async (request) => {
       await ready;
       const url = new URL(request.url);
@@ -141,14 +157,30 @@ export function createImageDiskCache({ directory, maxBytes = 256 * 1024 * 1024, 
       entry.readers += 1;
       entry.used = Date.now();
       const headers = { 'Content-Type': entry.mime, 'Content-Length': String(entry.size),
-        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes',
+        'Content-Security-Policy': "sandbox; default-src 'none'" };
       if (request.method === 'HEAD') { entry.readers -= 1; return new Response(null, { headers }); }
-      const stream = createReadStream(file(entry.key, 'bin'), { highWaterMark: 64 * 1024 });
+      const range = request.headers.get('range');
+      let start = 0;
+      let end = entry.size - 1;
+      if (range) {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+        start = match?.[1] ? Number(match[1]) : Math.max(0, entry.size - Number(match?.[2]));
+        end = match?.[1] && match[2] ? Math.min(Number(match[2]), end) : end;
+        if (!match || (!match[1] && !match[2]) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end)
+          || start < 0 || start >= entry.size || end < start) {
+          entry.readers -= 1;
+          return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${entry.size}` } });
+        }
+        headers['Content-Range'] = `bytes ${start}-${end}/${entry.size}`;
+        headers['Content-Length'] = String(end - start + 1);
+      }
+      const stream = createReadStream(file(entry.key, 'bin'), { highWaterMark: 64 * 1024, start, end });
       const abort = () => stream.destroy();
       stream.once('close', () => { entry.readers -= 1; request.signal?.removeEventListener('abort', abort); });
       if (request.signal?.aborted) stream.destroy();
       else request.signal?.addEventListener('abort', abort, { once: true });
-      return new Response(Readable.toWeb(stream), { headers });
+      return new Response(Readable.toWeb(stream), { status: range ? 206 : 200, headers });
     },
     stats: () => serial(() => ({ entries: entries.size, bytes: [...entries.values()].reduce((sum, entry) => sum + entry.size, 0), leases: leases.size })),
   };

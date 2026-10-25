@@ -1,0 +1,164 @@
+/* Welcome reuses the image-loading dot field and its drift keyframes.
+   Only the bounded decorative layer animates; the logo and layout stay still. */
+.yuri-mobile-welcome {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  overflow-y: auto;
+  background: var(--surface-background);
+  color: var(--surface-foreground);
+  padding: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 16px) 28px
+    calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 24px);
+}
+
+.yuri-welcome-brand {
+  display: flex;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-bottom: 8px;
+}
+
+.yuri-welcome-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  max-width: 400px;
+  margin-inline: auto;
+  gap: 48px;
+}
+
+.yuri-welcome-intro {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.yuri-welcome-art {
+  position: relative;
+  flex: 1;
+  min-height: 280px;
+  max-height: 520px;
+  isolation: isolate;
+  pointer-events: none;
+}
+
+.yuri-welcome-dots {
+  position: absolute;
+  inset: 0 -20px;
+  border-radius: 0;
+  background-color: transparent;
+  background-size: 14px 14px;
+  transform: rotate(-18deg) scale(0.94);
+  mask-image: radial-gradient(ellipse 47% 46% at 55% 50%, black 12%, transparent 100%);
+  contain: paint;
+}
+
+.yuri-welcome-dots::after {
+  background-size: 14px 14px;
+  animation-name: yuri-image-loading-drift, yuri-welcome-dots-breathe;
+  animation-duration: 4.2s, 2.4s;
+}
+
+@keyframes yuri-welcome-dots-breathe {
+  0%, 100% { opacity: 0.22; }
+  50% { opacity: 1; }
+}
+
+.yuri-welcome-logo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 144px;
+  height: 144px;
+  transform: translate(-50%, -50%);
+}
+
+.yuri-welcome-logo::before {
+  content: '';
+  position: absolute;
+  inset: -18%;
+  z-index: -1;
+  background: var(--surface-background);
+  mask-image: radial-gradient(ellipse, black 48%, transparent 72%);
+}
+
+.yuri-welcome-copy {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.yuri-welcome-copy h1 {
+  margin: 0;
+  font-size: clamp(40px, 11vw, 48px);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.045em;
+}
+
+.yuri-welcome-copy p {
+  margin: 12px 0 0;
+  color: var(--surface-muted-foreground);
+  font-size: 17px;
+  line-height: 1.6;
+  text-wrap: balance;
+}
+
+.yuri-welcome-primary[data-slot='button'] {
+  --primary-base: var(--surface-foreground);
+  --primary-foreground: var(--surface-background);
+  min-height: 56px;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--primary-base);
+  color: var(--primary-foreground);
+  border-color: transparent;
+  font-size: 17px;
+  gap: 12px;
+}
+
+.yuri-welcome-primary[data-slot='button']:hover {
+  background: color-mix(in srgb, var(--primary-base) 88%, var(--surface-background));
+}
+
+.yuri-welcome-primary[data-slot='button']:active {
+  background: color-mix(in srgb, var(--primary-base) 78%, var(--surface-background));
+}
+
+.yuri-mobile-welcome[data-welcome-paused] .yuri-welcome-dots::after,
+html:not(.yuri-native-app-active) .yuri-welcome-dots::after {
+  animation-play-state: paused;
+}
+
+@media (max-height: 680px) {
+  .yuri-welcome-content { gap: 24px; }
+  .yuri-welcome-art { min-height: 200px; }
+  .yuri-welcome-logo { width: 112px; height: 112px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yuri-welcome-dots::after { animation: none; }
+}
+
+.yuri-welcome-device[data-slot='button'] {
+  height: auto;
+  min-height: 76px;
+  gap: 16px;
+  margin-bottom: 8px;
+  padding: 16px;
+  white-space: normal;
+}
+
+.yuri-welcome-history-row[data-slot='button'] {
+  height: auto;
+  min-height: 68px;
+  gap: 16px;
+  padding-block: 12px;
+  white-space: normal;
+}
+
+.yuri-welcome-history-footer {
+  flex-shrink: 0;
+  padding: 16px 24px max(16px, var(--yuri-app-bottom-safe, env(safe-area-inset-bottom, 0px)));
+}

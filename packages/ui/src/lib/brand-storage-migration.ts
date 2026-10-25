@@ -4,7 +4,7 @@ const KEY_MARKER = 'yuri.migration.storage.';
 const DATABASE_MARKER_STORE = '__yuri_brand_migration';
 const DATABASES = new Set([
   'yuri-input-drafts', 'yuri-assistant-attachments', 'yuri-transcript-durable',
-  'yuri-transcript-search', 'yuri-transcript-diagnostics',
+  'yuri-transcript-search', 'yuri-transcript-diagnostics', 'yuri-runtime-images',
 ]);
 
 const renameBaseKey = (key: string): string => {

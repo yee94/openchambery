@@ -300,7 +300,7 @@ describe('fs stat', () => {
 
     const res = await callStat(handler, { path: '/repo/artifact.dmg' });
 
-    expect(res.body).toEqual({ path: '/repo/artifact.dmg', isFile: true, size: 2, mtimeMs: 1, isBinary: true });
+    expect(res.body).toEqual({ path: '/repo/artifact.dmg', isFile: true, size: 2, mtimeMs: 1, isBinary: true, mimeType: 'application/octet-stream', filename: 'artifact.dmg' });
     expect(file.read).toHaveBeenCalledWith(expect.any(Buffer), 0, 8192, 0);
     expect(file.close).toHaveBeenCalledOnce();
   });

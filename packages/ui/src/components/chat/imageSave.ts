@@ -3,9 +3,10 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { isCapacitorApp } from '@/lib/platform';
-import { runtimeFetch } from '@/lib/runtime-fetch';
+import { readFileResourceUrl, readRuntimeFileBlob } from '@/lib/runtime-file-resource';
+import { downloadRuntimeFile } from '@/lib/runtime-file-download';
 import { readRelayImageDisplayBlob } from '@/lib/relay/relay-image-stream';
-import { readDownloadBlob, type DownloadProgress } from '@/lib/download-progress';
+import { type DownloadProgress } from '@/lib/download-progress';
 
 import {
   needsRuntimeImageStream,
@@ -103,13 +104,7 @@ const fetchBlobFromUrl = async (url: string, signal?: AbortSignal, onProgress?: 
     if (original) return original;
     if (isCapacitorApp()) throw new Error('Image display stream is no longer available');
   }
-  const response = await (/^\/api(?=\/|[?#]|$)/.test(url)
-    ? runtimeFetch(url, { signal, cache: 'no-store', headers: onProgress && /^\/api\/fs\/raw(?:[?#]|$)/.test(url) ? { Range: 'bytes=0-' } : undefined })
-    : fetch(url, { signal, cache: 'no-store' }));
-  if (!response.ok) {
-    throw new Error(`Image fetch failed (${response.status})`);
-  }
-  return readDownloadBlob(response, signal, onProgress);
+  return readFileResourceUrl(url, signal, onProgress);
 };
 
 const materializeFromRuntimePath = async (
@@ -117,9 +112,7 @@ const materializeFromRuntimePath = async (
   signal?: AbortSignal,
   onProgress?: DownloadProgress,
 ): Promise<Blob> => {
-  const response = await runtimeFetch('/api/fs/raw', { query: { path }, signal, headers: onProgress ? { Range: 'bytes=0-' } : undefined });
-  if (!response.ok) throw new Error(`Image source request failed (${response.status})`);
-  return readDownloadBlob(response, signal, onProgress);
+  return readRuntimeFileBlob({ path, signal }, onProgress);
 };
 
 export const materializeImageBlob = async (
@@ -138,7 +131,7 @@ export const materializeImageBlob = async (
   // This is a local/memory read, not a second host download when the preview
   // is already resolved.
   const displayUrl = target.displayUrl?.trim();
-  if (!blob && displayUrl) {
+  if (!blob && displayUrl && (!/^https?:/i.test(displayUrl) || !needsRuntimeImageStream(resolveImageSource(target.sourceUrl, effectiveDirectory)))) {
     try {
       blob = await fetchBlobFromUrl(displayUrl, signal, onProgress);
     } catch {
@@ -201,6 +194,21 @@ export const saveImageToDevice = async (
   signal?: AbortSignal,
   onProgress?: DownloadProgress,
 ): Promise<ImageSaveResult> => {
+  const resolved = resolveImageSource(target.sourceUrl, target.effectiveDirectory ?? '');
+  if (isVSCodeRuntime() && target.kind === 'video' && !isNativeMediaAvailable()) {
+    const files = getRegisteredRuntimeAPIs()?.files;
+    if (needsRuntimeImageStream(resolved) && files?.downloadFile) {
+      signal?.throwIfAborted();
+      await files.downloadFile(resolved.path);
+      return 'saved';
+    }
+    throw new Error('Video download is unavailable for this source in VS Code');
+  }
+  if (needsRuntimeImageStream(resolved) && !target.prefetchedBlob && !/^(?:blob|data|yuri-asset):/i.test(target.displayUrl ?? '')
+    && !isNativeMediaAvailable() && !isVSCodeRuntime()) {
+    await downloadRuntimeFile({ path: resolved.path, filename: target.filename, signal }, onProgress);
+    return 'downloaded';
+  }
   const { blob, filename, mimeType } = await materializeImageBlob(target, signal, onProgress);
   signal?.throwIfAborted();
 
@@ -217,15 +225,6 @@ export const saveImageToDevice = async (
   }
 
   if (isVSCodeRuntime()) {
-    if (target.kind === 'video') {
-      const resolved = resolveImageSource(target.sourceUrl, target.effectiveDirectory ?? '');
-      const files = getRegisteredRuntimeAPIs()?.files;
-      if (needsRuntimeImageStream(resolved) && files?.downloadFile) {
-        await files.downloadFile(resolved.path);
-        return 'saved';
-      }
-      throw new Error('Video download is unavailable for this source in VS Code');
-    }
     const vscode = getRegisteredRuntimeAPIs()?.vscode;
     if (vscode?.saveImage) {
       const dataUrl = await blobToDataUrl(blob);

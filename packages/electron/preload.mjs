@@ -234,6 +234,9 @@ const imageCacheApi = isLocalPage ? {
   append: (leaseId, chunk) => ipcRenderer.invoke('yuri:image-cache:append', { leaseId, chunk }),
   commit: (leaseId, mime) => ipcRenderer.invoke('yuri:image-cache:commit', { leaseId, mime }),
   release: (leaseId) => ipcRenderer.invoke('yuri:image-cache:release', { leaseId }),
+  clear: () => ipcRenderer.invoke('yuri:image-cache:clear'),
+  fileResources: true,
+  lookup: (input) => ipcRenderer.invoke('yuri:image-cache:lookup', input),
 } : undefined;
 
 // Preview loopback gateway — local packaged/HMR UI only. Unauthenticated

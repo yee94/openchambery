@@ -30,4 +30,4 @@ python3 build_wordmark.py
 
 使用已有 Pillow 与相邻描摹工具，提取原稿上方主字标区域 `(180, 140, 1340, 660)`，生成轮廓 JSON、SVG 和 PNG，不包含下方的缩小展示和反白底板。不重新调用模型。原人物侧影 SVG 的路径直接复用于组合标志。
 
-本次交付为独立品牌素材，尚未替换应用界面中的普通文本标题。
+共享 UI 的 `YuriWordmark` 组件将随色 SVG 作为 CSS mask，使用语义前景色，欢迎页左上角展示这份字标。重建脚本在本仓库运行时同时更新 `packages/ui/src/assets/brand/yuri-wordmark.svg`，保持应用资源与本目录母版一致。

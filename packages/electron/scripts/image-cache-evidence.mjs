@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, protocol, net } from 'electron';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,13 +14,14 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'yuri-ui', privileges: ASSET_SCHEME_PRIVILEGES },
 ]);
 app.whenReady().then(async () => {
-const cache = createImageDiskCache({ directory: join(work, 'images') });
+let cache = createImageDiskCache({ directory: join(work, 'images') });
 const streams = createVirtualAssetRegistry();
 protocol.handle('yuri-asset', (request) => new URL(request.url).hostname === 'cache' ? cache.handleRequest(request) : streams.handleRequest(request));
 ipcMain.handle('cache:acquire', (event, input) => cache.acquire(event.sender.id, input));
 ipcMain.handle('cache:append', (event, id, bytes) => cache.append(event.sender.id, id, bytes));
 ipcMain.handle('cache:commit', (event, id, mime) => cache.commit(event.sender.id, id, mime));
 ipcMain.handle('cache:release', (event, id) => cache.release(event.sender.id, id));
+ipcMain.handle('cache:clear', () => cache.clear());
 ipcMain.handle('stream:create', (_event, input) => streams.create(input));
 ipcMain.handle('stream:push', (_event, id, bytes) => streams.push(id, bytes));
 ipcMain.handle('stream:finish', (_event, id) => streams.finish(id));
@@ -31,7 +33,7 @@ const server = createServer(async (request, response) => {
   if (url.pathname === '/stat') {
     stats++;
     response.setHeader('Content-Type', 'application/json');
-    response.end(JSON.stringify({ isFile: true, size: png.length, mtimeMs: 1 })); return;
+    response.end(JSON.stringify({ isFile: true, size: png.length, mtimeMs: 1, sha256: createHash('sha256').update(png).digest('hex') })); return;
   }
   if (url.pathname === '/api/fs/raw') {
     downloads++; response.setHeader('Content-Type', 'image/png');
@@ -62,6 +64,7 @@ try {
     results[cached ? 'cached' : 'baseline'] = { ...timing, downloads, bytes, stats };
   }
   results.disk = await cache.stats();
+  cache = createImageDiskCache({ directory: join(work, 'images') });
   downloads = 0; bytes = 0; stats = 0;
   await window.loadURL('yuri-ui://app/index.html');
   results.packaged = { ...await window.webContents.executeJavaScript('window.runImageBenchmark(true)'), downloads, bytes, stats };
