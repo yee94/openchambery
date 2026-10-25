@@ -11,8 +11,9 @@ describe('markstream-react trial path', () => {
     expect(source).toContain('markstreamReactEnabled');
     expect(source).toContain('MarkstreamRendererLazy');
     expect(source).toContain('MarkstreamFallbackBoundary');
-    expect(source).toContain('if (!markstreamEnabled)');
-    expect(source).toContain('currentRenderer');
+    expect(source).toMatch(/const renderer = !markstreamEnabled \? currentRenderer : \(\s*<MarkstreamFallbackBoundary fallback=\{currentRenderer\}>/);
+    expect(source).toContain('<MarkstreamRendererLazy {...props} />');
+    expect(source).toContain('}>{renderer}</div>');
   });
 
   test('SimpleMarkdownRenderer stays on the current implementation', () => {

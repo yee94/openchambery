@@ -30,3 +30,21 @@ test('runtime video download uses authenticated raw-file bytes and preserves the
   expect(result.filename).toBe('clip.webm');
   expect(mocks.fetch).toHaveBeenCalledWith('/api/fs/raw', expect.objectContaining({ query: { path: '/workspace/clip.webm' } }));
 });
+
+test('video save reports byte percentages over a full Range response before native saving', async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  mocks.fetch.mockResolvedValue(new Response(new ReadableStream({ start(controller) { stream = controller; } }), {
+    status: 206, headers: { 'content-type': 'video/mp4', 'content-range': 'bytes 0-3/4' },
+  }));
+  mocks.saveFile.mockResolvedValue({ cancelled: false });
+  const progress = vi.fn();
+  const saved = saveImageToDevice({ kind: 'video', sourceUrl: 'file:///workspace/clip.mp4' }, undefined, progress);
+  stream.enqueue(new Uint8Array([1, 2]));
+  await vi.waitFor(() => expect(progress).toHaveBeenLastCalledWith(50));
+  expect(mocks.saveFile).not.toHaveBeenCalled();
+  stream.enqueue(new Uint8Array([3, 4])); stream.close();
+  await expect(saved).resolves.toBe('saved');
+  expect(progress).toHaveBeenLastCalledWith(100);
+  expect(mocks.fetch).toHaveBeenCalledWith('/api/fs/raw', expect.objectContaining({ headers: { Range: 'bytes=0-' } }));
+  expect(mocks.saveFile).toHaveBeenCalledWith(expect.objectContaining({ dataBase64: 'AQIDBA==' }));
+});

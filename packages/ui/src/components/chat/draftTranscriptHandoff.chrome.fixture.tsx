@@ -8,7 +8,6 @@ import { ChatContainer } from './ChatContainer';
 import { I18nProvider } from '@/lib/i18n';
 import { queryClient } from '@/lib/queryRuntime';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import {
@@ -170,7 +169,6 @@ useUIStore.setState({
   showReasoningTraces: true,
   showExpandedBashTools: false,
 });
-useFeatureFlagsStore.setState({ legendTimelineEnabled: false });
 useProjectsStore.setState({
   projects: [{ id: 'fixture-project', path: '/fixture/project', label: 'Fixture' }],
   activeProjectId: 'fixture-project',

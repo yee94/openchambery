@@ -32,8 +32,9 @@ describe('history row-size scroll adjustment', () => {
         // The rule is inert unless wired: TanStack falls back to its default,
         // which skips rows above an upward reader and reintroduces load-more jumps.
         expect(messageListSource).toMatch(
-            /\.shouldAdjustScrollPositionOnItemSizeChange = shouldAdjustHistoryScrollOnItemSizeChange;\s*return installBatchedResizeItem\(/,
+            /tanstackVirtualizer\.shouldAdjustScrollPositionOnItemSizeChange = shouldAdjustHistoryScrollOnItemSizeChange;\s*const dispose = installBatchedResizeItem\(tanstackVirtualizer, finishHistoryMeasurement\);\s*return \(\) => \{\s*dispose\(\);/,
         );
+        expect(messageListSource).toMatch(/const finishHistoryMeasurement = useEvent\(\(\) => \{\s*restoreHistoryReadingAnchor\(\);\s*for \(const row of revealingHistoryRowsRef\.current\) row\.style\.removeProperty\('opacity'\);/);
     });
 
     test('first measurement compensates any row starting above the fold', () => {

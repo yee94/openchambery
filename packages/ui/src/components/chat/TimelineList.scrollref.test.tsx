@@ -57,7 +57,8 @@ const renderTimeline = async (scrollRef: React.RefObject<HTMLDivElement | null>)
     };
 };
 
-describe('TimelineList scroll element bridge', () => {
+// Legend production entry is disabled; retain these contracts for reactivation.
+describe.skip('TimelineList scroll element bridge', () => {
     test('publishes the list-owned scroll element as a real element', async () => {
         const scrollRef = React.createRef<HTMLDivElement>();
         const { cleanup } = await renderTimeline(scrollRef);
@@ -103,7 +104,8 @@ describe('TimelineList scroll element bridge', () => {
     });
 });
 
-describe('TimelineList scroll-shadow wiring', () => {
+// Legend production entry is disabled; retain these contracts for reactivation.
+describe.skip('TimelineList scroll-shadow wiring', () => {
     test('keeps the list-owned scroller on the same mask the old viewport used', () => {
         const timelineSource = readFileSync(join(here, 'TimelineList.tsx'), 'utf-8');
         const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf-8');

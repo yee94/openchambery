@@ -49,7 +49,7 @@ test('native playback stays user-initiated and only the download icon saves the 
   const download = host.querySelector<HTMLButtonElement>('[data-media-save]')!;
   expect(download.textContent).toBe('');
   await act(async () => download.click());
-  expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ kind: 'video', sourceUrl: 'https://example.com/clip.mp4' }), expect.any(AbortSignal));
+  expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ kind: 'video', sourceUrl: 'https://example.com/clip.mp4' }), expect.any(AbortSignal), expect.any(Function));
   expect(download.dataset.mediaSave).toBe('saved');
 });
 

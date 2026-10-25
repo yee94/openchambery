@@ -27,7 +27,8 @@ type Entry = { key: string; kind: string };
 
 const entries = (...keys: string[]): Entry[] => keys.map((key) => ({ key, kind: 'turn' }));
 
-describe('TimelineList prepend settle window', () => {
+// Legend production entry is disabled; retain these contracts for reactivation.
+describe.skip('TimelineList prepend settle window', () => {
     let host: HTMLElement;
     let root: Root;
     let scrollRef: React.RefObject<HTMLDivElement | null>;

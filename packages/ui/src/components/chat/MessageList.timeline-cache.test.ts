@@ -446,15 +446,19 @@ describe('MessageList history virtualization handle state', () => {
 });
 
 describe('runtime default list engine', () => {
-    test('TanStack is the default; LegendList is opt-in via oc:legend-timeline=1', () => {
+    test('TanStack is the only production engine across both transcript hosts', () => {
         const storeSource = readFileSync(join(here, '..', '..', 'stores', 'useFeatureFlagsStore.ts'), 'utf8');
-        const legendStart = storeSource.indexOf('export const readLegendTimelineEnabled');
-        const markstreamStart = storeSource.indexOf('export const readMarkstreamReactEnabled');
-        expect(legendStart).toBeGreaterThan(-1);
-        expect(markstreamStart).toBeGreaterThan(legendStart);
-        const legendSlice = storeSource.slice(legendStart, markstreamStart);
-        expect(legendSlice).toContain('readExactOneFlag');
-        expect(legendSlice).not.toContain("!== '0'");
+        const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
+        expect(storeSource).not.toMatch(/legendTimelineEnabled|readLegendTimelineEnabled|LEGEND_TIMELINE_STORAGE_KEY/);
+        expect(messageListSource).not.toMatch(/LegendTimelineHost|TimelineList|legendTimelineEnabled/);
+        expect(messageListSource).toContain('<StaticHistoryList');
+        expect(messageListSource).toContain('<StreamingTailContent');
+        for (const host of ['ChatContainer.tsx', '../layout/ContextPanelSessionTranscript.tsx']) {
+            const source = readFileSync(join(here, host), 'utf8');
+            expect(source).not.toMatch(/legendTimelineEnabled|timelineFollowEnabled/);
+            expect(source).toContain('enabled: active,');
+            expect(source).toContain('<ScrollShadow');
+        }
     });
 });
 

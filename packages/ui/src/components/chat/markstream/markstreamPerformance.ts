@@ -14,7 +14,7 @@
  *   max-live-nodes=0 + batch-rendering=false + smooth-streaming=false
  *
  * Markstream still renders assistant Markdown (default-on). Opt out with
- * `oc:markstream-react=0`. LegendList stays `oc:legend-timeline=1`.
+ * `oc:markstream-react=0`. TanStack is the only production list engine.
  */
 export const MARKSTREAM_CHAT_STREAM_PERFORMANCE = {
   maxLiveNodes: 0,

@@ -78,7 +78,10 @@ test('native tab bar reads UI badge strings and drives UITabBarItem.badgeValue',
   assert.match(view, /viewControllers\[index\]\.tabBarItem\.badgeValue = Self\.badgeValue\(item\.badge\)/);
   assert.match(view, /private static func badgeValue\(_ badge: String\?\) -> String\?/);
   assert.match(view, /guard let badge, !badge\.isEmpty else \{ return nil \}/);
-  assert.match(view, /Same tab structure: only push badgeValue updates/);
+  const updateExistingItems = view.match(/\} else \{\s*(?:\/\/[^\n]*\n\s*)?items = nextItems([\s\S]*?)\n\s*\}/)?.[1] ?? '';
+  assert.match(updateExistingItems, /applyBadges\(\)/);
+  assert.match(updateExistingItems, /applyActivity\(\)/);
+  assert.doesNotMatch(updateExistingItems, /rebuild\(/);
 });
 
 test('native tab bar switching stays on the overlay and does not own the React page stack', async () => {

@@ -309,6 +309,40 @@ beforeEach(() => {
 });
 
 describe('history failure feedback with production toast store', () => {
+    test('desktop pagination retains its snapshot through held display, samples user movement and does not fetch another page', async () => {
+        let finishLoad!: () => void;
+        const load = vi.fn(() => new Promise<void>((resolve) => { finishLoad = resolve; }));
+        const handle = await mountController({ isMobile: false, isPinned: false, loadMoreMessages: load,
+            geometry: { scrollHeight: 1200, clientHeight: 400, scrollTop: 100 } });
+        const restore = vi.fn(() => { handle.geometry.scrollHeight = 4000; return true; });
+        await handle.setState({ messageListApi: {
+            isHistoryVirtualized: () => true,
+            captureViewportAnchor: () => ({ messageId: 'msg_1', offsetTop: -handle.geometry.scrollTop }),
+            restoreViewportAnchor: restore, cancelViewportAnchorHold: () => {},
+        } as unknown as MessageListHandle });
+        const initial = handle.state.messages;
+        handle.scrollRef.current!.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 }));
+        let flight!: Promise<void>;
+        await act(async () => { flight = handle.api!.loadEarlier({ userInitiated: true }); });
+        await handle.setState({ messages: [message('older'), ...initial] });
+        await act(async () => finishLoad());
+        await waitMs(650);
+        expect(handle.api!.renderedMessages).toBe(initial);
+        expect(load).toHaveBeenCalledTimes(1);
+        expect(handle.api!.isLoadingOlder).toBe(true);
+        handle.geometry.scrollTop = 60;
+        handle.scrollRef.current!.dispatchEvent(new WheelEvent('wheel', { deltaY: -40 }));
+        await waitMs(900);
+        expect(handle.api!.renderedMessages).toBe(handle.state.messages);
+        expect(restore).toHaveBeenCalledWith({ messageId: 'msg_1', offsetTop: -60 });
+        await act(async () => { await flight; });
+        expect(load).toHaveBeenCalledTimes(1);
+        await waitMs(300);
+        restore.mockClear();
+        await handle.setState({ messages: [...handle.state.messages, message('live-tail')] });
+        expect(restore).not.toHaveBeenCalled();
+    });
+
     test.each([false, true])('desktop stages prefix responses until 800ms quiet and adopts the latest once (virtual=%s)', async (virtualized) => {
         const handle = await mountController({ showScroller: false, isMobile: false, isPinned: false,
             loadMoreMessages: vi.fn(async () => undefined),

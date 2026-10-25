@@ -87,7 +87,11 @@ describe('useNativeIosComposer', () => {
     expect(chatInput).toContain('nativeComposerOwnedInput');
     expect(chatInput).toContain('textPresetEpoch: composer.textPresetEpoch');
     expect(chatInput).toContain('getNativeIosComposerPlugin().focus()');
-    expect(chatInput).toContain('nativeComposerOwnedInput ? [] : tokenizeMarkdown(message)');
-    expect(chatInput).toContain('nativeComposerOwnedInput ? [] : highlightFencedCode(message)');
+    expect(chatInput).not.toContain('tokenizeMarkdown');
+    expect(chatInput).not.toContain('highlightFencedCode');
+    expect(chatInput).toContain('...mentionRangesToHighlightRanges(composerMentionRanges)');
+    expect(chatInput).toContain('...composerCommandRanges');
+    expect(chatInput).toContain('...attachmentCitationRanges');
+    expect(chatInput).toContain('return buildHighlightParts(message, ranges)');
   });
 });

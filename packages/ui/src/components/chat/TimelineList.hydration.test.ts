@@ -23,7 +23,8 @@ const here = dirname(fileURLToPath(import.meta.url));
  * scroll it never finishes in jsdom — the wiring cannot be driven from a test
  * DOM, only read.
  */
-describe('TimelineList Markdown hydration trigger contract', () => {
+// Legend production entry is disabled; retain these contracts for reactivation.
+describe.skip('TimelineList Markdown hydration trigger contract', () => {
     const source = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
 
     test('the trailing pass lands past the settle threshold', () => {

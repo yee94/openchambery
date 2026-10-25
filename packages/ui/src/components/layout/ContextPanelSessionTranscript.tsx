@@ -9,16 +9,13 @@ import { CHAT_TAIL_SPACER_DESKTOP_HEIGHT } from '@/components/chat/lib/scroll/ch
 import { SessionSurfaceContext, STRICT_READ_ONLY_SESSION_SURFACE_CAPABILITIES } from '@/components/chat/SessionSurfaceContext';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
-import { OverlayScrollbar } from '@/components/ui/OverlayScrollbar';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { toast } from '@/components/ui';
-import { useHistoryUpwardIntent } from '@/hooks/lib/chatUpwardIntent';
 import { useChatAutoFollow } from '@/hooks/useChatAutoFollow';
 import { useI18n } from '@/lib/i18n';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useStreamingStore } from '@/sync/streaming';
 import {
     useDirectorySync,
@@ -57,13 +54,6 @@ import {
     type ContextPanelPendingPrepend,
 } from './contextPanelSessionSurface';
 import { resolveContextPanelSessionExecution } from './contextPanelSessionExecution';
-
-const CHAT_SCROLL_STYLE = {
-    overflowAnchor: 'none',
-    overscrollBehavior: 'contain',
-    overscrollBehaviorY: 'contain',
-} as const;
-const LEGEND_SCROLL_DATASET = { scrollbar: 'chat', scrollShadow: 'true', orientation: 'vertical' } as const;
 
 export type ContextPanelSessionTranscriptProps = {
     surfaceId: string;
@@ -142,40 +132,17 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
         (state) => streamingMessageId ? state.messageStreamStates.get(streamingMessageId)?.phase ?? null : null,
     );
     const sessionIsWorking = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
-    const legendTimelineEnabled = useFeatureFlagsStore((state) => state.legendTimelineEnabled);
-    const [legendShowScrollButton, setLegendShowScrollButton] = React.useState(false);
-    const [legendFollowReleased, setLegendFollowReleased] = React.useState(false);
-    const [timelineHistoryAnchorToken, setTimelineHistoryAnchorToken] = React.useState(0);
     const { scrollRef, notifyContentChange, getAnimationHandlers, goToBottom, restoreSnapshot, showScrollButton } = useChatAutoFollow({
         scrollControllerRef: messageListRef,
-        // The legend timeline owns its scroll position. Leaving auto-follow on
-        // would put two writers on one container.
-        enabled: active && !legendTimelineEnabled,
+        enabled: active,
         currentSessionId: sessionId,
         viewportKey,
         sessionMessageCount,
         sessionIsWorking,
         isMobile: false,
     });
-    React.useEffect(() => {
-        setLegendShowScrollButton(false);
-        setLegendFollowReleased(false);
-    }, [sessionId]);
-    const handleTimelineIsAtEndChange = useEvent((atEnd: boolean, nextShowScrollButton?: boolean) => {
-        if (atEnd) setLegendFollowReleased(false);
-        if (nextShowScrollButton !== undefined) setLegendShowScrollButton(nextShowScrollButton);
-    });
     const resumeToLatest = useEvent((mode: 'instant' | 'smooth' = 'instant') => {
-        setLegendFollowReleased(false);
         goToBottom(mode);
-    });
-    const handleLegendUpwardIntent = useEvent(() => {
-        setLegendFollowReleased(true);
-    });
-    useHistoryUpwardIntent({
-        scrollRef,
-        enabled: legendTimelineEnabled,
-        onUpwardIntent: handleLegendUpwardIntent,
     });
     const ensureSession = useEvent((reason: 'active' | 'retry') => {
         void sync.ensureSessionRenderable(sessionId, resolveContextPanelEnsureForce(reason));
@@ -251,9 +218,6 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
     const loadOlder = useEvent(() => {
         if (!shouldRequestContextPanelLoadOlder(hasMore, isLoadingOlder || backgroundLoading)) return;
         if (loadOlderMutation.isPending) return;
-        if (legendTimelineEnabled) {
-            setTimelineHistoryAnchorToken((current) => current + 1);
-        }
         const token = prependRequestRef.current + 1;
         prependRequestRef.current = token;
         const element = scrollRef.current;
@@ -336,19 +300,11 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
             scrollRef={scrollRef}
             directory={syncDirectory}
             enableSendPark={false}
-            timelineScrollClassName="absolute inset-0 z-0 chat-scroll overlay-scrollbar-target"
-            timelineScrollStyle={CHAT_SCROLL_STYLE}
-            timelineScrollDataset={LEGEND_SCROLL_DATASET}
-            timelineFollowEnabled={!legendFollowReleased}
-            timelineHistoryAnchorToken={timelineHistoryAnchorToken}
-            timelineOnIsAtEndChange={handleTimelineIsAtEndChange}
-            headerSlot={legendTimelineEnabled ? <>{partialErrorRow}{loadOlderRow}</> : undefined}
-            footerSlot={legendTimelineEnabled ? tailSpacer : undefined}
         />
     );
     const scrollToBottomButton = (
         <ScrollToBottomButton
-            visible={legendTimelineEnabled ? legendShowScrollButton : showScrollButton}
+            visible={showScrollButton}
             onClick={() => resumeToLatest('smooth')}
         />
     );
@@ -358,15 +314,7 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
             <div className="relative flex h-full min-h-0 flex-col bg-background" data-context-session-surface="true" data-session-id={sessionId} data-surface-id={surfaceId}>
                 {canNavigateBack ? <Button type="button" variant="outline" size="xs" onClick={onNavigateBack} className="absolute left-3 top-3 z-20 !font-normal bg-[var(--surface-background)]/95" aria-label={t('chat.container.returnToParent.aria')} title={t('chat.container.returnToParent.title')}><Icon name="arrow-left" className="h-4 w-4" />{t('chat.container.returnToParent.label')}</Button> : null}
                 <div className="relative min-h-0 flex-1">
-                    {transcriptState === 'cold-loading' || transcriptState === 'working-empty' || transcriptState === 'authoritative-empty' || transcriptState === 'fatal-error' ? <TranscriptState state={transcriptState} error={prefetch?.error} onRetry={() => ensureSession('retry')} /> : legendTimelineEnabled ? (
-                        <>
-                            <div className="absolute inset-0">
-                                {transcriptList}
-                                <OverlayScrollbar containerRef={scrollRef} userIntentOnly observeMutations={false} />
-                            </div>
-                            {scrollToBottomButton}
-                        </>
-                    ) : (
+                    {transcriptState === 'cold-loading' || transcriptState === 'working-empty' || transcriptState === 'authoritative-empty' || transcriptState === 'fatal-error' ? <TranscriptState state={transcriptState} error={prefetch?.error} onRetry={() => ensureSession('retry')} /> : (
                         <>
                             <ScrollShadow ref={scrollRef} className="absolute inset-0 overflow-y-auto overflow-x-hidden chat-scroll overlay-scrollbar-target" observeMutations={false} data-scroll-shadow="true" data-scrollbar="chat">
                                 <div className="relative min-h-full">

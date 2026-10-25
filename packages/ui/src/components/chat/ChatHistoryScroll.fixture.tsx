@@ -13,7 +13,6 @@ import { I18nProvider } from '@/lib/i18n';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { createWebAPIs } from '../../../../web/src/api';
 import { useUIStore } from '@/stores/useUIStore';
-import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import type { ChatMessageEntry } from './lib/turns/types';
 import type { Message, Part } from '@/lib/opencode/v2-types';
 
@@ -188,7 +187,6 @@ export default function Fixture() {
 
 const partialTurn = ['partial-turn', 'mobile-partial-turn'].includes(new URLSearchParams(location.search).get('scenario') ?? '');
 useUIStore.setState({ isMobile, chatRenderMode: partialTurn || fixtureScenario.startsWith('turn-prepend') ? 'sorted' : 'live', activityRenderMode: partialTurn || fixtureScenario.startsWith('turn-prepend') ? 'collapsed' : 'summary' });
-useFeatureFlagsStore.setState({ legendTimelineEnabled: false });
 createRoot(document.getElementById('root')!).render(
     <RuntimeAPIProvider apis={createWebAPIs()}><QueryClientProvider client={queryClient}><I18nProvider>
         <SyncProvider sdk={opencodeClient.getSdkClient()} directory="/fixture" bootstrapDirectory={false}>

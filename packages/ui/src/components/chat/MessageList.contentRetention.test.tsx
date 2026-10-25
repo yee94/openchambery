@@ -9,7 +9,6 @@ import { opencodeClient } from '@/lib/opencode/client';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import type { RuntimeAPIs } from '@/lib/api/types';
 import { useUIStore } from '@/stores/useUIStore';
-import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import type { ChatMessageEntry } from './lib/turns/types';
 import type { Message, Part } from '@/lib/opencode/v2-types';
 import { getTranscriptRepository, unbindTranscriptRepository } from '@/sync/transcript-repository-runtime';
@@ -39,7 +38,6 @@ let container: HTMLDivElement;
 let root: Root;
 let client: QueryClient;
 let previousUI: ReturnType<typeof useUIStore.getState>;
-let previousFlags: ReturnType<typeof useFeatureFlagsStore.getState>;
 const apis = { runtime: { isVSCode: false, isDesktop: false }, files: {}, editor: {} } as RuntimeAPIs;
 
 test('hidden instruction notices do not split the three native tool runs', async () => {
@@ -107,9 +105,7 @@ test.each(['sorted', 'live'] as const)('zero-width provider text does not paint 
 
 beforeEach(async () => {
     previousUI = useUIStore.getState();
-    previousFlags = useFeatureFlagsStore.getState();
     useUIStore.setState({ chatRenderMode: 'sorted', activityRenderMode: 'collapsed', showReasoningTraces: true });
-    useFeatureFlagsStore.setState({ legendTimelineEnabled: false });
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -128,7 +124,6 @@ afterEach(async () => {
     client.clear();
     container.remove();
     useUIStore.setState(previousUI);
-    useFeatureFlagsStore.setState(previousFlags);
 });
 
 test('live repository overlays retain earlier conclusions in the real chat list', async () => {

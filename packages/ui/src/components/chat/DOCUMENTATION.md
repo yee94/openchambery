@@ -112,12 +112,14 @@ fallbacks. A new native build is required for PNG-consuming native surfaces.
 
 `ToolOutputDialog` image and video previews share `MediaSaveButton`: one icon-only
 download action in the shared control row, alongside image zoom controls. Mobile
-uses the bottom-right safe area with compact flat circles without borders or
+uses the bottom-right safe area with 32px visible circles, 16px icons and preserved
+36px hit areas. These compact flat circles have no borders or
 shadows. Desktop uses the bottom-left with larger controls and icons, reusing the
 close button's shared `mobileGlass` variant and design tokens. Both use a filled
 download icon. Video uses the same toolbar shell and control
 sizing. The saving/check states replace the icon in place. Clicking materializes bytes and
-saves directly; pending shows an indeterminate ring, success a checkmark. There
+saves directly; pending shows a dim circular track and a solid arc reflecting
+downloaded byte percentage, success a checkmark. There
 is no save sheet, long-press save, visible status text or success toast. Accessible
 labels/live status remain localized. A failed save restores the retryable download
 icon; native document-picker cancellation returns to idle. Browser success means
@@ -126,6 +128,16 @@ The control is keyed by source/runtime, rejects duplicate clicks, and aborts rea
 on close or source change. Late native completions cannot update another preview.
 Native picker/Photos confirmation remains owned by the OS. Thumbnail and Markdown
 images open the full-screen preview; they no longer own save gestures or sheets.
+
+`lib/download-progress.ts` reads response chunks and publishes only changed integer
+percentages (at most 101 notifications per transfer). Image and video saves share
+this reader, including native one-use image source re-reads. Host raw-file saves
+request the full `Range: bytes=0-` so `Content-Range` supplies the total even when
+Relay strips `Content-Length`. Cached Blobs are already downloaded and report 100%.
+The full ring remains until native save completes; it does not imply Photos/file
+write success. Unknown or compressed decoded lengths keep the faint track until
+EOF rather than fabricating progress. Interrupted/truncated reads never show the
+success check. The ring has an accessible percentage but no visible numeric text.
 
 Video attachments and Markdown video-file links open the same overlay with a
 native `video controls playsInline` player; there is no third-party player or
@@ -366,6 +378,27 @@ seed reads, one read per old row at activation, fractional sizes, reactivation,
 and snapshot restore.
 
 PC history enables virtualization at 12 render entries; mobile retains its five-entry threshold. Both the list and controller-facing virtualization flag use the same surface policy. A bottom-pinned background prepend calls `goToBottom` with `reveal: false`: position compensation must never re-arm a whole-transcript visibility gate. As a validation trial on current TanStack/Legend versions, both list implementations now disable the legacy Markdown pin-reveal gate entirely, including cold open and explicit jump-to-latest. Its helper remains for comparison, but no production list enables it. Per-row Markdown hydration, measured sizes and scroll anchoring remain active. Browser warmup regressions cover pinned short history below the PC threshold, pinned history crossing it, and a released reading viewport; they observe visibility mutations as well as DOM identity and scroll offsets.
+
+Desktop prepends wait for 800ms without wheel/scroll input before adopting the
+fetched page. Request-owned viewport snapshots survive this display hold: the
+ordinary 250ms render timeout must not retire them or classify a fetched but
+undisplayed page as collapsed history needing another request. The existing
+50ms adoption check refreshes anchor/top/height from the user's current position
+immediately before adoption, retaining the snapshot's request identity. The
+compensated display commit precedes cleanup. This also covers an initially empty
+history region with the reading row entirely in the live tail when the first
+prepend crosses the virtualization threshold; the request's whole-viewport
+anchor owns that transition without adding another scroll writer.
+
+Desktop render waits have a 10-second ceiling. If continuous input still holds
+the fetched page at that deadline, pagination stops and retains one deferred
+snapshot cleanup until actual adoption; additional loads are gated while that
+page remains held. The ceiling does not force insertion underneath the reader.
+Scope changes discard the old snapshot/deferred cleanup and resolve old render
+waiters. Mobile retains its original render-wait and gesture policy. The
+controller boundary test verifies one request through the hold, current-user
+anchor recapture and post-adoption cleanup; `desktop-short` exercises real
+normal-flow → virtualized geometry.
 
 The left-side rail highlights every prompt whose turn or message intersects the chat viewport, including a turn where only its assistant reply remains visible. `useVisiblePromptTurns` observes mounted transcript nodes with the chat scroller as its intersection root; virtual row additions, removals, and identity changes update registrations. Stable message ownership avoids reconnecting observers on text deltas, and unchanged visible sets retain their reference. Keyboard navigation's single active turn does not determine viewport highlighting.
 
@@ -704,7 +737,11 @@ The first-prompt draft handoff uses the same `ChatViewport` shell before and aft
 
 Chat timeline has no auto-fill geometry state. Streaming shell/tool part commits must not re-run a messages-keyed layout effect that `setState`s a fresh metrics object when height is unchanged — that double-rendered `ChatContainer` and forced a full-document layout next to programmatic `ScrollLayer` writes (Trace-20260805). Auto-follow's content ResizeObserver reads geometry once per callback and skips `scrollTop` writes when already within the bottom tolerance so dual container/content observers cannot double-pin.
 
-The runtime default chat list is TanStack Virtual. `legendTimelineEnabled` is true only when `localStorage.oc:legend-timeline === '1'`; unset, `'0'`, and `''` stay on TanStack. LegendList / TimelineList remain opt-in.
+The only production chat list path on every platform is TanStack Virtual / `StaticHistoryList` plus `StreamingTailContent` and auto-follow. `ChatContainer` and `ContextPanelSessionTranscript` both use their existing default `ScrollShadow` viewport and enable auto-follow for active views. Legend engine selection, its host, and its dedicated state/scroll bridges have been removed. The old `oc:legend-timeline=1` value is ignored because no production flag reader or setter remains.
+
+`TimelineList.tsx` and its dedicated algorithms remain in the tree without a production entry. The six `TimelineList.*.test.*` files are temporarily skipped with that reason; default TanStack, shared scroll helpers, mobile history, and `desktop-short` remain enabled. `timelineScrollAnchoring.ts` also contains helpers used by mobile Composer, so it and its shared tests remain intact. `useChatTimelineController` serves the default path and remains active. Entry removal does not change default scroll thresholds, quiet windows, history warmup, or Markdown preload policy. Historical Legend behavior described below documents the retained implementation, not an available runtime option.
+
+The `timelineHistoryAnchorToken` bridge remains active: user-initiated pagination calls `onWillLoadEarlier`, `ChatContainer` increments the token, and `StaticHistoryList` captures its reading anchor before the request changes rows. Despite its name, this is shared default-path protection, not a retired Legend bridge. The two Legend-only bridge assertions in `ChatContainer.hooks.test.ts` are skipped; its default follow, send, status-slot and history-anchor assertions still run.
 
 Markstream CSS enters through `markstream/markstreamTheme.css` in the `components` cascade layer, below OpenChamber utilities. Its generated `.rounded` and button reset otherwise override the nested legacy card's control radius and muted color. The host also maps `--border` to the complete color `var(--interactive-border)`: the library's bare HSL channels make Tailwind `border-border/80` and `/70` color-mixes invalid, producing `currentColor` edges in light mode. Chromium controls reproduced that black edge with layer-only isolation and restored theme borders with the token mapping. Keep `decorate.ts`'s intentional 16px rounded elevated card, 1px outer border and 1px header-bottom divider. `markstreamStyles.chrome.test.ts` builds both real renderers and library CSS, compares computed styles at 390px with touch enabled in light/dark, checks standalone/global isolation, and replays A→B→A with restored and identical message/part IDs. Run it with `bunx vitest run --project @openchamber/ui packages/ui/src/components/chat/markstream/markstreamStyles.chrome.test.ts`; `OPENCHAMBER_TEST_EVIDENCE_DIR` retains screenshots and `computed.json`. It uses installed Chrome through the shared CDP harness and explicitly skips when Chrome is unavailable; phone WebKit remains a separate device check.
 
@@ -722,7 +759,7 @@ Opening the Context Panel (or otherwise shrinking the transcript column) must ca
 
 The history frame is a `minHeight: totalSize` box with padding for the unrendered range (`resolveTanstackHistoryFrameStyle`), not `height: totalSize`: visible rows live in normal flow so sticky headers work, and the live tail is the next sibling — a cached-short row must grow that frame and push the tail down instead of overflowing onto it. Core 3.19 can report negative row starts while holding an unwritable scroll correction; a negative inner margin inside a flow-root preserves this shift without transforms or margin collapse. `scrollToFn` writes `scrollTop` and that minHeight **synchronously** (`applyTanstackHistoryFrameMinHeight`) — deferring to a microtask/rAF desyncs core's end-anchor offset from the DOM and blanks cold session open; writing `height` would re-lock the overflow. Session open pin in `ChatContainer` waits until the transcript gate leaves `hydrating` and re-pins once when message count first goes `0 → N` for that session so deep links do not pin against an empty skeleton.
 
-`useChatAutoFollow` owns following/released policy and composer/content observers, but delegates virtualized bottom writes through `MessageListHandle.scrollToBottom`. The handle returns whether an active list handled the request; normal-flow transcripts retain the DOM fallback. Passive growth uses `reveal: false`; explicit jumps re-arm Markdown reveal. Resume invokes only `goToBottom`, which updates policy and makes one list request, including on the opt-in Legend path where passive auto-follow is disabled. TanStack does not run the outer overflow-toggle/24-frame force-bottom watchdog. User release cancels the core scroll command; virtualizer-threshold anchor restoration also goes through `scrollToOffset`. `ChatHistoryScroll.chrome.test.ts` covers cold entry, prepend/late measurement, jump-to-latest, external live-tail growth, and released reading after growth. iOS gesture checks use its optional native fixture.
+`useChatAutoFollow` owns following/released policy and composer/content observers, but delegates virtualized bottom writes through `MessageListHandle.scrollToBottom`. The handle returns whether an active list handled the request; normal-flow transcripts retain the DOM fallback. Passive growth uses `reveal: false`; explicit jumps re-arm Markdown reveal. Resume invokes only `goToBottom`, which updates policy and makes one list request. TanStack does not run the outer overflow-toggle/24-frame force-bottom watchdog. User release cancels the core scroll command; virtualizer-threshold anchor restoration also goes through `scrollToOffset`. `ChatHistoryScroll.chrome.test.ts` covers cold entry, prepend/late measurement, jump-to-latest, external live-tail growth, and released reading after growth. iOS gesture checks use its optional native fixture.
 
 `markdownHeightCache.ts` records the height each content string actually rendered at, and the deferred placeholder in `MarkdownRenderer` reserves that box instead of laying out the Markdown source as an invisible spacer. Rendered Markdown is far shorter than its source — fenced code, link targets and table pipes all collapse — so the plain-text fallback overshoots and the swap into real content shrinks the row, which the virtualizer then compensates by yanking the scroll offset. Heights come from `ResizeObserver` entries rather than a measured read, keeping a batch of rows revealing together from thrashing layout, and are recorded only for a settled non-streaming render. Only the rich renderer records and reserves; the simple renderer produces different output for the same source. Every entry is dropped when the column is next measured at a new width, because one width applies to the whole transcript.
 

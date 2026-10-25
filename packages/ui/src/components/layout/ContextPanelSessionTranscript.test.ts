@@ -18,7 +18,8 @@ describe('ContextPanelSessionTranscript tail occupancy', () => {
 
     test('uses the same desktop tail spacer as the primary transcript', () => {
         expect(source).toContain('CHAT_TAIL_SPACER_DESKTOP_HEIGHT');
-        expect(source).toContain('footerSlot={legendTimelineEnabled ? tailSpacer : undefined}');
+        expect(source).toContain('{tailSpacer}');
+        expect(source).toContain('style={{ height: CHAT_TAIL_SPACER_DESKTOP_HEIGHT }}');
         expect(source).not.toContain('className="h-12"');
         expect(chatContainer).toContain('CHAT_TAIL_SPACER_DESKTOP_HEIGHT');
     });
@@ -27,10 +28,10 @@ describe('ContextPanelSessionTranscript tail occupancy', () => {
         expect(source).toContain('enableSendPark={false}');
     });
 
-    test('legend path lets the list own the scroller and disables auto-follow', () => {
-        expect(source).toContain('enabled: active && !legendTimelineEnabled');
-        expect(source).toContain('timelineScrollClassName="absolute inset-0 z-0 chat-scroll overlay-scrollbar-target"');
-        expect(source).toContain('timelineFollowEnabled={!legendFollowReleased}');
-        expect(source).toContain('timelineHistoryAnchorToken={timelineHistoryAnchorToken}');
+    test('uses the default scroller and active-view auto-follow', () => {
+        expect(source).toContain('enabled: active,');
+        expect(source).toContain('<ScrollShadow ref={scrollRef}');
+        expect(source).toContain('visible={showScrollButton}');
+        expect(source).not.toContain('legendTimelineEnabled');
     });
 });

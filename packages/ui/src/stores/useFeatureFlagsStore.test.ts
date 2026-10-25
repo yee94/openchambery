@@ -1,9 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import {
-    LEGEND_TIMELINE_STORAGE_KEY,
     MARKSTREAM_REACT_STORAGE_KEY,
-    readLegendTimelineEnabled,
     readMarkstreamReactEnabled,
 } from './useFeatureFlagsStore';
 
@@ -14,22 +12,21 @@ const memoryStorage = (
     getItem: (requested) => (requested === key ? value : null),
 });
 
-describe('readLegendTimelineEnabled', () => {
-    test('TanStack is the runtime default unless oc:legend-timeline is exactly 1', () => {
-        expect(readLegendTimelineEnabled(null)).toBe(false);
-        expect(readLegendTimelineEnabled(memoryStorage(LEGEND_TIMELINE_STORAGE_KEY, null))).toBe(false);
-        expect(readLegendTimelineEnabled(memoryStorage(LEGEND_TIMELINE_STORAGE_KEY, ''))).toBe(false);
-        expect(readLegendTimelineEnabled(memoryStorage(LEGEND_TIMELINE_STORAGE_KEY, '0'))).toBe(false);
-        expect(readLegendTimelineEnabled(memoryStorage(LEGEND_TIMELINE_STORAGE_KEY, 'true'))).toBe(false);
-        expect(readLegendTimelineEnabled(memoryStorage(LEGEND_TIMELINE_STORAGE_KEY, '1'))).toBe(true);
-    });
-
-    test('a throwing storage reader stays on TanStack', () => {
-        expect(readLegendTimelineEnabled({
-            getItem: () => {
-                throw new Error('blocked');
-            },
-        })).toBe(false);
+describe('retired timeline flag', () => {
+    test('ignores a persisted Legend opt-in at store initialization', async () => {
+        const getItem = vi.fn((key: string) => key === 'oc:legend-timeline' ? '1' : null);
+        vi.stubGlobal('localStorage', { getItem });
+        vi.resetModules();
+        try {
+            const { useFeatureFlagsStore } = await import('./useFeatureFlagsStore');
+            expect(getItem).not.toHaveBeenCalledWith('oc:legend-timeline');
+            expect(useFeatureFlagsStore.getState()).not.toHaveProperty('legendTimelineEnabled');
+            expect(useFeatureFlagsStore.getState()).not.toHaveProperty('setLegendTimelineEnabled');
+            expect(useFeatureFlagsStore.getState().markstreamReactEnabled).toBe(true);
+        } finally {
+            vi.unstubAllGlobals();
+            vi.resetModules();
+        }
     });
 });
 

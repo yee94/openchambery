@@ -10,6 +10,7 @@
  */
 
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { readDownloadBlob, type DownloadProgress } from '@/lib/download-progress';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 import {
@@ -589,16 +590,16 @@ export const streamRelayImageDisplayUrl = async (
 };
 
 /** Read original bytes without trying to consume a native display stream twice. */
-export const readRelayImageDisplayBlob = async (url: string, signal?: AbortSignal): Promise<Blob | null> => {
+export const readRelayImageDisplayBlob = async (url: string, signal?: AbortSignal, onProgress?: DownloadProgress): Promise<Blob | null> => {
   const asset = assetsByUrl.get(url);
   if (!asset || asset.released) return null;
   if (asset.transportIdentity !== getRuntimeTransportIdentity()) throw new Error('Image runtime changed');
   signal?.throwIfAborted();
-  if (asset.sourceBlob) return asset.sourceBlob;
+  if (asset.sourceBlob) { onProgress?.(100); return asset.sourceBlob; }
   if (!asset.sourcePath) return null;
-  const response = await runtimeFetch('/api/fs/raw', { query: { path: asset.sourcePath }, signal });
+  const response = await runtimeFetch('/api/fs/raw', { query: { path: asset.sourcePath }, signal, headers: onProgress ? { Range: 'bytes=0-' } : undefined });
   if (!response.ok) throw new Error(`Image source request failed (${response.status})`);
-  const blob = await response.blob();
+  const blob = await readDownloadBlob(response, signal, onProgress);
   signal?.throwIfAborted();
   if (asset.transportIdentity !== getRuntimeTransportIdentity()) throw new Error('Image runtime changed');
   if (!blob.size || blob.size > RELAY_IMAGE_MAX_BYTES) throw new Error('Invalid image size');
