@@ -109,6 +109,10 @@ const FILE_MIME_MAP = Object.freeze({
   '.eot': 'application/vnd.ms-fontobject',
   '.mp3': 'audio/mpeg',
   '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.ogv': 'video/ogg',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -885,6 +889,11 @@ export const registerFsRoutes = (app, dependencies) => {
         '.bmp': 'image/bmp',
         '.avif': 'image/avif',
         '.pdf': 'application/pdf',
+        '.mp4': 'video/mp4',
+        '.m4v': 'video/mp4',
+        '.mov': 'video/quicktime',
+        '.webm': 'video/webm',
+        '.ogv': 'video/ogg',
       };
       const mimeType = mimeMap[ext] || 'application/octet-stream';
 
@@ -900,11 +909,16 @@ export const registerFsRoutes = (app, dependencies) => {
         res.setHeader('Content-Disposition', `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`);
       }
 
-      const content = await fsPromises.readFile(canonicalPath);
       res.setHeader('Cache-Control', 'no-store');
       if (resolved.granted) {
         res.setHeader('Referrer-Policy', 'no-referrer');
       }
+      if (mimeType.startsWith('video/') || req.headers?.range || req.method === 'HEAD') {
+        // Path authorization above remains authoritative; Express owns range parsing,
+        // 206/416, stream backpressure and cancellation when the player seeks away.
+        return res.type(mimeType).sendFile(canonicalPath, { acceptRanges: true, dotfiles: 'allow', cacheControl: false });
+      }
+      const content = await fsPromises.readFile(canonicalPath);
       return res.type(mimeType).send(content);
     } catch (error) {
       const err = error;

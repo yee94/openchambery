@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { VideoPreviewDialog } from './VideoPreviewDialog';
 
-const mocks = vi.hoisted(() => ({ fetch: vi.fn(), save: vi.fn() }));
+const mocks = vi.hoisted(() => ({ fetch: vi.fn(), save: vi.fn(), native: vi.fn().mockResolvedValue(null) }));
+vi.mock('@/lib/native-video', () => ({ openNativeVideoSource: mocks.native }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: mocks.fetch }));
 vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/workspace' }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
@@ -80,4 +81,17 @@ test('request failure shows an error and retains the download action', async () 
   expect(host.querySelector('[role="alert"]')).not.toBeNull();
   expect(host.querySelector('video')).toBeNull();
   expect(host.textContent).toContain('filesView.editor.saveFile');
+});
+
+test('runtime video exposes a playback URL before the complete response body arrives', async () => {
+  const release = vi.fn();
+  mocks.native.mockResolvedValueOnce({ url: 'http://127.0.0.1:12345/opaque-video', release });
+  const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array([0, 0, 0, 24])); } });
+  mocks.fetch.mockResolvedValue(new Response(body, { headers: { 'content-type': 'video/mp4' } }));
+  await render('file:///workspace/clip.mp4');
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+  expect(host.querySelector('video')?.getAttribute('src')).toBeTruthy();
+  expect(mocks.fetch).not.toHaveBeenCalled();
+  await render('https://example.com/next.mp4');
+  expect(release).toHaveBeenCalled();
 });

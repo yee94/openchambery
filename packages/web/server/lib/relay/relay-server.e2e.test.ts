@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
+import * as fsPromises from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -25,7 +26,8 @@ import { setRuntimeBearerToken } from '../../../../ui/src/lib/runtime-auth.ts';
 import { adoptRelayTunnel, deactivateRelayTunnel } from '../../../../ui/src/lib/relay/runtime-tunnel.ts';
 import { acquireRuntimeImage } from '../../../../ui/src/lib/runtime-image-cache.ts';
 import { NATIVE_RELAY_ASSET_BRIDGE_KEY } from '../../../../ui/src/lib/relay/native-asset-bridge.ts';
-import { resetRelayImageStreamForTests } from '../../../../ui/src/lib/relay/relay-image-stream.ts';
+import { readRelayImageDisplayBlob, resetRelayImageStreamForTests } from '../../../../ui/src/lib/relay/relay-image-stream.ts';
+import { registerFsRoutes } from '../fs/routes.js';
 import { runtimeFetch } from '../../../../ui/src/lib/runtime-fetch.ts';
 import { registerTtsRoutes } from '../tts/routes.js';
 import { createDictationRuntime } from '../dictation/runtime.js';
@@ -156,6 +158,15 @@ const readBody = async (req: http.IncomingMessage) => {
 };
 
 const startOrigin = async () => {
+  const mediaDirectory = await mkdtemp(path.join(os.tmpdir(), 'relay-video-'));
+  const videoPath = path.join(mediaDirectory, 'clip.mp4');
+  await fsPromises.writeFile(videoPath, Buffer.from('0123456789'));
+  const rawFiles = express();
+  registerFsRoutes({ get: (route: string, handler: express.RequestHandler) => { if (route === '/api/fs/raw') rawFiles.get(route, handler); }, post() {}, put() {} }, {
+    fsPromises, os, path, spawn, crypto: globalThis.crypto, normalizeDirectoryPath: (value: string) => value,
+    resolveProjectDirectory: async () => ({ directory: mediaDirectory }), buildAugmentedPath: () => '',
+    resolveGitBinaryForSpawn: () => 'git', openchamberUserConfigRoot: mediaDirectory,
+  });
   const bearerRequests: string[] = [];
   const observedOrigins: string[] = [];
   const sockets = new Set<net.Socket>();
@@ -236,6 +247,7 @@ const startOrigin = async () => {
       if (pathname === '/api/fs/raw' && req.method === 'GET') {
         await uiAuth.requireAuth(req, res, () => {
           const filePath = new URL(req.url ?? '/', 'http://origin').searchParams.get('path');
+          if (filePath === videoPath) { rawFiles(req, rawRes); return; }
           if (filePath !== '/remote/icons-zoom.png' || !req.headers['x-openchamber-relay-connection']) {
             res.status(404).end(); return;
           }
@@ -289,7 +301,7 @@ const startOrigin = async () => {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as net.AddressInfo).port;
   return {
-    port, bearerRequests, observedOrigins, getHostSubscriptions: () => hostSubscriptions,
+    port, videoPath, bearerRequests, observedOrigins, getHostSubscriptions: () => hostSubscriptions,
     stop: async () => {
       dictation.stop();
       for (const client of wss.clients) client.terminate();
@@ -297,6 +309,7 @@ const startOrigin = async () => {
       await Promise.race([new Promise<void>((resolve) => wss.close(() => resolve())), wait(1_000)]);
       await Promise.race([new Promise<void>((resolve) => server.close(() => resolve())), wait(1_000)]);
       uiAuth.dispose();
+      await rm(mediaDirectory, { recursive: true, force: true });
     },
   };
 };
@@ -386,9 +399,9 @@ describe('private relay compiled-process boundary', () => {
     vi.stubEnv('OPENCHAMBER_DATA_DIR', path.join(temp, 'host-data'));
     const binary = path.join(temp, 'openchamber-relay');
     let relay: Awaited<ReturnType<typeof startCompiledRelay>> | undefined;
-    let origin: Awaited<ReturnType<typeof startOrigin>> | undefined;
-    let host: ReturnType<typeof startRelayHost> | undefined;
-    let client: ReturnType<typeof createRelayTunnelClient> | undefined;
+    let origin: Awaited<ReturnType<typeof startOrigin>> | undefined = undefined;
+    let host: ReturnType<typeof startRelayHost> | undefined = undefined;
+    let client: ReturnType<typeof createRelayTunnelClient> | undefined = undefined;
     cleanup = async () => {
       const results = await Promise.allSettled([Promise.resolve(client?.close()), Promise.resolve(host?.stop()), origin?.stop(), stopRelay(relay)]);
       await rm(temp, { recursive: true, force: true });
@@ -608,8 +621,18 @@ describe('private relay compiled-process boundary', () => {
         expect(image.url).toMatch(/^openchamber-asset:\/\/v\//);
         await eventually(() => ended, 'relay image did not finish writing to native bridge');
         expect(Buffer.concat(received)).toEqual(previewPng);
+        const savedImage = await readRelayImageDisplayBlob(image.url);
+        expect(Buffer.from(await savedImage!.arrayBuffer())).toEqual(previewPng);
         image.release();
         await eventually(() => released, 'native image lease was not released');
+      }
+      for (const [range, expectedRange, bytes] of [['bytes=0-1', 'bytes 0-1/10', '01'], ['bytes=7-', 'bytes 7-9/10', '789']]) {
+        const response = await runtimeFetch('/api/fs/raw', { query: { path: origin.videoPath }, headers: { Range: range } });
+        expect(response.status).toBe(206);
+        expect(response.headers.get('content-range')).toBe(expectedRange);
+        expect(response.headers.get('accept-ranges')).toBe('bytes');
+        expect(response.headers.get('content-type')).toBe('video/mp4');
+        expect(await response.text()).toBe(bytes);
       }
     } finally {
       resetRelayImageStreamForTests();

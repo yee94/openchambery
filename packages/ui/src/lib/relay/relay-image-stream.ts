@@ -47,6 +47,8 @@ type TrackedAsset = {
   released: boolean;
   byteLength: number;
   bridge: NativeRelayAssetBridge | null;
+  sourcePath?: string;
+  sourceBlob?: Blob;
 };
 
 const assetsByUrl = new Map<string, TrackedAsset>();
@@ -196,6 +198,7 @@ const streamToNativeBridge = async (
   response: Response,
   signal: AbortSignal,
   transportIdentity: string,
+  sourcePath: string,
 ): Promise<string> => {
   await acquireOpenSlot(signal);
   if (signal.aborted) {
@@ -240,6 +243,7 @@ const streamToNativeBridge = async (
     released: false,
     byteLength: 0,
     bridge,
+    sourcePath,
   };
   assetsByUrl.set(opened.url, asset);
   assetsById.set(opened.assetId, asset);
@@ -513,6 +517,7 @@ const writeVerifiedBlobToNativeBridge = async (
     released: false,
     byteLength: blob.size,
     bridge,
+    sourceBlob: blob,
   };
   assetsByUrl.set(opened.url, asset);
   assetsById.set(opened.assetId, asset);
@@ -578,9 +583,26 @@ export const streamRelayImageDisplayUrl = async (
 
   const bridge = await resolveNativeRelayAssetBridge();
   if (bridge) {
-    return streamToNativeBridge(bridge, response, signal, transportIdentity);
+    return streamToNativeBridge(bridge, response, signal, transportIdentity, path);
   }
   return bufferToBlobUrl(response, signal, transportIdentity);
+};
+
+/** Read original bytes without trying to consume a native display stream twice. */
+export const readRelayImageDisplayBlob = async (url: string, signal?: AbortSignal): Promise<Blob | null> => {
+  const asset = assetsByUrl.get(url);
+  if (!asset || asset.released) return null;
+  if (asset.transportIdentity !== getRuntimeTransportIdentity()) throw new Error('Image runtime changed');
+  signal?.throwIfAborted();
+  if (asset.sourceBlob) return asset.sourceBlob;
+  if (!asset.sourcePath) return null;
+  const response = await runtimeFetch('/api/fs/raw', { query: { path: asset.sourcePath }, signal });
+  if (!response.ok) throw new Error(`Image source request failed (${response.status})`);
+  const blob = await response.blob();
+  signal?.throwIfAborted();
+  if (asset.transportIdentity !== getRuntimeTransportIdentity()) throw new Error('Image runtime changed');
+  if (!blob.size || blob.size > RELAY_IMAGE_MAX_BYTES) throw new Error('Invalid image size');
+  return blob;
 };
 
 /** Release a URL returned by streamRelayImageDisplayUrl (blob or native). */

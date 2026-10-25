@@ -35,6 +35,12 @@ Own filesystem API behavior for the web server runtime, including file operation
 - `index.js` no longer owns FS route handlers or FS exec job state.
 
 ## Notes for contributors
+- `/api/fs/raw` serves video MIME types (MP4/M4V/MOV/WebM/OGV) using Express's
+  streamed `sendFile` after the existing path authorization/realpath checks.
+  Explicit Range requests and HEAD use the same path: 206/Content-Range,
+  suffix/open-ended reads, 416 and disconnect cancellation are transport-neutral.
+  `raw-video.test.js` exercises the real route; the compiled Relay E2E test checks
+  that authorized ranges retain metadata/bytes across the encrypted tunnel.
 - Keep filesystem policy (read access, workspace root checks for mutations, error mapping, exec timeout behavior) inside this module, not in the composition root.
 - Optional `GET /api/fs/read` responses retain their `text/plain` body and set `x-openchamber-file-exists` to `true` or `false` so empty files remain distinguishable from missing files.
 - If adding new `/api/fs/*` endpoints, add them in `routes.js` and extend this document.
