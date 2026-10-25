@@ -715,7 +715,7 @@ const ImagePreviewDialog: React.FC<{
                             aria-label={t('chat.toolOutputDialog.image.previousAria')}
                             title={t('chat.toolOutputDialog.image.previousAria')}
                         >
-                            <Icon name="arrow-left-s" weight="medium" className={isMobile ? 'size-5' : 'size-6'} />
+                            <Icon name="arrow-left-s" weight="medium" className={isMobile ? 'size-4' : 'size-6'} />
                         </Button>
                     )}
                     {hasMultipleImages && (
@@ -732,7 +732,7 @@ const ImagePreviewDialog: React.FC<{
                             aria-label={t('chat.toolOutputDialog.image.nextAria')}
                             title={t('chat.toolOutputDialog.image.nextAria')}
                         >
-                            <Icon name="arrow-right-s" weight="medium" className={isMobile ? 'size-5' : 'size-6'} />
+                            <Icon name="arrow-right-s" weight="medium" className={isMobile ? 'size-4' : 'size-6'} />
                         </Button>
                     )}
                     {hasMultipleImages && <span className="mx-0.5 h-4 w-px bg-current opacity-15" aria-hidden="true" />}
@@ -744,12 +744,12 @@ const ImagePreviewDialog: React.FC<{
                         aria-label={t('chat.toolOutputDialog.image.zoomOutAria')}
                         title={t('chat.toolOutputDialog.image.zoomOutAria')}
                     >
-                        <Icon name="subtract" weight="medium" className={isMobile ? 'size-5' : 'size-6'} />
+                        <Icon name="subtract" weight="medium" className={isMobile ? 'size-4' : 'size-6'} />
                     </Button>
                     <Button
                         variant={isMobile ? 'ghost' : 'mobileGlass'}
                         size={isMobile ? 'sm' : 'lg'}
-                        className={cn('rounded-full tabular-nums', isMobile ? 'min-w-14 px-2' : 'min-w-20', isMobile && controlTone)}
+                        className={cn('rounded-full tabular-nums', isMobile ? 'min-w-12 gap-1 px-2 typography-micro' : 'min-w-20', isMobile && controlTone)}
                         onClick={() => resetTransform(true)}
                         aria-label={t('chat.toolOutputDialog.image.resetZoomAria')}
                         title={t('chat.toolOutputDialog.image.resetZoomAria')}
@@ -765,7 +765,7 @@ const ImagePreviewDialog: React.FC<{
                         aria-label={t('chat.toolOutputDialog.image.zoomInAria')}
                         title={t('chat.toolOutputDialog.image.zoomInAria')}
                     >
-                        <Icon name="add" weight="medium" className={isMobile ? 'size-5' : 'size-6'} />
+                        <Icon name="add" weight="medium" className={isMobile ? 'size-4' : 'size-6'} />
                     </Button>
                 <MediaSaveButton isMobile={isMobile} key={imageResource.key} target={{
                 sourceUrl: currentImage.url || displayImageSource, displayUrl: displayImageSource || undefined,

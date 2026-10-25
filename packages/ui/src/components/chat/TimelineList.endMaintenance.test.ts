@@ -27,7 +27,8 @@ const here = dirname(fileURLToPath(import.meta.url));
  * produces no measurements and never finishes the initial scroll these passes
  * are driven by. The wiring is therefore read rather than run.
  */
-describe('TimelineList end maintenance contracts', () => {
+// Legend production entry is disabled; retain these contracts for reactivation.
+describe.skip('TimelineList end maintenance contracts', () => {
     const source = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
 
     test('animation waits until the transcript has reached its live edge', () => {

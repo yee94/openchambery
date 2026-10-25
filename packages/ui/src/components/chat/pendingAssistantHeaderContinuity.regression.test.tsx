@@ -97,11 +97,6 @@ vi.mock('@/stores/useGlobalSessionsStore', () => ({
   }),
 }));
 
-vi.mock('@/stores/useFeatureFlagsStore', () => ({
-  useFeatureFlagsStore: (selector: (state: { legendTimelineEnabled: boolean }) => unknown) => selector({
-    legendTimelineEnabled: false,
-  }),
-}));
 
 vi.mock('@/components/ui/ModelLogo', () => ({
   ModelLogo: ({ modelId }: { modelId?: string | null }) => React.createElement(

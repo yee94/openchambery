@@ -25,6 +25,7 @@ import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolv
 import { setRuntimeBearerToken } from '../../../../ui/src/lib/runtime-auth.ts';
 import { adoptRelayTunnel, deactivateRelayTunnel } from '../../../../ui/src/lib/relay/runtime-tunnel.ts';
 import { acquireRuntimeImage } from '../../../../ui/src/lib/runtime-image-cache.ts';
+import { materializeImageBlob } from '../../../../ui/src/components/chat/imageSave.ts';
 import { NATIVE_RELAY_ASSET_BRIDGE_KEY } from '../../../../ui/src/lib/relay/native-asset-bridge.ts';
 import { readRelayImageDisplayBlob, resetRelayImageStreamForTests } from '../../../../ui/src/lib/relay/relay-image-stream.ts';
 import { registerFsRoutes } from '../fs/routes.js';
@@ -634,6 +635,13 @@ describe('private relay compiled-process boundary', () => {
         expect(response.headers.get('content-type')).toBe('video/mp4');
         expect(await response.text()).toBe(bytes);
       }
+      const downloadProgress: Array<number | null> = [];
+      const savedVideo = await materializeImageBlob({ kind: 'video', sourceUrl: `file://${origin.videoPath}` }, undefined, percent => downloadProgress.push(percent));
+      expect(await savedVideo.blob.text()).toBe('0123456789');
+      expect(downloadProgress[0]).toBe(0);
+      expect(downloadProgress).toContain(99);
+      expect(downloadProgress.at(-1)).toBe(100);
+      expect(downloadProgress).not.toContain(null);
     } finally {
       resetRelayImageStreamForTests();
       Reflect.deleteProperty(globalThis, NATIVE_RELAY_ASSET_BRIDGE_KEY);

@@ -143,7 +143,7 @@ test('fullscreen image saves directly from its icon without a sheet or context-m
   const button = document.querySelector<HTMLButtonElement>('[data-media-save]')!;
   expect(button.textContent).toBe('');
   await act(async () => button.click());
-  expect(saveImageToDevice).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'data:image/png;base64,AA==' }), expect.any(AbortSignal));
+  expect(saveImageToDevice).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'data:image/png;base64,AA==' }), expect.any(AbortSignal), expect.any(Function));
   expect(button.dataset.mediaSave).toBe('saved');
   expect(document.querySelector('[data-oc-motion-id="image-save-actions-sheet"]')).toBeNull();
   expect(document.querySelector('[data-media-preview="image"]')).not.toBeNull();

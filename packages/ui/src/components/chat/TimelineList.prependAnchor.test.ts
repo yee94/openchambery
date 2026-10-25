@@ -21,7 +21,8 @@ const here = dirname(fileURLToPath(import.meta.url));
  * mounts no rows, produces no measurements and never finishes the initial
  * scroll the hold observes. Those parts are therefore read rather than run.
  */
-describe('TimelineList prepend anchor contracts', () => {
+// Legend production entry is disabled; retain these contracts for reactivation.
+describe.skip('TimelineList prepend anchor contracts', () => {
     const source = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
 
     /**

@@ -224,9 +224,11 @@ Examples:
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
 `useFeatureFlagsStore` owns lightweight localStorage A/B flags. TanStack Virtual
-is the chat list runtime default (`legendTimelineEnabled` is true only when
-`localStorage.oc:legend-timeline === '1'`). LegendList / TimelineList stay
-opt-in. On this experiment branch, assistant Markdown defaults to
+with StaticHistoryList and auto-follow is the only production chat list path on
+every platform and in the context panel. The Legend flag, reader, and setter
+have been removed; old `oc:legend-timeline` values are ignored. TimelineList and
+its algorithms are retained without a production entry.
+On this experiment branch, assistant Markdown defaults to
 `markstream-react` (`markstreamReactEnabled` is false only when
 `localStorage.oc:markstream-react === '0'`). Set that key to `0` to fall back
 to marked + Shiki + morphdom. User, tool, and other `SimpleMarkdownRenderer`

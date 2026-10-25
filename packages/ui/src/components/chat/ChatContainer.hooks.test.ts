@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -141,7 +141,8 @@ describe('ChatContainer source contracts', () => {
         expect(timelineSource).toContain('endHistoryViewportPreservation();');
     });
 
-    test('legend path releases end pinning before an explicit older-history fetch', () => {
+    // Legend production entry is disabled; retain its dedicated bridge contract.
+    test.skip('legend path releases end pinning before an explicit older-history fetch', () => {
         // A prepend is a data change, and maintainScrollAtEnd fires on
         // dataChange: with follow still armed the list reads the content
         // growth as an end correction and throws the viewport to the live
@@ -198,24 +199,17 @@ describe('ChatContainer source contracts', () => {
         const resumeStart = source.indexOf('const resumeToLatestInstant = useEvent');
         expect(resumeStart).toBeGreaterThan(-1);
         const resumeBody = source.slice(resumeStart, source.indexOf('});', resumeStart));
-        expect(resumeBody).toContain('setLegendFollowReleased(false);');
         expect(resumeBody).toContain("goToBottom('instant')");
         const autoFollowSource = readFileSync(join(here, '../../hooks/useChatAutoFollow.ts'), 'utf8');
         expect(source).toContain('scrollControllerRef: messageListRef');
         expect(autoFollowSource).toContain("scrollControllerRef?.current?.scrollToBottom({ behavior: mode === 'smooth' ? 'smooth' : 'auto', ...options })");
-        // The visible control goes through turn navigation, which must use
-        // this wrapper so the legend follow-release flag is also reset.
+        // The visible control goes through turn navigation and auto-follow.
         expect(source).toContain('resumeToBottom: resumeToLatestInstant,');
         expect(source).not.toContain('resumeToBottom: timelineController.resumeToBottomInstant,');
     });
 
-    test('legend footer keeps composer inset without the live status row', () => {
-        const footerStart = source.indexOf('footerSlot={(');
-        expect(footerStart).toBeGreaterThan(-1);
-        const footSpacer = source.indexOf('MOBILE_TIMELINE_FOOT_SPACER_HEIGHT', footerStart);
-        expect(footSpacer).toBeGreaterThan(footerStart);
-        const footer = source.slice(footerStart, footSpacer);
-        expect(footer).not.toContain('StatusRowContainer');
+    test('default viewport keeps composer inset and the shell-gated live status slot', () => {
+        expect(source).toContain('style={{ height: isMobile ? CHAT_TAIL_SPACER_MOBILE_HEIGHT : CHAT_TAIL_SPACER_DESKTOP_HEIGHT }}');
         expect(source).toContain('<StatusRowContainer />');
         // Classic path: shell-gated status mounts through MessageList.liveStatusSlot
         // (inside the pin-reveal root), not as a sibling after MessageList.
@@ -227,11 +221,10 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toMatch(/<\/MessageList>\s*\{\/\* No transcript shell/);
     });
 
-    test('composer send re-arms legend follow so a mid-history send can park', () => {
+    test('composer send invokes the default on-send follow policy', () => {
         expect(source).toContain('const scrollViewportOnSend = useEvent');
         const sendStart = source.indexOf('const scrollViewportOnSend = useEvent');
         const sendBody = source.slice(sendStart, source.indexOf('});', sendStart));
-        expect(sendBody).toContain('setLegendFollowReleased(false);');
         expect(sendBody).toContain('scrollToBottomOnSend()');
         expect(source).toContain('scrollToBottom={scrollViewportOnSend}');
         expect(source).not.toContain('scrollToBottom={scrollToBottomOnSend}');
@@ -299,7 +292,8 @@ describe('ChatContainer source contracts', () => {
         expect(revealBody).toContain('retainedPendingUserMessages.length > 0');
     });
 
-    test('legend scroller dataset restores the transcript scroll-shadow mask', () => {
+    // Legend production entry is disabled; default ScrollShadow remains tested.
+    test.skip('legend scroller dataset restores the transcript scroll-shadow mask', () => {
         expect(source).toContain("scrollShadow: 'true'");
         expect(source).toContain("orientation: 'vertical'");
     });

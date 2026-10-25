@@ -37,10 +37,25 @@
     corner-shape: round;
     box-shadow: none;
     color: var(--oc-media-preview-foreground);
+    background: transparent;
+    isolation: isolate;
+}
+
+[data-media-preview-toolbar="mobile"] button::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
     background: color-mix(in srgb, var(--oc-media-preview-background) 60%, var(--oc-media-preview-foreground));
 }
 
 [data-media-preview-toolbar="mobile"] button:hover:not(:disabled) {
+    background: transparent;
+}
+
+[data-media-preview-toolbar="mobile"] button:hover:not(:disabled)::before {
     background: color-mix(in srgb, var(--oc-media-preview-background) 48%, var(--oc-media-preview-foreground));
 }
 

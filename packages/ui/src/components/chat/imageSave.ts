@@ -5,6 +5,7 @@ import { isVSCodeRuntime } from '@/lib/desktop';
 import { isCapacitorApp } from '@/lib/platform';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { readRelayImageDisplayBlob } from '@/lib/relay/relay-image-stream';
+import { readDownloadBlob, type DownloadProgress } from '@/lib/download-progress';
 
 import {
   needsRuntimeImageStream,
@@ -96,33 +97,35 @@ const downloadBlob = (blob: Blob, filename: string): void => {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 };
 
-const fetchBlobFromUrl = async (url: string, signal?: AbortSignal): Promise<Blob> => {
+const fetchBlobFromUrl = async (url: string, signal?: AbortSignal, onProgress?: DownloadProgress): Promise<Blob> => {
   if (url.startsWith('openchamber-asset:')) {
-    const original = await readRelayImageDisplayBlob(url, signal);
+    const original = await readRelayImageDisplayBlob(url, signal, onProgress);
     if (original) return original;
     if (isCapacitorApp()) throw new Error('Image display stream is no longer available');
   }
   const response = await (/^\/api(?=\/|[?#]|$)/.test(url)
-    ? runtimeFetch(url, { signal, cache: 'no-store' })
+    ? runtimeFetch(url, { signal, cache: 'no-store', headers: onProgress && /^\/api\/fs\/raw(?:[?#]|$)/.test(url) ? { Range: 'bytes=0-' } : undefined })
     : fetch(url, { signal, cache: 'no-store' }));
   if (!response.ok) {
     throw new Error(`Image fetch failed (${response.status})`);
   }
-  return response.blob();
+  return readDownloadBlob(response, signal, onProgress);
 };
 
 const materializeFromRuntimePath = async (
   path: string,
   signal?: AbortSignal,
+  onProgress?: DownloadProgress,
 ): Promise<Blob> => {
-  const response = await runtimeFetch('/api/fs/raw', { query: { path }, signal });
+  const response = await runtimeFetch('/api/fs/raw', { query: { path }, signal, headers: onProgress ? { Range: 'bytes=0-' } : undefined });
   if (!response.ok) throw new Error(`Image source request failed (${response.status})`);
-  return response.blob();
+  return readDownloadBlob(response, signal, onProgress);
 };
 
 export const materializeImageBlob = async (
   target: ImageSaveTarget,
   signal?: AbortSignal,
+  onProgress?: DownloadProgress,
 ): Promise<{ blob: Blob; filename: string; mimeType: string }> => {
   const effectiveDirectory = target.effectiveDirectory ?? '';
   let blob: Blob | null = null;
@@ -137,10 +140,11 @@ export const materializeImageBlob = async (
   const displayUrl = target.displayUrl?.trim();
   if (!blob && displayUrl) {
     try {
-      blob = await fetchBlobFromUrl(displayUrl, signal);
+      blob = await fetchBlobFromUrl(displayUrl, signal, onProgress);
     } catch {
       signal?.throwIfAborted();
       blob = null;
+      onProgress?.(0);
     }
   }
 
@@ -151,13 +155,13 @@ export const materializeImageBlob = async (
     }
 
     if (/^(?:data|blob):/i.test(source) || /^https?:/i.test(source) || /^\/api(?=\/|[?#]|$)/.test(source)) {
-      blob = await fetchBlobFromUrl(source, signal);
+      blob = await fetchBlobFromUrl(source, signal, onProgress);
     } else {
       const resolved = resolveImageSource(source, effectiveDirectory);
       if (needsRuntimeImageStream(resolved)) {
-        blob = await materializeFromRuntimePath(resolved.path, signal);
+        blob = await materializeFromRuntimePath(resolved.path, signal, onProgress);
       } else {
-        blob = await fetchBlobFromUrl(resolved.source, signal);
+        blob = await fetchBlobFromUrl(resolved.source, signal, onProgress);
       }
     }
   }
@@ -165,6 +169,7 @@ export const materializeImageBlob = async (
   if (!blob || blob.size <= 0) {
     throw new Error('Image is empty');
   }
+  onProgress?.(100);
 
   const mimeType = (
     target.mimeType
@@ -194,8 +199,9 @@ const isNativeMediaAvailable = (): boolean => {
 export const saveImageToDevice = async (
   target: ImageSaveTarget,
   signal?: AbortSignal,
+  onProgress?: DownloadProgress,
 ): Promise<ImageSaveResult> => {
-  const { blob, filename, mimeType } = await materializeImageBlob(target, signal);
+  const { blob, filename, mimeType } = await materializeImageBlob(target, signal, onProgress);
   signal?.throwIfAborted();
 
   if (isNativeMediaAvailable()) {

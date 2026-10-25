@@ -64,7 +64,10 @@ test('native composer rest height stays collapsed and scroll lives above send', 
   assert.doesNotMatch(restTop, /scrollChrome/);
   assert.match(plugin, /not change this value/);
   assert.match(view, /setCornerRadius\(18\)/);
-  assert.match(view, /agentButton\.widthAnchor\.constraint\(equalToConstant: 16\)/);
+  assert.match(view, /agentButton\.widthAnchor\.constraint\(equalToConstant: 22\)/);
+  assert.match(view, /agentButton\.heightAnchor\.constraint\(equalToConstant: 22\)/);
+  assert.match(view, /Self\.decodePng\(agentIcon\)/);
+  assert.match(view, /Self\.identiconImage\(bits: agentIdenticon, color: agentColor, size: 22\)/);
   assert.match(view, /shouldApplyText/);
   assert.match(view, /markedTextRange/);
   assert.match(view, /returnKeyType = \.send/);

@@ -96,7 +96,15 @@ describe('mobile press feedback scale policy', () => {
     expect(mobileCss).toContain('[data-mobile-press-surface="soft"]:has(');
     expect(projectCardSource).toContain('data-mobile-press-surface-trigger');
     expect(projectCardSource).not.toContain('data-mobile-press-feedback="none"');
-    expect(assistantCardSource).toContain('data-mobile-press-surface-trigger');
+  });
+
+  test('swipeable assistant cards scale their interactive foreground without scaling the action rail', () => {
+    expect(assistantCardSource).toContain('useMobileSwipeActions(`assistant:${assistantID}`, onOpen)');
+    expect(assistantCardSource).toContain('<MobileSwipeActionRail swipe={swipe}');
+    expect(assistantCardSource).toContain('data-mobile-press-feedback="soft"');
+    expect(assistantCardSource).toContain('onClick={swipe.handleSelect}');
+    expect(assistantCardSource).not.toContain('data-mobile-press-surface-trigger');
+    expect(assistantCardSource).not.toContain('data-mobile-press-surface="soft"');
     expect(assistantCardSource).not.toContain('data-mobile-press-feedback="none"');
   });
 

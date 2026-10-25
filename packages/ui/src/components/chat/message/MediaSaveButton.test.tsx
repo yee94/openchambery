@@ -14,7 +14,7 @@ afterEach(async () => { await act(async () => root.unmount()); });
 const render = (sourceUrl = 'blob:first') => act(async () => root.render(<MediaSaveButton isMobile key={sourceUrl} target={{ sourceUrl }} />));
 const button = () => host.querySelector('button')!;
 
-test('one click shows an icon-only spinner until saving completes, then a check without duplicate writes', async () => {
+test('one click shows a track and byte-progress arc until saving completes, then a check without duplicate writes', async () => {
   let finish!: (result: 'saved') => void;
   vi.mocked(saveImageToDevice).mockReturnValue(new Promise(resolve => { finish = resolve; }));
   await render();
@@ -22,7 +22,15 @@ test('one click shows an icon-only spinner until saving completes, then a check 
   expect(saveImageToDevice).toHaveBeenCalledTimes(1);
   expect(button().dataset.mediaSave).toBe('saving');
   expect(button().getAttribute('aria-busy')).toBe('true');
-  expect(button().querySelector('svg')?.classList.contains('motion-safe:animate-spin')).toBe(true);
+  const report = vi.mocked(saveImageToDevice).mock.calls[0][2]!;
+  const ring = button().querySelector('[role="progressbar"]')!;
+  expect(ring.querySelectorAll('circle')).toHaveLength(2);
+  expect(ring.getAttribute('aria-valuenow')).toBe('0');
+  await act(async () => report(25));
+  expect(ring.getAttribute('aria-valuenow')).toBe('25');
+  expect(ring.querySelectorAll('circle')[1].getAttribute('stroke-dasharray')).toBe('25 100');
+  await act(async () => report(100));
+  expect(button().dataset.mediaSave).toBe('saving');
   expect(button().textContent).toBe('');
   await act(async () => finish('saved'));
   expect(button().dataset.mediaSave).toBe('saved');
@@ -48,9 +56,10 @@ test('switching media aborts the old read and ignores its late completion', asyn
   await render();
   await act(async () => button().click());
   const signal = vi.mocked(saveImageToDevice).mock.calls[0][1]!;
+  const report = vi.mocked(saveImageToDevice).mock.calls[0][2]!;
   await render('blob:second');
   expect(signal.aborted).toBe(true);
-  await act(async () => finish('saved'));
+  await act(async () => { report(80); finish('saved'); });
   expect(button().dataset.mediaSave).toBe('idle');
 });
 

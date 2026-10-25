@@ -13,7 +13,8 @@ const here = dirname(fileURLToPath(import.meta.url));
  * shrink measurement keep writing the row's natural height. jsdom gives
  * this list a zero-sized viewport, so the wiring is read rather than run.
  */
-describe('TimelineList new-turn anchor contracts', () => {
+// Legend production entry is disabled; retain these contracts for reactivation.
+describe.skip('TimelineList new-turn anchor contracts', () => {
     const source = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
     const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
 
