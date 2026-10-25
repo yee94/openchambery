@@ -1,17 +1,17 @@
 ---
 title: Yuri 文档
-description: 在 Web、桌面与 VS Code 上设置和使用 Yuri 的指南。
+description: 在桌面、手机、浏览器与 VS Code 中使用 Agent、个人助理和计划任务。
 ---
 
 # Yuri 文档
 
-Yuri 是围绕 OpenCode（在你终端中运行的 AI 编程 Agent）的可视化工作空间。它给你一块屏幕去观察并引导这些工作，而不必停留在命令行里。
+Yuri 是面向编程、个人助理与周期任务的 AI 工作台。把对话、文件、Diff 和终端放在一起，再连接其他设备，随时查看进展并继续工作。
 
 使用本文档来：
 
-- 为你的工作方式安装合适的应用
-- 安全地将 Yuri 开放给远程使用
-- 自定义外观并排查常见问题
+- 建立工作空间，选择模型与工具
+- 审查 Agent 改动，在其他设备上继续工作
+- 把重复工作设为目标或计划任务
 
 ## 请先阅读
 
@@ -25,8 +25,10 @@ Yuri 是围绕 OpenCode（在你终端中运行的 AI 编程 Agent）的可视�
 - [项目](/zh-cn/projects/) 与 [Worktree 会话](/zh-cn/worktrees/) — 组织并隔离你的工作
 - [提供商、模型与 Agent](/zh-cn/providers/) — 连接 OpenCode 并选择模型
 - [Git 与 GitHub 工作流](/zh-cn/git/) — 提交、审查并创建 PR
+- [会话目标](/zh-cn/session-goals/)与[计划任务](/zh-cn/scheduled-tasks/) — 设定目标，自动执行周期工作
+- [移动端](/zh-cn/mobile/)与[连接设备](/zh-cn/connect-devices/) — 从手机访问工作空间
 - [安全](/zh-cn/security/) 与 [Private Relay](/zh-cn/private-relay/) — 保护并访问你的实例
 
 ## Yuri 用于什么
 
-Yuri 面向 AI 编程中那些受益于控制中枢的部分：为会话分支、审查代码差异、管理终端、观察工具进度、运行项目操作，并在 Agent 工作时让整个面板尽收眼底。
+需要逐步引导时使用普通会话，有明确交付目标时使用目标模式，工作需要重复执行时使用计划任务。Yuri 使用 OpenCode 执行 Agent 任务，提供应用交互、会话协调、设备连接与自动化。计划任务需要 Yuri 服务保持在线。

@@ -1,143 +1,67 @@
-# <picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/yuri-logo-dark.svg"><img src="docs/references/badges/yuri-logo-light.svg" width="32" height="32" align="absmiddle" /></picture> Yuri
+# Yuri
 
-[![GitHub stars](https://img.shields.io/github/stars/yee94/yuri?style=flat&labelColor=100F0F&color=66800B)](https://github.com/yee94/yuri/stargazers)
-[![GitHub release](https://img.shields.io/github/v/release/yee94/yuri?style=flat&labelColor=100F0F&color=205EA6)](https://github.com/yee94/yuri/releases/latest)
-[![Created with OpenCode](docs/references/badges/created-with-opencode.svg)](https://opencode.ai)
+**An AI workspace for coding, personal assistants, and recurring tasks — across desktop, mobile, browser, and VS Code.**
 
-**The full-surface GUI and mission control for [OpenCode](https://opencode.ai).**
-
-Desktop · Mobile · Browser · VS Code
-
-[中文说明](./README_ZH.md)
+[中文](README_ZH.md) · [Documentation](packages/docs/content/docs/index.mdx) · [Contributing](CONTRIBUTING.md)
 
 <p align="center">
   <img src="docs/references/badges/yuri-logo-light.svg" alt="Yuri" width="160" />
 </p>
 
----
+Yuri brings conversations, code changes, terminals, and automated work into one workspace. Start a task at your desk, check it from your phone, review what changed, and decide what happens next.
 
-## About Yuri
+## Work with agents
 
-**Yuri** is maintained by [@yee94](https://github.com/yee94). Copyright and licensing notices are preserved in [LICENSE](LICENSE).
+- **Projects and sessions.** Organize work by project, branch a conversation, and use Git worktrees to isolate changes.
+- **Review and ship.** Inspect file edits and diffs, use the integrated terminal, and manage Git and GitHub workflows alongside the conversation.
+- **Personal assistants.** Keep assistant conversations close at hand and bring in text, links, and images from mobile sharing.
+- **Goals and schedules.** Give a session an objective with progress checks, or schedule prompts to run daily, weekly, or once. Inspect each run in its history. Scheduled work requires a running Yuri server.
+- **Your models and tools.** Configure providers, models, agents, skills, and MCP tools for each workflow.
 
-Building upon the upstream cross-surface architecture and [OpenCode](https://opencode.ai) runtime engine, Yuri focuses on:
-- **Codex-grade desktop flow**: `Ctrl+X` leader shortcuts, double-`Esc` abort, `/fork` session branching, and keyboard-first operations.
-- **Deep native mobile experience**: iOS Live Activities & Dynamic Island, refined haptics, native composer, and system share integration.
-- **Scheduled automations & Goal mode**: Built-in Cron scheduler for recurring codebase health audits, standup digests, and autonomous tasks.
-- **Reliability & cross-device sync**: SQLite session indexing, coalesced cold-start queries, and resilient synchronization.
+## Take the workspace with you
 
----
+| Surface | Role |
+| --- | --- |
+| Desktop | Electron app with local workspaces, Mini Chat, multiple windows, and SSH connections |
+| Mobile | iOS and Android clients that connect to a Yuri server; iOS Live Activities and system sharing |
+| Browser | Self-hosted access to the workspace, with device pairing and optional private relay |
+| VS Code | Sessions and project context inside the editor |
 
-## Features
+Yuri uses the OpenCode runtime for agent execution. Yuri owns the application experience, device connectivity, session coordination, and automation around that runtime.
 
-### 1. Chat & Interaction
-- **Codex-grade keyboard flow**: `Ctrl+X` leader chords, double-`Esc` abort, `/fork`, `/compact`, and `Ctrl+C` input clear.
-- **Branchable session tree**: Fork sessions anytime from earlier turns, explore alternative paths, and navigate past timelines with `/undo` and `/redo`.
-- **Smart tool UI**: Live visual diff cards, file operations, permission prompts, and long-running task progress (with real-time tok/s).
-- **Plan / Build mode**: Dedicated plan drafting view; add inline comments on diffs and plans to feed back to the agent.
-- **Parallel subagents & worktrees**: Spawn child agents running inside isolated Git worktrees without touching your active branch.
-- **Voice mode & diagrams**: Speech input and read-aloud responses; embedded Mermaid diagram rendering.
+## Run from source
 
-### 2. Git & GitHub Workflows
-- **Full Git sidebar**: Staging, commits, push/pull, branch management, rebase, and merge flows.
-- **Automated PR workflows**: AI-generated PR descriptions, integrated CI status checks, and in-app merging.
-- **Issue & PR context**: Start dedicated sessions directly from GitHub issues or pull requests with context pre-attached.
-
-### 3. Files, Diff & Integrated Terminal
-- **Interactive diff viewer**: Stacked and inline views, lazy loading for large changesets, and one-click file jump.
-- **Workspace file tree**: Built-in editor with syntax highlighting, Vim mode, and live Markdown preview.
-- **High-performance terminal**: Powered by the Ghostty engine with multi-tab support and stability under heavy output.
-
-### 4. Native Mobile Experience (iOS / Android / PWA)
-- **iOS Live Activities & Dynamic Island**: Track active tasks, runtime, and attention prompts without keeping the app open.
-- **Refined touch & native composer**: Elastic press feedback, light haptics, and a mobile-optimized input experience.
-- **System share integration**: Share links, text snippets, and images from any mobile app directly into Yuri assistants.
-- **Push alerts**: Remote notifications supported via APNs and self-hosted Push Relay.
-
-### 5. Scheduled Tasks & Automations
-- **Built-in Cron / recurring schedules**: Trigger runs daily, weekly, or via custom Cron expressions.
-- **Goal Mode**: Hand off high-level prompts that agents pursue autonomously until done, with complete run logs.
-- **Common use cases**: Daily codebase morning digests, periodic dependency audits, and weekly architecture reviews.
-
-### 6. Multi-Surface & Connectivity
-- **One-tap QR pairing**: Scan from the mobile app to pair devices instantly with isolated authorization tokens.
-- **Private Relay**: End-to-end encrypted remote access without opening router ports or exposing public IPs.
-- **Desktop extras**: Floating Mini Chat, multi-window workspace, and SSH remote instance management with port forwarding.
-- **VS Code Extension**: Run full sessions directly in your editor sidebar with Agent Manager and context menus.
-
-### 7. Customization & Insights
-- **18+ built-in themes**: Light and dark variants with hot-reloading for custom JSON themes.
-- **Token usage & cost metrics**: Real-time token breakdowns across providers, run pacing, and raw message inspector.
-- **Project notes & skills**: Persistent workspace Notes and Todos, plus built-in Skills catalog and management.
-
----
-
-## Downloads
-
-Release blocked pending ownership and signing verification. The repository and publisher below are candidate identities, not a claim that installers are available. See [release requirements](docs/RELEASING.md).
-
-| Platform | Installation |
-|---|---|
-| **Desktop** (macOS / Windows / Linux) | [GitHub Releases](https://github.com/yee94/yuri/releases) |
-| **iOS** (TestFlight) | New Yuri TestFlight identity pending verification; see [release requirements](docs/RELEASING.md) |
-| **Android** | [GitHub Releases](https://github.com/yee94/yuri/releases/latest) (`app-release.apk`) |
-| **VS Code** | Search `Yuri` in Extensions or install from [Marketplace](https://marketplace.visualstudio.com/items?itemName=yee94.yuri) |
-| **Web / CLI** | Install via `yuri` script (see below) |
-
----
-
-## Quick Start
-
-> Desktop bundles a matching OpenCode CLI. Web/CLI and VS Code use your locally installed [OpenCode](https://opencode.ai).
-
-### Web / CLI Server
-
-Requires Node.js 22+:
+Use Node.js 24 (see `.nvmrc`) and Bun 1.3.14. Install the OpenCode runtime before starting a local web development instance.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yee94/yuri/main/scripts/install.sh | bash
-yuri --ui-password your-secure-password
+git clone https://github.com/yee94/yuri.git
+cd yuri
+bun install
+bun run dev
 ```
 
-Open `http://localhost:3000`. Under Settings → Remote Instances, generate a QR code to pair your mobile app.
+Open the URL printed by the development server. For desktop development, run `bun run electron:dev` instead.
 
-<details>
-<summary>Common yuri CLI commands</summary>
+See [Contributing](CONTRIBUTING.md) for build commands and development checks, and the [connection guide](packages/docs/content/docs/connect-devices.mdx) for connecting another device.
 
-```bash
-yuri --port 8080              # Custom port
-yuri --lan --port 3000        # Listen on LAN (0.0.0.0)
-yuri --ui-password secret     # Require UI password
-yuri startup enable           # Enable auto-start service on boot
-yuri connect-url --port 3000 --qr # Print pairing QR in terminal
-yuri stop                     # Stop background service
-yuri update                   # Update to latest version
-```
+## Downloads and deployment
 
-</details>
+Published artifacts belong in [GitHub Releases](https://github.com/yee94/yuri/releases). Installer, store, and signing setup is tracked in the [release guide](docs/RELEASING.md); source availability does not imply that every platform has a published installer.
 
-<details>
-<summary>Docker</summary>
+- [Web server](packages/web/README.md)
+- [Desktop app](packages/electron/README.md)
+- [Mobile apps](packages/mobile/README.md)
+- [VS Code extension](packages/vscode/README.md)
+- [Private relay](packages/relay-server/README.md)
 
-```bash
-docker compose up -d
-```
+## Repository
 
-Available at `http://localhost:3000`. Set `UI_PASSWORD` in your environment.
+Shared UI lives in `packages/ui`. The web server and runtime services live in `packages/web`; Electron, mobile, and VS Code packages provide their platform integrations. User documentation lives in `packages/docs`.
 
-</details>
+## Acknowledgments
 
----
-
-## Attribution
-
-| Role | Details |
-|---|---|
-| **This fork** | Maintained by [yee94](https://github.com/yee94) (Yee) — Codex interaction parity, mobile UX, session reliability, and multi-surface polish |
-| **Runtime Engine** | [OpenCode](https://opencode.ai) — open-source AI agent runtime & SDK |
-
-Independent community project; not affiliated with the OpenCode team.
+Thank you to [OpenChamber](https://github.com/openchamber/openchamber) and [OpenCode](https://opencode.ai) for the open-source foundations that helped make Yuri possible.
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](LICENSE). Original copyright and license notices are retained.

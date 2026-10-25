@@ -1,8 +1,8 @@
 # Yuri Docs Source
 
-Repository and package links use candidate Yuri identities pending ownership verification. Do not treat these source changes as a completed public deployment.
+This package contains Yuri's user guides: project work, personal assistants, goals, scheduled tasks, and access across desktop, mobile, browser, and VS Code. Start with [the documentation overview](content/docs/index.mdx) or [简体中文](content/docs/zh-cn/index.mdx).
 
-This package is the source-of-truth for Yuri public docs content.
+The source repository is [yee94/yuri](https://github.com/yee94/yuri). Public installers and store availability are tracked separately in the [release guide](../../docs/RELEASING.md).
 
 ## Layout
 

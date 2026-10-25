@@ -3,6 +3,26 @@
   "exceptions": [
     {
       "kind": "content",
+      "path": "README.md",
+      "line": "Thank you to [OpenChamber](https://github.com/openchamber/openchamber) and [OpenCode](https://opencode.ai) for the open-source foundations that helped make Yuri possible.",
+      "count": 1,
+      "category": "upstream-attribution",
+      "reason": "User-requested acknowledgment of the open-source foundations",
+      "owner": "Repository documentation maintainers",
+      "exitCondition": "Retain while the upstream acknowledgment applies"
+    },
+    {
+      "kind": "content",
+      "path": "README_ZH.md",
+      "line": "感谢 [OpenChamber](https://github.com/openchamber/openchamber) 与 [OpenCode](https://opencode.ai) 提供的开源基础。",
+      "count": 1,
+      "category": "upstream-attribution",
+      "reason": "Chinese translation of the user-requested upstream acknowledgment",
+      "owner": "Repository documentation maintainers",
+      "exitCondition": "Retain while the upstream acknowledgment applies"
+    },
+    {
+      "kind": "content",
       "path": "packages/ui/src/lib/assistant-attachment-cache.ts",
       "line": "    for (const name of ['yuri-assistant-attachments', 'openchamber-assistant-attachments', 'openchambery-assistant-attachments']) {",
       "count": 1,
