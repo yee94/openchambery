@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.3] - 2026-10-25
+
+### 改进
+
+- 从某个工作区发起对话时，对应 worktree 会按最长路径匹配后提升到项目排序首位，侧边栏项目分组随之重排；同时兼容读取旧版本保存的分组排序偏好。
+
 ## [2.1.10-beta.2] - 2026-10-25
 
 ### 改进

@@ -1,6 +1,6 @@
-import { expect, test } from 'bun:test';
+import { expect, test } from 'vitest';
 import { MessageQueueServerError, type MessageQueueSnapshot } from '@/lib/message-queue-server';
-import { useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
+import { orderWorktrees, registerWorktreeOrderWriter, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import { __worktreeOrderSyncTest, createWorktreeOrderObserver, type WorktreeOrderSyncDependencies } from './worktree-order-sync';
 
 const reset = () => {
@@ -201,4 +201,51 @@ test('observer restores a pending empty order after restart', async () => {
   observer.stop();
   expect(writes).toEqual([[]]);
   expect(useWorktreeOrderStore.getState().pendingProjectIDs).toEqual({});
+});
+
+test('conversation promotion reaches the Host writer and a second client via an invalidation tip', async () => {
+  reset();
+  const paths = ['/trees/a', '/trees/b', '/trees/c'];
+  const catalog = paths.map((path) => ({ path, projectDirectory: '/project', branch: path, label: path }));
+  let hostOrder = { projectDirectory: '/project', orderedPaths: paths, revision: 1 };
+  const sourceDependencies = dependencies({
+    setOrder: async (input) => {
+      expect(input.expectedRevision).toBe(hostOrder.revision);
+      hostOrder = { projectDirectory: input.projectDirectory, orderedPaths: input.orderedPaths, revision: hostOrder.revision + 1 };
+      return { revision: hostOrder.revision, worktreeOrder: hostOrder };
+    },
+  });
+  useWorktreeOrderStore.getState().applyServerWorktreeOrder('project', paths, 1);
+  const unregister = registerWorktreeOrderWriter((id, directory, order) => {
+    __worktreeOrderSyncTest.enqueue(id, directory, order, sourceDependencies);
+  });
+  try {
+    useWorktreeOrderStore.getState().promoteWorktree('project', '/project', paths[2], catalog);
+    await settle();
+    expect(hostOrder.orderedPaths).toEqual([paths[2], paths[0], paths[1]]);
+    expect(useWorktreeOrderStore.getState().pendingProjectIDs).toEqual({});
+  } finally { unregister(); }
+
+  // A separate client's store starts with the old snapshot, then receives the Host tip.
+  reset();
+  let reads = 0;
+  let waits = 0;
+  const observer = createWorktreeOrderObserver(() => [{ id: 'other-client-project', path: '/project' }], dependencies({
+    fetchSnapshot: async () => {
+      reads += 1;
+      return snapshot([reads === 1 ? { ...hostOrder, orderedPaths: paths, revision: 1 } : hostOrder]);
+    },
+    waitInvalidation: async () => {
+      if (++waits === 1) return 'tip';
+      throw new MessageQueueServerError(501, 'unavailable');
+    },
+  }));
+  try {
+    observer.start();
+    await settle();
+    const received = useWorktreeOrderStore.getState().orderByProject['other-client-project'];
+    expect(received).toEqual(hostOrder.orderedPaths);
+    expect(orderWorktrees(received, catalog).map(({ path }) => path)).toEqual([paths[2], paths[0], paths[1]]);
+    expect(reads).toBe(2);
+  } finally { observer.stop(); }
 });
