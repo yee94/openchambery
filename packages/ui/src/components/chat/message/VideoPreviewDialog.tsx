@@ -70,7 +70,7 @@ export function VideoPreviewDialog({ video, onClose, isMobile }: {
       onError={() => setFailedSource(source)}
       controlsList="nodownload" onContextMenu={(event) => event.preventDefault()}
     />}
-    <MediaPreviewToolbar><MediaSaveButton key={sourceKey} target={{ kind: 'video', sourceUrl: video.url,
+    <MediaPreviewToolbar isMobile={isMobile}><MediaSaveButton isMobile={isMobile} key={sourceKey} target={{ kind: 'video', sourceUrl: video.url,
       displayUrl: activeNative?.url ? undefined : source, filename: video.filename,
       mimeType: video.mimeType, effectiveDirectory: directory, prefetchedBlob: resource.data }} /></MediaPreviewToolbar>
   </div>;
