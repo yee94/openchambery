@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
   endpointListeners: new Set<() => void>(), authListeners: new Set<() => void>(),
   native: false, open: vi.fn(), write: vi.fn(), end: vi.fn(), release: vi.fn(), abort: vi.fn(),
   durable: new Map<string, Blob>(), durableWrite: vi.fn(),
+  diskBridge: undefined as undefined | { acquire: ReturnType<typeof vi.fn>; append: ReturnType<typeof vi.fn>; commit: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> },
   directory: '/workspace',
 }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: state.fetch }));
@@ -57,7 +58,7 @@ vi.mock('@/lib/queryRuntime', async () => {
   return { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }) };
 });
 vi.mock('@/lib/relay/native-asset-bridge', () => ({
-  getNativeImageCacheBridge: () => null,
+  getNativeImageCacheBridge: () => state.diskBridge ?? null,
   resolveNativeRelayAssetBridge: async () => state.native ? {
     openAsset: state.open, writeChunk: state.write, endAsset: state.end,
     releaseAsset: state.release, abortAsset: state.abort,
@@ -198,6 +199,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   state.transport = 'relay:host-a'; state.generation = 0; state.auth = 0; state.bytes = 0;
   state.native = false;
+  state.diskBridge = undefined;
   state.binary = undefined;
   state.directory = '/workspace';
   state.durable.clear();
@@ -441,6 +443,49 @@ test('auth invalidation revokes active URLs and clears completed cached bodies',
   expect(state.fetch).toHaveBeenCalledTimes(2);
 });
 
+test('Markstream native fork revalidates delayed metadata and cannot reuse a live legacy file version', async () => {
+  const disk = new Set<string>();
+  const keys: string[] = [];
+  state.diskBridge = {
+    acquire: vi.fn(async ({ key }: { key: string }) => {
+      const hit = disk.has(key); disk.add(key); keys.push(key);
+      return { leaseId: key, url: `openchamber-asset://cache/${key}`, hit };
+    }),
+    append: vi.fn(async () => {}), commit: vi.fn(async () => {}), release: vi.fn(async () => {}),
+  };
+  const props = { node: { type: 'image', src: 'photo.png', alt: 'photo' } } as React.ComponentProps<typeof MarkstreamImageNode>;
+  await render(<MarkstreamImageNode key="A" {...props} />);
+  const waitSource = async (index: number) => vi.waitFor(async () => {
+    await act(async () => {});
+    expect(host.querySelectorAll('img')[index]?.getAttribute('src')).toMatch(/^openchamber-asset:\/\/cache\//);
+  });
+  await waitSource(0);
+  const original = host.querySelector('img')!.getAttribute('src');
+  await act(async () => host.querySelector('img')!.dispatchEvent(new Event('load')));
+  expect(host.querySelector('[data-image-state]')?.getAttribute('data-image-state')).toBe('loaded');
+
+  let finishStat!: (value: { isFile: boolean; size: number; mtimeMs: number }) => void;
+  state.stat.mockImplementationOnce(() => new Promise(resolve => { finishStat = resolve; }));
+  await render(<><MarkstreamImageNode key="A" {...props} /><MarkstreamImageNode key="fork" {...props} /></>);
+  await vi.waitFor(() => expect(finishStat).toBeTypeOf('function'));
+  expect(host.querySelectorAll('[data-image-state]')[1].getAttribute('data-image-state')).toBe('loading');
+  expect(host.querySelectorAll('img')[1].getAttribute('src')).toBeNull();
+  state.stat.mockResolvedValue({ isFile: true, size: IMAGE_BYTES, mtimeMs: 2 });
+  await act(async () => finishStat({ isFile: true, size: IMAGE_BYTES, mtimeMs: 2 }));
+  await waitSource(1);
+  expect(host.querySelectorAll('img')[0].getAttribute('src')).toBe(original);
+  expect(host.querySelectorAll('img')[1].getAttribute('src')).not.toBe(original);
+  expect(new Set(keys).size).toBe(2);
+  expect(state.fetch).toHaveBeenCalledTimes(2);
+
+  await render(<p>Session B</p>);
+  await render(<MarkstreamImageNode key="A-return" {...props} />);
+  await waitSource(0);
+  expect(state.fetch).toHaveBeenCalledTimes(2);
+  expect(state.diskBridge.acquire).toHaveBeenCalledTimes(3);
+  expect(keys[2]).toBe(keys[1]);
+});
+
 test('real fullscreen gallery A-B-A, reopen and owner restart share durable inline bytes', async () => {
   const bodies = [new Uint8Array(IMAGE_BYTES), new Uint8Array(IMAGE_BYTES).fill(1)];
   const hashes = await Promise.all(bodies.map(async (body) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', body)), (byte) => byte.toString(16).padStart(2, '0')).join('')));
@@ -461,9 +506,11 @@ test('real fullscreen gallery A-B-A, reopen and owner restart share durable inli
   };
   await render(<Image id="inline" />);
   await ready();
-  await render(<ToolOutputDialog popup={popup} onOpenChange={() => {}} isMobile />);
+  await render(<ToolOutputDialog popup={popup} onOpenChange={() => {}} />);
   await ready();
-  const click = async (direction: string) => act(async () => document.querySelector<HTMLButtonElement>(`[aria-label="chat.toolOutputDialog.image.${direction}Aria"]`)!.click());
+  // Gallery switching left the toolbar for keyboard/swipe; keyboard paging is desktop-only,
+  // so this case renders desktop while the cache assertions stay identical.
+  const click = async (direction: string) => act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: direction === 'next' ? 'ArrowRight' : 'ArrowLeft', bubbles: true })));
   await click('next');
   await ready();
   await click('previous');
@@ -471,12 +518,12 @@ test('real fullscreen gallery A-B-A, reopen and owner restart share durable inli
   expect(state.fetch).toHaveBeenCalledTimes(2);
   expect(state.durable.size).toBe(2);
   await render(null);
-  await render(<ToolOutputDialog popup={popup} onOpenChange={() => {}} isMobile />);
+  await render(<ToolOutputDialog popup={popup} onOpenChange={() => {}} />);
   await ready();
   expect(state.fetch).toHaveBeenCalledTimes(2);
   await render(null);
   clearRuntimeImageCacheLeases();
-  await render(<ToolOutputDialog popup={popup} onOpenChange={() => {}} isMobile />);
+  await render(<ToolOutputDialog popup={popup} onOpenChange={() => {}} />);
   await ready();
   console.info('gallery after owner restart', { requests: state.fetch.mock.calls.length, bytes: state.bytes });
   expect(state.fetch).toHaveBeenCalledTimes(2);

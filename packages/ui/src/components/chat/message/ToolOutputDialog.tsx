@@ -708,33 +708,9 @@ const ImagePreviewDialog: React.FC<{
 
             <MediaPreviewToolbar isMobile={isMobile}>
                     {hasMultipleImages && (
-                        <Button
-                            variant={isMobile ? 'ghost' : 'mobileGlass'}
-                            size={isMobile ? 'icon' : 'mobileIcon'}
-                            className={cn('rounded-full', isMobile && 'size-8', isMobile && controlTone)}
-                            onClick={showPrevious}
-                            aria-label={t('chat.toolOutputDialog.image.previousAria')}
-                            title={t('chat.toolOutputDialog.image.previousAria')}
-                        >
-                            <Icon name="arrow-left-s" weight="medium" className={isMobile ? 'size-4' : 'size-6'} />
-                        </Button>
-                    )}
-                    {hasMultipleImages && (
-                        <span className="min-w-10 px-1 text-center typography-micro tabular-nums opacity-80">
+                        <span data-media-gallery-counter="" className="min-w-10 px-1 text-center typography-micro tabular-nums opacity-80">
                             {currentIndex + 1} / {gallery.length}
                         </span>
-                    )}
-                    {hasMultipleImages && (
-                        <Button
-                            variant={isMobile ? 'ghost' : 'mobileGlass'}
-                            size={isMobile ? 'icon' : 'mobileIcon'}
-                            className={cn('rounded-full', isMobile && 'size-8', isMobile && controlTone)}
-                            onClick={showNext}
-                            aria-label={t('chat.toolOutputDialog.image.nextAria')}
-                            title={t('chat.toolOutputDialog.image.nextAria')}
-                        >
-                            <Icon name="arrow-right-s" weight="medium" className={isMobile ? 'size-4' : 'size-6'} />
-                        </Button>
                     )}
                     {hasMultipleImages && <span className="mx-0.5 h-4 w-px bg-current opacity-15" aria-hidden="true" />}
                     <Button

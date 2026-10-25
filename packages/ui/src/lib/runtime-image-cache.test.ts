@@ -1,7 +1,8 @@
 import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   acquire: vi.fn(), append: vi.fn(), commit: vi.fn(), release: vi.fn(), stat: vi.fn(), fetch: vi.fn(),
-  transport: 'direct:host-a', generation: 0, supported: true,
+  transport: 'direct:host-a', generation: 0, supported: true, auth: 1,
+  authListeners: new Set<() => void>(),
 }));
 vi.mock('./relay/native-asset-bridge', () => ({ getNativeImageCacheBridge: () => state.supported ? state : null, resolveNativeRelayAssetBridge: async () => null }));
 vi.mock('@/contexts/runtimeAPIRegistry', () => ({ getRegisteredRuntimeAPIs: () => ({ files: { statFile: state.stat } }) }));
@@ -13,11 +14,12 @@ vi.mock('./runtime-switch', () => ({
   subscribeRuntimeEndpointChanged: () => () => {},
 }));
 vi.mock('./runtime-auth', () => ({
-  getRuntimeAuthGeneration: () => 1, getRuntimeBearerTokenSync: () => 'test-credential', subscribeRuntimeAuthGeneration: () => () => {},
+  getRuntimeAuthGeneration: () => state.auth, getRuntimeBearerTokenSync: () => 'test-credential',
+  subscribeRuntimeAuthGeneration: (listener: () => void) => { state.authListeners.add(listener); return () => state.authListeners.delete(listener); },
 }));
 import { acquireRuntimeImage, clearRuntimeImageCacheLeases } from './runtime-image-cache';
 beforeEach(() => {
-  state.transport = 'direct:host-a'; state.generation = 0; state.supported = true;
+  state.transport = 'direct:host-a'; state.generation = 0; state.supported = true; state.auth = 1;
   state.stat.mockResolvedValue({ isFile: true, size: 3, mtimeMs: 1 });
   const disk = new Set<string>();
   state.acquire.mockImplementation(async ({ key }: { key: string }) => {
@@ -39,6 +41,7 @@ test('ten completed session revisits download once; preview shares the native le
   }
   expect(state.fetch).toHaveBeenCalledTimes(1);
   expect(state.append).toHaveBeenCalledTimes(1);
+  expect(state.stat).toHaveBeenCalledTimes(22);
   expect(state.acquire).toHaveBeenCalledTimes(11);
   expect(state.release).toHaveBeenCalledTimes(11);
 });
@@ -81,6 +84,36 @@ test('one cancelled subscriber cannot abort its peer', async () => {
   expect(state.release).not.toHaveBeenCalled();
   result.release();
   expect(state.release).toHaveBeenCalledTimes(1);
+});
+
+test('auth invalidation releases active native resources without duplicate late release', async () => {
+  (await acquire()).release();
+  const active = await acquireRuntimeImage('/repo/active.png', new AbortController().signal);
+  state.auth++;
+  for (const listener of state.authListeners) listener();
+  expect(state.release).toHaveBeenCalledTimes(2);
+  active.release();
+  expect(state.release).toHaveBeenCalledTimes(2);
+});
+
+test('a released old consumer cannot dispose a replacement flight after owner reset', async () => {
+  const old = await acquire();
+  clearRuntimeImageCacheLeases();
+  const replacement = await acquire();
+  old.release();
+  const peer = await acquire();
+  expect(peer.url).toBe(replacement.url);
+  expect(state.acquire).toHaveBeenCalledTimes(2);
+  peer.release(); replacement.release();
+});
+
+test('legacy metadata changes while another view holds a lease cannot reuse its old version', async () => {
+  const original = await acquire();
+  state.stat.mockResolvedValue({ isFile: true, size: 3, mtimeMs: 2 });
+  const changed = await acquire();
+  expect(changed.url).not.toBe(original.url);
+  expect(state.fetch).toHaveBeenCalledTimes(2);
+  changed.release(); original.release();
 });
 test('late results after a runtime switch are released without publishing', async () => {
   state.acquire.mockImplementation(async () => {
