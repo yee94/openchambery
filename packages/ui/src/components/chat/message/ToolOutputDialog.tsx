@@ -47,7 +47,7 @@ import {
     type ImageViewerTransform,
 } from './imageViewerTransform';
 import { closeImageViewerAfterMobileTap } from './imageViewerTapGuard';
-import { MediaPreviewOverlay, PreviewCloseButton } from './MediaPreviewOverlay';
+import { MediaPreviewOverlay, MediaPreviewToolbar, PreviewCloseButton } from './MediaPreviewOverlay';
 import { VideoPreviewDialog } from './VideoPreviewDialog';
 import { MediaSaveButton } from './MediaSaveButton';
 import { isVideoSource } from '../video';
@@ -655,9 +655,6 @@ const ImagePreviewDialog: React.FC<{
     }
 
     const isDarkTheme = themeSystem?.currentTheme.metadata.variant === 'dark';
-    const toolbarTone = isDarkTheme
-        ? 'border-foreground/15 bg-foreground/10 text-foreground'
-        : 'border-background/15 bg-background/10 text-background';
     const controlTone = isDarkTheme
         ? 'text-foreground hover:bg-foreground/15 hover:text-foreground'
         : 'text-background hover:bg-background/15 hover:text-background';
@@ -708,13 +705,7 @@ const ImagePreviewDialog: React.FC<{
                 />}
             </div>
 
-            <div className="pointer-events-none absolute inset-x-0 z-10 flex justify-center px-2 pb-2"
-                style={{ bottom: 'calc(var(--oc-safe-area-bottom, 0px) + 3.75rem)' }}>
-                <div
-                    className={cn('pointer-events-auto flex h-10 items-center gap-0.5 rounded-full border px-1 shadow-lg backdrop-blur-xl', toolbarTone)}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onDoubleClick={(event) => event.stopPropagation()}
-                >
+            <MediaPreviewToolbar>
                     {hasMultipleImages && (
                         <Button
                             variant="ghost"
@@ -776,13 +767,12 @@ const ImagePreviewDialog: React.FC<{
                     >
                         <Icon name="add" className="size-4" />
                     </Button>
-                </div>
-            </div>
-            <MediaSaveButton key={imageResource.key} target={{
+                <MediaSaveButton key={imageResource.key} target={{
                 sourceUrl: currentImage.url || displayImageSource, displayUrl: displayImageSource || undefined,
                 filename: currentImage.filename || popup.image?.filename || popup.title,
                 mimeType: currentImage.mimeType || popup.image?.mimeType, effectiveDirectory,
-            }} />
+                }} />
+            </MediaPreviewToolbar>
         </div>
     );
 

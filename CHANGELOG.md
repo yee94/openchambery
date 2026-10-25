@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.8] - 2026-10-25
+
+### 改进
+
+- 图片与视频预览统一保存入口与尺寸约束，加载中各阶段高度一致，失败时不再留下空白框。
+- 助手会话的滚动跟随与图片资源解析同步收敛，长对话预览大图时更少跳动。
+
 ## [2.1.10-beta.7] - 2026-10-25
 
 ### 改进

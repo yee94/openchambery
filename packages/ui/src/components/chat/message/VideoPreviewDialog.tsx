@@ -6,7 +6,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { openNativeVideoSource } from '@/lib/native-video';
 import { resolveImageSource, needsRuntimeImageStream, useRuntimeTransportIdentity } from '../imageSource';
 import { MediaSaveButton } from './MediaSaveButton';
-import { PreviewCloseButton } from './MediaPreviewOverlay';
+import { MediaPreviewToolbar, PreviewCloseButton } from './MediaPreviewOverlay';
 import type { ToolPopupContent } from './types';
 
 export function VideoPreviewDialog({ video, onClose, isMobile }: {
@@ -70,8 +70,8 @@ export function VideoPreviewDialog({ video, onClose, isMobile }: {
       onError={() => setFailedSource(source)}
       controlsList="nodownload" onContextMenu={(event) => event.preventDefault()}
     />}
-    <MediaSaveButton key={sourceKey} target={{ kind: 'video', sourceUrl: video.url,
+    <MediaPreviewToolbar><MediaSaveButton key={sourceKey} target={{ kind: 'video', sourceUrl: video.url,
       displayUrl: activeNative?.url ? undefined : source, filename: video.filename,
-      mimeType: video.mimeType, effectiveDirectory: directory, prefetchedBlob: resource.data }} />
+      mimeType: video.mimeType, effectiveDirectory: directory, prefetchedBlob: resource.data }} /></MediaPreviewToolbar>
   </div>;
 }

@@ -27,6 +27,18 @@ export function PreviewCloseButton({ onClose, isMobile, size }: {
     </div>;
 }
 
+export function MediaPreviewToolbar({ children }: { children: React.ReactNode }) {
+    return <div className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-2"
+        style={{ bottom: 'calc(var(--oc-safe-area-bottom, 0px) + 0.5rem)' }}>
+        <div data-media-preview-toolbar=""
+            className="pointer-events-auto flex h-10 items-center gap-0.5 rounded-full border border-[color-mix(in_srgb,var(--oc-media-preview-foreground)_15%,transparent)] bg-[color-mix(in_srgb,var(--oc-media-preview-foreground)_10%,transparent)] px-1 text-[var(--oc-media-preview-foreground)] shadow-lg backdrop-blur-xl"
+            onPointerDown={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}>
+            {children}
+        </div>
+    </div>;
+}
+
 export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpenChange, children }: {
     open: boolean;
     title: string;
