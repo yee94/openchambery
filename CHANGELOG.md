@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10-beta.14] - 2026-10-25
+
+### 改进
+
+- 桌面历史预热在中继模式下跳过，远程连接不再为补齐历史轮次额外拉取页面，减少隧道流量。
+
 ## [2.1.10-beta.13] - 2026-10-25
 
 ### 改进

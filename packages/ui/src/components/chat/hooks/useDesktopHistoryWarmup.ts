@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEvent, useEventListener, useInterval } from '@reactuses/core';
+import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 
 const TARGET_TURNS = 12;
 const WARMUP_PAGE_SIZE = 50;
@@ -20,7 +21,7 @@ export function useDesktopHistoryWarmup(options: {
     const attemptRef = React.useRef(attempt);
     const flight = React.useRef(false);
     const sample = React.useRef<{ height: number; top: number; since: number } | null>(null);
-    const eligible = enabled && cursor !== null && loadedTurns < TARGET_TURNS
+    const eligible = enabled && !isRelayModeActive() && cursor !== null && loadedTurns < TARGET_TURNS
         && attempt !== scope;
 
     React.useEffect(() => {
@@ -41,7 +42,7 @@ export function useDesktopHistoryWarmup(options: {
         const container = scrollRef.current;
         const lastAttempt = attemptRef.current;
         if (lastAttempt === scope) return;
-        if (!eligible || !cursor || !container || flight.current || document.visibilityState === 'hidden') {
+        if (!eligible || isRelayModeActive() || !cursor || !container || flight.current || document.visibilityState === 'hidden') {
             sample.current = null;
             return;
         }

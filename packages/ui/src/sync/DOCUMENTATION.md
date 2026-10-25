@@ -4,7 +4,9 @@ Mobile transcript demand keeps correctness reads enabled: opening/observing a
 session, authored-user anchor recovery (up to four extra projection pages),
 reconnect/terminal authority refresh, durable-seed exact revalidation, send
 confirmation, and explicit older-history requests. Desktop history warmup stays
-behind its existing mobile/dedicated-app gate. Session-reference selection in
+behind its mobile/dedicated-app gate and is disabled on Relay, including PC.
+The idle callback rechecks the active transport before requesting a page.
+Session-reference selection in
 `ChatInput` skips only the subsequent historical prefetch on mobile layouts,
 Capacitor and hosted mobile; its necessary initial renderable read remains.
 `ContextPanelSessionTranscript` loads on active display or empty-visible focus
