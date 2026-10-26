@@ -1,0 +1,5 @@
+.vercel
+dist
+*.test.mjs
+vitest.config.mjs
+README.md

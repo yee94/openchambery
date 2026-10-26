@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{t:meta.title}}</title><meta name="description" content="{{attr:meta.desc}}">
+<meta name="theme-color" content="#0a0a09"><meta name="color-scheme" content="dark">
+<meta property="og:title" content="{{attr:meta.title}}"><meta property="og:description" content="{{attr:meta.desc}}">
+<meta property="og:image" content="{{base}}assets/art/hero.webp">
+<link rel="icon" href="{{base}}assets/brand/icon-512.webp">
+<link rel="alternate" hreflang="zh-CN" href="{{base}}"><link rel="alternate" hreflang="en" href="{{base}}en/">
+<link rel="stylesheet" href="{{base}}assets/vendor/devices.css"><link rel="stylesheet" href="{{base}}assets/site.css">
+</head>
+<body>
+{{icons}}
+<a class="skip" href="#connect">{{t:page.skip}}</a>
+<header class="nav"><div class="nav-row wrap">
+  <a class="brand" href="#top" aria-label="Yuri"><img src="{{base}}assets/brand/yuri-b-mark-white.svg" alt="" width="29" height="29"><img class="nav-wordmark" src="{{base}}assets/brand/yuri-wordmark-white.svg" alt="" width="64" height="30"></a>
+  <nav aria-label="{{attr:page.sections}}"><a href="#connect">{{t:page.connect}}</a><a href="#assistant">{{t:nav.assistant}}</a><a href="#mobile">{{t:page.mobile}}</a><a href="#customize">{{t:nav.themes}}</a></nav>
+  <a class="language" href="{{switchHref}}" aria-label="{{attr:nav.lang}}">{{t:nav.langShort}}</a><a class="nav-github" href="https://github.com/yee94/yuri">{{icon:github}} GitHub</a>
+</div></header>
+<main id="top">
+  <section class="hero" aria-labelledby="hero-title">
+    <img class="hero-art" src="{{base}}assets/art/hero.webp" alt="" width="1672" height="941" fetchpriority="high">
+    <div class="hero-copy wrap">
+      <h1 id="hero-title"><span class="wordmark"><img class="hero-wordmark" src="{{base}}assets/brand/yuri-wordmark-white.svg" alt="Yuri" width="320" height="150"></span><span class="tagline">{{t:hero.tagline}}</span></h1>
+      <p class="hero-description">{{t:hero.sub}}</p>
+      <div class="actions"><a class="button" href="#downloads" data-download-primary><svg class="icon" aria-hidden="true"><use data-download-icon href="#icon-download"/></svg><span data-download-label>{{t:download.choose}}</span></a><a class="text-link" href="#connect">{{t:hero.more}} <span aria-hidden="true">↓</span></a></div>
+      <p class="hero-release"><span data-release-version>{{release}}</span> · <a href="#downloads">{{t:download.all}}</a></p>
+    </div>
+    <div class="hero-bottom wrap"><p>Desktop / iOS / Android / Web / VS Code</p><a href="#connect">{{t:hero.scroll}} <span aria-hidden="true">↓</span></a></div>
+  </section>
+
+  <section id="connect" class="connection" aria-labelledby="connect-title">
+    <div class="connection-stage">
+      <img class="sync-art stage-art" src="{{base}}assets/art/sync.webp" alt="" width="1672" height="941" loading="lazy">
+      <header class="connection-heading wrap"><p class="section-label">{{t:page.connect}}</p><h2 id="connect-title">{{words:connect.title}}</h2><p class="description">{{t:page.connectSub}}</p></header>
+      <div class="connection-visual wrap">
+        <svg class="connection-lines" viewBox="0 0 1200 600" preserveAspectRatio="none" aria-hidden="true"><path d="M20 170 C180 170 120 340 380 340 S800 570 1110 250 M20 190 C180 190 120 360 380 360 S800 590 1110 270"/><path class="signal" d="M20 170 C180 170 120 340 380 340 S800 570 1110 250"/></svg>
+        <div class="hardware-pair">
+          <figure class="sketch-laptop"><div class="laptop-display"><img src="{{img:home}}" alt="{{attr:stage.alt}}" width="1440" height="900" loading="lazy"></div><div class="laptop-base" aria-hidden="true"></div></figure>
+          <figure class="sketch-phone"><div class="sketch-phone-screen"><img src="{{img:m-home}}" alt="{{attr:mobile.alt}}" width="390" height="844" loading="lazy"></div></figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="routes-section" aria-labelledby="routes-title">
+    <img class="tunnel-art stage-art" src="{{base}}assets/art/tunnel.webp" alt="" width="1672" height="941" loading="lazy">
+    <div class="routes-content wrap" data-switcher data-loading="{{attr:preview.loading}}" data-error="{{attr:preview.error}}">
+      <div class="routes-copy"><h2 id="routes-title">{{t:connect.routes}}</h2><div class="route-choices" role="group" aria-label="{{attr:connect.routes}}">
+        <button type="button" data-choice="direct" aria-pressed="true"><span>{{t:page.lan}}</span><span class="choice-arrow" aria-hidden="true">↗</span></button><p>{{t:page.lanSub}}</p>
+        <button type="button" data-choice="relay" aria-pressed="false"><span>{{t:page.relay}}</span><span class="choice-arrow" aria-hidden="true">↗</span></button><p>{{t:page.relaySub}}</p>
+        <button type="button" data-choice="ssh" aria-pressed="false"><span>SSH</span><span class="choice-arrow" aria-hidden="true">↗</span></button><p>{{t:page.sshSub}}</p>
+      </div></div>
+      <div class="route-screen"><figure class="frame"><img data-panel="direct" src="{{img:add-device}}" alt="{{attr:connect.directAlt}}" width="1440" height="900" loading="lazy"><img data-panel="relay" hidden src="{{img:settings-remote}}" alt="{{attr:remote.alt}}" width="1440" height="900" loading="lazy"><img data-panel="ssh" hidden src="{{img:ssh}}" alt="{{attr:connect.sshAlt}}" width="1440" height="900" loading="lazy"></figure><p class="preview-status" role="status" hidden></p><p class="fine">{{t:connect.boundary}}</p></div>
+    </div>
+  </section>
+
+  <section id="assistant" class="assistant-section" aria-labelledby="assistant-title">
+    <div class="assistant-intro wrap">
+      <img class="assistant-art stage-art" src="{{base}}assets/art/assistant.webp" alt="" width="1536" height="1024" loading="lazy">
+      <header><p class="section-label">{{t:nav.assistant}}</p><h2 id="assistant-title">{{t:assistant.heading}}</h2><p class="description">{{t:assistant.sub}}</p></header>
+    </div>
+    <div class="assistant-evidence wrap">
+      <figure class="frame assistant-screen"><img src="{{img:assistant}}" alt="{{attr:assistant.alt}}" width="1440" height="900" loading="lazy"></figure>
+      <div class="assistant-notes"><p>{{t:assistant.parallel}}</p><p>{{t:assistant.memory}}</p></div>
+    </div>
+  </section>
+
+  <section id="mobile" class="mobile-section" aria-labelledby="mobile-title">
+    <div class="mobile-layout wrap" data-switcher data-loading="{{attr:preview.loading}}" data-error="{{attr:preview.error}}">
+      <header class="mobile-heading"><p class="section-label">{{t:page.mobile}}</p><h2 id="mobile-title">{{t:mobile.heading}}</h2><p class="description">{{t:mobile.sub}}</p></header>
+      <div class="mobile-device-stage"><div class="mobile-orbit" aria-hidden="true"></div><figure class="phone mobile-phone">{{device:start}}
+        <img data-panel="assistants" src="{{img:m-assistants}}" alt="{{attr:mobile.assistantsAlt}}" width="390" height="844" loading="lazy">
+        <img data-panel="swipe" hidden src="{{img:m-swipe}}" alt="{{attr:mobile.m3.t}}" width="390" height="844" loading="lazy">
+        <img data-panel="voice" hidden src="{{img:m-asr-send}}" alt="{{attr:mobile.m4.t}}" width="390" height="844" loading="lazy">
+        <img data-panel="schedule" hidden src="{{img:m-schedule}}" alt="{{attr:mobile.m6.t}}" width="390" height="844" loading="lazy">
+      {{device:end}}</figure></div>
+      <div class="mobile-controls"><div class="mobile-choices" role="group" aria-label="{{attr:mobile.scenarios}}">
+        <button type="button" data-choice="assistants" aria-pressed="true">{{t:nav.assistant}}</button><button type="button" data-choice="swipe" aria-pressed="false">{{t:mobile.m3.t}}</button><button type="button" data-choice="voice" aria-pressed="false">{{t:mobile.m4.t}}</button><button type="button" data-choice="schedule" aria-pressed="false">{{t:mobile.m6.t}}</button>
+      </div><p class="preview-status" role="status" hidden></p><div class="mobile-caption" aria-live="polite"><p data-panel="assistants">{{t:mobile.assistantsDesc}}</p><p data-panel="swipe" hidden>{{t:mobile.m3.d}}</p><p data-panel="voice" hidden>{{t:mobile.m4.d}}</p><p data-panel="schedule" hidden>{{t:mobile.m6.d}}</p></div><p class="fine native-note">{{t:page.native}}</p></div>
+    </div>
+  </section>
+
+  <section class="voice-section" aria-labelledby="voice-title">
+    <img class="voice-art stage-art" src="{{base}}assets/art/voice.webp" alt="" width="1774" height="887" loading="lazy">
+    <header class="voice-heading wrap"><p class="section-label">{{t:nav.voice}}</p><h2 id="voice-title">{{t:voice.heading}}</h2><p class="description">{{t:voice.sub}}</p></header>
+    <figure class="voice-closeup wrap"><div class="frame"><img src="{{img:asr-desk-close}}" alt="{{attr:voice.altDesk}}" width="1259" height="400" loading="lazy"></div><figcaption>{{t:page.voiceKeys}}</figcaption></figure>
+  </section>
+
+  <section id="customize" class="preferences-section wrap" aria-labelledby="themes-title">
+    <header class="preferences-heading"><div><p class="section-label">{{t:page.customize}}</p><h2 id="themes-title">{{t:themes.heading}}</h2></div><p class="description">{{t:themes.sub}}</p></header>
+    <div class="theme-showcase" data-switcher data-loading="{{attr:preview.loading}}" data-error="{{attr:preview.error}}"><div class="theme-choices" role="group" aria-label="{{attr:nav.themes}}"><button type="button" data-choice="vitesse" aria-pressed="true"><span class="swatch vitesse" aria-hidden="true"></span>Vitesse</button><button type="button" data-choice="tokyo" aria-pressed="false"><span class="swatch tokyo" aria-hidden="true"></span>Tokyo Night</button><button type="button" data-choice="rose" aria-pressed="false"><span class="swatch rose" aria-hidden="true"></span>Rosé Pine</button><button type="button" data-choice="nord" aria-pressed="false"><span class="swatch nord" aria-hidden="true"></span>Nord</button></div><p class="preview-status" role="status" hidden></p>
+      <figure class="frame"><img data-panel="vitesse" src="{{img:theme-vitesse-dark-dark}}" alt="Vitesse" width="1440" height="900" loading="lazy"><img data-panel="tokyo" hidden src="{{img:theme-tokyonight-dark}}" alt="Tokyo Night" width="1440" height="900" loading="lazy"><img data-panel="rose" hidden src="{{img:theme-rosepine-dark}}" alt="Rosé Pine" width="1440" height="900" loading="lazy"><img data-panel="nord" hidden src="{{img:theme-nord-dark}}" alt="Nord" width="1440" height="900" loading="lazy"></figure>
+    </div>
+    <details class="automation"><summary><span>{{t:auto.heading}}</span><span class="details-symbol" aria-hidden="true">+</span></summary><div class="automation-content"><p>{{t:page.schedule}}</p><figure class="frame"><img src="{{img:schedule}}" alt="{{attr:auto.alt}}" width="1440" height="900" loading="lazy"></figure></div></details>
+  </section>
+
+  <section class="get-section wrap" id="downloads" data-download-label="{{attr:download.action}}" data-choose-label="{{attr:download.choose}}">
+    <img src="{{base}}assets/brand/yuri-lockup-white.svg" alt="Yuri" class="download-lockup" width="160" height="56">
+    <h2>{{t:download.title}}</h2><p class="description">{{t:download.intro}} <span data-release-version>{{release}}</span></p>
+    <div class="download-grid">
+      <a href="{{download:mac}}" data-platform="mac">{{icon:apple}}<span><b>macOS</b><small>Apple Silicon · DMG</small></span>{{icon:download}}</a>
+      <a href="{{download:windows}}" data-platform="windows">{{icon:windows}}<span><b>Windows</b><small>x64 · EXE</small></span>{{icon:download}}</a>
+      <a href="{{download:linux}}" data-platform="linux">{{icon:linux}}<span><b>Linux</b><small>x64 · AppImage</small></span>{{icon:download}}</a>
+      <a href="{{download:linuxArm}}" data-platform="linuxArm">{{icon:linux}}<span><b>Linux</b><small>ARM64 · AppImage</small></span>{{icon:download}}</a>
+      <a href="{{download:android}}" data-platform="android">{{icon:android}}<span><b>Android</b><small>APK</small></span>{{icon:download}}</a>
+      <a href="{{download:ios}}" data-platform="ios">{{icon:apple}}<span><b>iOS / iPadOS</b><small>TestFlight</small></span><span aria-hidden="true">↗</span></a>
+    </div>
+    <p class="download-note">{{t:download.arch}}</p><p data-no-downloads hidden>{{t:download.unavailable}}</p>
+    <a class="text-link" href="https://github.com/yee94/yuri/releases">{{t:download.releases}} ↗</a><a class="text-link" href="https://github.com/yee94/yuri#run-from-source">{{t:cta.secondary}} ↗</a>
+  </section>
+</main>
+<footer class="wrap"><div class="footer-row"><a class="brand" href="#top"><img class="nav-wordmark" src="{{base}}assets/brand/yuri-wordmark-white.svg" alt="Yuri" width="64" height="30"></a><span>{{t:footer.license}} / {{t:footer.built}}</span><a href="{{switchHref}}">{{t:nav.lang}}</a></div><div class="footer-notes"><p>{{t:page.disclosure}}</p><p>{{t:page.deviceCredit}} <a href="https://github.com/picturepan2/devices.css">Devices.css</a> / MIT</p></div></footer>
+<script src="{{base}}assets/site.js" defer></script>
+<script type="module" src="{{base}}assets/downloads.mjs"></script>
+</body></html>

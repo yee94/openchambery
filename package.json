@@ -21,6 +21,9 @@
   "author": "yee94",
   "license": "MIT",
   "scripts": {
+    "site:build": "node site/build.mjs",
+    "site:check": "node site/verify.mjs",
+    "site:test": "vitest run --config site/vitest.config.mjs",
     "dev": "node ./scripts/dev-web-hmr.mjs",
     "yuri-dev": "node scripts/yuri-dev.mjs",
     "build": "bun run --filter '*' build",
