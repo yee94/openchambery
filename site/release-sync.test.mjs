@@ -21,8 +21,8 @@ function release(version, overrides = {}) {
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'yuri-site-releases-'));
   roots.push(root);
-  const sourcePath = path.join(root, 'downloads.mjs');
-  const source = await readFile(new URL('./assets/downloads.mjs', import.meta.url), 'utf8');
+  const sourcePath = path.join(root, 'downloads.js');
+  const source = await readFile(new URL('./assets/downloads.js', import.meta.url), 'utf8');
   await writeFile(sourcePath, source);
   return { sourcePath, source };
 }

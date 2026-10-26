@@ -1,12 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { resolveRelease } from './assets/downloads.mjs';
+import { resolveRelease } from './assets/downloads.js';
 
 const endpoint = 'https://api.github.com/repos/yee94/yuri/releases?per_page=100';
 const marker = /\/\* release-snapshot:start \*\/[\s\S]*?\/\* release-snapshot:end \*\//g;
 
 export async function syncDownloads({
-  sourcePath = new URL('./assets/downloads.mjs', import.meta.url),
+  sourcePath = new URL('./assets/downloads.js', import.meta.url),
   fetchImpl = fetch,
   token = process.env.GH_TOKEN,
   testFlightUrl = process.env.TESTFLIGHT_PUBLIC_URL,

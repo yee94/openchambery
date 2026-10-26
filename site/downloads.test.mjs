@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Window } from 'happy-dom';
-import { detectPlatform, initializeDownloads, resolveRelease, snapshot } from './assets/downloads.mjs';
+import { detectPlatform, initializeDownloads, resolveRelease, snapshot } from './assets/downloads.js';
 
 const release = (version, prerelease, assets = [], published_at = '2026-10-01T00:00:00Z') => ({
   tag_name: `v${version}`, prerelease, assets, published_at,

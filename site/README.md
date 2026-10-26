@@ -18,9 +18,10 @@ points, and waveforms. `assets/site.css` defines the static site's semantic surf
 interaction, selection, and primary-action tokens; it does not import React app
 primitives or distribute Cursor assets or fonts. Brand masters are unchanged.
 
-The website and handbook use Cursor Dark's neutral surface (`#1a1a1a`) and blue
-primary (`#4c9df3`), matching the application's new default. The theme showcase
-starts with Cursor and only lists registered palettes. Both languages reuse the
+The website and handbook retain their original near-black canvas (`#0a0a09`)
+and off-white primary buttons (`#eeede8`). Cursor Dark applies to product
+screenshots, not the website palette. The theme showcase starts with Cursor and
+only lists registered palettes. Both languages reuse the
 current sanitized screenshot set described in `docs/references/screenshots/README.md`.
 
 The sequence moves from overview to mechanism to usage and details:
@@ -72,7 +73,7 @@ animation loop, or per-scroll screenshot switching is used.
 
 The header uses the App-backed icon; hero and footer use the approved SVG wordmark. Inline icon symbols
 are defined in `src/icons.mjs` (Simple Icons GitHub/Apple/Android paths, CC0-1.0).
-`assets/downloads.mjs` exports a verified release snapshot for static HTML and
+`assets/downloads.js` exports a verified release snapshot for static HTML and
 refreshes the catalog from public GitHub release assets in the browser. It uses
 the same installer source as the auto-updater, not the stale repository update
 manifest or OTA web bundles. The most recently published installer release wins,
@@ -81,6 +82,10 @@ replaces the beta. HTTP failures preserve the snapshot.
 No missing installer URL is synthesized. iOS uses the configured public TestFlight
 link from the update service; availability is controlled by App Store Connect.
 
+Browser modules use `.js` because the EdgeOne static host serves `.mjs` as
+`application/octet-stream`, which browsers reject for module scripts. Live
+verification checks JavaScript MIME types as well as resource hashes.
+
 The website and handbook headers, favicon and repository READMEs reuse
 `assets/brand/icon-512.webp`: the existing App icon includes its own rounded
 background and contrasting portrait. Keep that backdrop when placing the mark
@@ -88,7 +93,7 @@ on arbitrary light/dark pages; the transparent monochrome masters remain availab
 for intentional compositions on a controlled background.
 
 Production CI runs `sync-downloads.mjs` with its GitHub token before building. It
-replaces the marked snapshot in `assets/downloads.mjs` from published `v*` installer
+replaces the marked snapshot in `assets/downloads.js` from published `v*` installer
 assets and `TESTFLIGHT_PUBLIC_URL`; OTA archive releases are excluded. Missing
 installers or failed catalog requests abort deployment and retain the existing
 website. The generated snapshot is shared by static HTML and browser fallback,

@@ -1,19 +1,19 @@
 :root {
   color-scheme:dark;
-  --surface-background:#1a1a1a;
-  --surface-elevated:#141414;
-  --surface-foreground:#cccccc;
-  --surface-muted-foreground:#848484;
-  --interactive-border:#8484841f;
-  --interactive-hover:#2a2a2a99;
-  --interactive-selection:#4c9df3;
-  --interactive-focus-ring:#4c9df399;
-  --primary-base:#4c9df3;
-  --primary-foreground:#191c22;
-  --signal:var(--primary-base);
+  --surface-background:#0a0a09;
+  --surface-elevated:#171715;
+  --surface-foreground:#eeede8;
+  --surface-muted-foreground:#a9a8a0;
+  --interactive-border:#35352f;
+  --interactive-hover:#24241f;
+  --interactive-selection:#d8e6de;
+  --interactive-focus-ring:#c0d8ce;
+  --primary-base:var(--surface-foreground);
+  --primary-foreground:var(--surface-background);
+  --signal:#b3d4c7;
   --theme-vitesse:#c3b599;
   --theme-tokyo:#7aa2f7;
-  --theme-cursor:var(--primary-base);
+  --theme-cursor:#4c9df3;
   --theme-nord:#88c0d0;
   --pad:clamp(24px,5.55vw,88px);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
@@ -101,15 +101,15 @@ h2 { font-size:clamp(30px,3.35vw,48px); font-weight:450; line-height:1.25; lette
 .node { display:inline-block; width:5px; height:5px; margin-right:10px; border-radius:50%; background:var(--signal); box-shadow:0 0 14px var(--signal); }
 .hardware-pair { position:absolute; left:50%; bottom:24px; width:min(88%,1080px,calc((100cqh - 32px) * 1.55)); aspect-ratio:1.55; transform:translateX(-50%); }
 .sketch-laptop { position:absolute; left:0; bottom:4%; width:91%; }
-.laptop-display { position:relative; padding:1.5% 1.2% 2%; border:1px solid #5e5e5e; border-radius:14px 14px 5px 5px; background:linear-gradient(145deg,#292929,#111111 40%,#262626); box-shadow:inset 0 0 0 2px #111111,0 24px 60px #0008; }
-.laptop-display::before { content:''; position:absolute; width:4px; height:4px; border-radius:50%; background:#595959; top:0.9%; left:50%; }
+.laptop-display { position:relative; padding:1.5% 1.2% 2%; border:1px solid #5d5e5c; border-radius:14px 14px 5px 5px; background:linear-gradient(145deg,#282a29,#101211 40%,#252726); box-shadow:inset 0 0 0 2px #101211,0 24px 60px #0008; }
+.laptop-display::before { content:''; position:absolute; width:4px; height:4px; border-radius:50%; background:#535d59; top:0.9%; left:50%; }
 .laptop-display img { width:100%; border-radius:5px; }
-.laptop-base { position:relative; height:clamp(9px,1.1vw,16px); width:108%; margin-left:-4%; background:linear-gradient(#686868,#393939 35%,#1b1b1b 80%); border-radius:1px 1px 45% 45% / 1px 1px 90% 90%; border-top:1px solid #878787; box-shadow:0 14px 18px #0009; }
-.laptop-base::before { content:''; position:absolute; top:0; left:40%; width:20%; height:38%; background:#232323; border-radius:0 0 8px 8px; }
-.sketch-phone { position:absolute; right:0; bottom:0; width:22%; aspect-ratio:0.47; padding:0.65%; border:1px solid #797979; border-radius:15% / 7%; background:linear-gradient(145deg,#3c3c3c,#121212 35%,#373737); box-shadow:inset 0 0 0 2px #1c1c1c,-12px 12px 32px #0009; }
-.sketch-phone-screen { position:relative; height:100%; border-radius:13% / 6%; padding-block:9% 6%; overflow:hidden; background:var(--surface-background); }
-.sketch-phone-screen::before { content:''; position:absolute; top:2.5%; left:35%; width:30%; height:2%; border-radius:99px; background:#060606; }
-.sketch-phone-screen::after { content:''; position:absolute; bottom:1.5%; left:35%; width:30%; height:0.6%; border-radius:99px; background:#a4a4a4; }
+.laptop-base { position:relative; height:clamp(9px,1.1vw,16px); width:108%; margin-left:-4%; background:linear-gradient(#666966,#383b38 35%,#191c19 80%); border-radius:1px 1px 45% 45% / 1px 1px 90% 90%; border-top:1px solid #858884; box-shadow:0 14px 18px #0009; }
+.laptop-base::before { content:''; position:absolute; top:0; left:40%; width:20%; height:38%; background:#212421; border-radius:0 0 8px 8px; }
+.sketch-phone { position:absolute; right:0; bottom:0; width:22%; aspect-ratio:0.47; padding:0.65%; border:1px solid #777c76; border-radius:15% / 7%; background:linear-gradient(145deg,#3a3e39,#101310 35%,#353a34); box-shadow:inset 0 0 0 2px #1a1e19,-12px 12px 32px #0009; }
+.sketch-phone-screen { position:relative; height:100%; border-radius:13% / 6%; padding-block:9% 6%; overflow:hidden; background:#111310; }
+.sketch-phone-screen::before { content:''; position:absolute; top:2.5%; left:35%; width:30%; height:2%; border-radius:99px; background:#050605; }
+.sketch-phone-screen::after { content:''; position:absolute; bottom:1.5%; left:35%; width:30%; height:0.6%; border-radius:99px; background:#a2a69f; }
 .sketch-phone-screen img { width:100%; height:100%; object-fit:contain; }
 .phone { --phone-width:258px; --device-scale:0.6028037383; width:var(--phone-width); aspect-ratio:428/868; position:relative; margin:0; flex:none; }
 .phone>.device { position:absolute; top:0; left:0; transform-origin:top left; transform:scale(var(--device-scale)); }

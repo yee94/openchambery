@@ -13,6 +13,9 @@ async function read(relative) {
     const url = new URL(relative, origin.endsWith('/') ? origin : `${origin}/`);
     const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
     assert(response.ok, `${url.pathname}: HTTP ${response.status}`);
+    if (/\.(?:m?js)$/.test(url.pathname)) {
+      assert.match(response.headers.get('content-type') || '', /^(?:text|application)\/javascript\b/i, `${url.pathname}: browser scripts require a JavaScript MIME type`);
+    }
     fetched.set(relative, Buffer.from(await response.arrayBuffer()));
   }
   return fetched.get(relative);

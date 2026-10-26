@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dictionaries } from './src/i18n.mjs';
 import { icons } from './src/icons.mjs';
-import { snapshot } from './assets/downloads.mjs';
+import { snapshot } from './assets/downloads.js';
 import { execFileSync } from 'node:child_process';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
