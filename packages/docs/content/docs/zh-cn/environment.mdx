@@ -1,133 +1,33 @@
 ---
-title: 环境变量
-description: 使用环境变量配置 Yuri 和 OpenCode 集成。
+title: 覆盖主机的启动配置
+description: 用少量明确的环境变量调整监听、存储和运行环境。
 ---
 
-# 环境变量
+# 覆盖主机的启动配置
 
-Yuri 会在启动时读取这些变量。对于开机启动服务，`yuri startup enable` 默认会保存当前环境的 snapshot，所以如果要让服务使用新的变量，请重新运行它。
+环境变量作用于读取它的进程。在手机或无关终端设置变量，不会改变已连接的 Yuri 主机。修改启动环境后，需要重启目标进程。
 
-## Yuri 服务器
+## 调整 Yuri 的访问与存储
 
-### `YURI_HOST`
+| 变量 | 用途 |
+| --- | --- |
+| `YURI_HOST` | 网页主机的监听地址，扩大监听范围会改变网络可达性。 |
+| `YURI_UI_PASSWORD` | 网页界面登录密码。 |
+| `YURI_API_ONLY` | 设为 `true` 或 `1`，保留 API，但不提供浏览器界面。 |
+| `YURI_DATA_DIR` | 覆盖 Yuri 数据目录，通常为 `~/.config/yuri`。 |
 
-Yuri web 服务器监听的地址。使用 `0.0.0.0` 可允许其他机器访问。
+改变数据目录是在选择另一处存储，不会自动迁移旧内容。扩大监听范围时，同时配置访问认证。
 
-### `YURI_UI_PASSWORD`
+## 选择执行环境
 
-浏览器 UI 的密码。当你绑定到 localhost 之外或反向代理时，请设置它。
+| 变量 | 用途 |
+| --- | --- |
+| `OPENCODE_HOST` | 带显式端口的 HTTP(S) origin，不含路径、查询或片段；优先于 `OPENCODE_PORT`。 |
+| `OPENCODE_PORT` | 显式选择 OpenCode 端口。 |
+| `OPENCODE_SKIP_START` | `true` 使用不启动托管服务的路径。 |
+| `OPENCODE_BINARY` | 显式选择 OpenCode 可执行文件。 |
+| `YURI_TERMINAL_SHELL` | Yuri 终端会话使用的 Shell。 |
 
-### `YURI_API_ONLY`
+外部运行环境示例见[主机指南](/zh-cn/opencode-server/)。启动服务已经捕获环境变量时，只修改当前 Shell 不会改变已安装服务。
 
-设置为 `true` 或 `1` 时，以 headless 模式启动 Yuri。桌面和移动客户端仍可使用 API 路由，但不会提供浏览器 UI。
-
-### `YURI_DATA_DIR`
-
-覆盖 Yuri 数据目录。默认是 `~/.config/yuri`。
-
-### `YURI_COMPRESS_API`
-
-控制 API 响应压缩。`true` 或 `1` 强制开启，`false` 或 `0` 强制关闭。
-
-### `YURI_SKIP_API_COMPRESSION`
-
-设置为 `true` 或 `1` 时关闭 API 响应压缩。它优先于 `YURI_COMPRESS_API`。
-
-### `YURI_VERBOSE_REQUEST_LOGS`
-
-设置为 `true` 或 `1` 时启用详细 HTTP request logs。
-
-### `YURI_UPDATE_API_URL`
-
-覆盖更新检查 API endpoint。大多数用户不需要设置它。
-
-### `YURI_PACKAGE_MANAGER`
-
-当自动检测错误时，强制指定更新操作使用的 package manager。
-
-## OpenCode 服务器
-
-### `OPENCODE_HOST`
-
-将 Yuri 连接到已有的 OpenCode server。值必须是带明确端口、没有 path、query 或 hash 的 `http` 或 `https` origin。`OPENCODE_HOST` 优先于 `OPENCODE_PORT`。
-
-### `OPENCODE_PORT`
-
-设置 OpenCode server 端口。对于 managed OpenCode，它请求使用该端口；配合 `OPENCODE_SKIP_START=true` 时，它连接到该端口上的外部服务器。
-
-### `OPENCODE_SKIP_START`
-
-设置为 `true` 时阻止 Yuri 启动自己的 OpenCode server。
-
-### `YURI_OPENCODE_HOSTNAME`
-
-Yuri 管理的 OpenCode server 绑定 hostname。默认是 `127.0.0.1`。
-
-### `OPENCODE_BINARY`
-
-Yuri 应该运行的 `opencode` executable 路径。
-
-### `OPENCODE_CONFIG`
-
-指定 OpenCode config 文件路径。
-
-### `OPENCODE_CONFIG_DIR`
-
-指定 OpenCode config 目录，用于 agents、skills 和 config discovery。
-
-### `OPENCODE_DATA_DIR`
-
-managed OpenCode server 的自定义数据目录。
-
-### `OPENCODE_WSL_DISTRO`
-
-选择 Windows 上 OpenCode 集成使用的 WSL distro。
-
-### `YURI_OPENCODE_WSL_DISTRO`
-
-Yuri 专用的 WSL distro alias。如果两个变量都设置，`OPENCODE_WSL_DISTRO` 优先。
-
-### `OPENCODE_JWT_SECRET`
-
-用于签名 UI auth tokens 的 secret。持久服务部署应使用长的随机值。
-
-## Terminal 和 Git
-
-### `YURI_TERMINAL_SHELL`
-
-Yuri terminal sessions 使用的 shell executable。
-
-### `YURI_GIT_BINARY`
-
-Yuri Git 功能使用的 Git executable。
-
-### `GIT_BINARY`
-
-Git executable 的备用 override。Yuri 专用配置建议使用 `YURI_GIT_BINARY`。
-
-### `YURI_GIT_READ_CACHE_TTL_MS`
-
-Git-backed file reads cache 的 TTL，单位为毫秒。调试时可设置为 `0` 禁用 cache。
-
-## 语音
-### `OPENAI_API_KEY`
-
-Yuri 语音功能调用 OpenAI-compatible services 时使用的 API key。
-
-### `YURI_ALLOW_REMOTE_OPENAI_COMPAT_URLS`
-
-设置为 `true` 或 `1` 时，允许语音功能使用远程 OpenAI-compatible base URLs。
-
-## Runtime helpers
-
-### `BUN_BINARY`
-
-Yuri 启动 daemon processes 时使用的 Bun executable。
-
-### `BUN_INSTALL`
-
-Bun 安装根目录。Yuri 使用它查找 `bin/bun` 来启动 daemon 和执行更新。
-
-### `VITE_OPENCODE_URL`
-
-Vite-built web app 的 build-time API base URL。普通 CLI 或 desktop 使用通常不需要设置它。
+本页是运维参考，不枚举所有内部构建或调试变量。模型、语音和外观优先使用实际开放的设置控件。

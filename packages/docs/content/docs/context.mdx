@@ -1,38 +1,18 @@
 ---
-title: Context
-description: See how much of the model's memory a session is using.
+title: Understand a conversation's size
+description: Inspect context usage and token details before deciding how to continue a long session.
 ---
 
-# Context
+# Understand a conversation's size
 
-Every model can only hold so much of a conversation at once — its context. Yuri shows how full that is, so you can tell when a session is getting close to the limit and a reply might start dropping older detail.
+The context indicator describes the conversation being sent to the model. It is different from a provider's account quota, which belongs in [Usage](/usage/).
 
-## The quick indicator
+## Open the numbers behind the indicator
 
-While you chat, a small gauge shows the percentage of context used. It changes color as you fill up:
+On desktop, click the usage ring in the header. You can also run **Show context usage** from the command palette. The Context panel shows the percentage used, message count and available token, cost and throughput details.
 
-- green — plenty of room
-- yellow — getting full (around three-quarters)
-- red — nearly full
+Treat the displayed numbers as reported or derived usage, not as a promise about remaining subscription credit. Available details depend on the model's responses.
 
-Hover it (or tap it on mobile) to see exact token counts.
+## When the conversation gets large
 
-## The full context panel
-
-Open the **Context** tab in the right sidebar for a fuller picture of the current session:
-
-- the model in use and when the session started
-- total tokens against the model's limit
-- message and cost totals
-- a breakdown of the last reply's tokens
-- a rough split of what's taking up context (your messages, the agent's, tool output)
-
-The breakdown is an estimate, not an exact count — use it to spot what's filling the window, not for billing.
-
-## What to do when it's full
-
-Start a fresh session for a new task instead of letting one session grow forever. A shorter context is faster and keeps the model focused.
-
-## Related
-
-- [Projects](/projects/) — sessions are grouped per project
+Check whether the current request still needs the earlier discussion. Use the session's compaction operation when you want to retain a summary, or begin a new session with a concise handoff for a different task. Keep important requirements explicit rather than relying on distant messages.

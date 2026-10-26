@@ -1,33 +1,31 @@
 ---
-title: 安装
-description: 为桌面、Web 或 VS Code 安装 Yuri。
+title: 为设备选择应用
+description: 先决定哪台电脑运行工作，再安装需要的访问端。
 ---
 
-# 安装
+# 为设备选择应用
 
-运行 Yuri 有三种方式：
+这台设备要负责执行项目，还是连接另一台正在工作的电脑？先确定这一点，再选择安装方式。
 
-- 面向 macOS 的桌面应用
-- 由 CLI 托管的 Web 应用，可以像手机应用一样安装（即 PWA）
-- VS Code 扩展
+## 负责执行工作的电脑
 
-## 前提条件
+[下载选择器](/#downloads)列出了当前可用的桌面安装包及芯片架构。安装匹配的包并打开 Yuri，桌面应用会启动自己的主机服务，无需另开 Yuri CLI。OpenCode 缺失或需要升级时，按启动页面的提示处理。
 
-请先安装 [OpenCode](https://opencode.ai)——Yuri 在它之上运行。
-
-## Web + PWA
+如果希望从终端管理主机，先安装 OpenCode，再使用仓库中的安装脚本：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yee94/yuri/main/scripts/install.sh | bash
-yuri --ui-password be-creative-here
+yuri --ui-password 'replace-with-your-own-password'
 ```
 
-打开 CLI 输出的 URL（通常是 `http://localhost:3000`）。你应该会看到 Yuri 会话列表。想随手取用，可以使用浏览器地址栏中的“安装”选项，把它添加为一个应用。
+换成自己的密码，打开命令输出的地址。后台运行方式见[主机管理](/zh-cn/opencode-server/)。
 
-## 桌面
+## 访问工作的设备
 
-从 GitHub 发布页或 Yuri 下载页下载最新的桌面版本。打开它，并登录你常用的 OpenCode 工作流。
+同一个下载选择器提供 iOS TestFlight 邀请和 Android APK。安装后需要[配对主机](/zh-cn/connect-devices/)，手机不会运行项目服务器。
 
-## VS Code
+浏览器无需安装，直接打开主机可访问的网页地址。编辑器集成则按 [VS Code 包说明](https://github.com/yee94/yuri/tree/main/packages/vscode)安装。
 
-从 VS Code Marketplace 安装，并登录你常用的 OpenCode 工作流。随后 Yuri 视图会在侧边栏中打开。
+## 选择版本前
+
+同时核对操作系统和 CPU。标有 Beta 的仍是预发布版本，即使它是当前唯一可下载的版本。已经安装过的用户，切换渠道前先看[版本说明](/zh-cn/updates/)。

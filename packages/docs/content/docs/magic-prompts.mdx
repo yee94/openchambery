@@ -1,26 +1,18 @@
 ---
-title: Magic Prompts
-description: Customize the built-in prompts behind Yuri's automated flows.
+title: Change the instructions behind an action
+description: Adjust built-in Git, GitHub and session prompts without creating another command.
 ---
 
-# Magic Prompts
+# Change the instructions behind an action
 
-Yuri uses built-in prompts behind the scenes whenever it does something automatically — writing a commit message, drafting a PR, reviewing an issue, resolving a conflict, summarizing a session. Magic Prompts is where you read and rewrite those prompts. Open it at **Settings → Magic Prompts**.
+Use **Settings → Magic Prompts** when an existing action produces the wrong style or emphasis. This page is available outside VS Code and organizes templates into Git, GitHub and Session groups.
 
-You don't need this page for normal use. Reach for it when you want a flow to behave differently — say, commit messages in a particular style.
+## Edit the part that matters
 
-## Edit a prompt
+Choose the relevant action. Where a template separates visible text from instructions, keep their roles distinct: the visible text appears as the request, while the instructions guide execution. Preserve named placeholders used to insert real task data.
 
-1. Open **Settings → Magic Prompts**.
-2. Pick a prompt from the groups in the sidebar — Git, GitHub, Planning, and Session.
-3. Edit the text and save.
+Save the override and try the action on a small example. A template's presence here is not proof that every older action using it still has a visible launch button.
 
-Some prompts have a visible part (the message you'd see) and an instructions part (hidden guidance for the agent). Prompts can include `{{placeholders}}` that Yuri fills in, like the diff or the issue title — keep those in place.
+## Recover the original behavior
 
-## Reset
-
-Changed your mind? Each prompt has **reset to default**, and there's a **reset all** if you want to start over everywhere.
-
-## Related
-
-- [Git & GitHub Workflows](/git/) — many of these prompts power the git flows
+Reset the selected template to remove its override. Use the all-overrides reset only when you intend to discard every customization on this page.

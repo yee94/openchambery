@@ -39,5 +39,48 @@ for (const page of ['index.html', 'en/index.html']) {
   console.log(`${page}: anchors, downloads and ${assets} asset references verified`);
 }
 if (!origin) {
-  assert.deepEqual(readdirSync(root).sort(), ['assets', 'en', 'index.html']);
+  assert.deepEqual(readdirSync(root).sort(), ['assets', 'docs', 'en', 'index.html']);
 }
+
+function htmlFiles(directory, prefix = '') {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const relative = `${prefix}${entry.name}`;
+    if (entry.isDirectory()) return htmlFiles(path.join(directory, entry.name), `${relative}/`);
+    return entry.name.endsWith('.html') ? [relative] : [];
+  });
+}
+
+const documents = new Map();
+for (const file of htmlFiles(root)) {
+  const route = `/${file.replace(/index\.html$/, '')}`;
+  const html = (await read(origin ? route.slice(1) : file)).toString();
+  if (origin) assert.equal(html, readFileSync(path.join(root, file), 'utf8'), `${route}: production differs from this revision`);
+  const ids = [...html.matchAll(/\bid="([^"]*)"/g)].map((match) => match[1]);
+  assert(ids.every(Boolean), `${route}: empty IDs`);
+  assert.equal(ids.length, new Set(ids).size, `${route}: duplicate IDs`);
+  if (html.includes('class="docs-page"')) {
+    assert.equal((html.match(/<h1[ >]/g) || []).length, 1, `${route}: exactly one page heading`);
+    assert(html.includes('aria-current="page"'), `${route}: missing current navigation item`);
+  }
+  documents.set(route, { html, ids });
+}
+let references = 0;
+for (const [route, { html }] of documents) {
+  for (const [, encoded] of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
+    const url = new URL(encoded.replaceAll('&amp;', '&'), `https://site.invalid${route}`);
+    if (url.origin !== 'https://site.invalid') continue;
+    const pathname = decodeURIComponent(url.pathname);
+    if (pathname.startsWith('/assets/')) {
+      const version = url.searchParams.get('v');
+      assert.match(version || '', /^[a-f0-9]{16}$/, `${route}: missing asset hash: ${pathname}`);
+      const data = await read(url.pathname.slice(1) + url.search);
+      assert.equal(createHash('sha256').update(data).digest('hex').slice(0, 16), version, pathname);
+    } else {
+      const target = documents.get(pathname);
+      assert(target, `${route}: broken internal link ${encoded}`);
+      if (url.hash) assert(target.ids.includes(decodeURIComponent(url.hash.slice(1))), `${route}: missing fragment ${encoded}`);
+    }
+    references++;
+  }
+}
+console.log(`${documents.size} pages: ${references} internal links, fragments and versioned resources verified`);

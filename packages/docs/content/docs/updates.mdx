@@ -1,31 +1,26 @@
 ---
-title: Updates
-description: Keep Yuri up to date on desktop, web, and VS Code.
+title: Update the component that needs it
+description: Distinguish the installed client, its web bundle, the host and OpenCode before applying an update.
 ---
 
-# Updates
+# Update the component that needs it
 
-How you update Yuri depends on how you installed it. In every case you can check your current version at **Settings → Yuri → About**.
+Desktop and mobile expose **Settings → About**. Read which component each version refers to: the installed app, active web bundle, connected Yuri host and OpenCode are not necessarily the same release.
 
-## Desktop app
+## Follow the offered update type
 
-The desktop app checks for updates against GitHub releases. When one is available, Yuri tells you, downloads it when you choose, and installs it on the next restart. You're always in control — nothing installs without your say-so.
+| The app offers | Your next step |
+| --- | --- |
+| A compatible OTA update | Apply it and restart/reload when requested. |
+| A new desktop installer | Complete the installer flow for the native shell. |
+| A required mobile native update | Install the available iOS build or Android APK. |
 
-## Web / CLI
+An OTA cannot add native capabilities missing from an older shell. Updating a phone does not update its remote host.
 
-If you installed the CLI, update it from **About** with the check and update buttons, or from the terminal:
+## Decide the release channel separately
 
-```bash
-yuri update
-```
+Use the Beta update setting deliberately. A prerelease is not a stable release, even when no stable installer exists yet. The [download chooser](/en/#downloads) labels that case and provides the available platform assets.
 
-Yuri detects how it was installed (npm, pnpm, yarn, or bun) and runs the right update for you.
+## A CLI-hosted installation
 
-## The OpenCode server
-
-Yuri and OpenCode update separately. When a new OpenCode version is available, Yuri offers to update it and restarts the server afterward. See [OpenCode Server](/opencode-server/) for how that server is managed.
-
-## Related
-
-- [Install](/install/) — how each app is installed in the first place
-- [OpenCode Server](/opencode-server/) — updating the underlying server
+Use `yuri update` for the Yuri CLI and follow the selected OpenCode runtime's update guidance separately. If an update fails, record the affected component and error before retrying. Do not delete project data as a client-update repair step.

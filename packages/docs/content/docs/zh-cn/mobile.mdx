@@ -1,43 +1,67 @@
 ---
-title: 移动应用与 PWA
-description: 在 iOS 或 Android 上安装 Yuri 应用，并把它连接到你的服务器。
+title: 把对话带在身边
+description: 在手机上切换页面，并分清设备设置与所连接的工作空间。
 ---
 
-# 移动应用与 PWA
+# 把对话带在身边
 
-Yuri 提供 iPhone 和 Android 原生应用，让你可以在手机上查看会话、回复代理并管理工作 — 在家通过 Wi-Fi，外出时通过 [Private Relay](/zh-cn/private-relay/)。
+打开原生应用，扫描主机的配对码，或使用已保存连接。**设置 → 切换实例**改变你正在查看的工作空间，不会在主机之间复制项目。
 
-## 安装应用
+## 从底部标签选择目的地
 
-- **iPhone/iPad** — 加入 [TestFlight 测试版](https://testflight.apple.com/join/ZCENBHtm)
-- **Android** — 从 [最新发布版本](https://github.com/yee94/yuri/releases/latest) 下载 APK
+项目入口通向会话及其结果；助理入口打开联系人对话；计划任务提供任务编辑和运行历史；设置包含手机端开放的配置页面，并非所有桌面设置都在其中。
 
-## 连接到你的服务器
+进入会话后，可以看回复、打开可用的文件改动、处理问题或权限请求。任务仍在主机执行。补充较长要求时，可以使用[语音输入](/zh-cn/voice/)。
 
-1. 在运行 Yuri 的电脑上，打开 **Settings → Remote Instances → 连接到此服务器**，然后按 **添加设备**。
-2. 选择 **任何地方**（如果只在家里用手机，可选 **仅家庭网络**），然后按 **创建二维码**。
-3. 在移动应用中点击 **扫描二维码**，用相机对准它。
+### 找到会话，整理列表
 
-应用会连接并记住这台服务器。二维码只能使用一次，每台设备都会获得自己的可撤销令牌 — 关于配对为何安全，参阅 [连接设备](/zh-cn/connect-devices/)。
+在底部选择 **项目**，从项目或 Worktree 下打开会话。左滑会话行可以露出置顶和归档操作；需要经常跟进的会话可以置顶，已经结束的会话可以归档。
 
-你可以把应用与多台服务器配对，并在实例列表中随意切换；应用会为每台服务器显示它是否可达，以及你是通过本地网络还是中继连接的。
+<div class="docs-shot-grid">
+<figure class="docs-phone-shot">
+<img src="/assets/shots/m-home.webp" alt="手机项目页：置顶或进行中的会话位于上方，下方按项目和 Worktree 展示会话" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>项目页：先找正在进行的会话，再按项目或 Worktree 继续工作。</figcaption>
+</figure>
+<figure class="docs-phone-shot">
+<img src="/assets/shots/m-swipe.webp" alt="向左滑动手机会话行后，右侧显示置顶和归档按钮" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>左滑会话行：直接选择置顶或归档。</figcaption>
+</figure>
+</div>
 
-## PWA（浏览器安装）
+### 找助理，查看计划
 
-完全不想经过应用商店？网页应用可以直接从浏览器安装：
+切到 **助理** 后，点联系人继续对话；切到 **计划** 后，可以查看任务列表，并从顶部切换到历史记录。助理负责对话与协调，计划页用于核对任务安排和实际运行结果。
 
-- **桌面浏览器** — 使用地址栏中的 **Install** 选项
-- **iPhone/iPad（Safari）** — 分享 → **Add to Home Screen**
-- **Android（Chrome）** — 菜单 → **Install app** / **Add to Home Screen**
+<div class="docs-shot-grid">
+<figure class="docs-phone-shot">
+<img src="/assets/shots/m-assistants.webp" alt="手机助理页：联系人卡片展示助理名称和最近消息" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>助理页：按联系人进入持续对话。配置方法见下方助理指南。</figcaption>
+</figure>
+<figure class="docs-phone-shot">
+<img src="/assets/shots/m-schedule.webp" alt="手机计划页：顶部有任务与历史记录切换，下方显示任务状态和执行时间" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>计划页：查看已启用或已暂停的任务，再到历史记录确认执行结果。</figcaption>
+</figure>
+</div>
 
-要在你的网络之外访问 PWA，优先通过 [Private Relay](/zh-cn/private-relay/) [配对设备](/zh-cn/connect-devices/)，或把服务器放在自建[反向代理](/zh-cn/reverse-proxy/) 后面并设置强 [UI 密码](/zh-cn/security/) — 原生应用会通过中继处理外出访问。
+详细操作见[助理指南](/zh-cn/assistants/)和[计划任务](/zh-cn/scheduled-tasks/)。
 
-## 移动端设置
+## 用语音补充要求
 
-在 **Settings → Yuri** 下，有几个选项可以调整移动端和已安装应用的体验 — 应用的安装名称、屏幕方向，以及屏幕键盘的行为方式。
+启用语音输入后，按住空白输入框开始录音。中间松手会保留可编辑文字，滑向取消区域会丢弃，滑向发送区域会识别后发送。松手前看清高亮目标，尤其留意路径、名称等容易识别错的内容。
 
-## 相关内容
+<figure class="docs-phone-shot">
+<img src="/assets/shots/m-asr-send.webp" alt="手机语音输入界面：上方显示识别文字，下方是取消与发送目标区域" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>录音手势：按松手位置选择保留文字、取消或发送。识别服务配置见语音指南。</figcaption>
+</figure>
 
-- [连接设备](/zh-cn/connect-devices/) — 配对、一次性二维码与设备管理
-- [Private Relay](/zh-cn/private-relay/) — “任何地方”访问的工作原理
-- [安全](/zh-cn/security/) — 在公开 UI 之前保护它
+首次使用前，按[语音指南](/zh-cn/voice/)配置识别服务并允许麦克风访问。
+
+## 接收其他应用的材料
+
+把支持的文字、链接或图片分享到 Yuri，再选择助理。Android 将内容放进助理草稿，供检查后发送；iOS 提供分享扩展的确认界面。提交前核对接收对象。
+
+支持的 iOS 安装包还提供系统小组件和实时活动。是否可用取决于原生版本与系统权限，不仅取决于网页包。
+
+## 也可以使用浏览器快捷入口
+
+打开主机网页地址，通过浏览器的安装或「添加到主屏幕」操作创建入口。这仍是使用浏览器权限的网页应用，不会因此获得原生系统集成。功能要求新原生包时，请看[更新说明](/zh-cn/updates/)。

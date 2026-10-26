@@ -1,34 +1,22 @@
 ---
-title: OpenCode Connection
-description: Fix Yuri not connecting to its OpenCode server.
+title: When the interface loads but work cannot start
+description: Separate OpenCode startup failures from model authentication and an incorrect upstream address.
 ---
 
-# OpenCode Connection
+# When the interface loads but work cannot start
 
-If Yuri loads but never gets past "OpenCode is restarting," or chat won't respond, the server it talks to isn't reachable. Work through these.
+A visible Yuri window proves that the interface loaded. It does not prove that the OpenCode service or selected model is ready.
 
-## It's stuck on "OpenCode is restarting"
+## Read the startup decision
 
-- give it a moment right after launch — this state is normal while the server starts
-- check whether the server is alive with `yuri status`
-- restart it with `yuri restart`
-- view startup details with `yuri logs`
+Follow any runtime-installation or compatibility message. For a CLI-managed host, inspect `yuri logs`; for desktop, use the startup error and retry action. `yuri status` reports Yuri instances, so do not treat it as proof that OpenCode is healthy.
 
-## You're connecting to your own server
+The default local connection uses a shared background service. Restarting the interface is not the same as upgrading or repairing that service.
 
-If you set Yuri to use an existing server, double-check the setup from [OpenCode Server](/opencode-server/):
+## Check explicit overrides next
 
-- `OPENCODE_HOST` must include the port, with no path — for example `http://localhost:4096`
-- set `OPENCODE_SKIP_START=true` so Yuri doesn't also start its own
-- if the address is invalid, Yuri ignores it and starts its own server instead — look for a `[config]` warning in the logs
+If you set `OPENCODE_HOST`, confirm its scheme, explicit port and absence of a path, query or fragment. Verify that the service is actually reachable from the Yuri host. Check `OPENCODE_SKIP_START` and the startup log for rejected configuration before assuming Yuri used your intended endpoint.
 
-## Still failing
+## If the service is ready
 
-- confirm Node.js is version `20` or newer
-- reinstall the latest CLI
-- open `http://localhost:3000` directly
-
-## Related
-
-- [OpenCode Server](/opencode-server/) — how Yuri finds and manages the server
-- [Troubleshooting](/troubleshooting/) — other common issues
+Check the selected provider and model in the session. An expired provider login or a model error is a different problem from service startup. Retry the small read-only request from [first use](/quickstart/) to separate project access from a larger failing task.

@@ -1,33 +1,31 @@
 ---
-title: Install
-description: Install Yuri for desktop, web, or VS Code.
+title: Pick the app for your device
+description: Choose a host installation first, then add the clients you need.
 ---
 
-# Install
+# Pick the app for your device
 
-There are three ways to run Yuri:
+Will this device run your projects, or connect to a computer that does? That choice matters more than the size of its screen.
 
-- desktop app for macOS
-- web app hosted by the CLI, which you can install like a phone app (a PWA)
-- VS Code extension
+## A computer that runs the work
 
-## Prerequisite
+The [download chooser](/en/#downloads) lists the available desktop installers and their processor architectures. Install the matching package and launch Yuri. The desktop app starts its host; a separate Yuri CLI process is unnecessary. Follow the startup screen if OpenCode needs installation or an upgrade.
 
-Install [OpenCode](https://opencode.ai) first — Yuri runs on top of it.
-
-## Web + PWA
+For a terminal-managed host, install OpenCode and use the repository's installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yee94/yuri/main/scripts/install.sh | bash
-yuri --ui-password be-creative-here
+yuri --ui-password 'replace-with-your-own-password'
 ```
 
-Open the URL the CLI prints (usually `http://localhost:3000`). You should see the Yuri session list. To keep it handy, use your browser's "Install" option in the address bar to add it as an app.
+Use your own password and open the address printed by the command. [Host management](/opencode-server/) covers background operation.
 
-## Desktop
+## A device that connects to the work
 
-Download the latest desktop build from the GitHub releases page or the Yuri download page. Open it and sign into your usual OpenCode workflow.
+Use the same download chooser for the iOS TestFlight invitation and Android APK. These apps need a [pairing connection](/connect-devices/); they do not run a project server on the phone.
 
-## VS Code
+A browser needs no installer: open the host's reachable web address. For editor integration, follow the current [VS Code package instructions](https://github.com/yee94/yuri/tree/main/packages/vscode).
 
-Install from the VS Code Marketplace and sign into your usual OpenCode workflow. The Yuri view then opens in the sidebar.
+## Before selecting a release
+
+Match both the operating system and CPU. A Beta label means a prerelease, even when it is the only download available. Consult [release channels](/updates/) before changing an existing installation's channel.

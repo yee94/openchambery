@@ -1,29 +1,20 @@
 ---
-title: Commands
-description: Make reusable slash commands for chat.
+title: Save a request as a slash command
+description: Turn a repeated prompt into a named command with optional model and Agent overrides.
 ---
 
-# Commands
+# Save a request as a slash command
 
-Commands are saved prompts you trigger with `/`.
+Commands are useful when you keep asking for the same kind of result. Unlike a shell [project action](/project-actions/), a command supplies instructions to an Agent conversation.
 
-## Commands
+## Write the reusable part
 
-A command is a saved prompt you run with a slash, like `/review`. Manage them at **Settings → Commands**.
+In **Settings → Commands**, create an entry with a name, scope and description. Edit its template and optionally select an Agent or model override. `$ARGUMENTS` allows the invocation to supply task-specific text. Use the template editor's hints for supported references and command substitutions.
 
-1. Open **Settings → Commands** and create a command.
-2. Give it a name, a description, and the prompt text it should send.
-3. Optionally pin it to a specific agent or model.
-4. Choose personal or project scope.
+Save the entry before leaving. Built-in commands have reset behavior rather than the same deletion controls as user entries.
 
-In chat, type `/` as the **first** character of the message to bring up commands, then pick one. Your text can use placeholders:
+## Supply the changing part in chat
 
-- `$ARGUMENTS` — whatever you type after the command
-- `@filename` — drops in the contents of a file
-- `` !`command` `` — drops in the output of a shell command
+Type `/` at the start of the project composer, select your command, and add its arguments. Check the resulting request before sending. If the procedure should be selected as supporting instructions instead, use a [Skill](/skills/) through `@`.
 
-The built-in `init` and `review` commands can be reset but not deleted.
-
-## Related
-
-- [Skills](/skills/) — load larger instruction sets on demand
+The historical URL contains “snippets”; the current interface exposes Commands, not a separate snippet manager.

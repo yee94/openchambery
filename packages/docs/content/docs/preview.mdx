@@ -1,32 +1,24 @@
 ---
-title: Preview & Dev Servers
-description: Open a running dev server inside Yuri.
+title: Bring a running page beside the chat
+description: Open a detected development URL or use the session menu's browser panel.
 ---
 
-# Preview & Dev Servers
+# Bring a running page beside the chat
 
-When you start a dev server, Yuri can open it right inside the app instead of a separate browser tab — so you can see your site next to the chat, capture its console, and point at elements to ask about them.
+First make sure the development server is actually running. A preview displays that server; it does not start your application by itself.
 
-## Open a preview
+## Use the entry you already have
 
-Yuri watches terminal output for a local address (the `Local:` line that tools like Vite, Next.js, or Astro print). When it spots one:
+| Starting point | Action |
+| --- | --- |
+| Terminal output contains a recognized development URL | Use the terminal's preview button. |
+| A saved project action starts the server | Open its preview, or enable its automatic preview option. |
+| You want to enter another address | Open the session menu and choose **Open browser panel**. |
 
-- in the terminal, an **Open preview** button appears
-- a [project action](/project-actions/) with auto-open turned on opens it for you
-- a local link in a chat message can open it too
+The browser-panel action is a menu item, not a permanent globe button in the header. Electron direct connections can use the native browser; Relay and other supported hosts use the preview proxy/iframe path.
 
-The site loads in the side panel. Only local addresses (on your own machine) can be previewed.
+## Attach evidence from the loaded page
 
-## Console and inspect
+For a loopback development page, the preview toolbar offers inspection and console controls once the page bridge is ready. Select an element or relevant console output and attach it to the current conversation. These controls are not promised for arbitrary third-party pages. They give the Agent a concrete target instead of a description such as “the button over there.”
 
-In the preview panel you can:
-
-- watch the page's **console** — errors, warnings, and logs, filtered however you like
-- turn on **inspect**, click any element, and send a note about it — selector, styles, position, and a screenshot — straight into chat
-
-This is the fastest way to tell the agent "this button, here" without describing it.
-
-## Related
-
-- [Project Actions](/project-actions/) — auto-open a server when you start it
-- [Desktop Browser](/desktop-browser/) — the same tools for any page, on desktop
+For remote development, confirm whose localhost the address refers to. An [SSH forward](/remote-instances/) is an option for desktop connections when the service needs a local port.

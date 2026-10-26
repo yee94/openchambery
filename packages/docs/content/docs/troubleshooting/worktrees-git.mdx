@@ -1,35 +1,22 @@
 ---
-title: Worktrees & Git
-description: Fix common worktree and git problems.
+title: Check the repository before retrying Git
+description: Distinguish a missing entry point from an operation that fails after it starts.
 ---
 
-# Worktrees & Git
+# Check the repository before retrying Git
 
-Issues that come up with [worktree sessions](/worktrees/) and the [git view](/git/), and how to clear them.
+First confirm the selected directory is the intended Git repository on the current host. A folder with the same name on another host is a different working copy.
 
-## A worktree needs attention
+## No worktree action is visible
 
-Yuri flags a worktree when something's off:
+The project-row worktree action requires a Git project and is not provided in the ordinary VS Code session sidebar. On supported surfaces, use that project action or **New Worktree Draft** from the command palette. See [worktrees](/worktrees/) for the current entry points.
 
-- **folder missing** — the worktree's folder was deleted or moved outside Yuri; remove the session and create a fresh worktree
-- **detached or unborn branch** — the worktree isn't on a normal branch; check it out onto one
-- **merge, rebase, or cherry-pick in progress** — an operation was left half-finished; finish or abort it from the git view
+## Creation or a branch operation fails
 
-## Can't create a worktree
+Read the error for the requested branch and path. Check for an existing checkout, a conflicting branch name, directory permissions and local changes. Preserve those changes before attempting cleanup. A failed setup command is separate from Git successfully creating the checkout.
 
-- **branch already exists** — pick a different branch name, or use the existing-branch option
-- **name already in use** — choose a different worktree name
+## Local work succeeds, remote work fails
 
-## Commit or PR generation fails
+Check the remote URL and credentials on the host performing the Git operation. Author name/email and access credentials solve different problems. Verify the [identity profile](/git-identities/) separately from network authentication.
 
-Generating a commit message or PR description runs in your active session, so you need a session open with a working model selected. Open or pick a session and try again.
-
-## SSH or Windows path issues
-
-- make sure the SSH key the repo uses is the one set in your [git identity](/git-identities/)
-- on Windows, git uses Unix-style paths (like `/c/Users/...`) — Yuri handles this, but custom SSH key paths should follow the same form
-
-## Related
-
-- [Worktree Sessions](/worktrees/) — how worktrees are created and removed
-- [Git Identities](/git-identities/) — set the right key and identity per repo
+Resolve conflicts in the working files and rerun the relevant check. The current UI has no Integrate or PR-management panel to repair; use Git/GitHub for those operations.

@@ -1,88 +1,35 @@
 ---
-title: OpenCode Server
-description: Connect Yuri to a local or remote OpenCode server.
+title: Operate a Yuri host from the terminal
+description: Manage the Yuri process separately from the OpenCode runtime behind it.
 ---
 
-# OpenCode Server
+# Operate a Yuri host from the terminal
 
-Yuri runs on top of an OpenCode server. By default it starts one for you, so you don't have to do anything. You only need this page if you want to point Yuri at a server you already run, or manage the one it starts.
+This is the CLI path. Desktop manages its own Yuri host; a phone connects to one. If your goal is simply to use another computer's workspace, start with [pairing](/connect-devices/) or [SSH](/remote-instances/).
 
-## How Yuri finds a server
+## Identify which process you are managing
 
-When Yuri starts, it looks for a server in this order:
+| Command | What to inspect |
+| --- | --- |
+| `yuri status` | Registered Yuri instances and their ports. |
+| `yuri logs` | Startup and runtime messages for the host. |
+| `yuri restart` | Restart the CLI-managed Yuri instance. |
+| `yuri stop` | Stop that Yuri instance. |
 
-1. reuse a server it already started
-2. connect to an external one if you told it to (see below)
-3. auto-detect a server on the default port (`4096`)
-4. otherwise, start and manage its own
+Use `--foreground` when you want startup output attached to the terminal. The default local OpenCode connection uses a shared service; stopping Yuri does not imply that this shared service was stopped too.
 
-If nothing is configured, step 4 happens automatically and you're up and running.
+## Point at an existing OpenCode service
 
-## Connect to a server you already run
-
-Set these before starting Yuri:
+For an explicitly managed upstream, configure the environment before launch:
 
 ```bash
 OPENCODE_HOST=http://localhost:4096 OPENCODE_SKIP_START=true yuri
 ```
 
-- `OPENCODE_HOST` — the full address of your OpenCode server, including the port (a value like `http://localhost:4096`). It must not have a path at the end.
-- `OPENCODE_SKIP_START=true` — tells Yuri not to start its own server.
+The address needs an explicit port and cannot include a path, query or fragment. This chooses the execution service behind the Yuri host—it is not a connection to another Yuri UI. Check startup warnings if the supplied value is rejected.
 
-If you only need to change the port, set `OPENCODE_PORT` instead of `OPENCODE_HOST`.
+## Arrange unattended startup
 
-If `OPENCODE_HOST` is missing its port or has a path, Yuri ignores it and falls back to starting its own server. Watch the startup logs for a `[config]` warning if a connection you expected didn't happen.
+Use `yuri startup enable`, inspect it with `yuri startup status`, and remove it with `yuri startup disable`. The startup service can capture the current environment; configure the values you need before enabling it and review `--help` for the environment-snapshot option.
 
-## Manage the server from the CLI
-
-```bash
-yuri status
-yuri logs
-yuri restart
-yuri stop
-```
-
-`yuri` on its own starts the server in the background. Add `--foreground` to keep it attached to your terminal.
-
-## Start Yuri at login
-
-Use `startup enable` to install a native user service. Yuri uses `launchd` on macOS, `systemd --user` on Linux, and Task Scheduler on Windows.
-
-```bash
-yuri startup enable
-yuri startup status
-yuri startup disable
-```
-
-To protect the UI, set the password when enabling the service:
-
-```bash
-YURI_UI_PASSWORD='secret' yuri startup enable
-```
-
-For a headless server that starts at login and is meant for desktop or mobile clients, include `--api-only` and a reachable host:
-
-```bash
-yuri startup enable --port 3000 --api-only --host 0.0.0.0 --ui-password secret
-```
-
-`startup enable` snapshots your current environment into the service so it behaves more like starting `yuri` from the same shell. This keeps provider tokens, `PATH`, SSH agent settings, and other CLI auth/config variables available. Use `--no-env-snapshot` if you want a minimal service environment.
-
-The startup service remembers `--port`, `--host`, `--ui-password`, and `--api-only`. CLI restart and update restart reuse those saved settings.
-
-To create a connection link for another Yuri app, use:
-
-```bash
-yuri connect-url --port 3000 --server http://your-host:3000 --qr
-```
-
-Run `yuri connect-url --help` to see all link options, including `--name`, `--lan`, `--server`, `--api-only`, `--ui-password`, and `--qr`.
-
-## "OpenCode is restarting"
-
-While the server is starting or restarting, Yuri shows an "OpenCode is restarting" state and pauses requests until it's ready. This is normal right after launch or a restart. If it never clears, see [OpenCode connection](/troubleshooting/opencode-connection/).
-
-## Related
-
-- [Providers, Models & Agents](/providers/) — set up what the server talks to
-- [OpenCode connection](/troubleshooting/opencode-connection/) — if it won't connect
+Use [environment settings](/environment/) for targeted overrides. A running host still needs working model credentials and an accessible project directory.

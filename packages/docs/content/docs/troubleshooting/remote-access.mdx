@@ -1,39 +1,20 @@
 ---
-title: Remote Access
-description: Fix remote instances, pairing, and reaching Yuri from another device.
+title: Trace a connection from client to host
+description: Check the selected machine, saved credential and transport before creating another pairing.
 ---
 
-# Remote Access
+# Trace a connection from client to host
 
-When you can't reach Yuri from your phone or another machine, the fix depends on how you're connecting.
+Check the destination computer first: it must be awake, online and running Yuri. Use its actual local address or desktop window to establish whether the problem exists before the network connection.
 
-## Check the basics first
+## Follow the route that was saved
 
-- open `http://localhost:3000` on the same computer first — if that fails, it's not a remote problem; see [OpenCode connection](/troubleshooting/opencode-connection/)
-- confirm the server is running with `yuri status`
+- **LAN:** the client needs a reachable address and a host listening on that network. A loopback address on the phone points at the phone.
+- **Relay:** check host Relay availability and connectivity. A Relay-only connection cannot rescue an offline host.
+- **SSH:** read the reported stage—authentication, remote setup or forwarding—and inspect that stage rather than repeatedly replacing the pairing code.
 
-## Paired device won't connect
+## Then check enrollment
 
-- the QR code / pairing link is **single-use** — if it was already scanned (or expired), create a new one from **Add a device**
-- if the device was paired with **Home network only**, it can't connect from outside that network — pair it again with **Anywhere**
-- for **Anywhere** pairing, check **Settings → Remote Instances → Yuri Relay** on the server: it should say **Connected**; if not, disable and re-enable it
-- if a device was **revoked**, its token is gone for good — pair it again with a new QR code
+A used or expired code cannot enroll another client. Generate a fresh one on the intended host. A revoked client must pair again; a locally deleted connection may simply need to be imported again with a new pairing.
 
-See [Connect a Device](/connect-devices/) and [Private Relay](/private-relay/) for how these connections work.
-
-## Remote instance won't connect (desktop)
-
-When a [remote instance](/remote-instances/) stalls, Yuri names the step that failed:
-
-- **auth** — your SSH or UI password was rejected; re-enter it
-- **install / start** — Yuri couldn't set up or start the server on the remote machine; check that machine's requirements
-- **forwarding** — the connection is up but the port isn't reaching you; try a different local port
-
-## Behind your own server
-
-If you put Yuri behind a reverse proxy and it loads oddly or won't connect, see [Reverse Proxy](/reverse-proxy/).
-
-## Related
-
-- [Connect a Device](/connect-devices/) · [Private Relay](/private-relay/) · [Remote Instances](/remote-instances/) · [Reverse Proxy](/reverse-proxy/)
-- [Security](/security/) — protect the UI before exposing it
+If the connection succeeds but the expected work is absent, confirm the host identity and project directory. Do not reset the host's data just because another device is looking at a different workspace.

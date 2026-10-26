@@ -1,32 +1,23 @@
 ---
-title: 问题排查
-description: 常见的设置与运行问题及快速解决方法。
+title: 找出失败发生在哪一层
+description: 从仍然可用的部分开始，把问题缩小到客户端、主机或执行服务。
 ---
 
-# 问题排查
+# 找出失败发生在哪一层
 
-遇到问题了？在下面找到对应的现象，试试相应的解决方法。
+不要同时修改多项设置。先记下设备、当前主机、应用版本，以及失败的具体操作。
 
-## Yuri 命令退出或无法启动
+## 你仍然能打开什么？
 
-- 确认 Node.js `>=22`
-- 运行 `yuri --version`
-- 如有需要，重新安装最新的 CLI
+| 观察到的现象 | 排查方向 |
+| --- | --- |
+| 主机本地可用，另一台设备连不上 | [连接排查](/zh-cn/troubleshooting/remote-access/)。 |
+| Yuri 能打开，会话无法使用执行服务 | [OpenCode 就绪状态](/zh-cn/troubleshooting/opencode-connection/)。 |
+| 仓库操作或独立工作目录创建失败 | [Git 与 Worktree 检查](/zh-cn/troubleshooting/worktrees-git/)。 |
+| 只有公开网址失败 | 对比直连结果和[代理清单](/zh-cn/reverse-proxy/)。 |
 
-## 无法访问 Web UI
+## 收集最少但有用的依据
 
-- 用 `yuri logs` 查看服务器日志
-- 确认活动端口（默认 `3000`）
-- 先直接打开 `http://localhost:3000`
+CLI 主机查看 `yuri status` 与 `yuri logs`；桌面或手机记录「关于」中的组件版本和可见错误。使用运行实例实际提供的地址，桌面端口不一定是 `3000`。
 
-## VS Code 扩展无法连接
-
-- 确认 Yuri 服务器正在运行
-- 确认扩展已更新
-- 重新加载 VS Code 窗口并重试连接
-
-## 相关内容
-
-- [Remote access](/zh-cn/troubleshooting/remote-access/)
-- [快速开始](/zh-cn/quickstart/)
-- [反向代理](/zh-cn/reverse-proxy/)
+重启前保留失败请求和未发送草稿。每做一次针对性调整，就重复同一操作，确认是否改善。反馈问题时附上预期结果和复现步骤，去掉凭据与配对链接。

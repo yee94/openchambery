@@ -1,34 +1,18 @@
 ---
-title: Notifications
-description: Get told when a session needs you or finishes.
+title: Choose when Yuri interrupts you
+description: Select the events worth an alert and check delivery on the device you use.
 ---
 
-# Notifications
+# Choose when Yuri interrupts you
 
-Notifications tell you when something needs your attention so you don't have to watch the screen — a session finished, hit an error, asked a question, or needs permission to do something. Set them up at **Settings → Yuri → Notifications**.
+Go to **Settings → Notifications**. Enable delivery, then choose the events you want: completion, errors, questions, permission requests, subtasks, scheduled tasks, assistants or goals.
 
-## Turn them on
+## Match the destination to the device
 
-1. Open **Settings → Yuri → Notifications**.
-2. Allow notifications when your browser or system asks.
-3. Choose what you want to be told about:
-   - a session **finishes**
-   - a session hits an **error**
-   - a session **asks a question**
-   - a session needs **permission**
-   - **subtasks** complete
+Desktop alerts use system notifications. Browser delivery has its own permission and background-push controls. Native mobile delivery also depends on the installed app, system permissions and connection state. Enabling an event in Yuri does not override the operating system's notification settings.
 
-## How they reach you
+Use the test control where it is offered, then verify a real event. A quiet device may be suppressing foreground alerts or notifications at the system level.
 
-- on **desktop**, you get native system notifications
-- in a **browser or installed app**, you get web push notifications, so they arrive even when the tab is in the background
+## Adjust the message where the editor is available
 
-Sessions set to auto-accept won't nag you with permission notifications.
-
-## Customize the wording
-
-Each kind of notification has a title and message template you can edit, using fields like the agent name and model. There's also a limit on how much of the last message is included, so notifications stay short.
-
-## Related
-
-- [Voice Mode](/voice/) — hear replies read aloud instead
+Desktop, Web and VS Code surfaces expose notification template editing. The native phone app hides that editor and the foreground-alert controls. Use the displayed template fields rather than looking for a message-length setting; no such length control is exposed in the current UI.

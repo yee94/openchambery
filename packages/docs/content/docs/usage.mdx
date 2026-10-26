@@ -1,28 +1,20 @@
 ---
-title: Usage & Quotas
-description: Track how much of your provider plan you've used.
+title: Read account usage in context
+description: Inspect reported quota windows and choose which accounts appear in the header.
 ---
 
-# Usage & Quotas
+# Read account usage in context
 
-The Usage page shows how much of each provider's plan you've used, so you can see how close you are to a limit. Open it at **Settings → Usage**.
+Open **Settings → Usage** and choose an account or provider. This view reports supported account quotas; it is not the same as a session's [context usage](/context/).
 
-## What you see
+## Decide what to keep visible
 
-For each connected provider, Yuri shows:
+The settings sidebar offers refresh controls, automatic refresh timing and display preferences. Account details expose **Show in header** where supported, so selected information can be reached from the header without reopening Settings.
 
-- how much of the current window you've used, as a bar
-- a breakdown by model
-- a pace indicator, so you can tell if you're on track to run out
+Read the quota window and reset information together with the value. A number without its time window can be misleading.
 
-You can choose which providers appear, and the same summary is available from a dropdown in the app header.
+The sidebar's **Magpie** group discovers supported gateways on the connected host and offers **Connect another Magpie** for an explicit address. See [Magpie usage and integration](/magpie/) for account aggregation and remote-access requirements.
 
-## Supported providers
+## Distinguish missing data from no usage
 
-Usage works for the providers that publish a quota, including Claude, Codex, GitHub Copilot, Google, OpenRouter, Kimi, NanoGPT, z.ai, Zhipu, MiniMax, Ollama Cloud, and Wafer.
-
-A provider only shows usage once you've signed in to it on the [Providers](/providers/) page. A few providers need an extra step — for example, Ollama Cloud reads a session file you set up separately. If a provider shows no data, it usually means that extra credential is missing.
-
-## Related
-
-- [Providers, Models & Agents](/providers/) — sign in before usage appears
+Provider support and authentication determine which details can be retrieved. An unavailable or failed fetch does not prove that the account has no remaining credit. Check the reported error and reconnect the provider if necessary; use the provider's own account page when the value is not supplied here.

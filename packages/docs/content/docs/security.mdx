@@ -1,43 +1,24 @@
 ---
-title: Security
-description: Protect the UI with a password and passkeys before exposing it.
+title: Control who can reach the workspace
+description: Match browser login, paired clients and passkeys to the access you actually use.
 ---
 
-# Security
+# Control who can reach the workspace
 
-Yuri gives access to your machine and your code, so lock it down before anyone but you can reach it. This page covers the UI password, passkeys, and what to know before exposing Yuri to a network.
+Access to a Yuri host can lead to file and tool operations on that computer. Choose the connection scope and credentials for the people and devices that should have that access.
 
-## Set a UI password
+## Browser login and paired clients are different
 
-Start Yuri with a password and the browser UI asks for it:
+A terminal-hosted web UI can use `--ui-password` or `YURI_UI_PASSWORD`. Set your own password before making that UI reachable by other machines.
 
-```bash
-yuri --ui-password be-creative-here
-```
+A paired app uses its issued client credential. Manage and revoke those clients on the host through Remote Instances. A single-use pairing link authorizes enrollment; keep an unused one private until the intended device redeems it.
 
-You can also set it with the `YURI_UI_PASSWORD` environment variable instead of putting it on the command line. After signing in, Yuri remembers the device for a while so you're not asked every time.
+## Add a convenient sign-in method
 
-Always set a password if the instance is reachable by anyone else — especially over the public internet or a reverse proxy.
+Passkey controls are under **Settings → Sessions**, in the Passkeys group. Registration depends on browser/runtime support and host authentication configuration. Follow the status shown there rather than assuming a biometric device alone is enough.
 
-## Passkeys
+Use the listed passkeys and sign-out controls to review access. If registration or global sign-out is unavailable, read its reported reason; resetting unrelated project files will not resolve an authentication policy.
 
-Once a password is set, you can add passkeys (Face ID, Touch ID, a security key) for quicker sign-in. Add them at **Settings → Yuri → Passkeys**.
+## Keep exposure intentional
 
-Passkeys are tied to the current password. If you change or remove the password, saved passkeys are cleared and you'll add them again.
-
-## Device tokens
-
-Devices paired through [Connect a Device](/connect-devices/) authenticate with their own per-device tokens, not the UI password. Pairing links are single-use and expire if unused; every paired device is listed at **Settings → Remote Instances → Connect to this server**, where you can revoke any of them at any time. Away-from-home connections go through the [Private Relay](/private-relay/), which is end-to-end encrypted and cannot read your traffic.
-
-## Before you expose it
-
-- By default Yuri only listens on your own machine (`127.0.0.1`). It takes a deliberate change to listen more widely, and you should set a password first.
-- For your own devices, prefer [pairing](/connect-devices/) with the [Private Relay](/private-relay/) — nothing is exposed publicly at all.
-- If you need a public URL, prefer a private network (like a VPN) or your own [reverse proxy](/reverse-proxy/) over opening a port to the internet.
-- If you put Yuri behind your own HTTPS server, see [Reverse Proxy](/reverse-proxy/).
-
-## Related
-
-- [Connect a Device](/connect-devices/) — one-time pairing and per-device tokens
-- [Private Relay](/private-relay/) — end-to-end encrypted access from anywhere
-- [Reverse Proxy](/reverse-proxy/) — run Yuri behind your own server
+LAN binding, [Relay](/private-relay/) and an [HTTPS reverse proxy](/reverse-proxy/) solve different connectivity problems. None replaces host authentication. Start with the narrowest route that serves the devices you intend to use.

@@ -1,39 +1,24 @@
 ---
-title: Scheduled Tasks
-description: Run a prompt automatically on a schedule.
+title: Put a task on the calendar
+description: Choose the working project and execution time, then inspect a real run.
 ---
 
-# Scheduled Tasks
+# Put a task on the calendar
 
-A scheduled task runs a prompt for you on a schedule — for example, a daily "summarize yesterday's changes" or a weekly cleanup. When it runs, Yuri starts a new session and sends the prompt on its own. Open the scheduler from the button at the top of the session sidebar.
+Start from **Scheduled tasks** in the main navigation; on the phone, use its bottom tab. The desktop opens a task workspace rather than requiring a session-sidebar dialog.
 
-## Create a task
+## Decide what a run should produce
 
-1. Open the scheduled tasks dialog from the session sidebar.
-2. Add a task and give it a name.
-3. Choose when it runs:
-   - **daily** — at one or more times each day
-   - **weekly** — on chosen weekdays and times
-   - **once** — a single date and time
-4. Set what it does: the prompt to send, and the provider, model, and agent to use. The prompt can be a slash command, like `/review`.
-5. Save, and make sure the task is enabled.
+Select a project and create a task. Give it a recognizable name, a prompt, and its model/Agent configuration. Creation needs an available project. Include enough context that a newly started run can work without your current conversation.
 
-You can run any task immediately with **run now** to check it does what you expect.
+Set the schedule and timezone in the editor, then check the next execution time. Enable the task when you are ready. Use the goal option only when the run should continue toward an outcome beyond a single reply.
 
-Check **Run as goal** to make the run pursue its prompt to completion instead of stopping after one reply — see [Session Goals](/session-goals/).
+## Test before relying on the clock
 
-## Run history
+Use **Run now** and inspect its result. A saved schedule proves that the configuration was stored, not that its prompt, credentials or working directory are correct.
 
-Open **History** in the scheduler to see scheduled and manual runs across every task. Each record includes its status, start time, duration, project, and any recorded error. Runs remain in History after their task is deleted.
+Open **History** in the task workspace to see runs, duration and recorded failures. A run with a session can be opened there. A failure before session creation has no conversation to open. Scheduled sessions are archived outside the ordinary session list; History is the place to find them.
 
-Each run session uses a title beginning with `[Scheduled]`. Open the session from History to inspect its conversation. Yuri automatically archives these system sessions and keeps them out of the regular session list.
+## Pause the arrangement, keep the evidence
 
-Failed runs also remain in History. A failure that happens before session creation has no session link.
-
-## Keep in mind
-
-Tasks only fire while the Yuri server is running. If you close it, scheduled runs are paused until it's back up.
-
-## Related
-
-- [Commands](/commands-snippets/) — reuse a slash command as the prompt
+Pause a task when you want to stop future executions. Deleting a task does not remove its run history. Execution requires the host to be running; do not treat a closed laptop as an always-on scheduler or assume every missed time will be replayed.

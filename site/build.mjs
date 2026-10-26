@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dictionaries } from './src/i18n.mjs';
 import { icons } from './src/icons.mjs';
 import { snapshot } from './assets/downloads.mjs';
+import { execFileSync } from 'node:child_process';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const output = path.join(root, 'dist');
@@ -54,6 +55,7 @@ for (const page of pages) {
     .replaceAll('{{lang}}', page.htmlLang)
     .replaceAll('{{base}}', page.base)
     .replaceAll('{{switchHref}}', page.switchHref)
+    .replaceAll('{{docsHref}}', page.lang === 'zh' ? '/docs/' : '/en/docs/')
     .replace(/(src|href)="((?:\.\.\/)?assets\/[^"?]+)"/g, (_, attr, url) => {
       const file = path.join(root, url.replace(/^\.\.\//, ''));
       assets.add(url.replace(/^\.\.\//, ''));
@@ -72,3 +74,4 @@ for (const asset of assets) {
   mkdirSync(path.dirname(target), { recursive: true });
   copyFileSync(path.join(root, asset), target);
 }
+execFileSync('bun', [path.join(root, 'src/build-docs.mjs')], { stdio: 'inherit' });

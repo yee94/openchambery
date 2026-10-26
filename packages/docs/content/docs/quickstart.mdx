@@ -1,26 +1,26 @@
 ---
-title: Quickstart
-description: Start Yuri quickly and pick the right app for the task.
+title: Get one useful answer
+description: Verify the host, model and project with a small request you can inspect.
 ---
 
-# Quickstart
+# Get one useful answer
 
-## Fastest path
+For a first run, use a request that does not depend on a long setup or a large code change. It gives you a clear way to tell whether the workspace is ready.
 
-1. Install [OpenCode](https://opencode.ai).
-2. Install the Yuri CLI (see [Install](/install/) for the one-line command).
-3. Run `yuri --ui-password be-creative-here`.
-4. Open the URL the CLI prints (usually `http://localhost:3000`).
-  5. To use it from your phone, [pair a device](/connect-devices/) with a QR code (use **Anywhere** for access away from home via the [Private Relay](/private-relay/)).
+## Prepare the destination
 
-You should see the Yuri session list in your browser. If it loads, you're up and running.
+Open Yuri on the computer containing your files. Add the project directory, or use the workspace already open in VS Code. On a remote connection, the directory belongs to that host, not the device displaying the window.
 
-Use a strong UI password, especially if you plan to open the instance to the internet.
+In **Settings → Providers**, connect a model provider. Return to the conversation and select an available model. If the list is empty, finish the [provider setup](/providers/) first.
 
-If the page doesn't load, check [Troubleshooting](/troubleshooting/).
+## Make the request easy to verify
 
-## Which app should I use?
+Create a session and ask:
 
-- use **desktop** for day-to-day work on macOS
-- use **web** for remote access and reviewing from your phone
-- use **VS Code** for sessions right next to your code
+> Inspect the project entry points. Tell me which command starts development and cite the file where you found it. Do not edit anything.
+
+Answer any question or permission request. Check the cited file against the reply. This tests access to both the model and the project without committing you to a change.
+
+## Decide what comes next
+
+Ask for a small modification and [review the diff](/git/), create an [assistant](/assistants/) for ongoing coordination, or [connect your phone](/connect-devices/) to follow this same session elsewhere.

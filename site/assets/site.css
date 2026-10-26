@@ -60,6 +60,7 @@ a:focus-visible,button:focus-visible,summary:focus-visible { outline:2px solid v
 .nav a:hover { color:var(--interactive-selection); }
 .language { font-size:12px; margin-left:18px; }
 .nav-github { font-size:13px; }
+.nav-docs { font-size:13px; padding-block:12px; }
 .nav-github span { margin-left:6px; color:var(--surface-muted-foreground); }
 .button { display:inline-flex; align-items:center; justify-content:center; gap:30px; padding:12px 20px; border:1px solid var(--primary-base); border-radius:4px; background:var(--primary-base); color:var(--primary-foreground); font-size:14px; }
 .button:hover { background:var(--interactive-selection); }

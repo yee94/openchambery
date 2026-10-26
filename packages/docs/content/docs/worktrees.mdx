@@ -1,36 +1,20 @@
 ---
-title: Worktree Sessions
-description: Give a session its own branch and folder so work stays isolated.
+title: Give a task its own checkout
+description: Create a worktree draft from a Git project without reusing the main working directory.
 ---
 
-# Worktree Sessions
+# Give a task its own checkout
 
-A worktree session runs in its own checked-out copy of your repo, on its own branch (a git worktree). That keeps parallel sessions from stepping on each other's files — one can refactor while another fixes a bug, with no switching back and forth.
+A worktree provides another checkout and branch for the same repository. Use it when concurrent work should not share one set of uncommitted files.
 
-## Create one
+## Start at the project row
 
-1. Open the new-worktree dialog from the button at the top of the session sidebar.
-2. Choose a starting point:
-   - **new branch** — name the branch and pick which branch to start from
-   - **existing branch** — check out a branch you already have
-3. Confirm the worktree folder (Yuri suggests one from the branch name).
-4. Create it.
+For a Git project, use its worktree action in the session sidebar, or choose **New Worktree Draft** from the command palette. On the phone, the project row in the sessions sheet provides the corresponding action. The ordinary project-row control is not offered in VS Code.
 
-Yuri makes the branch, sets up the folder, and starts a session in it. You can also kick one off straight from a [todo](/notes-todos-plans/) or a [GitHub issue or PR](/github/).
+Choose the base branch and complete the draft. If GitHub is connected, the creation dialog also offers an existing issue or PR as the starting point. Review the resulting directory and branch before sending the task.
 
-## Bring the work back
+## Finish the branch deliberately
 
-When the work is good, use **Integrate** in the Git view to bring the worktree's commits onto another branch (like `main`). If a change conflicts, you can hand the conflict to the agent to resolve.
+Inspect and commit the work, then use your normal Git or GitHub process to bring it into the destination branch. There is no currently mounted Integrate panel to follow in Yuri.
 
-## Clean up
-
-Deleting or archiving the session can remove the worktree. You choose whether to also delete the branch — local, and remote if there is one. Nothing is deleted without you asking.
-
-## If something looks off
-
-A worktree can need attention if its folder went missing, its branch is in a detached state, or a merge or rebase is half-finished. Yuri flags these so you can fix them — see [Worktrees & Git](/troubleshooting/worktrees-git/).
-
-## Related
-
-- [Multi-run](/multi-run/) — launch many worktree sessions at once
-- [Git & GitHub Workflows](/git/) — commit and integrate from inside Yuri
+When removing a worktree, read the cleanup choices carefully: deleting sessions, deleting the directory and deleting branches are distinct operations. Preserve work you still need before choosing them.

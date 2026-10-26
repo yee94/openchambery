@@ -1,41 +1,22 @@
 ---
-title: Git & GitHub Workflows
-description: Stage, commit, and manage branches without leaving Yuri.
+title: Turn a diff into a reviewed commit
+description: Inspect working-tree changes and bring existing GitHub work into a conversation.
 ---
 
-# Git & GitHub Workflows
+# Turn a diff into a reviewed commit
 
-Yuri has a built-in git view so you can review changes, commit, and manage branches without switching to a terminal. Open it from the **Git** tab in the right sidebar.
+The Git tab in the right sidebar is the starting point on desktop. Check that it shows the repository and branch you intended to change.
 
-## Review and commit
+## Choose what belongs in the commit
 
-The git view splits your changes into **staged** and **unstaged**:
+Open changed files to inspect their diffs. Stage only the intended changes, write a commit message, then commit. The generation control can draft the message; review the wording before using it.
 
-- click a file's **+** to stage it, or **−** to unstage it
-- stage or unstage everything in a group at once
-- click a file to see its diff
+The Git view also exposes synchronization, history and stash actions. Read the current branch and working-tree state before switching branches or restoring a stash.
 
-Then write a commit message and commit. You can have Yuri **generate a commit message** from your staged changes — it uses the current session's model, so you need a session open.
+## Bring GitHub context into the request
 
-## Branches and history
+Outside VS Code, connect your account through **Settings → Git**. Use the composer's attachment menu to select an existing issue or pull request as context. The worktree creation flow can also start from a connected GitHub item.
 
-The git view also covers the everyday rest of git:
+PR status in the session sidebar can take you to GitHub. Create, update or merge the pull request there, or explicitly ask an appropriately configured Agent to do it. The current Yuri Git interface does not expose a PR-management tab.
 
-- create, switch, rename, and delete branches
-- push, pull, and fetch
-- browse history and per-commit diffs
-- stash and restore changes
-
-## Pull requests
-
-Connect GitHub (see [GitHub Issues & PRs](/github/)) and the **PR** tab lets you open a pull request, update it, mark it ready, or merge it — and generate its title and description the same way as commit messages.
-
-## Bringing in conflicts
-
-If a merge, rebase, or integrate hits a conflict, Yuri shows what's stuck and lets you resolve it — including handing it to the agent.
-
-## Related
-
-- [GitHub Issues & PRs](/github/) — connect GitHub and start work from issues
-- [Worktree Sessions](/worktrees/) — isolate a branch in its own folder
-- [Git Identities](/git-identities/) — commit as the right person per repo
+For author identity, see [Git profiles](/git-identities/). For an isolated checkout, use [worktrees](/worktrees/).

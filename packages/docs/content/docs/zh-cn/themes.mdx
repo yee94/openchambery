@@ -1,30 +1,18 @@
 ---
-title: 主题
-description: 使用内置主题和用户自定义主题来自定义 Yuri。
+title: 调整阅读外观
+description: 选择明暗主题，或从当前主机重新加载自定义主题。
 ---
 
-# 主题
+# 调整阅读外观
 
-Yuri 支持内置主题和自定义主题 JSON 文件。
+打开 **设置 → 外观**。「主题」分组控制明暗模式及各自使用的主题。VS Code 不提供 Yuri 的主题选择控件。
 
-## 添加自定义主题
+## 决定是否跟随系统
 
-1. 创建主题目录：
+选择固定明亮、固定深色或跟随系统，再为两个模式分别选择主题。修改后检查一段对话和代码块，确认都容易阅读。
 
-```bash
-mkdir -p ~/.config/yuri/themes
-```
+## 加载自己的定义
 
-2. 将你的 JSON 文件添加到该目录（例如 `my-theme.json`）。
-3. 打开 Yuri，然后前往 **Settings -> Theme -> Reload themes**。
-4. 从下拉菜单中选择你的主题。它会立即生效。
+把主题 JSON 放到当前主机 Yuri 数据目录下的 `themes/`，通常是 `~/.config/yuri/themes/`，也可能由 `YURI_DATA_DIR` 指定。随后使用 **外观 → 主题 → 重新加载主题**，再选择加载出的条目。
 
-## 主题位置
-
-- macOS/Linux：`~/.config/yuri/themes/`
-
-## 完整 JSON 格式参考
-
-请使用主仓库文档中的完整格式指南：
-
-- [`docs/CUSTOM_THEMES.md`](https://github.com/yee94/yuri/blob/main/docs/CUSTOM_THEMES.md)
+手机上的重新加载仍然读取主机目录，不读取手机中的文件。JSON 字段见[主题格式参考](https://github.com/yee94/yuri/blob/main/docs/CUSTOM_THEMES.md)。

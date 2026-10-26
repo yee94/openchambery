@@ -1,36 +1,30 @@
 ---
-title: Voice Mode
-description: Speak to Yuri and hear replies read aloud.
+title: Speak, then decide what to send
+description: Use the recording gesture deliberately and configure recognition on the active host.
 ---
 
-# Voice Mode
+# Speak, then decide what to send
 
-Voice mode lets you dictate messages and have replies read back to you. Turn it on at **Settings → Yuri → Voice**.
+Enable input in **Settings → Voice** and allow the speaking device to use its microphone. Voice settings and capture are not offered in the VS Code surface.
 
-## Reading replies aloud (text-to-speech)
+## The release gesture is a choice
 
-Pick how replies are spoken:
+On a phone, hold the empty composer until recording starts. Release in the center to insert editable text, move to the left/cancel target to discard it, or move to the right/send target to recognize and send. Follow the highlighted target before lifting your finger. Assistant conversations use the same gesture when enabled.
 
-- **browser** — your browser's built-in voices, no setup
-- **OpenAI** — OpenAI's voices; paste your API key and pick a voice
-- **OpenAI-compatible** — any service that speaks the OpenAI format; enter its URL and, if it needs one, an API key
-- **macOS say** — the built-in `say` command, on Macs that have it
+On desktop, hold the composer to record and release to finish. During recording, **Enter** finishes and **Esc** cancels. Check the transcript for names, paths and technical terms.
 
-Once on, you get a play button on messages to hear them read aloud.
+![The desktop recording surface](/assets/shots/en-asr-desk-close.webp)
 
-## Dictating messages (speech-to-text)
+## Recognition belongs to a configured service
 
-Pick how your speech is transcribed:
+| Choice | What to prepare |
+| --- | --- |
+| Local | A downloaded model on the Yuri host that supports the language. |
+| OpenAI-compatible | The transcription URL, model and required credentials. |
+| Volcengine / Doubao | Credentials and a streaming ASR resource; test with the microphone. |
 
-- **browser** — your browser's built-in recognition, no setup
-- **server** — an OpenAI-compatible transcription service; enter its URL and, if needed, an API key
-- **on-device** — a speech model that runs in your browser and downloads the first time you use it
+“Local” refers to the host, not an offline model on the phone. A file-transcription test and a live microphone test exercise different paths.
 
-## A note for phones
+## Listening is configured separately
 
-For reading replies aloud on a phone, the OpenAI or OpenAI-compatible options are the most reliable — mobile browsers limit the built-in voices.
-
-## Related
-
-- [Notifications](/notifications/) — get pinged instead of listening
-- [Providers, Models & Agents](/providers/) — where your OpenAI key may already live
+Choose a playback provider in the same settings page and use the message playback action. Conversation auto-read is another option where offered. If capture fails before any transcript appears, check the microphone and secure browser context first; if capture works but recognition fails, check the selected host's service configuration.

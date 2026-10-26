@@ -1,34 +1,22 @@
 ---
-title: Projects
-description: Organize your work into projects and switch between them.
+title: Choose where a session works
+description: Navigate project directories and configure the actions attached to them.
 ---
 
-# Projects
+# Choose where a session works
 
-A project is a folder on your computer that Yuri keeps track of — usually one codebase. Switching projects switches the folder the agent works in, along with that project's sessions and settings.
+Before sending a file-related request, check the selected project and connected host. The Agent works in that directory; changing the window's device does not move the files.
 
-## Add a project
+## A directory you can return to
 
-You can add a project from a few places:
+Add a project through the sidebar or directory picker, then select it to see its sessions. **Settings → Projects** lets you select a registered project and adjust its identity, project actions and worktree settings.
 
-- the **Add project** entry in the command palette
-- the **+** button at the top of the session sidebar
-- the folder browser when you pick a directory
+In VS Code, the editor's open workspace supplies the project. Yuri's separate Projects settings page is not offered there.
 
-Point it at a folder and Yuri remembers it. The name comes from the folder; you can change it later.
+## Keep work separate when needed
 
-## Switch projects
+Use an ordinary new session for another conversation in the same directory. For a Git task that needs an isolated branch and checkout, create a [worktree draft](/worktrees/). Save repeatable shell commands as [project actions](/project-actions/).
 
-Pick a project from the sidebar to make it active. Everything — sessions, git, notes — follows the project you have open.
+## Read the Agent's task list
 
-## Make a project recognizable
-
-Open **Settings → Projects** to give a project a custom name, color, or icon. Yuri tries to find an icon automatically — see [Project icons](/project-icons/).
-
-> In VS Code, Yuri always uses the folder you have open as the only project, so there's nothing to add or switch. The Projects settings page is hidden there.
-
-## Related
-
-- [Project Notes, Todos & Plans](/notes-todos-plans/) — keep working notes per project
-- [Project Actions](/project-actions/) — save commands you run often
-- [Context](/context/) — see how much of the model's memory a session is using
+When an Agent writes todos, Yuri displays them in the session's status area and tool results. These reflect the Agent's progress; they are not a user-editable project checklist. The [Context view](/context/) reports conversation usage rather than storing project notes.

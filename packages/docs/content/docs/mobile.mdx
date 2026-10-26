@@ -1,43 +1,67 @@
 ---
-title: Mobile Apps & PWA
-description: Install the Yuri app on iOS or Android and connect it to your server.
+title: Take the conversation with you
+description: Navigate the phone app without confusing local device settings with the connected workspace.
 ---
 
-# Mobile Apps & PWA
+# Take the conversation with you
 
-Yuri has native apps for iPhone and Android, so you can watch sessions, reply to agents, and manage work from your phone — at home over Wi-Fi or from anywhere over the [Private Relay](/private-relay/).
+Open the native app and scan a host's pairing code, or use a previously saved connection. **Settings → Switch instance** changes the workspace you are looking at. It does not copy projects between hosts.
 
-## Install the app
+## Choose a destination from the bottom tabs
 
-- **iPhone/iPad** — join the [TestFlight beta](https://testflight.apple.com/join/ZCENBHtm)
-- **Android** — download the APK from the [latest release](https://github.com/yee94/yuri/releases/latest)
+Projects lead to sessions and their results. Assistants open contact conversations. Scheduled tasks provide task editing and run history. Settings contains the mobile configuration pages; not every desktop settings page is included.
 
-## Connect it to your server
+Within a session, read replies, open available file changes and respond to questions or permissions. The host continues doing the work. Use [voice input](/voice/) for a longer follow-up instead of typing it on the small screen.
 
-1. On the computer running Yuri, open **Settings → Remote Instances → Connect to this server** and press **Add a device**.
-2. Pick **Anywhere** (or **Home network only** if you'll only use the phone at home) and press **Create QR code**.
-3. In the mobile app, tap **Scan QR code** and point the camera at it.
+### Find a session and organize the list
 
-The app connects and remembers the server. The QR code is single-use and each device gets its own revocable token — see [Connect a Device](/connect-devices/) for how pairing stays safe.
+Choose **Projects** in the bottom bar, then open a session under its project or worktree. Swipe a session row left to reveal pin and archive actions. Pin work you want to revisit; archive conversations you have finished with.
 
-You can pair the app with several servers and switch between them from the instances list; the app shows for each one whether it's reachable and whether you're connected over the local network or the relay.
+<div class="docs-shot-grid">
+<figure class="docs-phone-shot">
+<img src="/assets/shots/en-m-home.webp" alt="Mobile Projects page with pinned or active sessions at the top and sessions grouped by project and worktree below" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>Projects: return to active work, or find a conversation under its project or worktree.</figcaption>
+</figure>
+<figure class="docs-phone-shot">
+<img src="/assets/shots/en-m-swipe.webp" alt="A mobile session row swiped left to reveal Pin and Archive buttons on the right" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>Swipe a session row left to pin or archive it.</figcaption>
+</figure>
+</div>
 
-## PWA (browser install)
+### Reach an assistant or check a schedule
 
-Prefer no app store at all? The web app installs straight from the browser:
+In **Assistants**, tap a contact to continue talking. In **Schedule**, inspect the task list or switch to **History** at the top. Use the contact conversation to coordinate work and the schedule page to verify its timing and actual runs.
 
-- **desktop browser** — use the **Install** option in the address bar
-- **iPhone/iPad (Safari)** — Share → **Add to Home Screen**
-- **Android (Chrome)** — menu → **Install app** / **Add to Home Screen**
+<div class="docs-shot-grid">
+<figure class="docs-phone-shot">
+<img src="/assets/shots/en-m-assistants.webp" alt="Mobile Assistants page showing contact cards with names and recent messages" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>Assistants: open an ongoing contact conversation. The assistant guide below covers setup.</figcaption>
+</figure>
+<figure class="docs-phone-shot">
+<img src="/assets/shots/en-m-schedule.webp" alt="Mobile Schedule page with Tasks and History tabs, status filters and upcoming execution times" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>Schedule: inspect active or paused tasks, then check History for execution results.</figcaption>
+</figure>
+</div>
 
-To reach the PWA from outside your network, prefer [pairing](/connect-devices/) with the [Private Relay](/private-relay/), or put the server behind your own [reverse proxy](/reverse-proxy/) with a strong [UI password](/security/) — the native apps handle away-from-home access for you via the relay.
+For the full workflows, see [assistants](/assistants/) and [scheduled tasks](/scheduled-tasks/).
 
-## Mobile settings
+## Speak a follow-up
 
-Under **Settings → Yuri**, a few options tune the mobile and installed experience — the app's installed name, screen orientation, and how the on-screen keyboard behaves.
+With voice input enabled, hold the empty composer to start recording. Release in the center to keep editable text, move to the cancel target to discard it, or move to the send target to recognize and send. Check the highlighted target before releasing, especially when the request includes paths or names that may be misheard.
 
-## Related
+<figure class="docs-phone-shot">
+<img src="/assets/shots/en-m-asr-send.webp" alt="Mobile voice input showing recognized text above the Cancel and Send gesture targets" width="390" height="844" loading="lazy" decoding="async">
+<figcaption>Recording gesture: where you release determines whether to keep text, cancel or send. Configure recognition with the voice guide.</figcaption>
+</figure>
 
-- [Connect a Device](/connect-devices/) — pairing, one-time QR codes, and managing devices
-- [Private Relay](/private-relay/) — how "Anywhere" access works
-- [Security](/security/) — protect the UI before exposing it
+Before the first recording, follow the [voice guide](/voice/) to configure recognition and grant microphone access.
+
+## Bring material from another app
+
+Share supported text, links or images to Yuri and select an assistant. Android places the material in the assistant draft for review and sending; iOS provides a share-extension confirmation screen. Check the destination before submitting.
+
+On supported iOS builds, system widgets and Live Activities provide additional entry and status surfaces. Their availability depends on the installed native version and system permissions, not just the web bundle.
+
+## If you prefer a browser shortcut
+
+Open the host's web address and use the browser's installation or Add to Home Screen action. This is a browser installation with browser permissions; it does not acquire the native app's system integrations. See [updates](/updates/) when a feature requires a new native build.

@@ -1,30 +1,23 @@
 ---
-title: MCP Servers
-description: Add MCP servers to give agents extra tools.
+title: Connect a tool service
+description: Configure an MCP connection and verify that it can actually be used.
 ---
 
-# MCP Servers
+# Connect a tool service
 
-An MCP server gives your agents extra tools — things like searching a database, calling an API, or reading a service you use. Add them in **Settings → MCP**.
+An MCP entry tells the host how to reach extra tools. Saving an entry, authenticating it and establishing a live connection are distinct steps.
 
-## Add a server
+## Choose the right connection form
 
-1. Open **Settings → MCP**.
-2. Add a server and choose its type:
-   - **local** — Yuri runs a command on your machine. You give it the command to run and, if needed, environment variables.
-   - **remote** — Yuri connects to a URL someone else hosts. You give it the URL and any headers it needs (for example an auth token).
-3. Save. The server is on by default; you can turn it off without deleting it.
+In **Settings → MCP**, add an entry or import a JSON snippet when creating one. Set its scope and transport:
 
-## Where it applies
+- A local service needs the command and arguments that run on the host, plus any environment variables.
+- A remote service needs its URL and, where required, headers or OAuth configuration.
 
-Pick the scope when you add a server:
+Advanced settings expose timeout and authorization options. Keep credentials in the configuration fields rather than pasting them into a task prompt.
 
-- **personal** — available in every project
-- **project** — available only in the current project, and saved alongside the project's other settings
+## Prove the connection is ready
 
-Server names use lowercase letters, numbers, hyphens, and underscores.
+Save, then use the entry's connection and test controls. Complete authorization if requested. VS Code may require pasting the authorization callback instead of using an automatically suggested redirect.
 
-## Related
-
-- [Providers, Models & Agents](/providers/) — connect a model first
-- [Skills](/skills/) — another way to extend what agents can do
+If authentication succeeded but tools remain unavailable, inspect the live connection status and service errors. Disable an entry to stop using it without deleting its configuration; remove it when it is no longer needed.

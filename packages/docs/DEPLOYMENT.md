@@ -1,54 +1,34 @@
-# Docs Source Deployment
+# Handbook publication
 
-This repo publishes docs **source artifacts**.
+The website and handbook are built from this repository and published together.
+No separate documentation renderer repository is required.
 
-Rendering and hosting require a separately configured website repository (`apps/docs`). The candidate name `yuri-website` has not been verified; repository ownership, dispatch destination and hosting must be configured before deployment.
+## Website workflow
 
-## Workflow
+`.github/workflows/site.yml` validates changes to `site/`, `packages/docs/`, and
+`scripts/docs/`. Pull requests build and check the static output. Main-branch
+changes, published releases and manual dispatch use the website production job.
 
-Use `.github/workflows/docs-source.yml`.
+The deployment job pulls the existing website project's Vercel settings and runs
+`vercel build --prod` **locally in the checked-out repository**. Its build command
+reads both `site/` and `packages/docs/` and writes `site/dist/`. It deploys the
+result with `vercel deploy --prebuilt --prod`; uploading only `site/` for a remote
+source build would omit the handbook source and is not supported.
 
-Triggers:
+The same credentials and website project variables described in `site/README.md`
+apply. Live verification compares all generated pages with this revision and
+checks internal links, fragments and versioned resources.
 
-- push to `main` when docs source changes
-- release published
-- manual `workflow_dispatch`
+## Source archives
 
-Outputs:
+`.github/workflows/docs-source.yml` remains a source archive job. It validates and
+packages all retained MDX sources and attaches archives to release/manual tags as
+before. It no longer dispatches builds to a separate website repository. Source
+archives are not the deployed handbook and include the archived translations.
 
-- validates docs (`bun run docs:validate`)
-- creates `yuri-docs-source-<sha>.tar.gz`
-- uploads archive as workflow artifact
-- on release/manual with tag, uploads archive to release assets
+## Preview and rollback
 
-## Cross-repo sync trigger
-
-After validating and packaging, the workflow sends a `repository_dispatch` event
-to `yuri-website` so it re-syncs and redeploys the docs. This fires on
-**every** trigger above — push to `main` (docs changes), release, and manual
-`workflow_dispatch` — so a normal commit to docs auto-updates the live site.
-
-Required secret in this repo:
-
-- `YURI_WEBSITE_REPO_TOKEN` — a token with `contents: write` (classic
-  `repo` scope, or fine-grained with Contents: read & write) on
-  the configured website repository. **Without it the dispatch step is skipped**
-  (it logs "not set" and exits cleanly), so the site will never auto-update.
-  This is the most common reason the pipeline silently does nothing.
-
-Event sent:
-
-- `event_type: docs_source_updated`
-
-Payload includes:
-
-- `source_repo`
-- `source_ref` — the ref the website checks out from `yuri` (`main` on a
-  push, the tag on a release)
-- `archive_name`
-
-`yuri-website`'s `deploy-docs.yml` listens for this event
-(`repository_dispatch: types: [docs_source_updated]`), checks out
-`yuri` at `source_ref`, runs `docs:sync`, builds `apps/docs`, and deploys
-to Cloudflare Pages. That repo needs its own secrets: `YURI_REPO_TOKEN`
-(read access to this repo), `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID`.
+Build and serve `site/dist/` using the commands in the package README. Previewing
+does not publish. After deployment, rollback the website and handbook together to
+a known-good deployment or repository revision; do not mix pages and assets from
+different builds.

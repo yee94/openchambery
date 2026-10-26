@@ -3,9 +3,9 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: ['site/**', '.github/workflows/site.yml']
+    paths: ['site/**', 'packages/docs/**', 'scripts/docs/**', '.github/workflows/site.yml']
   pull_request:
-    paths: ['site/**', '.github/workflows/site.yml']
+    paths: ['site/**', 'packages/docs/**', 'scripts/docs/**', '.github/workflows/site.yml']
   release:
     types: [published]
   workflow_run:
@@ -39,6 +39,7 @@ jobs:
         with:
           bun-version: '1.3.14'
       - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run docs:validate
       - run: bun run site:test
       - run: bun run site:build
       - run: bun run site:check
@@ -77,10 +78,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TESTFLIGHT_PUBLIC_URL: ${{ vars.TESTFLIGHT_PUBLIC_URL }}
         run: node site/sync-downloads.mjs
+      - name: Build website and handbook from this repository
+        working-directory: site
+        run: |
+          bunx vercel@65.2.0 pull --yes --environment=production
+          bunx vercel@65.2.0 build --prod
+          node verify.mjs
       - name: Deploy website project
         working-directory: site
-        run: bunx vercel@65.2.0 deploy --prod --yes
+        run: bunx vercel@65.2.0 deploy --prebuilt --prod --yes
       - name: Verify live pages and versioned assets
-        run: |
-          node site/build.mjs
-          node site/verify.mjs "$SITE_URL"
+        run: node site/verify.mjs "$SITE_URL"

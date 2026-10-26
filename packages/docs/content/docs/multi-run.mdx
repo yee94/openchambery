@@ -1,34 +1,20 @@
 ---
-title: Multi-run
-description: Run the same prompt across several models or sessions at once.
+title: Compare runs in VS Code
+description: Use the Yuri Agent Manager command to start a group of model runs.
 ---
 
-# Multi-run
+# Compare runs in VS Code
 
-Multi-run launches several sessions from one form — handy for trying the same task with different models and comparing the results. Open it from the button at the top of the session sidebar.
+The currently reachable group-creation interface is the VS Code Agent Manager. Desktop and Web do not expose the former sidebar multi-run launcher.
 
-## Start a multi-run
+## Launch from the editor
 
-1. Open the multi-run launcher.
-2. Pick the project and name the run group.
-3. Write the prompt and pick the models to run it with (up to five per group).
-4. Choose whether to **isolate runs**.
-5. Launch.
+Open a Git workspace in VS Code and run **Yuri: Agent Manager** from the editor's command palette. Create a group with a name, task prompt, base branch and selected models. The form accepts up to five model runs and offers an Agent selection and worktree setup commands.
 
-Each model gets its own session, and they all start with your prompt.
+The group uses the editor workspace. Check the prompt and branch before creating the runs, especially when setup commands modify files or install project dependencies.
 
-## Isolated runs
+## Compare the resulting work
 
-Turn on **isolate runs** to give every run its own [worktree](/worktrees/) and branch, so they never touch the same files. This needs a git repo — it's turned off automatically for folders that aren't one. Pick the branch the runs start from.
+Select the created group to inspect its runs. Each run has its own session and checkout. Compare the outputs and changes against the same acceptance criteria; choosing a favorite answer does not itself merge its branch.
 
-With isolation off, every run is a plain session in the project folder.
-
-## Comparing results
-
-Each run is a normal session you can open, read, and keep or discard. If you started runs to compare approaches, review them side by side and carry the best one forward.
-
-If a single run fails to start, the others still launch — you'll just see fewer sessions than you asked for.
-
-## Related
-
-- [Worktree Sessions](/worktrees/) — how isolation works under the hood
+Use your usual review and Git workflow to keep the result you want.

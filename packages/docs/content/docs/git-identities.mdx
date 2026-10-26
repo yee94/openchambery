@@ -1,30 +1,18 @@
 ---
-title: Git Identities
-description: Commit as the right name and email for each repository.
+title: Check who a commit belongs to
+description: Manage author profiles in Git settings and distinguish them from GitHub sign-in.
 ---
 
-# Git Identities
+# Check who a commit belongs to
 
-A git identity is the name and email your commits are signed with. If you work across personal and work repos, you can save identities and apply the right one per repository, instead of relying on a single global setting. Manage them at **Settings → Git**.
+An author profile answers who appears on a commit. GitHub authorization answers which account can access the service. Check both when moving between personal and work repositories.
 
-## Add an identity
+## Inspect the effective profile
 
-1. Open **Settings → Git** and choose **New**.
-2. Enter the **name** and **email** to commit with.
-3. Pick how it authenticates with the remote:
-   - **SSH** — point it at an SSH key
-   - **token** — use a saved credential for a host
-4. Optionally give it a color and icon so it's easy to spot.
+Open **Settings → Git** outside VS Code. The page displays the global identity and editable custom profiles. The global entry is read-only here; create or edit a profile when you need a different name, email or supported authentication configuration.
 
-Your system's global identity is shown too, as read-only.
+Review the selected default and any credentials offered for import. Naming a profile does not establish that its credentials can access a particular repository.
 
-## Apply an identity to a repo
+## Verify before publishing
 
-Applying an identity writes it to that repository's **local** git config — it only affects that repo, not your global setting. SSH identities also set the SSH command to use your key; token identities set up credential storage for the host.
-
-You can import identities Yuri discovers from your existing git credentials and save them as token identities.
-
-## Related
-
-- [Git & GitHub Workflows](/git/) — commit using the identity you set
-- [GitHub Issues & PRs](/github/) — connect a GitHub account for PRs
+Make a small local commit and inspect its author in history before pushing. If the profile is correct but remote access fails, investigate repository permissions and authentication separately rather than changing the author name repeatedly.

@@ -1,30 +1,22 @@
 ---
-title: Skills
-description: 创建可复用的指令，让 Agent 按需加载。
+title: 给 Agent 一套可复用的方法
+description: 管理已安装 Skills，通过 @ 选择器把它加入请求。
 ---
 
-# Skills
+# 给 Agent 一套可复用的方法
 
-Skill 是一组可复用的指令，Agent 可以在相关时引入它 — 例如“我们如何编写提交信息”或“我们的 API 规范”。你在 **Settings → Skills** 中管理它们。
+任务需要固定流程、支持文件或项目专用指令时，使用 Skill。它补充执行方法，你仍需说明这次要什么结果。
 
-如果想安装现成的 skill 而不是自己编写，请参阅 [Skills 目录](/zh-cn/skills-catalog/)。
+## 使用已经安装的 Skill
 
-## 创建 skill
+打开 **设置 → Skills**，选择条目检查描述、指令和支持文件。用户创建的条目可以编辑，内置条目只读。新建时选择保存位置，以及属于个人还是当前项目。
 
-1. 打开 **Settings → Skills**。
-2. 创建一个 skill，并给它一个名称和一段简短的描述。Agent 正是根据描述来判断该 skill 何时适用，因此请写得具体。
-3. 编写指令。如果该 skill 需要支持文件，可以添加它们。
-4. 选择它所在的位置：
-   - **personal** — 在每个项目中都可用
-   - **project** — 仅在当前项目中可用
+在项目会话输入 `@`，从引用列表选择 Skill，补充任务后发送。`/` 用于命令选择，不是另一套 Skill 菜单。
 
-## 在聊天中使用 skill
+## 查找别人发布的方法
 
-在消息中间输入 `/` 可调出 skill 选择器，然后选择一个。Agent 会为该次回复加载该 skill 的指令。
+桌面或 Web 的 **设置 → Skills Catalog** 是独立设置页面。选择来源、搜索并查看条目，再决定安装位置。通过 **Add catalog** 可以添加其他来源。
 
-位于消息最开头的 `/` 会改为打开 [命令](/zh-cn/commands-snippets/)。
+专用手机设置导航不提供 Skills Catalog。请从支持的界面安装，再回到所用主机的已安装 Skills 页面查看。
 
-## 相关内容
-
-- [Skills 目录](/zh-cn/skills-catalog/) — 安装他人发布的 skill
-- [命令](/zh-cn/commands-snippets/) — 在聊天中复用文本的其他方式
+需要连接额外工具而不是提供方法时，配置 [MCP](/zh-cn/mcp/)。

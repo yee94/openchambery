@@ -1,10 +1,12 @@
-# Yuri landing page
+# Yuri website and handbook
 
 Build both languages with `node build.mjs` from this directory. `src/index.template.html`
 owns the page and `src/i18n.mjs` owns Chinese and English copy. Generated entrypoints
 are `dist/index.html` and `dist/en/index.html`. Asset URLs carry content hashes to prevent
-stale scripts and markup from being mixed. No dependencies or application runtime
-are needed; serve `dist/` with any static server. Only referenced public resources
+stale scripts and markup from being mixed. Node.js 24 and Bun 1.3.14+ are required
+at build time: `build.mjs` invokes the Bun Markdown renderer for the handbook.
+No package installation or application runtime is needed to build or serve the
+site; serve `dist/` with any static server. Only referenced public resources
 and vendor licenses are copied to `dist/`; source, tests and deployment state are
 not published or committed as build output.
 
@@ -88,6 +90,21 @@ releases; it is also the no-JavaScript and API-rate-limit path.
 
 ## Local verification
 
+The handbook reads `packages/docs/content/docs/` and `sidebar.config.json` directly.
+Chinese lives at `/docs/`, English at `/en/docs/`. It shares the site's dark tokens
+and wordmark, with article navigation, in-page contents, title/description filtering,
+and mobile native disclosure navigation. Article reading and navigation work without
+JavaScript; filtering is progressive enhancement. The six merged page routes per
+language retain redirects; archived translations are not published. See
+`packages/docs/CONTRIBUTING.md` for the supported non-executable MDX subset.
+
+Desktop article navigation remembers the sidebar scroll offset and advanced-group
+disclosures in session storage, scoped to the tab and language. Restore disclosures
+before the offset, after revealing search, so the scroll range is ready. Save only
+on page exit, not on scroll; mobile document scrolling and filtered results do not
+overwrite desktop navigation state. Blocked storage leaves ordinary navigation
+usable. Article scroll and browser history restoration remain browser-owned.
+
 From the repository root:
 
 ```sh
@@ -99,7 +116,7 @@ python3 -m http.server 8794 --directory site/dist
 
 ## CI/CD
 
-`.github/workflows/site.yml` validates website pull requests. Changes to `site/`
+`.github/workflows/site.yml` validates website and handbook pull requests. Changes to `site/`, `packages/docs/`, or `scripts/docs/`
 on `main`, published releases, completion of the `Release` workflow, and manual workflow dispatch deploy the verified
 revision to the existing Vercel website project. PR jobs never receive deployment
 credentials. Production deploys are serialized, with live HTML, anchors and asset
@@ -119,9 +136,12 @@ Required GitHub settings:
 - Variable `YURI_RELEASE_IDENTITIES_VERIFIED=true`: repository publishing gate.
 
 The CLI deployment root is `site/`, build is `node build.mjs`, output is `dist`.
-The workflow invokes the CLI from that directory; no local `.vercel/` is committed.
-If using Vercel's Git integration instead, set its repository root to `site/` and
-avoid enabling a second production deployment path alongside this workflow.
+The workflow runs `vercel pull` and `vercel build --prod` inside the full repository,
+then `vercel deploy --prebuilt --prod`. This includes handbook sources outside
+`site/` without copying them into the website. Do not deploy the `site/` directory
+alone as a remote source build. No local `.vercel/` is committed. A Git integration
+would need access to the sibling docs package and Bun at build time; keep the
+workflow as the single production deployment path.
 For rollback, revert the website commit on `main`, or redeploy a known-good
 deployment in Vercel. Build artifacts and unused draft images are excluded from
 the repository; keep approved brand masters in the repository's brand directory.

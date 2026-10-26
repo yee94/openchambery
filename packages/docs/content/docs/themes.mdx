@@ -1,30 +1,18 @@
 ---
-title: Themes
-description: Customize Yuri with built-in and user-defined themes.
+title: Set the reading appearance
+description: Choose light and dark themes, or reload custom themes from the connected host.
 ---
 
-# Themes
+# Set the reading appearance
 
-Yuri supports built-in themes and custom theme JSON files.
+Open **Settings → Appearance**. The Theme group controls the mode and the themes used for light and dark appearances. VS Code does not offer Yuri's theme-selection controls.
 
-## Add a custom theme
+## Choose what follows the system
 
-1. Create the themes directory:
+Select a fixed light/dark mode or follow the system, then choose the theme for each mode. Check a conversation and a code block after changing it; both should remain easy to read.
 
-```bash
-mkdir -p ~/.config/yuri/themes
-```
+## Load a custom definition
 
-2. Add your JSON file to that directory (for example `my-theme.json`).
-3. Open Yuri, then go to **Settings -> Theme -> Reload themes**.
-4. Pick your theme from the dropdown. It applies right away.
+Place the theme JSON in the connected host's Yuri data directory under `themes/`—normally `~/.config/yuri/themes/`, or the directory selected by `YURI_DATA_DIR`. Then use **Appearance → Theme → Reload themes** and select the loaded entry.
 
-## Theme location
-
-- macOS/Linux: `~/.config/yuri/themes/`
-
-## Full JSON format reference
-
-Use the full format guide in the main repo docs:
-
-- [`docs/CUSTOM_THEMES.md`](https://github.com/yee94/yuri/blob/main/docs/CUSTOM_THEMES.md)
+On a phone, reloading still reads the host's directory, not files stored on the phone. The [theme format reference](https://github.com/yee94/yuri/blob/main/docs/CUSTOM_THEMES.md) describes the JSON fields.

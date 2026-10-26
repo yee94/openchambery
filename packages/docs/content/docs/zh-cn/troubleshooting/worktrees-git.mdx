@@ -1,35 +1,22 @@
 ---
-title: Worktree 与 Git
-description: 修复常见的 worktree 和 git 问题。
+title: 重试 Git 前先检查仓库
+description: 区分入口本来就不开放，与操作开始后执行失败。
 ---
 
-# Worktree 与 Git
+# 重试 Git 前先检查仓库
 
-[worktree 会话](/zh-cn/worktrees/) 和 [git 视图](/zh-cn/git/) 中可能出现的问题，以及如何清除它们。
+先确认当前目录是所连接主机上预期的 Git 仓库。另一台主机中的同名文件夹，是不同的工作副本。
 
-## worktree 需要关注
+## 看不到 Worktree 操作
 
-Yuri 会在出现异常时标记某个 worktree：
+项目行的 Worktree 操作要求 Git 项目，普通 VS Code 会话侧栏不提供该入口。支持的界面可以使用项目行操作，或命令面板中的 **New Worktree Draft**。具体位置见 [Worktree 指南](/zh-cn/worktrees/)。
 
-- **folder missing** — worktree 的文件夹在 Yuri 之外被删除或移动了；移除该会话并创建一个新的 worktree
-- **detached or unborn branch** — worktree 不在正常的分支上；将它检出到一个分支上
-- **merge, rebase, or cherry-pick in progress** — 某个操作处于半完成状态；在 git 视图中完成或中止它
+## 创建或分支操作失败
 
-## 无法创建 worktree
+根据错误检查目标分支和路径，关注已有检出目录、重名分支、目录权限以及本地改动。清理前先保留这些改动。Git 创建成功与初始化命令执行失败，是两件不同的事。
 
-- **branch already exists** — 选择一个不同的分支名，或使用现有分支选项
-- **name already in use** — 选择一个不同的 worktree 名称
+## 本地成功，远程失败
 
-## 提交信息或 PR 生成失败
+在真正执行 Git 的主机上检查远程 URL 和凭据。作者名称 / 邮箱与访问凭据解决不同问题，[身份配置](/zh-cn/git-identities/)应与网络认证分开检查。
 
-生成提交信息或 PR 描述会在你的活动会话中运行，因此你需要打开一个会话，并选中一个可用的模型。打开或选择一个会话，然后重试。
-
-## SSH 或 Windows 路径问题
-
-- 确保仓库所使用的 SSH 密钥就是你在 [git 身份](/zh-cn/git-identities/) 中设置的那个
-- 在 Windows 上，git 使用 Unix 风格的路径（比如 `/c/Users/...`）— Yuri 会处理这一点，但自定义的 SSH 密钥路径应遵循相同的形式
-
-## 相关内容
-
-- [Worktree 会话](/zh-cn/worktrees/) — worktree 如何被创建和移除
-- [Git 身份](/zh-cn/git-identities/) — 为每个仓库设置正确的密钥和身份
+在工作文件中解决冲突，再重新执行对应检查。当前 UI 没有 Integrate 或 PR 管理面板可供修复，这些操作请使用 Git / GitHub。

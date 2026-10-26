@@ -1,48 +1,24 @@
 ---
-title: 远程实例
-description: 通过 SSH 将桌面应用连接到另一台机器上的 Yuri。
+title: 通过 SSH 访问工作空间
+description: 远程机器需要 SSH 客户端连接时，使用桌面连接编辑器。
 ---
 
-# 远程实例
+# 通过 SSH 访问工作空间
 
-桌面应用可以通过 SSH 连接到运行在另一台机器上的 Yuri — 工作服务器、云主机、家庭实验室 — 并把它的 UI 带到你的屏幕上，仿佛它在本地一样。在 **Settings → Remote Instances** 中设置它。
+SSH 主机管理需要桌面桥接能力。在 **设置 → 远程实例** 中填写 SSH 命令，或选择本地 SSH 配置中的主机。主机匹配模式需要先补成具体目标。
 
-> 远程实例是一项**仅限桌面**的功能。在网页端或 VS Code 中，请改用 [OpenCode Server](/zh-cn/opencode-server/) 中的环境变量连接到远程服务器。
+## 决定由谁启动远程 Yuri
 
-## 添加远程实例
+需要 Yuri 安排远程服务时，选择托管连接；目标实例已经运行时，选择外部服务。保存后连接，进度阶段会区分认证、安装启动和转发失败。
 
-1. 打开 **Settings → Remote Instances** 并添加一个。
-2. 给它你通常用来访问该机器的 SSH 命令，外加一个昵称。
-3. 选择 Yuri 在那里如何运行：
-   - **managed** — Yuri 在远程机器上安装并启动它自己
-   - **external** — 连接到一个已经运行的实例
-4. 连接。
+连接就绪后确认远程项目目录。窗口虽然在本机，工作空间却在目标电脑。已有 Yuri 主机无需 SSH 也能访问时，直接[配对](/zh-cn/connect-devices/)可能就足够。
 
-Yuri 会引导你完成各个步骤 — 检查连接、设置远程、启动服务器并转发端口 — 并在每个阶段显示进度。当它到达 **ready** 时，远程 UI 会在本地加载。
+## 给其他服务加一条访问路径
 
-## 凭证
+实例的端口转发支持 Local（`-L`）、Remote（`-R`）和 Dynamic（`-D`）。Local 把远程服务映射到本机，Remote 反向映射，Dynamic 提供 SOCKS 代理。
 
-你来决定是保存 SSH 和 UI 密码，还是每次都输入它们。如果连接断开，Yuri 会报告哪一步失败了，以便你修复它 — 参阅 [远程访问](/zh-cn/troubleshooting/remote-access/)。
+仅供本机使用的转发应绑定回环地址。手机需要直接配对远程 Yuri 主机，不会运行桌面 SSH 管理器。
 
-## 连接链接
+## 一起带上模型配置
 
-如果远程机器已经在运行 Yuri，把桌面应用连上去的最简单方式是配对链接。在远程服务器的 UI 中，打开 **Settings → Remote Instances → 连接到此服务器 → 添加设备**，创建一个链接，然后在你的桌面应用的 **Settings → Remote Instances → 其他 Yuri 服务器 → 导入链接** 中导入它。完整流程参阅 [连接设备](/zh-cn/connect-devices/)。
-
-用 **任何地方** 创建的链接同时携带直接地址和一条 [Private Relay](/zh-cn/private-relay/) 路由：当桌面应用能直接访问服务器时（同一网络）走直连，外出时回退到端到端加密的中继。每个已保存服务器旁边的状态会显示当前使用的是哪条路由。
-
-你也可以在远程机器的终端里创建链接：
-
-```bash
-yuri connect-url --port 3000 --server http://your-host:3000 --qr
-```
-
-如果该端口上没有服务器，`connect-url` 会先启动服务器。使用 `--api-only` 可启动 headless 服务器，`--lan` 可在启动时绑定到 LAN，`--ui-password` 可保护浏览器访问，`--name` 可为保存的连接命名。加上 `--relay` 可生成一条在本地网络之外也能使用的链接：设备在可达时优先直连，否则回退到 [Private Relay](/zh-cn/private-relay/) — 实例会自行启动中继。
-
-生成的链接包含一个一次性配对密钥。导入后，设备会持有自己的 client token — 独立于浏览器 UI 密码 — 它会在服务器重启后继续有效，直到你在签发它的服务器上撤销它。
-
-## 相关内容
-
-- [连接设备](/zh-cn/connect-devices/) — 配对链接、二维码与设备管理
-- [Private Relay](/zh-cn/private-relay/) — “任何地方”连接的工作原理
-- [OpenCode Server](/zh-cn/opencode-server/) — 在网页端或 VS Code 中连接到远程服务器
-- [远程访问](/zh-cn/troubleshooting/remote-access/) — 当连接无法完成时
+已就绪的托管 SSH 连接提供配置同步。向导在所选来源发现 Magpie 后，会显示单独的可选项，用于传输支持的配置和授权。按 [Magpie 传输指南](/zh-cn/magpie/)操作，并在使用前检查目标端结果。

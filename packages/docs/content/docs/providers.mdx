@@ -1,49 +1,24 @@
 ---
-title: Providers, Models & Agents
-description: Connect AI providers, pick models, and set up agents.
+title: Separate model access from Agent behavior
+description: Connect an account, select a model, and define the permissions of an Agent.
 ---
 
-# Providers, Models & Agents
+# Separate model access from Agent behavior
 
-Before Yuri can do anything, it needs at least one AI provider connected. This page covers connecting a provider, choosing a model, and tailoring agents.
+Three choices serve different purposes: the provider supplies access, the model handles a request, and the Agent defines working instructions and permissions.
 
-## Connect a provider
+## Make a model available
 
-1. Open **Settings → Providers**.
-2. Open the **Add provider** menu and pick a provider that isn't connected yet.
-3. Sign in one of two ways, depending on the provider:
-   - **API key** — paste your key and save.
-   - **Sign-in (device flow)** — Yuri shows a link and a short code. Open the link, enter the code, and approve. Yuri finishes connecting on its own.
+Open **Settings → Providers**, add a provider and complete the authentication offered for it. This may be an API key or an authorization flow. Connected-provider details allow reconnecting or removing access. Model visibility controls affect which models appear in selection lists.
 
-When a provider shows as connected, its models become available in chat.
+Back in the composer, select the model for that conversation. Adding an account and choosing a session model are separate steps.
 
-To disconnect, open the provider and choose to remove its sign-in.
+For models exposed by Magpie, first configure its OpenCode connection on the execution host. The [Magpie guide](/magpie/) separates model access, plugin sign-ins and usage display.
 
-## Pick a model
+## Shape how an Agent works
 
-You pick the model where you're working:
+Under **Settings → Agents**, create or select an Agent. The editor offers scope, description, primary/subagent mode, model and variant, and a system prompt.
 
-- in chat, use the model picker in the message bar to set the provider and model for that session
-- per agent, set a default model (below)
+Permissions use **allow**, **ask** or **deny**, including pattern-based rules. Open the advanced editor when you need to adjust those rules; inspect saved permissions separately. A broad wildcard can affect more operations than a narrowly targeted pattern.
 
-## Set up agents
-
-An agent is a named setup — a model, a personality, and what it's allowed to do.
-
-1. Open **Settings → Agents**.
-2. Pick an agent, or create a new one.
-3. Edit any of:
-   - **description** — what the agent is for
-   - **model** — its default model
-   - **temperature** — how creative its answers are
-   - **prompt** — standing instructions it always follows
-   - **tool rules** — which tools it may use
-
-## Where your sign-ins live
-
-Provider sign-ins are stored by OpenCode, not Yuri, so they're shared with the OpenCode CLI. If you set the same provider in more than one place, the most specific setting wins: a per-project setting overrides your personal one.
-
-## Related
-
-- [MCP Servers](/mcp/) — add extra tools for agents
-- [Usage & Quotas](/usage/) — track how much you've used
+The current Agent editor has no temperature control. Use the fields actually shown rather than looking for an older parameter form.

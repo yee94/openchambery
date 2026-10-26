@@ -1,0 +1,48 @@
+---
+title: Bring Magpie into your workspace
+description: Use Magpie-backed models, inspect account usage and carry its configuration to another host.
+---
+
+# Bring Magpie into your workspace
+
+Magpie manages model access and exposes it through a gateway. Yuri uses the models available to its OpenCode runtime, can read Magpie's aggregate usage, and offers an explicit desktop workflow for transferring Magpie configuration between hosts. These are separate connections: enabling one does not automatically configure the others.
+
+## Start with the model you want to use
+
+On the computer running your execution service, configure the provider or subscription in Magpie and connect OpenCode through Magpie's agent configuration. Choose a model from Magpie's current catalog rather than copying an example model ID. Follow [Magpie's setup guide](https://usemagpie.ai/docs/start) for that step.
+
+Return to Yuri, check the available provider/model list, and select the intended model in a session. Send a small request to verify inference. A quota card alone is not evidence that the session is using the Magpie gateway.
+
+Magpie can also load provider/authentication plugins and expose their models through its gateway. Install and sign in to those plugins **in Magpie**; see its [plugin guide](https://usemagpie.ai/docs/plugins). Yuri's **Settings → Plugins** manages OpenCode's own extensions, not Magpie's plugin catalog. Do not assume that a package supported by Magpie is compatible with the running OpenCode version.
+
+## Read the accounts behind the gateway
+
+Open **Settings → Usage** and find the **Magpie** group. Yuri discovers a Magpie running alongside the connected host, and can recognize gateways configured for the active OpenCode service. It does not scan the phone or browser's computer for another installation.
+
+For a different gateway, expand **Connect another Magpie**, enter its HTTP(S) gateway address and save. The URL must not embed credentials, query parameters or a fragment. If remote quota access requires a key, the host administrator supplies `YURI_MAGPIE_API_KEY`; the Magpie gateway must also permit that key to read usage.
+
+The results can include separate accounts, quota windows, balances and reset times when Magpie supplies them. Use the Usage page's header-display controls for the accounts you want nearby. Refresh to request a newer reading. An error or stale marker means the displayed value is not a fresh successful measurement; it must not be interpreted as zero usage or unlimited credit.
+
+## Carry your setup to another host
+
+In desktop **Settings → Remote Instances**, open the destination's available configuration-sync action. The wizard supports push and pull over supported SSH, direct and Relay connections; the SSH action requires a ready, managed connection rather than an external-service entry.
+
+1. Choose the direction and confirm which computer is the source.
+2. Wait for discovery. The separate **Magpie** option appears only when the source has a discoverable CLI and transferable data. Old configuration files without an installed CLI are insufficient.
+3. Select Magpie explicitly—it is unchecked by default—then inspect the preview and apply.
+4. Read the completion result and test a model on the destination.
+
+The transfer uses Magpie's native backup/restore for configuration, API keys, profiles, model assignments, library data and portable plugin declarations. Current hosts can also transfer recognized plugin sign-ins and supported saved Codex accounts. Unsupported subscription sign-ins may still need to be completed on the destination. Use current versions on both hosts for authorization transfer.
+
+If the destination lacks a CLI, Yuri installs one only when you explicitly apply the selected Magpie transfer. Previewing or ordinary OpenCode-only sync does not install it. A failed transfer can leave some configuration already applied; inspect the result before retrying. The flow is an explicit transfer, not continuous synchronization, and its initiating wizard is desktop-only.
+
+## Find the missing connection
+
+| What you observe | Check next |
+| --- | --- |
+| Usage appears, but the model is absent | Magpie's OpenCode configuration and Yuri's selected runtime/model catalog. |
+| The model works, but usage is unavailable | Gateway identity, quota permissions, host address and any reported discovery error. |
+| The sync wizard has no Magpie option | The selected source, installed CLI discovery and whether there is transferable data. |
+| Sync reports that sign-in is required | Authenticate the affected account in Magpie on the destination, then test it. |
+
+For general account display see [Usage](/usage/); for the host connection itself see [SSH access](/remote-instances/) and [device pairing](/connect-devices/).

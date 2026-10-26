@@ -1,134 +1,33 @@
 ---
-title: Environment Variables
-description: Configure Yuri and OpenCode integration with environment variables.
+title: Override the host's startup configuration
+description: Use a small set of environment controls for binding, storage and runtime selection.
 ---
 
-# Environment Variables
+# Override the host's startup configuration
 
-Yuri reads these environment variables at startup. For startup services, `yuri startup enable` snapshots the current environment by default, so rerun it after changing variables you want the service to use.
+Environment values apply to the process that reads them. Setting a variable on your phone or in an unrelated terminal does not reconfigure the connected Yuri host. Restart the intended process after changing its startup environment.
 
-## Yuri server
+## Change how Yuri is reached or stored
 
-### `YURI_HOST`
+| Variable | Purpose |
+| --- | --- |
+| `YURI_HOST` | The web host's bind address. A wider bind changes network reachability. |
+| `YURI_UI_PASSWORD` | Browser UI authentication password. |
+| `YURI_API_ONLY` | `true` or `1` keeps API service without serving the browser UI. |
+| `YURI_DATA_DIR` | Override Yuri's data directory, normally `~/.config/yuri`. |
 
-Bind address for the Yuri web server. Use `0.0.0.0` to allow access from other machines.
+Changing the data directory selects another storage location; it does not migrate the old contents. Set host access and authentication together when widening the bind address.
 
-### `YURI_UI_PASSWORD`
+## Select the execution environment
 
-Password for the browser UI. Use this when binding outside localhost or running behind a reverse proxy.
+| Variable | Purpose |
+| --- | --- |
+| `OPENCODE_HOST` | An HTTP(S) origin with an explicit port; no path, query or fragment. Takes precedence over `OPENCODE_PORT`. |
+| `OPENCODE_PORT` | Explicit OpenCode port selection. |
+| `OPENCODE_SKIP_START` | `true` selects the no-managed-start path. |
+| `OPENCODE_BINARY` | Explicit OpenCode executable selection. |
+| `YURI_TERMINAL_SHELL` | Shell executable for Yuri terminal sessions. |
 
-### `YURI_API_ONLY`
+Use the [host guide](/opencode-server/) for an external-runtime example. When a startup service captures environment variables, changing your current shell alone will not change that already-installed service.
 
-Starts Yuri in headless mode when set to `true` or `1`. API routes stay available for desktop and mobile clients, but the browser UI is not served.
-
-### `YURI_DATA_DIR`
-
-Overrides the Yuri data directory. The default is `~/.config/yuri`.
-
-### `YURI_COMPRESS_API`
-
-Controls API response compression. Use `true` or `1` to force it on, `false` or `0` to force it off.
-
-### `YURI_SKIP_API_COMPRESSION`
-
-Disables API response compression when set to `true` or `1`. This takes precedence over `YURI_COMPRESS_API`.
-
-### `YURI_VERBOSE_REQUEST_LOGS`
-
-Enables verbose HTTP request logs when set to `true` or `1`.
-
-### `YURI_UPDATE_API_URL`
-
-Overrides the update-check API endpoint. Most users should leave this unset.
-
-### `YURI_PACKAGE_MANAGER`
-
-Forces the package manager used by update operations when auto-detection is wrong.
-
-## OpenCode server
-
-### `OPENCODE_HOST`
-
-Connects Yuri to an existing OpenCode server. The value must be an `http` or `https` origin with an explicit port and no path, query, or hash. `OPENCODE_HOST` takes precedence over `OPENCODE_PORT`.
-
-### `OPENCODE_PORT`
-
-Sets the OpenCode server port. With managed OpenCode this requests the managed port; with `OPENCODE_SKIP_START=true` it connects to an external server on that port.
-
-### `OPENCODE_SKIP_START`
-
-Prevents Yuri from starting its own OpenCode server when set to `true`.
-
-### `YURI_OPENCODE_HOSTNAME`
-
-Bind hostname for the OpenCode server managed by Yuri. The default is `127.0.0.1`.
-
-### `OPENCODE_BINARY`
-
-Path to the `opencode` executable Yuri should run.
-
-### `OPENCODE_CONFIG`
-
-Path to a specific OpenCode config file.
-
-### `OPENCODE_CONFIG_DIR`
-
-Path to a specific OpenCode config directory for agents, skills, and config discovery.
-
-### `OPENCODE_DATA_DIR`
-
-Custom data directory for the managed OpenCode server.
-
-### `OPENCODE_WSL_DISTRO`
-
-Selects the WSL distro used for OpenCode integration on Windows.
-
-### `YURI_OPENCODE_WSL_DISTRO`
-
-Yuri-specific alias for selecting the WSL distro. `OPENCODE_WSL_DISTRO` takes precedence when both are set.
-
-### `OPENCODE_JWT_SECRET`
-
-Secret used to sign UI authentication tokens. Use a long random value for persistent service deployments.
-
-## Terminal and Git
-
-### `YURI_TERMINAL_SHELL`
-
-Shell executable used for Yuri terminal sessions.
-
-### `YURI_GIT_BINARY`
-
-Git executable used by Yuri Git features.
-
-### `GIT_BINARY`
-
-Alternative Git executable override. Prefer `YURI_GIT_BINARY` for Yuri-specific configuration.
-
-### `YURI_GIT_READ_CACHE_TTL_MS`
-
-Time-to-live, in milliseconds, for cached Git-backed file reads. Set `0` to disable this cache while debugging.
-
-## Voice
-
-### `OPENAI_API_KEY`
-
-API key used by Yuri voice features that call OpenAI-compatible services.
-
-### `YURI_ALLOW_REMOTE_OPENAI_COMPAT_URLS`
-
-Allows remote OpenAI-compatible base URLs for voice features when set to `true` or `1`.
-
-## Runtime helpers
-
-### `BUN_BINARY`
-
-Bun executable Yuri should use when spawning daemon processes.
-
-### `BUN_INSTALL`
-
-Bun installation root. Yuri uses it to find `bin/bun` for daemon startup and updates.
-
-### `VITE_OPENCODE_URL`
-
-Build-time API base URL for the Vite-built web app. Most users should not set it for normal CLI or desktop usage.
+This is an operator reference, not a list of every internal build or debug variable. Prefer the visible Settings controls for model, speech and appearance configuration.

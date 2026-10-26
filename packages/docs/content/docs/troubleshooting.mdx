@@ -1,32 +1,23 @@
 ---
-title: Troubleshooting
-description: Common setup and runtime issues with quick fixes.
+title: Locate the failing layer
+description: Start with what still works and narrow the problem to the client, host or execution service.
 ---
 
-# Troubleshooting
+# Locate the failing layer
 
-Hit a snag? Find the symptom below and try the fix.
+Avoid changing several settings at once. First note the device, selected host, app version and exact action that failed.
 
-## Yuri command exits or fails to start
+## What can you still open?
 
-- confirm Node.js `>=22`
-- run `yuri --version`
-- reinstall latest CLI if needed
+| Observation | Follow this path |
+| --- | --- |
+| The host works locally but another device cannot reach it | [Connection troubleshooting](/troubleshooting/remote-access/). |
+| Yuri loads, but a session cannot use its execution service | [OpenCode readiness](/troubleshooting/opencode-connection/). |
+| A repository operation or isolated checkout fails | [Git and worktree checks](/troubleshooting/worktrees-git/). |
+| Only the public URL fails | Compare direct access with the [proxy checklist](/reverse-proxy/). |
 
-## Web UI is not reachable
+## Collect the smallest useful evidence
 
-- check server logs with `yuri logs`
-- verify active port (default `3000`)
-- open `http://localhost:3000` directly first
+For a CLI host, inspect `yuri status` and `yuri logs`. For desktop or mobile, record the component versions shown in About and the visible error. Use the actual address from the running instance; desktop ports need not be `3000`.
 
-## VS Code extension does not connect
-
-- confirm Yuri server is running
-- verify extension is updated
-- reload VS Code window and retry connection
-
-## Related
-
-- [Quickstart](/quickstart/)
-- [Remote access](/troubleshooting/remote-access/)
-- [Reverse Proxy](/reverse-proxy/)
+Preserve the failing request and unsent draft before restarting. After one targeted change, repeat the same action so you can tell whether it helped. If reporting a problem, include the expected result and reproduction steps, with credentials and pairing links removed.

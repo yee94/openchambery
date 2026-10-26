@@ -1,30 +1,22 @@
 ---
-title: Skills
-description: Create reusable instructions that agents load on demand.
+title: Give the Agent a reusable procedure
+description: Manage installed Skills and attach one to a request with the @ picker.
 ---
 
-# Skills
+# Give the Agent a reusable procedure
 
-A skill is a reusable set of instructions an agent can pull in when it's relevant — for example, "how we write commit messages" or "our API conventions." You manage them at **Settings → Skills**.
+Use a Skill when a task needs a repeatable method, supporting files or project-specific instructions. It complements the request; it does not replace saying what result you want now.
 
-To install ready-made skills instead of writing your own, see [Skills Catalog](/skills-catalog/).
+## Work with an installed Skill
 
-## Create a skill
+Open **Settings → Skills**. Select a Skill to inspect its description, instructions and supporting files. User-created entries can be edited; built-in entries are read-only. When creating one, choose the location and whether it belongs to the user or the project.
 
-1. Open **Settings → Skills**.
-2. Create a skill and give it a name and a short description. The description is how the agent decides when the skill applies, so make it specific.
-3. Write the instructions. Add supporting files if the skill needs them.
-4. Choose where it lives:
-   - **personal** — available in every project
-   - **project** — available only in the current project
+In a project conversation, type `@` and choose the Skill from the mention list. Add the task and send. `/` is the command picker, not a second Skill palette.
 
-## Use a skill in chat
+## Find a procedure someone else published
 
-Type `/` in the middle of a message to bring up the skill picker, then choose one. The agent loads that skill's instructions for the response.
+On desktop or Web, **Settings → Skills Catalog** is a separate settings page. Select a source, search, inspect an entry and choose its installation location. **Add catalog** accepts another source.
 
-A `/` at the very start of the message opens [commands](/commands-snippets/) instead.
+The dedicated phone Settings navigation does not expose Skills Catalog. Install from a supported interface, then return to the installed Skills page on the host you use.
 
-## Related
-
-- [Skills Catalog](/skills-catalog/) — install skills others have published
-- [Commands](/commands-snippets/) — other ways to reuse text in chat
+For tool connections rather than instructions, configure [MCP](/mcp/).
