@@ -18,6 +18,11 @@ const privateKeyPath = requireEnv('APP_STORE_CONNECT_PRIVATE_KEY_PATH');
 const betaGroupId = requireEnv('TESTFLIGHT_EXTERNAL_BETA_GROUP_ID');
 const bundleId = requireEnv('TESTFLIGHT_BUNDLE_ID');
 const buildNumber = requireEnv('TESTFLIGHT_BUILD_NUMBER');
+const marketingVersion = requireEnv('TESTFLIGHT_VERSION');
+
+if (!/^\d+\.\d+\.\d+$/.test(marketingVersion)) {
+  throw new Error('External TestFlight review requires a stable marketing version.');
+}
 
 if (!existsSync(privateKeyPath)) {
   throw new Error(`App Store Connect private key was not found at ${privateKeyPath}.`);
@@ -90,7 +95,12 @@ async function findBuild(appId) {
       limit: '10',
     })}`,
   );
-  const builds = assertSuccess(result, 'Find uploaded TestFlight build')?.data ?? [];
+  const candidates = assertSuccess(result, 'Find uploaded TestFlight build')?.data ?? [];
+  const builds = [];
+  for (const build of candidates) {
+    const train = assertSuccess(await api(`/v1/builds/${build.id}/preReleaseVersion`), 'Read build marketing version');
+    if (train?.data?.attributes?.version === marketingVersion) builds.push(build);
+  }
   if (builds.length > 1) {
     throw new Error(`Expected one build with number ${buildNumber}; found ${builds.length}.`);
   }

@@ -114,7 +114,7 @@ git push origin main
 git push origin "v$VERSION"
 ```
 
-`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@yuriai/web` 与 `@yuriai/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**iOS/TestFlight 由 `mobile-release-plan` 的 mode 决定**：`mode: native` 的 beta 与所有稳定版构建并上传 iOS（beta 走内测、不关联外测组、不提 Beta App Review；稳定版额外关联外测组）；`mode: ota` 的 beta 与 `mobile-beta/*` OTA-only tag 不构建 iOS。iOS 上传失败会拖住 `mobile-native-targets`（同版本 OTA 发布），用 `gh run rerun <run-id> --failed` 重跑即可。
+`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@yuriai/web` 与 `@yuriai/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**iOS/TestFlight 由 `mobile-release-plan` 的 mode 决定**：`mode: native` 的 beta 与所有稳定版构建并上传 iOS（beta 走内测；稳定版上传后留下异步外测请求）；`mode: ota` 的 beta 与 `mobile-beta/*` OTA-only tag 不构建 iOS。构建、签名和 IPA 上传仍是发布门禁；外测组关联、等待 Apple 处理及 Beta App Review 由独立 workflow 执行，不再阻塞 Release、Relay 或 OTA。若 IPA 已上传，不能直接重跑旧上传步骤，否则会重复上传相同 build number；外测失败按下文独立重试。
 
 npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@yuriai` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@yuriai/web`。完整 `v*` 仍会同时发布 `@yuriai/web` 与 `@yuriai/relay-server` 以及 Relay Docker；只发 Relay 时改用 `relay/v*`（见下文）。
 
@@ -214,7 +214,27 @@ gh run watch <run-id> --repo yee94/yuri
 
 - `TESTFLIGHT_EXTERNAL_BETA_GROUP_ID`：App Store Connect 外测群组 UUID。
 
-稳定版 `mobile-release.yml` 会把 iOS 构建关联到这个固定外测群组。群组的 TestFlight Public Link 保持不变；Apple 批准新的 Beta App Review 后，该链接会自动提供最新获准构建。prerelease / `-beta` 构建只上传到 TestFlight 内测，不写入该外测组。
+稳定版 `mobile-release.yml` 在 IPA 上传成功后保存 `testflight-review-request` artifact（版本、build number、源 run 和 commit）。独立的 `testflight-review.yml` 在 `Release` / `Mobile Release` 完成后通过 `workflow_run` 读取请求，等待 Apple 处理、关联固定外测群组并提交 Beta App Review。它只读取同仓库 push / 手动发布的请求，执行默认分支上的脚本；没有请求则跳过。主发布不等待审核，不吞掉错误：元数据缺失等失败只在 `TestFlight External Review` 中显示。群组的 TestFlight Public Link 保持不变；Apple 批准后才会提供最新获准构建。prerelease / `-beta` 构建只上传到内测，不生成外测请求。
+
+补齐 Apple 元数据后，只重跑独立审核 workflow，或手动指定已经上传的稳定版本和 build number：
+
+```bash
+gh workflow run testflight-review.yml --repo yee94/yuri --ref main \
+  -f version=0.1.0 -f build_number=5
+```
+
+脚本同时匹配 marketing version 和 build number，已送审的构建不会重复送审，也不重新打包或上传 IPA。
+
+### 恢复被旧版同步外测阻塞的 Release
+
+原运行使用旧 commit，重跑不会加载新的 workflow。使用 `release.yml` 的 `resume_run_id` 恢复已有 Draft：
+
+```bash
+gh workflow run release.yml --repo yee94/yuri --ref main \
+  -f version=0.1.0 -f resume_run_id=40268802312
+```
+
+恢复入口校验原 Release run、tag commit、桌面双架构 Linux/macOS/Windows、Android、npm 的成功记录；稳定版还要求 IPA 已成功上传，iOS 仅允许旧的外测送审步骤失败。任何构建、签名或上传失败都不能绕过。复用原始 build number 和现有安装包，跳过重新构建及 npm/IPA 上传，继续原 commit 的 Relay 镜像、资产完整性校验、正式 Release 和同版本 OTA。正常发布与恢复共用同一套 finalize 步骤，清理过期 Android 版本化资产并校验恰好 13 个产物。旧运行保留真实失败记录，新恢复运行必须通过；不移动原 tag。
 
 CI 每次关联新构建后保留外测组最近三个构建，并通过 App Store Connect API 移除更旧的组关联。Apple 的 TestFlight App Review 采用滚动 24 小时提交额度；额度耗尽时构建保持在外测组并记录为 `deferred-submission-limit`，GitHub Release 继续完成，后续构建在额度恢复后重新提交。同一版本 train 已有构建在审时记录为 `deferred-train-in-review`，同样不挡住 GitHub Release。
 

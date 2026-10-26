@@ -236,6 +236,7 @@ The native stream carries the App locale in `Accept-Language` for direct and rel
 Shipping a beta: default to a `v*` tag so macOS and APK installers exist for first-time downloaders (`docs/RELEASING.md` § 先选产物). TestFlight follows the mobile plan mode, not the tag: betas with native-shell changes (`mode: native`) upload iOS to internal TestFlight; web-only (`mode: ota`) betas skip iOS. Stable always uploads iOS (external group). Use `mobile-beta/v*` only when the user wants mobile-web-only OTA and no installers.
 
 - **iOS TestFlight:** a new, ownership-verified application record and invitation link are required before distribution.
+  Stable uploads queue a `testflight-review-request` artifact. The independent `TestFlight External Review` workflow handles Apple processing, external-group association, and review submission after the publishing workflow finishes. Review failures remain visible there and do not block GitHub Release, Relay, or OTA. Retry that workflow with the existing marketing version and build number instead of uploading the IPA again; see `docs/RELEASING.md`.
 - **Android:** signed APK/AAB assets on [GitHub Releases](https://github.com/yee94/yuri/releases).
   Package id is `com.yee94.yuri`. Keep the previous application installed until local drafts and attachments are recovered; this application cannot read its sandbox.
 
