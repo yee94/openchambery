@@ -1,5 +1,48 @@
 # Yuri Relay Server
 
+## Multi-app APNs push
+
+One Push process can deliver to multiple installed apps. `YURI_PUSH_RELAY_APNS_BUNDLE_ID`
+is the default topic for historical registrations without an app identity. Keep that
+default unchanged when retaining old clients. Add explicitly allowed apps with
+`YURI_PUSH_RELAY_APNS_APPS_JSON`:
+
+```yaml
+environment:
+  YURI_PUSH_RELAY_APNS_BUNDLE_ID: com.example.legacy
+  YURI_PUSH_RELAY_APNS_KEY_ID: ${APNS_KEY_ID}
+  YURI_PUSH_RELAY_APNS_TEAM_ID: ${APPLE_TEAM_ID}
+  YURI_PUSH_RELAY_APNS_P8_PATH: /run/secrets/apns_default
+  YURI_PUSH_RELAY_APNS_APPS_JSON: >-
+    [{"bundleId":"com.yee94.yuri"}]
+```
+
+An entry with only `bundleId` shares the default APNs key (the key must authorize
+that app and environment). For a separate key, provide **all** of `keyId`, `teamId`
+and `p8Path` (or `p8`) in that entry. Mount key files read-only. This uses APNs
+authentication `.p8` keys, not Apple Distribution / Developer ID `.p12` files.
+Each app has isolated JWT and HTTP/2 connection state; alert and Live Activity
+topics follow the stored app binding. Unknown apps fail registration; removed
+configurations do not fall back to another app's key or invalidate their tokens.
+
+Upgrade Relay first, then the Host and mobile web bundle. New native registrations
+read the installed shell's Bundle ID and the Host signs it into the Relay binding.
+An old Host cannot forward this identity, and old clients without it cannot be
+distinguished automatically. Reopen upgraded clients to re-register. Existing
+explicit bindings survive older registration requests without being downgraded.
+No alternate-topic probing is performed. Single-app direct Host APNs remains
+single-app and skips explicitly mismatched tokens without deleting them.
+
+The SQLite migration adds a nullable `bundle_id` column without deleting existing
+rows. Legacy rows retain default-topic behavior until re-registration. Back up the
+database before rollout; an old writer does not understand explicit app bindings,
+so rollbacks require the matching pre-upgrade database and single-app deployment.
+Use one process per database and a persistent volume (not a temporary directory).
+
+For a Docker-only release with an independent Relay package version, run the
+`Relay Docker` workflow with `version` matching this package, `push=true`, and
+`require_root_version_match=false`. The default remains `true` for full releases.
+
 `yuri-relay` is the self-hosted Layer 1 relay for Yuri remote access. It gives Yuri Hosts an outbound Relay connection and carries encrypted client traffic through that connection.
 
 The same `@yuriai/relay-server` package also ships `yuri-push-relay`, an isolated APNs push process. Layer 1 never receives Apple credentials. Push never terminates E2EE tunnels.

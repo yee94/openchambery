@@ -22,6 +22,7 @@ export interface PushRelayApnsConfig {
   teamId: string;
   p8: string;
   bundleId: string;
+  apps?: Array<Omit<PushRelayApnsConfig, 'apps'>>;
 }
 
 export interface PushRelayClock {
@@ -35,6 +36,7 @@ export interface PushRelayClock {
 
 export interface PushApnsSendInput {
   token: string;
+  bundleId?: string;
   env: PushRelayEnv;
   payload: unknown;
   collapseId?: string;
@@ -55,11 +57,12 @@ export interface PushTokenRecord {
   serverId: string;
   platform: string;
   updatedAt: number;
+  bundleId?: string;
 }
 
 export interface PushTokenStore {
   get(token: string): PushTokenRecord | null;
-  upsert(token: string, serverId: string, platform: string, updatedAt: number): void | Promise<void>;
+  upsert(token: string, serverId: string, platform: string, updatedAt: number, bundleId?: string): void | Promise<void>;
   delete(token: string, expected?: PushTokenRecord): void | Promise<void>;
   count(): number;
   close(): void | Promise<void>;

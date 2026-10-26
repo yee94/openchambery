@@ -1,5 +1,14 @@
 import { isCapacitorApp } from '@/lib/platform';
 
+/** Installed application identity, never inferred from the web bundle or host. */
+export const getMobileAppId = async (): Promise<string | null> => {
+  if (!isCapacitorApp()) return null;
+  const { App } = await import('@capacitor/app');
+  const { id } = await App.getInfo();
+  if (typeof id !== 'string' || !/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(id)) throw new Error('Native app identity unavailable');
+  return id;
+};
+
 declare const __APP_VERSION__: string | undefined;
 
 const nonEmptyVersion = (value: unknown): string | null => (

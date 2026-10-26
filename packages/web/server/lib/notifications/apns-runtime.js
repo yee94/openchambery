@@ -28,6 +28,11 @@ const APNS_HOST_SANDBOX = 'https://api.sandbox.push.apple.com';
 // APNs rejects auth tokens older than 1h; refresh well inside that window.
 const JWT_TTL_MS = 50 * 60 * 1000;
 const DEFAULT_BUNDLE_ID = 'com.yee94.yuri';
+const parseBundleId = (value) => {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.length > 255 || !/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(value)) throw new Error('Invalid push bundleId');
+  return value;
+};
 const MAX_TOKENS_PER_SESSION = 10;
 const MAX_LIVE_ACTIVITY_TOKENS_PER_SESSION = 8;
 const MAX_LIVE_ACTIVITY_TOKEN_CHARS = 512;
@@ -187,8 +192,8 @@ export const createApnsRuntime = (deps) => {
     y: publicJwk.y,
   });
 
-  const registrationCacheKey = (registerUrl, token, platform) =>
-    `${registerUrl}\0${token}\0${platform}`;
+  const registrationCacheKey = (registerUrl, token, platform, bundleId) =>
+    `${registerUrl}\0${token}\0${platform}\0${bundleId ?? ''}`;
 
   const rememberRelayRegisterUrl = (registerUrl) => {
     if (registrationCacheRegisterUrl === registerUrl) return;
@@ -211,28 +216,28 @@ export const createApnsRuntime = (deps) => {
   const boundRegistrationCache = (registerUrl, entries) => {
     rememberRelayRegisterUrl(registerUrl);
     const allowed = new Set(
-      entries.map((entry) => registrationCacheKey(registerUrl, entry.deviceToken, entry.platform)),
+      entries.map((entry) => registrationCacheKey(registerUrl, entry.deviceToken, entry.platform, entry.bundleId)),
     );
     for (const key of registrationSuccessCache.keys()) {
       if (!allowed.has(key)) registrationSuccessCache.delete(key);
     }
   };
 
-  const registerTokenWithRelay = async (token, platform = 'ios', relayOverride) => {
+  const registerTokenWithRelay = async (token, platform = 'ios', relayOverride, bundleId) => {
     const relay = relayOverride ?? (await resolveRelayConfig());
     if (!relay) return true; // direct mode — no relay binding needed
     rememberRelayRegisterUrl(relay.registerUrl);
-    const cacheKey = registrationCacheKey(relay.registerUrl, token, platform);
+    const cacheKey = registrationCacheKey(relay.registerUrl, token, platform, bundleId);
     if (registrationSuccessCache.has(cacheKey)) return true;
     try {
       const { privateKey, publicJwk } = await getOrCreateRelayKeypair();
       const ts = Date.now();
       // platform is part of the signed message so it can't be tampered en route.
-      const sig = signRelayMessage(privateKey, `${ts}.${token}.${platform}`);
+      const sig = signRelayMessage(privateKey, `${ts}.${token}.${platform}${bundleId ? `.${bundleId}` : ''}`);
       const res = await fetch(relay.registerUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token, platform, publicKeyJwk: relayPublicJwk(publicJwk), ts, sig }),
+        body: JSON.stringify({ token, platform, bundleId, publicKeyJwk: relayPublicJwk(publicJwk), ts, sig }),
       });
       if (!res.ok) {
         console.warn(`[Push relay] register-token failed status=${res.status}`);
@@ -246,18 +251,18 @@ export const createApnsRuntime = (deps) => {
     }
   };
 
-  const registerLiveActivityTokenWithRelay = async (token, relayOverride) => {
+  const registerLiveActivityTokenWithRelay = async (token, relayOverride, bundleId) => {
     const relay = relayOverride ?? (await resolveRelayConfig());
     if (!relay) return true;
     rememberLiveActivityRelayRegisterUrl(relay.liveActivityRegisterUrl);
     const cacheKey = liveActivityRegistrationCacheKey(relay.liveActivityRegisterUrl, token);
-    if (liveActivityRegistrationSuccessCache.has(cacheKey)) return true;
+    if (liveActivityRegistrationSuccessCache.get(cacheKey) === (bundleId ?? '')) return true;
     try {
       const { privateKey, publicJwk } = await getOrCreateRelayKeypair();
       const ts = Date.now();
       const sig = signRelayMessage(
         privateKey,
-        `${ts}.${token}.${LIVE_ACTIVITY_PLATFORM}.${LIVE_ACTIVITY_KIND}`,
+        `${ts}.${token}.${LIVE_ACTIVITY_PLATFORM}.${LIVE_ACTIVITY_KIND}${bundleId ? `.${bundleId}` : ''}`,
       );
       const res = await fetch(relay.liveActivityRegisterUrl, {
         method: 'POST',
@@ -266,6 +271,7 @@ export const createApnsRuntime = (deps) => {
           token,
           platform: LIVE_ACTIVITY_PLATFORM,
           kind: LIVE_ACTIVITY_KIND,
+          bundleId,
           publicKeyJwk: relayPublicJwk(publicJwk),
           ts,
           sig,
@@ -275,7 +281,7 @@ export const createApnsRuntime = (deps) => {
         console.warn(`[Push relay] register-live-activity-token failed status=${res.status}`);
         return false;
       }
-      liveActivityRegistrationSuccessCache.set(cacheKey, true);
+      liveActivityRegistrationSuccessCache.set(cacheKey, bundleId ?? '');
       return true;
     } catch (error) {
       console.warn('[Push relay] register-live-activity-token request failed:', error?.message ?? error);
@@ -394,6 +400,7 @@ export const createApnsRuntime = (deps) => {
         if (!entry || typeof entry !== 'object') return null;
         const deviceToken = entry.deviceToken;
         if (typeof deviceToken !== 'string' || deviceToken.trim().length === 0) return null;
+        try { parseBundleId(entry.bundleId); } catch { return null; }
         return {
           deviceToken: deviceToken.trim(),
           createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : null,
@@ -403,6 +410,7 @@ export const createApnsRuntime = (deps) => {
           platform: entry.platform === 'android' ? 'android' : 'ios',
           // App UI locale at last registration; missing → English titles (legacy tokens).
           locale: normalizeApnsLocale(entry.locale),
+          bundleId: entry.bundleId,
         };
       })
       .filter(Boolean);
@@ -419,11 +427,12 @@ export const createApnsRuntime = (deps) => {
         if (!isLimitedId(token, MAX_LIVE_ACTIVITY_TOKEN_CHARS)) return null;
         if (!isLimitedId(activityId, MAX_LIVE_ACTIVITY_ID_CHARS)) return null;
         if (!isLimitedId(sessionId, MAX_LIVE_ACTIVITY_ID_CHARS)) return null;
+        try { parseBundleId(entry.bundleId); } catch { return null; }
         const createdAt = typeof entry.createdAt === 'number' ? entry.createdAt : null;
         const lastSeenAt = typeof entry.lastSeenAt === 'number' ? entry.lastSeenAt : createdAt;
         if (typeof lastSeenAt === 'number' && now - lastSeenAt > LIVE_ACTIVITY_TOKEN_TTL_MS) return null;
         const snapshot = parseLiveActivitySnapshot(entry.snapshot);
-        return { token, activityId, sessionId, snapshot, createdAt, lastSeenAt };
+        return { token, activityId, sessionId, snapshot, createdAt, lastSeenAt, bundleId: entry.bundleId };
       })
       .filter(Boolean);
   };
@@ -473,17 +482,20 @@ export const createApnsRuntime = (deps) => {
     return unique;
   };
 
-  const addOrUpdateApnsToken = async (uiSessionToken, deviceToken, userAgent, platform, locale) => {
+  const addOrUpdateApnsToken = async (uiSessionToken, deviceToken, userAgent, platform, locale, bundleId) => {
+    parseBundleId(bundleId);
     if (!uiSessionToken || typeof deviceToken !== 'string' || deviceToken.trim().length === 0) return;
     const token = deviceToken.trim();
     const tokenPlatform = normalizePlatform(platform);
     const tokenLocale = normalizeApnsLocale(locale);
+    let tokenBundleId = bundleId;
     const now = Date.now();
 
     await persistTokenUpdate((current) => {
       const tokensBySession = { ...(current.tokensBySession || {}) };
       const existing = normalizeTokens(tokensBySession[uiSessionToken]);
       const prior = existing.find((entry) => entry.deviceToken === token);
+      tokenBundleId ??= prior?.bundleId;
       const filtered = existing.filter((entry) => entry.deviceToken !== token);
       filtered.unshift({
         deviceToken: token,
@@ -492,6 +504,7 @@ export const createApnsRuntime = (deps) => {
         userAgent: typeof userAgent === 'string' && userAgent.length > 0 ? userAgent : undefined,
         platform: tokenPlatform,
         locale: tokenLocale,
+        bundleId: tokenBundleId,
       });
       tokensBySession[uiSessionToken] = filtered.slice(0, MAX_TOKENS_PER_SESSION);
       return { version: APNS_TOKENS_VERSION, tokensBySession };
@@ -502,7 +515,7 @@ export const createApnsRuntime = (deps) => {
     // every time (not just for new tokens) keeps existing tokens bound after a relay/server
     // upgrade rather than silently going unbound. Platform is bound too so the relay routes
     // it to APNs vs FCM.
-    await registerTokenWithRelay(token, tokenPlatform);
+    await registerTokenWithRelay(token, tokenPlatform, undefined, tokenBundleId);
   };
 
   const removeApnsToken = async (uiSessionToken, deviceToken) => {
@@ -531,7 +544,9 @@ export const createApnsRuntime = (deps) => {
     });
   };
 
-  const addOrUpdateLiveActivityToken = async (uiSessionToken, token, activityId, sessionId, snapshot) => {
+  const addOrUpdateLiveActivityToken = async (uiSessionToken, token, activityId, sessionId, snapshot, bundleId) => {
+    parseBundleId(bundleId);
+    let tokenBundleId = bundleId;
     if (!uiSessionToken) return;
     const trimmedToken = typeof token === 'string' ? token.trim() : '';
     const trimmedActivityId = typeof activityId === 'string' ? activityId.trim() : '';
@@ -549,6 +564,7 @@ export const createApnsRuntime = (deps) => {
       );
       const existing = liveActivityTokensBySession[uiSessionToken] || [];
       const replaced = existing.find((entry) => entry.activityId === trimmedActivityId);
+      tokenBundleId ??= replaced?.bundleId;
       if (replaced && replaced.token !== trimmedToken) replacedToken = replaced.token;
       const filtered = existing.filter(
         (entry) => entry.activityId !== trimmedActivityId && entry.token !== trimmedToken,
@@ -559,6 +575,7 @@ export const createApnsRuntime = (deps) => {
         activityId: trimmedActivityId,
         sessionId: trimmedSessionId,
         snapshot: nextSnapshot,
+        bundleId: tokenBundleId,
         createdAt: typeof replaced?.createdAt === 'number' ? replaced.createdAt : now,
         lastSeenAt: now,
       });
@@ -566,7 +583,7 @@ export const createApnsRuntime = (deps) => {
       return { ...current, liveActivityTokensBySession };
     });
 
-    await registerLiveActivityTokenWithRelay(trimmedToken);
+    await registerLiveActivityTokenWithRelay(trimmedToken, undefined, tokenBundleId);
     if (replacedToken) {
       const store = await readTokensFromDisk();
       if (countLiveActivityTokenCopies(store.liveActivityTokensBySession, replacedToken) === 0) {
@@ -1122,7 +1139,7 @@ export const createApnsRuntime = (deps) => {
 
   // Shared Live Activity delivery path (relay register-then-send, or direct APNs).
   // Returns the tokens APNs accepted; callers decide what an accepted `end` means.
-  const deliverLiveActivityPayload = async (tokens, payload) => {
+  const deliverLiveActivityPayload = async (tokens, payload, bundleIds) => {
     const accepted = [];
     const relay = await resolveRelayConfig();
     if (relay) {
@@ -1131,7 +1148,7 @@ export const createApnsRuntime = (deps) => {
         tokens,
         RELAY_REGISTER_CONCURRENCY,
         async (token) => {
-          const registered = await registerLiveActivityTokenWithRelay(token, relay);
+          const registered = await registerLiveActivityTokenWithRelay(token, relay, bundleIds.get(token));
           return registered ? token : null;
         },
       );
@@ -1140,7 +1157,9 @@ export const createApnsRuntime = (deps) => {
         accepted.push(...await sendLiveActivityViaRelay(readyTokens, payload, relay));
       }
     } else {
-      accepted.push(...await sendLiveActivityViaDirectApns(tokens, payload));
+      const config = await resolveApnsConfig();
+      const compatible = tokens.filter((token) => !bundleIds.get(token) || bundleIds.get(token) === config?.bundleId);
+      accepted.push(...await sendLiveActivityViaDirectApns(compatible, payload));
     }
     return accepted;
   };
@@ -1224,6 +1243,7 @@ export const createApnsRuntime = (deps) => {
     }
 
     const updatedAtSeconds = now / 1000;
+    const bundleIds = new Map(entries.map((entry) => [entry.token, entry.bundleId]));
     const tokensToEnd = [];
     for (const group of groups.values()) {
       const working = group.items.filter((item) => liveActivityItemIsWorking(item.status));
@@ -1244,7 +1264,7 @@ export const createApnsRuntime = (deps) => {
       };
       let accepted = [];
       try {
-        accepted = await deliverLiveActivityPayload(group.tokens, payload);
+        accepted = await deliverLiveActivityPayload(group.tokens, payload, bundleIds);
       } catch (error) {
         console.warn('[Live Activity] refresh failed:', error?.message ?? error);
         continue;
@@ -1351,7 +1371,7 @@ export const createApnsRuntime = (deps) => {
     const tokens = pendingEntries.map((entry) => entry.token);
     let accepted = [];
     try {
-      accepted = await deliverLiveActivityPayload(tokens, payload);
+      accepted = await deliverLiveActivityPayload(tokens, payload, new Map(pendingEntries.map((entry) => [entry.token, entry.bundleId])));
     } catch (error) {
       console.warn('[Live Activity] end failed:', error?.message ?? error);
       return;
@@ -1378,7 +1398,7 @@ export const createApnsRuntime = (deps) => {
     const outcomes = await mapWithBoundedConcurrency(
       entries,
       RELAY_REGISTER_CONCURRENCY,
-      (entry) => registerTokenWithRelay(entry.deviceToken, entry.platform, relay),
+      (entry) => registerTokenWithRelay(entry.deviceToken, entry.platform, relay, entry.bundleId),
     );
     let succeeded = 0;
     let failed = 0;
@@ -1419,7 +1439,7 @@ export const createApnsRuntime = (deps) => {
         uniqueEntries,
         RELAY_REGISTER_CONCURRENCY,
         async (entry) => {
-          const registered = await registerTokenWithRelay(entry.deviceToken, entry.platform, relay);
+          const registered = await registerTokenWithRelay(entry.deviceToken, entry.platform, relay, entry.bundleId);
           return registered ? entry : null;
         },
       );
@@ -1436,7 +1456,8 @@ export const createApnsRuntime = (deps) => {
       }
       return;
     }
-    const byLocale = groupTokensByLocale(uniqueEntries);
+    const config = await resolveApnsConfig();
+    const byLocale = groupTokensByLocale(uniqueEntries.filter((entry) => !entry.bundleId || entry.bundleId === config?.bundleId));
     for (const [locale, deviceTokens] of byLocale) {
       await sendViaDirectApns(deviceTokens, localizeApnsPayload(payload, locale));
     }

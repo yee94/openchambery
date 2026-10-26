@@ -14,6 +14,24 @@ export const DEAD_TOKEN_REASONS = new Set(['BadDeviceToken', 'Unregistered', 'De
 const normalizePem = (value) => (typeof value === 'string' ? value.replace(/\\n/g, '\n').trim() : '');
 
 export const createApnsProvider = (options = {}) => {
+  if (options.apps?.length) {
+    const providers = new Map();
+    try {
+      for (const app of [{ ...options, apps: undefined }, ...options.apps]) {
+        providers.set(app.bundleId, createApnsProvider({ ...options, ...app, apps: undefined }));
+      }
+    } catch (error) {
+      for (const provider of providers.values()) provider.close();
+      throw error;
+    }
+    return {
+      send(input) {
+        const provider = providers.get(input.bundleId ?? options.bundleId);
+        return provider ? provider.send(input) : Promise.resolve({ ok: false });
+      },
+      close() { for (const provider of providers.values()) provider.close(); },
+    };
+  }
   const clock = { now: Date.now, setTimeout, clearTimeout, ...options.clock };
   const connect = options.http2?.connect ?? http2.connect;
   const sessionTtlMs = options.sessionTtlMs ?? SESSION_TTL_MS;
@@ -120,6 +138,7 @@ export const createApnsProvider = (options = {}) => {
 
   return {
     async send(input) {
+      if (input.bundleId !== undefined && input.bundleId !== bundleId) return { ok: false };
       const first = await dispatch(input, false);
       if (first.expired) {
         const retry = await dispatch(input, true);

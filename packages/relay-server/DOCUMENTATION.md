@@ -302,6 +302,18 @@ Push process:
 | `YURI_PUSH_RELAY_APNS_BUNDLE_ID` | `com.yee94.yuri` | App bundle ID |
 | `YURI_PUSH_RELAY_APNS_P8` | required unless path set | APNs `.p8` PEM |
 | `YURI_PUSH_RELAY_APNS_P8_PATH` | unset | Path to the `.p8` file |
+| `YURI_PUSH_RELAY_APNS_APPS_JSON` | unset | Up to 32 additional app configurations; see README Multi-app APNs push |
+
+Registration accepts optional `bundleId`. If present it is appended as
+`.${bundleId}` to the existing signed register message (including `kind` for Live
+Activity). The Relay validates it against its configured applications, then stores
+it with the token binding. Send bodies cannot override that identity. A token with
+an explicit binding cannot be reassigned to another app; historical callers that
+omit it preserve the binding. Unregister keeps its existing owner-authenticated
+signature. Missing identities use the configured default only; unknown explicit
+identities are never guessed. Both cached-store and SQLite persist the field,
+including across worker/process restarts. APNs providers are isolated per app and
+environment. See the README for migration, deployment order and rollback limits.
 
 TestFlight and App Store Hosts use `YURI_APNS_ENVIRONMENT=production`. Each send request carries `env`; the Push process does not pick sandbox vs production itself.
 

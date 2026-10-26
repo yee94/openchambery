@@ -83,6 +83,47 @@ afterEach(() => {
 });
 
 describe('apns runtime bundle ID', () => {
+  it('persists installed app identities and rebinds both alerts and activities after Host restart', async () => {
+    const sent = [];
+    const server = createPushRelayServer({
+      host: '127.0.0.1', port: 0, databasePath: ':memory:',
+      apns: { bundleId: 'com.example.legacy', apps: [{ bundleId: 'com.yee94.yuri' }] },
+      apnsProvider: { async send(input) { sent.push(input); return { ok: true }; }, close() {} },
+    });
+    await server.start();
+    process.env.YURI_PUSH_RELAY_URL = `${server.url}/v1/push/send`;
+    const deps = makeDeps();
+    const token = (label) => crypto.createHash('sha256').update(label).digest('hex');
+    try {
+      const first = createApnsRuntime(deps);
+      await first.addOrUpdateApnsToken('legacy', token('old'));
+      await first.addOrUpdateApnsToken('current', token('new'), undefined, 'ios', 'en', 'com.yee94.yuri');
+      await first.addOrUpdateLiveActivityToken('current', token('live'), 'activity', 'session', undefined, 'com.yee94.yuri');
+      const restored = createApnsRuntime(deps);
+      await restored.sendApnsToAllUiSessions({ title: 'Ready', body: 'Done' });
+      await restored.sendLiveActivityEnd({ sessionId: 'session', status: 'complete' });
+      expect(sent).toHaveLength(3);
+      expect(sent.find((input) => input.token === token('old')).bundleId).toBe('com.example.legacy');
+      expect(sent.find((input) => input.token === token('new')).bundleId).toBe('com.yee94.yuri');
+      expect(sent.find((input) => input.token === token('live'))).toMatchObject({ bundleId: 'com.yee94.yuri', pushType: 'liveactivity' });
+      expect(JSON.parse(await deps.fsPromises.readFile()).liveActivityTokensBySession).toEqual({});
+    } finally { await server.stop(); }
+  });
+
+  it('does not send or delete a different app token through a single-app direct credential', async () => {
+    process.env.YURI_PUSH_RELAY_DISABLED = 'true';
+    const deps = makeDeps({ readSettingsFromDiskMigrated: vi.fn(async () => ({ apnsConfig: APNS_CONFIG })) });
+    const runtime = createApnsRuntime(deps);
+    await runtime.addOrUpdateApnsToken('s', 'other-alert', undefined, 'ios', 'en', 'com.example.other');
+    await runtime.addOrUpdateLiveActivityToken('s', 'other-live', 'a', 'session', undefined, 'com.example.other');
+    await runtime.sendApnsToAllUiSessions({ title: 'Ready' });
+    await runtime.sendLiveActivityEnd({ sessionId: 'session', status: 'complete' });
+    expect(deps.http2.connect).not.toHaveBeenCalled();
+    const stored = JSON.parse(await deps.fsPromises.readFile());
+    expect(stored.tokensBySession.s).toHaveLength(1);
+    expect(stored.liveActivityTokensBySession.s).toHaveLength(1);
+  });
+
   it('defaults to the current product bundle ID when env and settings omit it', async () => {
     process.env.YURI_APNS_KEY_ID = 'KEY123';
     process.env.YURI_APNS_TEAM_ID = 'TEAM123';
@@ -859,12 +900,27 @@ describe('apns live activity routes', () => {
       body: { token: ' la-token ', activityId: ' act-1 ', sessionId: ' ses_1 ' },
     }, postRes);
     expect(postRes.body).toEqual({ ok: true });
-    expect(addOrUpdateLiveActivityToken).toHaveBeenCalledWith('ui-token', 'la-token', 'act-1', 'ses_1', undefined);
+    expect(addOrUpdateLiveActivityToken).toHaveBeenCalledWith('ui-token', 'la-token', 'act-1', 'ses_1', undefined, undefined);
 
     const delRes = createMockRes();
     await getRoute('DELETE', '/api/push/live-activity-token')({ body: { token: 'la-token' } }, delRes);
     expect(delRes.body).toEqual({ ok: true });
     expect(removeLiveActivityToken).toHaveBeenCalledWith('ui-token', 'la-token');
+  });
+
+  it('passes app identity through both registration routes and rejects malformed identities', async () => {
+    const addOrUpdateApnsToken = vi.fn(async () => {});
+    const { getRoute, addOrUpdateLiveActivityToken } = register({ addOrUpdateApnsToken });
+    for (const endpoint of ['/api/push/apns-token', '/api/push/live-activity-token']) {
+      const response = createMockRes();
+      await getRoute('POST', endpoint)({ headers: {}, body: { token: 'token', activityId: 'activity', sessionId: 'session', bundleId: 'com.yee94.yuri' } }, response);
+      expect(response.body).toEqual({ ok: true });
+      const invalid = createMockRes();
+      await getRoute('POST', endpoint)({ headers: {}, body: { token: 'token', activityId: 'activity', sessionId: 'session', bundleId: '../../other' } }, invalid);
+      expect(invalid.statusCode).toBe(400);
+    }
+    expect(addOrUpdateApnsToken).toHaveBeenCalledExactlyOnceWith('ui-token', 'token', undefined, 'ios', undefined, 'com.yee94.yuri');
+    expect(addOrUpdateLiveActivityToken).toHaveBeenCalledExactlyOnceWith('ui-token', 'token', 'activity', 'session', undefined, 'com.yee94.yuri');
   });
 });
 

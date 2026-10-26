@@ -36,6 +36,11 @@ on:
         required: false
         default: true
         type: boolean
+      require_root_version_match:
+        description: 'Require the repository version to match; disable for an independently versioned Relay image'
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read

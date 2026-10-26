@@ -134,11 +134,12 @@ export const validateRegisterBody = (body) => {
   if (body.platform === 'android') return { error: 'unsupported_platform' };
   if (body.platform !== 'ios') return { error: 'invalid_request' };
   if (!isIosToken(body.token)) return { error: 'invalid_request' };
+  if (body.bundleId !== undefined && (typeof body.bundleId !== 'string' || body.bundleId.length > 255 || !/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(body.bundleId))) return { error: 'invalid_request' };
   const jwk = parsePublicJwk(body.publicKeyJwk);
   const ts = parseTs(body.ts);
   const sig = parseSig(body.sig);
   if (!jwk || ts === null || !sig) return { error: 'invalid_request' };
-  return { value: { token: body.token, platform: 'ios', publicKeyJwk: jwk, ts, sig } };
+  return { value: { token: body.token, platform: 'ios', publicKeyJwk: jwk, ts, sig, ...(body.bundleId !== undefined ? { bundleId: body.bundleId } : {}) } };
 };
 
 export const validateLiveActivityRegisterBody = (body) => {

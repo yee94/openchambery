@@ -7,6 +7,19 @@ registered them — so a leaked device token alone can't be used to push.
 
 ## How it works
 
+Native registration now includes the installed shell's `bundleId`, obtained via
+Capacitor App metadata, not the connected Host or web bundle version. The Host
+validates and persists this optional field with alert and Live Activity tokens.
+It appends `.${bundleId}` to the existing Relay registration signature when present,
+and checks app identity in registration caches. Re-registration after restart
+or Relay switching preserves it. The Relay owns the allowlist and app-to-APNs-key
+mapping; the mobile client never supplies credentials or an arbitrary APNs topic.
+Existing tokens without identity retain the default-app behavior; missing fields
+must not overwrite an identity already stored. Upgrade Relay before Host/client.
+Direct APNs remains single-app and skips explicit tokens for other apps without
+deleting them. Browser/desktop/VS Code do not acquire a native app identity; Android
+notification-stream behavior is unchanged.
+
 1. The app registers its APNs device token with **its own server** (`POST /api/push/apns-token`,
    `useNativePushRegistration`). PWA/desktop never register — only the native Capacitor app.
 2. The server **binds the token on the relay**: it POSTs `{ token, publicKeyJwk, ts, sig }` to

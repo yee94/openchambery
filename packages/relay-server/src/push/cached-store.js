@@ -103,8 +103,8 @@ export const createCachedTokenStore = (databasePath, { maxTokens, maxPending = 6
     ready,
     get(token) { assertReady(); return records.get(token) ?? null; },
     count() { assertReady(); return records.size; },
-    upsert(token, serverId, platform, updatedAt) {
-      return write('upsert', [token, serverId, platform, updatedAt], () => records.set(token, { serverId, platform, updatedAt }), () => {
+    upsert(token, serverId, platform, updatedAt, bundleId) {
+      return write('upsert', [token, serverId, platform, updatedAt, bundleId], () => records.set(token, { serverId, platform, updatedAt, ...(bundleId ? { bundleId } : {}) }), () => {
         if (!records.has(token) && records.size >= maxTokens) throw overloaded();
         return false;
       });

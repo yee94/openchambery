@@ -64,6 +64,7 @@ const readBody = (request, maxBytes) => new Promise((resolve, reject) => {
 export const createPushRelayHandler = (options = {}) => {
   const claimHealthEndpoints = options.claimHealthEndpoints !== false;
   const config = normalizePushRelayOptions(options);
+  const allowedBundleIds = new Set([config.apns?.bundleId, ...(config.apns?.apps ?? []).map((app) => app.bundleId)].filter(Boolean));
   const limits = config.limits;
   const clock = { now: Date.now, setTimeout, clearTimeout, setInterval, clearInterval, setImmediate, ...config.clock };
   const resolveClientIp = config.resolveClientIp ?? ((request) => resolvePushRelayClientIp(request, config.trustProxy));
@@ -114,9 +115,10 @@ export const createPushRelayHandler = (options = {}) => {
   };
 
   const handleRegister = (parsed) => mutate(async () => {
-    const message = parsed.kind
+    let message = parsed.kind
       ? `${parsed.ts}.${parsed.token}.${parsed.platform}.${parsed.kind}`
       : `${parsed.ts}.${parsed.token}.${parsed.platform}`;
+    if (parsed.bundleId !== undefined) message += `.${parsed.bundleId}`;
     const authError = authenticate(parsed.publicKeyJwk, message, parsed.sig, parsed.ts);
     if (authError) return { status: 401, body: { error: authError } };
     const serverId = deriveServerId(parsed.publicKeyJwk);
@@ -124,9 +126,12 @@ export const createPushRelayHandler = (options = {}) => {
     if (replay.has(replayKey)) return { status: 200, body: { ok: true } };
     const tokens = store;
     const existing = tokens.get(parsed.token);
+    if (parsed.bundleId !== undefined && !allowedBundleIds.has(parsed.bundleId)) return { status: 400, body: { error: 'unsupported_app' } };
+    const bundleId = parsed.bundleId ?? existing?.bundleId;
+    if (existing?.bundleId && existing.bundleId !== bundleId) return { status: 409, body: { error: 'app_mismatch' } };
     if (!existing && tokens.count() >= limits.maxTokens) { reasons.limited += 1; return { status: 429, body: { error: 'token_limit' } }; }
     if (!replay.remember(replayKey)) { reasons.limited += 1; return { status: 429, body: { error: 'rate_limited' } }; }
-    try { await tokens.upsert(parsed.token, serverId, parsed.platform, clock.now()); } catch (error) { replay.forget(replayKey); throw error; }
+    try { await tokens.upsert(parsed.token, serverId, parsed.platform, clock.now(), bundleId); } catch (error) { replay.forget(replayKey); throw error; }
     return { status: 200, body: { ok: true } };
   });
 
@@ -160,7 +165,7 @@ export const createPushRelayHandler = (options = {}) => {
       const acquired = await inFlight.acquire();
       if (!acquired) { reasons.limited += 1; return { token, ok: false }; }
       try {
-        const outcome = await apns.send({ token, env: parsed.env, payload: parsed.payload, collapseId: parsed.collapseId });
+        const outcome = await apns.send({ token, bundleId: binding.bundleId ?? config.apns?.bundleId, env: parsed.env, payload: parsed.payload, collapseId: parsed.collapseId });
         if (outcome?.drop === true) {
           await tokens.delete(token, binding);
           return { token, ok: false, drop: true };
@@ -200,7 +205,7 @@ export const createPushRelayHandler = (options = {}) => {
       const acquired = await inFlight.acquire();
       if (!acquired) { reasons.limited += 1; return { token, ok: false }; }
       try {
-        const outcome = await apns.send({ token, env: parsed.env, payload, pushType: 'liveactivity' });
+        const outcome = await apns.send({ token, bundleId: binding.bundleId ?? config.apns?.bundleId, env: parsed.env, payload, pushType: 'liveactivity' });
         if (outcome?.drop === true) {
           await tokens.delete(token, binding);
           return { token, ok: false, drop: true };

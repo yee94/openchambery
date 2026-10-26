@@ -88,6 +88,33 @@ const liveActivityBody = (id, tokens, extra = {}) => {
 
 afterEach(async () => { await Promise.all(servers.splice(0).map((server) => server.stop())); });
 
+it('authenticates application identity and routes mixed legacy and explicit bindings without cross-app reassignment', async () => {
+  const { port, apnsProvider } = await startPush({ apns: { bundleId: 'com.example.legacy', apps: [{ bundleId: 'com.yee94.yuri' }] } });
+  const id = identity();
+  const legacy = hexToken('legacy-app'); const current = hexToken('current-app'); const activity = hexToken('current-activity');
+  const scoped = (token, bundleId, live = false) => {
+    const body = live ? liveRegisterBody(id, token) : registerBody(id, token);
+    return { ...body, bundleId, sig: id.sign(`${body.ts}.${token}.ios${live ? '.liveactivity' : ''}.${bundleId}`) };
+  };
+  expect((await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(id, legacy) })).status).toBe(200);
+  // A previously unidentified token can acquire its authoritative app identity.
+  expect((await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(id, current) })).status).toBe(200);
+  const body = scoped(current, 'com.yee94.yuri');
+  expect((await request(port, '/v1/push/register-token', { method: 'POST', body: { ...body, bundleId: 'com.example.legacy' } })).status).toBe(401);
+  expect((await request(port, '/v1/push/register-token', { method: 'POST', body: scoped(current, 'com.unknown.app') })).status).toBe(400);
+  expect((await request(port, '/v1/push/register-token', { method: 'POST', body })).status).toBe(200);
+  expect((await request(port, '/v1/push/register-token', { method: 'POST', body: scoped(current, 'com.example.legacy') })).status).toBe(409);
+  expect((await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(id, current) })).status).toBe(200);
+  expect((await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: scoped(activity, 'com.yee94.yuri', true) })).status).toBe(200);
+  await request(port, '/v1/push/send', { method: 'POST', body: sendBody(id, [legacy, current]) });
+  await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [activity]) });
+  expect(apnsProvider.sent.map(({ token, bundleId, pushType }) => ({ token, bundleId, pushType }))).toEqual([
+    { token: legacy, bundleId: 'com.example.legacy', pushType: undefined },
+    { token: current, bundleId: 'com.yee94.yuri', pushType: undefined },
+    { token: activity, bundleId: 'com.yee94.yuri', pushType: 'liveactivity' },
+  ]);
+});
+
 it('rejects replay windows smaller than twice the timestamp skew', () => {
   expect(() => createPushRelayServer({
     host: '127.0.0.1', databasePath: ':memory:',

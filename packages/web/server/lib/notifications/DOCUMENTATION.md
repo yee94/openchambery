@@ -5,6 +5,10 @@ This module provides notification message preparation utilities for the web serv
 
 ## Entrypoints and structure
 
+Native push registration accepts optional `bundleId` and carries it through Host
+persistence and signed Relay binding for alert and Live Activity delivery. See
+`APNS.md` for the multi-app compatibility contract and deployment ordering.
+
 Android notification-only subscriptions send the App locale in `Accept-Language`. `native-stream.js` localizes built-in English scenario titles per response using `apns-titles.js`, for both live delivery and replay, without mutating shared history. Custom titles, contact names and bodies are preserved. Missing/unsupported locales use the existing English fallback. The UI reconnects with its current locale when language changes; direct and encrypted relay requests carry the same header.
 - `native-stream.js`: bounded in-memory Android notification-only SSE/replay runtime, instantiated by the emitter and published by trigger fanout. `GET /api/notifications/native-stream` uses normal API/client authentication. It emits only `{type: 'notification', title, body, kind?, tag?, sessionId?, assistantID?, directory?, requireHidden}` and `{type: 'ready', gap}` with opaque SSE IDs; no session-status/transcript traffic. Initial connections receive only future events, reconnects use `Last-Event-ID`. Retention is 128 events / 15 minutes, no disk writes. Unknown/expired cursors explicitly signal a gap; backpressured clients disconnect and recover using the last processed ID. Heartbeat is 60 seconds and timers are removed on response close/error. Android owns foreground-service lifetime, native visibility and local system notification display; this channel is independent of APNs/FCM and the WebView.
 - `packages/web/server/lib/notifications/index.js`: public entrypoint imported by `packages/web/server/index.js`.

@@ -7,6 +7,23 @@ import type {
   PushUnsubscribePayload,
 } from '@yuriai/ui/lib/api/types';
 import { runtimeFetch } from '@yuriai/ui/lib/runtime-fetch';
+import { getMobileAppId } from '@yuriai/ui/lib/mobileAppVersion';
+import { getRuntimeTransportIdentity } from '@yuriai/ui/lib/runtime-switch';
+
+const registerNativeToken = async (path: string, payload: ApnsTokenPayload | LiveActivityTokenPayload): Promise<{ ok: true } | null> => {
+  const identity = getRuntimeTransportIdentity();
+  try {
+    const bundleId = await getMobileAppId();
+    if (getRuntimeTransportIdentity() !== identity) return null;
+    return fetchJson<{ ok: true }>(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, ...(bundleId ? { bundleId } : {}) }),
+    });
+  } catch {
+    return null;
+  }
+};
 
 const fetchJson = async <T>(input: string | URL | Request, init?: RequestInit): Promise<T | null> => {
   try {
@@ -66,13 +83,7 @@ export const createWebPushAPI = (): PushAPI => ({
   },
 
   async registerApnsToken(payload: ApnsTokenPayload) {
-    return fetchJson<{ ok: true }>('/api/push/apns-token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    return registerNativeToken('/api/push/apns-token', payload);
   },
 
   async unregisterApnsToken(payload: ApnsTokenPayload) {
@@ -86,13 +97,7 @@ export const createWebPushAPI = (): PushAPI => ({
   },
 
   async registerLiveActivityToken(payload: LiveActivityTokenPayload) {
-    return fetchJson<{ ok: true }>('/api/push/live-activity-token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    return registerNativeToken('/api/push/live-activity-token', payload);
   },
 
   async unregisterLiveActivityToken(payload: LiveActivityTokenUnregisterPayload) {

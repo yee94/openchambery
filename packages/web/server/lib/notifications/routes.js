@@ -177,8 +177,10 @@ export const registerNotificationRoutes = (app, dependencies) => {
 
     const platform = req.body?.platform === 'android' ? 'android' : 'ios';
     const locale = typeof req.body?.locale === 'string' ? req.body.locale.trim() : undefined;
+    const bundleId = req.body?.bundleId;
+    if (bundleId !== undefined && (typeof bundleId !== 'string' || bundleId.length > 255 || !/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(bundleId))) return res.status(400).json({ error: 'Invalid bundleId' });
     if (typeof addOrUpdateApnsToken === 'function') {
-      await addOrUpdateApnsToken(uiToken, deviceToken, req.headers['user-agent'], platform, locale);
+      await addOrUpdateApnsToken(uiToken, deviceToken, req.headers['user-agent'], platform, locale, bundleId);
     }
     return res.json({ ok: true });
   });
@@ -220,7 +222,9 @@ export const registerNotificationRoutes = (app, dependencies) => {
     }
 
     if (typeof addOrUpdateLiveActivityToken === 'function') {
-      await addOrUpdateLiveActivityToken(uiToken, token, activityId, sessionId, req.body?.items);
+      const bundleId = req.body?.bundleId;
+      if (bundleId !== undefined && (typeof bundleId !== 'string' || bundleId.length > 255 || !/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(bundleId))) return res.status(400).json({ error: 'Invalid bundleId' });
+      await addOrUpdateLiveActivityToken(uiToken, token, activityId, sessionId, req.body?.items, bundleId);
     }
     return res.json({ ok: true });
   });

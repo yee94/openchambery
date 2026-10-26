@@ -61,6 +61,9 @@ export const validDatabasePath = (name, value) => {
 
 export const normalizePem = (value) => (typeof value === 'string' ? value.replace(/\\n/g, '\n').trim() : '');
 
+const isPushBundleId = (value) => typeof value === 'string'
+  && value.length <= 255 && /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(value);
+
 export const validatePushRelayLimits = (limits) => {
   if (limits.replayMs < limits.timestampSkewMs * 2 || limits.maxReplayEntries < 1) throw new RangeError('invalid replay limits');
   if (limits.maxTokens < 1 || limits.maxInFlight < 1 || limits.registerLimitPerMinute < 1 || limits.sendLimitPerMinute < 1 || limits.serverSendLimitPerMinute < 1) {
@@ -79,7 +82,12 @@ export const normalizePushRelayOptions = (options = {}) => {
   validDatabasePath('databasePath', databasePath);
   if (!options.apnsProvider) {
     const apns = options.apns ?? {};
-    if (!apns.keyId || !apns.teamId || !apns.p8 || !apns.bundleId) throw new Error('Invalid APNs configuration');
+    const apps = [apns, ...(apns.apps ?? [])];
+    const ids = new Set();
+    for (const app of apps) {
+      if (!app.keyId || !app.teamId || !app.p8 || !isPushBundleId(app.bundleId) || ids.has(app.bundleId)) throw new Error('Invalid APNs configuration');
+      ids.add(app.bundleId);
+    }
   }
   return {
     host,
@@ -134,12 +142,33 @@ export const buildPushRelayConfig = (parsed = {}, env = process.env) => {
   if (typeof teamId !== 'string' || teamId.trim().length === 0) fail(`${ENV_PREFIX}APNS_TEAM_ID`);
   const p8 = loadP8(env);
   if (!p8) fail(`${ENV_PREFIX}APNS_P8`);
+  const apps = [];
+  const appsJson = env[`${ENV_PREFIX}APNS_APPS_JSON`];
+  if (appsJson !== undefined) {
+    let entries;
+    try { entries = JSON.parse(appsJson); } catch { fail(`${ENV_PREFIX}APNS_APPS_JSON`); }
+    if (!Array.isArray(entries) || entries.length > 32) fail(`${ENV_PREFIX}APNS_APPS_JSON`);
+    const ids = new Set([bundleId]);
+    for (const app of entries) {
+      if (!app || !isPushBundleId(app.bundleId) || ids.has(app.bundleId)) fail(`${ENV_PREFIX}APNS_APPS_JSON`);
+      ids.add(app.bundleId);
+      // Omit all credential fields to share the default team's APNs key.
+      const ownKey = ['keyId', 'teamId', 'p8', 'p8Path'].some((key) => app[key] !== undefined);
+      if (ownKey && (typeof app.keyId !== 'string' || !app.keyId.trim() || typeof app.teamId !== 'string' || !app.teamId.trim())) fail(`${ENV_PREFIX}APNS_APPS_JSON`);
+      const appP8 = ownKey ? loadP8({
+        [`${ENV_PREFIX}APNS_P8`]: app.p8,
+        [`${ENV_PREFIX}APNS_P8_PATH`]: app.p8Path,
+      }) : p8;
+      apps.push({ bundleId: app.bundleId, keyId: ownKey ? app.keyId.trim() : keyId.trim(), teamId: ownKey ? app.teamId.trim() : teamId.trim(), p8: appP8 });
+    }
+  }
+  if (!isPushBundleId(bundleId)) fail(`${ENV_PREFIX}APNS_BUNDLE_ID`);
   return {
     host,
     port,
     databasePath,
     trustProxy: parsed.trustProxy ?? bool(envName('trustProxy'), envValue(env, 'trustProxy')),
     limits: merged,
-    apns: { keyId: keyId.trim(), teamId: teamId.trim(), p8, bundleId: String(bundleId).trim() },
+    apns: { keyId: keyId.trim(), teamId: teamId.trim(), p8, bundleId: String(bundleId).trim(), ...(apps.length ? { apps } : {}) },
   };
 };

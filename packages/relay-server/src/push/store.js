@@ -20,9 +20,12 @@ export const createTokenStore = (databasePath, { busyTimeoutMs = 5_000 } = {}) =
   db.exec('PRAGMA journal_mode = WAL');
   db.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
   db.exec(SCHEMA);
-  const getStmt = db.prepare('SELECT server_id AS serverId, platform, updated_at AS updatedAt FROM push_tokens WHERE token = ?');
-  const upsertStmt = db.prepare(`INSERT INTO push_tokens (token, server_id, platform, updated_at) VALUES (?, ?, ?, ?)
-    ON CONFLICT(token) DO UPDATE SET server_id = excluded.server_id, platform = excluded.platform, updated_at = excluded.updated_at`);
+  if (!db.prepare('PRAGMA table_info(push_tokens)').all().some((column) => column.name === 'bundle_id')) {
+    db.exec('ALTER TABLE push_tokens ADD COLUMN bundle_id TEXT');
+  }
+  const getStmt = db.prepare('SELECT server_id AS serverId, platform, updated_at AS updatedAt, bundle_id AS bundleId FROM push_tokens WHERE token = ?');
+  const upsertStmt = db.prepare(`INSERT INTO push_tokens (token, server_id, platform, updated_at, bundle_id) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(token) DO UPDATE SET server_id = excluded.server_id, platform = excluded.platform, updated_at = excluded.updated_at, bundle_id = excluded.bundle_id`);
   const deleteStmt = db.prepare('DELETE FROM push_tokens WHERE token = ?');
   const countStmt = db.prepare('SELECT COUNT(*) AS n FROM push_tokens');
   let closed = false;
@@ -30,18 +33,18 @@ export const createTokenStore = (databasePath, { busyTimeoutMs = 5_000 } = {}) =
   return {
     entries(maxTokens) {
       assertOpen();
-      const rows = db.prepare('SELECT token, server_id AS serverId, platform, updated_at AS updatedAt FROM push_tokens LIMIT ?').all(maxTokens + 1);
+      const rows = db.prepare('SELECT token, server_id AS serverId, platform, updated_at AS updatedAt, bundle_id AS bundleId FROM push_tokens LIMIT ?').all(maxTokens + 1);
       if (rows.length > maxTokens) throw new Error('token capacity exceeded');
-      return rows;
+      return rows.map(({ bundleId, ...row }) => ({ ...row, ...(bundleId ? { bundleId } : {}) }));
     },
     get(token) {
       assertOpen();
       const row = getStmt.get(token);
-      return row ? { serverId: row.serverId, platform: row.platform, updatedAt: row.updatedAt } : null;
+      return row ? { serverId: row.serverId, platform: row.platform, updatedAt: row.updatedAt, ...(row.bundleId ? { bundleId: row.bundleId } : {}) } : null;
     },
-    upsert(token, serverId, platform, updatedAt) {
+    upsert(token, serverId, platform, updatedAt, bundleId = null) {
       assertOpen();
-      upsertStmt.run(token, serverId, platform, updatedAt);
+      upsertStmt.run(token, serverId, platform, updatedAt, bundleId);
     },
     delete(token) {
       assertOpen();
