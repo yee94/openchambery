@@ -139,7 +139,9 @@ Required GitHub settings:
 The same verified `site/dist/` output can also be published to a separate EdgeOne
 Makers direct-upload project in the global area (including mainland China).
 Set `SITE_EDGEONE_PROJECT_NAME` to enable this second deployment and provide the
-existing `EDGEONE_TOKEN` repository secret. Set `SITE_EDGEONE_URL` to the custom
+dedicated `SITE_EDGEONE_TOKEN` repository secret from the account owning that
+project and its bound domain; a token from another account can create a different
+project with the same name. Set `SITE_EDGEONE_URL` to the custom
 HTTPS origin after DNS and its certificate are ready to enable live verification.
 The domain is bound in EdgeOne, and its DNS provider must publish the CNAME returned
 by EdgeOne; mainland acceleration requires the domain's ICP filing. Preset preview

@@ -94,7 +94,7 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' && vars.SITE_EDGEONE_PROJECT_NAME != '' }}
         shell: bash
         env:
-          EDGEONE_TOKEN: ${{ secrets.EDGEONE_TOKEN }}
+          EDGEONE_TOKEN: ${{ secrets.SITE_EDGEONE_TOKEN }}
           EDGEONE_PROJECT_NAME: ${{ vars.SITE_EDGEONE_PROJECT_NAME }}
         run: |
           test -n "$EDGEONE_TOKEN"
