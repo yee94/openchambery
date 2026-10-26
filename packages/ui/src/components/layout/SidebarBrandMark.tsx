@@ -1,4 +1,5 @@
 import React from 'react';
+import { loadBrandDisplayFont } from '@/lib/fontLoader';
 import { useSidebarBrandStore } from '@/stores/useSidebarBrandStore';
 import { cn } from '@/lib/utils';
 import { YuriWordmark } from '@/components/ui/YuriWordmark';
@@ -15,7 +16,7 @@ import { YuriWordmark } from '@/components/ui/YuriWordmark';
  *
  * Each standalone Yuri word uses the approved SVG with its 12-unit padding
  * compensated so the visible 256-unit artwork matches the text's cap height.
- * Custom text uses a compact serif face to complement the sculpted wordmark.
+ * Custom text retains the Syne display face and its original tracking.
  *
  * The configured text is split on whitespace and uses one foreground color. Brand copy is
  * user content, so it is intentionally not localized.
@@ -31,6 +32,11 @@ export const SidebarBrandMark: React.FC<SidebarBrandMarkProps> = ({ className })
   const sidebarBrandName = useSidebarBrandStore((state) => state.sidebarBrandName);
   const brandName = sidebarBrandName.trim();
   const brandWords = brandName.split(/\s+/).filter(Boolean);
+  const usesDisplayFont = brandWords.some((word) => word !== 'Yuri');
+
+  React.useEffect(() => {
+    if (usesDisplayFont) void loadBrandDisplayFont();
+  }, [usesDisplayFont]);
 
   // Empty config → no custom logo; leave the sidebar brand slot empty.
   if (brandWords.length === 0) {
@@ -42,12 +48,12 @@ export const SidebarBrandMark: React.FC<SidebarBrandMarkProps> = ({ className })
       <span
         role="img"
         aria-label={brandWords.join(' ')}
-        className="inline-flex min-w-0 items-baseline gap-[0.25em] overflow-hidden whitespace-nowrap text-foreground"
+        className="inline-flex min-w-0 items-baseline gap-[0.28em] overflow-hidden whitespace-nowrap text-foreground"
         style={{
-          fontFamily: '"Bodoni 72", Didot, "Times New Roman", serif',
+          fontFamily: '"Syne", var(--font-sans, system-ui, sans-serif)',
           fontSize: '1.0625rem',
           fontWeight: 700,
-          letterSpacing: '-0.02em',
+          letterSpacing: '0.08em',
           lineHeight: 1,
         }}
       >

@@ -17,9 +17,10 @@ The default sidebar brand is `Yuri`. `SidebarBrandMark` renders the approved
 sculpted SVG through `YuriWordmark` for each exact, whitespace-separated `Yuri`
 word, including mixed names such as `Yee Yuri`. Its width is cap-height-relative
 (2.44814cap = 626.723 / 256), matching the visible artwork to the bold
-Bodoni/Didot serif text's cap height. A 0.046875cap downward offset compensates
+Syne text's cap height. A 0.046875cap downward offset compensates
 the SVG's 12-unit bottom padding so visible baselines align. All words use the
-same theme foreground, with compact tracking.
+same theme foreground. Custom text retains its original 1.0625rem size, 700
+weight and 0.08em tracking; Syne loads only when custom text is present.
 Whitespace-only names hide the slot. Store version 3 migrates exact historical default
 names, preserving other custom values and the existing runtime-scoped storage.
 
