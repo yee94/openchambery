@@ -237,6 +237,7 @@ Shipping a beta: default to a `v*` tag so macOS and APK installers exist for fir
 
 - **iOS TestFlight:** a new, ownership-verified application record and invitation link are required before distribution.
   Stable uploads queue a `testflight-review-request` artifact. The independent `TestFlight External Review` workflow handles Apple processing, external-group association, and review submission after the publishing workflow finishes. Review failures remain visible there and do not block GitHub Release, Relay, or OTA. Retry that workflow with the existing marketing version and build number instead of uploading the IPA again; see `docs/RELEASING.md`.
+  Native and OTA builds inject the verified EdgeOne/Vercel check endpoints into the UI. Native sync also sets `YURI_OTA_UPDATE_URL` to the mirror's `/v1/ota/check`; missing or inconsistent release endpoints fail preflight. A new installer is required when the native endpoint changes.
 - **Android:** signed APK/AAB assets on [GitHub Releases](https://github.com/yee94/yuri/releases).
   Package id is `com.yee94.yuri`. Keep the previous application installed until local drafts and attachments are recovered; this application cannot read its sandbox.
 

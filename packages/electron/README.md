@@ -104,6 +104,8 @@ That runs, in order:
 
 Build output goes to `packages/electron/dist`.
 
+Release CI injects `YURI_UPDATE_ORIGIN` from the verified `YURI_OTA_MIRROR_URL` repository variable before `bundle:main`. This origin is baked into the native main process; changing the hosted service alone cannot repair installers built with an empty origin. Release preflight validates both the Vercel authority and EdgeOne mirror before packaging. See `docs/RELEASING.md` for the shared endpoint variables.
+
 macOS builds produce `dmg` and `zip` artifacts. Windows builds produce an NSIS installer. Linux builds produce an AppImage for the native x64 or arm64 host.
 
 ### Desktop profiles (release vs preview)

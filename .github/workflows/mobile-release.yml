@@ -88,6 +88,13 @@ env:
   MOBILE_PACKAGE_DIR: packages/mobile
   IOS_PROJECT_DIR: packages/mobile/ios/App
   ANDROID_PROJECT_DIR: packages/mobile/android
+  YURI_UPDATE_ORIGIN: ${{ vars.YURI_OTA_MIRROR_URL }}
+  YURI_OTA_UPDATE_URL: ${{ vars.YURI_OTA_MIRROR_URL }}/v1/ota/check
+  VITE_YURI_EDGEONE_UPDATE_CHECK_URL: ${{ vars.YURI_OTA_MIRROR_URL }}/v1/update/check
+  VITE_YURI_VERCEL_UPDATE_CHECK_URL: ${{ vars.YURI_OTA_BASE_URL }}/v1/update/check
+  VITE_YURI_EDGEONE_OTA_CHECK_URL: ${{ vars.YURI_OTA_MIRROR_URL }}/v1/mobile/update/check
+  VITE_YURI_VERCEL_OTA_CHECK_URL: ${{ vars.YURI_OTA_BASE_URL }}/v1/mobile/update/check
+  VITE_YURI_IOS_TESTFLIGHT_URL: ${{ vars.TESTFLIGHT_PUBLIC_URL }}
 
 jobs:
   resolve-version:
@@ -109,6 +116,9 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v4
+
+      - name: Validate packaged update endpoints
+        run: node scripts/verify-release-update-env.mjs
 
       - name: Resolve version values
         id: version

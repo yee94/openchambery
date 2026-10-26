@@ -52,6 +52,12 @@ npm scope 使用用户已申请的 `@yuriai`，公开发布包为 `@yuriai/web` 
 
 ## 发布前检查
 
+### 更新源与客户端地址
+
+发布仓库必须配置 `YURI_OTA_BASE_URL`（Vercel 权威 HTTPS origin）、`YURI_OTA_MIRROR_URL`（EdgeOne HTTPS origin）及 `YURI_OTA_DETECTABILITY_BASES`（两者以逗号分隔）。EdgeOne 项目的环境变量 `YURI_OTA_UPSTREAM_ORIGIN` 指向 Vercel origin；项目根目录为 `deploy/update-service`，使用其中的 `edgeone.json`，部署后必须验证代理和更新接口可公开访问。
+
+原生发布、独立 Mobile Release 和 OTA 构建均将这两个 origin 注入 Electron、Capgo 和移动 UI：桌面与原生下载走 EdgeOne，UI 同时保留 EdgeOne/Vercel 两条检测地址。`scripts/verify-release-update-env.mjs` 在打包前拒绝空地址、占位符、路径错配及主镜像混用。首次补齐或更换原生更新地址必须重新发布安装包，线上配置无法修复已烘焙空地址的旧原生壳。
+
 设定版本号：
 
 ```bash
@@ -213,6 +219,7 @@ gh run watch <run-id> --repo yee94/yuri
 在 GitHub 仓库的 **Settings → Secrets and variables → Actions → Variables** 设置：
 
 - `TESTFLIGHT_EXTERNAL_BETA_GROUP_ID`：App Store Connect 外测群组 UUID。
+- `TESTFLIGHT_PUBLIC_URL`：该 Yuri 外测群组已启用的公开邀请链接。未配置时不发布新的 iOS native target，不借用其他 App 的链接；不阻塞异步送审。
 
 稳定版 `mobile-release.yml` 在 IPA 上传成功后保存 `testflight-review-request` artifact（版本、build number、源 run 和 commit）。独立的 `testflight-review.yml` 在 `Release` / `Mobile Release` 完成后通过 `workflow_run` 读取请求，等待 Apple 处理、关联固定外测群组并提交 Beta App Review。它只读取同仓库 push / 手动发布的请求，执行默认分支上的脚本；没有请求则跳过。主发布不等待审核，不吞掉错误：元数据缺失等失败只在 `TestFlight External Review` 中显示。群组的 TestFlight Public Link 保持不变；Apple 批准后才会提供最新获准构建。prerelease / `-beta` 构建只上传到内测，不生成外测请求。
 
