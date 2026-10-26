@@ -94,7 +94,7 @@ test('publishing and rollout retain both majors, channels and referenced bundles
     }), /shell\/backend changed/);
     const one = await publish('1.20.0-beta.1');
     assert.equal(one.activeBundle.applicationId, 'com.yee94.yuri');
-    assert.equal(one.activeBundle.minShellApiVersion, 2);
+    assert.equal(one.activeBundle.minShellApiVersion, 3);
     assert.equal(one.activeBundle.desktop.applicationId, 'dev.yuri.desktop');
     assert.equal(one.activeBundle.desktop.minShellApiVersion, 2);
     const two = await publish('2.0.0-beta.24');

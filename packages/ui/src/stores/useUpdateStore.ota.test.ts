@@ -190,6 +190,22 @@ describe('useUpdateStore mobile OTA branch', () => {
     expect(state.info?.version).toBe('1.18.2');
   });
 
+  test.each([
+    { state: 'required' },
+    { state: 'required', version: '1.2.3' },
+    { state: 'required', installUrl: 'https://updates.example.com/app.apk' },
+  ])('incompatible shell without a complete native target is a check failure: %j', async (native) => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
+      status: 'ok', primaryAction: 'install_native_required',
+      ota: { state: 'incompatible' }, native, nextCheckInSec: 3600,
+    });
+    await useUpdateStore.getState().checkForUpdates();
+    const state = useUpdateStore.getState();
+    expect(state.available).toBe(false);
+    expect(state.error).toBeTruthy();
+    expect(state.otaPhase).toBe('error');
+  });
+
   test('same-version apply_ota is not an available update', async () => {
     mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
       ...otaAvailableDecision(),

@@ -291,6 +291,9 @@ function mapOtaDecisionToUpdateInfo(
   }
 
   if (decision.primaryAction === 'install_native_required') {
+    if (!decision.native.version?.trim() || !decision.native.installUrl?.trim()) {
+      throw new Error('Native update required, but the update service supplied no complete installation target');
+    }
     return {
       available: decision.native.state === 'required' || decision.native.state === 'available',
       otaPhase: 'idle',

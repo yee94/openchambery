@@ -6,7 +6,7 @@ import { dict as en } from '@/lib/i18n/messages/en';
 import { dict as zh } from '@/lib/i18n/messages/zh-CN';
 import { AboutSettings } from './AboutSettings';
 
-const fixture = vi.hoisted(() => ({ locale: 'en', transport: 'host-a', generation: 1, mobile: false, fetch: vi.fn(), listeners: new Set<() => void>() }));
+const fixture = vi.hoisted(() => ({ locale: 'en', transport: 'host-a', generation: 1, mobile: false, native: false, nativeConfig: vi.fn(), fetch: vi.fn(), listeners: new Set<() => void>() }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: keyof typeof en, params?: Record<string, string>) => {
   let text: string = (fixture.locale === 'en' ? en : zh)[key] ?? key;
   for (const [name, value] of Object.entries(params ?? {})) text = text.replace(`{${name}}`, value);
@@ -22,8 +22,9 @@ vi.mock('@/lib/runtime-switch', () => ({
 vi.mock('@/stores/useUpdateStore', () => ({ useUpdateStore: (select: (state: unknown) => unknown) => select({ checking: false, available: false }) }));
 vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (state: unknown) => unknown) => select({ otaChannelOverride: null }) }));
 vi.mock('@/lib/device', () => ({ useDeviceInfo: () => ({ isMobile: fixture.mobile }) }));
-vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => false }));
-vi.mock('@/lib/desktop', () => ({ isElectronShell: () => true, getDesktopAppVersion: async () => '2.0.7-beta.1' }));
+vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => fixture.native }));
+vi.mock('@/lib/mobile-updates/native-config', () => ({ readNativeUpdateConfig: () => fixture.nativeConfig() }));
+vi.mock('@/lib/desktop', () => ({ isElectronShell: () => !fixture.native, getDesktopAppVersion: async () => '2.0.7-beta.1' }));
 vi.mock('@/components/ui/UpdateDialog', () => ({ UpdateDialog: () => null }));
 vi.mock('@/lib/mobileAppVersion', () => ({ getMobileClientVersion: async () => '2.0.0', getMobileClientBuildNumber: async () => null, formatMobileClientVersionLabel: (version: string) => version }));
 vi.mock('@/sync/transcript-diagnostics-runtime', () => ({ isTranscriptDiagnosticsEnabled: () => false, setTranscriptDiagnosticsEnabled: vi.fn(), exportAndDownloadClientDiagnostics: vi.fn() }));
@@ -33,6 +34,8 @@ let client: QueryClient;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   fixture.locale = 'en'; fixture.transport = 'host-a'; fixture.generation = 1; fixture.mobile = false; fixture.fetch.mockReset();
+  fixture.native = false;
+  fixture.nativeConfig.mockReset().mockResolvedValue({ channel: 'stable', shellApiVersion: 3 });
   fixture.fetch.mockImplementation(async (path: string) => Response.json(path.includes('system/info')
     ? { yuriVersion: 'host-version' }
     : { serveVersion: '2.0.14', currentVersion: '2.0.12', canManage: false, management: 'manual-global', guidance: 'server English guidance' }));
@@ -50,6 +53,14 @@ it('exposes desktop update, feedback, beta and diagnostic controls in the shared
   }
   expect(host.querySelector('[data-settings-item="about.feedback"]')?.getAttribute('href')).toContain('/issues/new');
   expect(host.querySelector('[data-settings-item="about.export-diagnostics"]')).toBeNull();
+});
+it.each(['stable', 'beta'])('uses the installed native %s channel in About', async (channel) => {
+  fixture.native = true;
+  fixture.nativeConfig.mockResolvedValue({ channel, shellApiVersion: 3 });
+  await render(); await render();
+  const toggle = host.querySelector('[data-settings-item="about.beta-updates"] [role="checkbox"]');
+  expect(toggle?.getAttribute('aria-checked')).toBe(String(channel === 'beta'));
+  expect(fixture.nativeConfig).toHaveBeenCalledTimes(1);
 });
 it('translates the raw snapshot on locale change without repeating requests', async () => {
   await render(); await render();

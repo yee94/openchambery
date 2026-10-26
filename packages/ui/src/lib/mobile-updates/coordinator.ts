@@ -5,6 +5,7 @@ import { isCapacitorApp, getClientPlatform } from '@/lib/platform';
 import { createUuid } from '@/lib/uuid';
 
 import { getCapgoUpdater, type CapgoUpdater } from './capgoAdapter';
+import { readNativeUpdateConfig } from './native-config';
 import type {
   MobileOtaBundleInfo,
   MobileUpdateChannel,
@@ -22,15 +23,6 @@ const YURI_NATIVE_APPLICATION_ID = 'com.yee94.yuri';
 const DEVICE_ID_STORAGE_KEY = 'yuri.mobile-ota.device-id.v1';
 
 declare const __APP_VERSION__: string | undefined;
-
-type YuriOtaConfig = {
-  shellApiVersion?: number;
-  channel?: MobileUpdateChannel;
-};
-
-type CapacitorConfigWithOta = {
-  YuriOTA?: YuriOtaConfig;
-};
 
 type HttpResponseLike = {
   ok: boolean;
@@ -53,36 +45,6 @@ export type CheckMobileOtaUpdateOptions = {
 const nonEmptyString = (value: unknown): string | null => (
   typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
 );
-
-type CapacitorWithOptionalConfig = typeof Capacitor & {
-  getConfig?: () => CapacitorConfigWithOta | undefined;
-  config?: CapacitorConfigWithOta;
-};
-
-const readOtaConfig = (): YuriOtaConfig => {
-  try {
-    const cap = Capacitor as CapacitorWithOptionalConfig;
-    // packages/mobile injects YuriOTA into capacitor.config; Capgo builds
-    // expose it via getConfig() (newer) or the static `config` field.
-    const config = (typeof cap.getConfig === 'function' ? cap.getConfig() : undefined)
-      ?? cap.config;
-    return config?.YuriOTA ?? {};
-  } catch {
-    return {};
-  }
-};
-
-/** Effective channel: runtime override wins over the build-time baked value. */
-const readChannel = (channelOverride?: MobileUpdateChannel): MobileUpdateChannel => {
-  if (channelOverride === 'beta' || channelOverride === 'stable') return channelOverride;
-  const channel = readOtaConfig().channel;
-  return channel === 'stable' ? 'stable' : 'beta';
-};
-
-const readShellApiVersion = (): number => {
-  const raw = readOtaConfig().shellApiVersion;
-  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1;
-};
 
 const resolvePlatform = (): MobileUpdatePlatform => {
   const client = getClientPlatform();
@@ -374,24 +336,7 @@ export async function checkMobileOtaUpdate(
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? Date.now;
-  const channel = readChannel(options.channelOverride);
-  const [deviceId, nativeInfo, currentBundleId] = await Promise.all([
-    resolveDeviceId(updater),
-    resolveNativeInfo(),
-    resolveCurrentBundleId(updater, channel),
-  ]);
-
-  const body: MobileUpdateCheckRequest = {
-    channel,
-    platform: resolvePlatform(),
-    applicationId: nativeInfo.applicationId,
-    deviceId,
-    nativeVersion: nativeInfo.version,
-    nativeBuild: nativeInfo.build,
-    shellApiVersion: readShellApiVersion(),
-    currentBundleId,
-    releaseMajor: releaseMajorOf(currentBundleId) ?? releaseMajorOf(nativeInfo.version),
-  };
+  const body = await assembleMobileOtaCheckRequest({ ...options, updater });
 
   const urls = getUpdateCheckUrls();
   const deadline = now() + MOBILE_OTA_CHECK_TIMEOUT_MS;
@@ -474,12 +419,13 @@ export async function queueDownloadedBundle(bundleId: string): Promise<void> {
   await updater.next({ id: bundleId });
 }
 
-/** Exported for tests — builds the request body without posting. */
+/** Build the same native-authoritative request for checks and download validation. */
 export async function assembleMobileOtaCheckRequest(
   options: CheckMobileOtaUpdateOptions = {},
 ): Promise<MobileUpdateCheckRequest> {
   const updater = options.updater === undefined ? await getCapgoUpdater() : options.updater;
-  const channel = readChannel(options.channelOverride);
+  const config = await readNativeUpdateConfig();
+  const channel = options.channelOverride ?? config.channel;
   const [deviceId, nativeInfo, currentBundleId] = await Promise.all([
     resolveDeviceId(updater),
     resolveNativeInfo(),
@@ -492,7 +438,7 @@ export async function assembleMobileOtaCheckRequest(
     deviceId,
     nativeVersion: nativeInfo.version,
     nativeBuild: nativeInfo.build,
-    shellApiVersion: readShellApiVersion(),
+    shellApiVersion: config.shellApiVersion,
     currentBundleId,
     releaseMajor: releaseMajorOf(currentBundleId) ?? releaseMajorOf(nativeInfo.version),
   };

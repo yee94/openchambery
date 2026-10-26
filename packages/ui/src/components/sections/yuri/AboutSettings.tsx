@@ -1,5 +1,4 @@
 import React from 'react';
-import { Capacitor } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
 import { useQuery } from '@tanstack/react-query';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -23,6 +22,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { formatMobileClientVersionLabel, getMobileClientVersion, getMobileClientBuildNumber } from '@/lib/mobileAppVersion';
 import { isCapacitorApp } from '@/lib/platform';
+import { readNativeUpdateConfig } from '@/lib/mobile-updates/native-config';
 import { isElectronShell, getDesktopAppVersion } from '@/lib/desktop';
 import {
   exportAndDownloadClientDiagnostics,
@@ -67,26 +67,6 @@ const aboutSnapshotQueryOptions = (path: '/api/system/info' | '/api/opencode/upg
   retry: false,
   staleTime: 30_000,
 });
-
-type CapacitorOtaConfig = {
-  YuriOTA?: {
-    channel?: 'beta' | 'stable';
-  };
-};
-
-const readBakedOtaChannel = (): 'beta' | 'stable' => {
-  try {
-    const capacitor = Capacitor as typeof Capacitor & {
-      getConfig?: () => CapacitorOtaConfig | undefined;
-      config?: CapacitorOtaConfig;
-    };
-    const config = (typeof capacitor.getConfig === 'function' ? capacitor.getConfig() : undefined)
-      ?? capacitor.config;
-    return config?.YuriOTA?.channel === 'stable' ? 'stable' : 'beta';
-  } catch {
-    return 'beta';
-  }
-};
 
 type AboutSettingsProps = {
   initialUpdateDialogOpen?: boolean;
@@ -143,7 +123,14 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   React.useEffect(() => {
     if (isElectronShell()) void getDesktopAppVersion().then((version) => setDesktopBakedChannel(version?.includes('-') ? 'beta' : 'stable'));
   }, []);
-  const bakedOtaChannel = readBakedOtaChannel();
+  const nativeUpdateConfig = useQuery({
+    queryKey: ['native-update-config'],
+    queryFn: readNativeUpdateConfig,
+    enabled: isNativeMobileApp,
+    staleTime: Infinity,
+    retry: false,
+  });
+  const bakedOtaChannel = nativeUpdateConfig.data?.channel;
   // The switch shows the effective opt-in state while preserving null as
   // “follow the baked channel”: explicit beta, or an untouched beta build.
   const betaUpdatesEnabled = otaChannelOverride === 'beta'
@@ -334,7 +321,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               label={t('settings.yuri.about.betaUpdates.label')}
               description={t('settings.yuri.about.betaUpdates.description')}
               ariaLabel={t('settings.yuri.about.betaUpdates.label')}
-              disabled={isChecking}
+              disabled={isChecking || (isNativeMobileApp && !nativeUpdateConfig.data)}
             />
           )}
           <SettingsToggleRow

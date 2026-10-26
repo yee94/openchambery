@@ -39,7 +39,8 @@ const mocks = vi.hoisted(() => {
     },
   };
   const getInfo = vi.fn(async () => ({ version: '1.2.3', build: '45', id: 'com.yee94.yuri', name: 'Yuri' }));
-  return { updater, capacitorState, getInfo };
+  const getConfiguration = vi.fn(async () => capacitorState.config.YuriOTA ?? {});
+  return { updater, capacitorState, getInfo, getConfiguration };
 });
 
 vi.mock('@capacitor/core', () => ({
@@ -47,7 +48,6 @@ vi.mock('@capacitor/core', () => ({
     isNativePlatform: () => mocks.capacitorState.isNativePlatform,
     isPluginAvailable: (name: string) => name === 'CapacitorUpdater' && mocks.capacitorState.isPluginAvailable,
     getPlatform: () => mocks.capacitorState.platform,
-    getConfig: () => mocks.capacitorState.config,
   },
   // Force the browser-fetch path so tests can inject fetchImpl.
   CapacitorHttp: {
@@ -55,7 +55,9 @@ vi.mock('@capacitor/core', () => ({
       throw new Error('capacitor_http_unavailable');
     }),
   },
-  registerPlugin: () => mocks.updater,
+  registerPlugin: (name: string) => name === 'YuriUpdateConfig'
+    ? { getConfiguration: mocks.getConfiguration }
+    : mocks.updater,
 }));
 
 vi.mock('@capacitor/app', () => ({
@@ -100,6 +102,7 @@ describe('mobile OTA coordinator', () => {
     mocks.capacitorState.config = {
       YuriOTA: { channel: 'beta', shellApiVersion: 2 },
     };
+    mocks.getConfiguration.mockImplementation(async () => mocks.capacitorState.config.YuriOTA ?? {});
     mocks.updater.current.mockResolvedValue({ bundle: { id: 'builtin', version: 'builtin' }, native: '1.2.3' });
     mocks.updater.getDeviceId.mockResolvedValue({ deviceId: 'device-abc' });
     mocks.updater.list.mockResolvedValue({ bundles: [] });
@@ -176,11 +179,16 @@ describe('mobile OTA coordinator', () => {
     expect(mocks.updater.list).not.toHaveBeenCalled();
   });
 
-  test('defaults channel to beta and shellApiVersion to 1 when config is missing', async () => {
+  test('missing native metadata fails instead of reporting an invented old shell', async () => {
     mocks.capacitorState.config = {};
-    const body = await assembleMobileOtaCheckRequest({ updater: mocks.updater });
-    expect(body.channel).toBe('beta');
-    expect(body.shellApiVersion).toBe(1);
+    await expect(assembleMobileOtaCheckRequest({ updater: mocks.updater })).rejects.toThrow('Invalid native update configuration');
+  });
+
+  test('native bridge failure does not submit a fabricated update check', async () => {
+    mocks.getConfiguration.mockRejectedValue(new Error('Native update configuration unavailable'));
+    const fetchImpl = vi.fn();
+    await expect(checkMobileOtaUpdate({ updater: mocks.updater, fetchImpl })).rejects.toThrow('Native update configuration unavailable');
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   test('channelOverride wins over the baked YuriOTA.channel', async () => {

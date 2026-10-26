@@ -13,7 +13,7 @@ export const YURI_OTA_CHANNEL = 'beta';
  * minShellApiVersion and older shells get install_native_required instead of a broken bundle.
  * Keep in sync with capacitor.config.ts YuriOTA.shellApiVersion.
  */
-export const YURI_SHELL_API_VERSION = 2;
+export const YURI_SHELL_API_VERSION = 3;
 
 export type YuriOtaBundleInfo = {
   id: string;

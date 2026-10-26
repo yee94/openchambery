@@ -24,6 +24,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(YuriHapticsPlugin.class);
+        registerPlugin(YuriUpdateConfigPlugin.class);
         registerPlugin(YuriScreenAwakePlugin.class);
         registerPlugin(YuriNavigationPlugin.class);
         registerPlugin(YuriSharePlugin.class);

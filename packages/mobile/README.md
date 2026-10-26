@@ -9,12 +9,22 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 ### Yuri native identity migration (shell API 2)
 
 This is a new installation, not an OTA-only rename. `YuriOTA.shellApiVersion`
-and `YURI_SHELL_API_VERSION` are **2**. The update publisher must use
-`minShellApiVersion: 2` and application identity `com.yee94.yuri` for every Yuri
+and `YURI_SHELL_API_VERSION` are now **3**. The update publisher must use
+`minShellApiVersion: 3` and application identity `com.yee94.yuri` for every new Yuri
 bundle. Old shells must receive `install_native_required`, never a Yuri UI bundle.
 The UI and Host owners must update all plugin imports, `Yuri*` registration names,
 `yuri://` deep links, `yuri-asset://` resources and `yuri:ime-state` together.
 The native relay HKDF label is `yuri-relay-v1` and must match both transport peers.
+
+Shell API 3 adds `YuriUpdateConfig.getConfiguration` on Android and iOS. It reads
+only `YuriOTA.channel` and `YuriOTA.shellApiVersion` from the installed APK/IPA's
+`capacitor.config.json`, never the replaceable Capgo web directory. The shared
+update coordinator and About channel control use this bridge; Capacitor's JS
+object does not expose `getConfig()` or `config`. Missing/invalid metadata fails
+the check instead of inventing epoch 1. Installing the new native shell is required;
+the broken 0.1.3 updater cannot fetch this repair itself. Hosted mobile keeps its
+existing public-feed path. Capgo automatic checks remain disabled and their legacy
+identity-only epoch inference stays conservative; interactive checks send epoch 3.
 
 Identity inventory (old strings here are migration documentation only):
 

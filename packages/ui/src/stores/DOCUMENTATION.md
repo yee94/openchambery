@@ -1,5 +1,12 @@
 # UI Stores
 
+Mobile updates use native-authoritative shell metadata through `YuriUpdateConfig`.
+An `install_native_required` decision is actionable only with both a target version
+and an installation URL. Incomplete targets fail the check (`available: false`,
+`otaPhase: error`) rather than opening an empty update dialog or claiming the client
+is current. Same-version native targets remain valid when a different build is
+required; version equality alone is not a shell-compatibility check.
+
 Session-index snapshot application builds `sessionsByDirectory` once and reuses
 it for pending-directory loading/refreshing classification. Never scan all
 active sessions once per pending directory: that cross-product runs on the UI

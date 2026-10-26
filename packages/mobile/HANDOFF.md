@@ -284,7 +284,7 @@ iOS pods / Android Gradle plugin registration for Capgo is **not** checked in fr
 
 ### `shellApiVersion` bump rule
 
-`YuriOTA.shellApiVersion` / `YURI_SHELL_API_VERSION` is the native bridge contract version. **Bump it when any custom Capacitor plugin method surface changes.** OTA manifests declare `minShellApiVersion`; older shells should receive `install_native_required` instead of a JS bundle that would call missing native APIs.
+`YuriOTA.shellApiVersion` / `YURI_SHELL_API_VERSION` is the native bridge contract version (currently 3). **Bump it when any custom Capacitor plugin method surface changes.** OTA manifests declare `minShellApiVersion`; older shells should receive `install_native_required` instead of a JS bundle that would call missing native APIs. `YuriUpdateConfig.getConfiguration` reads the installed native config for both update checks and About's baked channel; these values are not available on the JavaScript `Capacitor` object.
 
 ### Related endpoints / CI
 

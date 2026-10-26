@@ -177,6 +177,7 @@ class YuriBridgeViewController: CAPBridgeViewController {
 
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(YuriHapticsPlugin())
+        bridge?.registerPluginInstance(YuriUpdateConfigPlugin())
         bridge?.registerPluginInstance(YuriScreenAwakePlugin())
         bridge?.registerPluginInstance(YuriNavigationPlugin())
         bridge?.registerPluginInstance(YuriVirtualAssetPlugin())

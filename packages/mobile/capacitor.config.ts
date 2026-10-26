@@ -34,7 +34,7 @@ const config: CapacitorConfig & {
   // and older shells get `install_native_required` instead of a broken bundle.
   YuriOTA: {
     channel: otaChannel,
-    shellApiVersion: 2,
+    shellApiVersion: 3,
   },
   plugins: {
     Keyboard: {
