@@ -221,7 +221,7 @@ gh run watch <run-id> --repo yee94/yuri
 - `TESTFLIGHT_EXTERNAL_BETA_GROUP_ID`：App Store Connect 外测群组 UUID。
 - `TESTFLIGHT_PUBLIC_URL`：该 Yuri 外测群组已启用的公开邀请链接。未配置时不发布新的 iOS native target，不借用其他 App 的链接；不阻塞异步送审。
 
-稳定版 `mobile-release.yml` 在 IPA 上传成功后保存 `testflight-review-request` artifact（版本、build number、源 run 和 commit）。独立的 `testflight-review.yml` 在 `Release` / `Mobile Release` 完成后通过 `workflow_run` 读取请求，等待 Apple 处理、关联固定外测群组并提交 Beta App Review。它只读取同仓库 push / 手动发布的请求，执行默认分支上的脚本；没有请求则跳过。主发布不等待审核，不吞掉错误：元数据缺失等失败只在 `TestFlight External Review` 中显示。群组的 TestFlight Public Link 保持不变；Apple 批准后才会提供最新获准构建。prerelease / `-beta` 构建只上传到内测，不生成外测请求。
+`mobile-release.yml` 每次 IPA 上传成功后保存 `testflight-review-request` artifact（版本、build number、源 run、commit 与 `publishExternal`）。独立的 `testflight-review.yml` 在 `Release` / `Mobile Release` 完成后通过 `workflow_run` 读取请求，等待 Apple 处理，先关联内测组并回读确认；稳定版启用外测时再关联外测组并提交 Beta App Review。内测默认选择 App 唯一的内部群组；有多个内部群组时必须设置仓库变量 `TESTFLIGHT_INTERNAL_BETA_GROUP_ID`。beta 使用去掉 prerelease 后缀的 marketing version 与精确 build number 匹配，绝不关联外测组。它只读取同仓库 push / 手动发布的请求，执行默认分支上的脚本；没有请求则跳过。主发布不等待 Apple 处理或审核，分发失败在 `TestFlight External Review` 中显示。可手动运行该 workflow，传原版本和 build number，关闭 `publish_external` 单独重试内测分发，无需重新上传 IPA；已有关联须回读确认才视为成功。群组的 TestFlight Public Link 保持不变；Apple 批准后才会提供最新获准外测构建。
 
 补齐 Apple 元数据后，只重跑独立审核 workflow，或手动指定已经上传的稳定版本和 build number：
 

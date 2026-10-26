@@ -15,10 +15,14 @@ function requireEnv(name) {
 const keyId = requireEnv('APP_STORE_CONNECT_KEY_ID');
 const issuerId = requireEnv('APP_STORE_CONNECT_ISSUER_ID');
 const privateKeyPath = requireEnv('APP_STORE_CONNECT_PRIVATE_KEY_PATH');
-const betaGroupId = requireEnv('TESTFLIGHT_EXTERNAL_BETA_GROUP_ID');
+const distribution = process.env.TESTFLIGHT_DISTRIBUTION || 'external';
+if (!['internal', 'external', 'both'].includes(distribution)) throw new Error('Invalid TestFlight distribution.');
+const publishExternal = distribution !== 'internal';
+const betaGroupId = publishExternal ? requireEnv('TESTFLIGHT_EXTERNAL_BETA_GROUP_ID') : null;
 const bundleId = requireEnv('TESTFLIGHT_BUNDLE_ID');
 const buildNumber = requireEnv('TESTFLIGHT_BUILD_NUMBER');
-const marketingVersion = requireEnv('TESTFLIGHT_VERSION');
+const releaseVersion = requireEnv('TESTFLIGHT_VERSION');
+const marketingVersion = publishExternal ? releaseVersion : releaseVersion.split('-')[0];
 
 if (!/^\d+\.\d+\.\d+$/.test(marketingVersion)) {
   throw new Error('External TestFlight review requires a stable marketing version.');
@@ -210,6 +214,35 @@ async function getPublicLink() {
 async function main() {
   const app = await getApp();
   const build = await waitForProcessedBuild(app.id);
+  if (distribution !== 'external') {
+    const groups = assertSuccess(await api(`/v1/apps/${app.id}/betaGroups?${query({ limit: '200' })}`), 'List internal TestFlight groups');
+    const configuredId = process.env.TESTFLIGHT_INTERNAL_BETA_GROUP_ID?.trim();
+    const candidates = (groups?.data ?? []).filter((group) => group.attributes?.isInternalGroup
+      && (!configuredId || group.id === configuredId));
+    if (candidates.length !== 1 || groups?.links?.next) {
+      throw new Error('Expected one internal TestFlight group; configure TESTFLIGHT_INTERNAL_BETA_GROUP_ID and check group access.');
+    }
+    const groupId = candidates[0].id;
+    const relationship = `/v1/betaGroups/${groupId}/relationships/builds`;
+    const result = await api(relationship, {
+      method: 'POST',
+      body: JSON.stringify({ data: [{ type: 'builds', id: build.id }] }),
+    });
+    assertSuccess(result, 'Add TestFlight build to internal group', [409]);
+    let page = `${relationship}?limit=200`;
+    let linked = false;
+    while (page) {
+      const body = assertSuccess(await api(page), 'Verify internal TestFlight build association');
+      if (body?.data?.some((item) => item.id === build.id)) { linked = true; break; }
+      page = body?.links?.next ? body.links.next.replace(ASC_API_URL, '') : null;
+    }
+    if (!linked) throw new Error('Internal TestFlight group does not contain the uploaded build.');
+    console.log(`Internal TestFlight build ${marketingVersion} (${buildNumber}): verified`);
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Internal TestFlight\n\n- Build: ${marketingVersion} (${buildNumber})\n- Group association: verified\n`);
+    }
+  }
+  if (!publishExternal) return;
   await addBuildToExternalGroup(build.id);
   let removedBuildCount = 0;
   try {

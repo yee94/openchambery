@@ -41,16 +41,16 @@
           // splashBg* are the resolved theme surface.background colors persisted by the app
           // theme system (see ThemeSystemContext). When absent (e.g. a fresh install before
           // the theme has been persisted once), fall back to the default theme's
-          // surface.background — carbonfox-light / vitesse-dark-dark (see lib/theme/themes),
+          // surface.background — carbonfox-light / cursor-dark (see lib/theme/themes),
           // which is what the app renders on first launch — so the pre-paint matches instead
           // of flashing a different colour.
-          var bgDark = localStorage.getItem('splashBgDark') || '#121212';
+          var bgDark = localStorage.getItem('splashBgDark') || '#1a1a1a';
           var bgLight = localStorage.getItem('splashBgLight') || '#FFFFFF';
           var bg = isDark ? bgDark : bgLight;
 
           // Set the actual --background CSS variable, not just the element background.
           // `<body class="bg-background">` paints `var(--background)`, and design-system.css
-          // ships a baked default (.dark { --background: ... /* #151313 */ }) that otherwise
+          // ships a baked default (.dark { --background: #1a1a1a }) that otherwise
           // overpaints our html background the moment the stylesheet loads — before React's
           // theme system injects the real (default/custom) vars with !important. Setting the
           // var inline on the root wins over that non-!important default, so body paints the

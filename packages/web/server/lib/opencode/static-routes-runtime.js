@@ -75,12 +75,12 @@ export const createStaticRoutesRuntime = (dependencies) => {
   <style>
     :root {
       color-scheme: dark;
-      --surface-background: #151313;
-      --surface-elevated: #1c1b1a;
-      --surface-foreground: #cdccc3;
-      --surface-muted-foreground: #b6b4ab;
-      --interactive-border: rgba(57,56,54,.72);
-      --primary-base: #edb449;
+      --surface-background: #1a1a1a;
+      --surface-elevated: #141414;
+      --surface-foreground: #cccccc;
+      --surface-muted-foreground: #848484;
+      --interactive-border: #8484841f;
+      --primary-base: #4c9df3;
     }
     @media (prefers-color-scheme: light) {
       :root {

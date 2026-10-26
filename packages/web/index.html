@@ -8,7 +8,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" href="/favicon-32.png" sizes="32x32" />
     <link rel="icon" type="image/png" href="/favicon-16.png" sizes="16x16" />
-    <link rel="mask-icon" href="/favicon.svg" color="#edb449" />
+    <link rel="mask-icon" href="/favicon.svg" color="#4c9df3" />
 
     <!-- Apple touch icon - PNG format required for iOS PWA support -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png" />
@@ -238,8 +238,8 @@
           display: 'standalone',
           display_override: ['window-controls-overlay'],
           ...(manifestOrientation ? { orientation: manifestOrientation } : {}),
-          background_color: '#151313',
-          theme_color: '#edb449',
+          background_color: '#1a1a1a',
+          theme_color: '#4c9df3',
           icons: [
             { src: `${baseUrl}/pwa-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
             { src: `${baseUrl}/pwa-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -422,8 +422,8 @@
     </script>
 
     <!-- Theme color - Safari iOS 26+ prioritizes CSS background-color over this, but keep as fallback -->
-    <meta name="theme-color" content="#151313" />
-    <meta name="theme-color" content="#151313" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#1a1a1a" />
+    <meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
 
     <!-- iOS Safari / installable PWA styling -->
     <meta name="mobile-web-app-capable" content="yes" />
@@ -464,8 +464,8 @@
       }
 
       :root {
-        --splash-background-dark: #151313;
-        --splash-stroke-dark: #CECDC3;
+        --splash-background-dark: #1a1a1a;
+        --splash-stroke-dark: #CCCCCCdd;
         --splash-background-light: #FFFCF0;
         --splash-stroke-light: #100F0F;
 

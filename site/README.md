@@ -18,6 +18,11 @@ points, and waveforms. `assets/site.css` defines the static site's semantic surf
 interaction, selection, and primary-action tokens; it does not import React app
 primitives or distribute Cursor assets or fonts. Brand masters are unchanged.
 
+The website and handbook use Cursor Dark's neutral surface (`#1a1a1a`) and blue
+primary (`#4c9df3`), matching the application's new default. The theme showcase
+starts with Cursor and only lists registered palettes. Both languages reuse the
+current sanitized screenshot set described in `docs/references/screenshots/README.md`.
+
 The sequence moves from overview to mechanism to usage and details:
 
 1. Full-bleed portrait, Yuri wordmark, existing tagline, and one capability sentence.
@@ -65,7 +70,7 @@ animation loop, or per-scroll screenshot switching is used.
 
 ## Download catalog
 
-The header, hero and footer use the approved SVG wordmark. Inline icon symbols
+The header uses the App-backed icon; hero and footer use the approved SVG wordmark. Inline icon symbols
 are defined in `src/icons.mjs` (Simple Icons GitHub/Apple/Android paths, CC0-1.0).
 `assets/downloads.mjs` exports a verified release snapshot for static HTML and
 refreshes the catalog from public GitHub release assets in the browser. It uses
@@ -75,6 +80,12 @@ including prereleases, which are explicitly marked Beta. A later stable publicat
 replaces the beta. HTTP failures preserve the snapshot.
 No missing installer URL is synthesized. iOS uses the configured public TestFlight
 link from the update service; availability is controlled by App Store Connect.
+
+The website and handbook headers, favicon and repository READMEs reuse
+`assets/brand/icon-512.webp`: the existing App icon includes its own rounded
+background and contrasting portrait. Keep that backdrop when placing the mark
+on arbitrary light/dark pages; the transparent monochrome masters remain available
+for intentional compositions on a controlled background.
 
 Production CI runs `sync-downloads.mjs` with its GitHub token before building. It
 replaces the marked snapshot in `assets/downloads.mjs` from published `v*` installer

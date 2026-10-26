@@ -1,37 +1,49 @@
-# Yuri
-
-**An AI workspace for coding, personal assistants, and recurring tasks — across desktop, mobile, browser, and VS Code.**
-
-[中文](README_ZH.md) · [Documentation](packages/docs/content/docs/index.mdx) · [Contributing](CONTRIBUTING.md)
-
 <p align="center">
-  <img src="docs/references/badges/yuri-logo-light.svg" alt="Yuri" width="160" />
+  <img src="site/assets/brand/icon-512.webp" alt="Yuri app icon" width="144" height="144" />
 </p>
 
-Yuri brings conversations, code changes, terminals, and automated work into one workspace. Start a task at your desk, check it from your phone, review what changed, and decide what happens next.
+# Yuri
 
-## Work with agents
+**Work with AI on your computer. Pick up the conversation on your phone.**
 
-- **Projects and sessions.** Organize work by project, branch a conversation, and use Git worktrees to isolate changes.
-- **Review and ship.** Inspect file edits and diffs, use the integrated terminal, and manage Git and GitHub workflows alongside the conversation.
-- **Personal assistants.** Keep assistant conversations close at hand and bring in text, links, and images from mobile sharing.
-- **Goals and schedules.** Give a session an objective with progress checks, or schedule prompts to run daily, weekly, or once. Inspect each run in its history. Scheduled work requires a running Yuri server.
-- **Your models and tools.** Configure providers, models, agents, skills, and MCP tools for each workflow.
+[中文](README_ZH.md) · [Website](https://yuri.xiaobe.top/en/) · [Download](https://yuri.xiaobe.top/en/#downloads) · [Handbook](https://yuri.xiaobe.top/en/docs/)
 
-## Take the workspace with you
+Yuri is an OpenCode-powered workspace for coding, personal assistants and scheduled tasks. Conversations, files, terminals and previews stay together, with access from desktop, iOS, Android, browser and VS Code.
 
-| Surface | Role |
-| --- | --- |
-| Desktop | Electron app with local workspaces, Mini Chat, multiple windows, and SSH connections |
-| Mobile | iOS and Android clients that connect to a Yuri server; iOS Live Activities and system sharing |
-| Browser | Self-hosted access to the workspace, with device pairing and optional private relay |
-| VS Code | Sessions and project context inside the editor |
+![Yuri desktop workspace](site/assets/shots/en-home.webp)
 
-Yuri uses the OpenCode runtime for agent execution. Yuri owns the application experience, device connectivity, session coordination, and automation around that runtime.
+## What you can do
 
-## Run from source
+- **Code and review:** organize project sessions, isolate changes with worktrees, inspect diffs and commit from the Git view.
+- **Delegate to an assistant:** keep an ongoing contact conversation and follow its work through session cards.
+- **Automate:** use `/goal` to pursue an outcome, or schedule a prompt and check its run history.
+- **Connect your devices:** pair your phone, reach a host through private Relay, or connect over SSH from the desktop app.
+- **Speak and share:** dictate a follow-up, listen to replies, and share text, links or images from other mobile apps.
+- **Choose your tools:** configure models, Agents, Skills, commands and MCP; use Magpie-backed models and aggregate account usage.
 
-Use Node.js 24 (see `.nvmrc`) and Bun 1.3.14. Install the OpenCode runtime before starting a local web development instance.
+## Get started
+
+1. [Install Yuri](https://yuri.xiaobe.top/en/#downloads) on the computer holding your projects.
+2. Open a project, connect a provider in Settings, choose a model and start a session.
+3. To continue on your phone, [pair it with that host](https://yuri.xiaobe.top/en/docs/connect-devices/).
+
+Files and execution stay on the host. Remote access and scheduled work require it to remain online. Platform-specific controls are covered in the handbook.
+
+<p align="center">
+  <img src="site/assets/shots/en-m-home.webp" alt="Mobile projects" width="220" />
+  <img src="site/assets/shots/en-m-assistants.webp" alt="Mobile assistants" width="220" />
+  <img src="site/assets/shots/en-m-schedule.webp" alt="Mobile schedules" width="220" />
+</p>
+
+## Guides
+
+[First session](https://yuri.xiaobe.top/en/docs/quickstart/) · [Assistants](https://yuri.xiaobe.top/en/docs/assistants/) · [Mobile](https://yuri.xiaobe.top/en/docs/mobile/) · [Voice](https://yuri.xiaobe.top/en/docs/voice/)
+
+[Goals](https://yuri.xiaobe.top/en/docs/session-goals/) · [Schedules](https://yuri.xiaobe.top/en/docs/scheduled-tasks/) · [SSH / Relay](https://yuri.xiaobe.top/en/docs/remote-instances/) · [Magpie](https://yuri.xiaobe.top/en/docs/magpie/) · [Troubleshooting](https://yuri.xiaobe.top/en/docs/troubleshooting/)
+
+## Development
+
+Requires Node.js 24, Bun 1.3.14 and an installed OpenCode runtime.
 
 ```bash
 git clone https://github.com/yee94/yuri.git
@@ -40,28 +52,14 @@ bun install
 bun run dev
 ```
 
-Open the URL printed by the development server. For desktop development, run `bun run electron:dev` instead.
+For desktop development, use `bun run electron:dev`. For VS Code, use `bun run vscode:dev`.
 
-See [Contributing](CONTRIBUTING.md) for build commands and development checks, and the [connection guide](packages/docs/content/docs/connect-devices.mdx) for connecting another device.
+Shared UI lives in `packages/ui`, host services in `packages/web`, and platform integrations in `packages/electron`, `packages/mobile` and `packages/vscode`. `site/` builds the website and the handbook from `packages/docs`.
 
-## Downloads and deployment
-
-Published artifacts belong in [GitHub Releases](https://github.com/yee94/yuri/releases). Installer, store, and signing setup is tracked in the [release guide](docs/RELEASING.md); source availability does not imply that every platform has a published installer.
-
-- [Web server](packages/web/README.md)
-- [Desktop app](packages/electron/README.md)
-- [Mobile apps](packages/mobile/README.md)
-- [VS Code extension](packages/vscode/README.md)
-- [Private relay](packages/relay-server/README.md)
-
-## Repository
-
-Shared UI lives in `packages/ui`. The web server and runtime services live in `packages/web`; Electron, mobile, and VS Code packages provide their platform integrations. User documentation lives in `packages/docs`.
+[Contributing](CONTRIBUTING.md) · [Report an issue](https://github.com/yee94/yuri/issues) · [Releases](https://github.com/yee94/yuri/releases)
 
 ## Acknowledgments
 
-Thank you to [OpenChamber](https://github.com/openchamber/openchamber) and [OpenCode](https://opencode.ai) for the open-source foundations that helped make Yuri possible.
-
-## License
+Built on the open-source foundations of [OpenChamber](https://github.com/openchamber/openchamber) and [OpenCode](https://opencode.ai).
 
 [MIT](LICENSE). Original copyright and license notices are retained.

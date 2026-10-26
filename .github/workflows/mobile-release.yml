@@ -490,20 +490,19 @@ jobs:
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
 
       - name: Prepare asynchronous TestFlight review request
-        if: ${{ inputs.publish_external_testflight && !contains(needs.resolve-version.outputs.version_name, '-') }}
         shell: bash
         env:
           VERSION: ${{ needs.resolve-version.outputs.version_name }}
           BUILD_NUMBER: ${{ needs.resolve-version.outputs.build_number }}
+          PUBLISH_EXTERNAL: ${{ inputs.publish_external_testflight && !contains(needs.resolve-version.outputs.version_name, '-') }}
         run: |
           node --input-type=module - <<'NODE'
           import { writeFileSync } from 'node:fs';
           const { VERSION: version, BUILD_NUMBER: buildNumber, GITHUB_RUN_ID: runId, GITHUB_SHA: sha, RUNNER_TEMP: temp } = process.env;
-          writeFileSync(`${temp}/testflight-review.json`, JSON.stringify({ version, buildNumber, runId, sha }));
+          writeFileSync(`${temp}/testflight-review.json`, JSON.stringify({ version, buildNumber, runId, sha, publishExternal: process.env.PUBLISH_EXTERNAL === 'true' }));
           NODE
 
-      - name: Queue external TestFlight review
-        if: ${{ inputs.publish_external_testflight && !contains(needs.resolve-version.outputs.version_name, '-') }}
+      - name: Queue TestFlight distribution
         uses: actions/upload-artifact@v4
         with:
           name: testflight-review-request

@@ -7,13 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Stable marketing version already uploaded to TestFlight
+        description: Release version already uploaded to TestFlight
         required: true
         type: string
       build_number:
         description: Existing TestFlight build number (does not upload another IPA)
         required: true
         type: string
+      publish_external:
+        description: Also associate external group and submit Beta App Review (stable only)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -41,6 +45,7 @@ jobs:
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
+          INPUT_PUBLISH_EXTERNAL: ${{ inputs.publish_external }}
         run: |
           node --input-type=module - <<'NODE'
           import { execFileSync } from 'node:child_process';
@@ -48,11 +53,12 @@ jobs:
           const env = process.env;
           let version = env.INPUT_VERSION;
           let buildNumber = env.INPUT_BUILD_NUMBER;
+          let publishExternal = env.INPUT_PUBLISH_EXTERNAL === 'true';
           if (env.SOURCE_RUN_ID) {
             const pages = JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', `repos/${env.GITHUB_REPOSITORY}/actions/runs/${env.SOURCE_RUN_ID}/artifacts?per_page=100`], { encoding: 'utf8' }));
             const artifacts = pages.flatMap(page => page.artifacts).filter(item => item.name === 'testflight-review-request');
             if (artifacts.length === 0) {
-              console.log('No external review requested by this run.');
+              console.log('No TestFlight distribution requested by this run.');
               process.exit(0);
             }
             if (artifacts.length !== 1 || artifacts[0].expired) throw new Error('Review request is ambiguous or expired.');
@@ -60,12 +66,14 @@ jobs:
             const request = JSON.parse(readFileSync(`${env.RUNNER_TEMP}/testflight-review.json`, 'utf8'));
             if (request.runId !== env.SOURCE_RUN_ID || request.sha !== env.SOURCE_SHA) throw new Error('Review request does not match its source run.');
             ({ version, buildNumber } = request);
+            publishExternal = request.publishExternal ?? true;
           }
-          if (!/^\d+\.\d+\.\d+$/.test(version) || !/^\d+$/.test(buildNumber)) throw new Error('External review requires a stable version and numeric build number.');
-          appendFileSync(env.GITHUB_OUTPUT, `requested=true\nversion=${version}\nbuild_number=${buildNumber}\n`);
+          if (!/^\d+\.\d+\.\d+(-[\w.-]+)?$/.test(version) || !/^\d+$/.test(buildNumber)) throw new Error('Invalid release version or build number.');
+          if (publishExternal && version.includes('-')) throw new Error('External review requires a stable version.');
+          appendFileSync(env.GITHUB_OUTPUT, `requested=true\nversion=${version}\nbuild_number=${buildNumber}\ndistribution=${publishExternal ? 'both' : 'internal'}\n`);
           NODE
 
-      - name: Submit existing build for external review
+      - name: Distribute existing build to testers
         if: steps.request.outputs.requested == 'true'
         env:
           YURI_RELEASE_IDENTITIES_VERIFIED: ${{ vars.YURI_RELEASE_IDENTITIES_VERIFIED }}
@@ -77,6 +85,8 @@ jobs:
           TESTFLIGHT_VERSION: ${{ steps.request.outputs.version }}
           TESTFLIGHT_BUILD_NUMBER: ${{ steps.request.outputs.build_number }}
           TESTFLIGHT_EXTERNAL_BETA_GROUP_ID: ${{ vars.TESTFLIGHT_EXTERNAL_BETA_GROUP_ID }}
+          TESTFLIGHT_INTERNAL_BETA_GROUP_ID: ${{ vars.TESTFLIGHT_INTERNAL_BETA_GROUP_ID }}
+          TESTFLIGHT_DISTRIBUTION: ${{ steps.request.outputs.distribution }}
         run: |
           set -euo pipefail
           test "$YURI_RELEASE_IDENTITIES_VERIFIED" = true

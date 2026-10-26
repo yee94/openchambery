@@ -2621,7 +2621,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     minHeight: MIN_WINDOW_HEIGHT,
     icon: windowIconPath,
     show: false,
-    backgroundColor: useVibrancy ? '#00000000' : '#151313',
+    backgroundColor: useVibrancy ? '#00000000' : '#1a1a1a',
     // Vibrancy is applied after the window is shown (see applyMacVibrancy), not
     // here: setting it in the constructor leaves the material uncomposited on a
     // cold launch until a window event. No `transparent: true` either — vibrancy
@@ -3060,7 +3060,7 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
     minHeight: MINI_CHAT_MIN_WINDOW_HEIGHT,
     icon: getWindowIconPath(),
     show: false,
-    backgroundColor: useVibrancy ? '#00000000' : '#151313',
+    backgroundColor: useVibrancy ? '#00000000' : '#1a1a1a',
     // Vibrancy is applied after the window is shown (see applyMacVibrancy), not
     // here: setting it in the constructor leaves the material uncomposited on a
     // cold launch until a window event. No `transparent: true` either — vibrancy
@@ -4315,7 +4315,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (canUseTitleBarOverlay(browserWindow)) {
         const useDark = nativeTheme.shouldUseDarkColors;
         browserWindow.setTitleBarOverlay({
-          color: useDark ? '#151313' : '#f5f5f4',
+          color: useDark ? '#1a1a1a' : '#f5f5f4',
           symbolColor: useDark ? '#fafaf9' : '#1c1917',
           height: 48,
         });

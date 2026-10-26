@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { isValidTheme } from '@/contexts/theme-validation';
 import { CSSVariableGenerator } from '@/lib/theme/cssGenerator';
 import { buildTextMateThemeFromAppTheme } from '@/lib/shiki/textMateThemeFromAppTheme';
-import { getThemeById, themes } from '@/lib/theme/themes';
+import { getDefaultTheme, getThemeById, themes } from '@/lib/theme/themes';
 
 /** Matches YuriVisualSettings formatThemeLabel: variant pickers strip the suffix. */
 const selectorLabel = (name: string, variant: 'light' | 'dark'): string => {
@@ -42,6 +42,12 @@ const registered = [
 ];
 
 describe('built-in Cursor and Osaka Jade palettes', () => {
+  test('defaults to Cursor at night and Carbonfox by day', () => {
+    expect(getDefaultTheme(true).metadata.id).toBe('cursor-dark');
+    expect(getDefaultTheme(true).colors.surface.background).toBe('#1a1a1a');
+    expect(getDefaultTheme(false).metadata.id).toBe('carbonfox-light');
+  });
+
   test('registers both variants so the selector can apply their colors', () => {
     const generator = new CSSVariableGenerator();
 

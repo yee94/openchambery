@@ -1,37 +1,49 @@
-# Yuri
-
-**面向编程、个人助理与周期任务的 AI 工作台，覆盖桌面、手机、浏览器和 VS Code。**
-
-[English](README.md) · [使用文档](packages/docs/content/docs/zh-cn/index.mdx) · [参与开发](CONTRIBUTING.md)
-
 <p align="center">
-  <img src="docs/references/badges/yuri-logo-light.svg" alt="Yuri" width="160" />
+  <img src="site/assets/brand/icon-512.webp" alt="Yuri 应用图标" width="144" height="144" />
 </p>
 
-Yuri 把对话、代码修改、终端和自动化任务放在同一个工作空间里。在电脑上启动任务，用手机查看进展，审查改动，再决定下一步。
+# Yuri
 
-## 与 Agent 一起工作
+**在电脑上与 AI 一起工作，在手机上接着聊。**
 
-- **项目与会话**：按项目组织工作，为对话创建分支，用 Git worktree 隔离代码变更。
-- **审查与交付**：查看文件修改和 Diff，在内置终端执行命令，在对话旁完成 Git 与 GitHub 操作。
-- **个人助理**：保留日常助理对话，通过手机系统分享带入文字、链接与图片。
-- **目标与计划任务**：为会话设定目标并检查进展，或按每日、每周、单次时间自动运行提示词，在历史记录中查看结果。计划任务需要 Yuri 服务保持运行。
-- **模型与工具**：为不同工作流配置提供商、模型、Agent、Skills 和 MCP 工具。
+[English](README.md) · [官网](https://yuri.xiaobe.top/) · [下载](https://yuri.xiaobe.top/#downloads) · [使用手册](https://yuri.xiaobe.top/docs/)
 
-## 在不同设备上继续工作
+Yuri 是基于 OpenCode 的 AI 工作台，支持编程、个人助理和计划任务。对话、文件、终端与预览集中在一个工作空间，可从桌面、iOS、Android、浏览器和 VS Code 访问。
 
-| 入口 | 用途 |
-| --- | --- |
-| 桌面端 | Electron 应用，支持本地项目、Mini Chat、多窗口和 SSH 连接 |
-| 移动端 | iOS、Android 客户端连接 Yuri 服务；iOS 支持实时活动与系统分享 |
-| 浏览器 | 自托管工作空间，支持设备配对与可选的私有中继 |
-| VS Code | 在编辑器里处理会话和项目上下文 |
+![Yuri 桌面工作空间](site/assets/shots/home.webp)
 
-Yuri 使用 OpenCode 运行时执行 Agent 任务，应用交互、设备连接、会话协调与自动化由 Yuri 提供。
+## 可以做什么
 
-## 从源码运行
+- **编程与审查**：按项目组织会话，用 Worktree 隔离改动，查看 Diff 并完成 Git 提交。
+- **交给助理**：保留持续的联系人对话，通过会话卡片跟进它分配的工作。
+- **自动执行**：用 `/goal` 持续推进目标，或安排定时任务，在历史记录中查看结果。
+- **连接设备**：手机配对主机，通过 Private Relay 远程访问，或从桌面端建立 SSH 连接。
+- **语音与分享**：口述要求、朗读回复，将其他手机应用中的文字、链接和图片分享进来。
+- **选择模型与工具**：配置模型、Agent、Skills、命令和 MCP，也可接入 Magpie 模型并查看聚合用量。
 
-使用 Node.js 24（见 `.nvmrc`）与 Bun 1.3.14。启动本地 Web 开发环境前，请先安装 OpenCode 运行时。
+## 开始使用
+
+1. 在存放项目的电脑上[安装 Yuri](https://yuri.xiaobe.top/#downloads)。
+2. 打开项目，在设置中连接提供商，选好模型，开始会话。
+3. 需要用手机继续时，[扫码配对这台主机](https://yuri.xiaobe.top/docs/connect-devices/)。
+
+文件和执行留在主机上，远程访问与计划任务需要主机保持在线。各平台的具体入口与限制见手册。
+
+<p align="center">
+  <img src="site/assets/shots/m-home.webp" alt="手机项目页" width="220" />
+  <img src="site/assets/shots/m-assistants.webp" alt="手机助理页" width="220" />
+  <img src="site/assets/shots/m-schedule.webp" alt="手机计划页" width="220" />
+</p>
+
+## 使用指南
+
+[第一次会话](https://yuri.xiaobe.top/docs/quickstart/) · [个人助理](https://yuri.xiaobe.top/docs/assistants/) · [手机](https://yuri.xiaobe.top/docs/mobile/) · [语音](https://yuri.xiaobe.top/docs/voice/)
+
+[目标](https://yuri.xiaobe.top/docs/session-goals/) · [计划任务](https://yuri.xiaobe.top/docs/scheduled-tasks/) · [SSH / Relay](https://yuri.xiaobe.top/docs/remote-instances/) · [Magpie](https://yuri.xiaobe.top/docs/magpie/) · [问题排查](https://yuri.xiaobe.top/docs/troubleshooting/)
+
+## 参与开发
+
+需要 Node.js 24、Bun 1.3.14，以及已安装的 OpenCode 运行时。
 
 ```bash
 git clone https://github.com/yee94/yuri.git
@@ -40,28 +52,14 @@ bun install
 bun run dev
 ```
 
-打开开发服务打印的地址。开发桌面端时，将最后一条命令替换为 `bun run electron:dev`。
+开发桌面端使用 `bun run electron:dev`，开发 VS Code 扩展使用 `bun run vscode:dev`。
 
-构建命令和开发检查见[贡献指南](CONTRIBUTING.md)，连接其他设备见[设备连接文档](packages/docs/content/docs/zh-cn/connect-devices.mdx)。
+`packages/ui` 提供共享界面，`packages/web` 提供主机服务，`packages/electron`、`packages/mobile` 和 `packages/vscode` 负责平台集成。`site/` 将官网与 `packages/docs` 中的手册一起构建。
 
-## 下载与部署
-
-发布产物统一放在 [GitHub Releases](https://github.com/yee94/yuri/releases)。安装包、商店与签名配置的进展见[发布指南](docs/RELEASING.md)；源码可用不代表所有平台均已有可下载安装包。
-
-- [Web 服务](packages/web/README.md)
-- [桌面应用](packages/electron/README.md)
-- [移动应用](packages/mobile/README.md)
-- [VS Code 扩展](packages/vscode/README.md)
-- [私有中继](packages/relay-server/README.md)
-
-## 仓库结构
-
-`packages/ui` 提供共享界面，`packages/web` 承载 Web 服务与运行时服务，Electron、移动端和 VS Code 包负责各自的平台集成。使用文档位于 `packages/docs`。
+[贡献指南](CONTRIBUTING.md) · [反馈问题](https://github.com/yee94/yuri/issues) · [版本发布](https://github.com/yee94/yuri/releases)
 
 ## 致谢
 
 感谢 [OpenChamber](https://github.com/openchamber/openchamber) 与 [OpenCode](https://opencode.ai) 提供的开源基础。
-
-## 许可证
 
 [MIT](LICENSE)，保留原有版权与许可声明。

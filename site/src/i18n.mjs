@@ -96,7 +96,7 @@ const zh = {
   'mobile.m3.t': '左滑就处理',
   'mobile.m3.d': '置顶、归档，一划就好。',
   'mobile.m4.t': '按住说话',
-  'mobile.m4.d': '说完往右滑发送，往左滑取消。',
+  'mobile.m4.d': '说出来，检查文字，再发送。',
   'mobile.m5.t': '分享给助理',
   'mobile.m5.d': '在任何 App 里点分享，链接和图片直接交给助理。',
   'mobile.m6.t': '计划随身带',
@@ -126,7 +126,7 @@ const zh = {
   'voice.title': '按住录音，|转为文字',
   'voice.sub': '在电脑上按住空输入框，说完松手就是文字。',
   'voice.tags': 'Enter 确认|Esc 取消|本地 / OpenAI / 火山引擎',
-  'voice.altDesk': '桌面端按住输入框录音，输入框高亮并出现声纹光标',
+  'voice.altDesk': '桌面端语音按钮，以及发送前可编辑的示例草稿',
 
   'remote.kicker': '多端与远程',
   'remote.title': '连接另一台电脑|操作远端任务',
@@ -136,7 +136,7 @@ const zh = {
 
   'themes.kicker': '主题',
   'themes.title': '内置主题与|自定义配色',
-  'themes.sub': '31 套内置主题，深浅色分开挑，也能放进你自己的 JSON。',
+  'themes.sub': '深色默认 Cursor，深浅色可分别选择，也支持自定义 JSON。',
   'themes.alt': '同一个会话在不同主题下的样子',
 
   'auto.kicker': '自动化',
@@ -269,7 +269,7 @@ const en = {
   'mobile.m3.t': 'Swipe to act',
   'mobile.m3.d': 'Pin or archive with one swipe.',
   'mobile.m4.t': 'Hold to talk',
-  'mobile.m4.d': 'Slide right to send, left to cancel.',
+  'mobile.m4.d': 'Speak, review the text, then send.',
   'mobile.m5.t': 'Share to an assistant',
   'mobile.m5.d': 'Tap Share in any app to hand links and images to an assistant.',
   'mobile.m6.t': 'Schedules on the go',
@@ -299,7 +299,7 @@ const en = {
   'voice.title': 'Hold to record.|Convert to text.',
   'voice.sub': 'On desktop, hold the empty message box, talk, and let go. It’s text.',
   'voice.tags': 'Enter to confirm|Esc to cancel|On-device / OpenAI / Volcengine',
-  'voice.altDesk': 'Holding the desktop message box to record, with a voice meter cursor',
+  'voice.altDesk': 'Desktop dictation controls and an editable example draft before sending',
 
   'remote.kicker': 'Devices & remote',
   'remote.title': 'Connect a computer.|Operate its tasks.',
@@ -309,7 +309,7 @@ const en = {
 
   'themes.kicker': 'Themes',
   'themes.title': 'Built-in themes|and custom colors',
-  'themes.sub': '31 built-in themes, light and dark picked separately, or drop in your own JSON.',
+  'themes.sub': 'Cursor is the default dark theme. Pick light and dark themes separately, or add your own JSON.',
   'themes.alt': 'The same session in different themes',
 
   'auto.kicker': 'Automation',

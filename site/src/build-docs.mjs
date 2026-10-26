@@ -96,7 +96,6 @@ export function buildDocs() {
   const stylesheet = asset('/assets/docs.css');
   const sharedStyle = asset('/assets/site.css');
   const script = asset('/assets/docs.js');
-  const mark = asset('/assets/brand/yuri-b-mark-white.svg');
   const wordmark = asset('/assets/brand/yuri-wordmark-white.svg');
   const icon = asset('/assets/brand/icon-512.webp');
   let count = 0;
@@ -132,7 +131,7 @@ export function buildDocs() {
 <link rel="alternate" hreflang="zh-CN" href="${locales['zh-cn'].base}${route.slice(1)}"><link rel="alternate" hreflang="en" href="${locales.en.base}${route.slice(1)}">
 <link rel="stylesheet" href="${sharedStyle}"><link rel="stylesheet" href="${stylesheet}"><script src="${script}" defer></script></head>
 <body class="docs-page"><a class="skip" href="#content">${config.skip}</a>
-<header class="docs-header"><a class="brand" href="${config.home}" aria-label="Yuri"><img src="${mark}" width="27" height="27" alt=""><img src="${wordmark}" width="64" height="30" alt="Yuri"></a><a class="docs-label" href="${config.base}">${config.handbook}</a><nav aria-label="Yuri"><a href="${locales[config.other].base}${route.slice(1)}" lang="${locales[config.other].lang}" hreflang="${locales[config.other].lang}">${config.switch}</a><a class="docs-download" href="${config.home}#downloads">${config.download}</a><a class="docs-github" href="https://github.com/yee94/yuri">GitHub</a></nav></header>
+<header class="docs-header"><a class="brand" href="${config.home}" aria-label="Yuri"><img src="${icon}" width="40" height="40" alt=""><img src="${wordmark}" width="64" height="30" alt="Yuri"></a><a class="docs-label" href="${config.base}">${config.handbook}</a><nav aria-label="Yuri"><a href="${locales[config.other].base}${route.slice(1)}" lang="${locales[config.other].lang}" hreflang="${locales[config.other].lang}">${config.switch}</a><a class="docs-download" href="${config.home}#downloads">${config.download}</a><a class="docs-github" href="https://github.com/yee94/yuri">GitHub</a></nav></header>
 <div class="docs-layout"><aside class="docs-sidebar"><details class="docs-menu" open><summary>${config.menu}</summary><div class="docs-nav-body">${search}<nav aria-label="${config.menu}">${nav}</nav></div></details></aside>
 <main id="content" class="docs-main" tabindex="-1"><div class="docs-page-heading"><p>${escapeHtml(label(sidebar.sections.find((section) => section.items.some((item) => item.link === route)) || sidebar.sections[0]))}</p><h1>${escapeHtml(page.title)}</h1><div class="docs-description">${escapeHtml(page.description)}</div></div>${paths}<article class="docs-prose">${body}</article><footer class="docs-article-footer"><a href="https://github.com/yee94/yuri/edit/main/packages/docs/content/docs/${locale === 'en' ? '' : 'zh-cn/'}${page.file}">${config.edit}</a><nav class="docs-pagination" aria-label="${config.handbook}">${adjacent(items[index - 1], config.previous)}${adjacent(items[index + 1], config.next)}</nav></footer></main>
 <aside class="docs-toc"><nav aria-label="${config.toc}"><p>${config.toc}</p>${toc}</nav><a class="docs-toc-home" href="${config.base}">${config.handbook}</a></aside></div></body></html>`;

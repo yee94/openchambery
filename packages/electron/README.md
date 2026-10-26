@@ -10,6 +10,10 @@ Desktop starts the Yuri web server in the same Electron main process. There is n
 
 `main.mjs` uses `desktop-backend.mjs` to load the selected OTA backend or the installed `@yuriai/web/server/index.js`, then calls `startWebUiServer()`. The Electron window loads the UI from the local server in development, or from the selected OTA/builtin assets in packaged builds.
 
+Opaque main/Mini Chat windows and the dark native title-bar overlay use Cursor's
+`#1a1a1a` backdrop, matching the shared UI's default dark surface. Vibrancy keeps
+its transparent native backdrop; saved renderer theme choices remain authoritative.
+
 The preload bridge exposes desktop-only APIs to the web UI through `window.__YURI_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler.
 
 Packaged UI and local backend resources may be replaced by a verified desktop OTA directory under `userData/ota`. `desktop-ota.mjs` owns download, channel selection, atomic staging and next-launch activation. New backend-bearing bundles are activated without an automatic rollback: invalid active resources fail startup and require reinstall. Packaged pages use `yuri-ui://app`; the startup migration below imports the previous origin before the UI loads. Main, preload and dependencies remain installer-owned. `desktop-backend.mjs` loads the selected backend in-process and resolves its dependencies from the installed web package using synchronous Node module hooks; file grants use that same backend module instance. Config-sync modules shared with the shell and local dictation workers remain installer-owned and fingerprinted. `packages/web/server/lib/zip-assets.js` owns the bounded archive codec using the existing web-package ZIP dependency. The first migration requires a new installer with this backend loader; subsequent compatible UI/backend releases can use OTA.

@@ -3,6 +3,14 @@
 `@yuriai/ui` owns the shared React surfaces, runtime contracts, state and persistence.
 OpenCode package identities and protocols remain third-party contracts.
 
+## Default themes
+
+New preferences use Cursor Dark (`cursor-dark`) and Carbonfox Light
+(`carbonfox-light`), following the system appearance. Explicit saved selections
+remain authoritative. The web host fills missing theme preferences with the same
+defaults; Web, Mini Chat and mobile cold-start backdrops use Cursor's dark surface
+until persisted splash colors or the resolved runtime theme are available.
+
 ## Sidebar wordmark
 
 The default sidebar brand is `Yuri`. `SidebarBrandMark` renders the approved

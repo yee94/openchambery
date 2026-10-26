@@ -668,7 +668,7 @@ export const createSettingsRuntime = (deps) => {
     }
 
     const defaultLight = 'carbonfox-light';
-    const defaultDark = 'vitesse-dark-dark';
+    const defaultDark = 'cursor-dark';
 
     let nextLightThemeId = hasLight ? settings.lightThemeId : undefined;
     let nextDarkThemeId = hasDark ? settings.darkThemeId : undefined;

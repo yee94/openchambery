@@ -4,7 +4,7 @@
     {
       "kind": "content",
       "path": "README.md",
-      "line": "Thank you to [OpenChamber](https://github.com/openchamber/openchamber) and [OpenCode](https://opencode.ai) for the open-source foundations that helped make Yuri possible.",
+      "line": "Built on the open-source foundations of [OpenChamber](https://github.com/openchamber/openchamber) and [OpenCode](https://opencode.ai).",
       "count": 1,
       "category": "upstream-attribution",
       "reason": "User-requested acknowledgment of the open-source foundations",

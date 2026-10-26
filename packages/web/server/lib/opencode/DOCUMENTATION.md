@@ -47,6 +47,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/shutdown-runtime.js`: graceful shutdown orchestration runtime for watcher/session/terminal/process/server teardown.
 - `packages/web/server/lib/opencode/server-startup-runtime.js`: server listen/startup flow and process/signal handler orchestration runtime.
 - `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring. The SPA fallback sends `index.html` relative to `root`, so deep links keep working when the install lives under a dot directory.
+  - The API-only dark fallback and both server/client PWA manifest defaults use the Cursor surface (`#1a1a1a`) and primary (`#4c9df3`).
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
 - `packages/web/server/lib/conversations/`: combined create-session-and-prompt orchestration (Yuri-owned, registered before generic proxy).
 - `packages/web/server/lib/browser-provider/`: host for an installed extension that declares `browser`. Lists reachable providers, sends one agent browser action to the selected provider, and refuses when none is selected. Does not drive the in-app browser pane. See `browser-provider/DOCUMENTATION.md`.
@@ -61,6 +62,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/project-icon-routes.js`: project icon upload/read/discovery route registration and icon storage orchestration.
 - `packages/web/server/lib/opencode/skill-routes.js`: route registration for skill config CRUD, supporting files, and skills catalog scan/install flows.
 - `packages/web/server/lib/opencode/settings-runtime.js`: Settings persistence runtime (disk IO, migrations, normalization, project validation, and persisted update serialization).
+  - Missing theme preferences use `carbonfox-light` / `cursor-dark`, matching the shared UI defaults. Existing per-variant IDs and legacy explicitly selected theme IDs remain authoritative; changing the default does not rewrite a user's saved theme.
   - Project registry order and `projectSortOrder` are shared Host authority. After a successful changed write, `onProjectOrderChanged` emits `yuri:project-order-changed` on the existing Yuri SSE channel. Clients GET settings on initial mount, tip, and reconnect. Unchanged and failed writes emit no tip; older settings without a sort mode use `manual`.
 - `packages/web/server/lib/opencode/settings-helpers.js`: Settings payload sanitization/format helpers runtime for response shaping and persisted merge prep.
 - `packages/web/server/lib/opencode/settings-normalization-runtime.js`: path/settings normalization and sanitization helpers runtime used by settings/routes/config wiring.

@@ -36,6 +36,21 @@ const createRuntime = async (overrides = {}) => {
 };
 
 describe('settings runtime', () => {
+  it.each([
+    [{}, 'cursor-dark'],
+    [{ darkThemeId: 'vitesse-dark-dark' }, 'vitesse-dark-dark'],
+    [{ themeId: 'nord-dark', themeVariant: 'dark' }, 'nord-dark'],
+  ])('fills missing theme variants without replacing a saved selection: %j', async (stored, expectedDark) => {
+    const { runtime, settingsFilePath, cleanup } = await createRuntime();
+    try {
+      await fsPromises.writeFile(settingsFilePath, JSON.stringify(stored));
+      const settings = await runtime.readSettingsFromDiskMigrated();
+      expect(settings.darkThemeId).toBe(expectedDark);
+      expect(settings.lightThemeId).toBe('carbonfox-light');
+      expect((await runtime.readSettingsFromDiskMigrated()).darkThemeId).toBe(expectedDark);
+    } finally { await cleanup(); }
+  });
+
   it('notifies other clients only after project order commits and never on failed writes', async () => {
     let tips = 0;
     let fail = false;
