@@ -144,8 +144,12 @@ HTTPS origin after DNS and its certificate are ready to enable live verification
 The domain is bound in EdgeOne, and its DNS provider must publish the CNAME returned
 by EdgeOne; mainland acceleration requires the domain's ICP filing. Preset preview
 domains may require access tokens and are not the public verification origin.
-Vercel is deployed and verified first; an EdgeOne failure fails the workflow but
-does not roll back Vercel. Rerunning the workflow retries publication. Until the
+Both providers deploy before live verification. Once the shared build passes,
+failure of either provider does not skip deployment or verification of the other.
+Live verification retries up to twelve times, ten seconds apart, to allow
+production-domain propagation; every attempt still checks exact HTML and asset
+hashes. Exhausted retries fail the workflow without rolling back either provider.
+Rerunning the workflow retries publication. Until the
 workflow change reaches `main`, only manual EdgeOne uploads update the mirror.
 
 The CLI deployment root is `site/`, build is `node build.mjs`, output is `dist`.

@@ -79,18 +79,19 @@ jobs:
           TESTFLIGHT_PUBLIC_URL: ${{ vars.TESTFLIGHT_PUBLIC_URL }}
         run: node site/sync-downloads.mjs
       - name: Build website and handbook from this repository
+        id: build
         working-directory: site
         run: |
           bunx vercel@65.2.0 pull --yes --environment=production
           bunx vercel@65.2.0 build --prod
           node verify.mjs
       - name: Deploy website project
+        id: vercel
         working-directory: site
         run: bunx vercel@65.2.0 deploy --prebuilt --prod --yes
-      - name: Verify live pages and versioned assets
-        run: node site/verify.mjs "$SITE_URL"
       - name: Deploy website mirror to EdgeOne
-        if: vars.SITE_EDGEONE_PROJECT_NAME != ''
+        id: edgeone
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && vars.SITE_EDGEONE_PROJECT_NAME != '' }}
         shell: bash
         env:
           EDGEONE_TOKEN: ${{ secrets.EDGEONE_TOKEN }}
@@ -98,8 +99,25 @@ jobs:
         run: |
           test -n "$EDGEONE_TOKEN"
           bunx edgeone@1.6.46 makers deploy site/dist -n "$EDGEONE_PROJECT_NAME" -t "$EDGEONE_TOKEN" -e production -a global --skip-ai-gateway-sync 2>&1 | sed -E 's/eo_token=[^&[:space:]]*/eo_token=REDACTED/g'
+      - name: Verify live pages and versioned assets
+        if: ${{ !cancelled() && steps.vercel.outcome == 'success' }}
+        shell: bash
+        run: |
+          for attempt in {1..12}; do
+            if node site/verify.mjs "$SITE_URL"; then exit 0; fi
+            if [ "$attempt" -eq 12 ]; then exit 1; fi
+            echo "Waiting for Vercel production propagation (attempt $attempt/12)"
+            sleep 10
+          done
       - name: Verify EdgeOne custom domain
-        if: vars.SITE_EDGEONE_PROJECT_NAME != '' && vars.SITE_EDGEONE_URL != ''
+        if: ${{ !cancelled() && steps.edgeone.outcome == 'success' && vars.SITE_EDGEONE_URL != '' }}
+        shell: bash
         env:
           EDGEONE_URL: ${{ vars.SITE_EDGEONE_URL }}
-        run: node site/verify.mjs "$EDGEONE_URL"
+        run: |
+          for attempt in {1..12}; do
+            if node site/verify.mjs "$EDGEONE_URL"; then exit 0; fi
+            if [ "$attempt" -eq 12 ]; then exit 1; fi
+            echo "Waiting for EdgeOne production propagation (attempt $attempt/12)"
+            sleep 10
+          done
