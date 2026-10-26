@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { DesktopOta } from './desktop-ota.mjs';
 import { createAssetZip } from '../web/server/lib/zip-assets.js';
+import { writeDesktopAssetMetadata } from '../../scripts/desktop-ota-assets.mjs';
 
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
@@ -35,6 +36,13 @@ async function fixture(version = '2.1.1-beta.2', nativeVersion = '2.1.0') {
 }
 
 describe('desktop OTA lifecycle', () => {
+  test('accepts resources produced by the release metadata writer', async () => {
+    const f = await fixture();
+    const assets = path.join(f.root, 'assets');
+    const metadata = await writeDesktopAssetMetadata(assets);
+    const ota = new DesktopOta({ ...f.options, requireBackend: true });
+    await expect(ota.validateResources(assets, metadata.releaseVersion)).resolves.toBeUndefined();
+  });
   test('reports the native desktop identity and rejects foreign or old-bridge resources', async () => {
     const f = await fixture();
     await f.ota.check('beta');

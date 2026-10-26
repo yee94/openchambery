@@ -52,7 +52,7 @@ export async function writeDesktopAssetMetadata(directory) {
     filter: (source) => !/\.(?:test|spec)\./.test(source),
   });
   await cp(path.join(root, 'packages/web/package.json'), path.join(backend, 'package.json'));
-  const metadata = { releaseVersion: version, backendVersion: version, shellFingerprint: await desktopShellFingerprint() };
+  const metadata = { applicationId: 'dev.yuri.desktop', shellApiVersion: 2, releaseVersion: version, backendVersion: version, shellFingerprint: await desktopShellFingerprint() };
   await writeFile(path.join(directory, 'desktop-ota.json'), JSON.stringify(metadata));
   return metadata;
 }
