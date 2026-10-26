@@ -126,7 +126,7 @@ const zh = {
   'voice.title': '按住录音，|转为文字',
   'voice.sub': '在电脑上按住空输入框，说完松手就是文字。',
   'voice.tags': 'Enter 确认|Esc 取消|本地 / OpenAI / 火山引擎',
-  'voice.altDesk': '桌面端语音按钮，以及发送前可编辑的示例草稿',
+  'voice.altDesk': '桌面端正在录音：绿色输入框边框、麦克风高亮与声纹光标',
 
   'remote.kicker': '多端与远程',
   'remote.title': '连接另一台电脑|操作远端任务',
@@ -299,7 +299,7 @@ const en = {
   'voice.title': 'Hold to record.|Convert to text.',
   'voice.sub': 'On desktop, hold the empty message box, talk, and let go. It’s text.',
   'voice.tags': 'Enter to confirm|Esc to cancel|On-device / OpenAI / Volcengine',
-  'voice.altDesk': 'Desktop dictation controls and an editable example draft before sending',
+  'voice.altDesk': 'Desktop recording state with a green composer border, highlighted microphone and voice meter',
 
   'remote.kicker': 'Devices & remote',
   'remote.title': 'Connect a computer.|Operate its tasks.',

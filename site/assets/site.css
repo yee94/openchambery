@@ -157,8 +157,8 @@ h2 { font-size:clamp(30px,3.35vw,48px); font-weight:450; line-height:1.25; lette
 .voice-heading { text-align:center; position:relative; }
 .voice-heading .description { margin-inline:auto; }
 .voice-closeup { max-width:1120px; margin-top:240px; position:relative; }
-.voice-closeup .frame { border-radius:8px; aspect-ratio:4.7; position:relative; }
-.voice-closeup .frame img { position:absolute; width:135%; max-width:none; top:50%; left:50%; transform:translate(-50%,-55%); }
+.voice-closeup .frame { border-radius:8px; }
+.voice-closeup .frame img { width:100%; height:auto; }
 .voice-closeup figcaption { margin-top:20px; text-align:center; font-size:12px; color:var(--surface-muted-foreground); }
 .preferences-section { padding-block:100px 60px; }
 .preferences-heading { display:flex; justify-content:space-between; align-items:end; gap:60px; }
@@ -279,8 +279,6 @@ footer a:hover { text-decoration:underline; }
   .voice-heading { text-align:left; }
   .voice-art { top:90px; height:330px; width:160%; max-width:none; left:-30%; }
   .voice-closeup { margin-top:185px; padding-inline:16px; }
-  .voice-closeup .frame { aspect-ratio:3.2; }
-  .voice-closeup .frame img { width:145%; transform:translate(-50%,-65%); }
   .voice-closeup figcaption { font-size:11px; }
   .preferences-section { padding-block:80px 30px; }
   .preferences-heading { flex-direction:column; gap:0; }

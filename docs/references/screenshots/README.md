@@ -14,7 +14,7 @@ Chinese captures use the corresponding unprefixed filename.
 The current set contains 12 scenes and four theme previews per language (32
 lossless, sRGB WebP files). Main scenes use Cursor Dark: background `#1a1a1a`,
 primary `#4c9df3`. Desktop captures are 1440×900, phone captures 390×844, and the
-desktop composer close-up is cropped to 1259×389. Desktop sidebars use the actual
+desktop recording close-up is 1970×674. Desktop sidebars use the actual
 approved SVG wordmark at 48px wide, not a text approximation.
 
 These are browser-rendered captures of the current application DOM and theme
@@ -24,8 +24,12 @@ retain the application's layout, icons and controls. Theme previews apply the
 styles produced by the application's theme selector to the same localized scene.
 Cursor is the first preview; the others are Tokyo Night, Vitesse and Nord.
 
-Voice images show an editable example draft and the dictation controls, not an
-active recording or evidence of successful recognition. Swipe images capture the
+The desktop voice images are explicit exceptions to the refreshed DOM snapshots:
+Chinese uses the user-supplied recording capture, while English reuses the earlier
+sanitized recording capture, cropped and fitted to the same canvas. Both show the
+requested green recording border, microphone and voice meter. They do not prove
+successful recognition. Mobile voice images still show an editable example draft.
+Swipe images capture the
 actual touch gesture's revealed actions. Pairing and SSH images stop at setup;
 they contain no QR credentials and do not demonstrate completed connections.
 
