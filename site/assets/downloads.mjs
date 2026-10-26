@@ -22,8 +22,7 @@ export function resolveRelease(releases) {
     && typeof release.prerelease === 'boolean' && Array.isArray(release.assets));
   const published = (release) => Date.parse(release.published_at || release.created_at) || 0;
   const isBeta = (release) => release.prerelease || release.tag_name.includes('-');
-  candidates.sort((a, b) => Number(isBeta(a)) - Number(isBeta(b))
-    || published(b) - published(a)
+  candidates.sort((a, b) => published(b) - published(a)
     || b.tag_name.localeCompare(a.tag_name, 'en', { numeric: true }));
   const release = candidates[0];
   if (!release) return null;

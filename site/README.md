@@ -70,8 +70,9 @@ are defined in `src/icons.mjs` (Simple Icons GitHub/Apple/Android paths, CC0-1.0
 `assets/downloads.mjs` exports a verified release snapshot for static HTML and
 refreshes the catalog from public GitHub release assets in the browser. It uses
 the same installer source as the auto-updater, not the stale repository update
-manifest or OTA web bundles. Stable releases take priority; if none exist, the
-latest prerelease is explicitly marked Beta. HTTP failures preserve the snapshot.
+manifest or OTA web bundles. The most recently published installer release wins,
+including prereleases, which are explicitly marked Beta. A later stable publication
+replaces the beta. HTTP failures preserve the snapshot.
 No missing installer URL is synthesized. iOS uses the configured public TestFlight
 link from the update service; availability is controlled by App Store Connect.
 

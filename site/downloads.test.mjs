@@ -24,17 +24,24 @@ const page = () => {
 const windows = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', platform: 'Win32' };
 
 describe('release selection', () => {
-  it('prefers stable releases, then the newest publication, without mixing assets', () => {
+  it('selects the newest publication including beta, without mixing assets', () => {
     const result = resolveRelease([
       release('2.0.0-beta.1', true, [asset('2.0.0-beta.1', 'win-x64.exe')], '2026-10-25'),
       release('1.0.0', false, [asset('1.0.0', 'win-x64.exe')]),
       release('1.1.0', false, [asset('1.1.0', 'linux-arm64.AppImage')], '2026-10-20'),
     ]);
-    expect(result.version).toBe('1.1.0');
-    expect(result.prerelease).toBe(false);
-    expect(result.targets.windows).toBeNull();
-    expect(result.targets.linuxArm).toBe(asset('1.1.0', 'linux-arm64.AppImage').browser_download_url);
+    expect(result.version).toBe('2.0.0-beta.1');
+    expect(result.prerelease).toBe(true);
+    expect(result.targets.windows).toBe(asset('2.0.0-beta.1', 'win-x64.exe').browser_download_url);
+    expect(result.targets.linuxArm).toBeNull();
     expect(result.targets.ios).toBe(snapshot.targets.ios);
+  });
+
+  it('switches back to stable when it is published after beta', () => {
+    expect(resolveRelease([
+      release('2.0.0-beta.2', true, [], '2026-10-25'),
+      release('2.0.0', false, [], '2026-10-26'),
+    ])).toMatchObject({ version: '2.0.0', prerelease: false });
   });
 
   it('selects the newest beta when no stable release exists and ignores drafts', () => {

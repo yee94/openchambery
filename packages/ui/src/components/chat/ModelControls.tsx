@@ -43,7 +43,6 @@ import { useSessionMaterializationStatus, useSessionMessages } from '@/sync/sync
 import { useSync } from '@/sync/use-sync';
 import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
-import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import { formatEffortLabel, getCycledPrimaryAgentName, isPrimaryMode, resolveAgentModelSelection, type ControlledModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
 import { shouldCancelSearchableSelectorHoverDismiss } from './searchableSelectorDismiss';
 import { useI18n } from '@/lib/i18n';
@@ -1504,8 +1503,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     };
 
     const currentModelDisplayName = getCurrentModelDisplayName();
-    const modelLabelRef = React.useRef<HTMLSpanElement>(null);
-    const isModelLabelTruncated = useIsTextTruncated(modelLabelRef, [currentModelDisplayName, currentVariant, isCompact]);
 
     const getAgentDisplayName = () => {
         if (!uiAgentName) {
@@ -2296,7 +2293,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     )}
                                     {isModelControlReady && (
                                         <span
-                                            ref={modelLabelRef}
                                             key={`${currentProviderId}-${currentModelId}-${currentVariant ?? ''}`}
                                             className={cn(
                                                 'model-controls__model-label overflow-hidden',
@@ -2305,7 +2301,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                 'max-w-[260px]'
                                             )}
                                         >
-                                            <span className={cn('inline-flex min-w-0 items-center gap-1', isModelLabelTruncated && 'marquee-text marquee-text--active')}>
+                                            <span className="inline-flex max-w-full min-w-0 items-center gap-1">
                                                 <span className="truncate">{currentModelDisplayName}</span>
                                                 {modelTriggerVariantLabel ? (
                                                     <span className="shrink-0 font-normal text-muted-foreground">
@@ -2435,13 +2431,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     <Icon name="pencil-ai" className={cn(controlIconSize, 'text-muted-foreground')} />
                                 )}
                                 <span
-                                    ref={modelLabelRef}
                                     className={cn(
                                         'model-controls__model-label typography-micro font-medium overflow-hidden min-w-0',
                                         isMobile ? 'max-w-[120px]' : 'max-w-[220px]',
                                     )}
                                 >
-                                    <span className={cn('inline-flex min-w-0 items-center gap-1', isModelLabelTruncated && 'marquee-text marquee-text--active')}>
+                                    <span className="inline-flex max-w-full min-w-0 items-center gap-1">
                                         <span className="truncate">{currentModelDisplayName}</span>
                                         {modelTriggerVariantLabel ? (
                                             <span className="shrink-0 font-normal text-muted-foreground">

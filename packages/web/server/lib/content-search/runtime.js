@@ -43,6 +43,7 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
         if (!Array.isArray(page?.data)) throw new Error('Invalid global session page');
         for (const session of page.data) {
           if (typeof session?.id !== 'string' || !session.id || !Number.isFinite(session.time?.updated)) throw new Error('Invalid global session checkpoint');
+          if (typeof session.parentID === 'string' && session.parentID) continue;
           if (ids.has(session.id)) continue;
           ids.add(session.id);
           if (Number(session.time?.updated) >= state.since && !deleted.has(session.id)) sessions.push(session);

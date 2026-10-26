@@ -2,6 +2,49 @@ import { expect, test } from 'vitest';
 import { createContentSearchService } from './service.js';
 import { createContentSearchRuntime } from './runtime.js';
 
+test('indexes only roots and prunes legacy subagents after a complete catalog, including dirty children', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  const root = { id: 'root', time: { updated: 10 } };
+  const child = { id: 'child', parentID: 'root', time: { updated: 10 } };
+  const nested = { id: 'nested', parentID: 'child', time: { updated: 10 } };
+  const record = { info: { id: 'old', role: 'user', time: { created: 10 } }, parts: [{ type: 'text', text: 'legacy needle' }] };
+  service.replaceSession('host', child, [record], 0);
+  service.replaceSession('other', child, [record], 0);
+  let fail = true;
+  const reads = [];
+  const runtime = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', now: () => 100,
+    listSessions: async ({ cursor }) => {
+      if (!cursor) return { data: [child, nested], cursor: { next: 'roots' } };
+      if (fail) throw new Error('offline');
+      return { data: [root] };
+    },
+    listMessages: async ({ sessionID }) => {
+      reads.push(sessionID);
+      return { data: [{ type: 'user', id: 'new', sessionID, time: { created: 10 }, text: 'root needle' }] };
+    },
+  });
+  try {
+    await runtime.sync();
+    expect(runtime.status().phase).toBe('error');
+    expect(service.search('host', 'legacy')).toHaveLength(1);
+    fail = false;
+    runtime.observe({ payload: { type: 'session.updated', properties: { id: 'child' } } });
+    await runtime.sync();
+    expect(reads).toEqual(['root']);
+    expect(runtime.status()).toMatchObject({ phase: 'ready', total: 1, completed: 1, sessions: 1, initializationRequired: false });
+    expect(service.search('host', 'needle').map((hit) => hit.sessionID)).toEqual(['root']);
+    expect(service.updated('host', 'child')).toBeUndefined();
+    expect(service.search('other', 'legacy')).toHaveLength(1);
+    runtime.observe({ payload: { type: 'session.updated', properties: { id: 'nested' } } });
+    await runtime.sync();
+    expect(reads).toEqual(['root']);
+    expect(runtime.status().initializationRequired).toBe(false);
+  } finally {
+    await runtime.stop();
+    service.close();
+  }
+});
+
 test('persists initialization times only after all thirty-day history is covered and resumes partial work', async () => {
   const service = createContentSearchService({ dbPath: ':memory:' });
   const day = 86400000;

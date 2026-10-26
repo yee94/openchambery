@@ -28,15 +28,15 @@ async function fixture() {
 }
 
 describe('CI release snapshot', () => {
-  it('writes verified stable assets and the configured invitation into the browser/static snapshot', async () => {
+  it('writes the latest published beta and configured invitation into the browser/static snapshot', async () => {
     const f = await fixture();
     const fetchImpl = vi.fn(async () => Response.json([
-      release('0.1.2-beta.2'), release('0.1.1'),
+      release('0.1.2-beta.2'), release('0.1.1', { published_at: '2026-10-25T00:00:00Z' }),
       release('0.1.2', { draft: true }),
       release('9.0.0', { tag_name: 'mobile-stable/v9.0.0' }),
     ]));
     const result = await syncDownloads({ sourcePath: f.sourcePath, fetchImpl, token: 'fixture-token', testFlightUrl: invitation });
-    expect(result).toMatchObject({ version: '0.1.1', prerelease: false, targets: { ios: invitation } });
+    expect(result).toMatchObject({ version: '0.1.2-beta.2', prerelease: true, targets: { ios: invitation } });
     expect(fetchImpl.mock.calls[0][1].headers.Authorization).toBe('Bearer fixture-token');
     const source = await readFile(f.sourcePath, 'utf8');
     const generated = source.match(/\/\* release-snapshot:start \*\/ Object.freeze\(([\s\S]*?)\) \/\* release-snapshot:end \*\//);

@@ -4,7 +4,11 @@ The Host owns `content-search.sqlite` alongside the session index. This index is
 independent of browser transcript caches and includes all projects exposed by the
 active OpenCode runtime. `session.list` is called without a project/directory
 filter; opaque cursors are followed until exhausted. The default coverage is
-messages created in the last thirty days in recently updated sessions.
+messages created in the last thirty days in recently updated root sessions.
+Sessions with a non-empty `parentID` (subagents) are excluded before message
+fetching and progress counting. Only root IDs enter the authoritative pruning
+set, so a successful catalog scan also removes previously indexed subagent
+messages, FTS entries and checkpoints. Failed catalog reads preserve the old index.
 
 Two workers page native `message.list` directly, normalize via the shared server
 projection, and retain only user text and settled assistant text. Synthetic,
