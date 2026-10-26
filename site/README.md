@@ -43,6 +43,14 @@ entrance animation. With JavaScript unavailable, all primary screenshots and cop
 remain visible, including the original device frames. Native `details` still works.
 The selectors require JS; each defaults to a meaningful screenshot.
 
+On narrow screens the hero copy, portrait and bottom links are consecutive flow
+blocks, so the artwork cannot cross the description or download controls. The
+hero grows with localized text rather than clipping to a fixed viewport height.
+The mobile header keeps all links reachable, hiding only the GitHub word label
+below 380px while retaining its icon.
+Assistant artwork and the voice waveform also follow their headings in normal
+flow; connection artwork stays behind the device stage rather than its copy.
+
 ## Device and interaction contracts
 
 The connection panorama uses a custom CSS laptop and overlapping phone, with
