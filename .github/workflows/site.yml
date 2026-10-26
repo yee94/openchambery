@@ -89,3 +89,17 @@ jobs:
         run: bunx vercel@65.2.0 deploy --prebuilt --prod --yes
       - name: Verify live pages and versioned assets
         run: node site/verify.mjs "$SITE_URL"
+      - name: Deploy website mirror to EdgeOne
+        if: vars.SITE_EDGEONE_PROJECT_NAME != ''
+        shell: bash
+        env:
+          EDGEONE_TOKEN: ${{ secrets.EDGEONE_TOKEN }}
+          EDGEONE_PROJECT_NAME: ${{ vars.SITE_EDGEONE_PROJECT_NAME }}
+        run: |
+          test -n "$EDGEONE_TOKEN"
+          bunx edgeone@1.6.46 makers deploy site/dist -n "$EDGEONE_PROJECT_NAME" -t "$EDGEONE_TOKEN" -e production -a global --skip-ai-gateway-sync 2>&1 | sed -E 's/eo_token=[^&[:space:]]*/eo_token=REDACTED/g'
+      - name: Verify EdgeOne custom domain
+        if: vars.SITE_EDGEONE_PROJECT_NAME != '' && vars.SITE_EDGEONE_URL != ''
+        env:
+          EDGEONE_URL: ${{ vars.SITE_EDGEONE_URL }}
+        run: node site/verify.mjs "$EDGEONE_URL"

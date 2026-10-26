@@ -135,6 +135,18 @@ Required GitHub settings:
 - Variable `SITE_URL`: public production origin used by smoke verification.
 - Variable `YURI_RELEASE_IDENTITIES_VERIFIED=true`: repository publishing gate.
 
+The same verified `site/dist/` output can also be published to a separate EdgeOne
+Makers direct-upload project in the global area (including mainland China).
+Set `SITE_EDGEONE_PROJECT_NAME` to enable this second deployment and provide the
+existing `EDGEONE_TOKEN` repository secret. Set `SITE_EDGEONE_URL` to the custom
+HTTPS origin after DNS and its certificate are ready to enable live verification.
+The domain is bound in EdgeOne, and its DNS provider must publish the CNAME returned
+by EdgeOne; mainland acceleration requires the domain's ICP filing. Preset preview
+domains may require access tokens and are not the public verification origin.
+Vercel is deployed and verified first; an EdgeOne failure fails the workflow but
+does not roll back Vercel. Rerunning the workflow retries publication. Until the
+workflow change reaches `main`, only manual EdgeOne uploads update the mirror.
+
 The CLI deployment root is `site/`, build is `node build.mjs`, output is `dist`.
 The workflow runs `vercel pull` and `vercel build --prod` inside the full repository,
 then `vercel deploy --prebuilt --prod`. This includes handbook sources outside
