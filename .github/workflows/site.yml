@@ -8,6 +8,9 @@ on:
     paths: ['site/**', '.github/workflows/site.yml']
   release:
     types: [published]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -19,13 +22,14 @@ concurrency:
 
 jobs:
   verify:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.head_repository.full_name == github.repository && contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event))
     runs-on: ubuntu-latest
     outputs:
       revision: ${{ steps.revision.outputs.sha }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
+          ref: ${{ (github.event_name == 'release' || github.event_name == 'workflow_run') && 'main' || github.ref }}
       - id: revision
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -68,6 +72,11 @@ jobs:
           test -n "$VERCEL_ORG_ID"
           test -n "$VERCEL_PROJECT_ID"
           test -n "$SITE_URL"
+      - name: Refresh verified installer download snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTFLIGHT_PUBLIC_URL: ${{ vars.TESTFLIGHT_PUBLIC_URL }}
+        run: node site/sync-downloads.mjs
       - name: Deploy website project
         working-directory: site
         run: bunx vercel@65.2.0 deploy --prod --yes

@@ -73,6 +73,13 @@ latest prerelease is explicitly marked Beta. HTTP failures preserve the snapshot
 No missing installer URL is synthesized. iOS uses the configured public TestFlight
 link from the update service; availability is controlled by App Store Connect.
 
+Production CI runs `sync-downloads.mjs` with its GitHub token before building. It
+replaces the marked snapshot in `assets/downloads.mjs` from published `v*` installer
+assets and `TESTFLIGHT_PUBLIC_URL`; OTA archive releases are excluded. Missing
+installers or failed catalog requests abort deployment and retain the existing
+website. The generated snapshot is shared by static HTML and browser fallback,
+so visitors do not need a working anonymous GitHub API request for current links.
+
 UA Client Hints may refine architecture; iPadOS touch detection precedes desktop
 classification. Unknown CPU architectures use the all-platform chooser, with
 Apple Silicon explicitly required for the current macOS build. No UA data is
@@ -93,12 +100,15 @@ python3 -m http.server 8794 --directory site/dist
 ## CI/CD
 
 `.github/workflows/site.yml` validates website pull requests. Changes to `site/`
-on `main`, published releases, and manual workflow dispatch deploy the verified
+on `main`, published releases, completion of the `Release` workflow, and manual workflow dispatch deploy the verified
 revision to the existing Vercel website project. PR jobs never receive deployment
 credentials. Production deploys are serialized, with live HTML, anchors and asset
 hash checks after deployment. A release event checks out `main`, not the possibly
 older application tag. This workflow does not publish application installers or
-change the update service.
+change the update service. `workflow_run` is required because releases published
+with `GITHUB_TOKEN` do not trigger another workflow's `release` event. Completion
+also refreshes installers when a later OTA job fails; only public releases enter
+the catalog, and release-triggered builds always use the website on `main`.
 
 Required GitHub settings:
 
