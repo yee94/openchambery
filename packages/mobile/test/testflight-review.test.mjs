@@ -8,7 +8,7 @@ import path from 'node:path';
 const roots = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-function runReview({ alreadySubmitted = false, rejectReview = false, version = '0.1.0' } = {}) {
+function runReview({ alreadySubmitted = false, rejectReview = false, publicLink = true, version = '0.1.0' } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'testflight-review-'));
   roots.push(root);
   const keyPath = path.join(root, 'key.p8');
@@ -40,7 +40,7 @@ function runReview({ alreadySubmitted = false, rejectReview = false, version = '
         status = ${rejectReview ? 422 : 201};
         body = ${rejectReview ? "{ errors: [{ detail: 'Beta App Description is required' }] }" : "{ data: { id: 'new-review' } }"};
       }
-      else if (pathname === '/v1/betaGroups/group') body = { data: { attributes: { publicLink: 'https://testflight.apple.com/join/example' } } };
+      else if (pathname === '/v1/betaGroups/group') body = { data: { attributes: { publicLink: ${publicLink ? "'https://testflight.apple.com/join/example'" : 'null'} } } };
       else throw new Error('Unexpected request: ' + url);
       return new Response(status === 204 ? null : JSON.stringify(body), { status });
     };
@@ -78,4 +78,11 @@ test('prereleases cannot enter the external review workflow', () => {
   const result = runReview({ version: '0.1.1-beta.1' });
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('stable marketing version');
+});
+
+test('an email-only group does not turn successful review submission into failure', () => {
+  const result = runReview({ alreadySubmitted: true, publicLink: false });
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout).toContain('already-submitted');
+  expect(result.stdout).toContain('Public TestFlight link: not enabled');
 });

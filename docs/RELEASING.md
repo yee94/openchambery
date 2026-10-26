@@ -223,7 +223,7 @@ gh workflow run testflight-review.yml --repo yee94/yuri --ref main \
   -f version=0.1.0 -f build_number=5
 ```
 
-脚本同时匹配 marketing version 和 build number，已送审的构建不会重复送审，也不重新打包或上传 IPA。
+脚本同时匹配 marketing version 和 build number，已送审的构建不会重复送审，也不重新打包或上传 IPA。外测群组未开启公开链接时记录 `Public link: not enabled`；邮箱邀请群组不依赖公开链接，已成功送审不会因此报错。
 
 ### 恢复被旧版同步外测阻塞的 Release
 

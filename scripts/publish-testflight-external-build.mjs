@@ -204,9 +204,7 @@ async function submitBetaReview(build) {
 async function getPublicLink() {
   const result = await api(`/v1/betaGroups/${betaGroupId}`);
   const group = assertSuccess(result, 'Read external TestFlight group')?.data;
-  const publicLink = group?.attributes?.publicLink;
-  if (!publicLink) throw new Error(`External TestFlight group ${betaGroupId} has no enabled public link.`);
-  return publicLink;
+  return group?.attributes?.publicLink || null;
 }
 
 async function main() {
@@ -224,12 +222,12 @@ async function main() {
 
   console.log(`External TestFlight build ${buildNumber}: ${reviewStatus}`);
   console.log(`Removed ${removedBuildCount} old build(s) from the external TestFlight group.`);
-  console.log(`Public TestFlight link: ${publicLink}`);
+  console.log(`Public TestFlight link: ${publicLink ?? 'not enabled'}`);
 
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      `## External TestFlight\n\n- Build: \`${buildNumber}\`\n- Beta review: \`${reviewStatus}\`\n- Old group builds removed: \`${removedBuildCount}\`\n- Public link: ${publicLink}\n`,
+      `## External TestFlight\n\n- Build: \`${buildNumber}\`\n- Beta review: \`${reviewStatus}\`\n- Old group builds removed: \`${removedBuildCount}\`\n- Public link: ${publicLink ?? 'not enabled'}\n`,
     );
   }
 }
