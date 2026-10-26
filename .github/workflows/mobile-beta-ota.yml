@@ -43,6 +43,13 @@ env:
   OTA_DETECTABILITY_BASES: ${{ vars.YURI_OTA_DETECTABILITY_BASES }}
   MOBILE_APP_ID: com.yee94.yuri
   MAX_BUNDLE_BYTES: 25165824 # 24 MiB
+  YURI_UPDATE_ORIGIN: ${{ vars.YURI_OTA_MIRROR_URL }}
+  YURI_OTA_UPDATE_URL: ${{ vars.YURI_OTA_MIRROR_URL }}/v1/ota/check
+  VITE_YURI_EDGEONE_UPDATE_CHECK_URL: ${{ vars.YURI_OTA_MIRROR_URL }}/v1/update/check
+  VITE_YURI_VERCEL_UPDATE_CHECK_URL: ${{ vars.YURI_OTA_BASE_URL }}/v1/update/check
+  VITE_YURI_EDGEONE_OTA_CHECK_URL: ${{ vars.YURI_OTA_MIRROR_URL }}/v1/mobile/update/check
+  VITE_YURI_VERCEL_OTA_CHECK_URL: ${{ vars.YURI_OTA_BASE_URL }}/v1/mobile/update/check
+  VITE_YURI_IOS_TESTFLIGHT_URL: ${{ vars.TESTFLIGHT_PUBLIC_URL }}
 
 jobs:
   release-plan:
@@ -66,6 +73,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Validate packaged update endpoints
+        run: node scripts/verify-release-update-env.mjs
 
       - uses: oven-sh/setup-bun@v2
         with:

@@ -41,6 +41,13 @@ on:
 env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: short
+  YURI_UPDATE_ORIGIN: ${{ vars.YURI_OTA_MIRROR_URL }}
+  YURI_OTA_UPDATE_URL: ${{ vars.YURI_OTA_MIRROR_URL }}/v1/ota/check
+  VITE_YURI_EDGEONE_UPDATE_CHECK_URL: ${{ vars.YURI_OTA_MIRROR_URL }}/v1/update/check
+  VITE_YURI_VERCEL_UPDATE_CHECK_URL: ${{ vars.YURI_OTA_BASE_URL }}/v1/update/check
+  VITE_YURI_EDGEONE_OTA_CHECK_URL: ${{ vars.YURI_OTA_MIRROR_URL }}/v1/mobile/update/check
+  VITE_YURI_VERCEL_OTA_CHECK_URL: ${{ vars.YURI_OTA_BASE_URL }}/v1/mobile/update/check
+  VITE_YURI_IOS_TESTFLIGHT_URL: ${{ vars.TESTFLIGHT_PUBLIC_URL }}
 
 permissions:
   contents: write
@@ -88,6 +95,10 @@ jobs:
           RECOVERY_RUN_ID: ${{ inputs.resume_run_id }}
           VERSION: ${{ inputs.version }}
         run: node scripts/recover-release.mjs
+
+      - name: Validate packaged update endpoints
+        if: inputs.resume_run_id == ''
+        run: node scripts/verify-release-update-env.mjs
 
       - name: Checkout original release source
         if: steps.recovery.outcome == 'success'
@@ -726,16 +737,16 @@ jobs:
           SESSION_KEY_FILE: ${{ steps.zip.outputs.session_key_file }}
           # Match the channel baked into this release's shells (see mobile-release inputs).
           OTA_CHANNEL: ${{ contains(needs.create-release.outputs.version, '-') && 'beta' || 'stable' }}
+          TESTFLIGHT_PUBLIC_URL: ${{ vars.TESTFLIGHT_PUBLIC_URL }}
         run: |
           set -euo pipefail
           OUT="$RUNNER_TEMP/ota-native-targets"
           ANDROID_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}"
-          # Fixed TestFlight public link (stable external group). Advertise the
-          # native iOS target only when this release actually uploaded iOS
-          # (native-mode betas and stable); web-only betas keep the previous
-          # advertisement instead of pointing at a build that was never shipped.
-          IOS_URL="https://testflight.apple.com/join/ZCENBHtm"
+          # Advertise iOS only when this release uploaded a build and the Yuri
+          # external group's public link has been configured. Review remains async.
+          IOS_URL="${TESTFLIGHT_PUBLIC_URL:-}"
           BUILD_IOS="${{ needs.create-release.outputs.plan_mode == 'native' || !contains(needs.create-release.outputs.version, '-') }}"
+          if [[ -z "$IOS_URL" ]]; then BUILD_IOS=false; fi
           PLAN_JSON="$(node scripts/mobile-release-plan.mjs --json)"
           PLAN_MODE="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).mode || '')" "$PLAN_JSON")"
           echo "mobile-release-plan mode=$PLAN_MODE"
