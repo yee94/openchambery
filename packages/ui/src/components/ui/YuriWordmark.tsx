@@ -1,7 +1,7 @@
 import React from 'react';
 import wordmarkUrl from '@/assets/brand/yuri-wordmark.svg';
 
-export function YuriWordmark({ className = '', width = 112 }: { className?: string; width?: number }) {
+export function YuriWordmark({ className = '', width = 112 }: { className?: string; width?: React.CSSProperties['width'] }) {
   return (
     <span
       role="img"

@@ -1093,7 +1093,7 @@ export const settingsDict = {
   'settings.yuri.visual.field.inputBarOffsetTooltip': 'Podnieś pasek wpisywania, aby uniknąć zasłaniania przez systemowe elementy ekranu, takie jak pasek gestów.',
   'settings.yuri.visual.field.installAppName': 'Nazwa aplikacji do instalacji',
   'settings.yuri.visual.field.sidebarBrand': 'Marka paska bocznego',
-  'settings.yuri.visual.field.sidebarBrandHint': 'Wpisz pełny tekst logo paska bocznego. Ostatnie słowo oddzielone spacją używa koloru akcentu. Pozostaw puste, aby ukryć logo.',
+  'settings.yuri.visual.field.sidebarBrandHint': 'Wpisz tekst, np. Yee Yuri. Każde osobne słowo Yuri zmieni się w logo SVG o wysokości i kolorze tekstu. Pozostaw puste, aby ukryć logo.',
   'settings.yuri.visual.field.sidebarBrandAria': 'Marka paska bocznego',
   'settings.yuri.visual.field.installAppNameHint': 'Używana przez proces instalacji PWA.',
   'settings.yuri.visual.field.installOrientation': 'Orientacja instalacji',

@@ -1873,7 +1873,7 @@ export const settingsDict = {
   'settings.yuri.visual.field.themeImportInfoTooltip': '从 ~/.config/yuri/themes/ 导入自定义主题',
   'settings.yuri.visual.field.installAppName': '安装应用名称',
   'settings.yuri.visual.field.sidebarBrand': '侧边栏品牌',
-  'settings.yuri.visual.field.sidebarBrandHint': '输入完整的侧边栏标识文本。以空格分隔的最后一个词会使用强调色。完全留空则不显示 Logo。',
+  'settings.yuri.visual.field.sidebarBrandHint': '可输入 Yee Yuri 等文字，独立的 Yuri 会显示为与文字等高、同色的 SVG 字标。留空则隐藏 Logo。',
   'settings.yuri.visual.field.sidebarBrandAria': '侧边栏品牌',
   'settings.yuri.visual.field.installAppNameHint': '用于 PWA 安装流程。',
   'settings.yuri.visual.field.pwaInstallAppNameAria': 'PWA 安装应用名称',

@@ -1873,7 +1873,7 @@ export const settingsDict = {
   "settings.yuri.visual.field.themeImportInfoTooltip": "Importar temas personalizados desde ~/.config/yuri/themes/",
   "settings.yuri.visual.field.installAppName": "Nombre de la aplicación para instalar",
   "settings.yuri.visual.field.sidebarBrand": "Marca de la barra lateral",
-  "settings.yuri.visual.field.sidebarBrandHint": "Introduce el texto completo del logotipo de la barra lateral. La última palabra separada por espacios usa el color de acento. Déjalo vacío para ocultar el logo.",
+  "settings.yuri.visual.field.sidebarBrandHint": "Introduce texto como Yee Yuri. Cada palabra independiente Yuri se convierte en un logotipo SVG de la misma altura y color que el texto. Déjalo vacío para ocultar el logo.",
   "settings.yuri.visual.field.sidebarBrandAria": "Marca de la barra lateral",
   "settings.yuri.visual.field.installAppNameHint": "Lo usa la instalación de la PWA.",
   "settings.yuri.visual.field.pwaInstallAppNameAria": "Nombre de la aplicación para instalar PWA",

@@ -1873,7 +1873,7 @@ export const settingsDict = {
   "settings.yuri.visual.field.themeImportInfoTooltip": "Імпорт спеціальних тем із ~/.config/yuri/themes/",
   "settings.yuri.visual.field.installAppName": "Назва встановленого застосунку",
   "settings.yuri.visual.field.sidebarBrand": "Бренд бічної панелі",
-  "settings.yuri.visual.field.sidebarBrandHint": "Введіть повний текст логотипу бічної панелі. Останнє слово, відділене пробілом, використовує акцентний колір. Залиште порожнім, щоб приховати логотип.",
+  "settings.yuri.visual.field.sidebarBrandHint": "Введіть текст, наприклад Yee Yuri. Кожне окреме слово Yuri перетворюється на SVG-логотип тієї самої висоти й кольору, що й текст. Залиште порожнім, щоб приховати логотип.",
   "settings.yuri.visual.field.sidebarBrandAria": "Бренд бічної панелі",
   "settings.yuri.visual.field.installAppNameHint": "Використовується процесом встановлення PWA.",
   "settings.yuri.visual.field.pwaInstallAppNameAria": "Назва встановленого PWA",

@@ -30,8 +30,9 @@ timestamps, not installation/version timestamps or browser onboarding flags.
 An absent completion marker requires initialization. Every startup still walks
 the authoritative complete OpenCode catalog and compares each recent session's
 updated time and indexed boundary; a prior global completion never bypasses
-that check. Missing, stale, or insufficient-coverage checkpoints reopen the same
-initialization step. Already verified unchanged sessions are reused, including
+that check. Missing, stale, or insufficient-coverage checkpoints are refreshed in
+the background after the first successful initialization, without clearing its
+completion marker or reopening onboarding. Already verified unchanged sessions are reused, including
 sessions with no searchable text. Each session now commits an `indexed_at`
 completion timestamp atomically with its projection, source update time and
 coverage boundary. Existing databases gain this nullable column and the coverage
@@ -41,8 +42,9 @@ thirty-day boundary: a historical coverage claim alone cannot certify that a
 pre-upgrade partial projection was complete. Successful new checkpoints survive
 retries; subsequent scans reuse them normally.
 
-The start timestamp survives partial failures and restarts. Completion and the
-verified boundary advance only after the whole catalog and required message
+The first start and completion timestamps survive incremental updates, partial
+failures and restarts. Initial completion is recorded and the verified boundary
+advances only after the whole catalog and required message
 pages succeed, SQLite writes and pruning succeed, and no dirty event remains.
 Partial/error passes retain the last verified boundary and keep completion null
 for unfinished initialization; successful sessions resume from their committed
@@ -54,8 +56,10 @@ coverage (for example after a system-clock correction).
 The status response adds `initializationRequired` and these durable timestamps.
 `updatedAt` remains the current process's latest completed pass, including partial
 passes; clients must not confuse it with successful durable completion. A warm
-startup may be `pending` with `initializationRequired: false` until verification
-discovers a gap. No UI-triggered import or OpenCode database conversion is needed:
+startup may be `pending` with `initializationRequired: false`; discovered gaps
+remain background work. `initializationRequired` indicates unfinished first-time
+initialization, not whether the latest incremental pass has caught up. No
+UI-triggered import or OpenCode database conversion is needed:
 the existing readiness gate waits for OpenCode's migration, then native V2
 session/message APIs supply the history directly.
 

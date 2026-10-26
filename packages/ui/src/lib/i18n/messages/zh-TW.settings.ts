@@ -1762,7 +1762,7 @@
   'settings.yuri.visual.field.themeImportInfoTooltip': '從 ~/.config/yuri/themes/ 匯入自訂主題',
   'settings.yuri.visual.field.installAppName': '安裝應用程式名稱',
   'settings.yuri.visual.field.sidebarBrand': '側邊欄品牌',
-  'settings.yuri.visual.field.sidebarBrandHint': '輸入完整的側邊欄標識文字。以空格分隔的最後一個詞會使用強調色。完全留空則不顯示 Logo。',
+  'settings.yuri.visual.field.sidebarBrandHint': '可輸入 Yee Yuri 等文字，獨立的 Yuri 會顯示為與文字等高、同色的 SVG 字標。留空則隱藏 Logo。',
   'settings.yuri.visual.field.sidebarBrandAria': '側邊欄品牌',
   'settings.yuri.visual.field.installAppNameHint': '用於 PWA 安裝流程。',
   'settings.yuri.visual.field.pwaInstallAppNameAria': 'PWA 安裝應用程式名稱',

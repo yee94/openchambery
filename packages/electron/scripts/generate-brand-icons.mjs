@@ -12,19 +12,46 @@ if (source) {
     fs.copyFileSync(path.join(source, `yuri-b-${name}`), path.join(canonical, `yuri-${name}`));
   }
 }
-for (const name of ['app-icon.svg', 'icon-win.svg']) fs.copyFileSync(path.join(canonical, 'yuri-icon-dark.svg'), path.join(icons, name));
+const desktopSvg = fs.readFileSync(path.join(canonical, 'yuri-icon-light.svg'), 'utf8')
+  .replace('viewBox="0 0 1024 1024"', 'viewBox="100 100 824 824"');
+for (const name of ['app-icon.svg', 'icon-win.svg']) fs.writeFileSync(path.join(icons, name), desktopSvg);
 fs.copyFileSync(path.join(canonical, 'yuri-mark-black.svg'), path.join(icons, 'tray/tray-glyph.svg'));
 execFileSync('python3', ['-c', `
 from PIL import Image, ImageDraw
 from pathlib import Path
+from xml.etree import ElementTree
 import math, sys
 p = Path(sys.argv[1])
-base = Image.open(p/'source/yuri-icon-dark-1024.png').convert('RGBA')
+assets = p/'AppIcon.icon/Assets'
+assets.mkdir(parents=True, exist_ok=True)
+for appearance, mark_name in [('light', 'black'), ('dark', 'white')]:
+    svg = ElementTree.parse(p/f'source/yuri-icon-{appearance}.svg')
+    stops = svg.findall('.//{*}stop')
+    colors = [tuple(bytes.fromhex(stop.attrib['stop-color'].lstrip('#'))) for stop in stops]
+    tile = Image.new('RGBA', (1024, 1024))
+    draw = ImageDraw.Draw(tile)
+    for y in range(1024):
+        draw.line((0, y, 1023, y), fill=tuple(round(a+(b-a)*y/1023) for a,b in zip(*colors))+(255,))
+    mark = Image.open(p/f'source/yuri-mark-{mark_name}-1024.png').convert('RGBA')
+    mark = mark.resize((795,795), Image.Resampling.LANCZOS)
+    ink = tuple(bytes.fromhex(svg.find('.//{*}path').attrib['fill'].lstrip('#')))
+    portrait = Image.new('RGBA', mark.size, ink+(255,))
+    portrait.putalpha(mark.getchannel('A'))
+    tile.alpha_composite(portrait, (114,114))
+    # Icon Composer owns the outer shape; its layers must be full bleed.
+    tile.save(assets/f'yuri-{appearance}.png')
+    if appearance == 'light':
+        base = tile.copy()
+mask = Image.new('L', (4096,4096), 0)
+ImageDraw.Draw(mask).rounded_rectangle((0,0,4095,4095), radius=920, fill=255)
+base.putalpha(mask.resize(base.size, Image.Resampling.LANCZOS))
 for name in ['icon.png', 'app-icon.png', 'dev-icon.png']:
     base.save(p/name)
 base.save(p/'icon.ico', sizes=[(s,s) for s in [16,24,32,48,64,128,256]])
-base.save(p/'icon.icns')
-base.save(p/'dev-icon.icns')
+mac = Image.new('RGBA', (1024,1024), (0,0,0,0))
+mac.alpha_composite(base.resize((824,824), Image.Resampling.LANCZOS), (100,100))
+mac.save(p/'icon.icns')
+mac.save(p/'dev-icon.icns')
 mark = Image.open(p/'source/yuri-mark-black-1024.png').convert('RGBA')
 for scale in [1,2]:
     suffix = '@2x' if scale == 2 else ''
@@ -42,5 +69,4 @@ for scale in [1,2]:
 const assets = path.join(icons, 'AppIcon.icon/Assets');
 fs.mkdirSync(assets, { recursive: true });
 for (const obsolete of ['app-icon-glyph-dark 4.png', 'app-icon-glyph-light 2.png']) fs.rmSync(path.join(assets, obsolete), { force: true });
-for (const appearance of ['dark', 'light']) fs.copyFileSync(path.join(canonical, `yuri-icon-${appearance}-1024.png`), path.join(assets, `yuri-${appearance}.png`));
 console.log('Yuri canonical desktop, Windows, Linux and tray icons regenerated.');

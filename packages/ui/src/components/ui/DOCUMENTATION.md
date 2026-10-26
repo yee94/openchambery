@@ -58,7 +58,7 @@ Resource acquisition, auth, leases, cancellation and retry remain with each call
 
 The mobile connection welcome also reuses the `yuri-image-loading` visual class on an `aria-hidden` decorative span, not the status-bearing `ImageLoadingPlaceholder` component. Welcome-specific layout, fading and stronger breathing live in `apps/mobile-welcome.css` (4.2s shared drift, 2.4s opacity cycle from 0.22 to 1); image-loading behavior and timings remain owned here.
 
-`YuriWordmark` uses the bundled canonical sculpted-serif SVG as a current-color mask. The welcome positions it in a safe-area-aware top-left header, with `YuriLogo` as the central portrait. Regenerate the wordmark through `assets/brand/yuri/build_wordmark.py`, which also synchronizes the UI asset.
+`YuriWordmark` uses the bundled canonical sculpted-serif SVG as a current-color mask. Its width accepts CSS lengths so inline sidebar branding scales with text; standalone welcome callers retain numeric pixel sizing. The welcome positions it in a safe-area-aware top-left header, with `YuriLogo` as the central portrait. Regenerate the wordmark through `assets/brand/yuri/build_wordmark.py`, which also synchronizes the UI asset.
 
 Coverage: `LoadingImage.test.tsx`, `markstreamImages.test.tsx`, `MobileFilesSurface.imagePreview.test.tsx`, and the existing attachment/preview contracts. Avatar/provider icons retain their existing icon-specific fallbacks.
 

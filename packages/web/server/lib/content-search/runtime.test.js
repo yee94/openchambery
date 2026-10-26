@@ -38,6 +38,53 @@ test('persists initialization times only after all thirty-day history is covered
   await runtime.stop(); service.close();
 });
 
+test('completed initialization survives incremental refresh, failure, restart and dirty events', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  let clock = 1000;
+  let version = 1;
+  let fail = false;
+  let duringRead;
+  const dependencies = { service, getRuntimeKey: () => 'host', now: () => clock,
+    listSessions: async () => ({ data: [{ id: 's', time: { updated: version } }] }),
+    listMessages: async () => {
+      duringRead = runtime.status();
+      if (fail) throw new Error('offline');
+      if (version === 3) runtime.observe({ payload: { type: 'session.updated', properties: { id: 's' } } });
+      return { data: [{ type: 'user', id: 'm', sessionID: 's', time: { created: 900 }, text: `version${version}` }] };
+    },
+  };
+  let runtime = createContentSearchRuntime(dependencies);
+  try {
+    await runtime.sync();
+    const initialized = service.coverage('host');
+    version = 2; clock = 2000; fail = true;
+    await runtime.sync();
+    expect(duringRead.initializationRequired).toBe(false);
+    expect(runtime.status()).toMatchObject({ phase: 'partial', initializationRequired: false });
+    expect(service.coverage('host')).toEqual(initialized);
+    expect(service.search('host', 'version1')).toHaveLength(1);
+    await runtime.stop();
+    runtime = createContentSearchRuntime(dependencies);
+    expect(runtime.status().initializationRequired).toBe(false);
+    fail = false;
+    await runtime.sync();
+    expect(duringRead.initializationRequired).toBe(false);
+    expect(service.coverage('host')).toMatchObject({ indexStartedAt: 1000, indexCompletedAt: 1000, verifiedAt: 2000 });
+    expect(service.search('host', 'version2')).toHaveLength(1);
+    version = 3; clock = 3000;
+    await runtime.sync();
+    expect(runtime.status().initializationRequired).toBe(false);
+    expect(service.coverage('host')).toMatchObject({ indexCompletedAt: 1000, verifiedAt: 2000 });
+    version = 4; clock = 4000;
+    await runtime.sync();
+    expect(service.coverage('host')).toMatchObject({ indexCompletedAt: 1000, verifiedAt: 4000 });
+    expect(service.search('host', 'version4')).toHaveLength(1);
+  } finally {
+    await runtime.stop();
+    service.close();
+  }
+});
+
 test('expired rows cannot leave a checkpoint claiming coverage that was pruned', async () => {
   const service = createContentSearchService({ dbPath: ':memory:' });
   service.replaceSession('host', { id: 's', time: { updated: 10 } }, [], 1);

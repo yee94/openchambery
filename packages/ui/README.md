@@ -6,10 +6,13 @@ OpenCode package identities and protocols remain third-party contracts.
 ## Sidebar wordmark
 
 The default sidebar brand is `Yuri`. `SidebarBrandMark` renders the approved
-sculpted SVG through `YuriWordmark` when the configured name, after trimming, is
-exactly `Yuri`. The mask inherits the theme foreground. Other nonempty names keep
-the Syne/two-tone text treatment; whitespace-only names hide the slot. Syne is
-loaded only for custom text. Store version 3 migrates exact historical default
+sculpted SVG through `YuriWordmark` for each exact, whitespace-separated `Yuri`
+word, including mixed names such as `Yee Yuri`. Its width is cap-height-relative
+(2.44814cap = 626.723 / 256), matching the visible artwork to the bold
+Bodoni/Didot serif text's cap height. A 0.046875cap downward offset compensates
+the SVG's 12-unit bottom padding so visible baselines align. All words use the
+same theme foreground, with compact tracking.
+Whitespace-only names hide the slot. Store version 3 migrates exact historical default
 names, preserving other custom values and the existing runtime-scoped storage.
 
 ## Brand migration

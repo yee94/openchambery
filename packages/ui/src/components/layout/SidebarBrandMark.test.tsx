@@ -42,29 +42,41 @@ describe('sidebar brand selection and persisted defaults', () => {
     act(() => root.render(<SidebarBrandMark />));
     const mark = container.querySelector('[role="img"]');
     expect(mark?.getAttribute('aria-label')).toBe('Yuri');
-    expect(mark?.getAttribute('style')).toContain('mask');
     expect(mark?.classList.contains('text-foreground')).toBe(true);
+    expect(container.querySelectorAll('[style*="mask"]')).toHaveLength(1);
     expect(loadBrandDisplayFont).not.toHaveBeenCalled();
 
     act(() => useSidebarBrandStore.getState().setSidebarBrandName('My Studio'));
-    expect(container.querySelector('[role="img"]')).toBeNull();
-    expect(container.querySelector('.text-foreground')?.textContent).toBe('My');
-    expect(container.querySelector('.text-primary')?.textContent).toBe('Studio');
-    expect(loadBrandDisplayFont).toHaveBeenCalledOnce();
+    expect(container.querySelector('[aria-label]')?.getAttribute('aria-label')).toBe('My Studio');
+    expect(container.querySelectorAll('[style*="mask"]')).toHaveLength(0);
+    expect(container.querySelector('[role="img"]')?.textContent).toBe('MyStudio');
+    expect(loadBrandDisplayFont).not.toHaveBeenCalled();
 
     act(() => useSidebarBrandStore.getState().setSidebarBrandName(' Yuri '));
-    expect(container.querySelector('[role="img"]')).not.toBeNull();
+    expect(container.querySelectorAll('[style*="mask"]')).toHaveLength(1);
     act(() => useSidebarBrandStore.getState().setSidebarBrandName('  '));
     expect(container.innerHTML).toBe('');
   });
 
-  it.each(['Yuri Studio', 'yuri', 'YURI'])('keeps %s as custom text instead of a partial or case-insensitive match', (name) => {
+  it.each(['yuri', 'YURI', 'Yuris'])('keeps %s as custom text instead of a case-insensitive or partial match', (name) => {
     act(() => {
       useSidebarBrandStore.getState().setSidebarBrandName(name);
       root.render(<SidebarBrandMark />);
     });
-    expect(container.querySelector('[role="img"]')).toBeNull();
-    expect(container.querySelector('[aria-label]')?.getAttribute('aria-label')).toBe(name);
+    const mark = container.querySelector('[role="img"]');
+    expect(mark?.getAttribute('aria-label')).toBe(name);
+    expect(container.querySelectorAll('[style*="mask"]')).toHaveLength(0);
+  });
+
+  it('renders the SVG for a standalone Yuri word inside a multi-word name', () => {
+    act(() => {
+      useSidebarBrandStore.getState().setSidebarBrandName('Yee Yuri');
+      root.render(<SidebarBrandMark />);
+    });
+    const mark = container.querySelector('[role="img"]');
+    expect(mark?.getAttribute('aria-label')).toBe('Yee Yuri');
+    expect(mark?.textContent).toBe('Yee');
+    expect(container.querySelectorAll('[style*="mask"]')).toHaveLength(1);
   });
 
   it.each([
@@ -84,7 +96,8 @@ describe('sidebar brand selection and persisted defaults', () => {
     });
     expect(useSidebarBrandStore.getState().sidebarBrandName).toBe(expected);
     expect(JSON.parse(saved.get(key)!).state.sidebarBrandName).toBe(expected);
-    expect(container.querySelector('[role="img"]') !== null).toBe(expected === 'Yuri');
-    if (!expected.trim()) expect(container.innerHTML).toBe('');
+    expect(container.querySelectorAll('[style*="mask"]').length).toBe(expected.split(/\s+/).includes('Yuri') ? 1 : 0);
+    if (expected.trim()) expect(container.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe(expected);
+    else expect(container.innerHTML).toBe('');
   });
 });

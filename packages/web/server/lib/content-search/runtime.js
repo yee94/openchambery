@@ -55,9 +55,6 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
       state.completed = 0;
       const recentIDs = new Set(sessions.map((session) => session.id));
       for (const id of pendingDirty) if (!recentIDs.has(id)) dirty.delete(id);
-      if (sessions.some((session) => dirty.has(session.id) || service.updated(runtime, session.id, state.since) !== session.time.updated)) {
-        service.beginInitialization(runtime, now());
-      }
       if (service.coverage(runtime).indexCompletedAt === null) state.phase = 'indexing';
       let index = 0;
       const worker = async () => {
@@ -101,7 +98,6 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
         service.prune(runtime, state.since, ids);
         state.phase = state.failed ? 'partial' : 'ready';
         state.updatedAt = now();
-        if (dirty.size) service.beginInitialization(runtime, state.updatedAt);
         if (!state.failed && !dirty.size) service.completeInitialization(runtime, state.since, state.updatedAt);
       }
     })().catch(() => {

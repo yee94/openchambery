@@ -159,7 +159,7 @@ bun run --cwd packages/electron generate:preview-icons
 
 Requires Pillow (`python3` + `PIL`) and, on macOS, `sips` + `iconutil`.
 
-macOS packaged Dock icons prefer `resources/icons/Assets.car` (`CFBundleIconName=AppIcon`) over `icon.icns`. The Icon Composer source `resources/icons/AppIcon.icon` uses the approved light/dark neutral-gradient containers and monochrome mark from the final supplied vector assets. `resources/icons/source` holds the canonical vectors and PNG exports. Run `generate:brand-icons`, `generate:preview-icons`, then regenerate the catalog:
+macOS packaged Dock icons prefer `resources/icons/Assets.car` (`CFBundleIconName=AppIcon`) over `icon.icns`. The Icon Composer source `resources/icons/AppIcon.icon` uses full-bleed light/dark neutral-gradient artwork; the system owns the outer shape, avoiding a second dark frame around an inset tile. Windows/Linux use a single light rounded tile without baked-in shadow or outer padding; legacy macOS ICNS retains transparent Dock spacing. `resources/icons/source` holds the canonical vectors and PNG exports. Run `generate:brand-icons`, `generate:preview-icons`, then regenerate the catalog:
 
 ```bash
 bun run --cwd packages/electron generate:macos-icon

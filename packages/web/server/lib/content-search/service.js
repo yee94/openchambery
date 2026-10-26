@@ -48,8 +48,7 @@ export function createContentSearchService({ dbPath }) {
     },
     beginInitialization(runtime, timestamp) {
       db.prepare(`INSERT INTO search_coverage(runtime,started_at) VALUES(?,?)
-        ON CONFLICT(runtime) DO UPDATE SET started_at=excluded.started_at, completed_at=NULL
-        WHERE search_coverage.completed_at IS NOT NULL`).run(runtime, timestamp);
+        ON CONFLICT(runtime) DO NOTHING`).run(runtime, timestamp);
     },
     completeInitialization(runtime, since, timestamp) {
       db.prepare(`UPDATE search_coverage SET completed_at=COALESCE(completed_at,?), since=?, verified_at=? WHERE runtime=?`)

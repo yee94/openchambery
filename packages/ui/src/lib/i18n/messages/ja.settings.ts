@@ -1906,7 +1906,7 @@ export const settingsDict = {
   'settings.yuri.visual.field.themeImportInfoTooltip': '~/.config/yuri/themes/ からカスタムテーマをインポート',
   'settings.yuri.visual.field.installAppName': 'インストールアプリ名',
   'settings.yuri.visual.field.sidebarBrand': 'サイドバーブランド',
-  'settings.yuri.visual.field.sidebarBrandHint': 'サイドバーロゴの全文を入力します。空白で区切った最後の語にはアクセントカラーが適用されます。空欄にするとロゴは表示されません。',
+  'settings.yuri.visual.field.sidebarBrandHint': 'Yee Yuri などを入力してください。独立した Yuri は文字と同じ高さ・色の SVG ロゴになります。空欄にするとロゴを非表示にします。',
   'settings.yuri.visual.field.sidebarBrandAria': 'サイドバーブランド',
   'settings.yuri.visual.field.installAppNameHint': 'PWA インストールプロセスで使用されます。',
   'settings.yuri.visual.field.pwaInstallAppNameAria': 'PWA インストールアプリ名',

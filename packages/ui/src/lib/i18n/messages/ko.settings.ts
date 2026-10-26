@@ -1873,7 +1873,7 @@ export const settingsDict = {
   'settings.yuri.visual.field.themeImportInfoTooltip': '~/.config/yuri/themes/에서 사용자 정의 테마를 가져옵니다',
   'settings.yuri.visual.field.installAppName': '설치 앱 이름',
   'settings.yuri.visual.field.sidebarBrand': '사이드바 브랜드',
-  'settings.yuri.visual.field.sidebarBrandHint': '사이드바 로고의 전체 텍스트를 입력하세요. 공백으로 구분한 마지막 단어에는 강조 색상이 적용됩니다. 비워 두면 로고가 표시되지 않습니다.',
+  'settings.yuri.visual.field.sidebarBrandHint': 'Yee Yuri 같은 텍스트를 입력하세요. 독립된 단어 Yuri는 텍스트와 같은 높이와 색상의 SVG 로고로 표시됩니다. 비워 두면 로고가 숨겨집니다.',
   'settings.yuri.visual.field.sidebarBrandAria': '사이드바 브랜드',
   'settings.yuri.visual.field.installAppNameHint': 'PWA 설치 과정에서 사용됩니다.',
   'settings.yuri.visual.field.pwaInstallAppNameAria': 'PWA 설치 앱 이름',

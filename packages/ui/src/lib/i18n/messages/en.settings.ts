@@ -1906,7 +1906,7 @@ export const settingsDict = {
   'settings.yuri.visual.field.themeImportInfoTooltip': 'Import custom themes from ~/.config/yuri/themes/',
   'settings.yuri.visual.field.installAppName': 'Install App Name',
   'settings.yuri.visual.field.sidebarBrand': 'Sidebar Brand',
-  'settings.yuri.visual.field.sidebarBrandHint': 'Enter the full sidebar logo text. The final space-separated word uses the accent color. Leave empty to hide the logo.',
+  'settings.yuri.visual.field.sidebarBrandHint': 'Enter text such as Yee Yuri. Each standalone Yuri becomes an SVG wordmark matching the text height and color. Leave empty to hide the logo.',
   'settings.yuri.visual.field.sidebarBrandAria': 'Sidebar brand',
   'settings.yuri.visual.field.installAppNameHint': 'Used by PWA installation process.',
   'settings.yuri.visual.field.pwaInstallAppNameAria': 'PWA install app name',

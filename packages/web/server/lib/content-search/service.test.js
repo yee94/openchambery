@@ -54,7 +54,9 @@ test.each([false, true])('upgrades old checkpoints (existing boundary: %s) witho
     expect(service.updated('host', 's', 0)).toBe(50);
     expect(service.coverage('other').indexCompletedAt).toBeNull();
     service.beginInitialization('host', 300);
-    expect(service.coverage('host')).toMatchObject({ indexStartedAt: 300, indexCompletedAt: null, verifiedAt: 200 });
+    service.close();
+    service = createContentSearchService({ dbPath });
+    expect(service.coverage('host')).toEqual({ indexStartedAt: 100, indexCompletedAt: 200, coveredSince: 0, verifiedAt: 200 });
   } finally {
     service?.close();
     fs.rmSync(directory, { recursive: true, force: true });
