@@ -31,7 +31,7 @@ function StartupIndexCheck() {
     if (finished) setDismissed(true);
   }, [finished]);
 
-  if (dismissed || !index?.initializationRequired) return null;
+  if (dismissed || !index?.initializationRequired || index.total === 0) return null;
   return (
     <React.Suspense fallback={null}>
       <Dialog open onOpenChange={(open) => { if (!open) setDismissed(true); }}>

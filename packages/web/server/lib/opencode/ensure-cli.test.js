@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PINNED_OPENCODE2_VERSION } from './opencode2-pin.js';
+import { configureOpenCodeTerminalPath } from './terminal-path.js';
 import {
   ensurePinnedOpenCode2Cli,
   installedOpenCode2BinaryPath,
@@ -10,6 +11,8 @@ import {
   resolveYuriDataDir,
   upgradeSelectedOpenCodeCli,
 } from './ensure-cli.js';
+
+vi.mock('./terminal-path.js', () => ({ configureOpenCodeTerminalPath: vi.fn() }));
 
 const tempDirs = [];
 
@@ -20,12 +23,60 @@ const createTempDir = (prefix) => {
 };
 
 afterEach(() => {
+  vi.clearAllMocks();
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
 describe('ensurePinnedOpenCode2Cli', () => {
+  it('resolves the latest stable 2.x for a fresh installation', async () => {
+    const dataDir = createTempDir('yuri-latest-cli-');
+    const installed = path.join(dataDir, 'opencode-cli', '2.9.1', 'opencode');
+    const install = vi.fn(async () => installed);
+    const result = await ensurePinnedOpenCode2Cli({ dataDir,
+      resolveLatestVersion: async () => '2.9.1', install,
+      readVersion: (file) => file === installed ? '2.9.1' : '',
+    });
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({ version: '2.9.1' }));
+    expect(result.version).toBe('2.9.1');
+    expect(configureOpenCodeTerminalPath).toHaveBeenCalledWith(installed, expect.objectContaining({ dataDir }));
+  });
+
+  it.each(['1.18.4', '3.0.0', '2.9.1-beta.1', '2.0.1'])('never chooses an unsuitable fresh-install target %s', async (latest) => {
+    const install = vi.fn(async () => '/installed/opencode');
+    await ensurePinnedOpenCode2Cli({ dataDir: createTempDir('yuri-invalid-cli-'), install,
+      resolveLatestVersion: async () => latest,
+      readVersion: (file) => file === '/installed/opencode' ? PINNED_OPENCODE2_VERSION : '',
+    });
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({ version: PINNED_OPENCODE2_VERSION }));
+  });
+
+  it('reuses the newest verified cache offline instead of reinstalling the pin', async () => {
+    const dataDir = createTempDir('yuri-new-cache-');
+    for (const version of [PINNED_OPENCODE2_VERSION, '2.9.1', '2.10.0']) {
+      fs.mkdirSync(path.join(dataDir, 'opencode-cli', version), { recursive: true });
+    }
+    const latest = installedOpenCode2BinaryPath('2.10.0', { dataDir });
+    const resolveLatestVersion = vi.fn();
+    const result = await ensurePinnedOpenCode2Cli({ dataDir, resolveLatestVersion,
+      readVersion: (file) => path.basename(path.dirname(file)),
+      install: async () => { throw new Error('must not install'); },
+    });
+    expect(result).toMatchObject({ path: latest, version: '2.10.0', installed: false });
+    expect(resolveLatestVersion).not.toHaveBeenCalled();
+  });
+
+  it('uses the tested pin when the registry is unavailable', async () => {
+    const dataDir = createTempDir('yuri-offline-cli-');
+    const install = vi.fn(async () => '/installed/opencode');
+    await ensurePinnedOpenCode2Cli({ dataDir, install,
+      resolveLatestVersion: async () => { throw new Error('offline'); },
+      readVersion: (file) => file === '/installed/opencode' ? PINNED_OPENCODE2_VERSION : '',
+    });
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({ version: PINNED_OPENCODE2_VERSION }));
+  });
+
   it('runs upgrade through the selected launch target and preserves its CLI entry path', async () => {
     const dir = createTempDir('yuri-upgrade-cli-');
     const script = path.join(dir, 'cli.cjs');
@@ -86,6 +137,7 @@ describe('ensurePinnedOpenCode2Cli', () => {
     });
     expect(result.source).toBe('discovered');
     expect(result.path).toBe('/opt/old-opencode');
+    expect(configureOpenCodeTerminalPath).not.toHaveBeenCalled();
   });
 
   it('installs the pin only when no usable 2.x binary is present', async () => {

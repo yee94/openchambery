@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { mergePathValues } from './path-utils.js';
-import { PINNED_OPENCODE2_VERSION, isAcceptableOpenCode2HealthVersion, isOpenCode1xVersion } from './opencode2-pin.js';
-import { ensurePinnedOpenCode2Cli, installedOpenCode2BinaryPath, readOpenCode2BinaryVersion, upgradeSelectedOpenCodeCli } from './ensure-cli.js';
+import { isAcceptableOpenCode2HealthVersion, isOpenCode1xVersion } from './opencode2-pin.js';
+import { ensurePinnedOpenCode2Cli, installedOpenCode2BinaryCandidates, readOpenCode2BinaryVersion, upgradeSelectedOpenCodeCli } from './ensure-cli.js';
 
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
@@ -280,12 +280,12 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const resolveInstalledOpenCodeCliPath = () => {
-    const installed = installedOpenCode2BinaryPath(PINNED_OPENCODE2_VERSION, {
+    const installed = installedOpenCode2BinaryCandidates({
       env: process.env,
       homedir: resolveHomeDir,
       platform: process.platform,
-    });
-    if (isExecutable(installed) && !isWindowsOpenCodeDesktopAppPath(installed)) {
+    }).find((binary) => isExecutable(binary) && !isWindowsOpenCodeDesktopAppPath(binary));
+    if (installed) {
       clearWslOpencodeResolution();
       state.resolvedOpencodeBinarySource = 'installed';
       return installed;

@@ -2,8 +2,11 @@ import { execFile, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createOpenCodeUpdateDiscovery } from './update-discovery.js';
+import { configureOpenCodeTerminalPath } from './terminal-path.js';
 import {
   PINNED_OPENCODE2_VERSION,
+  compareOpenCode2Versions,
   isAcceptableOpenCode2HealthVersion,
   isOpenCode2VersionAtLeast,
   npmPackageForOpenCode2,
@@ -12,6 +15,7 @@ import {
 } from './opencode2-pin.js';
 
 const INSTALL_FETCH_TIMEOUT_MS = 30_000;
+const discoverLatestVersion = createOpenCodeUpdateDiscovery();
 
 export async function upgradeSelectedOpenCodeCli({ binaryPath, version, launchSpec, env = process.env, execFileImpl = execFile }) {
   if (launchSpec?.wrapperType === 'cmd-wrapper') {
@@ -53,6 +57,15 @@ export function resolveYuriDataDir(env = process.env, homedir = os.homedir) {
 export function installedOpenCode2BinaryPath(version = PINNED_OPENCODE2_VERSION, options = {}) {
   const dataDir = options.dataDir || resolveYuriDataDir(options.env, options.homedir);
   return path.join(dataDir, 'opencode-cli', version, openCodeBinaryName(options.platform));
+}
+
+export function installedOpenCode2BinaryCandidates(options = {}) {
+  const root = path.dirname(path.dirname(installedOpenCode2BinaryPath(undefined, options)));
+  let versions;
+  try { versions = fs.readdirSync(root).filter((name) => /^2\.\d+\.\d+$/.test(name)); }
+  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  return versions.sort((a, b) => compareOpenCode2Versions(b, a))
+    .map((version) => installedOpenCode2BinaryPath(version, options));
 }
 
 export function readOpenCode2BinaryVersion(binaryPath, options = {}) {
@@ -217,12 +230,16 @@ export async function installPinnedOpenCode2Cli(options = {}) {
   if (preparedVersion !== version) {
     throw new Error(`Installed opencode2 version mismatch: expected ${version}, got ${preparedVersion || 'unknown'}`);
   }
+  if (['opencode-path.sh', 'opencode-path.fish', 'opencode-path.windows'].some((name) => fs.existsSync(path.join(dataDir, name)))) {
+    try { configureOpenCodeTerminalPath(outputBinary, { ...options, dataDir }); }
+    catch (error) { console.warn('[OpenCode] Terminal PATH refresh failed:', error.message); }
+  }
   return outputBinary;
 }
 
 /**
- * Reuse any discovered acceptable 2.x CLI. Install the pin only when nothing
- * usable is already installed (global PATH, explicit override, or cache).
+ * Reuse any discovered acceptable 2.x CLI. Fresh installs resolve stable 2.x;
+ * an explicit pin or an unavailable registry uses the tested version instead.
  */
 export async function ensurePinnedOpenCode2Cli(input = {}) {
   const pin = input.pin || PINNED_OPENCODE2_VERSION;
@@ -232,18 +249,29 @@ export async function ensurePinnedOpenCode2Cli(input = {}) {
     ? input.readVersion
     : (binaryPath) => readOpenCode2BinaryVersion(binaryPath, input);
   const install = typeof input.install === 'function' ? input.install : installPinnedOpenCode2Cli;
+  const finish = (result) => {
+    const root = path.dirname(path.dirname(installedOpenCode2BinaryPath(pin, input)));
+    const relative = path.relative(root, result.path);
+    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+      try { configureOpenCodeTerminalPath(result.path, input); }
+      catch (error) { console.warn('[OpenCode] CLI is available in Yuri, but terminal PATH setup failed:', error.message); }
+    }
+    return result;
+  };
 
   if (discoveredPath) {
     const version = readVersion(discoveredPath);
     if (isAcceptableOpenCode2HealthVersion(version)) {
-      return { path: discoveredPath, version, source: 'discovered', installed: false };
+      return finish({ path: discoveredPath, version, source: 'discovered', installed: false });
     }
   }
 
-  const cached = installedOpenCode2BinaryPath(pin, input);
-  const cachedVersion = readVersion(cached);
-  if (cachedVersion === pin || isOpenCode2VersionAtLeast(cachedVersion, pin)) {
-    return { path: cached, version: cachedVersion, source: 'installed', installed: false };
+  const candidates = [...new Set([...installedOpenCode2BinaryCandidates(input), installedOpenCode2BinaryPath(pin, input)])];
+  for (const cached of candidates) {
+    const cachedVersion = readVersion(cached);
+    if (isOpenCode2VersionAtLeast(cachedVersion, pin)) {
+      return finish({ path: cached, version: cachedVersion, source: 'installed', installed: false });
+    }
   }
 
   if (!autoInstall) {
@@ -254,10 +282,19 @@ export async function ensurePinnedOpenCode2Cli(input = {}) {
     throw error;
   }
 
-  const installedPath = await install({ ...input, version: pin });
-  const version = readVersion(installedPath);
-  if (version !== pin) {
-    throw new Error(`Installed OpenCode version mismatch: expected ${pin}, got ${version || 'unknown'}`);
+  let target = pin;
+  if (!input.pin) {
+    try {
+      const latest = await (input.resolveLatestVersion || discoverLatestVersion)();
+      if (/^2\.\d+\.\d+$/.test(latest) && isOpenCode2VersionAtLeast(latest, pin)) target = latest;
+    } catch {
+      console.warn('[OpenCode] Latest version lookup failed; using the tested fallback version.');
+    }
   }
-  return { path: installedPath, version, source: 'installed', installed: true };
+  const installedPath = await install({ ...input, version: target });
+  const version = readVersion(installedPath);
+  if (version !== target) {
+    throw new Error(`Installed OpenCode version mismatch: expected ${target}, got ${version || 'unknown'}`);
+  }
+  return finish({ path: installedPath, version, source: 'installed', installed: true });
 }

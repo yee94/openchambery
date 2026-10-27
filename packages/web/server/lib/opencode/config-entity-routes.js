@@ -166,7 +166,7 @@ async function findGlobalConfigPath(target, configDirectory) {
     }
   }
 
-  return null;
+  return target === 'opencode' ? configPath : null;
 }
 
 function validateGlobalConfigContent(content) {
@@ -282,6 +282,10 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       return res.json({ target: req.params.target, fileName: target.fileName, content });
     } catch (error) {
       if (error?.code === 'ENOENT') {
+        if (req.params.target === 'opencode') {
+          return res.json({ target: 'opencode', fileName: target.fileName,
+            content: '{\n  "$schema": "https://opencode.ai/config.json"\n}\n' });
+        }
         return res.status(404).json({ error: `${target.fileName} does not exist` });
       }
       console.error('Failed to read global configuration:', error);

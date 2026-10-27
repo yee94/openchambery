@@ -95,6 +95,31 @@ test('continuing in background is local to this startup and runtime, never a ser
   expect(fixture.fetch.mock.calls.every(([url, options]) => url === '/api/yuri/content-search' && !options.method)).toBe(true);
 });
 
+test('a fresh empty Host never flashes onboarding while its catalog is being checked', async () => {
+  fixture.fetch.mockImplementation(async () => Response.json({ index: progress({ phase: 'pending', total: 0, completed: 0, messages: 0 }) }));
+  await render();
+  await tick(1);
+  expect(document.querySelector('[data-content-index-onboarding]')).toBeNull();
+  fixture.fetch.mockImplementation(async () => Response.json({ index: progress({ phase: 'ready', total: 0, completed: 0,
+    initializationRequired: false, indexCompletedAt: 300, updatedAt: 300 }) }));
+  await tick();
+  expect(document.querySelector('[data-content-index-onboarding]')).toBeNull();
+  const calls = fixture.fetch.mock.calls.length;
+  await tick(60_000);
+  expect(fixture.fetch).toHaveBeenCalledTimes(calls);
+});
+
+test('waiting for catalog discovery does not dismiss real first-time history indexing', async () => {
+  fixture.fetch.mockImplementation(async () => Response.json({ index: progress({ phase: 'pending', total: 0 }) }));
+  await render();
+  await tick(1);
+  expect(document.querySelector('[data-content-index-onboarding]')).toBeNull();
+  fixture.fetch.mockImplementation(async () => Response.json({ index: progress() }));
+  await tick();
+  await tick(1);
+  expect(document.querySelector('[data-content-index-onboarding]')).not.toBeNull();
+});
+
 test('a previously complete Host is checked without flashing onboarding; VS Code never requests Host FTS', async () => {
   fixture.vscode = true;
   await render();

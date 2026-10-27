@@ -34,6 +34,8 @@ By default, Yuri connects to the official shared OpenCode background service use
 
 Explicit `OPENCODE_HOST` / `OPENCODE_PORT` connections keep their existing behavior. `YURI_OPENCODE_SHARED_SERVICE=0` selects the private managed lifecycle when required by an existing deployment.
 
+When no usable OpenCode is installed, Yuri resolves the latest stable 2.x release (falling back to its tested pin when lookup fails), downloads the native CLI into its data directory, and configures the user's shell PATH. Open a new terminal to use `opencode`. Existing global CLIs are reused; owned cached versions remain usable offline. Shell setup failures are logged separately and retried at the next startup.
+
 ```bash
 yuri                          # Start on port 3000
 yuri --port 8080              # Custom port

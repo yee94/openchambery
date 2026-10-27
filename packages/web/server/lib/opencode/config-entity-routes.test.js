@@ -495,6 +495,29 @@ describe('config entity agent metadata route', () => {
 describe('global raw configuration routes', () => {
   beforeEach(() => vi.stubEnv('OPENCODE_CONFIG', ''));
   afterEach(() => vi.unstubAllEnvs());
+  it('offers an editable JSONC template on a fresh machine and creates it only on save', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'yuri-global-config-'));
+    const configDirectory = path.join(root, 'opencode');
+    const app = express();
+    app.use(express.json());
+    registerConfigEntityRoutes(app, createDependencies(vi.fn(), configDirectory));
+    try {
+      const available = await request(app).get('/api/config/global').expect(200);
+      expect(available.body.targets).toEqual([{ target: 'opencode', fileName: 'opencode.jsonc' }]);
+      const template = await request(app).get('/api/config/global/opencode').expect(200);
+      expect(JSON.parse(template.body.content)).toEqual({ $schema: 'https://opencode.ai/config.json' });
+      await expect(fs.stat(configDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
+      const content = '{\n  // first configuration\n  "model": "provider/model"\n}\n';
+      await request(app).put('/api/config/global/opencode').send({ content }).expect(200);
+      expect(await fs.readFile(path.join(configDirectory, 'opencode.jsonc'), 'utf8')).toBe(content);
+      const loaded = await request(app).get('/api/config/global/opencode').expect(200);
+      expect(loaded.body.content).toBe(content);
+      await request(app).get('/api/config/global/oh-my-openagent').expect(404);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('reads and validates the configured OpenCode and oh-my-opencode files', async () => {
     const app = express();
     app.use(express.json());

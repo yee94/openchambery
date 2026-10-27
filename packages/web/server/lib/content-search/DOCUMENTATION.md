@@ -69,7 +69,11 @@ session/message APIs supply the history directly.
 
 Web/desktop and hosted/Capacitor mobile mount the same `OnboardingScreen`
 `content-index` step after connecting. It displays thirty-day progress, preserves
-progress on request failure, and closes when verification succeeds. Continuing
+progress on request failure, and closes when verification succeeds. The dialog
+waits for a nonzero session total: pending catalog discovery and a successfully
+empty fresh installation never flash onboarding. The status check continues
+while the total is unknown/zero, so subsequently discovered history still opens
+the step; hiding it does not certify coverage or cancel Host indexing. Continuing
 in the background dismisses only this startup/runtime's UI, never writes a
 completion marker and never cancels Host work. Polling stops after completion or
 dismissal; runtime changes recheck. Older Hosts without the new status fields
