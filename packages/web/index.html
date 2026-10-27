@@ -504,11 +504,10 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        height: 100vh;
         font-family: system-ui, -apple-system, sans-serif;
         transition: opacity 0.3s ease-out;
-        position: absolute;
-        width: 100%;
+        position: fixed;
+        inset: 0;
         z-index: 9999;
       }
       #initial-loading.fade-out {
@@ -516,13 +515,22 @@
         pointer-events: none;
       }
       #initial-loading .splash-content {
+        position: relative;
         display: flex;
         width: min(280px, calc(100vw - 48px));
         flex-direction: column;
         align-items: center;
-        gap: 20px;
+      }
+      #initial-loading .splash-content > svg {
+        display: block;
+        width: 120px;
+        height: 120px;
+        flex: none;
       }
       #initial-loading .splash-session-progress {
+        position: absolute;
+        top: calc(100% + 20px);
+        left: 0;
         width: 100%;
         color: var(--splash-stroke);
       }

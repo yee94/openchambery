@@ -11,6 +11,10 @@ remain authoritative. The web host fills missing theme preferences with the same
 defaults; Web, Mini Chat and mobile cold-start backdrops use Cursor's dark surface
 until persisted splash colors or the resolved runtime theme are available.
 
+## Startup logo geometry
+
+The full-text index startup screen keeps the same transparent 120 × 120 CSS-pixel logo at the viewport center as the desktop/web splash. Its progress ring is concentric with the logo; percentage, description, and background action occupy an independently scrolling area below it. The fullscreen dialog must not scale during entrance or exit, and progress/text changes must never reposition the logo.
+
 ## Sidebar wordmark
 
 The default sidebar brand is `Yuri`. When the trimmed name is exactly `Yuri`,

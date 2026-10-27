@@ -64,7 +64,7 @@ const TOOL_METADATA: Record<string, ToolMetadata> = {
   },
 
   bash: {
-    displayName: 'Shell Command',
+    displayName: 'Shell',
     category: 'system',
     outputLanguage: 'text',
     inputFields: [

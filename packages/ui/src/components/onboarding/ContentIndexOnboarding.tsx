@@ -36,6 +36,7 @@ function StartupIndexCheck() {
     <React.Suspense fallback={null}>
       <Dialog open onOpenChange={(open) => { if (!open) setDismissed(true); }}>
         <DialogContent showCloseButton={false} className="h-full max-w-none rounded-none border-0 p-0"
+          style={{ transform: 'none', transition: 'none', opacity: 1 }}
           overlayClassName="z-[9997]" containerClassName="z-[9997] items-stretch p-0">
           <OnboardingScreen mode="content-index" indexStatus={index} indexStatusError={status.isError}
             onContinueInBackground={() => setDismissed(true)} />

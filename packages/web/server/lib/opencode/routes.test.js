@@ -355,20 +355,27 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
     expect(forceResolvedOpenCodeBinary).toHaveBeenLastCalledWith('/usr/local/bin/opencode', 'path');
   });
 
-  it('exposes shared upgrade availability while retaining active-task confirmation', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '2.0.10', pid: 42 }))));
-    const restartOpenCode = vi.fn();
+  it('upgrades with active sessions without requiring confirmation', async () => {
+    let version = '2.0.22';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version, pid: 42 }))));
+    vi.mocked(readOpenCode2BinaryVersion).mockReturnValue('2.0.23');
+    const restartOpenCode = vi.fn(async () => { version = '2.0.23'; });
+    const upgradeOpenCodeCli = vi.fn();
     const { app } = createUpgradeApp({
       getIsExternalOpenCode: () => true,
       getIsSharedOpenCodeService: () => true,
       getActiveSessionCount: () => 1,
+      discoverOpenCodeUpdate: async () => ({ version: '2.0.23' }),
+      upgradeOpenCodeCli,
+      forceResolvedOpenCodeBinary: vi.fn(),
       restartOpenCode,
     });
     const status = await request(app).get('/api/opencode/upgrade-status').expect(200);
     expect(status.body).toMatchObject({ canManage: true, available: true, ownership: 'shared-service' });
-    const response = await request(app).post('/api/opencode/upgrade').send({}).expect(409);
-    expect(response.body.errorCode).toBe('UPGRADE_ACTIVE_TASKS');
-    expect(restartOpenCode).not.toHaveBeenCalled();
+    const response = await request(app).post('/api/opencode/upgrade').send({ target: '2.0.23' }).expect(200);
+    expect(response.body).toMatchObject({ success: true, version: '2.0.23' });
+    expect(upgradeOpenCodeCli).toHaveBeenCalledWith({ binaryPath: '/usr/local/bin/opencode', version: '2.0.23' });
+    expect(restartOpenCode).toHaveBeenCalledWith({ binaryPath: '/usr/local/bin/opencode' });
   });
 
   it.each(['unreachable', 'old-version'])('rejects shared upgrade verification when the running service is %s', async (mode) => {

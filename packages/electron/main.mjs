@@ -1842,10 +1842,12 @@ const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => 
 
 const buildStartupSplashHtml = () => {
   const settings = readSettingsRoot();
-  const splashBgLight = typeof settings.splashBgLight === 'string' ? settings.splashBgLight.trim() : '#f5f5f4';
-  const splashFgLight = typeof settings.splashFgLight === 'string' ? settings.splashFgLight.trim() : '#1c1917';
-  const splashBgDark = typeof settings.splashBgDark === 'string' ? settings.splashBgDark.trim() : '#0c0a09';
-  const splashFgDark = typeof settings.splashFgDark === 'string' ? settings.splashFgDark.trim() : '#fafaf9';
+  const splashBgLight = typeof settings.splashBgLight === 'string' ? settings.splashBgLight.trim() : '#FFFCF0';
+  const splashFgLight = typeof settings.splashFgLight === 'string' ? settings.splashFgLight.trim() : '#100F0F';
+  const splashBgDark = typeof settings.splashBgDark === 'string' ? settings.splashBgDark.trim() : '#1a1a1a';
+  const splashFgDark = typeof settings.splashFgDark === 'string' ? settings.splashFgDark.trim() : '#CCCCCCdd';
+  const logo = fs.readFileSync(path.join(resourceRoot(), 'icons/source/yuri-mark-black.svg'), 'utf8')
+    .replaceAll('#000000', 'var(--splash-logo-fill)');
 
   return `<!doctype html>
   <html>
@@ -1888,11 +1890,16 @@ const buildStartupSplashHtml = () => {
         display: grid;
         justify-items: center;
       }
+      .stack > svg {
+        display: block;
+        width: 120px;
+        height: 120px;
+      }
     </style>
   </head>
   <body>
     <div class="stack">
-      <img width="120" height="120" alt="Yuri" src="data:image/png;base64,${fs.readFileSync(path.join(resourceRoot(), 'icons/icon.png')).toString('base64')}" />
+      ${logo.replace('<svg ', '<svg role="img" aria-label="Yuri" ')}
     </div>
   </body>
   </html>`;

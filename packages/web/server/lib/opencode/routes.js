@@ -348,17 +348,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         });
       }
       const target = resolveOpenCode2UpgradeTarget(rawTarget ?? (await buildUpgradeStatus()).targetVersion);
-      const confirmActive = req.body?.confirmActiveTasks === true || req.body?.force === true;
-      const activeCount = typeof getActiveSessionCount === 'function' ? Number(getActiveSessionCount()) || 0 : 0;
-      if (activeCount > 0 && !confirmActive) {
-        return res.status(409).json({
-          success: false,
-          error: 'OpenCode has active sessions. Confirm upgrade to interrupt them, or wait until idle.',
-          errorCode: 'UPGRADE_ACTIVE_TASKS',
-          hasActiveTasks: true,
-          activeSessionCount: activeCount,
-        });
-      }
 
       const begin = upgradeOperation.begin(target);
       if (!begin.ok) {

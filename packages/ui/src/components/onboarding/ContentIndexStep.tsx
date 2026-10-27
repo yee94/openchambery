@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { YuriLogo } from '@/components/ui/YuriLogo';
 import { DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/i18n';
 import type { SessionContentIndexStatus } from '@/queries/sessionContentSearchQueries';
@@ -17,12 +18,13 @@ export function ContentIndexStep({ status, statusError, onContinueInBackground }
   const progress = total > 0 ? Math.min(1, Math.max(0, completed / total)) : null;
 
   return (
-    <div className="flex h-full items-center justify-center p-6" data-content-index-onboarding>
-      <div className="flex w-full max-w-sm flex-col items-center text-center">
+    <div className="absolute inset-0 overflow-hidden" data-content-index-onboarding>
+      <div className="absolute left-1/2 top-1/2 h-[120px] w-[120px] -translate-x-1/2 -translate-y-1/2">
+        <YuriLogo width={120} height={120} className="block h-[120px] w-[120px] [&_path]:fill-[var(--splash-logo-fill,currentColor)]" />
         <div role="progressbar" aria-label={t('onboarding.index.title')}
           aria-valuemin={0} aria-valuemax={Math.max(total, 1)} aria-valuenow={total > 0 ? completed : undefined}
           aria-valuetext={t('commandPalette.index.progress', { completed, total })}
-          className="relative mb-9 flex size-40 items-center justify-center sm:size-44">
+          className="pointer-events-none absolute -inset-9">
           <svg viewBox="0 0 192 192" fill="none" aria-hidden="true"
             className={`absolute inset-0 size-full -rotate-90 ${progress === null && !failed ? 'motion-safe:animate-spin motion-safe:[animation-duration:3s]' : ''}`}>
             <circle cx="96" cy="96" r="84" stroke="currentColor" strokeWidth="1.5" className="text-border" />
@@ -36,23 +38,27 @@ export function ContentIndexStep({ status, statusError, onContinueInBackground }
               </g>
             )}
           </svg>
+        </div>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 top-[calc(50%+116px)] overflow-y-auto px-6 pb-6 text-center">
+        <div className="mx-auto flex w-full max-w-sm flex-col items-center">
           {progress !== null && (
-            <span aria-hidden="true" className="text-[2.5rem] font-light tabular-nums tracking-[-0.05em] text-foreground">
+            <span aria-hidden="true" className="mb-3 text-sm tabular-nums text-muted-foreground">
               {new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(progress)}
             </span>
           )}
+          <header className="space-y-2.5" role="status" aria-live="polite">
+            <DialogTitle className="tracking-tight" style={{ fontSize: '1.0625rem', fontWeight: 450 }}>
+              {t('onboarding.index.title')}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {failed ? t('onboarding.index.retrying') : t('onboarding.index.description')}
+            </DialogDescription>
+          </header>
+          <Button size="sm" className="mt-8 text-xs font-normal" onClick={onContinueInBackground}>
+            {t('onboarding.index.background')}
+          </Button>
         </div>
-        <header className="space-y-2.5" role="status" aria-live="polite">
-          <DialogTitle className="tracking-tight" style={{ fontSize: '1.0625rem', fontWeight: 450 }}>
-            {t('onboarding.index.title')}
-          </DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            {failed ? t('onboarding.index.retrying') : t('onboarding.index.description')}
-          </DialogDescription>
-        </header>
-        <Button variant="ghost" size="sm" className="mt-8 text-xs font-normal text-muted-foreground" onClick={onContinueInBackground}>
-          {t('onboarding.index.background')}
-        </Button>
       </div>
     </div>
   );
