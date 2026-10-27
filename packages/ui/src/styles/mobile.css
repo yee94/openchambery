@@ -2391,6 +2391,11 @@ button.yuri-mobile-worktree-label-trigger:active,
     min-width: 36px;
   }
 
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-user-text-expand[role="button"] {
+    min-height: 0;
+    min-width: 0;
+  }
+
   :root.mobile-pointer:not(.desktop-runtime) button.yuri-pending-changes-trigger {
     min-height: 28px !important;
   }
