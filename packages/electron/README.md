@@ -175,6 +175,8 @@ bun run --cwd packages/electron generate:macos-icon
 
 On macOS, two or more live app windows (including Mini Chat and hidden/minimized windows, excluding DevTools) disable native vibrancy. Main sends `yuri:vibrancy-ready` with `suppressed: true`; preload sets `data-yuri-vibrancy-suppressed`, and shared CSS paints each window with its own opaque theme tokens, even after theme changes or reloads. Closing back to one window restores vibrancy if enabled in settings. This is transient and does not change the saved preference.
 
+Native macOS fullscreen also suppresses vibrancy for that window, using the default opaque theme background. Leaving fullscreen restores vibrancy only when enabled in settings and there is a single app window.
+
 macOS packaging needs Xcode/build tools, a Developer ID Application certificate, and App Store Connect API credentials. Release workflows sign and notarize the DMG; local preview builds use the same signing configuration.
 
 Windows packaging needs NSIS support through `electron-builder`. If no Windows signing env is set, `package.mjs` disables code signing and builds an unsigned installer.

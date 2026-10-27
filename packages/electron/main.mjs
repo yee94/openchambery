@@ -2057,7 +2057,7 @@ const hasMultipleAppWindows = () => BrowserWindow.getAllWindows()
 
 const applyMacVibrancy = (browserWindow) => {
   if (process.platform !== 'darwin' || !browserWindow || browserWindow.isDestroyed()) return;
-  if (!browserWindow.__yuriUseVibrancy || hasMultipleAppWindows()) return;
+  if (!browserWindow.__yuriUseVibrancy || hasMultipleAppWindows() || browserWindow.isFullScreen()) return;
   try {
     browserWindow.setVibrancy('sidebar');
   } catch {}
@@ -2065,7 +2065,7 @@ const applyMacVibrancy = (browserWindow) => {
 
 const setMacVibrancyReady = (browserWindow, ready) => {
   if (process.platform !== 'darwin' || !browserWindow || browserWindow.isDestroyed()) return;
-  const suppressed = hasMultipleAppWindows();
+  const suppressed = hasMultipleAppWindows() || browserWindow.isFullScreen();
   emitToWindow(browserWindow, 'yuri:vibrancy-ready', {
     ready: ready && browserWindow.__yuriUseVibrancy && !suppressed,
     suppressed,
@@ -2103,11 +2103,11 @@ const syncMacWindowVibrancy = () => {
       nativeTheme.themeSource = window.__yuriThemeSource;
     }
     setMacVibrancyReady(window, false);
-    if (suppressed) {
+    if (suppressed || window.isFullScreen()) {
       try {
         window.setVibrancy(null);
       } catch (error) {
-        log.warn('[electron] failed to disable multi-window vibrancy', error);
+        log.warn('[electron] failed to disable window vibrancy', error);
       }
     } else if (window.__yuriUseVibrancy && window.isVisible() && !window.isMinimized()) {
       applyMacVibrancy(window);
@@ -2122,6 +2122,8 @@ const trackMacWindowVibrancy = (browserWindow, useVibrancy) => {
   browserWindow.on('closed', syncMacWindowVibrancy);
   browserWindow.on('show', syncMacWindowVibrancy);
   browserWindow.on('restore', syncMacWindowVibrancy);
+  browserWindow.on('enter-full-screen', syncMacWindowVibrancy);
+  browserWindow.on('leave-full-screen', syncMacWindowVibrancy);
   browserWindow.webContents.on('dom-ready', syncMacWindowVibrancy);
   syncMacWindowVibrancy();
 };

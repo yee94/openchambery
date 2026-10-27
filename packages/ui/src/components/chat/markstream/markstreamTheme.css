@@ -140,6 +140,14 @@
   margin: 0 0 var(--markdown-paragraph-spacing) 0;
 }
 
+.yuri-markstream-host .markstream-react .table-node {
+  margin: 0;
+}
+
+.yuri-markstream-host .markstream-react .table-node-wrapper {
+  margin: 0 0 var(--markdown-paragraph-spacing) 0;
+}
+
 .yuri-markstream-host .markstream-react > .node-slot:last-of-type .paragraph-node {
   margin-bottom: 0;
 }

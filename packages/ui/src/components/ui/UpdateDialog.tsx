@@ -518,7 +518,10 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
           <div className="flex-1 flex justify-end">
             {/* Desktop / in-app mobile OTA buttons */}
             {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && !isManualDesktopUpdate && !downloaded && !downloading && (
-              <Button onClick={onDownload} size="default">
+              <Button onClick={() => {
+                onDownload();
+                if (runtimeType === 'desktop') onOpenChange(false);
+              }} size="default">
                 <Icon name="download" className="h-4 w-4" />
                 {isInAppMobileOta
                   ? t('updateDialog.actions.applyOtaNow')

@@ -22,7 +22,7 @@ const setup = () => {
     const window = Object.assign(new EventEmitter(), {
       __yuriLabel: labeled ? `window-${windows.length}` : undefined,
       isDestroyed: vi.fn(() => false), isVisible: vi.fn(() => true),
-      isMinimized: vi.fn(() => false), setVibrancy: vi.fn(),
+      isMinimized: vi.fn(() => false), isFullScreen: vi.fn(() => false), setVibrancy: vi.fn(),
       show: vi.fn(), focus: vi.fn(),
       webContents: Object.assign(new EventEmitter(), { send: vi.fn() }),
     });
@@ -81,4 +81,34 @@ test('disabled preference stays disabled and DevTools does not count as an app w
   vi.runAllTimers();
   expect(first.setVibrancy).not.toHaveBeenCalledWith('sidebar');
   expect(lastState(first)).toEqual({ ready: false, suppressed: false });
+});
+
+test('native fullscreen stays opaque through pending callbacks and reloads, then restores vibrancy', () => {
+  const { create, lastState, present } = setup();
+  const window = create();
+  window.isFullScreen.mockReturnValue(true);
+  window.emit('enter-full-screen');
+  present(window, { useVibrancy: true });
+  window.webContents.emit('dom-ready');
+  vi.runAllTimers();
+  expect(window.setVibrancy.mock.lastCall).toEqual([null]);
+  expect(lastState(window)).toEqual({ ready: false, suppressed: true });
+
+  window.isFullScreen.mockReturnValue(false);
+  window.emit('leave-full-screen');
+  vi.runAllTimers();
+  expect(window.setVibrancy.mock.lastCall).toEqual(['sidebar']);
+  expect(lastState(window)).toEqual({ ready: true, suppressed: false });
+});
+
+test('closing another window does not restore fullscreen vibrancy', () => {
+  const { create, close, lastState } = setup();
+  const window = create();
+  window.isFullScreen.mockReturnValue(true);
+  window.emit('enter-full-screen');
+  const second = create();
+  close(second);
+  vi.runAllTimers();
+  expect(window.setVibrancy.mock.lastCall).toEqual([null]);
+  expect(lastState(window)).toEqual({ ready: false, suppressed: true });
 });

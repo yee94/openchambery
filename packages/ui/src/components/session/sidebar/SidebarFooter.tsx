@@ -8,6 +8,7 @@ import {
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from "@/lib/i18n";
 import { DeviceConnections } from './DeviceConnections';
+import { useUpdateStore } from '@/stores/useUpdateStore';
 
 type Props = {
   onOpenSettings: () => void;
@@ -23,6 +24,62 @@ const footerIconButtonClassName =
   "group size-7 rounded-md text-muted-foreground/75 transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary";
 const footerIconClassName =
   "size-4 text-foreground/55 transition-colors group-hover:text-foreground group-focus-visible:text-foreground";
+
+function SidebarUpdateButton({ onOpenUpdate }: { onOpenUpdate: () => void }) {
+  const { t } = useI18n();
+  const downloading = useUpdateStore((state) => state.downloading);
+  const downloaded = useUpdateStore((state) => state.downloaded);
+  const error = useUpdateStore((state) => state.error);
+  const percent = useUpdateStore((state) => state.progress?.total
+    ? Math.round(state.progress.downloaded / state.progress.total * 100)
+    : null);
+  const updateLabel = error || (downloading
+    ? t('updateDialog.status.downloading')
+    : downloaded
+      ? t('updateDialog.actions.restartToUpdate')
+      : t('sessions.sidebar.footer.actions.update'));
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="ml-auto size-5 rounded-full bg-transparent text-foreground hover:bg-transparent active:bg-transparent [corner-shape:round] supports-[corner-shape:squircle]:rounded-full"
+          onClick={onOpenUpdate}
+          aria-label={updateLabel}
+        >
+          {downloading ? (
+            <svg
+              viewBox="0 0 18 18"
+              className={percent === null ? 'size-3.5 animate-spin' : 'size-3.5 -rotate-90'}
+              role="progressbar"
+              aria-label={updateLabel}
+              aria-valuenow={percent ?? undefined}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <circle cx="9" cy="9" r="7.5" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
+              <circle
+                cx="9" cy="9" r="7.5" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                pathLength="100" strokeDasharray="100"
+                strokeDashoffset={100 - (percent === null ? 25 : Math.max(0, Math.min(100, percent)))}
+                className="transition-[stroke-dashoffset] duration-300"
+              />
+            </svg>
+          ) : (
+            <Icon name={downloaded ? 'restart' : 'download'} className="size-3" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={4}>
+        <p>{updateLabel}{downloading && percent !== null ? ` ${percent}%` : ''}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function SidebarFooter({
   onOpenSettings,
@@ -74,24 +131,7 @@ export function SidebarFooter({
           </Tooltip>
         </>
       ) : null}
-      {showUpdateButton && onOpenUpdate ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="icon"
-              className="ml-auto size-6 rounded-full [corner-shape:round] supports-[corner-shape:squircle]:rounded-full"
-              onClick={onOpenUpdate}
-              aria-label={t("sessions.sidebar.footer.actions.update")}
-            >
-              <Icon name="download" className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={4}>
-            <p>{t("sessions.sidebar.footer.actions.update")}</p>
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
+      {showUpdateButton && onOpenUpdate ? <SidebarUpdateButton onOpenUpdate={onOpenUpdate} /> : null}
     </div>
   );
 }

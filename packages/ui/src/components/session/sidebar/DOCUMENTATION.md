@@ -2,6 +2,15 @@
 
 ## Refactor result
 
+- Desktop update downloads close the update dialog immediately and continue in
+  the store. The footer uses a transparent, theme-foreground update button and
+  replaces the download icon with a context-style progress ring within the same
+  mini 20px button with a 14px ring (percentage in the tooltip), then reopens details
+  for errors or restart confirmation; closing the dialog never cancels downloads.
+  The private `SidebarUpdateButton` owns update subscriptions and ring rendering;
+  progress does not rerender the footer or device shortcut. Hidden update buttons
+  are unmounted. Ring animation uses CSS without Effects or timers.
+
 - Leading New / Schedule / Assistant navigation rows use explicit `px-2` so
   `Button`'s direct-SVG padding rule cannot shift the Assistant row when its icon
   becomes an image. Avatar artwork scales to 125% inside the unchanged 16px slot;
