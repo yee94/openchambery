@@ -1987,6 +1987,7 @@ export const settingsDict = {
   "settings.yuri.visual.option.mobileKeyboardMode.resizeContent.label": "Redimensionar conteúdo",
   "settings.yuri.visual.option.mobileKeyboardMode.resizeContent.description": "Pedir aos navegadores compatíveis que encolham o layout do app em vez de depender só do pan.",
   "chat.message.userText.collapseAria": "Recolher mensagem do usuário",
+  "chat.message.userText.showMore": "Mostrar mais",
   "settings.yuri.visual.option.chatRenderMode.sorted.label": "Ordenado",
   "settings.yuri.visual.option.chatRenderMode.sorted.description": "Organize o trabalho intermediário em Activity; transmita apenas a conclusão final.",
   "settings.yuri.visual.option.chatRenderMode.live.label": "Ao vivo",

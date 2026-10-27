@@ -529,6 +529,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         ref={scrollRef}
         className={cn(
           'min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 sm:px-8',
+          isMobile && 'pb-11',
           overlayHeader
             ? 'pt-[calc(max(0.625rem,var(--yuri-safe-area-top,0px))+var(--yuri-mobile-detail-navigation-height)+1.25rem)]'
             : 'pt-5 sm:pt-7',

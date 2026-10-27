@@ -111,6 +111,9 @@
   --yuri-mobile-tab-radius: calc(
     var(--yuri-mobile-dock-radius) - var(--yuri-mobile-dock-inner-inset)
   );
+  /* Dock caption: icon-first; labels stay legible but visually secondary. */
+  --yuri-mobile-tab-label-size: 0.5625rem;
+  --yuri-mobile-tab-label-line-height: 0.625rem;
   --yuri-mobile-float-background: color-mix(
     in srgb,
     var(--surface-elevated) 45%,
@@ -295,8 +298,6 @@
   padding: var(--yuri-mobile-dock-inner-inset);
   border-radius: var(--yuri-mobile-tab-radius) !important;
   corner-shape: round;
-  font-size: 0.75rem !important;
-  line-height: 0.75rem !important;
   /* visible: assistant unread bubble overhangs the icon (WeChat-style). */
   overflow: visible;
   scrollbar-width: none;
@@ -320,7 +321,9 @@
 /* Label-only clip keeps long locales ellipsized without hiding the unread badge. */
 .yuri-mobile-tab-button > .yuri-mobile-tab-label {
   position: relative;
-  top: 2px;
+  top: 3px;
+  font-size: var(--yuri-mobile-tab-label-size) !important;
+  line-height: var(--yuri-mobile-tab-label-line-height) !important;
   font-weight: 400;
   overflow: hidden;
   scrollbar-width: none;
@@ -334,12 +337,11 @@
 }
 
 /* The mobile typography compatibility block resets typography utility sizes
-   with !important. Re-assert the dock's measured label size at higher
-   specificity so 计划任务 remains complete on the 378px native viewport. */
+   with !important. Re-assert the dock caption size on the label only. */
 :root.mobile-pointer:not(.desktop-runtime)
-  .yuri-mobile-tab-button.typography-ui-label {
-  font-size: 0.75rem !important;
-  line-height: 0.75rem !important;
+  .yuri-mobile-tab-button > .yuri-mobile-tab-label {
+  font-size: var(--yuri-mobile-tab-label-size) !important;
+  line-height: var(--yuri-mobile-tab-label-line-height) !important;
 }
 
 .yuri-mobile-floating-surface,
@@ -3684,7 +3686,7 @@ button.yuri-mobile-worktree-label-trigger:active,
   overflow: visible;
   max-height: none;
   visibility: visible;
-  pointer-events: auto;
+  pointer-events: inherit;
 }
 
 .yuri-mobile-composer-foot--overlay {

@@ -1876,6 +1876,7 @@
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.label': '調整內容大小',
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.description': '請求受支援的瀏覽器縮小應用程式版面配置，而不是只依賴平移。',
   'chat.message.userText.collapseAria': '收合使用者訊息',
+  'chat.message.userText.showMore': '展開查看更多',
   'settings.yuri.visual.option.chatRenderMode.sorted.label': '整理後顯示',
   'settings.yuri.visual.option.chatRenderMode.sorted.description': '中間過程整理進 Activity；僅最終結論正文串流輸出。',
   'settings.yuri.visual.option.chatRenderMode.live.label': '即時顯示',

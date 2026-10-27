@@ -1884,6 +1884,7 @@ export const settingsDict = {
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.label': 'Redimensionner le contenu',
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.description': 'Demandez aux navigateurs pris en charge de réduire la présentation de l\'application au lieu de vous fier uniquement au panoramique.',
   'chat.message.userText.collapseAria': 'Réduire le message utilisateur',
+  'chat.message.userText.showMore': 'Afficher plus',
   'settings.yuri.visual.option.chatRenderMode.sorted.label': 'Trié',
   'settings.yuri.visual.option.chatRenderMode.sorted.description': 'Classez le travail intermédiaire dans Activity ; ne streamez que la conclusion finale.',
   'settings.yuri.visual.option.chatRenderMode.live.label': 'En direct',

@@ -28,6 +28,7 @@ import { createRelayTunnelClient } from '@/lib/relay/tunnel-client';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, getRuntimeKey, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { createUuid } from '@/lib/uuid';
+import { requestNativePushOnMobileConnect } from './nativePushOnboarding';
 
 const MOBILE_CONNECTIONS_STORAGE_KEY = 'yuri.mobile.connections.v1';
 const MOBILE_SECURE_STORAGE_PREFIX = 'yuri.mobile.';
@@ -1390,6 +1391,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
   const connectedListenersRef = React.useRef(new Set<() => void>());
 
   const notifyConnected = useEvent(() => {
+    requestNativePushOnMobileConnect();
     onConnected();
     connectedListenersRef.current.forEach((listener) => listener());
   });

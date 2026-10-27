@@ -51,13 +51,14 @@ let draft = '';
 let mobile = false;
 let active = true;
 let working = false;
+let pending = false;
 const stop = vi.fn();
 const submit = vi.fn();
 const voiceSend = vi.fn();
-const render = () => root.render(<QueryClientProvider client={client}><main><AssistantSessionComposer
-  key={runtime.transport} active={active} working={working} onStop={stop} stopLabel="Stop generating" value={draft} isMobile={mobile} autoResize={false} placeholder="normal input"
+const render = () => root.render(<QueryClientProvider client={client}><main><form onSubmit={(event) => { event.preventDefault(); submit(); }}><AssistantSessionComposer
+  key={runtime.transport} active={active} working={working} pending={pending} layout={mobile ? 'inline' : 'stacked'} onStop={stop} stopLabel="Stop generating" value={draft} isMobile={mobile} autoResize={false} placeholder="normal input"
   onChange={(value) => { draft = value; render(); }} onSubmit={submit} onVoiceSend={voiceSend}
-/></main></QueryClientProvider>);
+/></form></main></QueryClientProvider>);
 const input = () => host.querySelector('textarea')!;
 const flush = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); }); };
 const type = async (value: string, cursor = value.length, inputType = 'insertText') => {
@@ -75,13 +76,40 @@ const rows = () => Array.from(document.querySelectorAll<HTMLElement>('[role="opt
 
 beforeEach(async () => {
   runtime.transport = 'runtime-a'; runtime.dictationEnabled = true; runtime.load.mockReset().mockResolvedValue(snapshot()); submit.mockReset();
-  draft = ''; mobile = false; active = true; working = false; stop.mockReset();
+  draft = ''; mobile = false; active = true; working = false; pending = false; stop.mockReset();
   voiceSend.mockReset(); speech.renders.mockClear(); speech.start.mockClear(); speech.confirm.mockClear(); speech.cancel.mockClear();
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   await act(async () => render());
 });
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); });
+
+test.each(['keyboard', 'button'] as const)('%s sending keeps the mobile input focused and editable without duplicate admission', async (entry) => {
+  mobile = true;
+  await type('hello');
+  input().focus();
+  const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+  host.querySelector('[data-composer-send]')!.dispatchEvent(press);
+  expect(press.defaultPrevented).toBe(true);
+  if (entry === 'keyboard') {
+    await key('Enter');
+  } else {
+    const button = host.querySelector<HTMLButtonElement>('[data-composer-send]')!;
+    button.focus();
+    await act(async () => button.click());
+  }
+  expect(submit).toHaveBeenCalledTimes(1);
+  expect(document.activeElement).toBe(input());
+  await act(async () => { pending = true; draft = ''; render(); });
+  expect(input().disabled).toBe(false);
+  expect(document.activeElement).toBe(input());
+  await type('next message');
+  await key('Enter');
+  expect(submit).toHaveBeenCalledTimes(1);
+  await act(async () => { pending = false; working = true; render(); });
+  expect(input().value).toBe('next message');
+  expect(document.activeElement).toBe(input());
+});
 
 test('mobile ASR stays idle through 50 edits and delivers into the latest draft without sending', async () => {
   mobile = true;

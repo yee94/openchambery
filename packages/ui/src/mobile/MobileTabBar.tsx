@@ -87,7 +87,7 @@ export function MobileTabBar({ activeTab, onTabChange, className, tabMarks }: Mo
               // Equal flex slots + min-w-0 so long locale strings truncate on the label only.
               // overflow stays visible so the assistant unread bubble can paint outside the icon.
               'yuri-mobile-tab-button min-w-0 flex-1 flex-col overflow-visible',
-              'text-xs font-medium leading-none tracking-tight text-muted-foreground',
+              'font-medium leading-none tracking-tight text-muted-foreground',
               // The dock supplies immediate touch-down glass feedback in mobile.css.
               'transition-[background-color,color,box-shadow,transform] duration-100',
               'hover:bg-transparent hover:text-foreground',

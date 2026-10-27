@@ -2020,6 +2020,7 @@ export const settingsDict = {
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.label': 'コンテンツをリサイズ',
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.description': 'パンのみに依存せず、対応ブラウザにアプリレイアウトを縮小するよう要求。',
   'chat.message.userText.collapseAria': 'ユーザーメッセージを折りたたむ',
+  'chat.message.userText.showMore': 'もっと見る',
   'settings.yuri.visual.option.chatRenderMode.sorted.label': 'ソート',
   'settings.yuri.visual.option.chatRenderMode.sorted.description': '途中経過は Activity に整理し、最終結論の本文だけをストリーミング表示します。',
   'settings.yuri.visual.option.chatRenderMode.live.label': 'ライブ',

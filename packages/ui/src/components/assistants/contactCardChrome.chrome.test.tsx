@@ -49,6 +49,43 @@ type Measurement = {
 }
 
 describe('contact card width', () => {
+  test.skipIf(!resolveChrome())('keeps the contact typing row above the mobile composer fade', async () => {
+    const source = readFileSync(join(here, 'AssistantConversationSurface.tsx'), 'utf8')
+    const mobilePadding = source.match(/isMobile && '(pb-\d+)'/)?.[1] ?? ''
+    const contentClass = source.match(/ref=\{contentRef\} className="([^"]+)" data-assistant-contact-content/)![1]
+    const slotClass = source.match(/className="([^"]+)" data-assistant-contact-status-slot/)![1]
+    const css = await compileProductionCssAsync(join(here, '../..'))
+    const root = evidenceRoot()
+    const htmlPath = join(root, 'contact-typing-clearance.html')
+    writeFileSync(htmlPath, `<!doctype html><html class="mobile-pointer"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body>
+      <main class="flex h-screen flex-col"><div id="scroll" class="min-h-0 flex-1 overflow-y-auto ${mobilePadding}">
+      <div class="${contentClass}"><div style="height:1200px;flex-shrink:0">Conversation</div><div id="typing" class="${slotClass}">● ● ●</div></div></div>
+      <footer class="relative z-10 shrink-0 bg-background pt-1"><form id="composer" class="relative yuri-mobile-composer pt-1.5 pb-4"><div class="h-12">Input</div></form></footer></main></body></html>`)
+    const session = await openChromeSession({ width: 390, height: 844 })
+    try {
+      const page = await openPageSession(session, { width: 390, height: 844, standalone: false })
+      await page.navigateFile(htmlPath)
+      const measure = (removePadding: boolean) => page.evaluate<number>(`(() => {
+        const scroll = document.getElementById('scroll');
+        scroll.style.paddingBottom = ${removePadding ? "'0px'" : "''"};
+        scroll.scrollTop = scroll.scrollHeight;
+        const composer = document.getElementById('composer');
+        const fadeTop = composer.getBoundingClientRect().top - parseFloat(getComputedStyle(composer, '::after').height);
+        return fadeTop - document.getElementById('typing').getBoundingClientRect().bottom;
+      })()`)
+      for (const height of [844, 500]) {
+        await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height, deviceScaleFactor: 1, mobile: true })
+        for (let run = 0; run < 3; run++) {
+          expect(await measure(true), 'old spacing puts typing inside the fade').toBeLessThan(0)
+          expect(await measure(false), 'typing clears the entire fade').toBeGreaterThanOrEqual(0)
+        }
+      }
+    } finally {
+      await session.close()
+      if (!keepEvidence()) rmSync(root, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   test('caps content-hugging covers against both their parent and rem limit', () => {
     expect(CONTACT_CARD_COVER_CLASS).toContain('w-fit min-w-0 max-w-[min(100%,15rem)]')
     expect(CONTACT_SESSION_CARD_COVER_CLASS).toContain('w-fit min-w-0 max-w-[min(100%,20rem)]')

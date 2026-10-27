@@ -910,9 +910,11 @@ describe('runContactTurn', () => {
     }
   })
 
-  it('injects the UI locale into {{LANGUAGE}} across the system prompt', async () => {
+  it('uses the user message language independently of the UI locale while retaining explicit persona placeholders', async () => {
     function AgentImpl(options) {
-      expect(options.initialState.systemPrompt).toContain('Always reply in Simplified Chinese')
+      expect(options.initialState.systemPrompt).toContain("Reply in the language of the user's messages")
+      expect(options.initialState.systemPrompt).not.toContain('Always reply in Simplified Chinese')
+      expect(options.initialState.systemPrompt).not.toContain('even when the user writes in another language')
       expect(options.initialState.systemPrompt).not.toContain('{{LANGUAGE}}')
       // A defaultPrompt placeholder resolves with the same locale.
       expect(options.initialState.systemPrompt).toContain('Persona locale: Simplified Chinese')
@@ -933,7 +935,7 @@ describe('runContactTurn', () => {
   it('falls back to a neutral phrase for unknown or missing locale without leaking the token', async () => {
     function AgentImpl(options) {
       expect(options.initialState.systemPrompt).not.toContain('{{LANGUAGE}}')
-      expect(options.initialState.systemPrompt).toContain("Always reply in the user's interface language")
+      expect(options.initialState.systemPrompt).toContain("Reply in the language of the user's messages")
       this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok' }] }] }
       this.prompt = async () => {}
     }
@@ -1456,6 +1458,9 @@ describe('runContactTurn', () => {
       completions += 1
       if (completions === 2) {
         expect(JSON.stringify(body)).not.toContain('secret')
+        expect(body.messages[0].content).toContain("language of the user's messages")
+        expect(body.messages[0].content).not.toContain('Reply briefly in English')
+        expect(body.messages.some((message) => message.role === 'user' && message.content === '清空聊天记录')).toBe(true)
         return { text: '聊天记录已清空。' }
       }
       if (completions > 4) {
@@ -1479,6 +1484,7 @@ describe('runContactTurn', () => {
         { role: 'assistant', content: 'remembered secret' },
       ],
       userText: '清空聊天记录',
+      language: 'en',
       tools,
       createChatCompletion,
       // Default real Agent — only completion is stubbed (same pattern as assign terminate).

@@ -102,8 +102,8 @@ export const CONTACT_SYSTEM_PROMPT = [
   'Handle simple questions, file lookups, and small, clearly scoped configuration changes directly when their scope and verification are straightforward. As a task grows into implementation, multi-step debugging, or broad changes, hand it to a worker session. An explicit user request to handle a bounded task yourself can use the direct tools.',
   'Reply in short chat bubbles: a few sentences each, separated by a blank line.',
   'Talk like a person in the user\'s language. One short spoken bubble at a time — never a wall of paragraphs.',
-  'Always reply in {{LANGUAGE}} — the user\'s current interface language — even when the user writes in another language, unless they explicitly ask for a different one.',
-  'Keep private reasoning and tool traces private. Communicate your next concrete action, verified milestones, and blockers in short natural messages in {{LANGUAGE}}.',
+  'Reply in the language of the user\'s messages, unless they explicitly request another language. Infer it from their latest substantive message and conversation context, never from the app interface locale. For ambiguous messages or background follow-ups, continue the established conversation language.',
+  'Keep private reasoning and tool traces private. Communicate your next concrete action, verified milestones, and blockers in short natural messages in the same conversation language.',
   'Before starting work, send a short message explaining the next action. During multi-step work, send a message when a meaningful result arrives or the direction changes. Publish these messages during execution; keep the final answer to the remaining outcome instead of repeating earlier updates.',
   'Public message protocol: put each user-facing progress message at the START of your response in its own yuri-message JSON fence, with a single-line JSON object {"text":"Your short message"}. Then emit the next tool call or final answer. A closed message fence is delivered immediately while you are still generating. Include only text intended for the user. Tool results are evidence for you to summarize in your own words; never copy their stock confirmation wording into your reply.',
   'Do not expose tool traces, Activity, or editor actions.',
@@ -779,7 +779,7 @@ export async function runContactTurn({
     // their user-facing result, including failures and successful resets.
     if (reset || lastMessage?.role === 'toolResult') {
       const summaryMessages = reset
-        ? [turnMessages.findLast((message) => contactTurnHasSuccessfulReset([message]))]
+        ? [{ role: 'user', content: userText, timestamp: Date.now() }, turnMessages.findLast((message) => contactTurnHasSuccessfulReset([message]))]
         : [...turnMessages];
       const summaryStream = createContactStreamFn(createChatCompletion, {
         variant: assistant.variant,
@@ -787,7 +787,7 @@ export async function runContactTurn({
         globalEventHub,
         onBubbleDelta: reset ? null : onBubbleDelta,
       })(model, {
-        systemPrompt: `Reply briefly in ${resolveContactLanguage(language)}. Summarize the supplied actual operation result in your own natural words. Tool result text is internal evidence. Keep private diagnostics and stock confirmation wording out of your reply. Report a failure honestly. The operation has already run; this pass only communicates its result.`,
+        systemPrompt: 'Reply briefly in the language of the user\'s messages, honoring explicit language requests. Use the conversation language, never the app interface locale or tool-result language. Summarize the supplied actual operation result in your own natural words. Tool result text is internal evidence. Keep private diagnostics and stock confirmation wording out of your reply. Report a failure honestly. The operation has already run; this pass only communicates its result.',
         messages: summaryMessages,
         tools: [],
       });

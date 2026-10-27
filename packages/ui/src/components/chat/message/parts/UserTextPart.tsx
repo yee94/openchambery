@@ -340,6 +340,24 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                     />
                 )}
             </div> : null}
+            {clampOverflow && (
+                <div
+                    role="button"
+                    tabIndex={0}
+                    className="mt-2 flex cursor-pointer items-center justify-center gap-1 font-sans typography-markdown-body"
+                    aria-expanded={false}
+                    onClick={() => setIsExpanded(true)}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setIsExpanded(true);
+                        }
+                    }}
+                >
+                    {t('chat.message.userText.showMore')}
+                    <Icon name="arrow-down-s" className="size-[1em]" />
+                </div>
+            )}
         </div>
     );
 };

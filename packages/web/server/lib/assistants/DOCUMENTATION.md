@@ -223,6 +223,8 @@ and keep their existing error result handling.
 
 **Create assistant / schedule task (this PR)**
 
+Reply language follows the user's latest substantive message and conversation context, with explicit language requests taking precedence. Ambiguous messages and background follow-ups retain the conversation language. The built-in prompt and terminal-tool summary never select a response language from UI locale. Reset summaries receive the current user request as language context alongside the reset result, without restoring earlier history. Explicit `{{LANGUAGE}}` placeholders in user-authored `defaultPrompt` retain their locale substitution contract; the built-in prompt no longer uses that token.
+
 - `create_assistant` calls the same in-process `createAssistant` (`name`, connected OpenCode `providerID`/`modelID`, `mode: 'continuous'`). It emits an `assistant` card that opens that contact.
 - `schedule_task` calls in-process `projectConfigRuntime.upsertScheduledTask` with the same payload as `PUT /api/projects/:id/scheduled-tasks` (`name`, `schedule.kind/time/timezone`, `execution.prompt` + provider/model) on a registered project, then best-effort `scheduledTasksRuntime.syncProject`. It emits a `schedule` card.
 - Successful `schedule_task` also writes an assistants-owned mapping row in `assistants.sqlite` (`assistant_scheduled_task`: assistantID + projectID + taskID). Project-config execution strips unknown fields, so ownership stays out of the task payload. `GET /api/yuri/assistants/:id/scheduled-tasks` returns those mappings joined with live `listScheduledTasks` records when possible; failed project lookups keep the mapping with `task: null`.

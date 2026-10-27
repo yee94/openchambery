@@ -46,17 +46,17 @@ const pointer = async (type: string, x = 200, id = 1, y = 200) => {
     if (type === 'pointerdown') await act(async () => vi.advanceTimersByTime(300));
 };
 
-it('opens editing on release and ignores subsequent capture loss', async () => {
+it('sends on default release and ignores subsequent capture loss', async () => {
     await pointer('pointerdown');
     expect(speech.startDictation).toHaveBeenCalledTimes(1);
     await pointer('pointerup');
     await pointer('lostpointercapture');
     expect(speech.confirmDictation).toHaveBeenCalledTimes(1);
     expect(speech.cancelDictation).not.toHaveBeenCalled();
-    expect(document.activeElement).toBe(button);
-    transcript.deliver('可编辑的识别文本');
-    expect(onInsert).toHaveBeenCalledWith('可编辑的识别文本');
-    expect(onSend).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(button);
+    transcript.deliver('直接发送');
+    expect(onSend).toHaveBeenCalledExactlyOnceWith('直接发送');
+    expect(onInsert).not.toHaveBeenCalled();
 });
 
 it('shows the overlay and a loading indicator while iOS opens the microphone', async () => {
@@ -80,7 +80,7 @@ it('shows the overlay and a loading indicator while iOS opens the microphone', a
 it('arms left cancellation, ignores another pointer and discards on release', async () => {
     await pointer('pointerdown');
     await pointer('pointermove', 100, 2);
-    expect(onHintChange).toHaveBeenLastCalledWith('editing');
+    expect(onHintChange).toHaveBeenLastCalledWith('recording');
     await pointer('pointermove', 100);
     expect(onHintChange).toHaveBeenLastCalledWith('cancelling');
     expect(document.querySelector('.yuri-speech-target--cancel')?.getAttribute('data-active')).toBe('true');
@@ -114,18 +114,18 @@ it('provides haptics only when entering a target or returning to the center', as
     expect(haptic).toHaveBeenCalledTimes(4);
 });
 
-it('upper-right slide sends only on release', async () => {
+it('upper-right slide opens editing only on release', async () => {
     await pointer('pointerdown'); await pointer('pointermove', 290, 1, 100);
-    expect(onHintChange).toHaveBeenLastCalledWith('recording');
-    expect(document.querySelector('.yuri-speech-target--send')?.getAttribute('data-active')).toBe('true');
-    expect(document.querySelector('.yuri-speech-target--send')?.textContent).toContain('chat.dictation.send');
+    expect(onHintChange).toHaveBeenLastCalledWith('editing');
+    expect(document.querySelector('.yuri-speech-target--edit')?.getAttribute('data-active')).toBe('true');
+    expect(document.querySelector('.yuri-speech-target--edit')?.textContent).toContain('chat.dictation.edit');
     expect(speech.confirmDictation).not.toHaveBeenCalled();
     await pointer('pointerup', 290);
     expect(speech.confirmDictation).toHaveBeenCalledTimes(1);
-    expect(document.activeElement).not.toBe(button);
-    transcript.deliver('直接发送');
-    expect(onSend).toHaveBeenCalledExactlyOnceWith('直接发送');
-    expect(onInsert).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(button);
+    transcript.deliver('可编辑的识别文本');
+    expect(onInsert).toHaveBeenCalledExactlyOnceWith('可编辑的识别文本');
+    expect(onSend).not.toHaveBeenCalled();
 });
 
 it('activates the half under the finger when entering the bottom targets', async () => {
@@ -133,22 +133,22 @@ it('activates the half under the finger when entering the bottom targets', async
     const targets = document.querySelector('.yuri-speech-targets')!;
     vi.spyOn(targets, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 400, 80));
     await pointer('pointermove', 230, 1, 140);
-    expect(onHintChange).toHaveBeenLastCalledWith('recording');
+    expect(onHintChange).toHaveBeenLastCalledWith('editing');
     await pointer('pointermove', 170, 1, 140);
     expect(onHintChange).toHaveBeenLastCalledWith('cancelling');
     await pointer('pointermove', 200, 1, 200);
-    expect(onHintChange).toHaveBeenLastCalledWith('editing');
+    expect(onHintChange).toHaveBeenLastCalledWith('recording');
     await pointer('pointerup');
     expect(speech.confirmDictation).toHaveBeenCalledTimes(1);
 });
 
-it('moving vertically does not cancel and returning from send restores editing', async () => {
+it('moving vertically does not cancel and returning from edit restores sending', async () => {
     await pointer('pointerdown'); await pointer('pointermove', 200, 1, 80);
-    expect(onHintChange).toHaveBeenLastCalledWith('editing');
+    expect(onHintChange).toHaveBeenLastCalledWith('recording');
     await pointer('pointermove', 290); await pointer('pointermove', 200);
-    await pointer('pointerup'); transcript.deliver('编辑');
-    expect(onInsert).toHaveBeenCalledWith('编辑');
-    expect(onSend).not.toHaveBeenCalled();
+    await pointer('pointerup'); transcript.deliver('发送');
+    expect(onSend).toHaveBeenCalledWith('发送');
+    expect(onInsert).not.toHaveBeenCalled();
     expect(speech.cancelDictation).not.toHaveBeenCalled();
 });
 
@@ -257,12 +257,12 @@ it('keeps recording after capture loss and follows move/release outside the text
     await pointer('lostpointercapture');
     expect(speech.cancelDictation).not.toHaveBeenCalled();
     await act(async () => document.body.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 290, clientY: 100 })));
-    expect(onHintChange).toHaveBeenLastCalledWith('recording');
+    expect(onHintChange).toHaveBeenLastCalledWith('editing');
     await act(async () => document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 290, clientY: 100 })));
     expect(speech.confirmDictation).toHaveBeenCalledTimes(1);
-    transcript.deliver('移出后发送');
-    expect(onSend).toHaveBeenCalledWith('移出后发送');
-    expect(onInsert).not.toHaveBeenCalled();
+    transcript.deliver('移出后编辑');
+    expect(onInsert).toHaveBeenCalledWith('移出后编辑');
+    expect(onSend).not.toHaveBeenCalled();
 });
 
 it('tracks cancellation over another element even when it stops bubbling events', async () => {
@@ -273,7 +273,7 @@ it('tracks cancellation over another element even when it stops bubbling events'
     try {
         await pointer('pointerdown');
         await act(async () => outside.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 2, clientX: 100, clientY: 80 })));
-        expect(onHintChange).toHaveBeenLastCalledWith('editing');
+        expect(onHintChange).toHaveBeenLastCalledWith('recording');
         await act(async () => outside.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 100, clientY: 80 })));
         expect(onHintChange).toHaveBeenLastCalledWith('cancelling');
         await act(async () => outside.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 100, clientY: 80 })));
@@ -350,7 +350,7 @@ it.each(['send', 'edit'])('shows loading on %s release until finalization comple
     speech.status = 'recording';
     speech.partialTranscript = '待整理的文字';
     await render();
-    if (intent === 'send') await pointer('pointermove', 290);
+    if (intent === 'edit') await pointer('pointermove', 290);
     await pointer('pointerup');
     expect(document.querySelector('.yuri-speech-overlay [data-dictation-loading]')).not.toBeNull();
     expect((document.querySelector('[data-dictation-loading]') as HTMLElement).style.width).toBe('72px');

@@ -6801,23 +6801,30 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // their own keyboard handling; Capacitor uses native chrome choreography.
     const composerFormRef = React.useRef<HTMLFormElement | null>(null);
 
-    // Primary web composer publishes its real occupancy so the transcript tail
-    // reserves exactly the card + Changes / TODO / queue. ResizeObserver runs
-    // only when the box height changes (not per keystroke); swap motion is
-    // transform-only and never fires it. Native iOS measures its own accessory.
+    // Freeze the initial input/chrome reservation. Only Changes / TODO / queue
+    // resize it afterwards; typing and height-handle motion stay local.
     const publishesComposerOccupancy = isMobile && surface.kind === 'primary' && !nativeIosComposerActive;
     const composerOccupancyWrittenRef = React.useRef<string | null>(null);
-    useResizeObserver(publishesComposerOccupancy ? composerFormRef : null, () => {
+    const composerBaseOccupancyRef = React.useRef<number | null>(null);
+    const publishComposerOccupancy = useEvent(() => {
+        if (!publishesComposerOccupancy) return;
         const form = composerFormRef.current;
         if (!form?.closest('.yuri-mobile-composer-foot--overlay')) return;
-        const written = publishMobileComposerOccupancy(document.documentElement, form.offsetHeight);
+        const accessoryHeight = nativeAccessoryRef.current?.offsetHeight ?? 0;
+        if (composerBaseOccupancyRef.current === null) {
+            if (form.offsetHeight <= 0) return;
+            composerBaseOccupancyRef.current = Math.max(0, form.offsetHeight - accessoryHeight);
+        }
+        const written = publishMobileComposerOccupancy(document.documentElement, composerBaseOccupancyRef.current + accessoryHeight);
         if (written !== null) composerOccupancyWrittenRef.current = written;
     });
+    useResizeObserver(publishesComposerOccupancy ? nativeAccessoryRef : null, publishComposerOccupancy);
     React.useEffect(() => {
         if (!publishesComposerOccupancy) return;
         return () => {
             clearMobileComposerOccupancy(document.documentElement, composerOccupancyWrittenRef.current);
             composerOccupancyWrittenRef.current = null;
+            composerBaseOccupancyRef.current = null;
         };
     }, [publishesComposerOccupancy]);
 

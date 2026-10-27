@@ -38,7 +38,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
     const { t } = useI18n();
     const [held, setHeld] = useState(false);
     const [processing, setProcessing] = useState(false);
-    const [intent, setIntent] = useState<'send' | 'cancel' | 'edit'>('edit');
+    const [intent, setIntent] = useState<'send' | 'cancel' | 'edit'>('send');
     const gesture = useRef<{ pointer: number; x: number; y: number; intent: 'send' | 'cancel' | 'edit'; started: boolean } | null>(null);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const action = useRef<'send' | 'insert'>('insert');
@@ -66,7 +66,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         clearTimer();
         gesture.current = null;
         setHeld(false);
-        setIntent('edit');
+        setIntent('send');
         if (status === 'failed' || (status === 'idle' && error)) dictation.discardFailedDictation();
         else void dictation.cancelDictation();
     });
@@ -76,7 +76,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         if (!emptyInputForTarget(target)) return;
         event.preventDefault();
         event.stopPropagation();
-        gesture.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, intent: 'edit', started: false };
+        gesture.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, intent: 'send', started: false };
         timer.current = setTimeout(() => {
             timer.current = null;
             if (!gesture.current) return;
@@ -86,7 +86,7 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
             gesture.current.started = true;
             action.current = 'insert';
             setHeld(true);
-            setIntent('edit');
+            setIntent('send');
             void dictation.startDictation();
         }, 300);
     });
@@ -99,13 +99,13 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
         const targets = gestureStage.current?.getBoundingClientRect();
         const overTargets = targets && targets.width > 0 && event.clientY >= targets.top && event.clientY <= targets.bottom;
         const next = overTargets
-            ? event.clientX < targets.left + targets.width / 2 ? 'cancel' : 'send'
-            : dx <= -64 ? 'cancel' : dx >= 64 ? 'send' : 'edit';
+            ? event.clientX < targets.left + targets.width / 2 ? 'cancel' : 'edit'
+            : dx <= -64 ? 'cancel' : dx >= 64 ? 'edit' : 'send';
         if (!current.started && Math.hypot(dx, current.y - event.clientY) > 12) { clearTimer(); gesture.current = null; return; }
         if (current.started && next !== current.intent) {
             current.intent = next;
             setIntent(next);
-            triggerMobileHaptic(next === 'edit' ? 'light' : 'medium', { bypassCadence: true });
+            triggerMobileHaptic(next === 'send' ? 'light' : 'medium', { bypassCadence: true });
         }
     });
     const up = useEvent((event: PointerEvent) => {
@@ -193,9 +193,9 @@ export function HoldToTalkComposer({ containerRef, disabled, onInsert, onSend, o
                             <path d={cancelTargetPath} />
                             <text x="95" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(-11 95 68)">{t('chat.dictation.cancelGesture')}</text>
                         </g>
-                        <g className="yuri-speech-target yuri-speech-target--send" data-active={intent === 'send'}>
+                        <g className="yuri-speech-target yuri-speech-target--edit" data-active={intent === 'edit'}>
                             <path d={editTargetPath} />
-                            <text x="305" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(11 305 68)">{t('chat.dictation.send')}</text>
+                            <text x="305" y="68" textAnchor="middle" dominantBaseline="central" transform="rotate(11 305 68)">{t('chat.dictation.edit')}</text>
                         </g>
                     </g>
                     <path className="yuri-speech-hold-arc" fill={`url(#${arcGradientId})`} d="M-50 186.987 A500 500 0 0 1 450 186.987 L450 300 H-50 Z" />

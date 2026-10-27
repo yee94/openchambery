@@ -138,10 +138,12 @@ test.each(['completed', 'error'])('tool elapsed time survives projection, remoun
 
 test.each([
     [59_000, '59.0s'],
-    [60_000, '1.0m'],
-    [301_000, '5.0m'],
-    [825_000, '13.8m'],
-    [7_200_000, '120.0m'],
+    [60_000, '1m 0s'],
+    [96_000, '1m 36s'],
+    [119_999, '1m 59s'],
+    [301_000, '5m 1s'],
+    [825_000, '13m 45s'],
+    [7_200_000, '120m 0s'],
 ] as const)('shell duration displays %s ms without a cap', async (elapsed, expected) => {
     live.store = createStore(() => ({ status: { type: 'busy' } as SessionStatus }));
     live.messages = [];

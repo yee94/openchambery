@@ -71,7 +71,7 @@ freshness, catalog replacement and active-surface changes.
 
 `components/dictation/useHoldToTalkInput` shares only hold-to-talk state between Chat and Assistant inputs: the global dictation setting, runtime/capture availability, current hint and stable `onHintChange` callback. Callers supply surface availability and mount `HoldToTalkComposer` only while enabled, releasing capture when the global setting turns off. Disabled surfaces receive a null hint. Each input independently chooses its placeholder and localized copy; Assistant idle/disabled copy retains its contextual Assistant name. Gesture/audio behavior stays in the shared component; drafts and sends stay with each input owner.
 
-Hold-to-talk target transitions use the shared mobile haptic gate: entering cancel/send gives medium feedback, returning to the center gives light feedback. Repeated movement within the same intent gives no feedback. These transitions bypass streaming cadence; haptics remain limited to visible, active Capacitor apps with native haptic support.
+Mobile hold-to-talk sends on release by default; sliding to the upper-right target edits the transcript instead, while the left target cancels. Returning to the center restores send. Hold-to-talk target transitions use the shared mobile haptic gate: entering cancel/edit gives medium feedback, returning to the center gives light feedback. Repeated movement within the same intent gives no feedback. These transitions bypass streaming cadence; haptics remain limited to visible, active Capacitor apps with native haptic support.
 
 Desktop ASR uses `DesktopDictationButton` in the composer action row when
 dictation is enabled and capture is supported (web/Electron, not VS Code).

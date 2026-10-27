@@ -79,3 +79,41 @@ it('does zero snap hook or listener work across 50 edits at the production JSX b
   expect(host.querySelector('[data-mobile-composer-snap-handle]')).toBeNull();
   expect(host.firstElementChild?.hasAttribute('data-composer-height-snap')).toBe(false);
 });
+
+it('keeps the initial input reservation when text grows and adjusts only accessory height', () => {
+  const start = source.indexOf('const publishComposerOccupancy = useEvent(');
+  const end = source.indexOf('\n    useResizeObserver(', start);
+  const callback = source.slice(start, end);
+  const form = document.createElement('form');
+  const overlay = document.createElement('div');
+  overlay.className = 'yuri-mobile-composer-foot--overlay';
+  overlay.append(form);
+  let formHeight = 160;
+  const measure = vi.fn(() => formHeight);
+  Object.defineProperty(form, 'offsetHeight', { get: measure });
+  const accessory = { offsetHeight: 40 };
+  const publish = vi.fn(() => '160px');
+  const create = new Function('composerFormRef', 'nativeAccessoryRef', 'publishMobileComposerOccupancy', 'document', `
+    const publishesComposerOccupancy = true;
+    const composerBaseOccupancyRef = { current: null };
+    const composerOccupancyWrittenRef = { current: null };
+    const useEvent = fn => fn;
+    ${callback}
+    return publishComposerOccupancy;
+  `);
+  const update = create({ current: form }, { current: accessory }, publish, document);
+  update();
+  expect(publish).toHaveBeenLastCalledWith(document.documentElement, 160);
+  measure.mockClear();
+  formHeight = 460;
+  update();
+  expect(publish).toHaveBeenLastCalledWith(document.documentElement, 160);
+  accessory.offsetHeight = 100;
+  update();
+  expect(publish).toHaveBeenLastCalledWith(document.documentElement, 220);
+  accessory.offsetHeight = 0;
+  update();
+  expect(publish).toHaveBeenLastCalledWith(document.documentElement, 120);
+  expect(measure).not.toHaveBeenCalled();
+  expect(source).toContain('useResizeObserver(publishesComposerOccupancy ? nativeAccessoryRef : null, publishComposerOccupancy)');
+});

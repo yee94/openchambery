@@ -1987,6 +1987,7 @@ export const settingsDict = {
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.label': '콘텐츠 크기 조정',
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.description': '지원되는 브라우저에 패닝만 의존하지 않고 앱 레이아웃을 줄이도록 요청합니다.',
   'chat.message.userText.collapseAria': '사용자 메시지 접기',
+  'chat.message.userText.showMore': '더 보기',
   'settings.yuri.visual.option.chatRenderMode.sorted.label': '정렬됨',
   'settings.yuri.visual.option.chatRenderMode.sorted.description': '중간 과정은 Activity로 정리하고, 최종 결론 본문만 스트리밍합니다.',
   'settings.yuri.visual.option.chatRenderMode.live.label': 'Live',

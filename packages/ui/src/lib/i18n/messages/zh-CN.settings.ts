@@ -1987,6 +1987,7 @@ export const settingsDict = {
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.label': '调整内容大小',
   'settings.yuri.visual.option.mobileKeyboardMode.resizeContent.description': '请求受支持的浏览器缩小应用布局，而不是只依赖平移。',
   'chat.message.userText.collapseAria': '折叠用户消息',
+  'chat.message.userText.showMore': '展开查看更多',
   'settings.yuri.visual.option.chatRenderMode.sorted.label': '整理后显示',
   'settings.yuri.visual.option.chatRenderMode.sorted.description': '中间过程整理进 Activity；仅最终结论正文流式输出。',
   'settings.yuri.visual.option.chatRenderMode.live.label': '实时显示',

@@ -1206,6 +1206,7 @@ export const settingsDict = {
   'settings.yuri.visual.option.timeFormat.auto.description': 'Używaj preferencji lokalnych systemu.',
   'settings.yuri.visual.option.timeFormat.auto.label': 'Auto',
   'chat.message.userText.collapseAria': 'Zwiń wiadomość użytkownika',
+  'chat.message.userText.showMore': 'Pokaż więcej',
   'settings.yuri.visual.option.weekStart.auto.description': 'Używaj lokalnego początku tygodnia.',
   'settings.yuri.visual.option.weekStart.auto.label': 'Auto',
   'settings.yuri.visual.option.weekStart.monday.label': 'Poniedziałek',

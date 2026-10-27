@@ -1987,6 +1987,7 @@ export const settingsDict = {
   "settings.yuri.visual.option.mobileKeyboardMode.resizeContent.label": "Змінювати розмір вмісту",
   "settings.yuri.visual.option.mobileKeyboardMode.resizeContent.description": "Просити сумісні браузери зменшувати макет застосунку замість покладатися лише на панорамування.",
   "chat.message.userText.collapseAria": "Згорнути повідомлення користувача",
+  "chat.message.userText.showMore": "Показати більше",
   "settings.yuri.visual.option.chatRenderMode.sorted.label": "Відсортовано",
   "settings.yuri.visual.option.chatRenderMode.sorted.description": "Проміжну роботу збирайте в Activity; транслюйте лише фінальний висновок.",
   "settings.yuri.visual.option.chatRenderMode.live.label": "Live",

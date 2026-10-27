@@ -259,7 +259,7 @@ const formatDuration = (start: number, end?: number, now: number = Date.now()) =
     const seconds = duration / 1000;
 
     if (seconds >= 60) {
-        return `${(seconds / 60).toFixed(1)}m`;
+        return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
     }
 
     const displaySeconds = seconds < 0.05 && end !== undefined ? 0.1 : seconds;

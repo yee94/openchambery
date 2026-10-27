@@ -225,7 +225,8 @@ export const AssistantSessionComposer = ({ active, working = false, onChange, on
       onHintChange={setDictationHint} />}
     <ChatPromptComposer {...props} value={document.text} pending={props.pending || working}
     placeholder={placeholder}
-    disableInputWhilePending={props.pending === true} inputRef={inputRef}
+    disableInputWhilePending={false} inputRef={inputRef}
+    onSubmit={() => { if (!props.pending) props.onSubmit(); }}
     highlightedContent={highlighted} highlightRef={highlightRef}
     textLayoutClassName={cn('whitespace-pre-wrap break-words overflow-hidden px-3 typography-markdown md:typography-ui-label', props.layout === 'inline' ? 'py-3 leading-6' : 'pt-4 pb-2', props.textLayoutClassName)}
     onChange={(value, event) => {

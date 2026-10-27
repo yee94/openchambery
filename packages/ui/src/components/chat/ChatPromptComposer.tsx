@@ -284,6 +284,9 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
       disabled={disabled || pending || !hasContent}
       aria-busy={pending || undefined}
       aria-label={sendLabel}
+      onClick={() => localInputRef.current?.focus({ preventScroll: true })}
+      onMouseDown={(event) => event.preventDefault()}
+      onPointerDownCapture={isMobile ? (event) => event.preventDefault() : undefined}
     >
       <SendCircleIcon className={circleGlyphClass} spinning={pending} />
     </button>
