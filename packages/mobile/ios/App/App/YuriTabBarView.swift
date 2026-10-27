@@ -26,7 +26,7 @@ struct YuriTabBarItem {
 /// hosts real pages — placeholder controllers stay clear, taps emit
 /// `tabSelected`, and React still owns the homepage stack.
 /// Light and dark follow the Web theme via `overrideUserInterfaceStyle`.
-final class YuriTabBarView: UIView, UITabBarControllerDelegate {
+final class YuriTabBarView: UIView, UITabBarControllerDelegate, WKNavigationDelegate {
     weak var delegate: YuriTabBarViewDelegate?
 
     static var supportsLiquidGlass: Bool {
@@ -43,6 +43,7 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
     private var activityBadges: [String: TabActivityBadge] = [:]
     private var avatarView: WKWebView?
     private var avatarURI: String?
+    private var avatarImage: UIImage?
     private var selectedId = ""
     private var applying = false
     private var lastReportedHeight: CGFloat = -1
@@ -67,7 +68,6 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         layoutActivityBadges()
-        layoutAvatar()
         reportHeightIfNeeded()
     }
 
@@ -218,6 +218,7 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
             avatarView?.removeFromSuperview()
             avatarView = nil
             avatarURI = nil
+            avatarImage = nil
             return
         }
         let item = items[index]
@@ -229,29 +230,29 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
             avatarView?.removeFromSuperview()
             avatarView = nil
             avatarURI = nil
+            avatarImage = nil
             tab.image = UIImage(systemName: item.symbol)
             tab.selectedImage = UIImage(systemName: item.selectedSymbol)
             return
         }
-        let blank = UIGraphicsImageRenderer(size: CGSize(width: 23, height: 23)).image { _ in }
-            .withRenderingMode(.alwaysOriginal)
-        tab.image = blank
-        tab.selectedImage = blank
-        if avatarView == nil {
+        if avatarURI != uri {
+            avatarView?.removeFromSuperview()
+            avatarImage = nil
+            avatarURI = uri
             let configuration = WKWebViewConfiguration()
             configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-            let view = WKWebView(frame: .zero, configuration: configuration)
+            // Rasterize SVG offscreen; UITabBarItem owns positioning and selection animations.
+            let view = WKWebView(frame: CGRect(x: -100, y: 0, width: 28.75, height: 28.75), configuration: configuration)
             view.isOpaque = false
             view.backgroundColor = .clear
             view.scrollView.backgroundColor = .clear
             view.scrollView.isScrollEnabled = false
+            view.scrollView.contentInsetAdjustmentBehavior = .never
             view.isUserInteractionEnabled = false
             view.isAccessibilityElement = false
+            view.navigationDelegate = self
             addSubview(view)
             avatarView = view
-        }
-        if avatarURI != uri {
-            avatarURI = uri
             let escaped = uri.replacingOccurrences(of: "&", with: "&amp;")
                 .replacingOccurrences(of: "\"", with: "&quot;")
                 .replacingOccurrences(of: "<", with: "&lt;")
@@ -262,31 +263,34 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
                 <img src="\(escaped)">
                 """, baseURL: nil)
         }
-        setNeedsLayout()
+        tab.image = avatarImage ?? UIImage(systemName: item.symbol)
+        tab.selectedImage = avatarImage ?? UIImage(systemName: item.selectedSymbol)
     }
 
-    private func layoutAvatar() {
-        guard let avatarView, let index = items.firstIndex(where: { $0.id == "assistant" }) else { return }
-        let frames = tabButtonFrames()
-        guard index < frames.count else { return }
-        let frame = frames[index]
-        avatarView.frame = CGRect(x: frame.midX - 14.375, y: frame.minY + 0.125, width: 28.75, height: 28.75)
-        let buttons = chromeController.tabBar.subviews
-            .filter { String(describing: type(of: $0)).contains("TabBarButton") && !$0.frame.isEmpty }
-            .sorted { $0.frame.minX < $1.frame.minX }
-        if buttons.count == items.count, let image = iconImageView(in: buttons[index]) {
-            let iconFrame = image.convert(image.bounds, to: self)
-            avatarView.center = CGPoint(x: iconFrame.midX, y: iconFrame.midY)
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === avatarView else { return }
+        webView.takeSnapshot(with: nil) { [weak self, weak webView] image, _ in
+            guard let self, let webView, webView === self.avatarView else { return }
+            webView.removeFromSuperview()
+            self.avatarView = nil
+            guard let image else {
+                self.avatarURI = nil
+                return
+            }
+            self.avatarImage = image.withRenderingMode(.alwaysOriginal)
+            self.applyAvatar()
         }
-        for badge in activityBadges.values { bringSubviewToFront(badge) }
     }
 
-    private func iconImageView(in view: UIView) -> UIImageView? {
-        if let image = view as? UIImageView, !image.bounds.isEmpty { return image }
-        for child in view.subviews {
-            if let image = iconImageView(in: child) { return image }
-        }
-        return nil
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard webView === avatarView else { return }
+        webView.removeFromSuperview()
+        avatarView = nil
+        avatarURI = nil
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        self.webView(webView, didFail: navigation, withError: error)
     }
 
     private func layoutActivityBadges() {

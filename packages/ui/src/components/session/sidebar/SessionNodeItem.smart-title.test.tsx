@@ -42,6 +42,7 @@ afterEach(async () => {
   requestTitle.mockClear();
   loadChildren.mockClear();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 afterAll(() => {
   container.remove();
@@ -105,15 +106,14 @@ function Harness({ live = session, editing = true, indexed = session, children =
   /></TooltipProvider>;
 }
 
-test('AI title click immediately shows the title loading while the request is pending', async () => {
+test('AI title admission alone does not show title loading', async () => {
   root = createRoot(container);
   await act(async () => root.render(<Harness />));
   const button = container.querySelector<HTMLButtonElement>('[aria-label="sessions.sidebar.session.rename.smartTitle"]');
   expect(button).not.toBeNull();
   await act(async () => button!.click());
   expect(requestTitle).toHaveBeenCalledWith(session.id);
-  expect(container.querySelector('[aria-busy="true"]')?.textContent).toBe(session.title);
-  expect(container.querySelector('[aria-busy="true"]')?.classList.contains('animate-text-shimmer')).toBe(true);
+  expect(container.querySelector('.animate-text-shimmer')).toBeNull();
 });
 
 test('indexed child availability survives a live session snapshot without hasChildren and loads only on expansion', async () => {
@@ -156,7 +156,7 @@ test('expansion shows pending state and reports failure so a later expansion can
 
 test('server first-title generation shows loading without clicking the AI button', async () => {
   root = createRoot(container);
-  const generating = { ...session, title: '', metadata: { yuri: { titleRefresh: { isGenerating: true } } } } as Session;
+  const generating = { ...session, title: '', metadata: { yuri: { titleRefresh: { isGenerating: true, generationExpiresAt: Date.now() + 10_000 } } } } as Session;
   await act(async () => root.render(<Harness editing={false} live={generating} />));
   expect(container.querySelector('[aria-busy="true"]')?.classList.contains('animate-text-shimmer')).toBe(true);
   expect(requestTitle).not.toHaveBeenCalled();
@@ -168,7 +168,7 @@ test('server first-title generation shows loading without clicking the AI button
 
 test('metadata-only title completion stops text loading while execution remains busy', async () => {
   root = createRoot(container);
-  const generating = { ...session, metadata: { yuri: { titleRefresh: { isGenerating: true } } } } as Session;
+  const generating = { ...session, metadata: { yuri: { titleRefresh: { isGenerating: true, generationExpiresAt: Date.now() + 10_000 } } } } as Session;
   await act(async () => root.render(<Harness editing={false} live={generating} />));
   expect(container.querySelector('.animate-text-shimmer')?.textContent).toBe(session.title);
   const completed = { ...session, metadata: { yuri: { titleRefresh: {} } } } as Session;
@@ -176,4 +176,29 @@ test('metadata-only title completion stops text loading while execution remains 
   expect(container.querySelector('.animate-text-shimmer')).toBeNull();
   expect(container.querySelector('[aria-busy="true"]')).toBeNull();
   expect(container.querySelector('[aria-label="sessions.sidebar.session.status.active"]')).not.toBeNull();
+});
+
+test('title loading expires without a completion event and only restarts for a fresh attempt', async () => {
+  vi.useFakeTimers();
+  root = createRoot(container);
+  const deadline = Date.now() + 10_000;
+  const generating = { ...session, metadata: { yuri: { titleRefresh: { isGenerating: true, generationExpiresAt: deadline } } } } as Session;
+  await act(async () => root.render(<Harness editing={false} live={generating} />));
+  expect(container.querySelector('.animate-text-shimmer')).not.toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(container.querySelector('.animate-text-shimmer')).toBeNull();
+  await act(async () => root.render(<Harness editing={false} live={{ ...generating }} />));
+  expect(container.querySelector('.animate-text-shimmer')).toBeNull();
+  const retry = { ...session, metadata: { yuri: { titleRefresh: { isGenerating: true, generationExpiresAt: Date.now() + 10_000 } } } } as Session;
+  await act(async () => root.render(<Harness editing={false} live={retry} />));
+  expect(container.querySelector('.animate-text-shimmer')).not.toBeNull();
+  await act(async () => root.render(<Harness editing={false} live={session} />));
+  expect(container.querySelector('.animate-text-shimmer')).toBeNull();
+});
+
+test.each([undefined, 1])('persisted loading without a valid deadline does not shimmer (%s)', async (generationExpiresAt) => {
+  root = createRoot(container);
+  const stale = { ...session, metadata: { yuri: { titleRefresh: { isGenerating: true, generationExpiresAt } } } } as Session;
+  await act(async () => root.render(<Harness editing={false} live={stale} />));
+  expect(container.querySelector('.animate-text-shimmer')).toBeNull();
 });

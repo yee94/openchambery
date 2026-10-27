@@ -241,6 +241,7 @@ import {
 import { buildAssistantQueueDeliveryParts, buildAssistantQueueSyntheticSidecar, buildSyntheticDeliveryParts, compileChatComposerDelivery, legacyTextToAuthoredPlan } from './chatComposerDelivery';
 import { useComposerTextareaAutosize } from './useComposerTextareaAutosize';
 import { MobileComposerHeightHandle } from './MobileComposerHeightHandle';
+import { clearMobileComposerOccupancy, publishMobileComposerOccupancy } from './mobileComposerSwap';
 import { queueModeAllowsMutations, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
 
 const COMPOSER_TEXT_LAYOUT_CLASS = 'box-border w-full whitespace-pre-wrap break-words px-3 typography-markdown [font-family:inherit] [font-style:inherit] [font-weight:inherit] leading-[inherit] tracking-[inherit] md:typography-ui-label';
@@ -6799,6 +6800,26 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // Used by scrollIntoView reveal and the composer <form> ref — browsers keep
     // their own keyboard handling; Capacitor uses native chrome choreography.
     const composerFormRef = React.useRef<HTMLFormElement | null>(null);
+
+    // Primary web composer publishes its real occupancy so the transcript tail
+    // reserves exactly the card + Changes / TODO / queue. ResizeObserver runs
+    // only when the box height changes (not per keystroke); swap motion is
+    // transform-only and never fires it. Native iOS measures its own accessory.
+    const publishesComposerOccupancy = isMobile && surface.kind === 'primary' && !nativeIosComposerActive;
+    const composerOccupancyWrittenRef = React.useRef<string | null>(null);
+    useResizeObserver(publishesComposerOccupancy ? composerFormRef : null, () => {
+        const form = composerFormRef.current;
+        if (!form?.closest('.yuri-mobile-composer-foot--overlay')) return;
+        const written = publishMobileComposerOccupancy(document.documentElement, form.offsetHeight);
+        if (written !== null) composerOccupancyWrittenRef.current = written;
+    });
+    React.useEffect(() => {
+        if (!publishesComposerOccupancy) return;
+        return () => {
+            clearMobileComposerOccupancy(document.documentElement, composerOccupancyWrittenRef.current);
+            composerOccupancyWrittenRef.current = null;
+        };
+    }, [publishesComposerOccupancy]);
 
     const footerPaddingClass = isMobile ? 'px-1.5 py-1.5' : (isVSCode ? 'px-1.5 py-1' : 'px-2.5 py-1.5');
     const buttonSizeClass = isMobile ? 'h-8 w-8' : (isVSCode ? 'h-5 w-5' : 'h-6 w-6');

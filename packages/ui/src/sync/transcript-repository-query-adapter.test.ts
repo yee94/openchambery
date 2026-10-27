@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -3364,6 +3364,53 @@ describe("remote revert.committed retires late reads (ticket 08)", () => {
       } as Event,
     })
     expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_u3", "msg_a3", "msg_u5"])
+    repo.destroy()
+  })
+})
+
+describe("subscribed transcript Query lifetime", () => {
+  const scope = { directory: DIRECTORY, sessionID: SESSION, transport: TRANSPORT, generation: GENERATION }
+  const page = transportPage([{ info: userMessage("msg_1"), parts: [textPart("p_1", "msg_1")] }], { complete: true })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test.each(["before", "after"] as const)("a listener subscribed %s the first page keeps the transcript past gcTime", async (order) => {
+    vi.useFakeTimers()
+    const repo = createQueryTranscriptRepository({
+      client: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    const apply = () => repo.apply(scope, { type: "http-page", purpose: "initial", page })
+    if (order === "after") apply()
+    const unsubscribe = repo.subscribe(scope, () => undefined)
+    if (order === "before") apply()
+    await vi.advanceTimersByTimeAsync(30 * 60_000)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_1"])
+
+    unsubscribe()
+    await vi.advanceTimersByTimeAsync(6 * 60_000)
+    expect(repo.getTranscript(scope).messageOrder).toEqual([])
+    repo.destroy()
+  })
+
+  test("a purged transcript stays alive once it is loaded again", async () => {
+    vi.useFakeTimers()
+    const repo = createQueryTranscriptRepository({
+      client: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    const unsubscribe = repo.subscribe(scope, () => undefined)
+    repo.apply(scope, { type: "http-page", purpose: "initial", page })
+    repo.getCacheBudget().purgeSession(scope)
+    expect(repo.getTranscript(scope).messageOrder).toEqual([])
+    repo.apply(scope, { type: "http-page", purpose: "initial", page })
+    await vi.advanceTimersByTimeAsync(30 * 60_000)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_1"])
+    unsubscribe()
     repo.destroy()
   })
 })

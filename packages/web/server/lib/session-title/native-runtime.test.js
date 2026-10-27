@@ -45,7 +45,7 @@ it.each([false, true, 'timeout'])('runs a Host smart-title request and clears lo
       sessionID: session.id, directory: '/repo', metadata,
     } });
     await vi.runAllTimersAsync();
-    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledTimes(fail ? 3 : 1);
     expect(session.title).toBe(fail ? 'Original' : 'Title refresh');
     if (fail) expect(session.metadata.yuri.titleRefresh.lastError).toBe(fail === 'timeout' ? 'Title generation timed out' : 'title model unavailable');
     expect(session.metadata.yuri.titleRefresh.isGenerating).not.toBe(true);
@@ -54,6 +54,63 @@ it.each([false, true, 'timeout'])('runs a Host smart-title request and clears lo
   } finally {
     runtime.stop();
   }
+});
+
+it.each(['timeout', 'error', 'empty', 'stop'])('bounds automatic title retries with backoff (%s)', async (failure) => {
+  vi.useFakeTimers();
+  const session = { id: 'ses_backoff', title: 'Original', metadata: { yuri: {
+    titleRefresh: { lastAutoTitle: 'Original', requestedAt: 1000 },
+  } } };
+  const lateResults = [];
+  const generate = vi.fn().mockImplementation(() => {
+    if (failure === 'timeout') return new Promise((resolve) => lateResults.push(resolve));
+    if (failure === 'empty') return Promise.resolve({ text: '  ' });
+    return Promise.reject(new Error('Unavailable'));
+  });
+  const runtime = createSessionTitleRuntime({
+    sessionAccess: {
+      get: async () => structuredClone(session),
+      messages: async () => [{ info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'Title retry' }] }],
+      update: async (_id, _directory, patch) => {
+        if (patch.metadata) session.metadata = mergeMetadataPatch(session.metadata, patch.metadata);
+        if (patch.title) session.title = patch.title;
+      },
+    },
+    getSmallModelService: async () => ({ generateSmallModelText: generate }),
+  });
+  try {
+    runtime.processPayload({ type: 'yuri:session-metadata', properties: {
+      sessionID: session.id, metadata: session.metadata,
+    } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(generate).toHaveBeenCalledTimes(1);
+    const duration = failure === 'timeout' ? 10_000 : 0;
+    await vi.advanceTimersByTimeAsync(duration + 999);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.generationExpiresAt).toBeUndefined();
+    if (failure === 'stop') {
+      runtime.stop();
+      await vi.runAllTimersAsync();
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(session.metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
+      return;
+    }
+    await vi.advanceTimersByTimeAsync(1);
+    expect(generate).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(duration + 1999);
+    expect(generate).toHaveBeenCalledTimes(2);
+    generate.mockResolvedValueOnce({ text: 'Recovered', providerID: 'test', modelID: 'test' });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(generate).toHaveBeenCalledTimes(3);
+    expect(session.title).toBe('Recovered');
+    expect(session.metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.yuri.titleRefresh.lastError).toBeUndefined();
+    for (const resolve of lateResults) resolve({ text: 'Obsolete' });
+    await vi.runAllTimersAsync();
+    expect(generate).toHaveBeenCalledTimes(3);
+    expect(session.title).toBe('Recovered');
+  } finally { runtime.stop(); }
 });
 
 it('runs a retry after a hung generation expires and ignores its late result', async () => {
@@ -345,7 +402,7 @@ it.each([false, true].flatMap((missedEvent) =>
       runtime.processPayload(firstAdmission);
       await vi.runAllTimersAsync();
     }
-    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledTimes(result === 'failure' ? 3 : 1);
     expect(generate.mock.calls[0][0].prompt).toContain('Implement the alternate direction');
     expect(session.title).toBe(['new-title', 'metadata-retry'].includes(result) ? 'Fork direction' : 'Original (fork #1)');
     expect(session.metadata.yuri.titleRefresh.isGenerating).toBeUndefined();
@@ -360,7 +417,7 @@ it.each([false, true].flatMap((missedEvent) =>
     await vi.runAllTimersAsync();
     runtime.processPayload({ type: 'session.execution.succeeded', data: { sessionID: session.id } });
     await vi.runAllTimersAsync();
-    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledTimes(result === 'failure' ? 3 : 1);
   } finally { runtime.stop(); }
 });
 

@@ -8,6 +8,7 @@ import {
 } from './lib/scroll/timelineScrollAnchoring';
 import {
     COMPOSER_SWAP_CSS_VAR,
+    COMPOSER_SWAP_INTENT_WINDOW_MS,
     COMPOSER_SWAP_SNAP_MS,
     COMPOSER_SWAP_USER_SCROLL_WINDOW_MS,
     NATIVE_COMPOSER_DOCK_CSS_VAR,
@@ -171,6 +172,13 @@ describe('useMobileComposerSwap gesture commit', () => {
         await fireTouch('touchmove', toY, identifier);
     };
 
+    /** Finger-tracked collapse that ends compact at rest, 300px from the edge. */
+    const collapse = async () => {
+        await beginSwipe();
+        for (const distance of [30, 60, 100, 300]) await fireScroll(distance);
+        expect(readSwap(scopeEl)).toEqual({ phase: 'rest', rest: 'compact', progress: '1' });
+    };
+
     test('held finger never commits — flash regression', async () => {
         await mount();
 
@@ -197,26 +205,45 @@ describe('useMobileComposerSwap gesture commit', () => {
         expect(readSwap(scopeEl).phase).toBe('tracking');
     });
 
-    test('lift commits by progress threshold then settles', async () => {
+    test('lift commits in the release direction, else by the midpoint', async () => {
         await mount();
 
+        // 30px of upward travel is below the midpoint but is clear intent.
         await beginSwipe();
         await fireScroll(30);
         expect(readSwap(scopeEl).phase).toBe('tracking');
         expect(Number(readSwap(scopeEl).progress)).toBeCloseTo(0.375);
-
         await fireTouch('touchend', 420);
         await advance(120);
-        expect(readSwap(scopeEl)).toMatchObject({
-            phase: 'snapping',
-            rest: 'expanded',
-        });
-
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'compact' });
         await advance(COMPOSER_SWAP_SNAP_MS);
-        expect(readSwap(scopeEl)).toMatchObject({
-            phase: 'rest',
-            rest: 'expanded',
-        });
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'compact' });
+
+        // Back to the edge, then a held pause lets the intent expire.
+        await beginSwipe(420, 520);
+        for (const distance of [250, 150, 60, 0]) await fireScroll(distance);
+        expect(readSwap(scopeEl)).toMatchObject({ rest: 'expanded', progress: '0' });
+        await fireScroll(30);
+        await advance(COMPOSER_SWAP_INTENT_WINDOW_MS + 50);
+        await fireTouch('touchend', 420);
+        await advance(120);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'expanded' });
+        await advance(COMPOSER_SWAP_SNAP_MS);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'expanded' });
+    });
+
+    test('per-frame progress lands on the overlay foot, not the scope', async () => {
+        const foot = document.createElement('div');
+        foot.className = 'yuri-mobile-composer-foot--overlay';
+        scopeEl.append(foot);
+        await mount();
+
+        await beginSwipe();
+        await fireScroll(30);
+        expect(scopeEl.dataset.yuriComposerSwapPhase).toBe('tracking');
+        expect(foot.style.getPropertyValue(COMPOSER_SWAP_CSS_VAR)).toBe('0.375');
+        expect(scopeEl.style.getPropertyValue(COMPOSER_SWAP_CSS_VAR)).toBe('');
+        expect(foot.style.getPropertyValue(NATIVE_COMPOSER_DOCK_CSS_VAR)).toBe('0.375');
     });
 
     test('lets preview touch scroll before expanding on a tap', async () => {
@@ -240,30 +267,31 @@ describe('useMobileComposerSwap gesture commit', () => {
     test('full follow lands compact at rest without snapping', async () => {
         await mount();
 
-        await beginSwipe();
-        await fireScroll(100);
-        expect(readSwap(scopeEl)).toMatchObject({
-            phase: 'rest',
-            rest: 'compact',
-            progress: '1',
-        });
+        await collapse();
 
-        await fireScroll(10);
+        // Return travel follows the finger from far up the transcript.
+        await fireScroll(290);
         expect(readSwap(scopeEl).phase).toBe('tracking');
-        expect(Number(readSwap(scopeEl).progress)).toBeCloseTo(0.125);
+        expect(Number(readSwap(scopeEl).progress)).toBeCloseTo(0.875);
+        await fireScroll(280);
+        expect(Number(readSwap(scopeEl).progress)).toBeCloseTo(0.75);
 
         await fireTouch('touchend', 420);
         await advance(120);
-        expect(readSwap(scopeEl)).toMatchObject({
-            phase: 'snapping',
-            rest: 'expanded',
-        });
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'expanded' });
 
         await advance(COMPOSER_SWAP_SNAP_MS);
-        expect(readSwap(scopeEl)).toMatchObject({
-            phase: 'rest',
-            rest: 'expanded',
-        });
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'expanded' });
+    });
+
+    test('a fling frame snaps through the transition', async () => {
+        await mount();
+
+        await beginSwipe();
+        await fireScroll(300);
+        expect(readSwap(scopeEl)).toEqual({ phase: 'snapping', rest: 'compact', progress: '1' });
+        await advance(COMPOSER_SWAP_SNAP_MS);
+        expect(readSwap(scopeEl)).toEqual({ phase: 'rest', rest: 'compact', progress: '1' });
     });
 
     /**
@@ -301,18 +329,14 @@ describe('useMobileComposerSwap gesture commit', () => {
 
         // Not vacuous: the same scroller, with the same geometry, still
         // collapses the moment a finger is behind the motion.
-        await beginSwipe();
-        await fireScroll(300);
-        expect(readSwap(scopeEl)).toMatchObject({ rest: 'compact', progress: '1' });
+        await collapse();
     });
 
     test('a held tap or horizontal touch leaves program geometry unable to move compact', async () => {
         await mount();
 
-        await beginSwipe();
-        await fireScroll(300);
+        await collapse();
         await fireTouch('touchend', 420);
-        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'compact', progress: '1' });
 
         await fireTouch('touchstart', 520);
         await advance(COMPOSER_SWAP_USER_SCROLL_WINDOW_MS + 20);
@@ -331,8 +355,7 @@ describe('useMobileComposerSwap gesture commit', () => {
     test('touch cancellation clears claimed intent before later geometry frames', async () => {
         await mount();
 
-        await beginSwipe();
-        await fireScroll(300);
+        await collapse();
         await fireTouch('touchend', 420);
 
         await fireTouch('touchstart', 520);
@@ -345,41 +368,22 @@ describe('useMobileComposerSwap gesture commit', () => {
     test('travel toward the bottom reveals the composer far from the live edge', async () => {
         await mount();
 
-        await beginSwipe();
-        await fireScroll(300);
-        expect(readSwap(scopeEl)).toEqual({
-            phase: 'rest',
-            rest: 'compact',
-            progress: '1',
-        });
+        await collapse();
         await fireTouch('touchend', 420);
 
-        // One short downward step stays below the reveal threshold.
+        // Momentum toward the bottom tracks the reveal, then commits that way.
         await fireScroll(280);
-        expect(readSwap(scopeEl)).toEqual({
-            phase: 'rest',
-            rest: 'compact',
-            progress: '1',
-        });
-
-        // Travel accumulates across events, so a slow scroll qualifies too.
+        expect(readSwap(scopeEl).phase).toBe('tracking');
+        expect(Number(readSwap(scopeEl).progress)).toBeCloseTo(0.75);
         await fireScroll(270);
-        expect(readSwap(scopeEl)).toEqual({
-            phase: 'snapping',
-            rest: 'expanded',
-            progress: '0',
-        });
+        await advance(120);
+        expect(readSwap(scopeEl)).toEqual({ phase: 'snapping', rest: 'expanded', progress: '0' });
         await advance(COMPOSER_SWAP_SNAP_MS);
-        expect(readSwap(scopeEl)).toEqual({
-            phase: 'rest',
-            rest: 'expanded',
-            progress: '0',
-        });
+        expect(readSwap(scopeEl)).toEqual({ phase: 'rest', rest: 'expanded', progress: '0' });
 
-        // Later events of the same gesture are still far from the bottom; the
-        // reveal has to survive them instead of collapsing on absolute distance.
+        // Further travel toward the bottom never collapses it again.
         await fireScroll(260);
-        expect(readSwap(scopeEl).rest).toBe('expanded');
+        expect(readSwap(scopeEl)).toEqual({ phase: 'rest', rest: 'expanded', progress: '0' });
         // Accessories have no background: stay hidden even while swap is expanded,
         // and a short approach toward the edge must not fade them in.
         expect(readDock(scopeEl)).toMatchObject({ rest: 'away', progress: '1' });
@@ -388,33 +392,40 @@ describe('useMobileComposerSwap gesture commit', () => {
         await fireScroll(0);
         expect(readDock(scopeEl)).toMatchObject({ rest: 'bottom', progress: '0' });
 
-        // Scrolling back up hands the endpoint back to distance follow.
-        await fireScroll(300);
+        // Scrolling back up follows the finger into compact again.
+        for (const distance of [30, 60, 100]) await fireScroll(distance);
         expect(readSwap(scopeEl).rest).toBe('compact');
     });
 
-    test('direction reversals restart reveal travel from the latest turn', async () => {
+    test('release direction comes from the latest same-direction run', async () => {
         await mount();
 
         await beginSwipe();
-        await fireScroll(300);
-        await fireScroll(285);
-        expect(readSwap(scopeEl).rest).toBe('compact');
+        await fireScroll(30);
+        await fireScroll(60);
+        expect(Number(readSwap(scopeEl).progress)).toBeCloseTo(0.75);
 
-        await fireScroll(310);
-        await fireScroll(295);
-        expect(readSwap(scopeEl).rest).toBe('compact');
+        // A small reversal stays below intent: the midpoint still decides.
+        await fireScroll(52);
+        await fireTouch('touchend', 420);
+        await advance(120);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'compact' });
+        await advance(COMPOSER_SWAP_SNAP_MS);
 
-        await fireScroll(284);
+        // A deliberate reversal commits its own way even above the midpoint.
+        await beginSwipe(420, 520);
+        await fireScroll(45);
+        await fireScroll(36);
+        expect(Number(readSwap(scopeEl).progress)).toBeGreaterThan(0.5);
+        await fireTouch('touchend', 520);
+        await advance(120);
         expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'expanded' });
     });
 
     test('iOS top rubber-band spring-back is not downward travel', async () => {
         await mount();
 
-        await beginSwipe();
-        await fireScroll(300);
-        expect(readSwap(scopeEl).rest).toBe('compact');
+        await collapse();
 
         // Overscroll past the top, then let the spring return to rest. The
         // second event is 60px of downward motion with no intent behind it.
@@ -451,9 +462,7 @@ describe('useMobileComposerSwap gesture commit', () => {
     test('the transcript re-anchoring a prepend never moves the composer', async () => {
         await mount();
 
-        await beginSwipe();
-        await fireScroll(300);
-        expect(readSwap(scopeEl).rest).toBe('compact');
+        await collapse();
 
         scrollEl.setAttribute(TIMELINE_ANCHORING_ATTRIBUTE, 'true');
         // The prepend lands: 2000px of older history above the viewport, then
@@ -464,23 +473,18 @@ describe('useMobileComposerSwap gesture commit', () => {
         expect(readSwap(scopeEl).rest).toBe('compact');
 
         // The released anchor cleared the previous swipe. A fresh vertical move
-        // takes ownership immediately and can reveal from the corrected baseline.
+        // takes ownership immediately and follows from the corrected baseline.
         scrollEl.removeAttribute(TIMELINE_ANCHORING_ATTRIBUTE);
         await fireTouch('touchmove', 380);
         await fireScroll(270);
-        expect(readSwap(scopeEl).rest).toBe('expanded');
+        expect(readSwap(scopeEl).phase).toBe('tracking');
+        expect(Number(readSwap(scopeEl).progress)).toBeCloseTo(0.625);
     });
 
     test('load-older tap cannot turn released anchor compensation into a composer reveal', async () => {
         await mount();
 
-        await beginSwipe();
-        await fireScroll(300);
-        expect(readSwap(scopeEl)).toEqual({
-            phase: 'rest',
-            rest: 'compact',
-            progress: '1',
-        });
+        await collapse();
         await fireTouch('touchend', 420);
 
         await advance(16);

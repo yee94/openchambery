@@ -29,7 +29,15 @@ type UseAssistantContactAutoFollowResult = {
   scrollRef: React.RefCallback<HTMLDivElement>
   contentRef: React.RefCallback<HTMLDivElement>
   preparePrepend: () => void
+  /**
+   * The user's own send re-attaches bottom follow from any reading position.
+   * `timing` shapes only the next follow animation, so the list can travel on
+   * the same curve as the send transition.
+   */
+  followLatest: (timing?: FollowTiming) => void
 }
+
+type FollowTiming = { duration: number; ease: readonly [number, number, number, number] }
 
 const readScrollGeometry = (element: HTMLElement): ScrollGeometry => ({
   scrollTop: element.scrollTop,
@@ -148,6 +156,17 @@ export const useAssistantContactAutoFollow = ({
     captureAnchor()
   })
 
+  const followTimingRef = React.useRef<FollowTiming | null>(null)
+  const followLatest = useEvent((timing?: FollowTiming) => {
+    const element = scrollNodeRef.current
+    if (!activeRef.current || !element) return
+    followTimingRef.current = timing ?? null
+    followingRef.current = true
+    anchorRef.current = null
+    userIntentRef.current = null
+    lastScrollTopRef.current = element.scrollTop
+  })
+
   const pinToBottom = useEvent(() => {
     if (!activeRef.current || !followingRef.current) return false
     const element = scrollNodeRef.current
@@ -174,9 +193,11 @@ export const useAssistantContactAutoFollow = ({
       if (followTargetRef.current === target) return false
       stopFollowAnimation()
       followTargetRef.current = target
+      const timing = followTimingRef.current
+      followTimingRef.current = null
       followAnimationRef.current = animate(element.scrollTop, target, {
-        duration: 0.22,
-        ease: 'easeOut',
+        duration: timing?.duration ?? 0.22,
+        ease: timing ? [...timing.ease] : 'easeOut',
         onUpdate: (top) => {
           if (!activeRef.current || !followingRef.current || scrollNodeRef.current !== element) return
           const maximum = Math.max(0, element.scrollHeight - element.clientHeight)
@@ -361,5 +382,5 @@ export const useAssistantContactAutoFollow = ({
   const canObserveResize = typeof ResizeObserver !== 'undefined'
   useResizeObserver(canObserveResize && active ? contentNode : null, handleContentResize)
 
-  return { scrollRef, contentRef, preparePrepend }
+  return { scrollRef, contentRef, preparePrepend, followLatest }
 }

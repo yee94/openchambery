@@ -319,6 +319,9 @@
 
 /* Label-only clip keeps long locales ellipsized without hiding the unread badge. */
 .yuri-mobile-tab-button > .yuri-mobile-tab-label {
+  position: relative;
+  top: 2px;
+  font-weight: 400;
   overflow: hidden;
   scrollbar-width: none;
 }
@@ -3618,9 +3621,12 @@ button.yuri-mobile-worktree-label-trigger:active,
   initial-value: 0;
 }
 
-/* Bottom chrome the transcript reserves below its last message: the web
-   Composer keeps one fixed reservation while its two layers exchange through
-   paint-only motion.
+/* Bottom chrome the transcript reserves below its last message: the measured
+   web Composer occupancy (card + Changes / TODO / queue + safe area, published
+   by ChatInput as --yuri-mobile-composer-occupancy only when its height
+   changes), falling back to a fixed 8rem guess before the first measurement.
+   The two layers still exchange through paint-only motion, which never
+   changes this value.
 
    Declared on the root rather than on `.yuri-chat-composer-swap-scope`, because
    the native iOS override further down is a plain root-class selector: a
@@ -3630,8 +3636,9 @@ button.yuri-mobile-worktree-label-trigger:active,
    class. A root declaration also means no consumer can resolve an undefined
    inset when React `isMobile` disagrees with `mobile-pointer`. */
 :root {
-  --yuri-chat-foot-inset: calc(
-    8rem + var(--yuri-safe-area-bottom-visual, 0px)
+  --yuri-chat-foot-inset: var(
+    --yuri-mobile-composer-occupancy,
+    calc(8rem + var(--yuri-safe-area-bottom-visual, 0px))
   );
 }
 
@@ -3897,11 +3904,16 @@ button.yuri-mobile-worktree-label-trigger:active,
   touch-action: manipulation;
 }
 
-.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"] {
+/* The hook writes the per-frame swap variable on the overlay foot (not the
+   scope) so tracking frames restyle only the composer subtree, not the whole
+   transcript. The transition must live on that same element. */
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"],
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"] > .yuri-mobile-composer-foot--overlay {
   transition: --yuri-mobile-composer-swap 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="tracking"] {
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="tracking"],
+.yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="tracking"] > .yuri-mobile-composer-foot--overlay {
   transition: none;
 }
 
@@ -3947,7 +3959,8 @@ button.yuri-mobile-worktree-label-trigger:active,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"] {
+  .yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"],
+  .yuri-chat-composer-swap-scope[data-yuri-composer-swap-phase="snapping"] > .yuri-mobile-composer-foot--overlay {
     transition-duration: 0ms;
   }
 }

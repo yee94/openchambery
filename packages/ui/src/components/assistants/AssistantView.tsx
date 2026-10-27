@@ -151,7 +151,7 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
           <span className={cn('block truncate typography-ui-label leading-5', selected ? 'font-semibold' : 'font-medium')}>{displayName}</span>
           <span className={cn(ASSISTANT_MESSAGE_PREVIEW_CLASS, 'mt-1 leading-5')}>{summary}</span>
         </span>
-        <AssistantUnreadBadge count={unreadCount} />
+        <AssistantUnreadBadge count={unreadCount} className="h-3.5 min-w-3.5 bg-[oklch(from_var(--primary-base)_calc(l_*_0.78)_c_h)] px-1 text-[10px] text-[var(--color-white)] shadow-none" />
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[10rem]">
         <ContextMenuItem onClick={handleEdit}>
@@ -263,7 +263,8 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
       {isMobileSurface ? null : (
         <section className="flex h-full min-h-0 w-[clamp(16rem,22vw,20rem)] shrink-0 flex-col overflow-hidden">
           <header className="flex shrink-0 items-center gap-3 px-4 pb-3 pt-4 sm:px-5">
-            <h1 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">{t('assistants.title')}</h1>
+            <h1 className="min-w-0 truncate typography-ui-label font-semibold text-foreground">{t('assistants.title')}</h1>
+            <AssistantMarkAllReadButton snapshot={snapshot} compact rowClassName="min-w-0 flex-1" />
             <Button
               type="button"
               variant="ghost"
@@ -274,9 +275,8 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
               <Icon name="add" className="size-4" />
             </Button>
           </header>
-          <AssistantMarkAllReadButton snapshot={snapshot} rowClassName="flex justify-end px-4 pb-2 sm:px-5" />
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 sm:px-4" role="listbox" aria-label={t('assistants.listAria')}>
-            <div className="flex flex-col gap-1 border-t border-border/40 pt-3">
+            <div className="flex flex-col gap-1 pt-3">
               {contacts.map((item) => {
                 const selected = item.id === selectedAssistantID;
                 const itemPresentation = getAssistantPresentation(item.name);

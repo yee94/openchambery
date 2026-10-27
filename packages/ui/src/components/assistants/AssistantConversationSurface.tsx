@@ -59,6 +59,13 @@ import { createContactTimeFormatter, getContactTimeSeparators } from './contactM
 import { useAssistantContactWorkingStore } from './assistantWorking'
 import { useAssistantContactAutoFollow } from './useAssistantContactAutoFollow'
 import {
+  captureContactSendFlightSource,
+  CONTACT_SEND_FLIGHT_DURATION_S,
+  CONTACT_SEND_FLIGHT_VERTICAL_EASE,
+  startContactSendFlight,
+  type ContactSendFlightSource,
+} from './contactSendFlight'
+import {
   filesFromClipboard,
   filesFromDrop,
   mergeContactComposerAttachments,
@@ -239,12 +246,41 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     } catch { /* Query retains the loaded transcript and exposes the retry state. */ }
     finally { pageFlightRef.current = false }
   })
-  const { scrollRef, contentRef, preparePrepend } = useAssistantContactAutoFollow({
+  const { scrollRef, contentRef, preparePrepend, followLatest } = useAssistantContactAutoFollow({
     active,
     assistantID: assistant.id,
     contentRevision: `${transcript[0]?.messageID}:${transcript.length}:${streamingTextLength}:${contactQuery.isFetchingPreviousPage}:${contactQuery.hasPreviousPage}:${contactQuery.isFillingMessageGap}`,
     onLoadEarlier: () => { void loadEarlier(true) },
   })
+  const surfaceRef = React.useRef<HTMLDivElement | null>(null)
+  const composerRef = React.useRef<HTMLElement | null>(null)
+  const pendingSendFlightRef = React.useRef<{ messageID: string; source: ContactSendFlightSource } | null>(null)
+  // The morph owns the flown row's entrance; the generic append fade must not also run.
+  const flownMessageIDRef = React.useRef<string | null>(null)
+  const stopSendFlightRef = React.useRef<(() => void) | null>(null)
+  const [sendFlight, setSendFlight] = React.useState<{ scope: string; messageID: string } | null>(null)
+  const captureSendFlightSource = (): ContactSendFlightSource | null => {
+    const surface = composerRef.current?.querySelector<HTMLElement>('[data-assistant-contact-composer-surface]')
+    const field = surface?.querySelector('textarea')
+    return surface && field ? captureContactSendFlightSource(surface, field, !isMobile) : null
+  }
+  React.useLayoutEffect(() => {
+    const pending = pendingSendFlightRef.current
+    if (!pending) return
+    pendingSendFlightRef.current = null
+    const row = Array.from(surfaceRef.current?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [])
+      .find((node) => node.dataset.messageId === pending.messageID)
+    const bubble = row?.querySelector<HTMLElement>('[data-assistant-contact-text]')
+    const settle = () => setSendFlight((current) => current?.messageID === pending.messageID ? null : current)
+    if (!bubble) { settle(); return }
+    stopSendFlightRef.current?.()
+    stopSendFlightRef.current = startContactSendFlight(pending.source, bubble, bubble, settle)
+  })
+  React.useEffect(() => () => {
+    pendingSendFlightRef.current = null
+    stopSendFlightRef.current?.()
+    stopSendFlightRef.current = null
+  }, [active, assistant.id, transportIdentity])
 
   React.useEffect(() => {
     setSendError(null)
@@ -380,6 +416,17 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     if (!begun.ok) return
     setContactWorking(sentAssistantID, true)
     retrySendRef.current = { assistantID: sentAssistantID, text, attachments: staged, messageID: begun.messageID }
+    // Text-only sends leave the field at once, like iMessage; attachment previews
+    // keep their composer-owned blob leases until admission.
+    const textOnly = staged.length === 0
+    // A retry reuses its mounted row; only a fresh text bubble morphs out of the field.
+    // Voice sends never painted their text in the field, so there is nothing to morph.
+    const flightSource = textOnly && voiceText === undefined && !retryID && active && !reducedMotion ? captureSendFlightSource() : null
+    pendingSendFlightRef.current = flightSource ? { messageID: begun.messageID, source: flightSource } : null
+    setSendFlight(flightSource ? { scope: entryScope, messageID: begun.messageID } : null)
+    flownMessageIDRef.current = flightSource ? begun.messageID : flownMessageIDRef.current
+    followLatest(flightSource ? { duration: CONTACT_SEND_FLIGHT_DURATION_S, ease: CONTACT_SEND_FLIGHT_VERTICAL_EASE } : undefined)
+    if (textOnly) setDraft((current) => current === text ? '' : current)
     setOptimisticTurns((current) => [...current.filter((turn) => turn.messageID !== begun.messageID), begun.turn])
     setSendError(null)
     const clearSentDraft = () => {
@@ -449,6 +496,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         timedOut: t('assistants.contact.timedOut'),
       })
       setOptimisticTurns((current) => markContactOptimisticFailed(current, begun.messageID, detail))
+      // Hand an early-cleared draft back for retry unless the user typed something new.
+      if (textOnly) setDraft((current) => current === '' ? text : current)
       setSendError(detail)
     } finally {
       sendGate.release()
@@ -475,7 +524,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const optimisticByID = new Map(scopedOptimisticTurns.map((turn) => [turn.messageID, turn]))
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background">
+    <div ref={surfaceRef} className="flex min-h-0 flex-1 flex-col bg-background">
       <div
         ref={scrollRef}
         className={cn(
@@ -581,7 +630,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                 {timeSeparator}
                 <motion.div
                   data-message-id={message.messageID}
-                  initial={animateAppends && messageIndex > previousTailIndex ? { opacity: 0, y: 4 } : false}
+                  initial={animateAppends && messageIndex > previousTailIndex && message.messageID !== flownMessageIDRef.current ? { opacity: 0, y: 4 } : false}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: reducedMotion ? 0 : 0.18, ease: 'easeOut' }}
                   className={cn(
@@ -692,24 +741,38 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                 </React.Fragment>
               )
             })}
-            <div className="pointer-events-none absolute bottom-2 left-[2.625rem] flex h-8 items-center" data-assistant-contact-status-slot="">
-              {sending || processing || serverWorking ? (
-                <div
+            <div className="pointer-events-none absolute bottom-1 left-[2.625rem] flex h-10 items-center" data-assistant-contact-status-slot="">
+              {!sending && sendFlight?.scope !== entryScope && (processing || serverWorking) ? (
+                <motion.div
                   role="status"
                   aria-label={t('assistants.contact.processing')}
-                  className="inline-flex items-center gap-1 px-4 text-muted-foreground/70"
+                  initial={reducedMotion ? false : { opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: reducedMotion ? 0 : 0.18, ease: 'easeOut' }}
+                  className="relative inline-flex h-9 origin-bottom-left items-center gap-1 rounded-[1.35rem] bg-[var(--surface-muted)] px-4 text-muted-foreground/70"
                   data-assistant-contact-processing=""
                 >
+                  <div className="absolute -left-[2.625rem] top-0.5 flex w-8 justify-center" data-assistant-contact-processing-avatar="">
+                    <AssistantWorkingAvatar
+                      name={assistant.id}
+                      avatarSeed={assistant.avatarSeed}
+                      size={28}
+                      label={displayName}
+                      working
+                      showWorkingDot={false}
+                    />
+                  </div>
                   <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.45s] [animation-duration:1.4s] motion-reduce:animate-none" />
                   <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.22s] [animation-duration:1.4s] motion-reduce:animate-none" />
                   <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-duration:1.4s] motion-reduce:animate-none" />
-                </div>
+                </motion.div>
               ) : null}
             </div>
           </div>
         )}
       </div>
       <footer
+        ref={composerRef}
         className="relative z-10 shrink-0 bg-background pt-1"
         data-assistant-contact-composer=""
       >

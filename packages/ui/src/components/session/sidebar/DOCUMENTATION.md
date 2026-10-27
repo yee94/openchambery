@@ -2,6 +2,11 @@
 
 ## Refactor result
 
+- Title shimmer requires the Host's `isGenerating` plus an unexpired
+  `generationExpiresAt`. Admission and retry backoff do not shimmer. An active
+  row arms one deadline timer (no polling); missing cleanup events cannot leave
+  the title loading indefinitely. Old loading flags without a deadline are inert.
+
 - Desktop update downloads close the update dialog immediately and continue in
   the store. The footer uses a transparent, theme-foreground update button and
   replaces the download icon with a context-style progress ring within the same

@@ -49,7 +49,7 @@ export const SidebarBrandMark: React.FC<SidebarBrandMarkProps> = ({ className })
       <span
         role="img"
         aria-label={brandWords.join(' ')}
-        className={cn('inline-flex min-w-0 gap-[0.28em] overflow-hidden whitespace-nowrap text-foreground', brandName === 'Yuri' ? 'items-center' : 'items-baseline')}
+        className={cn('inline-flex min-w-0 gap-[0.28em] overflow-hidden whitespace-nowrap text-foreground', brandName.includes('Yuri') ? 'items-center' : 'items-baseline')}
         style={{
           fontFamily: '"Syne", var(--font-sans, system-ui, sans-serif)',
           fontSize: '1.0625rem',
@@ -69,7 +69,7 @@ export const SidebarBrandMark: React.FC<SidebarBrandMarkProps> = ({ className })
             aria-hidden="true"
             className="inline-flex shrink-0 items-baseline"
           >
-            {word === 'Yuri' ? <YuriWordmark width="2.44814cap" className={brandName === 'Yuri' ? undefined : 'translate-y-[0.046875cap]'} /> : word}
+            {word === 'Yuri' ? <YuriWordmark width="2.44814cap" /> : word}
           </span>
         ))}
       </span>

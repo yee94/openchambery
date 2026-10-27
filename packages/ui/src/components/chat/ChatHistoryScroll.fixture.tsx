@@ -53,7 +53,7 @@ export default function Fixture() {
             part.type === 'text' ? { ...part, text: 'Short initial transcript' } : part
         )) }))
         : turnPrepend ? makeTurns(100, 12)
-        : makeRows(compactPrepend || warmup ? 100 : 20, scenario === 'virtualize-transition' || warmup ? 4 : scenario?.startsWith('fast-entry') ? 8 : 12));
+        : makeRows(compactPrepend || warmup ? 100 : 20, scenario === 'column-resize-desktop' ? 24 : scenario === 'virtualize-transition' || warmup ? 4 : scenario?.startsWith('fast-entry') ? 8 : 12));
     const [token, setToken] = React.useState(0);
     const [tailHeight, setTailHeight] = React.useState(0);
     const listRef = React.useRef<MessageListHandle | null>(null);

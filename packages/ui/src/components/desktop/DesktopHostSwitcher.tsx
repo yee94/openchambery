@@ -303,6 +303,7 @@ type DesktopHostSwitcherDialogProps = {
   onOpenChange: (open: boolean) => void;
   embedded?: boolean;
   onHostSwitched?: () => void;
+  onBusyChange?: (busy: boolean) => void;
 };
 
 export function DesktopHostSwitcherDialog({
@@ -310,6 +311,7 @@ export function DesktopHostSwitcherDialog({
   onOpenChange,
   embedded = false,
   onHostSwitched,
+  onBusyChange,
 }: DesktopHostSwitcherDialogProps) {
   const { t } = useI18n();
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
@@ -332,6 +334,12 @@ export function DesktopHostSwitcherDialog({
   // SSH path still uses a local id while the tunnel comes up (not the query mutation).
   const [sshSwitchingHostId, setSshSwitchingHostId] = React.useState<string | null>(null);
   const switchingHostId = sshSwitchingHostId || switchingHostIdFromMutation;
+  const actionPendingRef = React.useRef(false);
+  const setActionPending = useEvent((hostId: string | null) => {
+    actionPendingRef.current = hostId !== null;
+    setSshSwitchingHostId(hostId);
+    onBusyChange?.(hostId !== null);
+  });
   const [sshHostIds, setSshHostIds] = React.useState<Record<string, true>>({});
   const [sshStatusesById, setSshStatusesById] = React.useState<Record<string, DesktopSshInstanceStatus>>({});
   const [sshSwitchModal, setSshSwitchModal] = React.useState<{
@@ -535,6 +543,7 @@ export function DesktopHostSwitcherDialog({
   }, [open]);
 
   const handleSwitch = useEvent(async (host: DesktopHost) => {
+    if (actionPendingRef.current || hostSwitchPending) return;
     const origin = host.id === LOCAL_HOST_ID ? localOrigin : (normalizeHostUrl(host.url) || '');
     const apiOrigin = host.id === LOCAL_HOST_ID ? localOrigin : (normalizeHostUrl(getDesktopHostApiUrl(host)) || '');
     const relayOnly = Boolean(host.relay) && !host.apiUrl && host.id !== LOCAL_HOST_ID;
@@ -544,18 +553,24 @@ export function DesktopHostSwitcherDialog({
       if (!apiOrigin && !host.relay) return;
       if (hostSwitchPending) return;
 
-      // Global mutation entry owns pending + full-screen overlay. Local needs the
-      // live client token; remote hosts pass the cached open-probe when available.
-      const clientToken = host.id === LOCAL_HOST_ID ? await getLocalClientToken() : null;
-      const result = await switchDesktopHostInstance({
-        host,
-        cachedProbe: statusById[host.id] || null,
-        ...(host.id === LOCAL_HOST_ID
-          ? { localApiOrigin: apiOrigin, localClientToken: clientToken }
-          : {}),
-      });
-      setStatusById((prev) => ({ ...prev, [host.id]: result.status }));
-      if (result.ok) onHostSwitched?.();
+      // Keep preparation progress in this dialog until the endpoint changes.
+      // Local needs the live client token; remote hosts pass the cached open-probe.
+      setActionPending(host.id);
+      try {
+        const clientToken = host.id === LOCAL_HOST_ID ? await getLocalClientToken() : null;
+        const result = await switchDesktopHostInstance({
+          host,
+          inlineProgress: true,
+          cachedProbe: statusById[host.id] || null,
+          ...(host.id === LOCAL_HOST_ID
+            ? { localApiOrigin: apiOrigin, localClientToken: clientToken }
+            : {}),
+        });
+        setStatusById((prev) => ({ ...prev, [host.id]: result.status }));
+        if (result.ok) onHostSwitched?.();
+      } finally {
+        setActionPending(null);
+      }
       return;
     }
 
@@ -716,7 +731,9 @@ export function DesktopHostSwitcherDialog({
     await persist(configHosts, next);
   }, [configHosts, persist]);
 
-  const openInNewWindow = React.useCallback((host: DesktopHost) => {
+  const openInNewWindow = useEvent(async (host: DesktopHost) => {
+    if (actionPendingRef.current || hostSwitchPending) return;
+    setActionPending(host.id);
     const reportFailure = (err: unknown) => {
       toast.error(t('desktopHostSwitcher.error.failedToOpenNewWindow'), {
         description: err instanceof Error ? err.message : String(err),
@@ -724,15 +741,22 @@ export function DesktopHostSwitcherDialog({
     };
     // Relay-capable hosts can't be expressed as a fixed window URL — the new
     // window boots the local UI and picks direct-vs-tunnel itself.
-    if (host.relay && host.id !== LOCAL_HOST_ID) {
-      desktopOpenNewWindowForHost(host.id).catch(reportFailure);
-      return;
+    try {
+      if (host.relay && host.id !== LOCAL_HOST_ID) {
+        await desktopOpenNewWindowForHost(host.id);
+      } else {
+        const origin = host.id === LOCAL_HOST_ID ? localOrigin : getDesktopHostApiUrl(host);
+        if (!origin) return;
+        const target = toNavigationUrl(origin);
+        await desktopOpenNewWindowAtUrl(target, { clientToken: host.clientToken || null, requestHeaders: host.requestHeaders || null });
+      }
+      onHostSwitched?.();
+    } catch (err) {
+      reportFailure(err);
+    } finally {
+      setActionPending(null);
     }
-    const origin = host.id === LOCAL_HOST_ID ? localOrigin : getDesktopHostApiUrl(host);
-    if (!origin) return;
-    const target = toNavigationUrl(origin);
-    desktopOpenNewWindowAtUrl(target, { clientToken: host.clientToken || null, requestHeaders: host.requestHeaders || null }).catch(reportFailure);
-  }, [localOrigin, t]);
+  });
 
   const switchToLocal = useEvent(async () => {
     sshSwitchTokenRef.current += 1;
@@ -791,9 +815,9 @@ export function DesktopHostSwitcherDialog({
     void handleSwitch(host);
   }, [allHosts, handleSwitch, sshSwitchModal.hostId]);
 
-  const connectSshHostInPlace = React.useCallback(async (host: DesktopHost) => {
-    if (!isDesktopShell()) return;
-    setSshSwitchingHostId(host.id);
+  const connectSshHostInPlace = useEvent(async (host: DesktopHost) => {
+    if (!isDesktopShell() || actionPendingRef.current || hostSwitchPending) return;
+    setActionPending(host.id);
     try {
       await desktopSshConnect(host.id);
       const readyStatus = await waitForSshReady(host.id, SSH_CONNECT_TIMEOUT_MS, (status) => {
@@ -818,9 +842,9 @@ export function DesktopHostSwitcherDialog({
         });
       }
     } finally {
-      setSshSwitchingHostId(null);
+      setActionPending(null);
     }
-  }, [t]);
+  });
 
   if (!isDesktopShell()) {
     return null;
@@ -953,10 +977,11 @@ export function DesktopHostSwitcherDialog({
                         isEditing && 'pointer-events-none opacity-70'
                       )}
                       onClick={() => void handleSwitch(host)}
-                      disabled={switchingHostId === host.id}
+                      disabled={Boolean(switchingHostId)}
+                      aria-busy={switchingHostId === host.id}
                       aria-label={t('desktopHostSwitcher.actions.switchToAria', { instance: displayLabel })}
                     >
-                      <span className={cn('h-2 w-2 rounded-full flex-shrink-0', statusDotClass(statusKind))} />
+                      {switchingHostId === host.id ? <Icon name="loader-4" className="h-3.5 w-3.5 animate-spin flex-shrink-0" /> : <span className={cn('h-2 w-2 rounded-full flex-shrink-0', statusDotClass(statusKind))} />}
                       {/* Same reading order as the settings device list: name +
                           badges on the first line, a toned status line under it,
                           then the address. */}
@@ -977,7 +1002,7 @@ export function DesktopHostSwitcherDialog({
                           )}
                         </div>
                         <div className={cn('typography-micro truncate', statusTextClass(statusKind))}>
-                          {isSsh && !isActive ? t(sshPhaseLabelKey(sshStatus?.phase)) : t(statusLabelKey(statusKind))}
+                          {isSsh && (!isActive || switchingHostId === host.id) ? t(sshPhaseLabelKey(sshStatus?.phase)) : t(statusLabelKey(statusKind))}
                           {rowDisplay.latencyMs != null
                             ? t('desktopHostSwitcher.status.ping', { ms: rowDisplay.latencyMs })
                             : ''}
@@ -997,7 +1022,7 @@ export function DesktopHostSwitcherDialog({
                             variant="outline"
                             size="sm"
                             className="h-8 px-2.5"
-                            disabled={switchingHostId === host.id}
+                            disabled={Boolean(switchingHostId)}
                             onClick={(e) => {
                               e.stopPropagation();
                               void connectSshHostInPlace(host);
@@ -1050,10 +1075,11 @@ export function DesktopHostSwitcherDialog({
                               e.stopPropagation();
                               openInNewWindow(host);
                             }}
-                            disabled={isBlockedDisplayStatus(statusKind)}
+                            disabled={Boolean(switchingHostId) || isBlockedDisplayStatus(statusKind)}
+                            aria-busy={switchingHostId === host.id}
                             aria-label={t('desktopHostSwitcher.actions.openInNewWindowAria')}
                           >
-                            <Icon name="window" className="h-4 w-4" />
+                            <Icon name={switchingHostId === host.id ? 'loader-4' : 'window'} className={cn('h-4 w-4', switchingHostId === host.id && 'animate-spin')} />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent sideOffset={6}>
@@ -1108,6 +1134,7 @@ export function DesktopHostSwitcherDialog({
             type="button"
             className="w-full flex items-center gap-2 px-2 py-2 text-left text-muted-foreground hover:text-foreground hover:bg-interactive-hover/30 transition-colors"
             onClick={openRemoteInstancesSettings}
+            disabled={Boolean(switchingHostId)}
           >
             <Icon name="add" className="h-4 w-4" />
             <span className="typography-ui-label">{t('desktopHostSwitcher.actions.addInstance')}</span>
@@ -1202,7 +1229,10 @@ export function DesktopHostSwitcherDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={(nextOpen) => {
+        if (!nextOpen && actionPendingRef.current) return;
+        onOpenChange(nextOpen);
+      }}>
         <DialogContent className="w-[min(42rem,calc(100vw-2rem))] max-w-none max-h-[70vh] flex flex-col overflow-hidden gap-3">
           {content}
         </DialogContent>

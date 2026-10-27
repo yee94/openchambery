@@ -17,7 +17,7 @@
 import type { Message, Part } from '@/lib/opencode/v2-types'
 import type { Event } from '@/sync/types'
 
-import type { QueryClient } from "@tanstack/react-query"
+import { QueryObserver, type Query, type QueryClient } from "@tanstack/react-query"
 
 import { queryClient as defaultQueryClient } from "@/lib/queryRuntime"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -617,8 +617,23 @@ export function createQueryTranscriptRepository(
     if (cacheUnsubs.has(key)) return
     const queryKey = queryKeyFor(scope)
     const cache = client.getQueryCache()
+    // Repository listeners are not Query observers, so gcTime would drop a
+    // transcript that is still on screen. A disabled observer keeps the
+    // canonical query alive without fetching.
+    let keepAlive: { query: Query; release: () => void } | undefined
+    const attachKeepAlive = () => {
+      if (keepAlive) return
+      const query = cache.find({ queryKey, exact: true })
+      if (!query) return
+      const observer = new QueryObserver(client, { ...query.options, queryKey, enabled: false })
+      keepAlive = { query, release: observer.subscribe(() => undefined) }
+    }
+    const detachKeepAlive = () => {
+      keepAlive?.release()
+      keepAlive = undefined
+    }
     const unsubscribe = cache.subscribe((event) => {
-      if (event.type !== "updated" && event.type !== "removed") return
+      if (event.type !== "added" && event.type !== "updated" && event.type !== "removed") return
       const eventKey = event.query.queryKey
       if (
         eventKey[0] !== queryKey[0]
@@ -629,9 +644,18 @@ export function createQueryTranscriptRepository(
       ) {
         return
       }
+      if (event.type === "added") {
+        attachKeepAlive()
+        return
+      }
+      if (event.type === "removed" && keepAlive?.query === event.query) detachKeepAlive()
       notify(scope)
     })
-    cacheUnsubs.set(key, unsubscribe)
+    attachKeepAlive()
+    cacheUnsubs.set(key, () => {
+      unsubscribe()
+      detachKeepAlive()
+    })
   }
 
   const releaseIfIdle = (key: string) => {

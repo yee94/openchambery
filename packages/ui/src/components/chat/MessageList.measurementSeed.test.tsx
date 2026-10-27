@@ -11,9 +11,13 @@ import { installBatchedResizeItem } from './lib/batchResizeUpdates';
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'MessageList.tsx'), 'utf8');
 const ast = ts.createSourceFile('MessageList.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let buildSeed = '';
+let invalidateWidth = '';
 const visit = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'buildMeasurementSeedFromSizes') {
         buildSeed = `const ${node.getText(ast)};`;
+    }
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'shouldInvalidateVirtualizerMeasurementsOnColumnResize') {
+        invalidateWidth = `const ${node.getText(ast)};`;
     }
     ts.forEachChild(node, visit);
 };
@@ -83,40 +87,59 @@ test('normal-flow commits do no seed measurements; virtualization adopts current
 
 test.each([false, true])('new virtual rows measure together before reveal (seeded estimates=%s)', async (seeded) => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-    const end = source.indexOf('    const columnWidthRef');
+    vi.useFakeTimers();
+    const end = source.indexOf('    const canObserveColumnResize');
     const start = source.lastIndexOf('    useIsomorphicLayoutEffect(() => {', source.indexOf('tanstackVirtualizer.shouldAdjustScrollPositionOnItemSizeChange'));
     const measurementBoundary = source.slice(start, end);
     const measured = new Map<string, number>(seeded ? Array.from({ length: 12 }, (_, index) => [`row-${index}`, 100]) : []);
     const restore = vi.fn();
     const writes: number[] = [];
     let update!: React.Dispatch<React.SetStateAction<number>>;
+    let resizeColumn!: () => void;
+    let width = 800;
+    const column = document.createElement('div');
+    Object.defineProperty(column, 'offsetWidth', { get: () => width });
     const virtualizer = {
         itemSizeCache: measured,
+        elementsCache: new Map<string, HTMLDivElement>(),
         options: { getItemKey: (index: number) => `row-${index}` },
         indexFromElement: (node: HTMLElement) => Number(node.dataset.index),
         // During scrolling core registers the ref but waits for ResizeObserver.
-        measureElement: () => {},
+        measureElement: (node: HTMLDivElement | null) => {
+            if (node) virtualizer.elementsCache.set(`row-${node.dataset.index}`, node);
+        },
+        measure: () => {
+            measured.clear();
+            update((value) => value + 1);
+        },
         resizeItem: (index: number, size: number) => {
             measured.set(`row-${index}`, size);
             writes.push(index);
             update((value) => value + 1);
         },
     };
-    const compiled = ts.transpileModule(`return function Rows({ count }) {
+    const compiled = ts.transpileModule(`${invalidateWidth}
+    return function Rows({ count }) {
         const [tick, setTick] = React.useState(0); setUpdate(setTick);
         const isTanstack = true, tanstackVirtualizer = virtualizer;
         const unmeasuredHistoryRowsRef = React.useRef(new Set());
         const revealingHistoryRowsRef = React.useRef(new Set());
-        const restoreHistoryReadingAnchor = restore;
+        const columnReadingAnchorRef = React.useRef(null);
+        const restoreHistoryReadingAnchor = () => restore(columnReadingAnchorRef.current);
+        const sizeContainerRef = { current: column }, scrollRef = { current: column };
+        const touchActiveRef = { current: false };
+        const captureViewportMessageAnchor = () => ({ messageId: 'row-0', offsetTop: 0 });
         ${measurementBoundary}
+        React.useLayoutEffect(() => { setResize(handleColumnResize); });
         return <div data-tick={tick}>{Array.from({ length: count }, (_, index) =>
             <div key={index} data-index={index} ref={measureHistoryElement}
                 style={{ opacity: measured.has('row-' + index) ? undefined : 0 }} />)}</div>;
     }`, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
     const Rows = new Function('React', 'useEvent', 'useIsomorphicLayoutEffect', 'installBatchedResizeItem',
-        'shouldAdjustHistoryScrollOnItemSizeChange', 'virtualizer', 'restore', 'measured', 'setUpdate', compiled)(
+        'shouldAdjustHistoryScrollOnItemSizeChange', 'virtualizer', 'restore', 'measured', 'setUpdate', 'column', 'setResize', compiled)(
         React, useEvent, useIsomorphicLayoutEffect, installBatchedResizeItem, () => true, virtualizer,
-        restore, measured, (setter: typeof update) => { update = setter; },
+        restore, measured, (setter: typeof update) => { update = setter; }, column,
+        (callback: () => void) => { resizeColumn = callback; },
     ) as React.ComponentType<{ count: number }>;
     const reads = vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLDivElement) {
         return { height: 180.25 + Number(this.dataset.index) } as DOMRect;
@@ -132,12 +155,28 @@ test.each([false, true])('new virtual rows measure together before reveal (seede
         expect([...host.querySelectorAll<HTMLElement>('[data-index]')].every((row) => row.style.opacity === '')).toBe(true);
         for (let i = 0; i < 50; i++) await act(async () => root.render(<Rows count={10} />));
         expect(reads).toHaveBeenCalledTimes(10);
-        await act(async () => root.render(<Rows count={12} />));
-        expect(reads).toHaveBeenCalledTimes(12);
+        const retainedRows = [...host.querySelectorAll<HTMLElement>('[data-index]')];
+        // Column width changes, but every mounted row keeps its height: no RO event
+        // or ref attachment will rescue the cache reset in this regression.
+        resizeColumn();
+        width = 760;
+        resizeColumn();
+        await act(async () => { vi.advanceTimersByTime(220); });
+        expect(measured.size, 'cache invalidation must remeasure retained rows without an observer event').toBe(10);
+        expect(reads).toHaveBeenCalledTimes(20);
+        expect(retainedRows.every((row) => row.isConnected && row.style.opacity === '')).toBe(true);
         expect(restore).toHaveBeenCalledTimes(2);
+        expect(restore).toHaveBeenLastCalledWith({ messageId: 'row-0', offsetTop: 0 });
+        for (let i = 0; i < 50; i++) await act(async () => root.render(<Rows count={10} />));
+        expect(reads).toHaveBeenCalledTimes(20);
+        await act(async () => root.render(<Rows count={12} />));
+        expect(reads).toHaveBeenCalledTimes(22);
+        expect(restore).toHaveBeenCalledTimes(3);
+        expect(restore).toHaveBeenLastCalledWith(null);
         expect(measured.get('row-11')).toBe(191.25);
     } finally {
         await act(async () => root.unmount());
         host.remove(); reads.mockRestore(); vi.unstubAllGlobals();
+        vi.useRealTimers();
     }
 });

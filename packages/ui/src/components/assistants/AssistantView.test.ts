@@ -129,7 +129,8 @@ describe('AssistantView contact surface', () => {
       expect(header).toContain('<Icon name="add"')
     }
     expect(desktopHeader).toContain('size="icon"')
-    expect(desktopHeader).toContain('min-w-0 flex-1 truncate')
+    expect(desktopHeader).toContain('min-w-0 truncate')
+    expect(desktopHeader).toContain('<AssistantMarkAllReadButton snapshot={snapshot} compact rowClassName="min-w-0 flex-1" />')
     expect(desktopHeader).toContain('onClick={openCreateSettings}')
     expect(mobileHeader).toContain('trailing={(')
     expect(mobileHeader).toContain('size="mobileIcon"')

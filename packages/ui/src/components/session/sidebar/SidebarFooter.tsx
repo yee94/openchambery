@@ -1,4 +1,6 @@
 import React from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useEvent } from "@reactuses/core";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -30,14 +32,37 @@ function SidebarUpdateButton({ onOpenUpdate }: { onOpenUpdate: () => void }) {
   const downloading = useUpdateStore((state) => state.downloading);
   const downloaded = useUpdateStore((state) => state.downloaded);
   const error = useUpdateStore((state) => state.error);
+  // Read the action at call time so the mutation never captures a stale store.
+  const restartToUpdate = useUpdateStore((state) => state.restartToUpdate);
   const percent = useUpdateStore((state) => state.progress?.total
     ? Math.round(state.progress.downloaded / state.progress.total * 100)
     : null);
+  // A queued bundle restarts immediately; that click must land once, so the
+  // mutation owns the in-flight state and blocks re-entry.
+  const restart = useMutation({
+    mutationKey: ['update', 'restart-to-apply'],
+    mutationFn: () => restartToUpdate(),
+    retry: false,
+    networkMode: 'always',
+  });
+  const restarting = restart.isPending;
+  const launchGate = React.useRef(false);
+  const handleClick = useEvent(() => {
+    if (downloaded && !restarting) {
+      if (launchGate.current) return;
+      launchGate.current = true;
+      restart.mutate();
+      return;
+    }
+    onOpenUpdate();
+  });
   const updateLabel = error || (downloading
     ? t('updateDialog.status.downloading')
-    : downloaded
-      ? t('updateDialog.actions.restartToUpdate')
-      : t('sessions.sidebar.footer.actions.update'));
+    : restarting
+      ? t('updateDialog.status.updating')
+      : downloaded
+        ? t('updateDialog.actions.restartToUpdate')
+        : t('sessions.sidebar.footer.actions.update'));
 
   return (
     <Tooltip>
@@ -46,14 +71,16 @@ function SidebarUpdateButton({ onOpenUpdate }: { onOpenUpdate: () => void }) {
           type="button"
           variant="ghost"
           size="icon"
-          className="ml-auto size-5 rounded-full bg-transparent text-foreground hover:bg-transparent active:bg-transparent [corner-shape:round] supports-[corner-shape:squircle]:rounded-full"
-          onClick={onOpenUpdate}
+          className={`ml-auto ${footerIconButtonClassName} disabled:opacity-100`}
+          onClick={handleClick}
+          disabled={restarting}
+          aria-busy={restarting || undefined}
           aria-label={updateLabel}
         >
           {downloading ? (
             <svg
               viewBox="0 0 18 18"
-              className={percent === null ? 'size-3.5 animate-spin' : 'size-3.5 -rotate-90'}
+              className={percent === null ? 'size-4 animate-spin' : 'size-4 -rotate-90'}
               role="progressbar"
               aria-label={updateLabel}
               aria-valuenow={percent ?? undefined}
@@ -70,7 +97,7 @@ function SidebarUpdateButton({ onOpenUpdate }: { onOpenUpdate: () => void }) {
               />
             </svg>
           ) : (
-            <Icon name={downloaded ? 'restart' : 'download'} className="size-3" />
+            <Icon name="download" className={footerIconClassName} />
           )}
         </Button>
       </TooltipTrigger>

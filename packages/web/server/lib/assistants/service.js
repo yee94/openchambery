@@ -610,12 +610,14 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     // interrupt notify — duplicate cancelled reports (boot+timer, error+message.updated)
     // must still reach the contact LLM.
     if (status === 'cancelled') cancelAssignedResumes({ sessionID, statuses: ['complete', 'error'] });
-    const watches = listWatchesBySession(db, sessionID);
-    if (watches.length === 0) return false;
+    if (listWatchesBySession(db, sessionID).length === 0) return false;
     let changed = false;
     const resumes = [];
     db.exec('BEGIN IMMEDIATE');
     try {
+      // Read under the write lock: another Host process sharing this SQLite file
+      // may have settled the same watch, and only one transition may resume.
+      const watches = listWatchesBySession(db, sessionID);
       for (const watch of watches) {
         if (watch.status === status || watch.status === 'cancelled') continue;
         // session.idle / status idle follow session.error. Do not rewrite 失败 as 完成.
@@ -2700,7 +2702,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       );
     } else {
       lines.push(
-        '- If no further work is needed, reply in one or two short sentences in the user\'s language summarizing the result or failure reason.',
+        '- If no further work is needed, reply once in one or two short sentences in the user\'s language summarizing the result or failure reason. Use the worker output as the result; when it is unavailable, use read_session before replying.',
+        '- The user is waiting for this assigned result: report it unless history already reports this same result, in which case stay silent instead of repeating it.',
       );
     }
     return lines.join('\n');
@@ -2942,7 +2945,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         const generated = await runContactTurn({
           signal: controller.signal,
           readOnly: true,
-          allowSilent: Boolean(scheduledRun),
+          allowSilent: true,
           assistant: assistantSnapshot,
           history: executionHistory,
           userText,
@@ -2970,8 +2973,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           const current = assistant(assistantID);
           if (!current || current.tombstone_at || !enabled() || !current.enabled) { finishCancelled(); return; }
         }
-        if (scheduledRun && generated?.silent === true) {
-          db.prepare('INSERT OR IGNORE INTO assistant_scheduled_result(assistant_id, run_id, status) VALUES (?,?,?)').run(assistantID, scheduledRun.id, 'silent');
+        if (generated?.silent === true) {
+          if (scheduledRun) db.prepare('INSERT OR IGNORE INTO assistant_scheduled_result(assistant_id, run_id, status) VALUES (?,?,?)').run(assistantID, scheduledRun.id, 'silent');
           settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
           emitContactTurnEvent('yuri:contact-turn-end', { assistantID, turnID, status: 'complete' });
           resolveContactTurnSettlement(messageID, { status: 'complete', silent: true });

@@ -254,12 +254,14 @@ describe('AssistantConversationSurface scroll ownership', () => {
     }));
     expect(host.querySelectorAll('[data-message-id]')).toHaveLength(1);
     expect(host.querySelector('[data-assistant-contact-processing]')?.parentElement).toBe(slot);
+    expect(host.querySelector('[data-assistant-contact-processing-avatar]')).not.toBeNull();
     expect(host.querySelector('[data-assistant-contact-processing]')?.closest('[data-message-id]')).toBeNull();
     await act(async () => contactEvents.handler?.({
       type: 'contact-turn-end', assistantID: 'assistant-a', turnID: 'assistant-a:turn', status: 'complete', occurredAt: 3,
     }));
     expect(host.querySelector('[data-assistant-contact-processing]')).toBeNull();
     expect(host.querySelector('[data-assistant-contact-status-slot]')).toBe(slot);
+    expect(host.querySelector('[data-assistant-contact-processing-avatar]')).toBeNull();
     expect(host.querySelectorAll('[data-message-id]')).toHaveLength(1);
     expect(host.querySelector('[data-message-id="assistant-a:user"]')).toBe(row);
   });
@@ -424,6 +426,22 @@ describe('AssistantConversationSurface scroll ownership', () => {
     await act(async () => send.click());
     expect(attachmentIO.send.mock.calls[1]).toEqual(attachmentIO.send.mock.calls[0]);
     expect(textarea.value).toBe('');
+  });
+
+  test('text-only sends leave the field immediately and hand the draft back on failure', async () => {
+    let fail!: (error: Error) => void;
+    attachmentIO.send.mockReset().mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    const { host } = await mountSurface();
+    const textarea = host.querySelector('textarea')!;
+    await act(async () => {
+      textarea.value = 'Ship it';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-send]')!.click());
+    expect(textarea.value).toBe('');
+    expect(host.querySelector('[data-assistant-contact-turn-status="sending"]')?.textContent).toContain('Ship it');
+    await act(async () => fail(new Error('offline')));
+    expect(textarea.value).toBe('Ship it');
   });
 
   test('gap recovery shows its status and disables retry while filling', async () => {
@@ -724,7 +742,9 @@ test.each(['sending', 'serverWorking', 'processing'] as const)('pending send pre
     if (!stop.hidden) await act(async () => stop.click());
     expect(attachmentIO.abort).toHaveBeenCalledTimes(source === 'sending' ? 0 : 1);
     expect(host.querySelector<HTMLButtonElement>('[data-send]')!.disabled).toBe(true);
+    expect(host.querySelector('[data-assistant-contact-processing]')).toBeNull();
   } finally {
     await act(async () => finish({ revision: 2 }));
   }
+  expect(host.querySelector('[data-assistant-contact-processing]')).not.toBeNull();
 });

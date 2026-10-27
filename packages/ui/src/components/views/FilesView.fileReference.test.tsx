@@ -242,6 +242,22 @@ describe('file reference failure lifecycle', () => {
     }
   });
 
+  test.each(['focus', 'navigation'] as const)('a pending %s intent for another panel does not reload the bound file', async (intent) => {
+    harness.files.readFile.mockResolvedValue({ content: 'content-A' });
+    await open('/repo/A.ts');
+    useUIStore.setState({ pendingFileFocusPath: null });
+    await act(async () => reactRoot.render(<FilePanel />));
+    expect(host.querySelector('[data-testid="editor"]')?.textContent).toBe('content-A');
+    const count = harness.files.readFile.mock.calls.length;
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', false);
+    if (intent === 'focus') useUIStore.getState().setPendingFileFocusPath('/repo/other/B.md');
+    else useUIStore.getState().setPendingFileNavigation({ path: '/repo/other/B.md', line: 3, column: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    expect(harness.files.readFile.mock.calls.length).toBe(count);
+    expect(host.querySelector('[data-testid="editor"]')?.textContent).toBe('content-A');
+  });
+
   test('an allowed outside file still uses the existing read capability', async () => {
     harness.files.readFile.mockResolvedValue({ content: 'outside-content' });
     await open('/outside/C.ts');

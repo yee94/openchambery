@@ -1,5 +1,5 @@
 import React from 'react';
-import { useClickOutside, useEvent } from '@reactuses/core';
+import { useClickOutside, useEvent, useTimeoutFn } from '@reactuses/core';
 import type { Session } from '@/lib/opencode/v2-types';
 import { isSessionSharingAvailable } from '@/sync/session-sharing-availability';
 import { ContextMenu } from '@base-ui/react/context-menu';
@@ -406,7 +406,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const handleSaveEditRef = React.useRef(handleSaveEdit);
   handleSaveEditRef.current = handleSaveEdit;
   const [renameDraft, setRenameDraft] = React.useState(editTitle);
-  const [pendingSmartTitle, setPendingSmartTitle] = React.useState<string | null>(null);
   const renameDraftRef = React.useRef(renameDraft);
   renameDraftRef.current = renameDraft;
   const renameTargetRef = React.useRef<string | null>(null);
@@ -499,6 +498,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       yuri?: {
         titleRefresh?: {
           isGenerating?: unknown;
+          generationExpiresAt?: unknown;
           lastError?: unknown;
           failedAt?: unknown;
         };
@@ -513,18 +513,20 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     : null;
   React.useEffect(() => {
     if (!titleGenerationError || titleGenerationFailedAt === null) return;
-    setPendingSmartTitle(null);
     console.warn(`[session-title] generation failed for ${session.id}: ${titleGenerationError}`);
   }, [session.id, titleGenerationError, titleGenerationFailedAt]);
+  const generationExpiresAt = typeof titleRefreshMetadata?.generationExpiresAt === 'number'
+    && Number.isFinite(titleRefreshMetadata.generationExpiresAt) ? titleRefreshMetadata.generationExpiresAt : 0;
+  const [expiredGeneration, setExpiredGeneration] = React.useState(0);
+  const generationTimeout = React.useMemo(() => Math.max(0, generationExpiresAt - Date.now()), [generationExpiresAt]);
+  const [, startGenerationTimeout, stopGenerationTimeout] = useTimeoutFn(
+    () => setExpiredGeneration(generationExpiresAt), generationTimeout, { immediate: false },
+  );
+  const generationActive = titleRefreshMetadata?.isGenerating === true;
   React.useEffect(() => {
-    if (pendingSmartTitle === null) return;
-    if (sessionTitle !== pendingSmartTitle) {
-      setPendingSmartTitle(null);
-      return;
-    }
-    const timeout = window.setTimeout(() => setPendingSmartTitle(null), 30_000);
-    return () => window.clearTimeout(timeout);
-  }, [pendingSmartTitle, sessionTitle]);
+    if (generationActive && generationExpiresAt > Date.now()) startGenerationTimeout();
+    return stopGenerationTimeout;
+  }, [generationActive, generationExpiresAt, startGenerationTimeout, stopGenerationTimeout]);
   const hasChildren = node.children.length > 0
     || Boolean((resolvedSession as Session & { hasChildren?: boolean }).hasChildren
       ?? (session as Session & { hasChildren?: boolean }).hasChildren);
@@ -870,12 +872,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
   if (editingId === session.id) {
     const handleEnableSmartTitle = async () => {
-      setPendingSmartTitle(sessionTitle);
       handleCancelEdit();
       try {
         await requestSessionSmartTitle(session.id);
       } catch (error) {
-        setPendingSmartTitle(null);
         console.warn('[session-sidebar] failed to request smart title:', error);
       }
     };
@@ -944,7 +944,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   }
 
   const isStreaming = hasSessionActivity;
-  const isTitleGenerating = pendingSmartTitle !== null || titleRefreshMetadata?.isGenerating === true;
+  const isTitleGenerating = generationActive && generationExpiresAt > Date.now() && expiredGeneration !== generationExpiresAt;
   const pendingPermissionCount = sessionPermissions.length;
   // Pending ask-tool questions outrank the busy spinner: the session is
   // waiting on the user, so the trailing marker should read as a Question

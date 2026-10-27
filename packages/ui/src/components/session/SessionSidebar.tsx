@@ -2540,7 +2540,7 @@ export const SessionSidebar = React.memo(function SessionSidebar({
                 <AssistantNavigationIcon className="size-4 shrink-0 [&[data-assistant-navigation-avatar]]:scale-125" />
                 <span className="truncate">{t("assistants.title")}</span>
                 <span className="ml-auto flex shrink-0 items-center gap-2">
-                  <AssistantNavigationUnreadBadge />
+                  <AssistantNavigationUnreadBadge className="h-3.5 min-w-3.5 bg-[oklch(from_var(--primary-base)_calc(l_*_0.78)_c_h)] px-1 text-[10px] text-[var(--color-white)] shadow-none" />
                   {isVisible ? <AssistantNavigationActivity /> : null}
                 </span>
               </Button> : null}

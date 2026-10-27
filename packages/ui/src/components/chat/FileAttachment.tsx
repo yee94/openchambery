@@ -249,7 +249,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
         event.stopPropagation();
       }}
       data-attachment-preview="true"
-      className="relative h-10 w-10 rounded-lg border border-border/40 bg-muted/10 overflow-hidden flex-shrink-0 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className="relative h-10 w-10 rounded-lg border border-border/40 bg-muted/10 overflow-hidden flex-shrink-0 group cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       aria-label={displayName}
     >
       <LoadingImage
@@ -257,7 +257,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
         resourceError={imageResource.error}
         src={displayImageUrl || undefined}
         alt={displayName}
-        className="h-full w-full object-cover"
+        className="h-full w-full object-cover transition-transform duration-200 ease-out hover:scale-110 motion-reduce:transform-none motion-reduce:transition-none"
         loading="lazy"
         draggable={false}
       />
@@ -267,13 +267,13 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
           onRemove();
         }}
         className={cn(
-          "absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-transparent text-foreground hover:text-destructive flex items-center justify-center transition-opacity focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "group/remove absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-transparent text-foreground cursor-pointer flex items-center justify-center transition-opacity duration-200 ease-out motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           alwaysShowActions ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         )}
         title={t('chat.fileAttachment.actions.removeImage')}
         aria-label={t('chat.fileAttachment.actions.removeNamed', { name: displayName })}
       >
-        <Icon name="close" className="h-2.5 w-2.5" />
+        <Icon name="close" className="h-2.5 w-2.5 transition-[width,height] duration-200 ease-out group-hover/remove:h-3 group-hover/remove:w-3 motion-reduce:transition-none" />
       </button>
     </div>
   );

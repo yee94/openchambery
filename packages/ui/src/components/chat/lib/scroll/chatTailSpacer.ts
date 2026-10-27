@@ -28,11 +28,12 @@ export const CHAT_TAIL_SPACER_DESKTOP_HEIGHT = `${CHAT_TAIL_SPACER_DESKTOP_VH}vh
  * breathes with it changes the at-bottom band under the reader.
  *
  * The composer page-background fade (`.yuri-mobile-composer::after`, 2.75rem)
- * paints above the input and eats the bottom of this tail. 80px left the
- * newest lines inside that mask once the queue or changes strip outgrew the
- * fixed foot inset. Keep enough room that those lines sit clear of the fade.
+ * paints above the input and eats the bottom of this tail. The foot inset is
+ * now the measured composer occupancy (card + Changes / TODO / queue), so the
+ * tail no longer has to absorb a strip that outgrows a fixed guess: it only
+ * clears that fade plus a short breathing gap.
  */
-export const CHAT_TAIL_SPACER_MOBILE_PX = 144;
+export const CHAT_TAIL_SPACER_MOBILE_PX = 56;
 
 export const CHAT_TAIL_SPACER_MOBILE_HEIGHT = `${CHAT_TAIL_SPACER_MOBILE_PX}px`;
 

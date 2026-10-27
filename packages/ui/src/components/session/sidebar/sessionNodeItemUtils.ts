@@ -22,7 +22,7 @@ export const resolvedSessionRenderKey = (session: Session): string => {
     metadata?: {
       yuri?: {
         assistant?: unknown;
-        titleRefresh?: { isGenerating?: unknown; lastError?: unknown; failedAt?: unknown };
+        titleRefresh?: { isGenerating?: unknown; generationExpiresAt?: unknown; lastError?: unknown; failedAt?: unknown };
       };
     };
   };
@@ -35,6 +35,7 @@ export const resolvedSessionRenderKey = (session: Session): string => {
     extended.parentID ?? '',
     extended.metadata?.yuri?.assistant ? '1' : '',
     titleRefresh?.isGenerating ? '1' : '',
+    String(titleRefresh?.generationExpiresAt ?? ''),
     String(titleRefresh?.lastError ?? ''),
     String(titleRefresh?.failedAt ?? ''),
     Math.floor(activity / SESSION_ACTIVITY_LABEL_GRANULARITY_MS),

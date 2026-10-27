@@ -314,10 +314,15 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   anchorRef,
 }: DesktopServicesMenuProps) {
   const { t } = useI18n();
+  const hostActionBusyRef = React.useRef(false);
+  const handleHostActionBusyChange = useEvent((busy: boolean) => {
+    hostActionBusyRef.current = busy;
+  });
   return (
     <DropdownMenu
       open={isDesktopServicesOpen}
       onOpenChange={(open) => {
+        if (!open && hostActionBusyRef.current) return;
         setIsDesktopServicesOpen(open);
         if (open) {
           void refreshCurrentInstanceLabel();
@@ -350,6 +355,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
               items={servicesTabItems}
               activeId={desktopServicesTab}
               onSelect={(tabID) => {
+                if (hostActionBusyRef.current) return;
                 const value = tabID as 'instance' | 'usage' | 'mcp';
                 setDesktopServicesTab(value);
                 if (value === 'usage' && quotaLastUpdated === null) {
@@ -397,6 +403,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
               open={isDesktopServicesOpen && desktopServicesTab === 'instance'}
               onOpenChange={() => {}}
               onHostSwitched={() => setIsDesktopServicesOpen(false)}
+              onBusyChange={handleHostActionBusyChange}
             />
           </div>
         ) : null}

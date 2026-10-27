@@ -3632,6 +3632,105 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('resumes once when two Host processes share the assistants database', async () => {
+    const directory = root();
+    const resumes = [];
+    const options = {
+      runContactTurn: async ({ userText }) => {
+        resumes.push(userText);
+        return { text: '清理完成。', bubbles: ['清理完成。'] };
+      },
+    };
+    const client = { messages: async () => ({ data: [] }) };
+    const first = setup(directory, client, options);
+    const second = setup(directory, client, options);
+    try {
+      const assistant = first.createAssistant(assistantInput);
+      first.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_shared', directory, title: 'Cleanup', status: 'busy' });
+      expect(first.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_shared' } })).toBe(true);
+      expect(second.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_shared' } })).toBe(false);
+      await vi.waitFor(() => expect(first.snapshot().assistants[0].working).toBe(false));
+      expect(resumes).toHaveLength(1);
+      expect(first.contactMessages(assistant.id).messages.filter((message) => message.text === '清理完成。')).toHaveLength(1);
+    } finally {
+      first.close();
+      second.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('a Host that exits while holding the write lock does not block the next transition or user send', async () => {
+    const directory = root();
+    const resumes = [];
+    const service = setup(directory, { messages: async () => ({ data: [] }) }, {
+      runContactTurn: async ({ userText, readOnly }) => {
+        if (readOnly) resumes.push(userText);
+        return { text: 'ok', bubbles: ['ok'] };
+      },
+    });
+    try {
+      const assistant = service.createAssistant(assistantInput);
+      service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_crash', directory, title: 'Cleanup', status: 'busy' });
+      // A real second Host takes the write lock, then dies by SIGKILL mid-transaction.
+      const { spawn } = require('node:child_process');
+      const holder = spawn(process.execPath, ['-e', `
+        const db = new (require(${JSON.stringify(require.resolve('better-sqlite3'))}))(${JSON.stringify(path.join(directory, 'assistants.sqlite'))});
+        db.exec('BEGIN IMMEDIATE');
+        db.prepare("UPDATE assistant_contact_watch SET status='error'").run();
+        process.stdout.write('locked');
+        setInterval(() => {}, 1000);
+      `], { stdio: ['ignore', 'pipe', 'inherit'] });
+      await new Promise((resolve, reject) => {
+        holder.stdout.once('data', resolve);
+        holder.once('exit', (code) => reject(new Error(`lock holder exited early: ${code}`)));
+      });
+      const exited = new Promise((resolve) => holder.once('exit', resolve));
+      holder.kill('SIGKILL');
+      await exited;
+      expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_crash' } })).toBe(true);
+      await vi.waitFor(() => expect(resumes).toHaveLength(1));
+      const sent = await settleSend(service, assistant.id, { messageID: 'after_crash', parts: [{ type: 'text', text: 'hi' }] });
+      expect(sent.settled).toMatchObject({ status: 'complete' });
+      expect(service.snapshot().assistants[0].working).toBe(false);
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('lets an assigned-session follow-up stay silent without progress, unread, or notification', async () => {
+    const directory = root();
+    let time = 7_000;
+    const onContactTurnComplete = vi.fn();
+    const backgroundTurns = [];
+    const service = setup(directory, { messages: async () => ({ data: [] }) }, {
+      clock: () => time,
+      onContactTurnComplete,
+      runContactTurn: (input) => {
+        backgroundTurns.push(input);
+        return realRunContactTurn({
+          ...input,
+          createChatCompletion: async () => ({ text: '```yuri-message\n{"text":"正在查看该会话的执行结果"}\n```\n```yuri-final\n{"status":"silent","text":""}\n```' }),
+        });
+      },
+    });
+    try {
+      const assistant = service.createAssistant(assistantInput);
+      service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_quiet', directory, title: 'Cleanup', status: 'busy' });
+      const before = service.contactMessages(assistant.id).messages.length;
+      service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_quiet' } });
+      const settled = await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_quiet', 'complete', 7_000));
+      expect(settled).toMatchObject({ status: 'complete', silent: true });
+      expect(backgroundTurns[0]).toMatchObject({ readOnly: true, allowSilent: true });
+      expect(service.contactMessages(assistant.id).messages).toHaveLength(before);
+      expect(onContactTurnComplete).not.toHaveBeenCalled();
+      expect(service.snapshot().assistants[0].working).toBe(false);
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('reconciles a missed assigned-session idle on boot and the 60s timer with resume and no canned settle', async () => {
     const directory = root();
     const first = setup(directory);

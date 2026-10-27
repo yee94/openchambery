@@ -1550,6 +1550,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         contentRef.current = element;
     });
     const historyReadingAnchorRef = React.useRef<ViewportMessageAnchor | null>(null);
+    const columnReadingAnchorRef = React.useRef<ViewportMessageAnchor | null>(null);
     const unmeasuredHistoryRowsRef = React.useRef(new Set<HTMLDivElement>());
     const revealingHistoryRowsRef = React.useRef(new Set<HTMLDivElement>());
     const previousHistoryAnchorTokenRef = React.useRef(historyAnchorToken);
@@ -1567,14 +1568,17 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
             ? captureViewportMessageAnchor(container, content)
             : null;
     }
-    const releaseHistoryReadingAnchor = useEvent(() => { historyReadingAnchorRef.current = null; });
+    const releaseHistoryReadingAnchor = useEvent(() => {
+        historyReadingAnchorRef.current = null;
+        columnReadingAnchorRef.current = null;
+    });
     useEventListener('wheel', releaseHistoryReadingAnchor, undefined, { passive: true, capture: true });
     useEventListener('touchstart', releaseHistoryReadingAnchor, undefined, { passive: true, capture: true });
     useEventListener('pointerdown', releaseHistoryReadingAnchor, undefined, { passive: true, capture: true });
     useEventListener('click', releaseHistoryReadingAnchor, undefined, { capture: true });
     useEventListener('keydown', releaseHistoryReadingAnchor, undefined, { capture: true });
     const restoreHistoryReadingAnchor = useEvent(() => {
-        const anchor = historyReadingAnchorRef.current;
+        const anchor = columnReadingAnchorRef.current ?? historyReadingAnchorRef.current;
         const container = scrollRef?.current;
         if (!anchor || !container) return;
         const element = findMessageElement(container, anchor.messageId);
@@ -1709,12 +1713,14 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
             for (const row of revealingHistoryRowsRef.current) row.style.removeProperty('opacity');
             revealingHistoryRowsRef.current.clear();
             unmeasuredHistoryRowsRef.current.clear();
+            columnReadingAnchorRef.current = null;
         };
     }, [isTanstack, tanstackVirtualizer]);
     const finishHistoryMeasurement = useEvent(() => {
         restoreHistoryReadingAnchor();
         for (const row of revealingHistoryRowsRef.current) row.style.removeProperty('opacity');
         revealingHistoryRowsRef.current.clear();
+        columnReadingAnchorRef.current = null;
     });
     const measureHistoryElement = useEvent((element: HTMLDivElement | null) => {
         tanstackVirtualizer.measureElement(element);
@@ -1759,6 +1765,17 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         // so wrap heights match the settled column, not an in-between frame.
         columnMeasureTimeoutRef.current = setTimeout(() => {
             columnMeasureTimeoutRef.current = null;
+            const container = scrollRef?.current;
+            const content = sizeContainerRef.current;
+            if (container && content && !touchActiveRef.current) {
+                columnReadingAnchorRef.current = captureViewportMessageAnchor(container, content);
+            }
+            // measure() clears sizes, but retained refs and unchanged row boxes
+            // emit no new measurement. Enroll them in the same pre-paint batch
+            // as newly attached rows before invalidating the cache.
+            for (const row of tanstackVirtualizer.elementsCache.values()) {
+                if (row.isConnected) unmeasuredHistoryRowsRef.current.add(row);
+            }
             tanstackVirtualizer.measure();
         }, 220);
     });

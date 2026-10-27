@@ -264,7 +264,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                                 className={cn(isMobile ? 'size-3' : 'size-3.5', editPending && 'animate-spin')}
                                 aria-hidden="true"
                             />
-                            <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
+                            <span className={cn('font-medium capitalize', isMobile ? 'leading-none' : 'typography-ui-label')}>
                                 {t('chat.queuedMessage.edit')}
                             </span>
                         </button>
@@ -288,7 +288,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                                 className={cn(isMobile ? 'size-3' : 'size-3.5')}
                                 aria-hidden="true"
                             />
-                            <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
+                            <span className={cn('font-medium capitalize', isMobile ? 'leading-none' : 'typography-ui-label')}>
                                 {t('chat.queuedMessage.send')}
                             </span>
                         </button>

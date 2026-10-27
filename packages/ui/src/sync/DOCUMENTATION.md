@@ -120,7 +120,7 @@ successful empty lists clear it. Remote order changes do not change the selected
 project. VS Code keeps its workspace registry.
 
 Live session list equality includes the title-refresh presentation fields
-`isGenerating`, `lastError`, and `failedAt`. Metadata-only completion must release
+`isGenerating`, `generationExpiresAt`, `lastError`, and `failedAt`. Metadata-only completion must release
 the sidebar title shimmer even when the title is unchanged and execution remains
 busy. Recency ticks and unrelated metadata do not invalidate that list.
 Manual rename explicitly clears title-refresh loading, pending requests and errors.
@@ -964,7 +964,10 @@ Modules:
     limits).
   - Active retain = TanStack Query observer count **or** repository listener
     scopes via an explicit active-scope registry (cache subscribers alone do not
-    increment Query observers).
+    increment Query observers). A subscribed scope therefore also attaches a
+    disabled keep-alive `QueryObserver` to its canonical query (re-attached when
+    the query is recreated after purge), so TanStack `gcTime` cannot remove a
+    transcript that is still mounted; unsubscribe releases it and normal GC resumes.
   - Active transcripts keep every loaded page; inactive order by canonical
     `dataUpdatedAt` LRU.
   - `purgeSession` cancel+removes canonical, transport-page, and reserved

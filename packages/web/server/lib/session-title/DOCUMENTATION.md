@@ -25,8 +25,12 @@ Only changed `titleRefresh` fields are persisted. Transient fields are removed
 with RFC 7386 `null`, so `isGenerating` and `requestedAt` cannot survive a clear.
 Manual rename clears loading, pending requests, and old errors; a new smart-title
 request clears stale loading/errors before admission. Model generation has a
-120-second deadline, releasing loading and the in-flight slot even if the model
-never settles. Late timed-out results cannot write titles. A request received
+10-second deadline per attempt. Failed, empty, or timed-out generations retry
+twice after 1s and 2s backoff (three attempts maximum); loading is set for each
+attempt and clears before backoff, on success, failure, or timeout. Each attempt
+publishes `generationExpiresAt` (10s deadline); clients expire loading locally
+even if cleanup events are lost or the Host exits. Stopping the runtime or
+receiving a newer request prevents further retries. Late timed-out results cannot write titles. A request received
 during generation is retained and runs after that attempt settles; the obsolete
 attempt does not commit its title or consume the newer request. Cleanup writes
 the narrow metadata patch directly rather than depending on another session GET.

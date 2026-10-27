@@ -14,10 +14,10 @@ type DesktopRuntimeSwitchOverlayProps = {
 
 export function DesktopRuntimeSwitchOverlay({ transition, ready }: DesktopRuntimeSwitchOverlayProps) {
   const { t } = useI18n();
-  const mutationPending = useDesktopHostSwitchPending();
+  const mutationPending = useDesktopHostSwitchPending(true);
   const [completedEpoch, setCompletedEpoch] = React.useState(0);
-  // Keep overlay through probe/switch mutation AND the post-endpoint reconnect
-  // window (identity-change epoch). One shared surface for every entry point.
+  // Dialog actions show preparation inline; other callers use the overlay.
+  // Every entry keeps the post-endpoint reconnect window (identity-change epoch).
   const epochVisible = transition.epoch > completedEpoch;
   const visible = mutationPending || epochVisible;
 

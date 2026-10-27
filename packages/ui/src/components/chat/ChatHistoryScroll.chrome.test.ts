@@ -17,7 +17,7 @@ afterAll(() => {
     if (!keepEvidence()) for (const dir of workDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short', 'desktop-warmup', 'desktop-warmup-scrolling', 'desktop-warmup-pinned', 'desktop-warmup-small-pinned', 'partial-turn', 'mobile-partial-turn', 'fast-entry', 'fast-entry-desktop-wheel', 'fast-entry-desktop-key', 'compact-prepend', 'compact-prepend-desktop', 'turn-prepend', 'turn-prepend-desktop'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
+test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short', 'desktop-warmup', 'desktop-warmup-scrolling', 'desktop-warmup-pinned', 'desktop-warmup-small-pinned', 'column-resize-desktop', 'partial-turn', 'mobile-partial-turn', 'fast-entry', 'fast-entry-desktop-wheel', 'fast-entry-desktop-key', 'compact-prepend', 'compact-prepend-desktop', 'turn-prepend', 'turn-prepend-desktop'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
     const fastEntry = scenario.startsWith('fast-entry');
     const desktop = scenario.includes('desktop') || scenario === 'partial-turn';
     const width = desktop ? 1200 : 402;
@@ -78,6 +78,61 @@ window.addEventListener('error',e=>{
         let releasedReadingDistance: number | null = null;
         let quietAnchorTop: number | null = null;
         expect(prepared.loads).toBe(0);
+        if (scenario === 'column-resize-desktop') {
+            expect(await page.evaluate('document.querySelectorAll("[data-index][data-turn-entry]").length')).toBeGreaterThan(0);
+            // The outer column changes width while the capped message bodies do
+            // not. No row ResizeObserver callback follows the delayed reset.
+            await page.evaluate(`document.head.insertAdjacentHTML('beforeend', '<style>.chat-message-column{width:700px!important;max-width:700px!important}</style>')`);
+            await new Promise((resolve) => setTimeout(resolve, 600));
+            for (const [iteration, nextWidth] of [1100, 1200, 1100].entries()) {
+                const frames = await page.evaluate<Array<{ hidden: number; offset: number | null; height: number }>>(`new Promise(resolve => {
+                    const scroller = document.querySelector('[data-history-scroller]');
+                    const anchor = [...scroller.querySelectorAll('[data-message-id]')].find(row => {
+                        const rect = row.getBoundingClientRect();
+                        return rect.top >= 0 && rect.top < scroller.clientHeight;
+                    });
+                    const frames = [], started = performance.now();
+                    const sample = () => {
+                        frames.push({
+                            hidden: [...scroller.querySelectorAll('[data-index][data-turn-entry]')].filter(row => {
+                                const rect = row.getBoundingClientRect();
+                                return rect.bottom > 0 && rect.top < scroller.clientHeight && getComputedStyle(row).opacity === '0';
+                            }).length,
+                            offset: anchor?.isConnected ? anchor.getBoundingClientRect().top : null,
+                            height: anchor?.getBoundingClientRect().height ?? 0,
+                        });
+                    };
+                    sample();
+                    scroller.style.width = '${nextWidth}px';
+                    const tick = () => {
+                        sample();
+                        if (performance.now() - started < 800) requestAnimationFrame(tick);
+                        else resolve(frames);
+                    };
+                    requestAnimationFrame(tick);
+                })`);
+                writeFileSync(join(work, `resize-${iteration}-${nextWidth}.json`), JSON.stringify(frames));
+                expect(frames.length).toBeGreaterThan(10);
+                expect(frames.every((frame) => frame.offset !== null), 'reading DOM must survive cache invalidation').toBe(true);
+                expect(Math.max(...frames.map((frame) => frame.hidden)), 'no painted frame may contain transparent history').toBe(0);
+                expect(Math.max(...frames.map((frame) => Math.abs(frame.offset! - frames[0].offset!))), 'cache invalidation must not flash estimated positions').toBeLessThanOrEqual(1.1);
+                expect(frames.every((frame) => frame.height === frames[0].height), 'fixture must exercise unchanged row geometry').toBe(true);
+            }
+            await page.evaluate('window.historyScrollFixture.resume()');
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            await page.evaluate('document.querySelector("[data-history-scroller]").style.width = "1200px"');
+            await new Promise((resolve) => setTimeout(resolve, 600));
+            const pinnedBeforeGrowth = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
+            expect(Math.abs(pinnedBeforeGrowth.max - pinnedBeforeGrowth.top)).toBeLessThan(3);
+            await page.evaluate('const rows = document.querySelectorAll("[data-index][data-turn-entry]"); rows[rows.length - 1].style.paddingBottom = "200px"');
+            await new Promise((resolve) => setTimeout(resolve, 600));
+            const pinnedAfterGrowth = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
+            expect(pinnedAfterGrowth.max).toBeGreaterThan(pinnedBeforeGrowth.max + 100);
+            expect(Math.abs(pinnedAfterGrowth.max - pinnedAfterGrowth.top), 'completed width measurement must not retain an anchor that fights bottom following').toBeLessThan(3);
+            expect((await page.evaluate<Sample>('window.historyScrollFixture.sample()')).loads).toBe(0);
+            expect(await page.evaluate('window.errors')).toEqual([]);
+            return;
+        }
         if (partialTurn) {
             expect(await page.evaluate('getComputedStyle(document.querySelector("[data-history-scroller]")).overflowY')).toBe('auto');
             expect(await page.evaluate('document.body.textContent.includes("HIDDEN_PARTIAL_PROCESS")')).toBe(false);

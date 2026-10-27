@@ -27,7 +27,8 @@ export const TITLE_QUIET_MS = 15_000;
 export const TITLE_THROTTLE_MS = 5 * 60_000;
 /** Fetch enough recent messages to find a subject anchor around the title window. */
 const TRANSCRIPT_MESSAGE_LIMIT = 16;
-const GENERATION_TIMEOUT_MS = 120_000;
+const GENERATION_TIMEOUT_MS = 10_000;
+const GENERATION_RETRY_DELAYS_MS = [1_000, 2_000];
 /** Latest user/assistant turns used for title generation. */
 const TRANSCRIPT_MAX_TURNS = 5;
 const TRANSCRIPT_USER_CHAR_LIMIT = 2_000;
@@ -479,6 +480,7 @@ export const createSessionTitleRuntime = ({
           yuri: {
             titleRefresh: {
               isGenerating: null,
+              generationExpiresAt: null,
               ...(forcedRefreshes.has(sessionId) ? {} : { requestedAt: null }),
             },
           },
@@ -671,41 +673,61 @@ export const createSessionTitleRuntime = ({
       : '';
     const { generateSmallModelText } = await getSmallModelService();
     let generated;
-    await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, {
-      directory,
-      method: 'PATCH',
-      body: {
-        metadata: {
-          yuri: {
-            titleRefresh: {
-              isGenerating: true,
-              lastError: null,
-              failedAt: null,
+    try {
+      for (let attempt = 0; attempt <= GENERATION_RETRY_DELAYS_MS.length; attempt += 1) {
+        if (stopped || forcedRefreshes.has(sessionId)) return;
+        await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, {
+          directory,
+          method: 'PATCH',
+          body: {
+            metadata: {
+              yuri: {
+                titleRefresh: {
+                  isGenerating: true,
+                  generationExpiresAt: now() + GENERATION_TIMEOUT_MS,
+                  lastError: null,
+                  failedAt: null,
+                },
+              },
             },
           },
-        },
-      },
-    }).catch((error) => {
-      console.warn('[session-title] failed to set generation state:', error?.message || error);
-    });
-    let generationTimer;
-    try {
-      generated = await Promise.race([generateSmallModelText({
-        // Background feature: use the configured or displayed default Summary
-        // AI model, while arbitrary small-model fallbacks stay on the session
-        // provider.
-        restrictToPreferredProvider: true,
-        purpose: 'session-title',
-        prompt: `Conversation turns for title generation (name the MAIN SUBJECT of the work, not the last wrap-up step):\n\n${transcript}${currentSubjectHint}\n\nWrite the title in the user's language. Use this actual user-message sample as the language source: "${languageSample}"`,
-        system: buildTitleSystemPrompt(),
-        maxOutputTokens: 64,
-        directory,
-        preferredProviderID: typeof lastAssistantInfo?.providerID === 'string' ? lastAssistantInfo.providerID : undefined,
-        preferredModelID: typeof lastAssistantInfo?.modelID === 'string' ? lastAssistantInfo.modelID : undefined,
-      }), new Promise((_, reject) => {
-        generationTimer = setTimeout(() => reject(new Error('Title generation timed out')), GENERATION_TIMEOUT_MS);
-        generationTimer.unref?.();
-      })]);
+        }).catch((error) => {
+          console.warn('[session-title] failed to set generation state:', error?.message || error);
+        });
+        let generationTimer;
+        try {
+          generated = await Promise.race([generateSmallModelText({
+            // Background feature: use the configured or displayed default Summary
+            // AI model, while arbitrary small-model fallbacks stay on the session
+            // provider.
+            restrictToPreferredProvider: true,
+            purpose: 'session-title',
+            prompt: `Conversation turns for title generation (name the MAIN SUBJECT of the work, not the last wrap-up step):\n\n${transcript}${currentSubjectHint}\n\nWrite the title in the user's language. Use this actual user-message sample as the language source: "${languageSample}"`,
+            system: buildTitleSystemPrompt(),
+            maxOutputTokens: 64,
+            directory,
+            preferredProviderID: typeof lastAssistantInfo?.providerID === 'string' ? lastAssistantInfo.providerID : undefined,
+            preferredModelID: typeof lastAssistantInfo?.modelID === 'string' ? lastAssistantInfo.modelID : undefined,
+          }), new Promise((_, reject) => {
+            generationTimer = setTimeout(() => reject(new Error('Title generation timed out')), GENERATION_TIMEOUT_MS);
+            generationTimer.unref?.();
+          })]);
+          if (!cleanGeneratedTitle(generated?.text)) throw new Error('Title generation returned an empty title');
+          break;
+        } catch (error) {
+          if (stopped || forcedRefreshes.has(sessionId)) return;
+          if (attempt === GENERATION_RETRY_DELAYS_MS.length) throw error;
+        } finally {
+          clearTimeout(generationTimer);
+          await clearTitleGenerationState(sessionId, directory).catch((error) => {
+            console.warn('[session-title] failed to clear generation state:', error?.message || error);
+          });
+        }
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, GENERATION_RETRY_DELAYS_MS[attempt]);
+          timer.unref?.();
+        });
+      }
     } catch (error) {
       if (Number(error?.statusCode) !== 404) {
         console.warn('[session-title] generation failed:', error?.message || error);
@@ -715,7 +737,6 @@ export const createSessionTitleRuntime = ({
       });
       return;
     } finally {
-      clearTimeout(generationTimer);
       await clearTitleGenerationState(sessionId, directory).catch((error) => {
         console.warn('[session-title] failed to clear generation state:', error?.message || error);
       });

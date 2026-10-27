@@ -98,8 +98,8 @@ describe('mobile composer overflow and swap contract', () => {
         expect(mobileCss).toContain('@property --yuri-mobile-composer-swap');
         expect(mobileCss).toMatch(/\.yuri-mobile-composer-expanded-layer\s*\{[^}]*transform:\s*none/s);
         expect(mobileCss).toMatch(/data-yuri-composer-swap-phase="snapping"[\s\S]*?\.yuri-mobile-composer-expanded-layer\s*\{[^}]*min\(1, var\(--yuri-mobile-composer-swap\) \* 2\) \* 110%/s);
-        expect(mobileCss).toMatch(/\.yuri-mobile-composer-compact-layer\s*\{[^}]*width:\s*80%;[^}]*--yuri-mobile-glass-shadow[^}]*--yuri-mobile-glass-blur[^}]*max\(0, var\(--yuri-mobile-composer-swap\) \* 2 - 1\)/s);
-        expect(mobileCss).toMatch(/\.yuri-mobile-composer-compact-layer\s*\{[^}]*background:\s*var\(--yuri-mobile-glass-fill\)/s);
+        expect(mobileCss).toMatch(/\.yuri-mobile-composer-compact-layer\s*\{[^}]*width:\s*80%;[^}]*background:\s*var\(--surface-background\);[^}]*box-shadow:[\s\S]*?--yuri-mobile-glass-highlight[^}]*opacity:\s*max\(0, calc\(var\(--yuri-mobile-composer-swap\) \* 2 - 1\)\)/s);
+        expect(mobileCss).toMatch(/\.dark \.yuri-mobile-composer-compact-layer\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--surface-background\), var\(--surface-foreground\) 8%\)/s);
         expect(mobileCss).toMatch(/data-yuri-composer-swap-phase="snapping"[^}]*transition:\s*--yuri-mobile-composer-swap 240ms/s);
         expect(mobileCss).toMatch(/data-yuri-composer-swap-phase="tracking"[^}]*transition:\s*none/s);
         expect(chatInputSource).toContain('data-yuri-composer-compact-surface="true"');
@@ -161,7 +161,8 @@ describe('mobile composer overflow and swap contract', () => {
     });
 
     test('keeps fixed inset and pin accessibility contracts', () => {
-        expect(mobileCss).toMatch(/--yuri-chat-foot-inset:\s*calc\(\s*8rem/);
+        expect(mobileCss).toMatch(/--yuri-chat-foot-inset:\s*var\(\s*--yuri-mobile-composer-occupancy,\s*calc\(\s*8rem/);
+        expect(mobileCss).toMatch(/data-yuri-composer-swap-phase="snapping"\]\s*>\s*\.yuri-mobile-composer-foot--overlay\s*\{[^}]*transition:\s*--yuri-mobile-composer-swap 240ms/s);
         expect(mobileCss).not.toMatch(/\.yuri-mobile-composer-foot\s*\{[^}]*--yuri-mobile-composer-swap:/s);
         expect(mobileCss).toContain('padding-bottom: var(--yuri-chat-foot-inset)');
         expect(swapHookSource).toContain('textarea[data-chat-input="true"]');
@@ -291,7 +292,7 @@ describe('mobile composer overflow and swap contract', () => {
                 .replace(/\s+/g, '');
         };
 
-        expect(resolveFootInset(false)).toBe('calc(8rem+34px)');
+        expect(resolveFootInset(false)).toBe('var(--yuri-mobile-composer-occupancy,calc(8rem+34px))');
         expect(resolveFootInset(true)).toBe('calc(90px+100px)');
     });
 

@@ -55,12 +55,15 @@ type ProbeProps = {
   nodeKey?: string
 }
 
+let probeFollowLatest: (() => void) | null = null
+
 const Probe: React.FC<ProbeProps> = ({ active, assistantID, revision, geometry, nodeKey }) => {
-  const { scrollRef, contentRef } = useAssistantContactAutoFollow({
+  const { scrollRef, contentRef, followLatest } = useAssistantContactAutoFollow({
     active,
     assistantID,
     contentRevision: revision,
   })
+  probeFollowLatest = followLatest
   const attachScroller = React.useMemo<React.RefCallback<HTMLDivElement>>(() => (node) => {
     if (node && !Object.prototype.hasOwnProperty.call(node, 'scrollHeight')) {
       Object.defineProperties(node, {
@@ -478,6 +481,23 @@ describe('useAssistantContactAutoFollow', () => {
     TestResizeObserver.emit(probe.content)
     expect(geometry.top).toBe(700)
     expect(geometry.writes).toBe(0)
+  })
+
+  test('an own send re-attaches follow from a released reading position', async () => {
+    const geometry: Geometry = { top: 0, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+
+    wheel(probe.scroller, -80)
+    geometry.top = 120
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    geometry.height += 40
+    await probe.render({ revision: 1 })
+    expect(geometry.top).toBe(120)
+
+    act(() => { probeFollowLatest?.() })
+    geometry.height += 60
+    await probe.render({ revision: 2 })
+    expect(geometry.top).toBe(geometry.height - geometry.client)
   })
 
   test('compensates growth above the reader that lands in the same frame as a wheel scroll', async () => {

@@ -19,6 +19,7 @@ export const DESKTOP_HOST_SWITCH_MUTATION_KEY = ['desktopHostSwitch'] as const;
 export type SwitchDesktopHostInstanceVariables = {
   host: DesktopHost;
   cachedProbe?: DesktopHostProbeSnapshot | null;
+  inlineProgress?: boolean;
   /**
    * Local host only: API origin + client token. Remote hosts use the host record.
    * When omitted for local, the call is a no-op failure.
@@ -148,8 +149,11 @@ export const isDesktopHostSwitchPending = (): boolean => {
 };
 
 /** React: true while any desktop host switch mutation is in flight. */
-export const useDesktopHostSwitchPending = (): boolean => {
-  return useIsMutating({ mutationKey: DESKTOP_HOST_SWITCH_MUTATION_KEY }) > 0;
+export const useDesktopHostSwitchPending = (overlayOnly = false): boolean => {
+  return useIsMutating({
+    mutationKey: DESKTOP_HOST_SWITCH_MUTATION_KEY,
+    predicate: (mutation) => !overlayOnly || !(mutation.state.variables as SwitchDesktopHostInstanceVariables | undefined)?.inlineProgress,
+  }) > 0;
 };
 
 /** React: host id currently being switched, or null. */

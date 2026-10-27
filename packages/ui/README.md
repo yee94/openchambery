@@ -18,14 +18,13 @@ The full-text index startup screen keeps the same transparent 120 × 120 CSS-pix
 ## Sidebar wordmark
 
 The default sidebar brand is `Yuri`. Whenever the name contains `Yuri`,
-`SidebarBrandMark` adds a 24px `YuriLogo` portrait before the name. An exact
-`Yuri` name vertically centers both marks without the mixed-text baseline offset.
+`SidebarBrandMark` adds a 24px `YuriLogo` portrait before the name and vertically
+centers the portrait, wordmark, and custom text.
 `SidebarBrandMark` renders the approved
 sculpted SVG through `YuriWordmark` for each exact, whitespace-separated `Yuri`
 word, including mixed names such as `Yee Yuri`. Its width is cap-height-relative
 (2.44814cap = 626.723 / 256), matching the visible artwork to the bold
-Syne text's cap height. A 0.046875cap downward offset compensates
-the SVG's 12-unit bottom padding so visible baselines align. All words use the
+Syne text's cap height. All words use the
 same theme foreground. Custom text retains its original 1.0625rem size, 700
 weight and 0.08em tracking; Syne loads only when custom text is present.
 Whitespace-only names hide the slot. Store version 3 migrates exact historical default
@@ -74,6 +73,13 @@ The UI maintainers own these exceptions. Legacy names are not emitted as new key
 new URLs or new protocol defaults.
 
 ## Runtime contract integration
+
+Desktop host-picker actions keep their popup visible during SSH preparation and
+show the polled SSH phase inline. Switch, connect and new-window actions share a
+synchronous local guard and disabled controls until completion; failures leave the
+picker open for retry. The services menu ignores dismissal and tab changes while
+an action is pending. Host-switch mutations from the picker opt into inline
+progress, while the global overlay still covers the actual endpoint transition.
 
 All runtime owners must agree on `__YURI_*`, `yuri:*`, `/api/yuri`, `Yuri*` native
 plugins, `yuri-ui` / `yuri-asset` schemes and `yuri_url_token` / `yuri_preview_token`

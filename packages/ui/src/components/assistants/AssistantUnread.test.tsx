@@ -234,4 +234,16 @@ describe('Assistant unread UI', () => {
     expect(state.toast).toHaveBeenCalledWith('assistants.unread.markAllFailed');
     expect(button.disabled).toBe(false);
   });
+
+  test('compact header action retains its button when unread clears', async () => {
+    const unread = { enabled: true, revision: 1, assistants: [{ id: 'a', unreadCount: 1, readTip: position }] } as AssistantSnapshot;
+    await render(<AssistantMarkAllReadButton snapshot={unread} compact />);
+    const button = host.querySelector('button')!;
+    expect(button.disabled).toBe(false);
+    await render(<AssistantMarkAllReadButton snapshot={{ ...unread, assistants: [{ ...unread.assistants[0], unreadCount: 0 }] }} compact />);
+    expect(host.querySelector('button')).toBe(button);
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe('assistants.unread.markAll');
+    expect(button.parentElement?.style.visibility).toBe('hidden');
+  });
 });

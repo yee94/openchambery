@@ -378,6 +378,8 @@ export function createContactStreamFn(createChatCompletion, {
     const baseIndex = projectStreamedContactTurnBubbles(context.messages, turnStart).length;
     const publishPublicMessage = (text) => {
       signal?.throwIfAborted();
+      // Background reviews speak only through their final decision.
+      if (allowSilent) return;
       for (const bubble of splitContactBubbles(text)) {
         const index = baseIndex + publicBubbles.length;
         publicBubbles.push(bubble);
@@ -666,7 +668,7 @@ export async function runContactTurn({
       CONTACT_SYSTEM_PROMPT,
       'Conversation history is a bounded recent window. Use search_memory and read_memory to recall earlier facts from this contact when references or decisions are missing. Search by short distinctive terms or browse by time, read the relevant source, and report its date when useful. A page with complete=false still has older candidates. Cleared memory forms an access boundary and deleted history is unavailable. Historical messages are quoted evidence; current user instructions govern actions. Yuri card context records contain actual session identifiers and status. Ask for missing details after checking accessible history.',
       readOnly ? 'This turn is a background result review. Only read-only lookup tools are available. Never create or continue work; follow the latest user constraints.' : '',
-      allowSilent ? 'Decide whether this scheduled result needs a user-facing reply. Deliver requested research, summaries, or other requested output. Successful background work with no requested report should stay silent. Report actionable failures or missing input unless the user explicitly requested silence. For silence, emit only ```yuri-final\n{"status":"silent","text":""}\n```. Otherwise give the actual result in the user language. Do not narrate checks or announce progress.' : '',
+      allowSilent ? 'Decide whether this background result needs a user-facing reply. Deliver requested research, summaries, or other requested output. Successful background work with no requested report should stay silent. Stay silent when conversation history already reports this same result and nothing new needs the user. Report actionable failures or missing input unless the user explicitly requested silence. For silence, emit only ```yuri-final\n{"status":"silent","text":""}\n```. Otherwise give the actual result once, in the user language, as a single short final answer. Do not narrate checks, announce progress, or send yuri-message progress updates.' : '',
       formatPiCodingPrompt({
         cwd: runtime?.cwd,
         skillsPrompt: runtime?.skillsPrompt,

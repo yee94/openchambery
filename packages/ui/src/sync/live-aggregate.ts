@@ -27,7 +27,7 @@ export const getLiveSessionStructuralSignature = (session: Session): string => {
   const directory = (session as Session & { directory?: string | null }).directory ?? ''
   const parentID = (session as Session & { parentID?: string | null }).parentID ?? ''
   const titleRefresh = (session.metadata?.yuri as {
-    titleRefresh?: { isGenerating?: unknown; lastError?: unknown; failedAt?: unknown }
+    titleRefresh?: { isGenerating?: unknown; generationExpiresAt?: unknown; lastError?: unknown; failedAt?: unknown }
   } | undefined)?.titleRefresh
   return [
     session.id,
@@ -38,6 +38,7 @@ export const getLiveSessionStructuralSignature = (session: Session): string => {
     parentID,
     session.share?.url ?? '',
     titleRefresh?.isGenerating === true,
+    typeof titleRefresh?.generationExpiresAt === 'number' ? titleRefresh.generationExpiresAt : '',
     typeof titleRefresh?.lastError === 'string' ? titleRefresh.lastError : '',
     typeof titleRefresh?.failedAt === 'number' ? titleRefresh.failedAt : '',
   ].join('|')

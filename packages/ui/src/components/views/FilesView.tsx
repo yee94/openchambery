@@ -2824,7 +2824,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     }
 
     if (selectedFile?.path !== targetPath) {
-      if (confirmDiscardOpen) {
+      if (confirmDiscardOpen || boundTargetPath) {
         return;
       }
       void handleSelectFile(toFileNode(targetPath));
@@ -2899,6 +2899,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     setPendingFileNavigation(null);
     pendingNavigationCycleRef.current = { key: '', attempts: 0 };
   }, [
+    boundTargetPath,
     canEdit,
     clearFailedFileNavigation,
     confirmDiscardOpen,
@@ -2935,7 +2936,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     }
 
     if (selectedFile?.path !== targetPath) {
-      if (confirmDiscardOpen) {
+      if (confirmDiscardOpen || boundTargetPath) {
         return;
       }
       void handleSelectFile(toFileNode(targetPath));
@@ -2956,6 +2957,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
 
     setPendingFileFocusPath(null);
   }, [
+    boundTargetPath,
     canEdit,
     clearFailedFileNavigation,
     confirmDiscardOpen,

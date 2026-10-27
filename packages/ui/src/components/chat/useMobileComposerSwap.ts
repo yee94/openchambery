@@ -5,9 +5,10 @@ import {
     COMPOSER_SWAP_COMPACT_SETTLE_MS,
     COMPOSER_SWAP_FULL_RANGE_PX,
     COMPOSER_SWAP_IDLE_MS,
-    COMPOSER_SWAP_NOISE_PX,
-    COMPOSER_SWAP_REVEAL_TRAVEL_PX,
+    COMPOSER_SWAP_INTENT_TRAVEL_PX,
+    COMPOSER_SWAP_INTENT_WINDOW_MS,
     COMPOSER_SWAP_SNAP_MS,
+    COMPOSER_SWAP_TOUCH_SLOP_PX,
     COMPOSER_SWAP_USER_SCROLL_WINDOW_MS,
     applyComposerSwapCommit,
     applyComposerSwapForce,
@@ -18,6 +19,8 @@ import {
     createComposerSwapState,
     publishComposerSwap,
     publishNativeComposerDock,
+    resolveComposerSwapMotionTarget,
+    type ComposerSwapRest,
     type ComposerSwapState,
 } from './mobileComposerSwap';
 import {
@@ -81,11 +84,12 @@ export const useMobileComposerSwap = (args: {
     const lastDistanceRef = React.useRef<number | null>(null);
     /** Previous dimensions separate size-driven geometry from scroll travel. */
     const lastGeometryRef = React.useRef<ReturnType<typeof readScrollGeometry> | null>(null);
-    /** Travel since the last direction change, accumulated in each direction. */
-    const downwardTravelRef = React.useRef(0);
-    const upwardTravelRef = React.useRef(0);
-    /** A scroll reveal owns the expanded endpoint until the user scrolls up. */
-    const holdExpandedRef = React.useRef(false);
+    /** Latest same-direction user travel; decides the release direction. */
+    const travelRunRef = React.useRef<{ direction: ComposerSwapRest | null; px: number; at: number }>({
+        direction: null,
+        px: 0,
+        at: 0,
+    });
     const enabledRef = React.useRef(args.enabled);
     enabledRef.current = args.enabled;
 
@@ -95,10 +99,37 @@ export const useMobileComposerSwap = (args: {
         ref.current = null;
     };
 
+    const motionTargetRef = React.useRef<HTMLElement | null>(null);
+    /**
+     * The overlay foot can be replaced under a reused scope (hydrating →
+     * transcript). A new foot carries none of the published variables, so the
+     * publish caches restart with it.
+     */
+    const resolveMotionTarget = (scope: HTMLElement): HTMLElement => {
+        const current = motionTargetRef.current;
+        if (current && current !== scope && current.parentElement === scope) return current;
+        const next = resolveComposerSwapMotionTarget(scope);
+        if (next !== current) {
+            motionTargetRef.current = next;
+            publishedRef.current = undefined;
+            publishedDockRef.current = undefined;
+        }
+        return next;
+    };
+
     const publish = useEvent((state: ComposerSwapState) => {
         const scope = args.scopeRef.current;
         if (!scope) return;
-        publishedRef.current = publishComposerSwap(scope, state, publishedRef.current);
+        const target = resolveMotionTarget(scope);
+        publishedRef.current = publishComposerSwap(scope, state, publishedRef.current, target);
+    });
+
+    /** Re-publish onto a freshly mounted foot before this frame reads it. */
+    const syncMotionTarget = useEvent((scope: HTMLElement): HTMLElement => {
+        const previous = motionTargetRef.current;
+        const target = resolveMotionTarget(scope);
+        if (target !== previous) publish(stateRef.current);
+        return target;
     });
 
     const replaceState = useEvent((next: ComposerSwapState) => {
@@ -143,12 +174,23 @@ export const useMobileComposerSwap = (args: {
         return true;
     });
 
+    const resetTravelRun = () => {
+        travelRunRef.current = { direction: null, px: 0, at: 0 };
+    };
+
+    const resolveReleaseDirection = (): ComposerSwapRest | null => {
+        const run = travelRunRef.current;
+        if (!run.direction || run.px < COMPOSER_SWAP_INTENT_TRAVEL_PX) return null;
+        if (Date.now() - run.at > COMPOSER_SWAP_INTENT_WINDOW_MS) return null;
+        return run.direction;
+    };
+
     const commitIdle = useEvent(() => {
         clearTimer(idleTimerRef);
         if (!enabledRef.current) return;
         if (touchActiveRef.current > 0) return;
         if (stateRef.current.phase !== 'tracking') return;
-        const next = applyComposerSwapCommit(stateRef.current);
+        const next = applyComposerSwapCommit(stateRef.current, resolveReleaseDirection());
         replaceState(next);
         armSnapDone();
     });
@@ -182,7 +224,9 @@ export const useMobileComposerSwap = (args: {
             point.currentY = touch.clientY;
             const horizontalTravel = Math.abs(point.currentX - point.startX);
             const verticalTravel = Math.abs(point.currentY - point.startY);
-            if (verticalTravel > 0 && verticalTravel > horizontalTravel) {
+            // Tap jitter must not claim the gesture: a claimed tap turns the
+            // next program scroll frame into user travel.
+            if (verticalTravel >= COMPOSER_SWAP_TOUCH_SLOP_PX && verticalTravel > horizontalTravel) {
                 hasVerticalMove = true;
             }
         }
@@ -199,8 +243,7 @@ export const useMobileComposerSwap = (args: {
         if (startsGesture) {
             touchPointsRef.current.clear();
             rebaseTouchIntent();
-            downwardTravelRef.current = 0;
-            upwardTravelRef.current = 0;
+            resetTravelRun();
             const scrollEl = args.scrollRef.current;
             if (scrollEl) {
                 const geometry = readScrollGeometry(scrollEl);
@@ -252,18 +295,19 @@ export const useMobileComposerSwap = (args: {
         // so the first frame after the anchor settles measures from where the
         // transcript actually is.
         if (scrollEl.hasAttribute(TIMELINE_ANCHORING_ATTRIBUTE)) {
-            downwardTravelRef.current = 0;
-            upwardTravelRef.current = 0;
+            resetTravelRun();
             rebaseTouchIntent();
             return;
         }
 
         // Dock follows raw distance on every frame. Swap can rest expanded far
         // from the live edge; accessories have no background and must not.
+        const motionTarget = syncMotionTarget(scope);
         publishedDockRef.current = publishNativeComposerDock(
             scope,
             distance,
             publishedDockRef.current,
+            motionTarget,
         );
 
         // The transcript scrolls for two very different reasons on this path:
@@ -277,48 +321,37 @@ export const useMobileComposerSwap = (args: {
                 || previousGeometry.clientHeight !== geometry.clientHeight);
         const userDriven = gestureOwnsScroll && !sizeChanged;
 
-        // Direction comes from the change in distance rather than scrollTop:
+        // Travel comes from the change in distance rather than scrollTop:
         // history prepends move scrollTop and scrollHeight together, and tail
         // growth moves scrollHeight alone, so neither reads as user travel.
         // iOS top rubber-band springs a negative scrollTop back to 0, which is
         // real downward travel with no intent behind it — excluded here.
-        const delta = previousDistance === null ? 0 : previousDistance - distance;
-        if (!userDriven) {
-            // Growth and glide frames are not travel in either direction. Zero
-            // the accumulators so the next real gesture starts from its own
-            // first pixel instead of inheriting the stream's motion.
-            downwardTravelRef.current = 0;
-            upwardTravelRef.current = 0;
-        } else if (delta > 0) {
-            upwardTravelRef.current = 0;
-            if (geometry.scrollTop > 0) {
-                downwardTravelRef.current += delta;
-            }
-        } else if (delta < 0) {
-            downwardTravelRef.current = 0;
-            upwardTravelRef.current += -delta;
-            if (upwardTravelRef.current >= COMPOSER_SWAP_REVEAL_TRAVEL_PX) {
-                holdExpandedRef.current = false;
-            }
-        }
-        if (userDriven && distance <= COMPOSER_SWAP_NOISE_PX) {
-            holdExpandedRef.current = false;
+        const overscrollTop = geometry.scrollTop < 0
+            || (previousGeometry !== null && previousGeometry.scrollTop < 0);
+        const travelFrame = userDriven && !overscrollTop && previousDistance !== null;
+        if (!travelFrame) {
+            // Growth and glide frames are not travel in either direction, so
+            // the next real gesture starts from its own first pixel.
+            resetTravelRun();
+        } else if (distance !== previousDistance) {
+            const direction: ComposerSwapRest = distance > previousDistance ? 'compact' : 'expanded';
+            const run = travelRunRef.current;
+            const px = Math.abs(distance - previousDistance);
+            travelRunRef.current = {
+                direction,
+                px: run.direction === direction ? run.px + px : px,
+                at: Date.now(),
+            };
         }
 
         const previousState = stateRef.current;
         let next = applyComposerSwapPin(previousState, pinned);
         if (!pinned) {
-            const wasCompact = next.rest === 'compact';
             next = applyComposerSwapScroll(next, distance, {
+                previousDistance: travelFrame ? previousDistance : null,
                 suppressReturn: userDriven && resolveSuppressReturn(distance),
-                towardBottom: downwardTravelRef.current >= COMPOSER_SWAP_REVEAL_TRAVEL_PX,
-                holdExpanded: holdExpandedRef.current,
                 userDriven,
             });
-            if (wasCompact && next.rest === 'expanded' && distance > COMPOSER_SWAP_NOISE_PX) {
-                holdExpandedRef.current = true;
-                downwardTravelRef.current = 0;
-            }
         }
         replaceState(next);
         if (!userDriven) return;
@@ -413,11 +446,9 @@ export const useMobileComposerSwap = (args: {
         if (event.type === 'click' && !preview) return;
         if ('preventDefault' in event) event.preventDefault();
         if ('stopPropagation' in event) event.stopPropagation();
-        // Focus/keyboard normally pins expanded, but a tap that never lands
-        // focus would otherwise be collapsed again by the next scroll event.
-        holdExpandedRef.current = true;
-        downwardTravelRef.current = 0;
-        upwardTravelRef.current = 0;
+        // Follow is relative, so a later scroll frame can only collapse it
+        // again by real upward travel, not by the absolute distance.
+        resetTravelRun();
         replaceState(applyComposerSwapForce(stateRef.current, 'expanded'));
         armSnapDone();
         armExpandFocusShield();
@@ -429,7 +460,8 @@ export const useMobileComposerSwap = (args: {
     const [scopeEl, setScopeEl] = React.useState<HTMLElement | null>(null);
     const lastScopeRef = React.useRef<HTMLElement | null>(null);
     const releaseScope = useEvent((scope: HTMLElement | null) => {
-        if (scope) clearComposerSwap(scope);
+        if (scope) clearComposerSwap(scope, motionTargetRef.current ?? scope);
+        motionTargetRef.current = null;
         publishedRef.current = undefined;
         publishedDockRef.current = undefined;
         compactSettleArmedRef.current = false;
@@ -440,9 +472,7 @@ export const useMobileComposerSwap = (args: {
         lastTouchAtRef.current = 0;
         lastDistanceRef.current = null;
         lastGeometryRef.current = null;
-        downwardTravelRef.current = 0;
-        upwardTravelRef.current = 0;
-        holdExpandedRef.current = false;
+        resetTravelRun();
         replaceState(createComposerSwapState());
     });
     React.useLayoutEffect(() => {
@@ -452,6 +482,9 @@ export const useMobileComposerSwap = (args: {
             releaseScope(lastScopeRef.current);
         }
         lastScopeRef.current = nextScope;
+        // A shell change can swap the overlay foot without a scroll event; a
+        // new foot would otherwise paint the default expanded progress.
+        if (nextScope) syncMotionTarget(nextScope);
         setScrollEl((prev) => (prev === nextScroll ? prev : nextScroll));
         setScopeEl((prev) => (prev === nextScope ? prev : nextScope));
     });
