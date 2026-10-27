@@ -66,6 +66,29 @@ afterEach(async () => {
   }
 });
 
+test('concurrent connect callers share preparation while the old connection is closing', async () => {
+  const dir = await makeTempDir();
+  const manager = new ElectronSshManager({ settingsFilePath: path.join(dir, 'settings.json'), appVersion: '0.0.0-test', emit() {} });
+  manager.readInstances = () => ({ instances: [{ id: 'ssh-test' }] });
+  manager.sanitizeInstance = (instance) => instance;
+  let finishDisconnect;
+  let disconnects = 0;
+  let bootstraps = 0;
+  manager.disconnectInternal = async () => {
+    disconnects += 1;
+    await new Promise((resolve) => { finishDisconnect = resolve; });
+  };
+  manager.connectBlocking = async () => { bootstraps += 1; };
+  const first = manager.connect('ssh-test');
+  const second = manager.connect('ssh-test');
+  expect(disconnects).toBe(1);
+  expect(bootstraps).toBe(0);
+  finishDisconnect();
+  await Promise.all([first, second]);
+  expect(bootstraps).toBe(1);
+  expect(manager.connecting.size).toBe(0);
+});
+
 describe('parseSshCommand host:port destination', () => {
   test('rewrites scp-style user@host:port to destination + -p', () => {
     expect(parseSshCommand('ssh root@host:36000')).toEqual({

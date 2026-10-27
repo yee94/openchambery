@@ -322,6 +322,14 @@ export const desktopHostsSet = async (config: DesktopHostsConfigInput): Promise<
   });
 };
 
+export const desktopPrepareHost = async (host: DesktopHost): Promise<DesktopHost> => {
+  const invoke = getInvoke();
+  if (!invoke) throw new Error('Desktop host preparation is unavailable');
+  const prepared = parseHost(await invoke('desktop_host_prepare', { hostId: host.id }));
+  if (!prepared || prepared.id !== host.id) throw new Error('Invalid prepared desktop host');
+  return prepared;
+};
+
 export const desktopLocalClientTokenGet = async (): Promise<string> => {
   const invoke = getInvoke();
   if (!invoke) return '';

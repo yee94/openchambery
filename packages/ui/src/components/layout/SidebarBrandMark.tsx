@@ -58,7 +58,7 @@ export const SidebarBrandMark: React.FC<SidebarBrandMarkProps> = ({ className })
           lineHeight: 1,
         }}
       >
-        {brandName === 'Yuri' ? (
+        {brandName.includes('Yuri') ? (
           <span aria-hidden="true" className="inline-flex shrink-0 self-center">
             <YuriLogo width={24} height={24} />
           </span>

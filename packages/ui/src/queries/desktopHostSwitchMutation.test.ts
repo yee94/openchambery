@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
+import { it } from 'vitest';
 
 // Controllable impls + manual call tracking (project bun-test.d.ts does not
 // declare mock matcher / mockClear types; existing tests use plain arrays).
@@ -98,6 +99,18 @@ afterEach(() => {
 });
 
 describe('desktopHostSwitchMutation', () => {
+  it('reports bootstrap failures and releases the pending lane for retry', async () => {
+    switchDesktopHostImpl = async () => { throw new Error('Remote update failed'); };
+    const result = await switchDesktopHostInstance({ host });
+    expect(result.ok).toBe(false);
+    expect(isDesktopHostSwitchPending()).toBe(false);
+    expect(toastErrorCalls).toEqual([[
+      'desktopHostSwitcher.toast.instanceUnreachable:Office',
+      { description: 'Remote update failed' },
+    ]]);
+    expect(switchRuntimeEndpointCalls).toEqual([]);
+  });
+
   test('exposes a stable mutation key for the global pending lane', () => {
     expect(DESKTOP_HOST_SWITCH_MUTATION_KEY).toEqual(['desktopHostSwitch']);
   });

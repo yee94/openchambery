@@ -2796,9 +2796,10 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     const connectAttempt = this.nextConnectAttempt(trimmed);
     this.appendAttemptSeparator(trimmed, connectAttempt, retryAttempt);
     this.appendLog(trimmed, 'Starting SSH connection');
-    await this.disconnectInternal(trimmed, false);
-
-    const task = this.connectBlocking(this.sanitizeInstance(instance))
+    const task = (async () => {
+      await this.disconnectInternal(trimmed, false);
+      await this.connectBlocking(this.sanitizeInstance(instance));
+    })()
       .catch(async (error) => {
         const raw = error instanceof Error ? error.message : String(error);
         this.appendLogWithLevel(trimmed, 'ERROR', raw);

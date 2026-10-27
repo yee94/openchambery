@@ -17,9 +17,9 @@ The full-text index startup screen keeps the same transparent 120 × 120 CSS-pix
 
 ## Sidebar wordmark
 
-The default sidebar brand is `Yuri`. When the trimmed name is exactly `Yuri`,
-`SidebarBrandMark` pairs the wordmark with a 24px `YuriLogo` portrait, vertically
-centering both without the mixed-text baseline offset.
+The default sidebar brand is `Yuri`. Whenever the name contains `Yuri`,
+`SidebarBrandMark` adds a 24px `YuriLogo` portrait before the name. An exact
+`Yuri` name vertically centers both marks without the mixed-text baseline offset.
 `SidebarBrandMark` renders the approved
 sculpted SVG through `YuriWordmark` for each exact, whitespace-separated `Yuri`
 word, including mixed names such as `Yee Yuri`. Its width is cap-height-relative

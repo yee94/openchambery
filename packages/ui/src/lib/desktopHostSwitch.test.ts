@@ -23,6 +23,7 @@ mock.module('@/lib/desktop', () => ({
 }));
 
 mock.module('@/lib/desktopHosts', () => ({
+  desktopPrepareHost: async (host: unknown) => host,
   desktopHostProbe: (...args: unknown[]) => {
     desktopHostProbeCalls.push(args);
     return desktopHostProbeImpl(...args);

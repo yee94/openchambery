@@ -21,7 +21,10 @@ describe('first message after switching desktop instance', () => {
     vi.stubGlobal('fetch', networkFetch);
     switchRuntimeEndpoint({ apiBaseUrl: 'http://localhost:3000', runtimeKey: 'local', clientToken: 'test-local-client' });
     await Promise.resolve();
-    mocks.invoke.mockResolvedValue({ status: 'auth', latencyMs: 1 });
+    mocks.invoke.mockImplementation(async (command: string) => command === 'desktop_host_prepare' ? {
+      id: 'first-remote', label: 'Remote', url: 'https://remote.example', clientToken: 'test-remote-client',
+      relay: { relayUrl: 'wss://relay.example', serverId: 'remote', hostEncPubJwk: {} },
+    } : { status: 'auth', latencyMs: 1 });
     mocks.tunnelFetch.mockImplementation(async (input: string | Request, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       if (headers.get('Authorization') !== 'Bearer test-remote-client') return new Response(null, { status: 401 });

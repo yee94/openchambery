@@ -3828,6 +3828,18 @@ const runSpecChain = (specs, appName) => {
   throw new Error(`Failed to open in ${appName}: ${failures.join('; ')}`);
 };
 
+const prepareDesktopHost = async (hostId, browserWindow) => {
+  let host = readDesktopHostsConfig().hosts.find((entry) => entry.id === hostId);
+  if (!host) throw new Error('Host not found');
+  if (sshManager.readInstances().instances.some((entry) => entry.id === hostId)) {
+    if (!isLocalSender(browserWindow?.webContents)) throw new Error('SSH preparation requires a local desktop page');
+    await sshManager.connect(hostId);
+    host = readDesktopHostsConfig().hosts.find((entry) => entry.id === hostId);
+    if (!host) throw new Error('Host not found after SSH preparation');
+  }
+  return host;
+};
+
 const handleInvoke = async (browserWindow, command, args = {}) => {
   switch (command) {
     case 'desktop_start_window_drag':
@@ -4437,7 +4449,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         ? buildPackagedUiUrl('/index.html')
         : (state.localUiOrigin || state.sidecarUrl || state.localOrigin);
       const host = config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID
-        ? config.hosts.find((entry) => entry.id === config.defaultHostId)
+        ? await prepareDesktopHost(config.defaultHostId, browserWindow)
         : null;
       const relayHost = host && host.relay && typeof host.relay === 'object' ? host : null;
       if (relayHost) {
@@ -4468,15 +4480,16 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return null;
     }
 
+    case 'desktop_host_prepare':
+      return await prepareDesktopHost(typeof args.hostId === 'string' ? args.hostId.trim() : '', browserWindow);
+
     case 'desktop_new_window_for_host': {
       // Open a saved host in a new window. Hosts with a relay leg boot the
       // LOCAL UI and let the renderer pick the transport (direct first, E2EE
       // tunnel fallback) via the injected relay host id — a fixed apiBaseUrl
       // would strand the window when the direct leg is unreachable.
       const hostId = typeof args.hostId === 'string' ? args.hostId.trim() : '';
-      const config = readDesktopHostsConfig();
-      const host = config.hosts.find((entry) => entry.id === hostId);
-      if (!host) throw new Error('Host not found');
+      const host = await prepareDesktopHost(hostId, browserWindow);
       if (host.relay) {
         const windowUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
         await createAdditionalWindow(windowUrl, {
@@ -4499,14 +4512,19 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     }
 
     case 'desktop_new_window_at_url': {
-      const targetUrl = normalizeHostUrl(String(args.url || ''));
+      let targetUrl = normalizeHostUrl(String(args.url || ''));
       if (!targetUrl) {
         throw new Error('Invalid URL');
       }
       const config = readDesktopHostsConfig();
+      const savedHost = config.hosts.find((host) => normalizeHostUrl(host.apiUrl || host.url) === targetUrl);
+      const isSshHost = savedHost && sshManager.readInstances().instances.some((entry) => entry.id === savedHost.id);
+      const preparedHost = isSshHost ? await prepareDesktopHost(savedHost.id, browserWindow) : null;
+      if (preparedHost) targetUrl = normalizeHostUrl(preparedHost.apiUrl || preparedHost.url);
+      if (!targetUrl) throw new Error('Invalid URL');
       const providedToken = typeof args.clientToken === 'string' ? args.clientToken : '';
-      const clientToken = sanitizeClientTokenForStorage(providedToken) || resolveStoredClientTokenForUrl(targetUrl, config);
-      const requestHeaders = sanitizeRuntimeRequestHeaders(args.requestHeaders || config.hosts.find((host) => normalizeHostUrl(host.apiUrl || host.url) === targetUrl)?.requestHeaders || {});
+      const clientToken = preparedHost?.clientToken || sanitizeClientTokenForStorage(providedToken) || resolveStoredClientTokenForUrl(targetUrl, config);
+      const requestHeaders = sanitizeRuntimeRequestHeaders(preparedHost?.requestHeaders || args.requestHeaders || savedHost?.requestHeaders || {});
       let windowUrl = targetUrl;
       const runtimeConfig = { apiBaseUrl: targetUrl, clientToken, requestHeaders };
       if (shouldUsePackagedUi()) {

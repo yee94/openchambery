@@ -12,3 +12,7 @@ test('keeps generic desktop restarts local to the packaged UI', () => {
   assert.equal(isRemoteIpcCommandAllowed('desktop_restart'), false);
   assert.equal(isRemoteIpcCommandAllowed('desktop_restart', { applyUpdate: false }), false);
 });
+
+test('does not allow remote pages to prepare SSH hosts', () => {
+  assert.equal(isRemoteIpcCommandAllowed('desktop_host_prepare'), false);
+});

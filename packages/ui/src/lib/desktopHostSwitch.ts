@@ -1,6 +1,7 @@
 import { isElectronShell } from '@/lib/desktop';
 import {
   desktopHostProbe,
+  desktopPrepareHost,
   getDesktopHostApiUrl,
   normalizeHostUrl,
   probeRelayDesktopHost,
@@ -54,6 +55,8 @@ export const switchDesktopHost = async (
   if (!isElectronShell()) {
     return { ok: false, status: { status: 'unreachable', latencyMs: 0 }, reason: 'unsupported' };
   }
+
+  host = await desktopPrepareHost(host);
 
   const apiOrigin = normalizeHostUrl(getDesktopHostApiUrl(host)) || '';
   // Need at least one transport: a direct API origin and/or a relay leg.

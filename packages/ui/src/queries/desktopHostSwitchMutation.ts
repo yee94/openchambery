@@ -73,7 +73,7 @@ const mutationFn = async (
 
 type SwitchObserver = MutationObserver<
   SwitchDesktopHostResult,
-  DesktopHostSwitchError,
+  Error,
   SwitchDesktopHostInstanceVariables
 >;
 
@@ -87,7 +87,12 @@ const getSwitchObserver = (): SwitchObserver => {
     mutationKey: DESKTOP_HOST_SWITCH_MUTATION_KEY,
     mutationFn,
     onError: (error, variables) => {
-      if (!(error instanceof DesktopHostSwitchError)) return;
+      if (!(error instanceof DesktopHostSwitchError)) {
+        toast.error(t('desktopHostSwitcher.toast.instanceUnreachable', {
+          host: redactSensitiveUrl(variables.host.label),
+        }), { description: error instanceof Error ? error.message : String(error) });
+        return;
+      }
       if (error.result.reason === 'unsupported') return;
       if (error.result.status.status === 'auth') {
         toast.error(t('desktopHostSwitcher.status.authRequired'));
@@ -133,7 +138,7 @@ export const switchDesktopHostInstance = async (
     if (error instanceof DesktopHostSwitchError) {
       return error.result;
     }
-    throw error;
+    return { ok: false, status: { status: 'unreachable', latencyMs: 0 }, reason: 'unreachable' };
   }
 };
 

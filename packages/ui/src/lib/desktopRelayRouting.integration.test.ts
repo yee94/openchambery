@@ -87,6 +87,7 @@ beforeEach(() => {
     openWebSocket: () => { throw new Error('unused'); },
   } satisfies RelayTunnelClient));
   invoke.mockImplementation(async (command, args) => {
+    if (command === 'desktop_host_prepare') return host;
     if (command === 'desktop_hosts_get') return { hosts: [host], defaultHostId, initialHostChoiceCompleted: true, localOrigin };
     if (command === 'desktop_hosts_set') return;
     if (command === 'desktop_host_probe') return nativeContext.probe(args.url, 1000, args.clientToken, args.requestHeaders, args.expectedServerId);

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  prepare: vi.fn(),
   probe: vi.fn(),
   relayProbe: vi.fn(),
   switchEndpoint: vi.fn(),
@@ -8,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/desktop', () => ({ isElectronShell: () => true }));
 vi.mock('@/lib/desktopHosts', () => ({
+  desktopPrepareHost: mocks.prepare,
   desktopHostProbe: mocks.probe,
   probeRelayDesktopHost: mocks.relayProbe,
   getDesktopHostApiUrl: (host: { url: string }) => host.url,
@@ -28,6 +30,7 @@ const relay = { relayUrl: 'wss://relay.example', serverId: 'remote', hostEncPubJ
 describe('desktop switch authentication readiness', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.prepare.mockImplementation(async (value) => value);
     mocks.probe.mockResolvedValue({ status: 'auth', latencyMs: 10 });
     mocks.relayProbe.mockResolvedValue({ status: 'ok', latencyMs: 20 });
   });
@@ -35,6 +38,28 @@ describe('desktop switch authentication readiness', () => {
   it('keeps the current instance when direct credentials are rejected', async () => {
     const result = await switchDesktopHost(host);
     expect(result.ok).toBe(false);
+    expect(mocks.switchEndpoint).not.toHaveBeenCalled();
+  });
+
+  it('waits for SSH preparation even with a ready badge, then uses refreshed credentials and URL', async () => {
+    let finish!: (value: typeof host) => void;
+    mocks.prepare.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    mocks.probe.mockResolvedValue({ status: 'ok', latencyMs: 1 });
+    const pending = switchDesktopHost(host, { cachedProbe: { status: 'ok', latencyMs: 1 } });
+    expect(mocks.probe).not.toHaveBeenCalled();
+    expect(mocks.switchEndpoint).not.toHaveBeenCalled();
+    finish({ ...host, url: 'http://127.0.0.1:54321', clientToken: 'refreshed-client' });
+    expect((await pending).ok).toBe(true);
+    expect(mocks.switchEndpoint).toHaveBeenCalledWith(expect.objectContaining({
+      apiBaseUrl: 'http://127.0.0.1:54321', clientToken: 'refreshed-client',
+    }));
+  });
+
+  it('does not bypass failed SSH preparation through relay', async () => {
+    mocks.prepare.mockRejectedValue(new Error('Remote update failed'));
+    await expect(switchDesktopHost({ ...host, relay })).rejects.toThrow('Remote update failed');
+    expect(mocks.probe).not.toHaveBeenCalled();
+    expect(mocks.relayProbe).not.toHaveBeenCalled();
     expect(mocks.switchEndpoint).not.toHaveBeenCalled();
   });
 
@@ -57,6 +82,7 @@ describe('desktop switch authentication readiness', () => {
     mocks.probe.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const pending = switchDesktopHost(host, { cachedProbe: { status: 'ok', latencyMs: 1 } });
     expect(mocks.switchEndpoint).not.toHaveBeenCalled();
+    await Promise.resolve();
     finish({ status: 'ok', latencyMs: 10 });
     expect((await pending).ok).toBe(true);
     expect(mocks.switchEndpoint).toHaveBeenCalledOnce();
