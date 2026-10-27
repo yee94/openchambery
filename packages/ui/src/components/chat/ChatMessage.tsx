@@ -1152,7 +1152,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 borderRadius: userMessageRadius,
                                                 borderBottomRightRadius: 'var(--radius-sm)',
                                             }}
-                                            className={isShellResult ? 'min-w-0 text-left' : 'px-3 py-1.5 shadow-none border border-primary/5'}
+                                            className={isShellResult ? 'min-w-0 text-left' : 'px-3 py-1.5 shadow-none'}
                                             data-user-message-bubble={isShellResult ? undefined : 'true'}
                                             data-shell-result={isShellResult ? 'true' : undefined}
                                         >

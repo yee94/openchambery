@@ -2,6 +2,11 @@
 
 ## Refactor result
 
+- Leading New / Schedule / Assistant navigation rows use explicit `px-2` so
+  `Button`'s direct-SVG padding rule cannot shift the Assistant row when its icon
+  becomes an image. Avatar artwork scales to 125% inside the unchanged 16px slot;
+  all three labels retain the same left edge in both avatar and fallback states.
+
 - `DeviceConnections` owns the settings-adjacent desktop/phone shortcut. Its
   hover/click popover fetches the active runtime's authorized devices only while
   open; failed refreshes retain the previous snapshot with an error message.

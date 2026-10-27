@@ -1347,6 +1347,7 @@ html:not(.dark) .chat-scroll {
 
 /* Override Streamdown's hardcoded bg-muted for inline code - use theme colors instead */
 .markdown-content code[data-markdown="inline-code"] {
+  font-size: inherit;
   background-color: var(
     --markdown-inline-code-bg,
     var(--surface-muted)

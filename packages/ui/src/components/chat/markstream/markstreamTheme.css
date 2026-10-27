@@ -60,7 +60,7 @@
   background: var(--syntax-background, var(--surface-muted));
   color: var(--syntax-foreground, var(--surface-foreground));
   font-family: var(--font-mono);
-  font-size: var(--text-code);
+  font-size: inherit;
 }
 
 /* Library lists use pl-[calc(13/8*1em)] plus li.pl-1.5 / my-2, which sits
@@ -102,8 +102,8 @@
   margin-bottom: 0.25rem;
 }
 
-/* Library inline code is text-[85%]; fenced blocks inline fontSize:12px.
-   Both ignore --text-code (settings / dpt scale). Tool markdown stays inherit. */
+/* Fenced blocks use --text-code (settings / dpt scale); inline code follows
+   its surrounding prose. Tool markdown stays inherit. */
 .yuri-markstream-host .markstream-react code,
 .yuri-markstream-host .markstream-react pre {
   font-family: var(--font-mono);

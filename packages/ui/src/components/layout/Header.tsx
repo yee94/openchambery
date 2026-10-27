@@ -1952,7 +1952,6 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </button>
           </SessionSwitcherDropdown>
-          {sessionOverflowMenu}
         </div>
 
         {tabs.length > 0 && (
@@ -1964,6 +1963,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex-1" />
 
         <div className="flex shrink-0 items-center gap-1">
+          {sessionOverflowMenu}
           {showDesktopHeaderContextUsage && stableDesktopContextUsage ? (
             <ContextUsageDisplay
               pending={stableDesktopContextUsage.pending}

@@ -147,7 +147,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
             className={cn(
                 'inline-flex shrink-0 items-center justify-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
                 // Mobile: compact hit target; slightly taller than pure icon size.
-                isMobile ? 'h-7 w-3' : 'size-7',
+                isMobile ? 'h-7 w-3' : 'size-6',
             )}
             aria-label={t('chat.queuedMessage.removeAria')}
         >
@@ -166,7 +166,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                 isMobile
                     // Uniform gap; light vertical padding for a slightly taller row.
                     ? 'gap-1 py-0.5'
-                    : 'flex gap-1.5 md:gap-2',
+                    : 'flex gap-1.5 py-px md:gap-2',
                 isDragging && 'z-10 opacity-60',
             )}
         >
@@ -214,7 +214,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                     <span
                         className={cn(
                             'inline-flex items-center gap-1 font-medium text-muted-foreground',
-                            isMobile ? 'h-7 text-[11px] leading-none' : 'h-7 typography-ui-label',
+                            isMobile ? 'h-7 text-[11px] leading-none' : 'h-6 typography-ui-label',
                         )}
                         aria-live="polite"
                         aria-label={t('chat.queuedMessage.sendingAria')}
@@ -226,7 +226,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                     <span
                         className={cn(
                             'inline-flex items-center gap-1 font-medium text-muted-foreground',
-                            isMobile ? 'h-7 text-[11px] leading-none' : 'h-7 typography-ui-label',
+                            isMobile ? 'h-7 text-[11px] leading-none' : 'h-6 typography-ui-label',
                         )}
                         aria-live="polite"
                         aria-label={t('chat.queuedMessage.queuingAria')}
@@ -238,7 +238,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                     <span
                         className={cn(
                             'inline-flex items-center gap-1 font-medium text-muted-foreground',
-                            isMobile ? 'h-7 text-[11px] leading-none' : 'h-7 typography-ui-label',
+                            isMobile ? 'h-7 text-[11px] leading-none' : 'h-6 typography-ui-label',
                         )}
                         aria-live="polite"
                         aria-label={t('chat.queuedMessage.waitingForCompactionAria')}
@@ -256,7 +256,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                             aria-label={t('chat.queuedMessage.edit')}
                             className={cn(
                                 'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
-                                isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                                isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-6 gap-1 px-0.5',
                             )}
                         >
                             <Icon
@@ -280,7 +280,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                             aria-label={t('chat.queuedMessage.send')}
                             className={cn(
                                 'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
-                                isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                                isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-6 gap-1 px-0.5',
                             )}
                         >
                             <Icon
@@ -300,7 +300,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                                 aria-label={t('chat.queuedMessage.title')}
                                 className={cn(
                                     'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
-                                    isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                                    isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-6 gap-1 px-0.5',
                                 )}
                             >
                                 <Icon
@@ -885,8 +885,8 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
             <div
                 data-yuri-queue-card=""
                 className={cn(
-                    // Match composer surface (subtle + border, no elevation shadow). PC radius = chat input 1.5rem.
-                    'overflow-hidden border border-border/60 bg-[var(--surface-subtle)] text-foreground',
+                    // Match composer palette; dark queue sits behind the brighter input. PC radius = chat input 1.5rem.
+                    'overflow-hidden border border-[color-mix(in_srgb,var(--interactive-border)_50%,transparent)] bg-[var(--surface-background)] text-foreground dark:border-transparent dark:bg-[color-mix(in_srgb,var(--surface-background),var(--surface-foreground)_4%)]',
                     isMobile ? 'rounded-[1.25rem]' : 'rounded-3xl',
                 )}
             >
@@ -897,7 +897,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
                         isMobile
                             // Match composer footer left inset.
                             ? 'px-1.5 py-1'
-                            : 'gap-0.5 px-3 pb-1 pt-1.5',
+                            : 'gap-0.5 px-3 py-1',
                     )}
                 >
                     {hasQueueSurface ? (

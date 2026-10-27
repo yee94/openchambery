@@ -2501,7 +2501,7 @@ export const SessionSidebar = React.memo(function SessionSidebar({
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  "w-full justify-start font-normal",
+                  "w-full justify-start px-2 font-normal",
                   mobileVariant && "h-11",
                 )}
                 onClick={handleNewTask}
@@ -2515,7 +2515,7 @@ export const SessionSidebar = React.memo(function SessionSidebar({
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  "w-full justify-start font-normal",
+                  "w-full justify-start px-2 font-normal",
                   activeMainTab === "schedule" && "bg-interactive-selection text-interactive-selection-foreground",
                   mobileVariant && "h-11",
                 )}
@@ -2529,13 +2529,13 @@ export const SessionSidebar = React.memo(function SessionSidebar({
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  "w-full justify-start font-normal",
+                  "w-full justify-start px-2 font-normal",
                   activeMainTab === "assistant" && "bg-interactive-selection text-interactive-selection-foreground",
                   mobileVariant && "h-11",
                 )}
                 onClick={handleOpenAssistants}
               >
-                <AssistantNavigationIcon className="size-4 shrink-0" />
+                <AssistantNavigationIcon className="size-4 shrink-0 [&[data-assistant-navigation-avatar]]:scale-125" />
                 <span className="truncate">{t("assistants.title")}</span>
                 <span className="ml-auto flex shrink-0 items-center gap-2">
                   <AssistantNavigationUnreadBadge />

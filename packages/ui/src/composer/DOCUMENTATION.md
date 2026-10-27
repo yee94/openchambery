@@ -119,6 +119,11 @@ within, without a shadow. Focus never further intensifies hover.
 Color transitions take 150ms and respect reduced motion.
 Mobile web expanded composers inherit this shared material without CSS overrides;
 compact composers use the same light/dark fill, border and shadow recipe.
+The attached queue card shares the composer's palette and border on desktop and
+mobile without stacking another elevation shadow. Its dark fill uses 4% foreground
+instead of the input's 8% to separate the rear queue from the front input.
+Desktop queue controls are 24px tall with 1px row padding above and below
+(26px total), plus 4px card padding above and below.
 The desktop dictation lifecycle uses `--voice-active-fill` for the 1px composer
 border without an additional focus ring, including microphone/connection initialization
 and finalization. Loading and listening share the active composer presentation,
