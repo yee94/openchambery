@@ -7,7 +7,7 @@ vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/lib/runtime-switch', () => ({
   getRuntimeApiBaseUrl: () => '', getRuntimeKey: () => 'test', switchRuntimeEndpoint: vi.fn(),
 }));
-vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => false }));
+vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => false, getClientPlatform: () => 'web' }));
 vi.mock('./MobileShareBridge', () => ({ publishNativeAssistantCatalog: vi.fn().mockResolvedValue(undefined) }));
 
 const key = 'yuri.mobile.connections.v1';

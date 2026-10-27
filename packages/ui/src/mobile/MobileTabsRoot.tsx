@@ -16,7 +16,6 @@ import { useMobileBackRoute } from './mobileBackNavigation';
 import type { MobileNavigationState } from './mobileNavigation';
 import { MOBILE_TABS, type MobileTabId } from './mobileTabs';
 import { useNativeIosTabBar } from './useNativeIosTabBar';
-import { useAssistantNavigationAvatar } from '@/components/assistants/useAssistantNavigationAvatar';
 
 export type MobileSecondaryPage = {
   key: string;
@@ -144,7 +143,6 @@ export function MobileTabsRoot({
   });
 
   const assistantUnreadCount = useAssistantUnreadTotal();
-  const assistantAvatar = useAssistantNavigationAvatar();
   const assistantWorking = useAssistantWorking();
   const scheduledWorking = useScheduledNavigationWorking();
   const loadingLabel = t('mobile.tabs.activity.loading');
@@ -157,7 +155,6 @@ export function MobileTabsRoot({
       return {
         id: tab.id,
         label: t(tab.labelKey),
-        avatar: tab.id === 'assistant' ? assistantAvatar : null,
         badge: tab.id === 'assistant' && assistantMark === 'unread'
           ? (assistantUnreadCount > 99 ? '99+' : String(assistantUnreadCount))
           : null,
@@ -165,7 +162,7 @@ export function MobileTabsRoot({
         activityLabel: loading ? loadingLabel : null,
       };
     }),
-    [t, assistantMark, scheduledMark, assistantUnreadCount, loadingLabel, assistantAvatar],
+    [t, assistantMark, scheduledMark, assistantUnreadCount, loadingLabel],
   );
   const nativeTabBarVisible = showTabBar && !tabBarCovered && !topSecondaryPage;
   const nativeTabBarMode = useNativeIosTabBar({

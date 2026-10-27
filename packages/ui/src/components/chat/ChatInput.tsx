@@ -2210,12 +2210,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         });
     }, [inputMode, message, sendableAttachedFiles]);
 
+    const nativeComposerOwnedInput = iosNativeUiEnabled && canUseNativeIosComposer(isMobile) && surface.kind === 'primary';
     const { globallyEnabled: dictationEnabled, enabled: holdToTalkEnabled, hint: dictationHint,
-        onHintChange: setDictationHint } = useHoldToTalkInput({ available: isMobile });
+        onHintChange: setDictationHint } = useHoldToTalkInput({ available: isMobile && !nativeComposerOwnedInput });
     const speechPlaceholder = t(dictationHint === 'recording' ? 'chat.dictation.releaseSend' : dictationHint === 'cancelling' ? 'chat.dictation.releaseCancel' : dictationHint === 'editing' ? 'chat.dictation.releaseEdit' : dictationHint === 'processing' ? 'chat.dictation.processing' : 'chat.dictation.inputPlaceholder');
     const [desktopRecording, setDesktopRecording] = React.useState(false);
     const [desktopDictationActive, setDesktopDictationActive] = React.useState(false);
-    const nativeComposerOwnedInput = iosNativeUiEnabled && canUseNativeIosComposer(isMobile) && surface.kind === 'primary' && !holdToTalkEnabled;
     const [desktopDictationPreview, setDesktopDictationPreview] = React.useState<{
         draftID: string | null; text: string; start: number; end: number;
     } | null>(null);
@@ -6513,7 +6513,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         setNativeSuggestionHighlight(0);
     });
     const nativeIosComposerActive = useNativeIosComposer({
-        enabled: isMobile && surface.kind === 'primary' && !holdToTalkEnabled,
+        enabled: nativeComposerOwnedInput,
         isMobile,
         text: message,
         textPresetEpoch: composer.textPresetEpoch,

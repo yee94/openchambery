@@ -67,9 +67,10 @@ test('forwards a loading mark and clears it without leaving a count badge', asyn
   dockHost.remove();
 });
 
-test('forwards avatar identity and animation changes, then restores the default icon', async () => {
+test('ignores custom avatars so native tabs keep their system icons', async () => {
   function Dock({ avatar }: { avatar: string | null }) {
-    useNativeIosTabBar({ visible: true, activeTab: 'assistant', tabs: [{ id: 'assistant', label: 'Agent', avatar }], ariaLabel: 'Navigation', onTabChange: () => undefined });
+    const tabs = [{ id: 'assistant' as const, label: 'Agent', avatar }];
+    useNativeIosTabBar({ visible: true, activeTab: 'assistant', tabs, ariaLabel: 'Navigation', onTabChange: () => undefined });
     return null;
   }
   const dockHost = document.createElement('div');
@@ -78,9 +79,9 @@ test('forwards avatar identity and animation changes, then restores the default 
   plugin.present.mockClear();
   for (const avatar of ['data:image/svg+xml,first', 'data:image/svg+xml,animated', 'data:image/svg+xml,second', null]) {
     await act(async () => dockRoot.render(<Dock avatar={avatar} />));
-    expect(plugin.present.mock.calls.at(-1)?.[0].tabs[0].avatar).toBe(avatar);
+    expect(plugin.present.mock.calls.at(-1)?.[0].tabs[0]).not.toHaveProperty('avatar');
   }
-  expect(plugin.present).toHaveBeenCalledTimes(4);
+  expect(plugin.present).toHaveBeenCalledTimes(1);
   await act(async () => dockRoot.unmount());
   dockHost.remove();
 });

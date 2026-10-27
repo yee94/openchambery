@@ -46,6 +46,24 @@ const root = createRoot(host);
 afterEach(async () => { await act(async () => root.render(null)); vi.restoreAllMocks(); });
 
 it.each([
+    [true, true, 'primary', true, false],
+    [false, true, 'primary', false, true],
+    [true, false, 'primary', false, true],
+    [true, true, 'secondary', false, true],
+])('native input takes precedence over hold-to-talk (%s/%s/%s)', (enabled, supported, kind, native, holdToTalk) => {
+    const dictation = [...declarations].find(([name]) => name.includes('globallyEnabled: dictationEnabled'))?.[1];
+    expect(dictation).toBeDefined();
+    const evaluate = new Function('iosNativeUiEnabled', 'canUseNativeIosComposer', 'surface', 'isMobile', 'useHoldToTalkInput', `
+        ${declarations.get('nativeComposerOwnedInput')}
+        ${dictation}
+        return { native: nativeComposerOwnedInput, holdToTalk: holdToTalkEnabled };
+    `);
+    expect(evaluate(enabled, () => supported, { kind }, true, ({ available }: { available: boolean }) => ({
+        globallyEnabled: true, enabled: available, hint: null, onHintChange: () => undefined,
+    }))).toEqual({ native, holdToTalk });
+});
+
+it.each([
     [false, false, false, 1],
     [true, false, false, 0],
     [false, true, false, 0],

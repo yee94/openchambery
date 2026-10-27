@@ -51,7 +51,6 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
   const tabsKey = JSON.stringify(args.tabs.map((tab) => [
     tab.id,
     tab.label,
-    tab.avatar ?? null,
     tab.badge ?? null,
     tab.activity === true,
     tab.activity === true ? (tab.activityLabel ?? null) : null,
@@ -117,7 +116,6 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
       tabs: args.tabs.map((tab) => ({
         id: tab.id,
         label: tab.label,
-        avatar: tab.avatar ?? null,
         badge: tab.badge ?? null,
         activity: tab.activity === true,
         activityLabel: tab.activity === true ? (tab.activityLabel ?? null) : null,

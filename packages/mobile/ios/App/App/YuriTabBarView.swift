@@ -1,5 +1,4 @@
 import UIKit
-import WebKit
 
 protocol YuriTabBarViewDelegate: AnyObject {
     func tabBarView(_ view: YuriTabBarView, didSelectTab id: String)
@@ -16,7 +15,6 @@ struct YuriTabBarItem {
     /// Spinner badge. UI sends this only when `badge` is nil.
     let activity: Bool
     let activityLabel: String?
-    let avatar: String?
 }
 
 /// Full-screen pass-through host for a chrome-only `UITabBarController`.
@@ -41,8 +39,6 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
 
     private var items: [YuriTabBarItem] = []
     private var activityBadges: [String: TabActivityBadge] = [:]
-    private var avatarView: WKWebView?
-    private var avatarURI: String?
     private var selectedId = ""
     private var applying = false
     private var lastReportedHeight: CGFloat = -1
@@ -66,9 +62,7 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        chromeController.view.layoutIfNeeded()
         layoutActivityBadges()
-        layoutAvatar()
         reportHeightIfNeeded()
     }
 
@@ -125,7 +119,6 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
             selectedId = nextItems.first?.id ?? ""
         }
         applySelectedItem()
-        applyAvatar()
         applying = false
     }
 
@@ -141,7 +134,6 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
         isAccessibilityElement = false
         accessibilityContainerType = .semanticGroup
         chromeController.delegate = self
-        chromeController.onLayout = { [weak self] in self?.layoutAvatar() }
         let tabBar = chromeController.tabBar
         // Leave system bar chrome untouched so iOS 26 can paint glass + lens.
         tabBar.isTranslucent = true
@@ -212,86 +204,6 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
         addSubview(badge)
         activityBadges[id] = badge
         return badge
-    }
-
-    private func applyAvatar() {
-        guard let index = items.firstIndex(where: { $0.id == "assistant" }),
-              let controllers = chromeController.viewControllers, index < controllers.count else {
-            avatarView?.removeFromSuperview()
-            avatarView = nil
-            avatarURI = nil
-            return
-        }
-        let item = items[index]
-        let uri = item.avatar.flatMap { value in
-            value.hasPrefix("data:image/svg+xml;charset=utf-8,") ? value : nil
-        }
-        guard let tab = controllers[index].tabBarItem else { return }
-        guard let uri else {
-            avatarView?.removeFromSuperview()
-            avatarView = nil
-            avatarURI = nil
-            tab.image = UIImage(systemName: item.symbol)
-            tab.selectedImage = UIImage(systemName: item.selectedSymbol)
-            return
-        }
-        let blank = UIGraphicsImageRenderer(size: CGSize(width: 23, height: 23)).image { _ in }
-            .withRenderingMode(.alwaysOriginal)
-        tab.image = blank
-        tab.selectedImage = blank
-        if avatarView == nil {
-            let configuration = WKWebViewConfiguration()
-            configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-            let view = WKWebView(frame: .zero, configuration: configuration)
-            view.isOpaque = false
-            view.backgroundColor = .clear
-            view.scrollView.backgroundColor = .clear
-            view.scrollView.isScrollEnabled = false
-            view.scrollView.contentInsetAdjustmentBehavior = .never
-            view.isUserInteractionEnabled = false
-            view.isAccessibilityElement = false
-            addSubview(view)
-            avatarView = view
-        }
-        if avatarURI != uri {
-            avatarURI = uri
-            let escaped = uri.replacingOccurrences(of: "&", with: "&amp;")
-                .replacingOccurrences(of: "\"", with: "&quot;")
-                .replacingOccurrences(of: "<", with: "&lt;")
-            avatarView?.loadHTMLString("""
-                <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
-                <style>html,body{margin:0;background:transparent;overflow:hidden}img{display:block;width:28.75px;height:28.75px;border-radius:25%}</style>
-                <img src="\(escaped)">
-                """, baseURL: nil)
-        }
-        setNeedsLayout()
-    }
-
-    private func layoutAvatar() {
-        guard let avatarView,
-              let index = items.firstIndex(where: { $0.id == "assistant" }),
-              let controllers = chromeController.viewControllers, index < controllers.count,
-              let image = controllers[index].tabBarItem.image else { return }
-        // iOS 26 nests tab icons inside the glass platter. Match our placeholder
-        // instead of relying on private button class names or equal-width slots.
-        guard let icon = iconImageView(in: chromeController.tabBar, matching: image) else {
-            avatarView.isHidden = true
-            return
-        }
-        let frame = icon.convert(icon.bounds, to: self)
-        avatarView.bounds = CGRect(x: 0, y: 0, width: 28.75, height: 28.75)
-        avatarView.center = CGPoint(x: frame.midX, y: frame.midY)
-        avatarView.isHidden = false
-        for badge in activityBadges.values { bringSubviewToFront(badge) }
-    }
-
-    private func iconImageView(in view: UIView, matching image: UIImage) -> UIImageView? {
-        if let icon = view as? UIImageView, icon.image === image, !icon.bounds.isEmpty { return icon }
-        for child in view.subviews {
-            if let icon = iconImageView(in: child, matching: image) { return icon }
-        }
-        return nil
     }
 
     private func layoutActivityBadges() {
@@ -398,13 +310,6 @@ private final class TabActivityBadge: UIView {
 /// Keeps the controller view clear so the WebView remains visible.
 /// Pages stay empty; only the system tab bar is meant to paint.
 final class YuriTabBarChromeController: UITabBarController {
-    var onLayout: (() -> Void)?
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        onLayout?()
-    }
-
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
