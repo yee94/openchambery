@@ -1950,6 +1950,7 @@ export const settingsDict = {
   'settings.remoteInstances.direct.import.placeholder': 'yuri://connect?...',
   'settings.remoteInstances.direct.import.action': 'Importer le lien',
   'settings.remoteInstances.direct.error.invalidConnectLink': 'Lien de connexion Yuri invalide.',
+  'settings.remoteInstances.direct.error.pairingFailed': 'Impossible de terminer l’association. Vérifiez que le serveur est en ligne et réessayez avec un nouveau lien de connexion.',
   'settings.remoteInstances.direct.state.loading': 'Chargement des instances...',
   'settings.remoteInstances.direct.state.empty': 'Aucun autre serveur importé pour le moment.',
   'settings.remoteInstances.clientAuth.title': 'Se connecter à ce serveur',

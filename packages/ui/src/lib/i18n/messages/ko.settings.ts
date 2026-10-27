@@ -191,6 +191,7 @@ export const settingsDict = {
   'settings.remoteInstances.direct.import.placeholder': 'yuri://connect?...',
   'settings.remoteInstances.direct.import.action': '링크 가져오기',
   'settings.remoteInstances.direct.error.invalidConnectLink': '잘못된 Yuri 연결 링크입니다.',
+  'settings.remoteInstances.direct.error.pairingFailed': '페어링을 완료하지 못했습니다. 서버가 온라인인지 확인하고 새 연결 링크로 다시 시도하세요.',
   'settings.remoteInstances.direct.state.loading': '서버를 불러오는 중...',
   'settings.remoteInstances.direct.state.empty': '아직 가져온 서버가 없습니다.',
   'settings.remoteInstances.clientAuth.title': '이 서버에 연결',

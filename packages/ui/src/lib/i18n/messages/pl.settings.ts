@@ -1630,6 +1630,7 @@ export const settingsDict = {
   'settings.remoteInstances.direct.import.placeholder': 'yuri://connect?...',
   'settings.remoteInstances.direct.import.action': 'Importuj link',
   'settings.remoteInstances.direct.error.invalidConnectLink': 'Nieprawidłowy link połączenia Yuri.',
+  'settings.remoteInstances.direct.error.pairingFailed': 'Nie udało się ukończyć parowania. Sprawdź, czy serwer jest online, i spróbuj ponownie z nowym linkiem połączenia.',
   'settings.remoteInstances.direct.state.loading': 'Ładowanie serwerów...',
   'settings.remoteInstances.direct.state.empty': 'Nie zaimportowano jeszcze innych serwerów.',
   'settings.remoteInstances.clientAuth.title': 'Połącz z tym serwerem',

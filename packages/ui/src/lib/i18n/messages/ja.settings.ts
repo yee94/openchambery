@@ -224,6 +224,7 @@ export const settingsDict = {
   'settings.remoteInstances.direct.import.placeholder': 'yuri://connect?...',
   'settings.remoteInstances.direct.import.action': 'リンクをインポート',
   'settings.remoteInstances.direct.error.invalidConnectLink': '無効な Yuri 接続リンクです。',
+  'settings.remoteInstances.direct.error.pairingFailed': 'ペアリングを完了できませんでした。サーバーがオンラインであることを確認し、新しい接続リンクで再試行してください。',
   'settings.remoteInstances.direct.state.loading': 'インスタンスを読み込み中...',
   'settings.remoteInstances.direct.state.empty': 'まだサーバーがインポートされていません。',
   'settings.remoteInstances.clientAuth.title': 'このサーバーに接続',

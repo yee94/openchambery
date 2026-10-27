@@ -1173,17 +1173,18 @@ export const RemoteInstancesPage: React.FC = () => {
 
   const loadDirectHosts = React.useCallback(async () => {
     setDirectLoading(true);
-    setDirectError(null);
     try {
       const config = await desktopHostsGet();
       setDirectHosts(config.hosts || []);
       setDirectDefaultHostId(config.defaultHostId || 'local');
     } catch (err) {
-      setDirectError(err instanceof Error ? err.message : String(err));
+      toast.error(t('desktopHostSwitcher.error.failedToLoad'), {
+        description: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setDirectLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     void loadDirectHosts();
@@ -1201,17 +1202,20 @@ export const RemoteInstancesPage: React.FC = () => {
 
   const persistDirectHosts = React.useCallback(async (hosts: DesktopHost[], defaultHostId: string | null = directDefaultHostId) => {
     setDirectSaving(true);
-    setDirectError(null);
     try {
       await desktopHostsSet({ hosts, defaultHostId, initialHostChoiceCompleted: true });
       setDirectHosts(hosts);
       setDirectDefaultHostId(defaultHostId);
+      return true;
     } catch (err) {
-      setDirectError(err instanceof Error ? err.message : String(err));
+      toast.error(t('desktopHostSwitcher.error.failedToSave'), {
+        description: err instanceof Error ? err.message : String(err),
+      });
+      return false;
     } finally {
       setDirectSaving(false);
     }
-  }, [directDefaultHostId]);
+  }, [directDefaultHostId, t]);
 
   const sshInstanceIds = React.useMemo(
     () => new Set(instances.map((instance) => instance.id)),
@@ -1223,6 +1227,7 @@ export const RemoteInstancesPage: React.FC = () => {
   );
 
   const importDirectConnectLink = useEvent(async () => {
+    setDirectError(null);
     const payload = parsePairingConnectionPayload(directConnectLink);
     if (!payload) {
       setDirectError(t('settings.remoteInstances.direct.error.invalidConnectLink'));
@@ -1319,7 +1324,7 @@ export const RemoteInstancesPage: React.FC = () => {
     }
 
     if (!redeemed) {
-      setDirectError(t('desktopHostSwitcher.error.invalidUrl'));
+      setDirectError(t('settings.remoteInstances.direct.error.pairingFailed'));
       return;
     }
 
@@ -1358,7 +1363,7 @@ export const RemoteInstancesPage: React.FC = () => {
 
     const url = directUrl || (relay ? relayHostDisplayUrl(relay.serverId) : null);
     if (!url) {
-      setDirectError(t('desktopHostSwitcher.error.invalidUrl'));
+      setDirectError(t('settings.remoteInstances.direct.error.invalidConnectLink'));
       return;
     }
     const transportFields = {
@@ -1380,10 +1385,10 @@ export const RemoteInstancesPage: React.FC = () => {
       const nextHosts = directHosts.map((host) => host.id === existing.id
         ? { ...host, label: payload.label || host.label, ...transportFields }
         : host);
-      await persistDirectHosts(nextHosts, directDefaultHostId);
+      if (!await persistDirectHosts(nextHosts, directDefaultHostId)) return;
     } else {
       // payload.label is the operator-typed instance name from the pairing QR.
-      await persistDirectHosts([{ id: makeId(), label: payload.label || redactSensitiveUrl(url), ...transportFields }, ...directHosts], directDefaultHostId);
+      if (!await persistDirectHosts([{ id: makeId(), label: payload.label || redactSensitiveUrl(url), ...transportFields }, ...directHosts], directDefaultHostId)) return;
     }
     setDirectConnectLink('');
     setDirectError(null);
@@ -1423,7 +1428,6 @@ export const RemoteInstancesPage: React.FC = () => {
 
   const switchToDirectHost = useEvent(async (host: DesktopHost) => {
     if (isDesktopHostActive(host) || hostSwitchPending) return;
-    setDirectError(null);
     // Global mutation entry: pending state + full-screen overlay are owned by
     // desktopHostSwitchMutation / DesktopRuntimeSwitchOverlay.
     const result = await switchDesktopHostInstance({
@@ -2239,7 +2243,7 @@ export const RemoteInstancesPage: React.FC = () => {
             label={t('settings.remoteInstances.clientAuth.title')}
             action={(
               <div className="flex shrink-0 items-center gap-2 pt-0.5">
-                <Button type="button" size="xs" className="!font-normal" onClick={() => setDirectImportDialogOpen(true)} disabled={directSaving}>
+                <Button type="button" size="xs" className="!font-normal" onClick={() => { setDirectError(null); setDirectImportDialogOpen(true); }} disabled={directSaving}>
                   {t('settings.remoteInstances.direct.import.action')}
                 </Button>
                 <Button type="button" size="xs" className="!font-normal" onClick={() => void openAddDevice()}>
@@ -2607,7 +2611,6 @@ export const RemoteInstancesPage: React.FC = () => {
                 })}
               </>
             )}
-            {directError ? <p className="typography-meta text-[var(--status-error)]">{directError}</p> : null}
           </div>
         </RemoteSettingsSection> : null}
 
@@ -2647,18 +2650,34 @@ export const RemoteInstancesPage: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        {showInstanceManagement ? <Dialog open={directImportDialogOpen} onOpenChange={setDirectImportDialogOpen}>
+        {showInstanceManagement ? <Dialog open={directImportDialogOpen} onOpenChange={(open) => { setDirectImportDialogOpen(open); setDirectError(null); }}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>{t('settings.remoteInstances.direct.import.action')}</DialogTitle>
               <DialogDescription>{t('settings.remoteInstances.direct.import.description')}</DialogDescription>
             </DialogHeader>
-            <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void importDirectConnectLink(); }}>
-              <Input className="h-8" value={directConnectLink} onChange={(event) => setDirectConnectLink(event.target.value)} placeholder={t('settings.remoteInstances.direct.import.placeholder')} disabled={directSaving} autoFocus />
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" size="xs" className="!font-normal" onClick={() => setDirectImportDialogOpen(false)} disabled={directSaving}>{t('settings.common.actions.cancel')}</Button>
-                <Button type="submit" size="xs" className="!font-normal" disabled={directSaving || !directConnectLink.trim()}>{t('settings.remoteInstances.direct.import.action')}</Button>
+            <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void importDirectConnectLink(); }}>
+              <div className="space-y-2">
+                <Input
+                  value={directConnectLink}
+                  onChange={(event) => { setDirectConnectLink(event.target.value); setDirectError(null); }}
+                  placeholder={t('settings.remoteInstances.direct.import.placeholder')}
+                  aria-label={t('settings.remoteInstances.direct.import.action')}
+                  aria-invalid={Boolean(directError)}
+                  aria-describedby={directError ? 'remote-import-error' : undefined}
+                  disabled={directSaving}
+                  autoFocus
+                />
+                {directError ? (
+                  <div id="remote-import-error" role="alert" className="rounded-lg bg-[var(--status-error-background)] px-3 py-2.5 typography-meta leading-relaxed text-[var(--status-error)] break-words">
+                    {directError}
+                  </div>
+                ) : null}
               </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" size="sm" onClick={() => { setDirectImportDialogOpen(false); setDirectError(null); }} disabled={directSaving}>{t('settings.common.actions.cancel')}</Button>
+                <Button type="submit" size="sm" disabled={directSaving || !directConnectLink.trim()}>{t('settings.remoteInstances.direct.import.action')}</Button>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog> : null}

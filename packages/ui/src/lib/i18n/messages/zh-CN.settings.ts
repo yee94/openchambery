@@ -191,6 +191,7 @@ export const settingsDict = {
   'settings.remoteInstances.direct.import.placeholder': 'yuri://connect?...',
   'settings.remoteInstances.direct.import.action': '导入链接',
   'settings.remoteInstances.direct.error.invalidConnectLink': '无效的 Yuri 连接链接。',
+  'settings.remoteInstances.direct.error.pairingFailed': '配对未完成。请确认服务器在线，并重新生成连接链接后重试。',
   'settings.remoteInstances.direct.state.loading': '正在加载服务器...',
   'settings.remoteInstances.direct.state.empty': '尚未导入其他服务器。',
   'settings.remoteInstances.clientAuth.title': '其他设备连接到此服务器',

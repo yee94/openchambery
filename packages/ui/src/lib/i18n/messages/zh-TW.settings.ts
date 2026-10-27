@@ -198,6 +198,7 @@
   'settings.remoteInstances.direct.import.placeholder': '貼上連線連結',
   'settings.remoteInstances.direct.import.action': '匯入連線',
   'settings.remoteInstances.direct.error.invalidConnectLink': '連線連結無效',
+  'settings.remoteInstances.direct.error.pairingFailed': '配對未完成。請確認伺服器在線，並重新產生連線連結後再試。',
   'settings.remoteInstances.direct.state.loading': '正在載入直接連線...',
   'settings.remoteInstances.direct.state.empty': '尚未匯入其他伺服器。',
   'settings.remoteInstances.clientAuth.title': '用戶端存取 token',

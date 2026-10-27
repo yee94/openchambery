@@ -192,6 +192,7 @@ export const settingsDict = {
   "settings.remoteInstances.direct.import.placeholder": "yuri://connect?...",
   "settings.remoteInstances.direct.import.action": "Importar enlace",
   "settings.remoteInstances.direct.error.invalidConnectLink": "Enlace de conexión de Yuri no válido.",
+  "settings.remoteInstances.direct.error.pairingFailed": "No se pudo completar el emparejamiento. Comprueba que el servidor esté conectado y vuelve a intentarlo con un nuevo enlace de conexión.",
   "settings.remoteInstances.direct.state.loading": "Cargando servidores...",
   "settings.remoteInstances.direct.state.empty": "Todavía no se han importado otros servidores.",
   "settings.remoteInstances.clientAuth.title": "Conectarse a este servidor",

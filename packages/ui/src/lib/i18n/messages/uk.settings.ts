@@ -192,6 +192,7 @@ export const settingsDict = {
   "settings.remoteInstances.direct.import.placeholder": "yuri://connect?...",
   "settings.remoteInstances.direct.import.action": "Імпортувати посилання",
   "settings.remoteInstances.direct.error.invalidConnectLink": "Недійсне посилання підключення Yuri.",
+  "settings.remoteInstances.direct.error.pairingFailed": "Не вдалося завершити сполучення. Переконайтеся, що сервер онлайн, і повторіть спробу з новим посиланням підключення.",
   "settings.remoteInstances.direct.state.loading": "Завантаження серверів...",
   "settings.remoteInstances.direct.state.empty": "Інші сервери ще не імпортовано.",
   "settings.remoteInstances.clientAuth.title": "Підключення до цього сервера",
