@@ -843,6 +843,10 @@ const ToolScrollableTextOutput: React.FC<{
 }> = ({ output, part, metadata, input, isMobile = false }) => {
     const { t } = useI18n();
     const renderedOutput = getToolOutputText(output, part, metadata);
+    const displayOutput = React.useMemo(
+        () => part.tool === 'bash' ? renderedOutput.replace(/[\r\n]+$/, '') : renderedOutput,
+        [part.tool, renderedOutput],
+    );
     const outputLanguage = getToolOutputLanguage(output, part, metadata, input);
     const jsonResult = React.useMemo(() => tryParseJsonOutput(renderedOutput), [renderedOutput]);
     const [jsonViewMode, setJsonViewMode] = React.useState<'formatted' | 'raw'>('formatted');
@@ -934,7 +938,7 @@ const ToolScrollableTextOutput: React.FC<{
         <div className={part.tool === 'bash' ? 'typography-code text-muted-foreground/90' : undefined}>
             <WorkerHighlightedCode
                 language={outputLanguage}
-                code={renderedOutput}
+                code={displayOutput}
                 style={{
                     ...TOOL_COLLAPSED_CUSTOM_STYLE,
                     ...(isMobile && part.tool === 'bash' ? { lineHeight: MOBILE_SHELL_CODE_LINE_HEIGHT } : {}),

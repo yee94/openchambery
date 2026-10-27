@@ -7,6 +7,7 @@ import { createSessionMetadataStore } from '../session-metadata/session-metadata
 import { createSessionArchiveService } from '../session-metadata/session-archive.js';
 import { createSessionIndexService } from './service.js';
 import { registerSessionIndexRoutes } from './routes.js';
+import { applySessionIndexEvent } from './event-ingest.js';
 
 const tempDirs = [];
 
@@ -45,6 +46,44 @@ const response = () => ({
 });
 
 describe('session-index routes + Host archive (production path)', () => {
+  it('keeps newly sent user activity ahead of older Host title metadata', async () => {
+    const dataDir = makeDir();
+    const store = createSessionMetadataStore({ dataDir });
+    const index = createSessionIndexService({
+      dbPath: path.join(dataDir, 'index.sqlite'),
+      getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime-test' }),
+    });
+    try {
+      index.replaceDirectory({ directory: '/repo', sessions: [
+        { id: 'ses_sent', title: 'Sent', directory: '/repo', time: { created: 1, updated: 10 } },
+        { id: 'ses_other', title: 'Other', directory: '/repo', time: { created: 1, updated: 20 } },
+      ], cursor: null, hasMore: false });
+      await store.setSessionMetadata('ses_sent', {
+        yuri: { titleRefresh: { activityUpdatedAt: 10, lastAutoTitle: 'Sent' } },
+      });
+      const event = { payload: { type: 'session.inbox.enqueued', created: 30,
+        data: { sessionID: 'ses_sent', item: { type: 'user', payload: { text: 'Hello' } } },
+      } };
+      expect(applySessionIndexEvent(index, event, 40)).toBe(true);
+      expect(applySessionIndexEvent(index, event, 50)).toBe(false);
+      const { app, route } = registry();
+      registerSessionIndexRoutes(app, {
+        sessionIndexService: index, getCommittedHostMetadata: () => store.getAll(),
+      });
+      const res = response();
+      await route('GET', '/api/yuri/session-index')({}, res);
+      const sessions = res.body.directories[0].sessions;
+      expect(sessions.map((session) => session.id)).toEqual(['ses_sent', 'ses_other']);
+      expect(sessions[0].metadata.yuri.titleRefresh).toMatchObject({ activityUpdatedAt: 30, lastAutoTitle: 'Sent' });
+      expect([...sessions].sort((a, b) => b.metadata.yuri.titleRefresh.activityUpdatedAt
+        - a.metadata.yuri.titleRefresh.activityUpdatedAt).map((session) => session.id))
+        .toEqual(['ses_sent', 'ses_other']);
+      expect(sessions[0].time.updated).toBe(10);
+    } finally {
+      index.close();
+    }
+  });
+
   it('snapshot/lookup filter Host-archived rows and pins; 503 when metadata unavailable', async () => {
     const dataDir = makeDir();
     const store = createSessionMetadataStore({ dataDir });

@@ -8,6 +8,7 @@ import { WindowsWindowControls } from '@/components/desktop/WindowsWindowControl
 import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { invokeDesktop, isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { useDesktopWindowControlsLayout } from '@/hooks/useDesktopWindowControlsLayout';
+import { useDesktopWindowFullscreen } from '@/hooks/useDesktopWindowFullscreen';
 import { useSidebarBrandStore } from '@/stores/useSidebarBrandStore';
 import { SidebarBrandMark } from './SidebarBrandMark';
 import { GlobalSearchButton } from './GlobalSearchButton';
@@ -46,12 +47,11 @@ export const TitlebarLeftControls: React.FC = () => {
   const toggleShortcut = formatShortcutForDisplay(getEffectiveShortcutCombo('toggle_sidebar', shortcutOverrides));
   const { usesFramelessChrome, side: windowControlsSide } = useDesktopWindowControlsLayout();
   const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
-  // Electron only moves search into the sidebar when a brand/logo is shown there.
-  const showGlobalSearchInTitlebar = !isDesktopShellRuntime || !isSidebarOpen || !hasSidebarBrand;
-  const usesWebSidebarHeader = React.useMemo(
-    () => isWebRuntime() && !isDesktopShellRuntime && !isVSCodeRuntime(),
-    [isDesktopShellRuntime],
-  );
+  const isDesktopWindowFullscreen = useDesktopWindowFullscreen();
+  // Windowed Electron moves search into the sidebar when a brand/logo is shown there.
+  const showGlobalSearchInTitlebar = !isDesktopShellRuntime || isDesktopWindowFullscreen || !isSidebarOpen || !hasSidebarBrand;
+  const usesWebSidebarHeader = !isVSCodeRuntime()
+    && (isDesktopShellRuntime ? isDesktopWindowFullscreen : isWebRuntime());
 
   const handleOpenWindowsAppMenu = React.useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();

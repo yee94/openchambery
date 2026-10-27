@@ -103,6 +103,9 @@ omitted (`yuri.titleAuthority`, `yuri.scheduledTaskSkill`,
 keys pass through. Writers and the title runtime read the omitted keys from the
 session record, never from the index list. The deep-link lookup keeps the full
 projection. Both list routes return 503 when Host metadata is unavailable.
+Host title metadata must not regress the index's activity clock: projection keeps
+the newer finite activity timestamp, so user enqueue promotes the session before
+execution completes even when title metadata still describes an earlier turn.
 
 The server-side global OpenCode event subscriber writes session summary events
 directly into this index. User `message.updated` events and `session.idle`

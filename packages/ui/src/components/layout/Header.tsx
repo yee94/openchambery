@@ -28,6 +28,7 @@ import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useGitHubAuthQuery } from '@/queries/githubAuthQueries';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useDesktopWindowControlsLayout } from '@/hooks/useDesktopWindowControlsLayout';
+import { useDesktopWindowFullscreen } from '@/hooks/useDesktopWindowFullscreen';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { WindowsWindowControls } from '@/components/desktop/WindowsWindowControls';
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
@@ -717,7 +718,7 @@ export const Header: React.FC<HeaderProps> = ({
   const hasElectronDesktopIPC = React.useMemo(() => canUseElectronDesktopIPC(), []);
   const usesSolidWindowsChrome = isDesktopApp && getElectronPlatform() === 'win32';
   const isTabletStandalonePwa = useTabletStandalonePwaRuntime();
-  const [isDesktopWindowFullscreen, setIsDesktopWindowFullscreen] = React.useState(false);
+  const isDesktopWindowFullscreen = useDesktopWindowFullscreen();
 
   const isMacPlatform = React.useMemo(() => {
     if (typeof navigator === 'undefined') {
@@ -1393,40 +1394,6 @@ export const Header: React.FC<HeaderProps> = ({
   const headerControlsSpacerWidth = isSidebarOpen
     ? '0px'
     : 'calc(var(--yuri-titlebar-controls-width, 5.5rem) + 0.5rem)';
-
-  useEffect(() => {
-    if (!isDesktopApp || !isMacPlatform) {
-      setIsDesktopWindowFullscreen(false);
-      return;
-    }
-
-    let disposed = false;
-
-    const syncFullscreenState = async () => {
-      try {
-        const fullscreen = await invokeDesktop<boolean>('desktop_is_window_fullscreen');
-        if (!disposed) {
-          setIsDesktopWindowFullscreen(fullscreen === true);
-        }
-      } catch {
-        if (!disposed) {
-          setIsDesktopWindowFullscreen(false);
-        }
-      }
-    };
-
-    const onResize = () => {
-      void syncFullscreenState();
-    };
-
-    void syncFullscreenState();
-    window.addEventListener('yuri:window-resized', onResize);
-
-    return () => {
-      disposed = true;
-      window.removeEventListener('yuri:window-resized', onResize);
-    };
-  }, [isDesktopApp, isMacPlatform]);
 
   const macosHeaderSizeClass = React.useMemo(() => {
     if (!isDesktopApp || !isMacPlatform || macosMajorVersion === null) {

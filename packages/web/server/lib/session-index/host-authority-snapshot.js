@@ -20,7 +20,22 @@ export const projectIndexSessionWithHost = (session, storedById) => {
   if (!session || typeof session !== 'object' || typeof session.id !== 'string') return session;
   const host = storedById && isPlainObject(storedById[session.id]) ? storedById[session.id] : null;
   // Index summaries already carry time.*; fold Host archive the same way as proxy.
-  return projectSessionWithHostMetadata(session, host);
+  const projected = projectSessionWithHostMetadata(session, host);
+  const indexedActivity = session.metadata?.yuri?.titleRefresh?.activityUpdatedAt;
+  const projectedActivity = projected?.metadata?.yuri?.titleRefresh?.activityUpdatedAt;
+  if (typeof indexedActivity !== 'number' || !Number.isFinite(indexedActivity)
+    || (typeof projectedActivity === 'number' && Number.isFinite(projectedActivity)
+      && projectedActivity >= indexedActivity)) return projected;
+  return {
+    ...projected,
+    metadata: {
+      ...projected.metadata,
+      yuri: {
+        ...projected.metadata?.yuri,
+        titleRefresh: { ...projected.metadata?.yuri?.titleRefresh, activityUpdatedAt: indexedActivity },
+      },
+    },
+  };
 };
 
 // Host metadata keys that no session-list consumer reads. Writers and the title

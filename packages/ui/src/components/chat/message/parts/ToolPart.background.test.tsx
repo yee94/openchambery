@@ -24,7 +24,9 @@ vi.mock('@/sync/sync-context', async () => {
 });
 vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/workspace' }));
 vi.mock('../../MarkdownRenderer', () => ({ SimpleMarkdownRenderer: () => null }));
-vi.mock('@/components/code/WorkerHighlightedCode', () => ({ WorkerHighlightedCode: () => null }));
+vi.mock('@/components/code/WorkerHighlightedCode', () => ({
+    WorkerHighlightedCode: ({ code }: { code: string }) => <pre data-highlighted-output>{code}</pre>,
+}));
 vi.mock('@pierre/diffs/react', () => ({ PatchDiff: () => null }));
 
 import ToolPart from './ToolPart';
@@ -36,6 +38,40 @@ import { applyTranscriptDirectoryEvent, type TranscriptEventDraft } from '@/sync
 let root: ReturnType<typeof createRoot> | undefined;
 afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks(); });
 afterAll(() => { vi.unstubAllGlobals(); });
+
+test.each([false, true])('shell display drops trailing blank lines without changing raw output (mobile=%s)', async (isMobile) => {
+    live.store = createStore(() => ({ status: { type: 'idle' } as SessionStatus }));
+    live.messages = [];
+    const host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    const output = 'first line\n\n  indented result\r\n\r\n';
+    const part = {
+        id: 'tool-spacing', sessionID: 'ses_parent', messageID: 'msg_parent',
+        type: 'tool', tool: 'shell', callID: 'call-spacing',
+        state: {
+            status: 'completed', input: { command: 'example' }, metadata: {},
+            output, title: 'Shell', time: { start: 100, end: 110 },
+        },
+    } as ToolPartType;
+    const replace = vi.spyOn(String.prototype, 'replace');
+    const normalizationCount = () => replace.mock.calls.filter(([pattern]) => (
+        pattern instanceof RegExp && pattern.source === '[\\r\\n]+$'
+    )).length;
+    await act(async () => root!.render(<ToolPart part={part} isExpanded onToggle={() => {}} isMobile={isMobile} />));
+    expect(host.querySelector('[data-highlighted-output]')?.textContent).toBe('first line\n\n  indented result');
+    expect((part.state as { output: string }).output).toBe(output);
+    const initialCount = normalizationCount();
+    expect(initialCount).toBeGreaterThan(0);
+    for (let index = 0; index < 50; index += 1) {
+        await act(async () => root!.render(<ToolPart part={{ ...part }} isExpanded onToggle={() => {}} isMobile={index % 2 === 0 ? !isMobile : isMobile} />));
+    }
+    expect(normalizationCount()).toBe(initialCount);
+    const updated = { ...part, state: { ...part.state, output: 'new output\n\n' } } as ToolPartType;
+    await act(async () => root!.render(<ToolPart part={updated} isExpanded onToggle={() => {}} isMobile={isMobile} />));
+    expect(host.querySelector('[data-highlighted-output]')?.textContent).toBe('new output');
+    expect(normalizationCount()).toBe(initialCount + 1);
+});
 
 test('task message avatars match sidebar faces for distinct tasks, late identity and continuation', async () => {
     live.store = createStore(() => ({ status: { type: 'idle' } as SessionStatus }));
