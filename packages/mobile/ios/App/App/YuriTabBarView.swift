@@ -26,7 +26,7 @@ struct YuriTabBarItem {
 /// hosts real pages — placeholder controllers stay clear, taps emit
 /// `tabSelected`, and React still owns the homepage stack.
 /// Light and dark follow the Web theme via `overrideUserInterfaceStyle`.
-final class YuriTabBarView: UIView, UITabBarControllerDelegate, WKNavigationDelegate {
+final class YuriTabBarView: UIView, UITabBarControllerDelegate {
     weak var delegate: YuriTabBarViewDelegate?
 
     static var supportsLiquidGlass: Bool {
@@ -43,7 +43,6 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate, WKNavigationDele
     private var activityBadges: [String: TabActivityBadge] = [:]
     private var avatarView: WKWebView?
     private var avatarURI: String?
-    private var avatarImage: UIImage?
     private var selectedId = ""
     private var applying = false
     private var lastReportedHeight: CGFloat = -1
@@ -67,7 +66,9 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate, WKNavigationDele
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        chromeController.view.layoutIfNeeded()
         layoutActivityBadges()
+        layoutAvatar()
         reportHeightIfNeeded()
     }
 
@@ -140,6 +141,7 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate, WKNavigationDele
         isAccessibilityElement = false
         accessibilityContainerType = .semanticGroup
         chromeController.delegate = self
+        chromeController.onLayout = { [weak self] in self?.layoutAvatar() }
         let tabBar = chromeController.tabBar
         // Leave system bar chrome untouched so iOS 26 can paint glass + lens.
         tabBar.isTranslucent = true
@@ -218,7 +220,6 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate, WKNavigationDele
             avatarView?.removeFromSuperview()
             avatarView = nil
             avatarURI = nil
-            avatarImage = nil
             return
         }
         let item = items[index]
@@ -230,19 +231,18 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate, WKNavigationDele
             avatarView?.removeFromSuperview()
             avatarView = nil
             avatarURI = nil
-            avatarImage = nil
             tab.image = UIImage(systemName: item.symbol)
             tab.selectedImage = UIImage(systemName: item.selectedSymbol)
             return
         }
-        if avatarURI != uri {
-            avatarView?.removeFromSuperview()
-            avatarImage = nil
-            avatarURI = uri
+        let blank = UIGraphicsImageRenderer(size: CGSize(width: 23, height: 23)).image { _ in }
+            .withRenderingMode(.alwaysOriginal)
+        tab.image = blank
+        tab.selectedImage = blank
+        if avatarView == nil {
             let configuration = WKWebViewConfiguration()
             configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-            // Rasterize SVG offscreen; UITabBarItem owns positioning and selection animations.
-            let view = WKWebView(frame: CGRect(x: -100, y: 0, width: 28.75, height: 28.75), configuration: configuration)
+            let view = WKWebView(frame: .zero, configuration: configuration)
             view.isOpaque = false
             view.backgroundColor = .clear
             view.scrollView.backgroundColor = .clear
@@ -250,9 +250,11 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate, WKNavigationDele
             view.scrollView.contentInsetAdjustmentBehavior = .never
             view.isUserInteractionEnabled = false
             view.isAccessibilityElement = false
-            view.navigationDelegate = self
             addSubview(view)
             avatarView = view
+        }
+        if avatarURI != uri {
+            avatarURI = uri
             let escaped = uri.replacingOccurrences(of: "&", with: "&amp;")
                 .replacingOccurrences(of: "\"", with: "&quot;")
                 .replacingOccurrences(of: "<", with: "&lt;")
@@ -263,34 +265,33 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate, WKNavigationDele
                 <img src="\(escaped)">
                 """, baseURL: nil)
         }
-        tab.image = avatarImage ?? UIImage(systemName: item.symbol)
-        tab.selectedImage = avatarImage ?? UIImage(systemName: item.selectedSymbol)
+        setNeedsLayout()
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard webView === avatarView else { return }
-        webView.takeSnapshot(with: nil) { [weak self, weak webView] image, _ in
-            guard let self, let webView, webView === self.avatarView else { return }
-            webView.removeFromSuperview()
-            self.avatarView = nil
-            guard let image else {
-                self.avatarURI = nil
-                return
-            }
-            self.avatarImage = image.withRenderingMode(.alwaysOriginal)
-            self.applyAvatar()
+    private func layoutAvatar() {
+        guard let avatarView,
+              let index = items.firstIndex(where: { $0.id == "assistant" }),
+              let controllers = chromeController.viewControllers, index < controllers.count,
+              let image = controllers[index].tabBarItem.image else { return }
+        // iOS 26 nests tab icons inside the glass platter. Match our placeholder
+        // instead of relying on private button class names or equal-width slots.
+        guard let icon = iconImageView(in: chromeController.tabBar, matching: image) else {
+            avatarView.isHidden = true
+            return
         }
+        let frame = icon.convert(icon.bounds, to: self)
+        avatarView.bounds = CGRect(x: 0, y: 0, width: 28.75, height: 28.75)
+        avatarView.center = CGPoint(x: frame.midX, y: frame.midY)
+        avatarView.isHidden = false
+        for badge in activityBadges.values { bringSubviewToFront(badge) }
     }
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        guard webView === avatarView else { return }
-        webView.removeFromSuperview()
-        avatarView = nil
-        avatarURI = nil
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        self.webView(webView, didFail: navigation, withError: error)
+    private func iconImageView(in view: UIView, matching image: UIImage) -> UIImageView? {
+        if let icon = view as? UIImageView, icon.image === image, !icon.bounds.isEmpty { return icon }
+        for child in view.subviews {
+            if let icon = iconImageView(in: child, matching: image) { return icon }
+        }
+        return nil
     }
 
     private func layoutActivityBadges() {
@@ -397,6 +398,13 @@ private final class TabActivityBadge: UIView {
 /// Keeps the controller view clear so the WebView remains visible.
 /// Pages stay empty; only the system tab bar is meant to paint.
 final class YuriTabBarChromeController: UITabBarController {
+    var onLayout: (() -> Void)?
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        onLayout?()
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear

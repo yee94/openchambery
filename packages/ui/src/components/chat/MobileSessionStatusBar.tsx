@@ -1747,10 +1747,10 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
           setRenameDraft('');
         }}
         footer={
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Button
               type="button"
-              variant="ghost"
+              variant="default"
               className="flex-1"
               onClick={() => {
                 setRenamingSession(null);

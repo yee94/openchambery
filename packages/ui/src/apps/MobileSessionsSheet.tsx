@@ -1857,10 +1857,10 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
             setRenameDraft('');
           }}
           footer={
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
-                variant="ghost"
+                variant="default"
                 className="flex-1"
                 disabled={smartTitleRequesting}
                 onClick={() => {

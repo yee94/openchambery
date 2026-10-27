@@ -26,6 +26,7 @@ vi.mock('@/queries/assistantQueries', () => ({
   useAssistantUnreadTotal: () => 0,
   useAssistantWorking: () => false,
   useScheduledNavigationWorking: () => false,
+  useAssistantSnapshotQuery: () => ({ data: null }),
 }));
 vi.mock('@/lib/iosNativeUi', () => ({ useIosNativeUiEnabled: () => false }));
 vi.mock('./useNativeIosTabBar', () => ({ useNativeIosTabBar: () => 'web' }));
