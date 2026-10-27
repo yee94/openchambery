@@ -1,4 +1,5 @@
 import React from 'react';
+import { SettingsActionHeader } from '@/components/sections/shared/SettingsActionHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -660,10 +661,12 @@ export const AgentsPage: React.FC = () => {
     <ScrollableOverlay outerClassName="h-full" className="w-full">
       <div className="yuri-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
-        <SavedPermissionsSection />
-
         {/* Header & Actions */}
-        <div className="mb-4 flex items-center justify-between gap-4">
+        <SettingsActionHeader actions={
+          <Button type="button" size="sm" onClick={handleSave} disabled={!canSave} aria-busy={isSaving}>
+            {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
+          </Button>
+        }>
           <div className="min-w-0">
             <h2 className="typography-ui-header font-semibold text-foreground truncate">
               {isNewAgent ? t('settings.agents.page.title.new') : formatAgentDisplayName(selectedAgentName ?? '')}
@@ -672,10 +675,9 @@ export const AgentsPage: React.FC = () => {
               {isNewAgent ? t('settings.agents.page.subtitle.new') : t('settings.agents.page.subtitle.edit')}
             </p>
           </div>
-          <Button type="button" onClick={handleSave} disabled={!canSave}>
-            {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
-          </Button>
-        </div>
+        </SettingsActionHeader>
+
+        <SavedPermissionsSection />
 
         {droppedKeys.length > 0 ? (
           <div className="mt-3 flex flex-col gap-2">

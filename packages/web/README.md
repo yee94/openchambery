@@ -84,7 +84,7 @@ Point every Yuri Host at the Relay, then generate a Relay pairing link or enable
 YURI_RELAY_URL=wss://relay.example.com/ws yuri
 ```
 
-The **Add a device** dialog requires a configured `ws://` or `wss://` Relay endpoint. No hosted Yuri endpoint is assumed before ownership and deployment are verified. The Host persists the selected endpoint before creating the QR code; `YURI_RELAY_URL` remains authoritative when set. The creating client remembers the last effective endpoint locally.
+The **Add a device** dialog and Host default to `wss://relay.openchamber.dev/ws`. The Host persists the selected endpoint before creating the QR code; `YURI_RELAY_URL` remains authoritative when set. The creating client remembers the last effective endpoint locally.
 
 Saved pairing candidates retain their endpoint snapshot, including the Relay URL. Mobile and Desktop clients reconnect through that saved endpoint until a new pairing flow replaces it. See [Yuri Relay Server](https://github.com/yee94/yuri/tree/main/packages/relay-server#readme) for bundle builds, reverse-proxy configuration, security, operations, and systemd guidance.
 

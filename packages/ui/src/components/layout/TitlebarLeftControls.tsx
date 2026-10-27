@@ -110,7 +110,7 @@ export const TitlebarLeftControls: React.FC = () => {
         )}
       >
         {usesWebSidebarHeader && isSidebarOpen ? (
-          <SidebarBrandMark className="flex min-w-0 items-center p-0" />
+          <SidebarBrandMark className="flex min-w-0 items-center p-0 pl-1.5" />
         ) : null}
 
         {usesFramelessChrome && windowControlsSide === 'left' ? (

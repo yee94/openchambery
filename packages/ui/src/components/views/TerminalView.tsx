@@ -1068,12 +1068,12 @@ export const TerminalView: React.FC = () => {
         return (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-muted-foreground">
                 <p>{t('terminalView.empty.noWorkingDirectoryForSession')}</p>
-                <button
+                <Button
                     onClick={handleRestart}
-                    className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                    size="sm"
                 >
                     {t('terminalView.actions.retry')}
-                </button>
+                </Button>
             </div>
         );
     }

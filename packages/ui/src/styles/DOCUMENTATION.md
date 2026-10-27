@@ -22,8 +22,8 @@ geometry, gradient, keyframes and reduced-motion handling. ChatInput mounts the
 trail only for a current provisional transcript and keys it by text to restart the
 animation on recognition updates; entering recording alone does not animate it.
 
-Dark `--voice-active-fill` follows the resolved `--primary` token (Cursor blue by
-default), including the recording border, microphone and provisional-text trail.
+Dark `--voice-active-fill` uses fixed sRGB `#3BCC80`, independent of the theme
+primary color, including the recording border, microphone and provisional-text trail.
 The dark startup fallback also mirrors Cursor's neutral surfaces and blue accent.
 Light mode uses sRGB `#38CD80`, targeting raw screenshot RGB `#85C688`
 under the embedded `Rec2020 Gamut with sRGB Transfer` screenshot profile. These

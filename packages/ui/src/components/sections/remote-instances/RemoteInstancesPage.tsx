@@ -23,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
+import { SettingsActionHeader } from '@/components/sections/shared/SettingsActionHeader';
 import {
   SettingsGroup,
   SettingsRow,
@@ -3008,7 +3009,8 @@ export const RemoteInstancesPage: React.FC = () => {
   return (
     <Dialog open={Boolean(draft)} onOpenChange={(open) => { if (!open) setSelectedId(null); }}>
       <DialogContent className="yuri-settings-workspace yuri-settings-workspace-desktop yuri-settings-section-stack sm:max-w-4xl max-h-[90vh] overflow-auto">
-      <DialogHeader className="gap-1 pr-8">
+      <SettingsActionHeader className="pr-8" actions={<Button type="button" size="sm" onClick={() => void handleSave()} disabled={!hasChanges || isSaving} aria-busy={isSaving}>{t('settings.common.actions.saveChanges')}</Button>}>
+      <DialogHeader className="gap-1">
         <DialogTitle className="truncate">{instanceTitle}</DialogTitle>
         <DialogDescription className="flex flex-wrap items-center gap-2">
           <span className={`h-2.5 w-2.5 rounded-full ${phaseDotClass(statusPhase)}`} />
@@ -3017,6 +3019,7 @@ export const RemoteInstancesPage: React.FC = () => {
           {reconnectAppearsStuck ? <span>{t('settings.remoteInstances.page.status.reconnectStale')}</span> : null}
         </DialogDescription>
       </DialogHeader>
+      </SettingsActionHeader>
       {statusPhase === 'error' ? (
         <SshBootstrapErrorNotice errorCode={status?.errorCode} detail={status?.detail} />
       ) : null}
@@ -3670,9 +3673,6 @@ export const RemoteInstancesPage: React.FC = () => {
               </Button>
             </>
           ) : null}
-          <Button type="button" size="xs" className="!font-normal" onClick={() => void handleSave()} disabled={!hasChanges || isSaving}>
-            {t('settings.common.actions.saveChanges')}
-          </Button>
       </DialogFooter>
 
       <SyncConfigDialog

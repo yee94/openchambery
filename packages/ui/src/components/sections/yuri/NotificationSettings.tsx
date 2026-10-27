@@ -1,7 +1,6 @@
 import React from 'react';
 import { useUIStore } from '@/stores/useUIStore';
 import { isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
-import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { Input } from '@/components/ui/input';
@@ -629,38 +628,32 @@ export const NotificationSettings: React.FC = () => {
           label={t('settings.notifications.page.push.title')}
           className="yuri-settings-detail-group"
         >
-          <div
-            data-settings-item="notifications.push"
-            className="yuri-settings-group-row flex items-center gap-2"
-          >
-            <Checkbox
-              checked={pushSupported ? pushSubscribed : false}
-              disabled={!pushSupported || pushBusy}
-              onChange={(checked: boolean) => {
-                if (checked) {
-                  void handleEnableBackgroundNotifications();
-                } else {
-                  void handleDisableBackgroundNotifications();
-                }
-              }}
-              ariaLabel={t('settings.notifications.page.push.enableAria')}
-            />
-            <div className="flex min-w-0 flex-col">
-              <span className={cn('typography-ui-label', !pushSupported ? 'text-muted-foreground' : 'text-foreground')}>
-                {t('settings.notifications.page.push.enableLabel')}
+          <SettingsToggleRow
+            itemId="notifications.push"
+            checked={pushSupported ? pushSubscribed : false}
+            disabled={!pushSupported || pushBusy}
+            onChange={(checked: boolean) => {
+              if (checked) {
+                void handleEnableBackgroundNotifications();
+              } else {
+                void handleDisableBackgroundNotifications();
+              }
+            }}
+            ariaLabel={t('settings.notifications.page.push.enableAria')}
+            label={(
+              <span className="inline-flex items-center gap-2">
+                <span className={cn('typography-ui-label', !pushSupported ? 'text-muted-foreground' : 'text-foreground')}>
+                  {t('settings.notifications.page.push.enableLabel')}
+                </span>
+                {pushBusy && (
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-current text-muted-foreground animate-busy-pulse" aria-label={t('settings.notifications.page.push.loadingAria')} />
+                )}
               </span>
-              <span className="typography-meta text-muted-foreground">
-                {!pushSupported
-                  ? t('settings.notifications.page.push.unsupportedHint')
-                  : t('settings.notifications.page.push.supportedHint')}
-              </span>
-            </div>
-            {pushBusy && (
-              <div className="pt-0.5 text-muted-foreground">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-busy-pulse" aria-label={t('settings.notifications.page.push.loadingAria')} />
-              </div>
             )}
-          </div>
+            description={!pushSupported
+              ? t('settings.notifications.page.push.unsupportedHint')
+              : t('settings.notifications.page.push.supportedHint')}
+          />
         </SettingsGroup>
       ) : null}
     </div>

@@ -33,7 +33,7 @@ vi.mock('./host-client.js', () => ({
 
 import {
   createRelayService,
-  DEFAULT_RELAY_URL as UNCONFIGURED_RELAY_URL,
+  DEFAULT_RELAY_URL as PRODUCT_RELAY_URL,
   derivePushSendUrlFromRelayUrl,
   isRelayHostRuntime,
   RELAY_HOST_DESKTOP_ONLY_MESSAGE,
@@ -91,8 +91,8 @@ describe('resolveEffectiveRelayUrl', () => {
   });
 
   it('prefers a valid env URL, then settings, then the default', () => {
-    expect(resolveEffectiveRelayUrl()).toBe(UNCONFIGURED_RELAY_URL);
-    expect(UNCONFIGURED_RELAY_URL).toBe('');
+    expect(resolveEffectiveRelayUrl()).toBe(PRODUCT_RELAY_URL);
+    expect(PRODUCT_RELAY_URL).toBe('wss://relay.openchamber.dev/ws');
     expect(
       resolveEffectiveRelayUrl({
         settings: { privateRelay: { relayUrl: 'wss://settings.example/ws' } },

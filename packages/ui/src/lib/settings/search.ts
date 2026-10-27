@@ -616,13 +616,6 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['create', 'add', 'new agent'],
   },
   {
-    id: 'assistants.instance-enabled',
-    page: 'assistants',
-    titleKey: 'assistants.settings.instanceEnabled',
-    descriptionKey: 'assistants.settings.description',
-    keywords: ['assistant', 'enable', 'feature'],
-  },
-  {
     id: 'assistants.create',
     page: 'assistants',
     titleKey: 'assistants.settings.create',

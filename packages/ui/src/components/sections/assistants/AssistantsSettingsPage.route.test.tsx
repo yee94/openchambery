@@ -47,7 +47,6 @@ vi.mock('@/queries/assistantQueries', () => ({
   createAssistant: fixture.create,
   deleteAssistant: fixture.remove,
   fetchAssistantCapability: vi.fn(),
-  setAssistantsEnabled: vi.fn(),
 }));
 
 import { AssistantsSettingsPage } from './AssistantsSettingsPage';
@@ -149,7 +148,7 @@ test('deleting the route assistant returns through its owner and preserves the S
   vi.stubGlobal('confirm', vi.fn(() => true));
   const onItemDeleted = vi.fn();
   await act(async () => root.render(<AssistantsSettingsPage assistantID="asst_route" onItemDeleted={onItemDeleted} />));
-  await act(async () => button('assistants.settings.delete').click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="assistants.settings.delete"]')!.click());
   expect(fixture.remove).toHaveBeenCalledWith(fixture.assistant);
   expect(onItemDeleted).toHaveBeenCalledOnce();
   expect(useAssistantUIStore.getState().settingsSelectedAssistantID).toBe('asst_settings_tab');

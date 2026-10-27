@@ -3,6 +3,7 @@ import { loadBrandDisplayFont } from '@/lib/fontLoader';
 import { useSidebarBrandStore } from '@/stores/useSidebarBrandStore';
 import { cn } from '@/lib/utils';
 import { YuriWordmark } from '@/components/ui/YuriWordmark';
+import { YuriLogo } from '@/components/ui/YuriLogo';
 
 /**
  * Left-sidebar wordmark.
@@ -48,7 +49,7 @@ export const SidebarBrandMark: React.FC<SidebarBrandMarkProps> = ({ className })
       <span
         role="img"
         aria-label={brandWords.join(' ')}
-        className="inline-flex min-w-0 items-baseline gap-[0.28em] overflow-hidden whitespace-nowrap text-foreground"
+        className={cn('inline-flex min-w-0 gap-[0.28em] overflow-hidden whitespace-nowrap text-foreground', brandName === 'Yuri' ? 'items-center' : 'items-baseline')}
         style={{
           fontFamily: '"Syne", var(--font-sans, system-ui, sans-serif)',
           fontSize: '1.0625rem',
@@ -57,13 +58,18 @@ export const SidebarBrandMark: React.FC<SidebarBrandMarkProps> = ({ className })
           lineHeight: 1,
         }}
       >
+        {brandName === 'Yuri' ? (
+          <span aria-hidden="true" className="inline-flex shrink-0 self-center">
+            <YuriLogo width={24} height={24} />
+          </span>
+        ) : null}
         {brandWords.map((word, index) => (
           <span
             key={index}
             aria-hidden="true"
             className="inline-flex shrink-0 items-baseline"
           >
-            {word === 'Yuri' ? <YuriWordmark width="2.44814cap" className="translate-y-[0.046875cap]" /> : word}
+            {word === 'Yuri' ? <YuriWordmark width="2.44814cap" className={brandName === 'Yuri' ? undefined : 'translate-y-[0.046875cap]'} /> : word}
           </span>
         ))}
       </span>

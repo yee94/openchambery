@@ -821,6 +821,7 @@ const messageFromPreviewRow = (row, parts) => {
     role: row.role,
     ordinal: row.ordinal,
     status: row.status,
+    createdAt: row.created_at,
     parts: list,
     text: list.filter((part) => part.type === 'text').map((part) => part.text).join(''),
   };
@@ -849,7 +850,7 @@ const pickPreviewFromCandidateRows = (rows, partsByMessage) => {
  *   occupy a slot and force a deeper probe only within the same LIMIT.
  */
 const CONTACT_PREVIEW_CANDIDATE_SQL = `
-  SELECT message_id, assistant_id, role, ordinal, status
+  SELECT message_id, assistant_id, role, ordinal, status, created_at
   FROM assistant_contact_message m
   WHERE m.assistant_id = ?
     AND m.role IN ('user', 'assistant', 'peer')

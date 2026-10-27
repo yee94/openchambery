@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, expect, test, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ unread: 0 }));
-vi.mock('@/queries/assistantQueries', () => ({ useAssistantUnreadTotal: () => state.unread }));
+vi.mock('@/queries/assistantQueries', () => ({ useAssistantUnreadTotal: () => state.unread, useAssistantSnapshotQuery: () => ({ data: null }) }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 import { MobileTabBar } from './MobileTabBar';
 

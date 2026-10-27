@@ -3,6 +3,66 @@
   "exceptions": [
     {
       "kind": "content",
+      "path": "packages/ui/src/lib/pairingRelayPreference.ts",
+      "line": "export const DEFAULT_PAIRING_RELAY_URL = 'wss://relay.openchamber.dev/ws';",
+      "count": 1,
+      "category": "external-service",
+      "reason": "User-selected OpenChamber relay service endpoint",
+      "owner": "Relay maintainers",
+      "exitCondition": "Remove when the default relay service changes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/ui/src/lib/pairingRelayPreference.test.ts",
+      "line": "    expect(DEFAULT_PAIRING_RELAY_URL).toBe('wss://relay.openchamber.dev/ws');",
+      "count": 1,
+      "category": "external-service-test",
+      "reason": "Assert the user-selected relay endpoint",
+      "owner": "Relay maintainers",
+      "exitCondition": "Remove when the default relay service changes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/relay/service.js",
+      "line": "export const DEFAULT_RELAY_URL = 'wss://relay.openchamber.dev/ws';",
+      "count": 1,
+      "category": "external-service",
+      "reason": "User-selected OpenChamber relay service endpoint",
+      "owner": "Relay maintainers",
+      "exitCondition": "Remove when the default relay service changes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/relay/service.test.js",
+      "line": "    expect(PRODUCT_RELAY_URL).toBe('wss://relay.openchamber.dev/ws');",
+      "count": 1,
+      "category": "external-service-test",
+      "reason": "Assert the user-selected relay endpoint",
+      "owner": "Relay maintainers",
+      "exitCondition": "Remove when the default relay service changes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/README.md",
+      "line": "The **Add a device** dialog and Host default to `wss://relay.openchamber.dev/ws`. The Host persists the selected endpoint before creating the QR code; `YURI_RELAY_URL` remains authoritative when set. The creating client remembers the last effective endpoint locally.",
+      "count": 1,
+      "category": "external-service-docs",
+      "reason": "Document the user-selected relay endpoint",
+      "owner": "Relay maintainers",
+      "exitCondition": "Remove when the default relay service changes"
+    },
+    {
+      "kind": "content",
+      "path": "packages/web/server/lib/relay/DOCUMENTATION.md",
+      "line": "The Host and pairing UI default to `wss://relay.openchamber.dev/ws`. Host endpoint precedence is `YURI_RELAY_URL`, saved `privateRelay.relayUrl`, then the product default. Existing saved pairing endpoints remain authoritative for reconnects.",
+      "count": 1,
+      "category": "external-service-docs",
+      "reason": "Document the user-selected relay endpoint",
+      "owner": "Relay maintainers",
+      "exitCondition": "Remove when the default relay service changes"
+    },
+    {
+      "kind": "content",
       "path": "README.md",
       "line": "Built on the open-source foundations of [OpenChamber](https://github.com/openchamber/openchamber) and [OpenCode](https://opencode.ai).",
       "count": 1,

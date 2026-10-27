@@ -14,6 +14,7 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
 import type { Extension } from '@codemirror/state';
 import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
+import { SettingsActionHeader } from '@/components/sections/shared/SettingsActionHeader';
 
 const DEFAULT_SUMMARY_COMMIT_PROMPT = 'You are generating a Conventional Commits subject line from the diffs of the selected files.';
 
@@ -282,8 +283,10 @@ export const SummarySettings: React.FC = () => {
 
   return (
     <div className="yuri-settings-section-stack">
+      <SettingsActionHeader actions={<Button size="sm" onClick={() => void save()} disabled={isSaving} aria-busy={isSaving}>{isSaving ? t('settings.common.actions.saving') : t('settings.yuri.defaults.summary.save')}</Button>}>
+        <h2 className="truncate typography-ui-header font-semibold text-foreground">{t('settings.yuri.defaults.summary.title')}</h2>
+      </SettingsActionHeader>
       <SettingsGroup
-        label={t('settings.yuri.defaults.summary.title')}
         description={(
           <span className="flex flex-col gap-2">
             <span className="flex flex-wrap items-center justify-between gap-2">
@@ -383,9 +386,6 @@ export const SummarySettings: React.FC = () => {
             <CodeMirrorEditor value={summarySessionTitlePrompt} onChange={setSummarySessionTitlePrompt} extensions={editorExtensions} className="h-full" enableSearch />
           </div>
         </SettingsRow>
-        <div className="yuri-settings-group-row flex items-center justify-end">
-          <Button size="sm" onClick={() => void save()} disabled={isSaving}>{isSaving ? t('settings.common.actions.saving') : t('settings.yuri.defaults.summary.save')}</Button>
-        </div>
       </SettingsGroup>
     </div>
   );

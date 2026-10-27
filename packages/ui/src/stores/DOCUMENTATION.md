@@ -196,6 +196,24 @@ selection, drafts, and configuration mutations; `useMcpStore` retains runtime
 diagnostics and connection/OAuth mutations. Every mutation captures transport
 and directory before dispatch, then refreshes the matching Query keys.
 
+MCP OAuth uses the V2 server's `integrationID` from `mcp.list`, discovers its
+OAuth method with `integration.get`, and calls `integration.oauth.connect`.
+The store retains only transient, runtime-generation/directory/server-scoped
+attempts. Settings opens the returned URL through `openExternalUrl`; `auto`
+completion is determined by `integration.oauth.status`, not MCP connectivity.
+Only `code` attempts expose manual completion via `integration.oauth.complete`.
+Replacing or clearing an attempt cancels it; abandoned attempts expire on the
+OpenCode server. Credential removal uses only IDs returned by that integration's
+connections, never a guessed MCP/provider ID. A partial removal failure is
+reported; retry re-reads remaining connections rather than restoring credentials.
+
+OpenCode owns the OAuth callback listener. Settings no longer writes a Yuri
+callback URI or queues callback state; starting auth removes a saved legacy
+`/mcp/oauth/callback` redirect while preserving custom redirects. All UI runtimes
+use the same SDK and their existing external-browser opener. Automatic loopback
+callbacks require the browser to reach the OpenCode host's listener (normally
+the same machine); this does not add remote-host/mobile callback tunneling.
+
 `githubAuthQueries.ts` owns GitHub authentication status by transport identity.
 Auth refreshes retain the prior complete snapshot on failure, while
 `useGitHubAuthStore` provides only imperative refresh and cache-write actions.

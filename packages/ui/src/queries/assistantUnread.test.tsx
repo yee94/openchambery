@@ -26,6 +26,9 @@ vi.mock('@/lib/yuriEvents', () => ({
   },
 }));
 import { assistantQueryKeys, assistantSnapshotQueryOptions, markAllAssistantsRead, markAssistantContactRead, useAssistantUnreadTotal } from './assistantQueries';
+import { AssistantNavigationIcon } from '@/components/assistants/AssistantNavigationIcon';
+import { useAssistantContactWorkingStore } from '@/components/assistants/assistantWorking';
+import { generatedAvatarDataUri } from '@/lib/generatedAvatar';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const position = (ordinal: number, generation = 0) => ({ ordinal, generation, messageID: `message-${ordinal}` });
@@ -52,6 +55,52 @@ afterEach(async () => {
 });
 
 describe('Assistant shared read contract', () => {
+  test('navigation follows latest messages, animates live work, and clears on runtime or catalog changes', async () => {
+    const a = { ...assistant('a', 99), avatarSeed: 'face-a', latestMessagePreview: { ...assistantContractFixtures.assistant.latestMessagePreview, createdAt: 10 } };
+    const b = { ...assistant('b', 0), avatarSeed: 'face-b', latestMessagePreview: { ...assistantContractFixtures.assistant.latestMessagePreview, createdAt: 20 } };
+    let snapshot = { enabled: true, revision: 1, assistants: [a, b] };
+    state.fetch.mockImplementation(async () => response(snapshot));
+    state.client!.setQueryData(assistantQueryKeys.snapshot(), snapshot);
+    host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+    const rendered = vi.fn();
+    await act(async () => root!.render(<QueryClientProvider client={state.client!}><React.Profiler id="navigation" onRender={rendered}><AssistantNavigationIcon className="size-4" /></React.Profiler></QueryClientProvider>));
+    const src = () => host.querySelector('img')?.getAttribute('src');
+    await vi.waitFor(() => expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-b')));
+    const update = async () => {
+      await act(async () => {
+        state.client!.setQueryData(assistantQueryKeys.snapshot(), { ...snapshot });
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+    };
+    snapshot = { ...snapshot, revision: 2, assistants: [a, { ...b, working: true }] };
+    await update();
+    await vi.waitFor(() => expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-b', true)));
+    snapshot = { ...snapshot, revision: 3, assistants: [{ ...a, latestMessagePreview: { ...a.latestMessagePreview, createdAt: 30 } }, b] };
+    await update();
+    await vi.waitFor(() => expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-a')));
+    await act(async () => useAssistantContactWorkingStore.getState().setWorking('a', true));
+    expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-a', true));
+    await act(async () => useAssistantContactWorkingStore.getState().setWorking('a', false));
+    expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-a'));
+    const image = host.querySelector('img');
+    rendered.mockClear();
+    for (let i = 0; i < 50; i++) {
+      snapshot = { ...snapshot, revision: i + 4, assistants: snapshot.assistants.map(item => ({ ...item, unreadCount: i, updatedAt: i })) };
+      await update();
+    }
+    expect(host.querySelector('img')).toBe(image);
+    expect(rendered).not.toHaveBeenCalled();
+    expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-a'));
+    snapshot = { ...snapshot, enabled: false };
+    await update();
+    await vi.waitFor(() => expect(host.querySelector('img')).toBeNull());
+    expect(host.querySelector('svg')).not.toBeNull();
+    state.transport = 'navigation-other-runtime';
+    snapshot = { enabled: true, revision: 1, assistants: [] };
+    await act(async () => root!.render(<QueryClientProvider client={state.client!}><AssistantNavigationIcon className="size-[23px]" /></QueryClientProvider>));
+    expect(host.querySelector('img')).toBeNull();
+  });
+
   test('parses the server response and rejects malformed counts and positions', () => {
     expect(parseAssistantReadResponse(assistantContractFixtures.contactReadResponse)).toEqual(assistantContractFixtures.contactReadResponse);
     for (const unreadCount of [-1, 1.5, NaN, '3']) {

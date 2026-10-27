@@ -2,9 +2,11 @@ import type { ReactNode } from 'react';
 
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
+import { SettingsActionHeader } from './SettingsActionHeader';
 
 export type SettingsGroupProps = {
   label?: ReactNode;
+  actions?: ReactNode;
   children: ReactNode;
   description?: ReactNode;
   itemId?: string;
@@ -25,6 +27,7 @@ export type SettingsGroupProps = {
  */
 export function SettingsGroup({
   label,
+  actions,
   children,
   description,
   itemId,
@@ -40,7 +43,11 @@ export function SettingsGroup({
 
   return (
     <section className={cn('yuri-settings-group', className)} aria-label={ariaLabel}>
-      {label ? (
+      {actions ? (
+        <SettingsActionHeader actions={actions}>
+          {label ? <div className="yuri-settings-group-label" data-settings-label-script={labelScript}>{label}</div> : null}
+        </SettingsActionHeader>
+      ) : label ? (
         <div
           className="yuri-settings-group-label"
           data-settings-label-script={labelScript}

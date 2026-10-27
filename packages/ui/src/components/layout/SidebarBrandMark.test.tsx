@@ -7,6 +7,7 @@ import { loadBrandDisplayFont } from '@/lib/fontLoader';
 import { SidebarBrandMark } from './SidebarBrandMark';
 
 vi.mock('@/lib/fontLoader', () => ({ loadBrandDisplayFont: vi.fn(async () => {}) }));
+vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -50,7 +51,7 @@ describe('sidebar brand selection and persisted defaults', () => {
     expect(container.querySelector('[aria-label]')?.getAttribute('aria-label')).toBe('My Studio');
     expect(container.querySelectorAll('[style*="mask"]')).toHaveLength(0);
     expect(container.querySelector('[role="img"]')?.textContent).toBe('MyStudio');
-    expect(loadBrandDisplayFont).not.toHaveBeenCalled();
+    expect(loadBrandDisplayFont).toHaveBeenCalledTimes(1);
 
     act(() => useSidebarBrandStore.getState().setSidebarBrandName(' Yuri '));
     expect(container.querySelectorAll('[style*="mask"]')).toHaveLength(1);

@@ -1492,14 +1492,14 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
               title={t('mobile.sessions.empty.noProjectsTitle')}
               description={t('mobile.sessions.empty.noProjectsDescription')}
               action={
-                <button
+                <Button
                   type="button"
-                  className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 typography-ui-label text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  size="lg"
                   onClick={() => setDirectoryDialogOpen(true)}
                 >
                   <Icon name="folder-add" className="size-4" />
                   {t('sessions.sidebar.header.actions.addProject')}
-                </button>
+                </Button>
               }
             />
           ) : hasNoMatches ? (

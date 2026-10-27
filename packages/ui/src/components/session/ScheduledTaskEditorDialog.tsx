@@ -1894,9 +1894,7 @@ export function ScheduledTaskEditorDialog(props: {
             <Button
               key="save"
               type="button"
-              variant="mobileGlass"
               size="mobileIcon"
-              className="text-primary"
               onClick={handleSubmit}
               disabled={saving}
               aria-label={saving

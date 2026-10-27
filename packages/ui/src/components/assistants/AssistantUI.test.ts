@@ -57,12 +57,10 @@ describe('Assistant UI product contract', () => {
     expect(settingsView).toContain('<AssistantsSettingsSidebar onItemSelect={opts.onItemSelect} />');
     expect(settingsView).toContain('onItemDeleted={isMobile ? handleMobileSplitItemDeleted : undefined}');
     expect(metadata.slice(metadata.indexOf("slug: 'assistants'"), metadata.indexOf("slug: 'behavior'"))).toContain("kind: 'split'");
-    expect(settings).toContain('<SettingsToggleRow');
-    expect(settings).toContain('itemId="assistants.instance-enabled"');
-    expect(settings).toContain('setAssistantsEnabled(enabled, snapshot.revision)');
+    expect(settings).not.toContain('assistants.instance-enabled');
+    expect(settings).not.toContain('setAssistantsEnabled');
     expect(settings).not.toContain('settings.page.assistants.title');
-    expect(settings).toContain('description={(');
-    expect(settings.indexOf('itemId="assistants.instance-enabled"')).toBeLessThan(settings.indexOf('AssistantsSettingsPage'));
+    expect(settings).toContain('yuri-settings-group-description');
     expect(settings).toContain('useProjectsStore((state) => state.projects)');
     expect(settings).toContain("patchDraft('workspacePath', null)");
     expect(settings).toContain("patchDraft('workspacePath', project.path)");
@@ -538,8 +536,9 @@ describe('Assistant UI product contract', () => {
     expect(promptComposer).toContain("data-chat-input=\"true\"");
     expect(promptComposer).toContain('isIMECompositionEvent');
     expect(surface).toContain("borderRadius: 'var(--radius-xl)'");
-    expect(surface).toContain("backgroundColor: 'var(--surface-subtle)'");
-    expect(surface).toContain('focus-within:ring-primary/50');
+    expect(surface).toContain('bg-[color-mix(in_srgb,var(--surface-background),var(--surface-foreground)_8%)]');
+    expect(surface).toContain('border border-[color-mix(in_srgb,var(--interactive-border)_50%,transparent)] dark:border-transparent');
+    expect(surface).not.toContain('focus-within:ring');
     expect(conversation).toContain("borderRadius: '1.5rem'");
     expect(conversation).toContain('layout="inline"');
     expect(promptComposer).toContain("layout = 'stacked'");

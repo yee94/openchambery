@@ -60,6 +60,7 @@ import type { GitHubAuthStatus } from '@/lib/api/types';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { DesktopHostSwitcherDialog } from '@/components/desktop/DesktopHostSwitcher';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
+import { Button } from '@/components/ui/button';
 import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { resolveServicesPanelIntent } from '@/components/layout/servicesPanelIntent';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
@@ -379,13 +380,13 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
                     </div>
                   </div>
                   {remoteUpdateInfo?.available ? (
-                    <button
+                    <Button
                       type="button"
-                      className="shrink-0 rounded-md bg-[var(--primary-base)] px-3 py-1.5 typography-ui-label font-medium text-[var(--primary-foreground)] hover:opacity-90"
+                      size="sm"
                       onClick={onOpenRemoteUpdate}
                     >
                       {t('header.services.remoteUpdate.actions.open')}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               </div>

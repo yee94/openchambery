@@ -175,6 +175,7 @@ export function GlobalConfigPage() {
       <div className="yuri-settings-page-content mx-auto w-full max-w-4xl p-3 sm:p-6 sm:pt-8">
         <SettingsGroup
           itemId="global-config.editor"
+          actions={target ? <Button onClick={handleSave} disabled={isLoading || isSaving || content === savedContent} size="sm" aria-busy={isSaving}>{isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}</Button> : undefined}
           label={t('settings.globalConfig.title')}
           description={t('settings.globalConfig.description')}
           cardClassName="p-3"
@@ -215,9 +216,6 @@ export function GlobalConfigPage() {
                       />
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
-                      <Button onClick={handleSave} disabled={isLoading || isSaving || content === savedContent} size="sm">
-                        {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
-                      </Button>
                       {target !== 'opencode' && <p className="typography-meta text-muted-foreground">{t('settings.globalConfig.restartHint')}</p>}
                     </div>
                   </>

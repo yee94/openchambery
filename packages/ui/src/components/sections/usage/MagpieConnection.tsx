@@ -39,7 +39,7 @@ export function MagpieConnection() {
       if (identity === getRuntimeTransportIdentity()) setError(true);
     } finally { setSaving(false); }
   });
-  return <SettingsGroup label="Magpie" itemId="usage.magpie">
+  return <SettingsGroup label="Magpie" itemId="usage.magpie" actions={<Button size="sm" onClick={save} disabled={saving || draft === null || draft === saved} aria-busy={saving}>{t('settings.usage.magpie.save')}</Button>}>
     <div className="yuri-settings-group-row min-w-0">
       <p className="typography-meta text-muted-foreground break-words">
         {providerCount > 0 ? t('settings.usage.magpie.connected', { count: providerCount }) : t('settings.usage.magpie.description')}
@@ -52,7 +52,6 @@ export function MagpieConnection() {
           <label htmlFor={inputId} className="typography-meta text-muted-foreground">{t('settings.usage.magpie.url')}</label>
           <Input id={inputId} className="w-full min-w-0" value={draft ?? saved} disabled={saving}
             onChange={(event) => setDraft(event.target.value)} aria-label={t('settings.usage.magpie.url')} />
-          <Button className="self-end" size="sm" variant="outline" onClick={save} disabled={saving}>{t('settings.usage.magpie.save')}</Button>
           {error && <p role="alert" className="typography-meta text-[var(--status-error)]">{t('settings.usage.page.state.refreshFailedTitle')}</p>}
         </div>
       </details>

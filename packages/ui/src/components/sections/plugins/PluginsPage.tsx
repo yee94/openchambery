@@ -8,6 +8,7 @@ import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
+import { SettingsActionHeader } from '@/components/sections/shared/SettingsActionHeader';
 import { RegistryBanner } from './RegistryBanner';
 import { PluginStatusBanner } from './PluginStatusBanner';
 import { configEntryRuntimeTarget, pluginFileRuntimeTarget } from './pluginLoadState';
@@ -208,7 +209,10 @@ export const PluginsPage: React.FC = () => {
 
     return (
       <SettingsPageLayout>
-        <div>
+        <SettingsActionHeader actions={<>
+          <Button variant="outline" size="sm" onClick={handleEntryDiscard} disabled={!isDirty || isSaving}>{t('settings.plugins.page.action.discard')}</Button>
+          <Button size="sm" onClick={() => void handleEntrySave()} disabled={!isDirty || !optionsValid || isSaving} aria-busy={isSaving}>{t('settings.plugins.page.action.save')}</Button>
+        </>}>
           <div className="flex flex-wrap items-center gap-2 min-w-0">
             <h2 className="typography-ui-header font-semibold text-foreground break-all">
               {selectedEntry.spec}
@@ -222,7 +226,7 @@ export const PluginsPage: React.FC = () => {
               }
             />
           </div>
-        </div>
+        </SettingsActionHeader>
 
         <PluginStatusBanner target={selectedEntryTarget} name={selectedEntry.spec} />
 
@@ -268,24 +272,6 @@ export const PluginsPage: React.FC = () => {
           </SettingsGroup>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => void handleEntrySave()}
-            disabled={!isDirty || !optionsValid || isSaving}
-          >
-            {t('settings.plugins.page.action.save')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleEntryDiscard}
-            disabled={!isDirty || isSaving}
-          >
-            {t('settings.plugins.page.action.discard')}
-          </Button>
-        </div>
       </SettingsPageLayout>
     );
   }
@@ -329,7 +315,10 @@ export const PluginsPage: React.FC = () => {
 
     return (
       <SettingsPageLayout>
-        <div>
+        <SettingsActionHeader actions={<>
+          <Button variant="outline" size="sm" onClick={handleFileDiscard} disabled={isSaving || isLoadingFile}>{t('settings.plugins.page.action.discard')}</Button>
+          <Button size="sm" onClick={() => void handleFileSave()} disabled={!isDirty || isSaving || isLoadingFile} aria-busy={isSaving}>{t('settings.plugins.page.action.save')}</Button>
+        </>}>
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <h2 className="typography-ui-header font-semibold text-foreground break-all">
               {selectedFile.fileName}
@@ -343,7 +332,7 @@ export const PluginsPage: React.FC = () => {
               }
             />
           </div>
-        </div>
+        </SettingsActionHeader>
 
         <PluginStatusBanner target={selectedFileTarget} name={selectedFile.fileName} />
 
@@ -364,24 +353,6 @@ export const PluginsPage: React.FC = () => {
           </SettingsGroup>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => void handleFileSave()}
-            disabled={!isDirty || isSaving || isLoadingFile}
-          >
-            {t('settings.plugins.page.action.save')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleFileDiscard}
-            disabled={isSaving || isLoadingFile}
-          >
-            {t('settings.plugins.page.action.discard')}
-          </Button>
-        </div>
       </SettingsPageLayout>
     );
   }

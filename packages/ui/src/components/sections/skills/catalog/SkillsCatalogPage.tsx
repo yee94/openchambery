@@ -224,18 +224,16 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
         )}
 
         {/* Source & Search */}
-        <div data-settings-item="skills.catalog.source">
           <SettingsGroup
+            itemId="skills.catalog.source"
             label={t('settings.skills.catalog.page.section.sourceRepository')}
-            cardClassName="p-3"
           >
-            <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2 py-1.5">
+            <div className="yuri-settings-group-row flex flex-wrap items-center gap-2">
               <Select
                 value={effectiveSelectedSourceId || ''}
                 onValueChange={(v) => setSelectedSource(v)}
               >
-                <SelectTrigger className="w-fit">
+                <SelectTrigger className="w-fit min-w-0 max-w-full" aria-label={t('settings.skills.catalog.page.section.sourceRepository')}>
                   <SelectValue placeholder={t('settings.skills.catalog.page.field.selectSourcePlaceholder')}>
                     {selectedSource?.label}
                   </SelectValue>
@@ -250,12 +248,12 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
               </Select>
 
               <Button
-                variant="outline"
-                size="xs"
-                className="!font-normal h-6 w-6 px-0"
+                variant="ghost"
+                size="icon"
                 onClick={() => void refreshCatalog()}
                 disabled={isRefreshing}
                 title={t('settings.skills.catalog.page.actions.refreshTitle')}
+                aria-label={t('settings.skills.catalog.page.actions.refreshTitle')}
               >
                 <Icon name="refresh" className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
               </Button>
@@ -263,11 +261,12 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
               {isCustomSource && (
                 <Button
                   variant="ghost"
-                  size="xs"
-                  className="!font-normal h-6 w-6 px-0 text-[var(--status-error)] hover:text-[var(--status-error)]"
+                  size="icon"
+                  className="text-[var(--status-error)] hover:text-[var(--status-error)]"
                   onClick={() => setIsRemoveCatalogDialogOpen(true)}
                   disabled={isRemovingCatalog}
                   title={t('settings.skills.catalog.page.actions.removeCatalogTitle')}
+                  aria-label={t('settings.skills.catalog.page.actions.removeCatalogTitle')}
                 >
                   <Icon name="delete-bin" className="h-3.5 w-3.5" />
                 </Button>
@@ -275,33 +274,15 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
 
               <Button
                 data-settings-item="skills.catalog.add-catalog"
-                size="xs"
-                className="!font-normal gap-1"
+                size="sm"
+                className="ml-auto"
                 onClick={() => setAddCatalogOpen(true)}
               >
                 <Icon name="add" className="h-3.5 w-3.5" /> {t('settings.skills.catalog.page.actions.addCatalog')}
               </Button>
             </div>
 
-            <div data-settings-item="skills.catalog.search">
-              <div className="relative">
-                <Icon name="search" className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t('settings.skills.catalog.shared.field.searchSkillsPlaceholder')}
-                  className="h-7 pl-8 w-full sm:w-64"
-                />
-              </div>
-              <span className="typography-meta text-muted-foreground mt-1 block">
-                {isLoadingCatalog
-                  ? t('settings.skills.catalog.page.loading.catalog')
-                  : t('settings.skills.catalog.page.foundCount', { count: filtered.length })}
-              </span>
-            </div>
-            </div>
           </SettingsGroup>
-        </div>
 
         {/* Error State */}
         {lastCatalogError && (
@@ -312,8 +293,25 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
         )}
 
         {/* Skills List */}
-        <div>
-          <div>
+        <div className="min-w-0 space-y-3">
+          <div data-settings-item="skills.catalog.search" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="relative min-w-0 flex-1 basis-48">
+              <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('settings.skills.catalog.shared.field.searchSkillsPlaceholder')}
+                aria-label={t('settings.skills.catalog.shared.field.searchSkillsPlaceholder')}
+                className="w-full pl-9"
+              />
+            </div>
+            <span className="typography-meta shrink-0 text-muted-foreground tabular-nums" role="status">
+              {isLoadingCatalog || isLoadingSource
+                ? t('settings.skills.catalog.page.loading.catalog')
+                : t('settings.skills.catalog.page.foundCount', { count: filtered.length })}
+            </span>
+          </div>
+          <SettingsGroup>
             {filtered.length === 0 && !isLoadingSource ? (
               <div className="py-8 text-center text-muted-foreground">
                 <p className="typography-body">{t('settings.skills.catalog.page.empty.noSkillsTitle')}</p>
@@ -325,17 +323,17 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                 <p className="typography-meta">{t('settings.skills.catalog.page.loading.skills')}</p>
               </div>
             ) : (
-              <div className="divide-y divide-[var(--surface-subtle)]">
+              <>
                 {filtered.map((item) => {
                   const installed = item.installed?.isInstalled;
                   const installedScope = item.installed?.scope;
 
                   return (
-                    <div key={`${item.sourceId}:${item.skillDir}`} className="py-2">
-                      <div className="flex items-start justify-between gap-4">
+                    <div key={`${item.sourceId}:${item.skillDir}`} className="yuri-settings-group-row">
+                      <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="typography-ui-label font-medium text-foreground truncate">{item.skillName}</span>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="typography-ui-label font-medium text-foreground [overflow-wrap:anywhere]">{item.skillName}</span>
                             {installed && (
                               <span className="typography-micro text-[var(--status-success)] bg-[var(--status-success)]/10 px-1.5 py-0.5 rounded flex-shrink-0">
                                 {t('settings.skills.catalog.page.badge.installed', { scope: installedScope || t('settings.skills.catalog.page.badge.unknown') })}
@@ -349,13 +347,13 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                           </div>
 
                           {item.description ? (
-                            <div className="typography-meta text-muted-foreground mt-0.5 line-clamp-2">{item.description}</div>
+                            <div className="typography-meta text-muted-foreground mt-1 line-clamp-2 max-w-prose [overflow-wrap:anywhere]">{item.description}</div>
                           ) : (
                             <div className="typography-meta text-muted-foreground/50 mt-0.5 italic">{t('settings.skills.catalog.shared.noDescription')}</div>
                           )}
 
                           {item.clawdhub && (
-                            <div className="typography-micro text-muted-foreground mt-1.5 flex items-center gap-3">
+                            <div className="typography-micro text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 [overflow-wrap:anywhere]">
                               {item.clawdhub.owner && (
                                 <span>{t('settings.skills.catalog.page.byOwnerPrefix')} <span className="font-medium text-foreground/80">{item.clawdhub.owner}</span></span>
                               )}
@@ -374,16 +372,15 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                           )}
 
                           {item.warnings?.length ? (
-                            <div className="typography-micro text-[var(--status-warning)] mt-1.5 bg-[var(--status-warning)]/10 px-2 py-1 rounded w-fit">
+                            <div className="typography-micro text-[var(--status-warning)] mt-1.5 bg-[var(--status-warning)]/10 px-2 py-1 rounded w-fit [overflow-wrap:anywhere]">
                               {item.warnings.join(' · ')}
                             </div>
                           ) : null}
                         </div>
 
                         <Button
-                          variant="outline"
-                          size="xs"
-                          className="!font-normal shrink-0"
+                          size="sm"
+                          className="shrink-0"
                           disabled={!item.installable}
                           onClick={() => {
                             setInstallItem(item);
@@ -396,9 +393,9 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                     </div>
                   );
                 })}
-              </div>
+              </>
             )}
-          </div>
+          </SettingsGroup>
 
           {isClawdHubSource && sourceQuery.hasNextPage && !isLoadingSource && filtered.length > 0 && (
             <div className="flex justify-center mt-2 px-2">

@@ -66,3 +66,21 @@ test('forwards a loading mark and clears it without leaving a count badge', asyn
   await act(async () => dockRoot.unmount());
   dockHost.remove();
 });
+
+test('forwards avatar identity and animation changes, then restores the default icon', async () => {
+  function Dock({ avatar }: { avatar: string | null }) {
+    useNativeIosTabBar({ visible: true, activeTab: 'assistant', tabs: [{ id: 'assistant', label: 'Agent', avatar }], ariaLabel: 'Navigation', onTabChange: () => undefined });
+    return null;
+  }
+  const dockHost = document.createElement('div');
+  const dockRoot = createRoot(dockHost);
+  document.body.append(dockHost);
+  plugin.present.mockClear();
+  for (const avatar of ['data:image/svg+xml,first', 'data:image/svg+xml,animated', 'data:image/svg+xml,second', null]) {
+    await act(async () => dockRoot.render(<Dock avatar={avatar} />));
+    expect(plugin.present.mock.calls.at(-1)?.[0].tabs[0].avatar).toBe(avatar);
+  }
+  expect(plugin.present).toHaveBeenCalledTimes(4);
+  await act(async () => dockRoot.unmount());
+  dockHost.remove();
+});

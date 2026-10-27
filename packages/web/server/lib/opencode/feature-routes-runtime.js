@@ -319,7 +319,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       },
       readModelPreferences: async () => {
         const settings = await readSettingsFromDiskStrict();
-        return { favoriteModels: settings.favoriteModels, recentModels: settings.recentModels };
+        return { defaultModel: settings.defaultModel, defaultVariant: settings.defaultVariant, favoriteModels: settings.favoriteModels, recentModels: settings.recentModels };
       },
       listScheduledTasks: (projectID) => projectConfigRuntime.listScheduledTasks(projectID),
       sessionIndexService,

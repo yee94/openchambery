@@ -13,6 +13,7 @@ import { useNotificationStore } from '@/sync/notification-store';
 import { useAllLiveSessions } from '@/sync/sync-context';
 import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
 import { AssistantNavigationUnreadBadge } from '@/components/assistants/AssistantUnreadBadge';
+import { AssistantNavigationIcon } from '@/components/assistants/AssistantNavigationIcon';
 import { AssistantNavigationActivity, ScheduledNavigationActivity } from './SidebarNavigationActivity';
 import { openAssistant } from '@/stores/useAssistantUIStore';
 import { useAlwaysVisibleSessionIds, useRunningSessionIds } from './sidebar/hooks/useAlwaysVisibleSessionIds';
@@ -2534,7 +2535,7 @@ export const SessionSidebar = React.memo(function SessionSidebar({
                 )}
                 onClick={handleOpenAssistants}
               >
-                <Icon name="ai-agent" className="size-4" />
+                <AssistantNavigationIcon className="size-4 shrink-0" />
                 <span className="truncate">{t("assistants.title")}</span>
                 <span className="ml-auto flex shrink-0 items-center gap-2">
                   <AssistantNavigationUnreadBadge />

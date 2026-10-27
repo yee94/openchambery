@@ -13,7 +13,7 @@ description: Use when creating or modifying Yuri UI components, styling, colors,
 - Use the sprite-based `Icon`; never import icons directly from `@remixicon/react`.
 - Apply hover tokens only to interactive elements.
 - Use status colors only for actual status/feedback.
-- Use selection tokens for selected state and primary tokens for primary actions.
+- Use selection tokens for selected state. Primary actions follow `packages/ui/src/components/ui/DOCUMENTATION.md#default-action-buttons`: shared `Button` default, solid neutral surface, ordinary foreground, neutral interaction states.
 
 ## Load References By Task
 
@@ -29,7 +29,7 @@ Load every matching reference before editing. Settings work must also load `sett
 
 1. Code display -> `syntax.*`
 2. Error/warning/success/info -> `status.*`
-3. Primary CTA -> `primary.*`
+3. Primary CTA -> shared `Button` default (neutral solid action contract)
 4. Hover/pressed/focus -> `interactive.*`
 5. Selected/active state -> `interactive.selection*`
 6. Background/text/border layer -> `surface.*` and semantic utility classes
@@ -43,7 +43,7 @@ Use `Button` from `packages/ui/src/components/ui/button.tsx`.
 | Variant | Use |
 |---|---|
 | `default` | Primary local action |
-| `outline` | Visible secondary action |
+| `outline` | Legacy action name; same borderless solid neutral recipe as default |
 | `secondary` | Soft secondary action |
 | `ghost` | Quiet row/toolbar action |
 | `destructive` | Destructive action |

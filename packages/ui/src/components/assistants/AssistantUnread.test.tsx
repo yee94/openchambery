@@ -8,6 +8,7 @@ vi.mock('@/queries/assistantQueries', () => ({
   markAssistantContactRead: state.mark,
   markAllAssistantsRead: state.all,
   useAssistantUnreadTotal: () => state.total,
+  useAssistantSnapshotQuery: () => ({ data: null }),
 }));
 vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => state.transport, getRuntimeGeneration: () => state.generation }));
 vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => state.native }));

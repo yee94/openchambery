@@ -168,7 +168,8 @@ class YuriTabBarPlugin: CAPPlugin, CAPBridgedPlugin, YuriTabBarViewDelegate {
                 selectedSymbol: pair.1,
                 badge: parseBadge(object["badge"]),
                 activity: parseActivity(object["activity"]),
-                activityLabel: parseActivityLabel(object["activityLabel"])
+                activityLabel: parseActivityLabel(object["activityLabel"]),
+                avatar: id == "assistant" ? object["avatar"] as? String : nil
             )
         }
     }

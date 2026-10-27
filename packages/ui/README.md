@@ -13,7 +13,10 @@ until persisted splash colors or the resolved runtime theme are available.
 
 ## Sidebar wordmark
 
-The default sidebar brand is `Yuri`. `SidebarBrandMark` renders the approved
+The default sidebar brand is `Yuri`. When the trimmed name is exactly `Yuri`,
+`SidebarBrandMark` pairs the wordmark with a 24px `YuriLogo` portrait, vertically
+centering both without the mixed-text baseline offset.
+`SidebarBrandMark` renders the approved
 sculpted SVG through `YuriWordmark` for each exact, whitespace-separated `Yuri`
 word, including mixed names such as `Yee Yuri`. Its width is cap-height-relative
 (2.44814cap = 626.723 / 256), matching the visible artwork to the bold

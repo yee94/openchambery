@@ -59,7 +59,7 @@ const openDb = () => {
 };
 
 const insert = (db, assistantID, {
-  role, text = '', parts, status = 'complete', fromAssistantID = null, fromAssistantName = null, turnID = null, messageID = null,
+  role, text = '', parts, status = 'complete', fromAssistantID = null, fromAssistantName = null, turnID = null, messageID = null, createdAt = Date.now(),
 }) => {
   const id = typeof messageID === 'string' && messageID ? messageID : crypto.randomUUID();
   const ordinal = nextContactOrdinal(db, assistantID);
@@ -69,14 +69,14 @@ const insert = (db, assistantID, {
     role,
     turnID: typeof turnID === 'string' && turnID ? turnID : id,
     bubbleIndex: 0,
-    createdAt: Date.now(),
+    createdAt,
     ordinal,
     status,
     parts: parts || (text ? [{ type: 'text', text }] : [{ type: 'text', text: '' }]),
     fromAssistantID,
     fromAssistantName,
   });
-  return { messageID: id, ordinal };
+  return { messageID: id, ordinal, createdAt };
 };
 
 describe('contact LLM history trim', () => {
@@ -503,6 +503,16 @@ describe('contact messages page keyset', () => {
 });
 
 describe('contact latest message preview', () => {
+  it('preserves message time through individual and batched snapshot previews', () => {
+    const db = openDb();
+    insert(db, 'sent', { role: 'user', text: 'sent now', createdAt: 3000 });
+    insert(db, 'received', { role: 'assistant', text: 'new reply', createdAt: 4000 });
+    expect(getLatestContactMessagePreview(db, 'sent')?.createdAt).toBe(3000);
+    const batch = getLatestContactMessagePreviews(db, ['sent', 'received']);
+    expect(batch.get('sent')?.createdAt).toBe(3000);
+    expect(batch.get('received')?.createdAt).toBe(4000);
+    db.close();
+  });
   it('returns null when the assistant has no contact rows', () => {
     const db = openDb();
     expect(getLatestContactMessagePreview(db, 'asst_empty')).toBeNull();

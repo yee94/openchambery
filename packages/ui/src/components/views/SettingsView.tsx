@@ -738,7 +738,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const prepareSettingsSearchTarget = React.useCallback(
     (result: SettingsSearchResult): string => {
       if (result.id.startsWith("assistants.")) {
-        if (result.id === "assistants.instance-enabled") return result.id;
         if (result.id === "assistants.default-share") {
           const assistantStore = useAssistantUIStore.getState();
           const assistants = readAssistantSnapshot()?.assistants ?? [];

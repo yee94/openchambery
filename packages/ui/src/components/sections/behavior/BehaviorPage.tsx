@@ -322,6 +322,7 @@ export const BehaviorPage: React.FC = () => {
 
         <SettingsGroup
           itemId="behavior.system-prompt"
+          actions={<Button onClick={handleSave} disabled={isSaving || !isPromptDirty || !promptReady} size="sm" aria-busy={isSaving}>{isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}</Button>}
           label={(
             <div className="flex items-center gap-1.5">
               <span>{t('settings.behavior.page.section.systemPrompt')}</span>
@@ -354,14 +355,6 @@ export const BehaviorPage: React.FC = () => {
               outerClassName="min-h-[160px] max-h-[70vh]"
               className="w-full font-mono typography-meta bg-transparent"
             />
-            <Button
-              onClick={handleSave}
-              disabled={isSaving || !isPromptDirty || !promptReady}
-              size="xs"
-              className="!font-normal"
-            >
-              {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
-            </Button>
           </div>
         </SettingsGroup>
 

@@ -3642,9 +3642,6 @@ button.yuri-mobile-worktree-label-trigger:active,
   min-height: min-content !important;
   max-height: min(70vh, 22rem);
   overflow: visible;
-  background: var(--surface-subtle) !important;
-  background-color: var(--surface-subtle) !important;
-  box-shadow: none !important;
   filter: none !important;
 }
 
@@ -3802,19 +3799,15 @@ button.yuri-mobile-worktree-label-trigger:active,
   bottom: var(--yuri-safe-area-bottom-visual, 0px);
   width: 80%;
   height: 2.75rem;
-  /* Keep overflow visible so --yuri-mobile-glass-shadow's outer drop can paint;
+  /* Keep overflow visible so the composer's outer drop can paint;
      the preview child still clips the single-line text. */
   overflow: visible;
-  border: 0;
+  border: 1px solid color-mix(in srgb, var(--interactive-border) 50%, transparent);
   border-radius: 1.5rem;
-  background: var(--yuri-mobile-glass-fill);
-  box-shadow: var(--yuri-mobile-glass-shadow);
-  -webkit-backdrop-filter:
-    blur(var(--yuri-mobile-glass-blur))
-    saturate(var(--yuri-mobile-glass-saturate));
-  backdrop-filter:
-    blur(var(--yuri-mobile-glass-blur))
-    saturate(var(--yuri-mobile-glass-saturate));
+  background: var(--surface-background);
+  box-shadow:
+    0 2px 6px -3px color-mix(in srgb, var(--surface-foreground) 4%, transparent),
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight);
   transform: translate3d(
     -50%,
     calc((1 - max(0, var(--yuri-mobile-composer-swap) * 2 - 1)) * 140%),
@@ -3823,6 +3816,16 @@ button.yuri-mobile-worktree-label-trigger:active,
   opacity: max(0, calc(var(--yuri-mobile-composer-swap) * 2 - 1));
   pointer-events: none;
   will-change: transform, opacity;
+}
+
+.dark .yuri-mobile-composer-compact-layer {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--surface-background), var(--surface-foreground) 8%);
+  box-shadow: none;
+}
+
+.dark .yuri-mobile-composer-compact-layer:is(:hover, :focus-within) {
+  background: color-mix(in srgb, var(--surface-background), var(--surface-foreground) 11%);
 }
 
 .yuri-mobile-composer-compact-preview {
@@ -3954,13 +3957,6 @@ button.yuri-mobile-worktree-label-trigger:active,
   .yuri-mobile-readonly-prompt-foot::after {
     content: none;
     display: none;
-  }
-
-  .yuri-mobile-composer-compact-layer {
-    background: var(--surface-elevated) !important;
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-    /* Keep the glass outer + top inset shadow; only drop the translucent fill. */
   }
 
   .yuri-mobile-readonly-prompt-surface {

@@ -7676,13 +7676,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     onSubmit={handlePrimaryAction}
                     data-mobile-composer-surface={isMobile ? 'true' : undefined}
                     expanded={isComposerExpanded}
-                    focusedTone={inputMode === 'shell' ? 'info' : 'primary'}
                     className={cn(
                         'relative z-10',
                         desktopDictationActive && '!ring-0 [&_textarea]:caret-transparent',
                         isDragging && "ring-2 ring-primary ring-offset-2",
                         // Ctrl+X leader pending: subtle selection ring while waiting for M/A/N/C.
-                        isLeaderKeyPending && "ring-1 ring-[var(--interactive-selection)] border-[var(--interactive-selection)]",
+                        isLeaderKeyPending && "ring-1 ring-[var(--interactive-selection)]",
                         isMobile && 'yuri-mobile-composer-surface',
                     )}
                     style={{

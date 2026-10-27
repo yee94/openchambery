@@ -107,6 +107,18 @@ dragging more than 6px, keyboard input,
 pointer cancellation or backgrounding cancels the pending hold. The timer rechecks
 editability and text selection before capture. The idle placeholder preserves the usual
 input instructions and appends mouse hold-to-talk guidance inline, without adding a line break or changing input height.
+The shared web composer uses a solid surface fill with a 1px border, lightly gray
+in light mode (50% interactive border) and transparent in dark mode.
+Border space stays reserved in both idle and focused states; ordinary focus adds no ring.
+In light mode the fill uses surface background with a restrained glass-style
+shadow: a short 2px/6px drop shadow at 4% foreground opacity and the shared glass
+top highlight, without an outer edge halo. Hover and focus leave the fill unchanged.
+In dark mode it mixes surface
+background with 8% surface foreground at rest and 11% on both hover and focus
+within, without a shadow. Focus never further intensifies hover.
+Color transitions take 150ms and respect reduced motion.
+Mobile web expanded composers inherit this shared material without CSS overrides;
+compact composers use the same light/dark fill, border and shadow recipe.
 The desktop dictation lifecycle uses `--voice-active-fill` for the 1px composer
 border without an additional focus ring, including microphone/connection initialization
 and finalization. Loading and listening share the active composer presentation,

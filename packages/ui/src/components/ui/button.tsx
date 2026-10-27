@@ -4,20 +4,12 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 import { Slot } from "@/components/ui/slot"
 
-// Flat tinted buttons: very pale tinted fill (a desaturated version of the
-// border tone) + saturated tinted border + saturated tinted text. No
-// elevation. Dark theme mixes into transparent over the surface so the tone
-// sits atop the dark background.
-const TINT_PRIMARY = [
-  "bg-[color-mix(in_srgb,var(--primary-base)_10%,var(--background))]",
-  "text-[var(--primary-base)]",
-  "border border-[color-mix(in_srgb,var(--primary-base)_12%,transparent)]",
-  "hover:bg-[color-mix(in_srgb,var(--primary-base)_16%,var(--background))]",
-  "active:bg-[color-mix(in_srgb,var(--primary-base)_22%,var(--background))]",
-  "dark:bg-[color-mix(in_srgb,var(--primary-base)_16%,transparent)]",
-  "dark:border-[color-mix(in_srgb,var(--primary-base)_20%,transparent)]",
-  "dark:hover:bg-[color-mix(in_srgb,var(--primary-base)_22%,transparent)]",
-  "dark:active:bg-[color-mix(in_srgb,var(--primary-base)_30%,transparent)]",
+// Primary actions use an opaque neutral plate in both light and dark themes.
+const SOLID_PRIMARY = [
+  "bg-[var(--surface-muted)] text-foreground border-0 shadow-none",
+  "hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--surface-muted))]",
+  "active:bg-[color-mix(in_srgb,var(--foreground)_12%,var(--surface-muted))]",
+  "focus-visible:border-transparent focus-visible:ring-foreground/20",
 ].join(" ")
 
 const TINT_DESTRUCTIVE = [
@@ -44,30 +36,21 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: TINT_PRIMARY,
+        default: SOLID_PRIMARY,
         destructive: cn(
           TINT_DESTRUCTIVE,
           "focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
         ),
-        neutral:
-          "bg-interactive-hover text-foreground border border-border/60 hover:bg-interactive-active",
-        outline:
-          "bg-[var(--surface-elevated)] text-foreground border border-border/60 hover:bg-interactive-hover hover:text-foreground",
+        neutral: SOLID_PRIMARY,
+        outline: SOLID_PRIMARY,
         mobileGlass:
           "yuri-mobile-floating-action text-foreground hover:brightness-105 active:bg-interactive-active focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]",
-        // Flat chip for "one-of-N" toggles. Unselected: hairline border + hover
-        // fill. Selected (aria-pressed): same tinted palette as the default
-        // button (pale primary fill + primary text + soft primary border).
+        // Borderless neutral toggles distinguish selection through fill strength.
         chip: cn(
-          "border border-border/60 bg-transparent text-foreground hover:bg-interactive-hover hover:text-foreground",
-          "aria-pressed:bg-[color-mix(in_srgb,var(--primary-base)_10%,var(--background))]",
-          "aria-pressed:text-[var(--primary-base)]",
-          "aria-pressed:border-[color-mix(in_srgb,var(--primary-base)_12%,transparent)]",
-          "aria-pressed:hover:bg-[color-mix(in_srgb,var(--primary-base)_16%,var(--background))]",
-          "aria-pressed:hover:text-[var(--primary-base)]",
-          "dark:aria-pressed:bg-[color-mix(in_srgb,var(--primary-base)_16%,transparent)]",
-          "dark:aria-pressed:border-[color-mix(in_srgb,var(--primary-base)_20%,transparent)]",
-          "dark:aria-pressed:hover:bg-[color-mix(in_srgb,var(--primary-base)_22%,transparent)]",
+          SOLID_PRIMARY,
+          "aria-pressed:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--surface-muted))]",
+          "aria-pressed:hover:bg-[color-mix(in_srgb,var(--foreground)_8%,var(--surface-muted))]",
+          "aria-pressed:active:bg-[color-mix(in_srgb,var(--foreground)_10%,var(--surface-muted))]",
         ),
         secondary:
           "bg-interactive-hover text-foreground hover:bg-interactive-active",

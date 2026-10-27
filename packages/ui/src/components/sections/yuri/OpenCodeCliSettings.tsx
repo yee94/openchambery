@@ -98,6 +98,7 @@ export const OpenCodeCliSettings: React.FC = () => {
 
   return (
     <SettingsGroup
+      actions={<Button type="button" size="sm" onClick={handleSaveAndReload} disabled={isLoading || isSaving} aria-busy={isSaving}>{isSaving ? t('settings.common.actions.saving') : t('settings.yuri.opencodeCli.actions.saveAndReload')}</Button>}
       label={(
         <div className="flex items-center gap-2">
           <span>
@@ -168,17 +169,6 @@ export const OpenCodeCliSettings: React.FC = () => {
           </div>
         </label>
 
-        <div className="yuri-settings-group-row flex justify-end">
-          <Button
-            type="button"
-            size="xs"
-            onClick={handleSaveAndReload}
-            disabled={isLoading || isSaving}
-            className="shrink-0 !font-normal"
-          >
-            {isSaving ? t('settings.common.actions.saving') : t('settings.yuri.opencodeCli.actions.saveAndReload')}
-          </Button>
-        </div>
     </SettingsGroup>
   );
 };

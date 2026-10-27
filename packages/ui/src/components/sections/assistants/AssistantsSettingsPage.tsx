@@ -11,7 +11,8 @@ import type { IconName } from '@/components/icon/icons';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { SettingsSidebarItem } from '@/components/sections/shared/SettingsSidebarItem';
 import { SettingsSidebarLayout } from '@/components/sections/shared/SettingsSidebarLayout';
-import { SettingsField, SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
+import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
+import { SettingsActionHeader } from '@/components/sections/shared/SettingsActionHeader';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -27,7 +28,6 @@ import {
   createAssistant,
   deleteAssistant,
   fetchAssistantCapability,
-  setAssistantsEnabled,
   updateAssistant,
   useAssistantCapabilityQuery,
   useAssistantContactMessagesQuery,
@@ -46,7 +46,7 @@ import { useScopedProvidersQuery } from '@/queries/agentQueries';
 const MANAGED_WORKSPACE_VALUE = '__managed_workspace__';
 const LEGACY_WORKSPACE_VALUE = '__current_workspace__';
 
-const DEFAULT_ASSISTANT_NAME = '默认助理';
+const DEFAULT_ASSISTANT_NAME = 'Yuri';
 
 /** Resolves an initial provider and model for default assistant creation. */
 const resolveDefaultAssistantModel = (): { providerID: string; modelID: string; variant?: string } | null => {
@@ -342,32 +342,6 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
     onItemSelect?.();
   });
 
-  const toggleEnabled = useEvent(async (enabled: boolean) => {
-    if (!snapshot) return;
-    try {
-      await setAssistantsEnabled(enabled, snapshot.revision);
-      // When enabling with an empty catalog, seed the default assistant so the user
-      // immediately has an active contact ready without manual onboarding.
-      if (enabled && snapshot.assistants.length === 0) {
-        const defaultModel = resolveDefaultAssistantModel();
-        if (defaultModel) {
-          const created = await createAssistant({
-            enabled: true,
-            name: DEFAULT_ASSISTANT_NAME,
-            defaultPrompt: '',
-            workspacePath: null,
-            providerID: defaultModel.providerID,
-            modelID: defaultModel.modelID,
-            variant: defaultModel.variant,
-          });
-          selectSettingsAssistant(created.id);
-        }
-      }
-    } catch {
-      toast.error(t('assistants.settings.toast.toggleFailed'));
-    }
-  });
-
   if (capabilityQuery.isSuccess && !capabilityQuery.data.supported) return null;
 
   return (
@@ -375,31 +349,19 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
       variant="background"
       header={
         <>
-          <SettingsGroup
-            description={(
-              <>
-                {t('assistants.settings.description')}
-                <a
-                  href="#assistant-share-welcome"
-                  className="underline underline-offset-2"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    setWelcomeOpen(true);
-                  }}
-                >
-                  {t('assistants.settings.descriptionLearnMore')}
-                </a>
-              </>
-            )}
-          >
-            <SettingsToggleRow
-              itemId="assistants.instance-enabled"
-              checked={snapshot?.enabled ?? false}
-              onChange={toggleEnabled}
-              label={t('assistants.settings.instanceEnabled')}
-              ariaLabel={t('assistants.settings.instanceEnabled')}
-            />
-          </SettingsGroup>
+          <p className="yuri-settings-group-description text-muted-foreground">
+            {t('assistants.settings.description')}
+            <a
+              href="#assistant-share-welcome"
+              className="underline underline-offset-2"
+              onClick={(event) => {
+                event.preventDefault();
+                setWelcomeOpen(true);
+              }}
+            >
+              {t('assistants.settings.descriptionLearnMore')}
+            </a>
+          </p>
           <AssistantShareWelcome open={welcomeOpen} onOpenChange={setWelcomeOpen} />
         </>
       }
@@ -600,7 +562,11 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
 
         {selectedID ? (
           <>
-            <div className="mb-4 flex items-center gap-3">
+            <SettingsActionHeader actions={<>
+              {selected ? <Button variant="ghost" size="icon" onClick={remove} disabled={saving} className="text-[var(--status-error)]" aria-label={t('assistants.settings.delete')} title={t('assistants.settings.delete')}><Icon name="delete-bin" className="size-4" /></Button> : null}
+              {!saveActionContainer ? <Button size="sm" onClick={save} disabled={saving} aria-busy={saving}>{saving ? <Icon name="loader-4" className="size-4 animate-spin" /> : null}{t('assistants.settings.save')}</Button> : null}
+            </>}>
+              <div className="flex min-w-0 items-center gap-3">
               <div className="group/avatar relative shrink-0">
                 <AgentAvatar kind="assistant" name={draft.avatarSeed ?? selected?.id ?? 'new'} size={40} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} shape="rounded" className="rounded-[0.5rem]" />
                 <Button variant="link" size="icon" disabled={saving} className="absolute inset-0 h-full w-full p-0 text-muted-foreground opacity-0 transition-opacity hover:no-underline group-hover/avatar:opacity-100 group-focus-within/avatar:opacity-100 [@media(hover:none)]:opacity-100" aria-label={t('assistants.settings.randomAvatar')} title={t('assistants.settings.randomAvatar')} onClick={() => patchDraft('avatarSeed', crypto.randomUUID())}>
@@ -612,11 +578,11 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               <div className="min-w-0 flex-1">
                 <h2 className="truncate typography-ui-header font-semibold text-foreground">{selected ? selectedPresentation?.displayName : t('assistants.settings.create')}</h2>
                 {draft.providerID && draft.modelID ? (
-                  <p className="mt-0.5 typography-micro leading-none text-muted-foreground/70">{`${draft.providerID}/${draft.modelID}`}</p>
+                  <p className="mt-0.5 truncate typography-micro leading-none text-muted-foreground/70">{`${draft.providerID}/${draft.modelID}`}</p>
                 ) : null}
               </div>
-              {selected ? <Button variant="ghost" size="sm" onClick={remove} disabled={saving} className="text-[var(--status-error)]"><Icon name="delete-bin" className="size-4" />{t('assistants.settings.delete')}</Button> : null}
-            </div>
+              </div>
+            </SettingsActionHeader>
 
             <SettingsGroup>
                 <SettingsRow itemId="assistants.name" label={t('assistants.settings.name')}>
@@ -688,13 +654,11 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
             {selected ? <AssistantScheduledTasksGroup assistantID={selected.id} /> : null}
 
             {saveActionContainer ? createPortal(
-              <Button type="button" variant="mobileGlass" size="mobileIcon" className="text-primary" onClick={save} disabled={saving} aria-label={t('assistants.settings.save')} aria-busy={saving}>
+              <Button type="button" size="mobileIcon" onClick={save} disabled={saving} aria-label={t('assistants.settings.save')} aria-busy={saving}>
                 <Icon name={saving ? 'loader-4' : 'check'} className={saving ? 'size-5 animate-spin motion-reduce:animate-none' : 'size-5'} />
               </Button>,
               saveActionContainer,
-            ) : <div className="flex justify-end">
-              <Button onClick={save} disabled={saving}>{saving ? <Icon name="loader-4" className="size-4 animate-spin" /> : null}{t('assistants.settings.save')}</Button>
-            </div>}
+            ) : null}
           </>
         ) : (
           <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">

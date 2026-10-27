@@ -17,7 +17,7 @@ const createStorage = () => {
 
 describe('pairing relay preference', () => {
   test('uses the official Relay as the product default', () => {
-    expect(DEFAULT_PAIRING_RELAY_URL).toBe('wss://relay.yuri.dev/ws');
+    expect(DEFAULT_PAIRING_RELAY_URL).toBe('wss://relay.openchamber.dev/ws');
   });
 
   test('accepts websocket endpoints and rejects non-websocket URLs', () => {

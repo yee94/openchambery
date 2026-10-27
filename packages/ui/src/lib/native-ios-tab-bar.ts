@@ -21,6 +21,8 @@ export type NativeIosTabBarAppearance = 'dark' | 'light';
 export type NativeIosTabBarItem = {
   id: NativeIosTabId;
   label: string;
+  /** Locally generated SVG data URI; null restores the system symbol. */
+  avatar?: string | null;
   badge?: string | null;
   /** Spinner badge. UI sends this only when `badge` is null. */
   activity?: boolean;
@@ -112,6 +114,7 @@ export const nativeTabBarStatesEqual = (
   && left.tabs.every((tab, index) => (
     tab.id === right.tabs[index]?.id
     && tab.label === right.tabs[index]?.label
+    && (tab.avatar ?? null) === (right.tabs[index]?.avatar ?? null)
     && tab.badge === right.tabs[index]?.badge
     && (tab.activity === true) === (right.tabs[index]?.activity === true)
     && (tab.activity === true ? (tab.activityLabel ?? null) : null) === (right.tabs[index]?.activity === true ? (right.tabs[index]?.activityLabel ?? null) : null)

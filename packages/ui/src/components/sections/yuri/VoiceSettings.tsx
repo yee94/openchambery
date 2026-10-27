@@ -767,7 +767,7 @@ const VoiceSettingsContent = ({ settings }: { settings: SpeechSettings }) => {
 
             {/* Playback (read messages aloud) */}
             <div data-settings-item="voice.playback">
-                <SettingsGroup label={t('settings.voice.page.section.playbackAndSummary')}>
+                <SettingsGroup label={t('settings.voice.page.section.playbackAndSummary')} actions={<Button size="sm" disabled={tts.saving} aria-busy={tts.saving} onClick={() => { if (!tts.saving) void tts.save(); }}>{t('settings.voice.volcengine.save')}</Button>}>
 
                     <SettingsRow label={t('settings.voice.page.field.messageReadAloudButton')}>
                         <Checkbox checked={showMessageTTSButtons} onChange={setShowMessageTTSButtons} ariaLabel={t('settings.voice.page.field.messageReadAloudButtonAria')} />
@@ -1094,15 +1094,12 @@ const VoiceSettingsContent = ({ settings }: { settings: SpeechSettings }) => {
                             </SettingsRow>
                         </>
                     )}
-                    <div className="yuri-settings-group-row flex justify-end">
-                        <Button size="sm" aria-busy={tts.saving} onClick={() => { if (!tts.saving) void tts.save(); }}>{t('settings.voice.volcengine.save')}</Button>
-                    </div>
                 </SettingsGroup>
             </div>
 
             {/* Speech Recognition */}
             <div data-settings-item="voice.speech-recognition">
-                    <SettingsGroup label={t('settings.voice.page.section.speechRecognition')}>
+                    <SettingsGroup label={t('settings.voice.page.section.speechRecognition')} actions={<Button size="sm" disabled={asr.saving} aria-busy={asr.saving} onClick={() => { if (!asr.saving) void asr.save(); }}>{t('settings.voice.volcengine.save')}</Button>}>
                         <SettingsRow label={t('settings.voice.page.field.enableVoiceInput')}>
                             <Checkbox checked={dictationEnabled} onChange={setDictationEnabled} ariaLabel={t('settings.voice.page.field.enableVoiceInputAria')} />
                         </SettingsRow>
@@ -1230,9 +1227,6 @@ const VoiceSettingsContent = ({ settings }: { settings: SpeechSettings }) => {
                         )}
 
                         </>)}
-                        <div className="yuri-settings-group-row flex justify-end">
-                            <Button size="sm" aria-busy={asr.saving} onClick={() => { if (!asr.saving) void asr.save(); }}>{t('settings.voice.volcengine.save')}</Button>
-                        </div>
                     </SettingsGroup>
             </div>
 

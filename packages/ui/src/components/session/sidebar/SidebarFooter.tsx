@@ -79,9 +79,8 @@ export function SidebarFooter({
           <TooltipTrigger asChild>
             <Button
               type="button"
-              variant="ghost"
               size="icon"
-              className="ml-auto size-6 rounded-full [corner-shape:round] supports-[corner-shape:squircle]:rounded-full border border-[var(--primary-base)] bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] hover:text-[var(--primary-foreground)] active:bg-[var(--primary-hover)]"
+              className="ml-auto size-6 rounded-full [corner-shape:round] supports-[corner-shape:squircle]:rounded-full"
               onClick={onOpenUpdate}
               aria-label={t("sessions.sidebar.footer.actions.update")}
             >

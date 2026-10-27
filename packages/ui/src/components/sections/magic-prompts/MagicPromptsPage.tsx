@@ -328,6 +328,10 @@ export const MagicPromptsPage: React.FC = () => {
           return (
             <SettingsGroup
               key={block.id}
+              actions={<>
+                <Button variant="outline" size="sm" onClick={() => void resetPrompt(block.id)} disabled={!isOverridden || saving || resetting}>{resetting ? t('settings.magicPrompts.page.actions.resetting') : t('settings.magicPrompts.page.actions.resetToDefault')}</Button>
+                <Button size="sm" onClick={() => void savePrompt(block.id)} disabled={!isDirty || saving || resetting || isInvalidEmptyVisiblePrompt} aria-busy={saving}>{saving ? t('settings.common.actions.saving') : t('settings.magicPrompts.page.actions.save')}</Button>
+              </>}
               label={(
                 <div className="flex flex-wrap items-center gap-2">
                   <span>{tUnsafe(block.titleKey)}</span>
@@ -371,27 +375,6 @@ export const MagicPromptsPage: React.FC = () => {
                         ? t('settings.magicPrompts.page.status.usingSavedOverride')
                         : t('settings.magicPrompts.page.status.usingBuiltinDefault')}
                   </span>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        void resetPrompt(block.id);
-                      }}
-                      disabled={!isOverridden || saving || resetting}
-                    >
-                      {resetting ? t('settings.magicPrompts.page.actions.resetting') : t('settings.magicPrompts.page.actions.resetToDefault')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        void savePrompt(block.id);
-                      }}
-                      disabled={!isDirty || saving || resetting || isInvalidEmptyVisiblePrompt}
-                    >
-                      {saving ? t('settings.common.actions.saving') : t('settings.magicPrompts.page.actions.save')}
-                    </Button>
-                  </div>
                 </div>
               </div>
             </SettingsGroup>

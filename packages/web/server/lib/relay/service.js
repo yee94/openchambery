@@ -23,7 +23,7 @@ import express from 'express';
 import { createRelayIdentityRuntime } from './identity.js';
 import { startRelayHost } from './host-client.js';
 
-export const DEFAULT_RELAY_URL = '';
+export const DEFAULT_RELAY_URL = 'wss://relay.openchamber.dev/ws';
 
 export const RELAY_HOST_DESKTOP_ONLY_MESSAGE =
   'Relay host is only available in the Yuri desktop app or an SSH-managed remote server';

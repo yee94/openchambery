@@ -554,7 +554,7 @@ export function MobileProjectsHome({
                 <Button
                   type="button"
                   size="mobileIcon"
-                  className="yuri-mobile-round-control border-transparent bg-[var(--primary-base)] text-[var(--primary-foreground)] shadow-[0_10px_22px_color-mix(in_srgb,var(--primary-base)_22%,transparent)] hover:bg-[var(--primary-hover)] dark:bg-[var(--primary-base)] dark:hover:bg-[var(--primary-hover)]"
+                  className="yuri-mobile-round-control"
                   aria-label={t('mobile.projects.menu.label')}
                 >
                   <Icon

@@ -37,11 +37,11 @@ Each family may expose foreground, background, and border variants.
 
 ### Primary
 
-- `primary.base`: primary CTA
-- `primary.hover`: primary hover
-- `primary.foreground`: content on primary
+- `primary.base`: theme accent for non-button emphasis
+- `primary.hover`: accent interaction tone
+- `primary.foreground`: content on accent surfaces
 
-Primary means “act”; selection means “currently active.” Do not use primary to mark ordinary selected tabs or rows.
+Primary action buttons follow `packages/ui/src/components/ui/DOCUMENTATION.md#default-action-buttons` and use the shared neutral default, including hover, press, and focus. Theme accent tokens are not a button recipe. Use selection tokens for ordinary selected tabs or rows.
 
 ### Chat
 

@@ -76,7 +76,7 @@ import {
   sanitizeAssignFileParts,
 } from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
-import { loadConnectedCatalog } from '../llm/catalog.js';
+import { loadConnectedCatalog, parseModelRef } from '../llm/catalog.js';
 import { buildAssistantSessionMetadata } from '../session-metadata/system-session.js';
 
 const require = createRequire(import.meta.url);
@@ -301,9 +301,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const shareColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_share_operation')").all().map((column) => column.name));
   if (!shareColumns.has('attempt')) db.exec('ALTER TABLE assistant_share_operation ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0');
   if (!shareColumns.has('lease_expires_at')) db.exec('ALTER TABLE assistant_share_operation ADD COLUMN lease_expires_at INTEGER');
-  // Fresh installs keep Assistants off until Settings flips the global switch.
-  // INSERT OR IGNORE preserves any already-persisted enabled value.
-  db.prepare("INSERT OR IGNORE INTO assistant_meta(key,value) VALUES ('enabled','0')").run(); db.prepare("INSERT OR IGNORE INTO assistant_meta(key,value) VALUES ('revision','0')").run();
+  // Assistants are always available; retain the field for older clients.
+  db.prepare("INSERT OR IGNORE INTO assistant_meta(key,value) VALUES ('enabled','1')").run(); db.prepare("INSERT OR IGNORE INTO assistant_meta(key,value) VALUES ('revision','0')").run();
   const now = () => Math.trunc(clock());
   const revision = () => Number(db.prepare("SELECT value FROM assistant_meta WHERE key='revision'").get().value);
   const bump = () => {
@@ -312,7 +311,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (typeof onRevisionTip === 'function') queueMicrotask(() => { if (!closed) onRevisionTip({ revision: value, occurredAt: now() }); });
     return value;
   };
-  const enabled = () => db.prepare("SELECT value FROM assistant_meta WHERE key='enabled'").get().value === '1';
+  const enabled = () => true;
+  db.transaction(() => {
+    if (db.prepare("UPDATE assistant_meta SET value='1' WHERE key='enabled' AND value!='1'").run().changes) bump();
+  })();
   const assistant = (assistantID) => db.prepare('SELECT * FROM assistant_v2 WHERE assistant_id=?').get(assistantID);
   const editable = (assistantID) => { const row = assistant(assistantID); if (!row || row.tombstone_at) fail('not_found'); return row; };
   const active = (assistantID) => { const row = editable(assistantID); if (!enabled() || !row.enabled) fail('assistant_disabled'); return row; };
@@ -1314,7 +1316,52 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       }
     }
   };
-  const createAssistant = (input) => { const allowed = new Set(['enabled', 'name', 'avatarSeed', 'defaultPrompt', 'providerID', 'modelID', 'agent', 'variant', 'mode', 'workspacePath']); if (!plainObject(input) || Object.keys(input).some((key) => !allowed.has(key))) fail('validation_error'); const mode = input.mode == null ? 'continuous' : input.mode === 'stateless' || input.mode === 'continuous' ? input.mode : fail('validation_error'); const assistantID = id(); const workspacePath = input.workspacePath == null ? null : workspace(input.workspacePath, assistantID); effectiveWorkspace({ assistant_id: assistantID, workspace_path: workspacePath }); const at = now(); db.exec('BEGIN IMMEDIATE'); try { if (Number(db.prepare('SELECT COUNT(*) AS count FROM assistant_v2 WHERE tombstone_at IS NULL').get().count) >= 100) fail('assistant_limit'); db.prepare('INSERT INTO assistant_v2 (assistant_id,revision,enabled,name,default_prompt,workspace_path,provider_id,model_id,agent,variant,mode,current_session_id,session_generation,created_at,updated_at,tombstone_at,avatar_seed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(assistantID, 1, input.enabled === false ? 0 : 1, string(input.name, 256, true), input.defaultPrompt ? string(input.defaultPrompt, 200_000) : '', workspacePath, string(input.providerID, 256, true), string(input.modelID, 256, true), input.agent == null ? null : string(input.agent, 256), input.variant == null ? null : string(input.variant, 256), mode, null, 0, at, at, null, input.avatarSeed === undefined ? null : string(input.avatarSeed, 256, true)); bump(); db.exec('COMMIT'); return output(assistant(assistantID)); } catch (error) { db.exec('ROLLBACK'); throw error; } };
+  const createAssistant = (input, { onlyIfEmpty = false } = {}) => {
+    const allowed = new Set(['enabled', 'name', 'avatarSeed', 'defaultPrompt', 'providerID', 'modelID', 'agent', 'variant', 'mode', 'workspacePath']);
+    if (!plainObject(input) || Object.keys(input).some((key) => !allowed.has(key))) fail('validation_error');
+    const mode = input.mode == null ? 'continuous' : input.mode === 'stateless' || input.mode === 'continuous' ? input.mode : fail('validation_error');
+    const assistantID = id();
+    const workspacePath = input.workspacePath == null ? null : workspace(input.workspacePath, assistantID);
+    const at = now();
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      // Tombstones count: explicitly deleting the last contact must not recreate it.
+      if (onlyIfEmpty && db.prepare('SELECT 1 FROM assistant_v2 LIMIT 1').get()) {
+        db.exec('COMMIT');
+        return null;
+      }
+      if (Number(db.prepare('SELECT COUNT(*) AS count FROM assistant_v2 WHERE tombstone_at IS NULL').get().count) >= 100) fail('assistant_limit');
+      effectiveWorkspace({ assistant_id: assistantID, workspace_path: workspacePath });
+      db.prepare('INSERT INTO assistant_v2 (assistant_id,revision,enabled,name,default_prompt,workspace_path,provider_id,model_id,agent,variant,mode,current_session_id,session_generation,created_at,updated_at,tombstone_at,avatar_seed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(assistantID, 1, input.enabled === false ? 0 : 1, string(input.name, 256, true), input.defaultPrompt ? string(input.defaultPrompt, 200_000) : '', workspacePath, string(input.providerID, 256, true), string(input.modelID, 256, true), input.agent == null ? null : string(input.agent, 256), input.variant == null ? null : string(input.variant, 256), mode, null, 0, at, at, null, input.avatarSeed === undefined ? null : string(input.avatarSeed, 256, true));
+      bump();
+      db.exec('COMMIT');
+      return output(assistant(assistantID));
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  };
+
+  let defaultAssistantFlight = null;
+  const ensureDefaultAssistant = () => {
+    if (closed || db.prepare('SELECT 1 FROM assistant_v2 LIMIT 1').get()) return Promise.resolve();
+    if (defaultAssistantFlight) return defaultAssistantFlight;
+    defaultAssistantFlight = (async () => {
+      const [catalog, preferences] = await Promise.all([
+        loadConnectedCatalog(client(), { timeoutMs: CONTACT_CATALOG_DEADLINE_MS }),
+        awaitWithDeadline(Promise.resolve().then(() => readModelPreferences()), CONTACT_CATALOG_DEADLINE_MS, 'upstream_error'),
+      ]);
+      if (closed) return;
+      const [modelRef, inlineVariant] = typeof preferences?.defaultModel === 'string' ? preferences.defaultModel.split('#') : [];
+      const preferred = parseModelRef(modelRef);
+      const preferredModel = preferred && catalog.models.find((model) => model.providerID === preferred.providerID && model.modelID === preferred.modelID);
+      const model = preferredModel || catalog.models[0];
+      // No provider configured yet: retry on the next snapshot after configuration.
+      if (!model) return;
+      createAssistant({
+        name: 'Yuri', providerID: model.providerID, modelID: model.modelID,
+        ...(preferredModel && (inlineVariant || preferences?.defaultVariant) ? { variant: inlineVariant || preferences.defaultVariant } : {}),
+      }, { onlyIfEmpty: true });
+    })().finally(() => { defaultAssistantFlight = null; });
+    return defaultAssistantFlight;
+  };
   const updateAssistant = async (assistantID, input) => { const row = editable(assistantID); const allowed = new Set(['expectedRevision', 'enabled', 'name', 'avatarSeed', 'defaultPrompt', 'providerID', 'modelID', 'agent', 'variant', 'mode', 'workspacePath']); if (!plainObject(input) || !Number.isInteger(input.expectedRevision) || Object.keys(input).some((key) => !allowed.has(key))) fail('validation_error'); const next = { avatarSeed: input.avatarSeed === undefined ? row.avatar_seed : string(input.avatarSeed, 256, true), enabled: input.enabled === undefined ? row.enabled : input.enabled ? 1 : 0, name: input.name === undefined ? row.name : string(input.name, 256, true), prompt: input.defaultPrompt === undefined ? row.default_prompt : string(input.defaultPrompt, 200_000), provider: input.providerID === undefined ? row.provider_id : string(input.providerID, 256, true), model: input.modelID === undefined ? row.model_id : string(input.modelID, 256, true), agent: input.agent === undefined ? row.agent : input.agent === null ? null : string(input.agent, 256), variant: input.variant === undefined ? row.variant : input.variant === null ? null : string(input.variant, 256), mode: input.mode === undefined ? (row.mode === 'stateless' ? 'stateless' : 'continuous') : input.mode === 'continuous' || input.mode === 'stateless' ? input.mode : fail('validation_error'), workspacePath: input.workspacePath === undefined ? row.workspace_path : input.workspacePath == null ? null : workspace(input.workspacePath, assistantID) }; const nextRow = { ...row, workspace_path: next.workspacePath, name: next.name }; effectiveWorkspace(nextRow); const workspaceChanged = next.workspacePath !== row.workspace_path; if (workspaceChanged && row.current_session_id) archiveSession(assistantID, row.current_session_id); const created = workspaceChanged ? await createSession(nextRow) : null; const result = db.prepare('UPDATE assistant_v2 SET avatar_seed=?,enabled=?,name=?,default_prompt=?,provider_id=?,model_id=?,agent=?,variant=?,mode=?,workspace_path=?,current_session_id=?,session_generation=session_generation+?,revision=revision+1,updated_at=? WHERE assistant_id=? AND revision=? AND session_generation=? AND tombstone_at IS NULL').run(next.avatarSeed, next.enabled, next.name, next.prompt, next.provider, next.model, next.agent, next.variant, next.mode, next.workspacePath, created?.sessionID ?? row.current_session_id, workspaceChanged ? 1 : 0, now(), assistantID, input.expectedRevision, row.session_generation); if (!result.changes) fail('revision_conflict'); bump(); return output(assistant(assistantID)); };
   const compact = async (assistantID, input) => { const row = active(assistantID); if (!plainObject(input) || input.sessionID !== row.current_session_id || input.sessionGeneration !== row.session_generation || !row.current_session_id) fail('revision_conflict'); let target = row; let result = await invokeSession(() => client().session.compact({ sessionID: target.current_session_id })); if (isMissing(result)) { await restoreOnce(row, row.current_session_id, row.session_generation); target = active(assistantID); result = await invokeSession(() => client().session.compact({ sessionID: target.current_session_id })); } if (result?.error || (result?.data !== true && result?.id == null && result?.type !== 'compaction')) fail('upstream_error'); return { binding: binding(active(assistantID)), summarized: true }; };
   const sendWithConfig = async ({ row, sessionID, directory, config, parts, messageID, restore }) => {
@@ -3727,7 +3774,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       )),
     };
   };
-  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId(), sharingAvailable: false, archiveMetadataAvailable: typeof archiveSessionHost === 'function', sessionMetadataAvailable: false }), snapshot, createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => {
+  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId(), sharingAvailable: false, archiveMetadataAvailable: typeof archiveSessionHost === 'function', sessionMetadataAvailable: false }), snapshot, ensureDefaultAssistant, createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); return { enabled: true, revision: revision() }; }, removeAssistant: (assistantID, expectedRevision) => {
     db.exec('BEGIN IMMEDIATE');
     try {
       const result = db.prepare('UPDATE assistant_v2 SET tombstone_at=?,revision=revision+1,updated_at=? WHERE assistant_id=? AND revision=? AND tombstone_at IS NULL').run(now(), now(), assistantID, expectedRevision);

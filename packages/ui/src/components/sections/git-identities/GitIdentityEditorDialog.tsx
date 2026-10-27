@@ -1,4 +1,5 @@
 import React from 'react';
+import { SettingsActionHeader } from '@/components/sections/shared/SettingsActionHeader';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -219,6 +220,10 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <SettingsActionHeader className="pr-8" actions={!isGlobalProfile ? <>
+            {!isNewProfile ? <Button variant="ghost" size="icon" onClick={() => setIsDeleteDialogOpen(true)} disabled={isSaving} aria-label={t('settings.common.actions.delete')} title={t('settings.common.actions.delete')} className="text-[var(--status-error)]"><Icon name="delete-bin" className="size-4" /></Button> : null}
+            <Button size="sm" onClick={handleSave} disabled={isSaving} aria-busy={isSaving}>{isSaving ? t('settings.common.actions.saving') : isNewProfile ? t('settings.gitIdentities.editor.actions.create') : t('settings.gitIdentities.editor.actions.save')}</Button>
+          </> : null}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>
@@ -229,6 +234,8 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
                 : t('settings.gitIdentities.editor.description.editProfile')}
             </DialogDescription>
           </DialogHeader>
+
+          </SettingsActionHeader>
 
           <div className="space-y-5 py-2">
             {/* Profile Display */}
@@ -461,24 +468,9 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
           </div>
 
           <DialogFooter className="gap-2">
-            {!isGlobalProfile && !isNewProfile && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsDeleteDialogOpen(true)}
-                className="text-[var(--status-error)] hover:text-[var(--status-error)] border-[var(--status-error)]/30 hover:bg-[var(--status-error)]/10 mr-auto"
-              >
-                <Icon name="delete-bin" className="w-3.5 h-3.5 mr-1" /> {t('settings.common.actions.delete')}
-              </Button>
-            )}
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="text-foreground hover:bg-interactive-hover hover:text-foreground">
               {isGlobalProfile ? t('settings.gitIdentities.editor.actions.close') : t('settings.common.actions.cancel')}
             </Button>
-            {!isGlobalProfile && (
-              <Button size="sm" onClick={handleSave} disabled={isSaving}>
-                {isSaving ? t('settings.common.actions.saving') : isNewProfile ? t('settings.gitIdentities.editor.actions.create') : t('settings.gitIdentities.editor.actions.save')}
-              </Button>
-            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

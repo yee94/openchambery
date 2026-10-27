@@ -6,6 +6,13 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 
 ## Runtime Model
 
+The Assistant dock icon accepts the UI-owned optional `avatar` SVG data URI.
+It follows the newest enabled contact and uses the same working animation as
+desktop/Android/hosted mobile. iOS renders the local image in a noninteractive
+28.75pt transparent WebKit surface centered on the unchanged 23pt system icon slot
+to compensate for the artwork's transparent margins; clearing restores the symbol.
+This native dock addition requires a native rebuild; older shells ignore it.
+
 ### Yuri native identity migration (shell API 2)
 
 This is a new installation, not an OTA-only rename. `YuriOTA.shellApiVersion`

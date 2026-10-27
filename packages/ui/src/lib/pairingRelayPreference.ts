@@ -1,5 +1,5 @@
 import '@/lib/brand-storage-bootstrap';
-export const DEFAULT_PAIRING_RELAY_URL = 'wss://relay.yuri.dev/ws';
+export const DEFAULT_PAIRING_RELAY_URL = 'wss://relay.openchamber.dev/ws';
 
 const PAIRING_RELAY_URL_STORAGE_KEY = 'yuri.pairing.relayUrl.v1';
 

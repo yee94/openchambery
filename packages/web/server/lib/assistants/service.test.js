@@ -93,9 +93,8 @@ const createV2Client = (overrides = {}) => {
     ...(config ? { config } : {}),
   };
 };
-// Behavioral tests enable the global switch after boot; pass enabled:false to assert the fresh-install default.
 const setup = (directory = root(), client = {}, options = {}) => {
-  const { enabled = true, ...serviceOptions } = options;
+  const serviceOptions = options;
   const service = createAssistantsService({
     dbPath: path.join(directory, 'assistants.sqlite'),
     dataDir: directory,
@@ -106,10 +105,6 @@ const setup = (directory = root(), client = {}, options = {}) => {
     runContactTurn: serviceOptions.runContactTurn ?? (async ({ userText }) => ({ text: `reply:${userText}`, bubbles: [`reply:${userText}`] })),
     ...serviceOptions,
   });
-  if (enabled) {
-    const snapshot = service.snapshot();
-    if (!snapshot.enabled) service.setEnabled({ enabled: true, expectedRevision: snapshot.revision });
-  }
   return service;
 };
 /** Wait for the async contact turn after 202 admission (not part of the HTTP body). */
@@ -705,6 +700,7 @@ describe('assistants service', () => {
     });
     expect(typeof afterUser.messageID).toBe('string');
     expect(Number.isFinite(afterUser.ordinal)).toBe(true);
+    expect(Number.isFinite(afterUser.createdAt)).toBe(true);
 
     const updated = await service.updateAssistant(created.id, {
       expectedRevision: service.snapshot().assistants[0].revision,
@@ -1537,11 +1533,64 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('defaults the global Assistants switch to off and preserves a persisted on value', async () => {
-    const fresh = setup(root(), {}, { enabled: false }); expect(await fresh.capability()).toMatchObject({ supported: true, enabled: false, revision: 0 }); expect(fresh.snapshot()).toMatchObject({ enabled: false, revision: 0 }); expect(fresh.setEnabled({ enabled: true, expectedRevision: 0 })).toMatchObject({ enabled: true, revision: 1 }); fresh.close();
+  it('always enables Assistants and migrates the old disabled flag without discarding contacts', async () => {
+    const fresh = setup(); expect(await fresh.capability()).toMatchObject({ supported: true, enabled: true, revision: 0 }); expect(fresh.snapshot()).toMatchObject({ enabled: true, revision: 0 }); expect(fresh.setEnabled({ enabled: false, expectedRevision: 0 })).toMatchObject({ enabled: true, revision: 0 }); fresh.close();
     const directory = root(); const Database = require('better-sqlite3'); const db = new Database(path.join(directory, 'assistants.sqlite'));
-    db.exec('CREATE TABLE assistant_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)'); db.prepare("INSERT INTO assistant_meta VALUES ('enabled','1')").run(); db.prepare("INSERT INTO assistant_meta VALUES ('revision','3')").run(); db.prepare("INSERT INTO assistant_meta VALUES ('schema_version','8')").run(); db.close();
-    const persisted = setup(directory, {}, { enabled: false }); expect(await persisted.capability()).toMatchObject({ supported: true, enabled: true, revision: 3 }); expect(persisted.snapshot()).toMatchObject({ enabled: true, revision: 3 }); persisted.close();
+    db.exec('CREATE TABLE assistant_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)'); db.prepare("INSERT INTO assistant_meta VALUES ('enabled','0')").run(); db.prepare("INSERT INTO assistant_meta VALUES ('revision','3')").run(); db.prepare("INSERT INTO assistant_meta VALUES ('schema_version','8')").run(); db.close();
+    const persisted = setup(directory); expect(await persisted.capability()).toMatchObject({ supported: true, enabled: true, revision: 4 });
+    const saved = persisted.createAssistant(assistantInput); persisted.close();
+    const reopened = setup(directory);
+    await reopened.ensureDefaultAssistant();
+    expect(reopened.snapshot().assistants.map(item => item.id)).toEqual([saved.id]);
+    expect(reopened.snapshot().revision).toBe(5);
+    reopened.close();
+  });
+
+  it('seeds one default contact across concurrent clients and restarts, honoring the configured model', async () => {
+    const directory = root();
+    const modelList = vi.fn(async () => ({ data: [{ providerID: 'p', id: 'first' }, { providerID: 'p', id: 'preferred' }] }));
+    const client = { model: { list: modelList } };
+    const options = { readModelPreferences: async () => ({ defaultModel: 'p/preferred', defaultVariant: 'fast' }) };
+    const first = setup(directory, client, options);
+    const second = setup(directory, client, options);
+    await Promise.all([first.ensureDefaultAssistant(), first.ensureDefaultAssistant(), second.ensureDefaultAssistant()]);
+    expect(first.snapshot().assistants).toHaveLength(1);
+    const seeded = first.snapshot().assistants[0];
+    expect(seeded).toMatchObject({ name: 'Yuri', enabled: true, providerID: 'p', modelID: 'preferred', variant: 'fast', workspacePath: null, sessionID: null });
+    expect(modelList).toHaveBeenCalledTimes(2);
+    first.close(); second.close();
+    const reopened = setup(directory, client, options);
+    await reopened.ensureDefaultAssistant();
+    expect(reopened.snapshot().assistants[0].id).toBe(seeded.id);
+    reopened.removeAssistant(seeded.id, seeded.revision);
+    await reopened.ensureDefaultAssistant();
+    expect(reopened.snapshot().assistants).toEqual([]);
+    expect(modelList).toHaveBeenCalledTimes(2);
+    reopened.close();
+  });
+
+  it('retries default seeding after catalog failures or no configured model, without writing a bogus contact', async () => {
+    const modelList = vi.fn().mockRejectedValueOnce(new Error('catalog unavailable')).mockResolvedValueOnce({ data: [] }).mockResolvedValue({ data: [{ providerID: 'p', id: 'm' }] });
+    const service = setup(root(), { model: { list: modelList } });
+    await expect(service.ensureDefaultAssistant()).rejects.toThrow();
+    expect(service.snapshot().assistants).toEqual([]);
+    await service.ensureDefaultAssistant();
+    expect(service.snapshot().assistants).toEqual([]);
+    await service.ensureDefaultAssistant();
+    expect(service.snapshot().assistants).toHaveLength(1);
+    service.close();
+  });
+
+  it('does not seed over a contact created while the model catalog is loading', async () => {
+    let resolve;
+    const pending = new Promise(done => { resolve = done; });
+    const service = setup(root(), { model: { list: () => pending } });
+    const seed = service.ensureDefaultAssistant();
+    const created = service.createAssistant(assistantInput);
+    resolve({ data: [{ providerID: 'p', id: 'm' }] });
+    await seed;
+    expect(service.snapshot().assistants.map(item => item.id)).toEqual([created.id]);
+    service.close();
   });
 
   it('permits a disabled assistant to be re-enabled through an editable CAS patch', async () => {

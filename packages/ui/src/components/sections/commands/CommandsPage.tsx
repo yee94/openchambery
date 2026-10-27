@@ -20,6 +20,7 @@ import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
+import { SettingsActionHeader } from '@/components/sections/shared/SettingsActionHeader';
 
 export const CommandsPage: React.FC = () => {
   const { t } = useI18n();
@@ -193,8 +194,13 @@ export const CommandsPage: React.FC = () => {
       <div className="yuri-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <div className="min-w-0">
+        <SettingsActionHeader actions={
+          <Button onClick={handleSave} disabled={isSaving || !isDirty} size="sm" aria-busy={isSaving}>
+            {isSaving ? <Icon name="loader-4" className="size-4 animate-spin motion-reduce:animate-none" /> : null}
+            {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
+          </Button>
+        }>
+          <div className="min-w-0 flex-1">
             <h2 className="typography-ui-header font-semibold text-foreground truncate">
               {isNewCommand ? t('settings.commands.page.title.new') : `/${selectedCommandName}`}
             </h2>
@@ -202,7 +208,7 @@ export const CommandsPage: React.FC = () => {
               {isNewCommand ? t('settings.commands.page.subtitle.new') : t('settings.commands.page.subtitle.edit')}
             </p>
           </div>
-        </div>
+        </SettingsActionHeader>
 
         {/* Identity */}
         <SettingsGroup label={t('settings.commands.page.section.identity')}>
@@ -309,18 +315,6 @@ export const CommandsPage: React.FC = () => {
               className="w-full font-mono typography-meta min-h-[160px] max-h-[60vh] bg-transparent resize-y"
             />
         </SettingsField>
-
-        {/* Save action */}
-        <div className="px-2 py-1">
-          <Button
-            onClick={handleSave}
-            disabled={isSaving || !isDirty}
-            size="xs"
-            className="!font-normal"
-          >
-            {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
-          </Button>
-        </div>
 
       </div>
     </ScrollableOverlay>

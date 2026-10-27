@@ -120,7 +120,7 @@
   }
 
   .dark {
-    --voice-active-fill: var(--primary);
+    --voice-active-fill: #3BCC80;
     /* Cursor Dark fallback until the resolved theme variables are applied. */
     --background: #1a1a1a;
     --foreground: #ccccccdd;

@@ -1,4 +1,5 @@
 import React from 'react';
+import { SettingsActionHeader } from '@/components/sections/shared/SettingsActionHeader';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -509,7 +510,11 @@ const SkillsInstalledPage: React.FC = () => {
       <div className="yuri-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div>
+        <SettingsActionHeader actions={
+          <Button onClick={handleSave} disabled={isReadOnlySkill || isSaving || !hasSkillChanges} size="sm" aria-busy={isSaving}>
+            {isSaving ? t('settings.common.actions.saving') : isNewSkill ? t('settings.skills.page.actions.createSkill') : t('settings.common.actions.saveChanges')}
+          </Button>
+        }>
           <div className="min-w-0">
             <h2 className="typography-ui-header font-semibold text-foreground truncate flex items-center gap-2">
               {isNewSkill ? t('settings.skills.page.title.newSkill') : selectedSkillName}
@@ -522,7 +527,7 @@ const SkillsInstalledPage: React.FC = () => {
                 : t('settings.skills.page.subtitle.newSkill')}
             </p>
           </div>
-        </div>
+        </SettingsActionHeader>
 
         {/* Basic Information */}
         <div data-settings-item="skills.basic-information">
@@ -703,18 +708,6 @@ const SkillsInstalledPage: React.FC = () => {
           </SettingsGroup>
         </div>
 
-        {/* Save action */}
-        <div>
-          <Button
-            onClick={handleSave}
-            disabled={isReadOnlySkill || isSaving || !hasSkillChanges}
-            size="xs"
-            className="!font-normal"
-          >
-            {isSaving ? t('settings.common.actions.saving') : isNewSkill ? t('settings.skills.page.actions.createSkill') : t('settings.common.actions.saveChanges')}
-          </Button>
-        </div>
-
       </div>
 
       {/* Add/Edit File Dialog */}
@@ -754,12 +747,14 @@ const SkillsInstalledPage: React.FC = () => {
         if (!open) setEditingFilePath(null);
       }}>
         <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <SettingsActionHeader className="pr-8" actions={<Button size="sm" onClick={handleSaveFile} disabled={isLoadingFile || !hasFileChanges}>{editingFilePath ? t('settings.common.actions.saveChanges') : t('settings.skills.page.actions.createFile')}</Button>}>
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>{editingFilePath ? t('settings.skills.page.fileDialog.titleEdit') : t('settings.skills.page.fileDialog.titleAdd')}</DialogTitle>
             <DialogDescription>
               {editingFilePath ? t('settings.skills.page.fileDialog.descriptionEdit') : t('settings.skills.page.fileDialog.descriptionAdd')}
             </DialogDescription>
           </DialogHeader>
+          </SettingsActionHeader>
           {isLoadingFile ? (
             <div className="flex-1 flex items-center justify-center py-8">
               <span className="typography-meta text-muted-foreground">{t('settings.skills.page.loading.fileContent')}</span>
@@ -809,9 +804,6 @@ const SkillsInstalledPage: React.FC = () => {
               }}
             >
               {t('settings.common.actions.cancel')}
-            </Button>
-            <Button size="sm" onClick={handleSaveFile} disabled={isLoadingFile || !hasFileChanges}>
-              {editingFilePath ? t('settings.common.actions.saveChanges') : t('settings.skills.page.actions.createFile')}
             </Button>
           </DialogFooter>
         </DialogContent>

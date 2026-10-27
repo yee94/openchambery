@@ -1,4 +1,5 @@
 import UIKit
+import WebKit
 
 protocol YuriTabBarViewDelegate: AnyObject {
     func tabBarView(_ view: YuriTabBarView, didSelectTab id: String)
@@ -15,6 +16,7 @@ struct YuriTabBarItem {
     /// Spinner badge. UI sends this only when `badge` is nil.
     let activity: Bool
     let activityLabel: String?
+    let avatar: String?
 }
 
 /// Full-screen pass-through host for a chrome-only `UITabBarController`.
@@ -39,6 +41,8 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
 
     private var items: [YuriTabBarItem] = []
     private var activityBadges: [String: TabActivityBadge] = [:]
+    private var avatarView: WKWebView?
+    private var avatarURI: String?
     private var selectedId = ""
     private var applying = false
     private var lastReportedHeight: CGFloat = -1
@@ -63,6 +67,7 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         layoutActivityBadges()
+        layoutAvatar()
         reportHeightIfNeeded()
     }
 
@@ -119,6 +124,7 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
             selectedId = nextItems.first?.id ?? ""
         }
         applySelectedItem()
+        applyAvatar()
         applying = false
     }
 
@@ -204,6 +210,83 @@ final class YuriTabBarView: UIView, UITabBarControllerDelegate {
         addSubview(badge)
         activityBadges[id] = badge
         return badge
+    }
+
+    private func applyAvatar() {
+        guard let index = items.firstIndex(where: { $0.id == "assistant" }),
+              let controllers = chromeController.viewControllers, index < controllers.count else {
+            avatarView?.removeFromSuperview()
+            avatarView = nil
+            avatarURI = nil
+            return
+        }
+        let item = items[index]
+        let uri = item.avatar.flatMap { value in
+            value.hasPrefix("data:image/svg+xml;charset=utf-8,") ? value : nil
+        }
+        guard let tab = controllers[index].tabBarItem else { return }
+        guard let uri else {
+            avatarView?.removeFromSuperview()
+            avatarView = nil
+            avatarURI = nil
+            tab.image = UIImage(systemName: item.symbol)
+            tab.selectedImage = UIImage(systemName: item.selectedSymbol)
+            return
+        }
+        let blank = UIGraphicsImageRenderer(size: CGSize(width: 23, height: 23)).image { _ in }
+            .withRenderingMode(.alwaysOriginal)
+        tab.image = blank
+        tab.selectedImage = blank
+        if avatarView == nil {
+            let configuration = WKWebViewConfiguration()
+            configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+            let view = WKWebView(frame: .zero, configuration: configuration)
+            view.isOpaque = false
+            view.backgroundColor = .clear
+            view.scrollView.backgroundColor = .clear
+            view.scrollView.isScrollEnabled = false
+            view.isUserInteractionEnabled = false
+            view.isAccessibilityElement = false
+            addSubview(view)
+            avatarView = view
+        }
+        if avatarURI != uri {
+            avatarURI = uri
+            let escaped = uri.replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "\"", with: "&quot;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+            avatarView?.loadHTMLString("""
+                <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
+                <style>html,body{margin:0;background:transparent;overflow:hidden}img{display:block;width:28.75px;height:28.75px;border-radius:25%}</style>
+                <img src="\(escaped)">
+                """, baseURL: nil)
+        }
+        setNeedsLayout()
+    }
+
+    private func layoutAvatar() {
+        guard let avatarView, let index = items.firstIndex(where: { $0.id == "assistant" }) else { return }
+        let frames = tabButtonFrames()
+        guard index < frames.count else { return }
+        let frame = frames[index]
+        avatarView.frame = CGRect(x: frame.midX - 14.375, y: frame.minY + 0.125, width: 28.75, height: 28.75)
+        let buttons = chromeController.tabBar.subviews
+            .filter { String(describing: type(of: $0)).contains("TabBarButton") && !$0.frame.isEmpty }
+            .sorted { $0.frame.minX < $1.frame.minX }
+        if buttons.count == items.count, let image = iconImageView(in: buttons[index]) {
+            let iconFrame = image.convert(image.bounds, to: self)
+            avatarView.center = CGPoint(x: iconFrame.midX, y: iconFrame.midY)
+        }
+        for badge in activityBadges.values { bringSubviewToFront(badge) }
+    }
+
+    private func iconImageView(in view: UIView) -> UIImageView? {
+        if let image = view as? UIImageView, !image.bounds.isEmpty { return image }
+        for child in view.subviews {
+            if let image = iconImageView(in: child) { return image }
+        }
+        return nil
     }
 
     private func layoutActivityBadges() {

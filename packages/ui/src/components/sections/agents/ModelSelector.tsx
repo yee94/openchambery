@@ -173,7 +173,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         return (
             <button
                 type="button"
-                className="flex min-h-9 shrink-0 items-center gap-0.5 rounded-md px-1.5 typography-micro font-medium text-muted-foreground hover:bg-interactive-hover hover:text-foreground"
+                className="flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 typography-micro font-medium text-muted-foreground hover:bg-interactive-hover hover:text-foreground"
                 onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();

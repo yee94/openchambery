@@ -52,6 +52,7 @@ Release artifacts and repository links use `yee94/yuri`. Electron is the desktop
 - Never add or log secrets, bearer tokens, pairing credentials, or sensitive user data.
 - Keep repository artifacts free of personal domains, machine paths, and container-registry namespaces; use neutral examples and environment-driven deployment references.
 - Keep changes minimal and preserve unrelated worktree changes.
+- All primary action buttons follow `packages/ui/src/components/ui/DOCUMENTATION.md#default-action-buttons`; use the shared neutral solid `Button` default across desktop and mobile, including new features.
 - Enforce security and correctness in core/runtime logic, not only UI visibility or prompts.
 - Keep entrypoints and bridges thin; place domain logic in focused owning modules.
 - Update owning documentation when module ownership, contracts, or invariants change.

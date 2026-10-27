@@ -1,5 +1,6 @@
 import { useEvent } from '@reactuses/core';
 import { AssistantNavigationUnreadBadge } from '@/components/assistants/AssistantUnreadBadge';
+import { AssistantNavigationIcon } from '@/components/assistants/AssistantNavigationIcon';
 
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
@@ -100,8 +101,10 @@ export function MobileTabBar({ activeTab, onTabChange, className, tabMarks }: Mo
               ],
             )}
           >
-            <span className="relative inline-flex shrink-0 overflow-visible">
-              <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />
+            <span className="relative inline-flex size-[23px] shrink-0 items-center justify-center overflow-visible">
+              {tab.id === 'assistant'
+                ? <AssistantNavigationIcon className="size-[23px] shrink-0 [&[data-assistant-navigation-avatar]]:scale-125" />
+                : <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />}
               {markId ? (
                 <span
                   id={markId}
