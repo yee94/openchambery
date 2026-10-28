@@ -59,7 +59,7 @@ function showSessionUndoToast(args: {
           ? React.createElement(
               Button,
               {
-                variant: "secondary",
+                variant: "ghost",
                 size: "sm",
                 className: "session-mutation-undo-action overflow-hidden !h-[26px] !min-h-0 !min-w-0 shrink-0 !px-2 !text-[12px]",
                 onClick: () => {
@@ -73,7 +73,7 @@ function showSessionUndoToast(args: {
         React.createElement(
           Button,
           {
-            variant: "default",
+            variant: "ghost",
             size: "sm",
             className: "session-mutation-undo-action overflow-hidden !h-[26px] !min-h-0 !min-w-0 shrink-0 gap-1 !pl-2 !pr-1 !text-[12px]",
             onClick: () => {

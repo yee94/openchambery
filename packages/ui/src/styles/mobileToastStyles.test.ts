@@ -8,20 +8,20 @@ const mobileCss = readFileSync(join(here, 'mobile.css'), 'utf-8');
 const indexCss = readFileSync(join(here, '../index.css'), 'utf-8');
 const sonnerSource = readFileSync(join(here, '../components/ui/sonner.tsx'), 'utf-8');
 
-describe('mobile toast visual contract', () => {
-  test('keeps desktop elevation as the fallback and uses a quiet contact shadow on mobile', () => {
+describe('shared toast visual contract', () => {
+  test('uses shared glass elevation on desktop and mobile with a fallback before styles load', () => {
     expect(sonnerSource).toContain('var(--yuri-toast-shadow, inset 0 1px');
     expect(sonnerSource).toContain(
       'backgroundColor: "var(--yuri-toast-background, var(--surface-elevated))"',
     );
-    expect(mobileCss).toContain('--yuri-toast-shadow: 0 2px 8px -3px');
-    expect(mobileCss).toContain('--yuri-toast-background: var(--yuri-mobile-glass-fill);');
+    expect(mobileCss).toContain('inset 0 1px 0 var(--yuri-mobile-glass-highlight)');
+    expect(mobileCss).toContain('--yuri-toast-background: color-mix(in srgb, var(--yuri-mobile-glass-fill) 70%, transparent);');
     expect(mobileCss).toContain('--yuri-toast-background-rear-near: var(--yuri-mobile-glass-fill);');
     expect(mobileCss).toContain('--yuri-toast-background-rear-far: var(--yuri-mobile-glass-fill);');
     expect(mobileCss).toContain('--yuri-toast-shadow-rear-near: 0 3px 7px -5px');
     expect(mobileCss).toContain('--yuri-toast-shadow-rear-far: 0 2px 5px -4px');
     expect(mobileCss).toMatch(
-      /:root\.dark:is\([\s\S]*?--yuri-toast-shadow-rear-near:\s*0 3px 7px -5px[\s\S]*?\) 62%[\s\S]*?--yuri-toast-shadow-rear-far:\s*0 2px 5px -4px[\s\S]*?\) 48%/,
+      /:root\.dark\s*\{[\s\S]*?--yuri-toast-shadow-rear-near:\s*0 3px 7px -5px[\s\S]*?\) 62%[\s\S]*?--yuri-toast-shadow-rear-far:\s*0 2px 5px -4px[\s\S]*?\) 48%/,
     );
     expect(mobileCss).toMatch(
       /data-front="false"\]\[data-index="1"\][^{]*\{[\s\S]*?--yuri-toast-shadow: var\(--yuri-toast-shadow-rear-near\);[\s\S]*?background: var\(--yuri-toast-background-rear-near\) !important;/,
@@ -38,11 +38,14 @@ describe('mobile toast visual contract', () => {
     expect(rearStackChrome).not.toContain('inset');
   });
 
-  test('scopes compact material and quiet actions to mobile-capable web and native roots', () => {
-    expect(mobileCss).toContain(':root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)');
+  test('shares compact glass and ghost actions without excluding desktop roots', () => {
+    const start = mobileCss.indexOf('/* Shared desktop and mobile notifications');
+    const sharedToastCss = mobileCss.slice(start, mobileCss.indexOf('@media (prefers-reduced-transparency: reduce)', start));
+    expect(start).toBeGreaterThan(-1);
+    expect(sharedToastCss).not.toMatch(/device-mobile|device-tablet|mobile-pointer|desktop-runtime/);
     expect(sonnerSource).toContain('var(--yuri-toast-action-background,var(--surface-muted))');
-    expect(mobileCss).toContain('--yuri-toast-action-foreground: var(--muted-foreground);');
-    expect(mobileCss).toMatch(/data-sonner-toast\]\[data-styled="true"\][^{]*\{[\s\S]*?padding: 0\.25rem 0\.625rem !important;/);
+    expect(mobileCss).toContain('--yuri-toast-action-foreground: var(--foreground);');
+    expect(mobileCss).toMatch(/data-sonner-toast\]\[data-styled="true"\][^{]*\{[\s\S]*?padding: var\(--yuri-toast-padding-y\) var\(--yuri-toast-padding-x\) !important;/);
     expect(mobileCss).toMatch(
       /data-sonner-toaster\]\[data-x-position="center"\][^{]*\{[\s\S]*?transform: none !important;/,
     );
@@ -59,21 +62,16 @@ describe('mobile toast visual contract', () => {
     expect(mobileCss).toMatch(/prefers-reduced-transparency:[\s\S]*?\[data-sonner-toast\] \{[\s\S]*?background: var\(--surface-elevated, var\(--card\)\) !important;/);
   });
 
-  test('uses filled sprite icons on desktop and linear sprite icons on mobile', () => {
+  test('uses one consistent Lucide outline family including the loading indicator', () => {
     expect(sonnerSource).toContain('icons={TOAST_ICONS}');
-    for (const [desktopName, mobileName] of [
-      ['checkbox-circle-fill', 'check'],
-      ['information-fill', 'information'],
-      ['alert-fill', 'error-warning'],
-      ['error-warning-fill', 'alert'],
-    ]) {
+    for (const name of ['checkbox-circle', 'information', 'error-warning', 'close-circle']) {
       expect(sonnerSource).toContain(
-        `<Icon name="${desktopName}" className="yuri-toast-status-icon-desktop size-5" />\n      <Icon name="${mobileName}" className="yuri-toast-status-icon-mobile hidden size-[18px]" />`,
+        `<Icon name="${name}" weight="medium" className="yuri-toast-status-icon size-5" />`,
       );
     }
+    expect(sonnerSource).toContain('<Icon name="loader-4" weight="medium" className="yuri-toast-status-icon size-5 animate-spin motion-reduce:animate-none" />');
     expect(sonnerSource).not.toMatch(/<(?:svg|path)\b/);
-    expect(mobileCss).toMatch(/\.yuri-toast-status-icon-desktop\s*\{\s*display: none;/);
-    expect(mobileCss).toMatch(/\.yuri-toast-status-icon-mobile\s*\{\s*display: block;/);
+    expect(mobileCss).toMatch(/\.yuri-toast-status-icon\s*\{\s*display: block;/);
   });
 
   test('keeps the undo countdown ring out of the button SVG transform workaround', () => {

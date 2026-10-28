@@ -466,23 +466,6 @@
   corner-shape: round;
 }
 
-/* Root-tab create controls intentionally invert the neutral theme plate. */
-.yuri-mobile-home-create {
-  background: var(--surface-foreground);
-  color: var(--surface-background);
-  box-shadow: var(--yuri-mobile-glass-shadow);
-}
-
-@media (hover: hover) {
-  .yuri-mobile-home-create:hover {
-    background: color-mix(in srgb, var(--surface-foreground) 90%, var(--surface-background));
-  }
-}
-
-.yuri-mobile-home-create:active {
-  background: color-mix(in srgb, var(--surface-foreground) 80%, var(--surface-background));
-}
-
 .yuri-mobile-tab-page {
   display: flex;
   height: 100%;
@@ -1741,6 +1724,12 @@ button.yuri-mobile-worktree-label-trigger:active,
   color: var(--surface-foreground);
 }
 
+/* Inverse tint only: keep the shared glass reflection, blur and shadows. */
+.yuri-mobile-floating-action.yuri-mobile-inverse-action {
+  background-color: color-mix(in srgb, var(--surface-foreground) 68%, transparent);
+  color: var(--surface-background);
+}
+
 /* Shared lens reflection stays paint-only; the existing containers own blur. */
 .yuri-mobile-floating-surface,
 .yuri-mobile-glass-surface,
@@ -2097,8 +2086,8 @@ button.yuri-mobile-worktree-label-trigger:active,
   height: 0;
 }
 
-/* Mobile notifications retain the shared glass fill, blur and saturation,
-   with a quieter contact shadow owned by --yuri-toast-shadow.
+/* Shared desktop and mobile notifications use the same glass fill, with
+   edge highlights and a short contact shadow owned by --yuri-toast-shadow.
    sonner.tsx pins box-shadow from that token.
    Material applies to every toast, including custom undo toasts
    (data-styled=false). WebKit will not backdrop-filter through a
@@ -2107,16 +2096,19 @@ button.yuri-mobile-worktree-label-trigger:active,
    Swipe and removal keep Sonner's transforms. Collapsed rear cards keep
    the glass fill and a shorter contact shadow; Sonner's 5% scale /
    0.5rem offset separates the stack. */
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime) {
-  --yuri-toast-background: var(--yuri-mobile-glass-fill);
-  --yuri-toast-radius: 0.75rem;
-  --yuri-toast-padding-x: 0.625rem;
-  --yuri-toast-padding-y: 0.25rem;
-  --yuri-toast-gap: 0.5rem;
+:root {
+  --yuri-toast-background: color-mix(in srgb, var(--yuri-mobile-glass-fill) 70%, transparent);
+  --yuri-toast-radius: 0.875rem;
+  --yuri-toast-padding-x: 0.75rem;
+  --yuri-toast-padding-y: 0.375rem;
+  --yuri-toast-gap: 0.625rem;
   --yuri-toast-background-rear-near: var(--yuri-mobile-glass-fill);
   --yuri-toast-background-rear-far: var(--yuri-mobile-glass-fill);
-  --yuri-toast-shadow: 0 2px 8px -3px
-    color-mix(in srgb, var(--surface-foreground, var(--foreground)) 14%, transparent);
+  --yuri-toast-shadow:
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight),
+    inset 0 0 0 0.5px var(--yuri-mobile-glass-highlight),
+    0 1px 3px -1px color-mix(in srgb, var(--foreground) 12%, transparent),
+    0 6px 14px -8px color-mix(in srgb, var(--foreground) 20%, transparent);
   --yuri-toast-shadow-rear-near: 0 3px 7px -5px
     color-mix(
       in srgb,
@@ -2131,12 +2123,12 @@ button.yuri-mobile-worktree-label-trigger:active,
     );
 }
 
-:root.dark:is(.device-mobile, .device-tablet, .mobile-pointer):not(
-    .desktop-runtime
-  ) {
-  --yuri-toast-shadow: 0 2px 8px -3px
-    color-mix(in srgb, var(--surface-background, var(--background)) 40%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--foreground) 6%, transparent);
+:root.dark {
+  --yuri-toast-shadow:
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight),
+    inset 0 0 0 0.5px color-mix(in srgb, var(--yuri-mobile-glass-highlight) 60%, transparent),
+    0 1px 3px -1px color-mix(in srgb, var(--background) 40%, transparent),
+    0 6px 14px -8px color-mix(in srgb, var(--background) 60%, transparent);
   --yuri-toast-shadow-rear-near: 0 3px 7px -5px
     color-mix(
       in srgb,
@@ -2151,7 +2143,7 @@ button.yuri-mobile-worktree-label-trigger:active,
     );
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toaster] {
   --width: min(320px, calc(100vw - 2rem)) !important;
   --gap: 0.5rem !important;
@@ -2161,12 +2153,12 @@ button.yuri-mobile-worktree-label-trigger:active,
   --warning-bg: var(--yuri-toast-background);
   --info-bg: var(--yuri-toast-background);
   --yuri-toast-action-background: transparent;
-  --yuri-toast-action-foreground: var(--muted-foreground);
+  --yuri-toast-action-foreground: var(--foreground);
   --yuri-toast-cancel-background: transparent;
   --yuri-toast-cancel-foreground: var(--muted-foreground);
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toaster][data-x-position="center"] {
   left: 50% !important;
   width: min(var(--width), calc(100vw - 2rem)) !important;
@@ -2176,13 +2168,16 @@ button.yuri-mobile-worktree-label-trigger:active,
 
 /* Glass lives on the toast element itself, including custom/unstyled
    undo toasts. A child cannot frost through this element's transform. */
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast] {
   border: 0 !important;
   width: var(--width) !important;
-  border-radius: 0.75rem !important;
+  border-radius: var(--yuri-toast-radius) !important;
   background: var(--yuri-toast-background) !important;
   background-color: var(--yuri-toast-background) !important;
+  background-image: linear-gradient(155deg,
+    color-mix(in srgb, var(--yuri-mobile-glass-highlight) 24%, transparent),
+    transparent 55%) !important;
   -webkit-backdrop-filter:
     blur(var(--yuri-mobile-glass-blur))
     saturate(var(--yuri-mobile-glass-saturate));
@@ -2193,27 +2188,47 @@ button.yuri-mobile-worktree-label-trigger:active,
 
 /* translateY(0) is still a transform. Resting front cards drop it so
    backdrop-filter can sample the page. Swipe and removal opt back in. */
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast][data-mounted="true"][data-front="true"]:not(
     [data-swiping="true"]
   ):not([data-removed="true"]):not([data-swipe-out="true"]) {
   transform: none !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast][data-styled="true"] {
-  min-height: 2.5rem;
-  padding: 0.25rem 0.625rem !important;
-  gap: 0.5rem !important;
+  min-height: 3rem;
+  padding: var(--yuri-toast-padding-y) var(--yuri-toast-padding-x) !important;
+  gap: var(--yuri-toast-gap) !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
+  [data-sonner-toast][data-type="error"] {
+  --yuri-toast-status-color: var(--status-error);
+}
+
+:root
+  [data-sonner-toast][data-type="warning"] {
+  --yuri-toast-status-color: var(--status-warning);
+}
+
+:root
+  [data-sonner-toast][data-type="success"] {
+  --yuri-toast-status-color: var(--status-success);
+}
+
+:root
+  [data-sonner-toast][data-type="info"] {
+  --yuri-toast-status-color: var(--status-info);
+}
+
+:root
   [data-sonner-toast][data-expanded="false"][data-front="false"][data-index="1"] {
   --yuri-toast-shadow: var(--yuri-toast-shadow-rear-near);
   background: var(--yuri-toast-background-rear-near) !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast][data-expanded="false"][data-front="false"][data-index]:not(
     [data-index="1"]
   ) {
@@ -2221,32 +2236,32 @@ button.yuri-mobile-worktree-label-trigger:active,
   background: var(--yuri-toast-background-rear-far) !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-content] {
   min-width: 0;
   gap: 0.125rem;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-title],
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-description] {
   overflow-wrap: anywhere;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast] [data-title] {
-  font-size: 0.8125rem !important;
-  line-height: 1.125rem !important;
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
   font-weight: 500 !important;
-  max-height: 3.375rem;
+  max-height: 3.75rem;
   overflow-y: auto;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast] [data-description] {
   font-size: 0.75rem !important;
   line-height: 1rem !important;
@@ -2254,29 +2269,25 @@ button.yuri-mobile-worktree-label-trigger:active,
   overflow-y: auto;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-icon] {
-  width: 1rem;
-  height: 1rem;
+  width: 1.25rem;
+  height: 1.25rem;
   margin-inline: 0;
+  justify-content: center;
+  color: var(--yuri-toast-status-color, var(--muted-foreground)) !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
-  .yuri-toast-status-icon-desktop {
-  display: none;
-}
-
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
-  [data-sonner-toast]
-  .yuri-toast-status-icon-mobile {
+  .yuri-toast-status-icon {
   display: block;
-  width: 1rem;
-  height: 1rem;
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-button] {
   min-width: 36px;
@@ -2287,14 +2298,14 @@ button.yuri-mobile-worktree-label-trigger:active,
   border: 0 !important;
   border-radius: var(--radius-md) !important;
   background: transparent !important;
-  color: var(--muted-foreground) !important;
+  color: var(--yuri-toast-action-foreground) !important;
   font-size: 0.75rem !important;
   transition:
     background-color 160ms ease,
     color 160ms ease;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-cancel] {
   background: transparent !important;
@@ -2302,26 +2313,30 @@ button.yuri-mobile-worktree-label-trigger:active,
 }
 
 @media (hover: hover) {
-  :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  :root
     [data-sonner-toast]
     [data-button]:hover {
     background: var(--interactive-hover) !important;
   }
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-button]:active {
   background: var(--interactive-active) !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-button]:focus-visible {
   box-shadow: 0 0 0 2px var(--interactive-focus-ring) !important;
 }
 
 @media (prefers-reduced-transparency: reduce) {
+  .yuri-mobile-floating-action.yuri-mobile-inverse-action {
+    background: var(--surface-foreground);
+  }
+
   .yuri-mobile-glass-surface,
   .yuri-mobile-floating-surface,
   .yuri-mobile-floating-bottom-bar,
@@ -2351,9 +2366,7 @@ button.yuri-mobile-worktree-label-trigger:active,
     background: var(--surface-elevated);
   }
 
-  :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(
-      .desktop-runtime
-    )
+  :root
     [data-sonner-toast] {
     background: var(--surface-elevated, var(--card)) !important;
     -webkit-backdrop-filter: none;

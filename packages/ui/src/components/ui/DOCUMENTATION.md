@@ -18,17 +18,17 @@ overrides. Keyboard focus remains visible through the neutral focus ring.
 All new primary actions reuse `Button` with the default variant (including icon
 actions, dialog confirmations, imports, creation, saves, retries and updates).
 Consumer classes may adjust layout, but must not override its colors with accent
-tokens or recreate the old tinted fill/border/text recipe. Third-party toast
-action defaults use the same neutral surface and foreground. This applies to all
+tokens or recreate the old tinted fill/border/text recipe. Toast utility actions
+(copy, acknowledge, undo) use neutral ghost buttons rather than primary plates. This applies to all
 shared UI runtimes. `button.test.tsx` guards the primitive across sizes and states,
 scans default Button consumers for direct accent overrides, and rejects raw
 buttons with literal accent-filled classes. Indirect class variables, CSS and
 native controls still require visual review; the source scan is not a CSS engine.
 
-The Projects and Assistant root-header add buttons are an explicit exception:
-shared default `Button` with `mobileIcon` and `yuri-mobile-home-create` uses
-`surface.foreground` as its plate and `surface.background` for its icon, including
-neutral hover/press mixes. This inverts light/dark contrast without accent colors.
+The Projects and Assistant root-header add buttons use `Button mobileGlass`
+with `mobileIcon`, matching search/back controls. `yuri-mobile-inverse-action`
+only swaps the tint to translucent `surface.foreground` and the icon to
+`surface.background`; reflection, blur and shadows retain the shared recipe.
 
 # Mobile row swipe actions
 

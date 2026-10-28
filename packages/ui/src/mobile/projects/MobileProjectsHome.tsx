@@ -553,8 +553,9 @@ export function MobileProjectsHome({
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
+                  variant="mobileGlass"
                   size="mobileIcon"
-                  className="yuri-mobile-round-control yuri-mobile-home-create"
+                  className="yuri-mobile-inverse-action"
                   aria-label={t('mobile.projects.menu.label')}
                 >
                   <Icon

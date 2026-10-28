@@ -137,14 +137,8 @@ const notifyWithWebAPI = async (payload?: NotificationPayload): Promise<boolean>
     return false;
   }
 
-  if (Notification.permission === 'default') {
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-      console.warn('Notification permission not granted');
-      return false;
-    }
-  }
-
+  // Never prompt from the send path. Browser permission is requested only from
+  // Settings when the user explicitly enables notifications.
   if (Notification.permission !== 'granted') {
     console.warn('Notification permission not granted');
     return false;

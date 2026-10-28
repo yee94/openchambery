@@ -5,7 +5,7 @@ import { Toaster as Sonner } from "sonner"
 import type { ToasterProps } from "sonner"
 import { Icon } from "@/components/icon/Icon"
 
-// Mobile sets --yuri-toast-shadow to a quiet contact shadow. The pin must
+// Shared toast styles set --yuri-toast-shadow to the glass elevation. The pin must
 // read that token; a hardcoded shadow here would flatten custom toasts.
 const SHADOW_DARK =
   "var(--yuri-toast-shadow, inset 0 1px 0 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.36), 0 1px 1px -0.5px rgba(0,0,0,0.22), 0 3px 3px -1.5px rgba(0,0,0,0.20), 0 6px 6px -3px rgba(0,0,0,0.16))"
@@ -14,30 +14,11 @@ const SHADOW_LIGHT =
   "var(--yuri-toast-shadow, inset 0 1px 0 0 rgba(255,255,255,0.8), inset 0 0 0 1px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.10), 0 1px 2px -0.5px rgba(0,0,0,0.08), 0 4px 8px -2px rgba(0,0,0,0.08), 0 12px 20px -4px rgba(0,0,0,0.08))"
 
 const TOAST_ICONS = {
-  success: (
-    <>
-      <Icon name="checkbox-circle-fill" className="yuri-toast-status-icon-desktop size-5" />
-      <Icon name="check" className="yuri-toast-status-icon-mobile hidden size-[18px]" />
-    </>
-  ),
-  info: (
-    <>
-      <Icon name="information-fill" className="yuri-toast-status-icon-desktop size-5" />
-      <Icon name="information" className="yuri-toast-status-icon-mobile hidden size-[18px]" />
-    </>
-  ),
-  warning: (
-    <>
-      <Icon name="alert-fill" className="yuri-toast-status-icon-desktop size-5" />
-      <Icon name="error-warning" className="yuri-toast-status-icon-mobile hidden size-[18px]" />
-    </>
-  ),
-  error: (
-    <>
-      <Icon name="error-warning-fill" className="yuri-toast-status-icon-desktop size-5" />
-      <Icon name="alert" className="yuri-toast-status-icon-mobile hidden size-[18px]" />
-    </>
-  ),
+  success: <Icon name="checkbox-circle" weight="medium" className="yuri-toast-status-icon size-5" />,
+  info: <Icon name="information" weight="medium" className="yuri-toast-status-icon size-5" />,
+  warning: <Icon name="error-warning" weight="medium" className="yuri-toast-status-icon size-5" />,
+  error: <Icon name="close-circle" weight="medium" className="yuri-toast-status-icon size-5" />,
+  loading: <Icon name="loader-4" weight="medium" className="yuri-toast-status-icon size-5 animate-spin motion-reduce:animate-none" />,
 }
 
 function useIsDarkTheme() {
@@ -126,6 +107,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={isDark ? "dark" : "light"}
       className="toaster group"
+      position="bottom-left"
       closeButton={false}
       duration={3500}
       icons={TOAST_ICONS}
@@ -142,7 +124,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--yuri-toast-cancel-background,var(--interactive-hover))] !text-[var(--yuri-toast-cancel-foreground,var(--foreground))] hover:!bg-[var(--interactive-active)] !px-2 !py-1 typography-meta !font-medium transition-colors",
           closeButton:
             "!rounded-[var(--radius-md)] !bg-[var(--interactive-hover)] !text-foreground hover:!bg-[var(--interactive-active)]",
-          icon: "!shrink-0 !text-muted-foreground",
+          icon: "!shrink-0 !text-[var(--yuri-toast-status-color,var(--muted-foreground))]",
           success: "[&_[data-icon]]:!text-[var(--status-success)]",
           error: "[&_[data-icon]]:!text-[var(--status-error)]",
           warning: "[&_[data-icon]]:!text-[var(--status-warning)]",
