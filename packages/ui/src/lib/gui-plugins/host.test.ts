@@ -272,7 +272,7 @@ describe('GUI plugin host with the actual official Solid SDK', () => {
         value.runCommand('commands.invoke');
         expect(Reflect.get(globalThis, '__guiHiddenRan')).toBe(true);
         value.install('viewer', bundle(`ctx.add(require('@opencode/plugin/gui/file').FileViewer,{kinds:['document'],View(){return null}});`));
-        expect(value.getSnapshot().plugins.find((plugin) => plugin.id === 'viewer')).toMatchObject({status:'failed',error:'Unsupported GUI host API: registry.file.viewer'});
+        expect(value.getSnapshot().plugins.find((plugin) => plugin.id === 'viewer')).toMatchObject({ status: 'failed', errorCode: 'GUI_PLUGIN_UNSUPPORTED', error: expect.stringContaining('registry.file.viewer') });
     });
     it('isolates failure, cleans styles and setup, and skips same-revision setup', () => {
         const value = host();
@@ -364,7 +364,7 @@ describe('GUI plugin host with the actual official Solid SDK', () => {
         `, '1', `main(){throw new Error('main must not execute')},`));
         expect(value.getSnapshot().commands[0].title).toBe('undefined');
         await value.runCommand('native.ping');
-        expect(value.getSnapshot().plugins.find((item) => item.id === 'native')?.error).toContain('native IPC');
+        expect(value.getSnapshot().plugins.find((item) => item.id === 'native')?.errorCode).toBe('GUI_PLUGIN_UNSUPPORTED');
         value.install('async', bundle('return Promise.resolve()'));
         expect(value.getSnapshot().plugins.find((item) => item.id === 'async')?.error).toContain('synchronous');
     });

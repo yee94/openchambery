@@ -313,6 +313,56 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 
 ## IPC Pattern
 
+### Native GUI plugins
+
+`gui-plugin-host.mjs` runs the standard OpenCode `./gui-experimental` bundle's
+`main` entry and typed IPC. It reads inventory/code/options itself through the
+in-process backend's `getGuiPluginClient()`; renderers supply only plugin id and
+expected revision. No renderer-supplied code, endpoint or credential is executed.
+The backend additionally requires lifecycle-confirmed managed/shared ownership and
+a loopback endpoint; an external server or SSH forward is not trusted merely because
+its URL looks local. The controller getter belongs on the returned server handle,
+not the feature-route dependency bag.
+The pinned SDK module map is shared with UI under `lib/gui-plugins/main-modules.mjs`
+and bundled into main, without additional dependencies.
+
+`yuri:gui-plugin` requires the exact local UI main frame and a main-owned local
+runtime identity (no remote/Relay instance). The local preload `guiPlugins`
+capability carries opaque document leases. Main entries are shared across windows;
+the last lease release stops the instance. Navigation, window destruction, revision
+replacement and app shutdown revoke calls and run cleanup (up to three seconds).
+`ctx.provide`, IPC methods/state/events, cancellation, `ctx.windows`, `onCleanup`,
+app metadata and translations are supported. Native storage, serverEndpoints, cli,
+embeds and native menu registries still fail explicitly. Plugins own their native
+resources and must register cleanup for them. Fetch/evaluation failures retain the
+running revision; setup failures clean partial resources and surface an error.
+
+Only known UI document paths qualify for native GUI IPC; same-origin preview/API
+documents are rejected. Before window-only GUI code executes in a local UI document,
+the renderer awaits `window-only`: main revokes that document's leases and removes
+its local-only desktop IPC privileges until a new document commits. GUI panels and
+format rendering remain available. Same-document navigation cannot clear this mode.
+Runtime changes revoke leases before navigation, and outgoing state/events recheck
+the window's current authorization. This is a native capability boundary, not a JS
+sandbox or support for mixing remote window code with local native permissions.
+
+GUI IPC uses serializable success/failure envelopes; renderer-side reconstruction
+preserves `error.code` through contextBridge. Stable `GUI_PLUGIN_*` codes and consumer
+guidance live in `packages/ui/src/lib/gui-plugins/DOCUMENTATION.md`. Host logs record
+codes without plugin arguments or upstream payloads. Plugins can catch unsupported
+native actions and keep their previews usable.
+
+Plugins can use Electron's `BrowserWindow`/`webContents.printToPDF()` through their
+main entry to implement PDF export. Yuri does not implement a plugin-specific
+export button. This capability requires an updated installer (main + preload),
+not only UI OTA; Web, VS Code, mobile and older shells retain window-only behavior.
+
+Focused validation: `bunx vitest run --project @yuriai/electron packages/electron/gui-plugin-host.test.mjs packages/electron/scripts/gui-plugin-evidence.test.mjs`.
+The evidence fixture runs the production preload/window host in real macOS Electron
+with Vite HMR on loopback and bundled UI on the packaged origin and checks generated PDF bytes. Its service
+inventory is mocked; it does not validate a signed installer, Eficy's export UI or
+Windows/Linux runtime behavior.
+
 Renderer code should call the desktop bridge exposed by `preload.mjs`. Do not import Electron from shared UI code.
 
 Add new native capabilities in this order:

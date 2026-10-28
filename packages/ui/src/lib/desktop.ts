@@ -6,6 +6,7 @@ import type { MobileUpdateDecision } from '@/lib/mobile-updates/types';
 import { getRuntimeApiBaseUrl, getRuntimeKey } from '@/lib/runtime-switch';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import type { NativeGuiBridge } from '@/lib/gui-plugins/native-types';
 
 export type UpdateInfo = {
   otaDecision?: MobileUpdateDecision;
@@ -227,6 +228,7 @@ export type DesktopSettings = {
 };
 
 type DesktopBridgeGlobal = {
+  guiPlugins?: NativeGuiBridge;
   invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
   openDialog?: (options: Record<string, unknown>) => Promise<unknown>;
   grantFileAccess?: (path: string) => Promise<unknown>;
@@ -305,6 +307,13 @@ export const hasDesktopInvoke = (): boolean => {
 };
 
 export const canUseElectronDesktopIPC = (): boolean => isElectronShell() && hasDesktopInvoke();
+
+export const getDesktopGuiPluginBridge = (): NativeGuiBridge | undefined =>
+  isElectronShell() && isDesktopLocalOriginActive() ? getDesktopBridge()?.guiPlugins : undefined;
+
+/** Only used to irrevocably restrict this document before evaluating window-only code. */
+export const getDesktopGuiPluginWindowBridge = (): NativeGuiBridge | undefined =>
+  isElectronShell() ? getDesktopBridge()?.guiPlugins : undefined;
 
 export const invokeDesktop = async <T = unknown>(command: string, args?: Record<string, unknown>): Promise<T | null> => {
   const bridge = getDesktopBridge();

@@ -9,6 +9,10 @@ Full project overview, screenshots, and all features: [github.com/yee94/yuri](ht
 
 ## Repository HMR development
 
+The in-process server controller exposes `getGuiPluginClient()` only to its desktop
+owner. It resolves the current authenticated OpenCode client for native GUI plugin
+inventory and bundle reads; this client is never an HTTP or renderer IPC response.
+
 From the repository root, run `bun run dev:web:hmr` (or start it in tmux with
 `tmux new-session -s vite 'bun run dev:web:hmr'`). Open `http://127.0.0.1:5180`;
 the API listens on port 3902. The supervisor restarts a crashed Vite or API

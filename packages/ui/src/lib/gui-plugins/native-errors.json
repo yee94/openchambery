@@ -1,0 +1,15 @@
+{
+  "GUI_PLUGIN_FORBIDDEN": "Native GUI access is not allowed for this window or runtime",
+  "GUI_PLUGIN_UNTRUSTED_SOURCE": "Native GUI plugins must come from the local managed OpenCode service",
+  "GUI_PLUGIN_DOCUMENT_RESTRICTED": "This document runs window-only plugins; reload before using native capabilities",
+  "GUI_PLUGIN_UNAVAILABLE": "The native GUI plugin or IPC provider is unavailable",
+  "GUI_PLUGIN_LEASE_EXPIRED": "The native GUI authorization has expired",
+  "GUI_PLUGIN_REVISION_MISMATCH": "The GUI plugin revision changed; refresh plugins",
+  "GUI_PLUGIN_INVALID_REQUEST": "Invalid native GUI request",
+  "GUI_PLUGIN_UNKNOWN_METHOD": "Unknown native GUI IPC method",
+  "GUI_PLUGIN_INVALID_INPUT": "The GUI IPC input does not match its schema",
+  "GUI_PLUGIN_INVALID_OUTPUT": "The GUI IPC output does not match its schema",
+  "GUI_PLUGIN_ABORTED": "The GUI IPC operation was aborted",
+  "GUI_PLUGIN_UNSUPPORTED": "This GUI capability is not supported by the current runtime",
+  "GUI_PLUGIN_FAILED": "The native GUI plugin operation failed"
+}

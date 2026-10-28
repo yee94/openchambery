@@ -55,6 +55,8 @@ import {
 } from './virtual-asset-protocol.mjs';
 import { createImageDiskCache } from './image-disk-cache.mjs';
 import { createPreviewLoopbackGateway } from './preview-loopback-gateway.mjs';
+import { createGuiPluginMainHost } from './gui-plugin-host.mjs';
+import { isGuiPluginUiUrl } from './gui-plugin-origin.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -1709,6 +1711,7 @@ const shutdownInProcessServer = () => {
 
   state.shutdownPromise = (async () => {
     try {
+      await guiPluginHost.dispose();
       if (handle) {
         await handle.stop({ exitProcess: false, forceCloseConnections: true });
       }
@@ -2937,6 +2940,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
 
   const mainWindow = state.mainWindow;
   if (mainWindow && !mainWindow.isDestroyed()) {
+    guiPluginHost.invalidateWindow(mainWindow.webContents);
     mainWindow.__yuriRuntimeConfig = rendererRuntimeConfig;
     mainWindow.__yuriInitScript = state.initScript;
     await navigateWindow(mainWindow, url, { allowAbort: true });
@@ -5148,7 +5152,7 @@ app.on('web-contents-created', (_event, contents) => {
 // shell.openPath, installed-app scans, app relaunch, and file dialogs
 // are gated to local senders — even the user's own remote UI shouldn't
 // need them, and a compromised remote can't use them either.
-const isLocalSender = (webContents) => {
+const isLocalUiSender = (webContents) => {
   try {
     const raw = typeof webContents?.getURL === 'function' ? webContents.getURL() : '';
     if (!raw) return false;
@@ -5181,6 +5185,30 @@ const isLocalSender = (webContents) => {
     return false;
   }
 };
+
+const isLocalSender = (contents) => isLocalUiSender(contents) && !guiPluginHost.isWindowOnly(contents);
+const isGuiPluginWindow = (event) => Boolean(event.senderFrame && event.senderFrame === event.sender.mainFrame
+  && BrowserWindow.fromWebContents(event.sender)
+  && isGuiPluginUiUrl(event.sender.getURL(), [state.localOrigin, state.localUiOrigin, state.sidecarUrl]));
+
+const guiPluginHost = createGuiPluginMainHost({
+  getClient: () => {
+    if (!state.serverHandle?.getGuiPluginClient) throw Object.assign(new Error('Local GUI plugin service unavailable'), { code: 'GUI_PLUGIN_UNAVAILABLE' });
+    return state.serverHandle.getGuiPluginClient();
+  },
+  windows: BrowserWindow,
+  app,
+  authorizeWindow: isGuiPluginWindow,
+  authorize: (event) => {
+    if (!isGuiPluginWindow(event) || !isLocalSender(event.sender)) return false;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return Boolean(win && !win.__yuriRuntimeConfig?.relayHostId
+      && sameOrigin(win.__yuriRuntimeConfig?.apiBaseUrl || state.localOrigin, state.sidecarUrl));
+  },
+  send: (contents, payload) => contents.send('yuri:gui-plugin:event', payload),
+  report: (message, level = 'warn') => log[level](`[gui-plugin] ${message}`),
+});
+ipcMain.handle('yuri:gui-plugin', (event, action, input) => guiPluginHost.dispatch(event, action, input));
 
 ipcMain.handle('yuri:invoke', async (event, command, args) => {
   if (!isLocalSender(event.sender) && !isRemoteIpcCommandAllowed(command, args)) {

@@ -271,6 +271,14 @@ const previewGatewayApi = isLocalPage
 contextBridge.exposeInMainWorld('__YURI_DESKTOP__', {
   applicationId: readArgValue('--yuri-application-id'),
   shellApiVersion: 2,
+  guiPlugins: isLocalPage && process.isMainFrame ? {
+    request: (action, input) => ipcRenderer.invoke('yuri:gui-plugin', action, input),
+    subscribe: (handler) => {
+      const listener = (_event, payload) => handler(payload);
+      ipcRenderer.on('yuri:gui-plugin:event', listener);
+      return () => ipcRenderer.removeListener('yuri:gui-plugin:event', listener);
+    },
+  } : undefined,
   invoke: (cmd, args) => ipcRenderer.invoke('yuri:invoke', cmd, args || {}),
   openDialog: (options) => ipcRenderer.invoke('yuri:dialog:open', options || {}),
   grantFileAccess: (filePath) => ipcRenderer.invoke('yuri:file:grant-existing', filePath),

@@ -24,6 +24,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/index.js`: public entrypoint (currently baseline placeholder).
 - `packages/web/server/lib/opencode/auth.js`: host-only authoritative provider credential API reads and deletion.
 - `packages/web/server/lib/opencode/auth-state-runtime.js`: managed OpenCode server auth password/header runtime.
+- `gui-plugin-source.js`: process-local native GUI client admission. Requires ready managed-child/shared-service ownership plus loopback endpoint; external servers/SSH forwards cannot supply native code. The returned server controller's `getGuiPluginClient()` calls this gate, and throws stable `GUI_PLUGIN_UNTRUSTED_SOURCE` / `GUI_PLUGIN_UNAVAILABLE` codes. It is never an HTTP route or renderer-provided endpoint.
 - `packages/web/server/lib/opencode/cli-options.js`: CLI/environment option parsing for server startup arguments.
 - `packages/web/server/lib/opencode/cli-entry-runtime.js`: CLI entrypoint runtime that detects direct execution, forces `YURI_RUNTIME=web` unless already `ssh-remote` (so `dev:server` cannot inherit a leftover desktop env and host a relay, while SSH-managed remotes may), parses CLI options, and starts server bootstrap.
 - `packages/web/server/lib/opencode/routes.js`: OpenCode/provider settings and auth-related route registration.

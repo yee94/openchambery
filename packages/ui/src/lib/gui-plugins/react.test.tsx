@@ -5,16 +5,20 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { GuiPluginsProvider } from './GuiPluginsProvider';
 import { useGuiPlugins } from './react';
 import { openFileReference } from '@/components/chat/fileReferenceActions';
+import type { NativeGuiBridge } from './native-types';
 
 const state = vi.hoisted(() => ({
   transport: 'host-a', directory: '/project', sessionID: 'session-a' as string | null,
   sessions: {} as Record<string, { id: string; directory: string }>,
   files: {},
+  nativeBridge: undefined as NativeGuiBridge | undefined,
+  windowBridge: undefined as NativeGuiBridge | undefined,
   focusFile: undefined as undefined | ((path: string, directory: string) => Promise<void>),
   list: vi.fn(), gui: vi.fn(), hostImports: vi.fn(), signals: [] as AbortSignal[], hostFailure: false,
   hosts: [] as Array<{ install: ReturnType<typeof vi.fn>; uninstall: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; setSession: ReturnType<typeof vi.fn> }>,
 }));
 vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => state.transport, getRuntimeKey: () => state.transport, getRuntimeGeneration: () => 0 }));
+vi.mock('@/lib/desktop', () => ({ getDesktopGuiPluginBridge: () => state.nativeBridge, getDesktopGuiPluginWindowBridge: () => state.windowBridge ?? state.nativeBridge }));
 vi.mock('@/lib/instanceScopedStorage', () => ({ instanceScopedStorageKey: (key: string, runtime: string) => `${runtime}:${key}` }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ files: state.files }) }));
 vi.mock('@/sync/session-ui-store', () => ({ useSessionUIStore: (select: (value: object) => unknown) => select({ currentSessionId: state.sessionID }) }));
@@ -69,6 +73,8 @@ beforeEach(() => {
   vi.stubGlobal('cancelIdleCallback', vi.fn((id: number) => idleTasks.delete(id)));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.transport = 'host-a'; state.hosts.length = 0; state.signals.length = 0; state.hostFailure = false;
+  state.nativeBridge = undefined;
+  state.windowBridge = undefined;
   state.directory = '/project'; state.sessionID = 'session-a';
   state.sessions = { 'session-a': { id: 'session-a', directory: '/project' } };
   state.list.mockReset().mockResolvedValue({ data: [plugin] });
@@ -96,6 +102,58 @@ it('keeps initial render light across 50 rerenders before idle preload starts', 
   expect(state.gui).not.toHaveBeenCalled();
   expect(state.hostImports).not.toHaveBeenCalled();
   expect(state.hosts).toHaveLength(0);
+});
+
+it('waits for trusted main activation and installs the authoritative bundle without renderer code in IPC', async () => {
+  let complete!: (value: unknown) => void;
+  const request = vi.fn<NativeGuiBridge['request']>(() => new Promise((resolve) => { complete = resolve; }));
+  state.nativeBridge = { request, subscribe: () => () => {} };
+  await load();
+  expect(context.loading).toBe(true);
+  expect(state.hosts[0].install).not.toHaveBeenCalled();
+  expect(request).toHaveBeenCalledExactlyOnceWith('acquire', { id: 'dsl', revision: 'one' });
+  const authoritative = { ...bundle, options: { trusted: true } };
+  await act(async () => complete({ ok: true, value: { lease: 'native', bundle: authoritative, os: 'macos', app: { version: '1', packaged: false } } }));
+  await settle();
+  expect(state.hosts[0].install).toHaveBeenCalledWith('dsl', authoritative, expect.anything());
+  expect(context.loading).toBe(false);
+  state.hosts[0].install.mock.calls[0][2].dispose();
+});
+
+it('releases a late native activation after disable instead of installing it', async () => {
+  let complete!: (value: unknown) => void;
+  const request = vi.fn<NativeGuiBridge['request']>((action) => action === 'acquire'
+    ? new Promise((resolve) => { complete = resolve; }) : Promise.resolve());
+  state.nativeBridge = { request, subscribe: () => () => {} };
+  await load();
+  await act(async () => context.setEnabled('dsl', false));
+  await act(async () => complete({ ok: true, value: { lease: 'late', bundle, os: 'macos', app: { version: '1', packaged: false } } }));
+  await settle();
+  expect(state.hosts[0].install).not.toHaveBeenCalled();
+  expect(request).toHaveBeenCalledWith('release', { lease: 'late' });
+});
+
+it('keeps remote GUI rendering after native privilege restriction is acknowledged', async () => {
+  let complete!: (value: unknown) => void;
+  const request = vi.fn<NativeGuiBridge['request']>(() => new Promise((resolve) => { complete = resolve; }));
+  state.windowBridge = { request, subscribe: () => () => {} };
+  await load();
+  expect(request).toHaveBeenCalledExactlyOnceWith('window-only', {});
+  expect(state.hosts[0].install).not.toHaveBeenCalled();
+  await act(async () => complete({ ok: true }));
+  await settle();
+  expect(state.hosts[0].install).toHaveBeenCalledExactlyOnceWith('dsl', bundle);
+  expect(context.loading).toBe(false);
+});
+
+it('falls back to window rendering when main rejects an external plugin source', async () => {
+  const request = vi.fn<NativeGuiBridge['request']>(async (action) => action === 'acquire'
+    ? { ok: false, error: { code: 'GUI_PLUGIN_UNTRUSTED_SOURCE' } } : { ok: true });
+  state.nativeBridge = { request, subscribe: () => () => {} };
+  await load();
+  expect(request).toHaveBeenCalledWith('window-only', {});
+  expect(state.hosts[0].install).toHaveBeenCalledExactlyOnceWith('dsl', bundle);
+  expect(context.loading).toBe(false);
 });
 
 it('preloads and installs at idle, so the first file demand reuses the ready host', async () => {

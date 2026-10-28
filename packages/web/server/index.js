@@ -1,7 +1,8 @@
 import './lib/brand-migration-bootstrap.js';
 import 'reflect-metadata';
 import express from 'express';
-import { configureOpenCodeCredentials, openCodeCredentialSource } from './lib/opencode/auth.js';
+import { configureOpenCodeCredentials, openCodeCredentialSource, currentClient } from './lib/opencode/auth.js';
+import { trustedGuiPluginClient } from './lib/opencode/gui-plugin-source.js';
 import compression from 'compression';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
@@ -2159,6 +2160,12 @@ async function main(options = {}) {
     httpServer: server,
     getPort: () => tunnelRuntimeContext.getActivePort(),
     getOpenCodePort: () => openCodePort,
+    // In-process desktop only: never serialize this authenticated client to a renderer.
+    getGuiPluginClient: () => trustedGuiPluginClient({
+      managed: Boolean(openCodeProcess && !isExternalOpenCode),
+      shared: openCodeLifecycleRuntime.isSharedOpenCodeService(),
+      ready: isOpenCodeReady, url: buildOpenCodeUrl('', ''), client: currentClient,
+    }),
     getQuitRiskStatus: () => ({
       scheduledTasks: scheduledTasksRuntime.getStatus(),
     }),

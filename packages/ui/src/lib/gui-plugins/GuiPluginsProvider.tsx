@@ -12,6 +12,9 @@ import { getRuntimeKey, getRuntimeTransportIdentity } from '@/lib/runtime-switch
 import { guiBundleOptions, guiInventoryOptions } from '@/queries/guiPluginQueries';
 import { guiPreferencesKey, readDisabledPlugins, writePluginEnabled } from './preferences';
 import { GuiFileIconsContext, GuiPluginsContext, getEmptySnapshot, type GuiPluginsContextValue } from './react';
+import { getDesktopGuiPluginBridge, getDesktopGuiPluginWindowBridge } from '@/lib/desktop';
+import type { NativeGuiActivation } from './native-types';
+import { NativeGuiError, requestNativeGui } from './native-errors';
 const noop = () => {};
 const noopSubscribe = () => noop;
 const message = (error: unknown): string | null => error ? error instanceof Error ? error.message : String(error) : null;
@@ -24,18 +27,44 @@ function Activation({ host, id, transport, report }: {
   host: GuiPluginHost; id: string; transport: string; report(host: GuiPluginHost, id: string, state: BundleState | null): void;
 }) {
   const query = useQuery(guiBundleOptions(transport, id));
-  const installError = React.useRef<string | null>(null);
+  const [activationState, setActivationState] = React.useState({ loading: false, error: null as string | null });
   React.useEffect(() => {
-    installError.current = null;
-    try {
-      if (query.data) host.install(id, query.data);
-    } catch (error) {
-      installError.current = message(error);
+    let cancelled = false;
+    const bridge = getDesktopGuiPluginBridge();
+    const windowBridge = getDesktopGuiPluginWindowBridge();
+    if (!query.data || (!bridge && !windowBridge)) {
+      let error: string | null = null;
+      try { if (query.data) host.install(id, query.data); } catch (cause) { error = message(cause); }
+      setActivationState({ loading: false, error });
+      return;
     }
-  }, [host, id, query.data, query.dataUpdatedAt]);
+    setActivationState({ loading: true, error: null });
+    const installWindowOnly = async () => {
+      if (windowBridge) await requestNativeGui(windowBridge, 'window-only', {});
+      if (cancelled || getRuntimeTransportIdentity() !== transport) return;
+      host.install(id, query.data!);
+      setActivationState({ loading: false, error: null });
+    };
+    void import('./native').then(async ({ NativeGuiSession }) => {
+      if (cancelled) return;
+      if (!bridge) { await installWindowOnly(); return; }
+      const activation = await requestNativeGui(bridge, 'acquire', { id, revision: query.data!.revision }) as NativeGuiActivation;
+      const native = new NativeGuiSession(bridge, activation);
+      if (cancelled || getRuntimeTransportIdentity() !== transport) { native.dispose(); return; }
+      host.install(id, activation.bundle, native);
+      setActivationState({ loading: false, error: null });
+    }).catch(async (cause) => {
+      if (cancelled) return;
+      if (cause instanceof NativeGuiError && ['GUI_PLUGIN_UNTRUSTED_SOURCE', 'GUI_PLUGIN_DOCUMENT_RESTRICTED', 'GUI_PLUGIN_FORBIDDEN'].includes(cause.code)) {
+        try { await installWindowOnly(); return; } catch (error) { cause = error; }
+      }
+      if (!cancelled) setActivationState({ loading: false, error: message(cause) });
+    });
+    return () => { cancelled = true; };
+  }, [host, id, transport, query.data, query.dataUpdatedAt]);
   React.useEffect(() => {
-    report(host, id, { loading: !installError.current && (query.isPending || query.isFetching), error: installError.current ?? message(query.error) });
-  }, [host, id, query.data, query.dataUpdatedAt, query.error, query.isPending, query.isFetching, report]);
+    report(host, id, { loading: activationState.loading || query.isPending || query.isFetching, error: activationState.error ?? message(query.error) });
+  }, [host, id, activationState, query.error, query.isPending, query.isFetching, report]);
   React.useEffect(() => () => { host.uninstall(id); report(host, id, null); }, [host, id, report]);
   return null;
 }

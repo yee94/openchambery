@@ -1,6 +1,6 @@
 # GUI plugin window host
 
-本模块承载 OpenCode GUI 插件的**窗口兼容子集**。使用官方 `@opencode/plugin` **2.2.0** 契约，读取 npm 包 `./gui-experimental` 指向的预构建单文件 CommonJS；插件不需要 Yuri 专用入口，也不改写第三方 bundle。
+本模块承载 OpenCode GUI 插件的**窗口兼容子集**，本地 Electron 窗口另接原生 `main + IPC`。使用官方 `@opencode/plugin` **2.2.0** 契约，读取 npm 包 `./gui-experimental` 指向的预构建单文件 CommonJS；插件不需要 Yuri 专用入口，也不改写第三方 bundle。
 
 ## 所有权与运行时
 
@@ -8,7 +8,8 @@
 - `host.ts` 负责插件 owner/context、注册表、Contract、生命周期、窗口贡献、会话与布局桥接；`GuiPluginsProvider.tsx` 管理加载与启停，`react.ts` 提供轻量 React context，`components/gui-plugins` 负责界面和 Solid 容器。
 - `files.ts` 负责会话工作区文件读取与变更观察；`storage.ts` 和 `preferences.ts` 负责插件持久状态及 GUI 启用偏好。
 - `file-icons.ts` 负责窗口级文件扩展名图标索引、SVG 资源校验和独立订阅，不依赖 host snapshot。
-- Web、Electron、VS Code 聊天窗口、hosted/mobile 使用同一个窗口 host。嵌入会话和独立 Agent Manager 不重复加载宿主。Electron 的存在不赋予本 host 原生 main 权限；兼容 context 的 `app.platform` 为 `web`，`desktop` 为 undefined。若部署的 CSP 禁止 CJS 求值，插件状态显示求值失败，不能绕过 CSP。
+- Web、Electron、VS Code 聊天窗口、hosted/mobile 使用同一个窗口 host。嵌入会话和独立 Agent Manager 不重复加载宿主。只有新版 Electron 的本地实例主 frame 可以申请 native lease；其他运行时、远程/Relay 实例及旧 shell 保持 `app.platform: web`、`desktop: undefined`。获得 lease 后为 `app.platform: desktop`，提供 `desktop.os`（其他 desktop 方法仍明确 unsupported）。若部署的 CSP 禁止 CJS 求值，插件状态显示求值失败，不能绕过 CSP。
+- `native.ts` 负责窗口 IPC codec、响应式 state/live、事件与取消；`native-types.ts` 定义 preload 消息契约。`main-modules.mjs` 仅导出 main 进程使用的固定 ABI 共享模块映射，由 Electron 打包；原生求值、可信代码获取、调用授权与生命周期归 `packages/electron/gui-plugin-host.mjs`，不能导入 renderer bundle。
 
 官方 npm SDK 2.2.0 没有公开 `gui/host` 导出。Yuri 的受控依赖 patch 只开放 `gui/yuri-host` 内部 context，让 host 与官方 `usePlugin` / `bindPlugin` 共用真实 `PluginContext`、`PanelContext` 和 lifetime。它是**宿主实现细节**，第三方插件始终只 import 官方公开 SDK。升级 SDK 必须重新验证 patch 与单实例 Solid 语义。
 
@@ -34,7 +35,48 @@ Provider 的会话目录来自 `useCurrentSessionEntity(sessionID)` 的匹配会
 | sessions / files / layout | 已实现的当前会话、文件和面板操作；不推定所有 Host API 成员可用 |
 | RPC | 通过当前连接服务的官方 client 调用服务端插件契约 |
 
-未支持 native `main`、IPC、`WebContentsView`/embeds、server sources、slots、原生菜单及其他未实现 Host API。访问未支持能力必须产生可见错误，不能用空对象或成功 no-op 冒充支持。首批拒绝任何带 `os` 限制的定义，不猜测浏览器所在操作系统是否满足原生要求。
+本地 Electron 支持 `main`、`ctx.main(Ipc)`、`ctx.use(Ipc)`、schema 编解码、每窗口 state/events、调用取消及 `os` 限制；其他运行时仍拒绝 native IPC、main-only 和带 `os` 限制的定义。未支持 `WebContentsView`/embeds、server sources、slots、原生菜单及其他未实现 Host API。访问未支持能力必须产生可见错误，不能用空对象或成功 no-op 冒充支持。
+
+原生主进程自行从进程内后端的权威 OpenCode client 读取全局 inventory/bundle；窗口只能提交 id/revision，不能提交代码、options、服务地址或凭证。revision 必须匹配，窗口随后运行 main 返回的同一 bundle。插件 main 每个 revision 在应用内共享一个实例；每窗口激活有独立 lease，停用/卸载/切服务释放本窗口 lease，最后一个 lease 释放时撤销 IPC、abort 调用并清理 main。导航/销毁由 main 兜底撤销；replacement 会撤销旧 revision 的全部 lease。每次 native 操作验证主 frame、精确本地来源及主进程记录的本地实例身份，远程页面和预览 iframe 无权调用。
+
+代码来源还必须由本机 OpenCode 生命周期证明为 managed child 或官方 shared service，且 endpoint 是 loopback；外接服务、SSH 转发即使是 localhost 也不取得本机 native 执行权。同源 `/api/preview/*`、`/api/fs/*` 页面不是应用文档，不能调用 native GUI。
+
+远端 GUI 的 `setup`、LinkHandler、Panel 和格式预览继续可用。带本地 preload 的文档在加载 window-only bundle **之前**，必须等待 main 确认 `window-only` 限权：撤销本窗口 native leases/调用，并让既有 local-only desktop IPC gate 拒绝后续请求。限权持续至跨文档导航提交，切会话、hash/path 同文档导航和重新申请 lease 均不能恢复权限；切回 native 能力须重新加载应用文档。真正的远程页面没有本地 GUI bridge，保持 window-only。窗口插件仍不是独立 JS 沙箱；不能在同一文档混合远端窗口代码与本机原生插件权限。独立的本地可信插件访问远端数据通道尚未开放，不能通过移除 Relay 判断来实现。
+
+### 原生拒绝错误契约
+
+错误目录为 `native-errors.json`。main 的 IPC 返回 `{ ok: true, value }` 或 `{ ok: false, error: { code, message } }`；preload 只转发可序列化结果，`requestNativeGui` 在窗口重建 `GuiPluginError`，保证 `error.code` 不被 Electron/contextBridge 丢掉。日志记录同一 code，不记录调用参数、schema 原值、上游响应或凭证。未知异常归 `GUI_PLUGIN_FAILED`。窗口 host 的未捕获原生错误还在 snapshot 保留 `errorCode`。
+
+| code | 消费方式 |
+| --- | --- |
+| `GUI_PLUGIN_UNTRUSTED_SOURCE` / `GUI_PLUGIN_FORBIDDEN` | 不自动重试原生调用，使用窗口/服务端方案 |
+| `GUI_PLUGIN_DOCUMENT_RESTRICTED` | 本文档保持 window-only；恢复 native 须重载 |
+| `GUI_PLUGIN_UNSUPPORTED` | 当前运行时无此能力；保留预览，隐藏原生动作或提供服务端动作 |
+| `GUI_PLUGIN_LEASE_EXPIRED` / `GUI_PLUGIN_REVISION_MISMATCH` | 丢弃旧 client，由宿主重新激活/刷新 |
+| `GUI_PLUGIN_UNAVAILABLE` | 服务/提供者未就绪，可在恢复后重试 |
+| `GUI_PLUGIN_INVALID_REQUEST` / `GUI_PLUGIN_UNKNOWN_METHOD` / `GUI_PLUGIN_INVALID_INPUT` / `GUI_PLUGIN_INVALID_OUTPUT` | 契约错误，修正请求或插件实现 |
+| `GUI_PLUGIN_ABORTED` | 用户取消或生命周期结束，停止本次操作 |
+| `GUI_PLUGIN_FAILED` | 未分类执行失败，显示失败并保留用户操作上下文 |
+
+插件不需要 import Yuri 模块，直接检查标准 `ctx.main(...)` 调用的异常属性：
+
+```ts
+try {
+  await exporter.pdf(input)
+} catch (error) {
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+  if (code === 'GUI_PLUGIN_UNSUPPORTED' || code === 'GUI_PLUGIN_DOCUMENT_RESTRICTED') {
+    // Keep the report visible and offer the plugin's server-side export, if available.
+    return
+  }
+  if (code === 'GUI_PLUGIN_ABORTED') return
+  throw error
+}
+```
+
+原生 acquire 的读取/求值失败保留已有实例；main setup 失败清理已注册的资源并向插件管理器报错。异步结果经过 document/lease 与 runtime transport 检查，旧实例不能覆盖新实例。main cleanup 支持异步且等待最多 3 秒；插件直接创建的 BrowserWindow、Node 资源仍需用 `ctx.onCleanup` 或返回 cleanup 管理。
+
+PDF/长图不是宿主专用 API：插件可从标准 main 入口调用 Electron，创建独立导出页，通过 `webContents.printToPDF()` 生成 PDF，并自行处理保存与取消。宿主不注入 Eficy 导出按钮，也不声称支持全部官方 Desktop API。
 
 `FileViewer` 注册明确报 unsupported；自定义后缀使用 `LinkHandler + Panel`。文件树结构扩展、composer、宿主设置分区、原生文件动作和完整 Desktop tabs/layout 语义不在首批范围。文件预览按 `PanelTab.file` 的规范化完整路径匹配，直接挂载到已有文件标签页/手机文件详情中，支持切回源码；只有没有内联文件视图承载的独立面板和设置页使用 Dialog/手机 Sheet，不复刻拖拽分屏和最近关闭恢复。
 
@@ -109,6 +151,8 @@ SDK 2.2.0 的文件接口是 `ctx.screen.current()?.file` 或面板的 `props.sc
 ## 验证
 
 使用本目录 focused Vitest 测试检查 host、bundle、files、preferences 和 storage。生产集成必须再验证真实 React/Solid 挂载、CSP、服务连接与文件事件；静态类型通过不代表所有平台可用。
+
+`native.test.ts` 检查 IPC codec、快照/事件顺序、取消与 lease 清理；Electron 的 `gui-plugin-host.test.mjs` 覆盖多窗口共享 main、窗口隔离、非法来源、revision/读取失败、部分 setup 清理与导航取消。`scripts/gui-plugin-evidence.test.mjs` 用真实 Electron、正式 preload、窗口 host 和标准 CJS 插件，在 loopback Vite HMR 与 `yuri-ui://app` bundled 页面生成有效 PDF；服务端 inventory/bundle 是受控夹具，不代表真实 Eficy 导出 UI、签名安装包或 Windows/Linux 验收。
 
 `packages/ui/vitest.config.ts` 内联 Solid 和插件 SDK，使 happy-dom 测试与浏览器使用同一 owner graph；不需要额外 NODE_OPTIONS。`host.test.ts`、`files.test.ts` 验证注册、文件刷新、错误恢复、会话隔离和清理。`react.test.tsx` 验证空闲前 50 次 rerender 零 host import/零 bundle、空闲预加载后点击复用、空闲取消与迟到隔离、并发需求合并、关闭重开复用、禁用/无 GUI、慢 bundle loading、失败重试及 transport 迟到隔离；另覆盖全局目录切换零会话同步、冷加载元数据、真实目录迁移、切会话等待与旧会话迟到更新隔离。
 

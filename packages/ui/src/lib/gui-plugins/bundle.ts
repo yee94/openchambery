@@ -11,6 +11,7 @@ import * as effect from 'effect';
 import * as solid from 'solid-js';
 import * as web from 'solid-js/web';
 import * as store from 'solid-js/store';
+import { NativeGuiError } from './native-errors';
 
 const modules: Record<string, object> = {
   '@opencode/plugin/gui': sdk,
@@ -45,7 +46,7 @@ function inert(): object {
   return placeholder;
 }
 
-export function evaluateGuiBundle(code: string): sdk.Plugin.Definition {
+export function evaluateGuiBundle(code: string, nativeOS?: 'macos' | 'windows' | 'linux'): sdk.Plugin.Definition {
   if (code.length > 16 * 1024 * 1024) throw new Error('GUI bundle exceeds 16 MiB');
   const module: { exports: unknown } = { exports: {} };
   const requireModule = (name: string) => {
@@ -58,11 +59,12 @@ export function evaluateGuiBundle(code: string): sdk.Plugin.Definition {
   const exported = module.exports;
   const definition = exported && typeof exported === 'object' && 'default' in exported ? exported.default : exported;
   if (!definition || typeof definition !== 'object') throw new Error('GUI bundle must default-export Plugin.define');
-  if (!('setup' in definition) || typeof definition.setup !== 'function') {
-    throw new Error('This host requires a window setup; main-only plugins are unsupported');
+  if ((!('setup' in definition) || typeof definition.setup !== 'function') && !(nativeOS && 'main' in definition && typeof definition.main === 'function')) {
+    throw new NativeGuiError('GUI_PLUGIN_UNSUPPORTED', 'This host requires a window setup; main-only plugins are unsupported');
   }
   if ('os' in definition && definition.os !== undefined) {
-    throw new Error('OS-restricted plugins require the native GUI host');
+    if (!nativeOS) throw new NativeGuiError('GUI_PLUGIN_UNSUPPORTED', 'OS-restricted plugins require the native GUI host');
+    if (!Array.isArray(definition.os) || !definition.os.includes(nativeOS)) throw new NativeGuiError('GUI_PLUGIN_UNSUPPORTED', 'GUI plugin is unavailable on this OS');
   }
   if ('main' in definition && definition.main !== undefined && typeof definition.main !== 'function') {
     throw new Error('Invalid GUI main entry');

@@ -6,6 +6,8 @@ export interface WebUiServerController {
   httpServer: Server;
   getPort: () => number | null;
   getOpenCodePort: () => number | null;
+  /** Authenticated process-local client for the desktop GUI host; never expose over HTTP/IPC. */
+  getGuiPluginClient: () => import('@opencode/client').OpenCodeClient;
   isReady: () => boolean;
   restartOpenCode: () => Promise<void>;
   stop: (options?: { exitProcess?: boolean; forceCloseConnections?: boolean }) => Promise<void>;

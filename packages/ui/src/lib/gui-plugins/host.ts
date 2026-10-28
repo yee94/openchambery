@@ -11,6 +11,8 @@ import { GuiPluginStorage } from './storage';
 import { GUI_FILE_ICON_REGISTRY, GuiPluginFileIcons } from './file-icons';
 import { isLikelyFileReferencePath, parseFileReference } from '@/components/chat/fileReferenceParser';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
+import type { NativeGuiSession } from './native';
+import { NativeGuiError, type NativeGuiErrorCode } from './native-errors';
 
 export type PluginGuiBundle = PluginGuiOutput['data'];
 type Appearance = { locale: string; mode: 'light' | 'dark'; narrow: boolean };
@@ -18,7 +20,7 @@ type Options = Appearance & { client: OpenCodeClient; files: FilesAPI; queryClie
 type CommandView = { key: string; title: string; description?: string; bind?: string; hidden?: boolean; run: () => void | Promise<void> };
 type PanelView = { key: string; pluginId: string; title: string; active: boolean; file?: string; inline?: boolean };
 export type GuiPluginSnapshot = Readonly<{
-    plugins: readonly Readonly<{ id: string; revision: string; status: 'active' | 'failed'; error?: string }>[];
+    plugins: readonly Readonly<{ id: string; revision: string; status: 'active' | 'failed'; error?: string; errorCode?: NativeGuiErrorCode }>[];
     commands: readonly Readonly<CommandView>[];
     panels: readonly Readonly<PanelView>[];
     settings: readonly Readonly<{ key: string; pluginId: string; title: string }>[];
@@ -29,6 +31,8 @@ export type GuiPluginSnapshot = Readonly<{
 type Contribution = { registry: string; read: Accessor<unknown> };
 type PanelEntry = { plugin: Instance; panel: Gui.Panel; tab: Gui.PanelTab };
 type Instance = {
+    errorCode?: NativeGuiErrorCode;
+    native?: NativeGuiSession;
     id: string; revision: string; controller: AbortController; status: 'active' | 'failed'; error?: string;
     context?: Gui.SetupContext<Gui.Plugin.Definition>; owner?: Owner; root?: Owner; dispose?: () => void;
     cleanups: Set<() => void>; contributions: Set<Contribution>;
@@ -36,7 +40,7 @@ type Instance = {
     commands: CommandView[]; panels: PanelEntry[]; settings: Gui.SettingsPage[]; menus: Gui.SessionPanelMenuItem[];
 };
 type LayoutState = { open: string[]; active: string | null; shown: boolean; scroll: Map<string, { x: number; y: number }> };
-const unsupported = (name: string): never => { throw new Error(`Unsupported GUI host API: ${name}`); };
+const unsupported = (name: string): never => { throw new NativeGuiError('GUI_PLUGIN_UNSUPPORTED', `Unsupported GUI host API: ${name}`); };
 function partial<T extends object>(name: string, value: Partial<T>): T {
     // Runtime proxy makes missing capabilities fail explicitly rather than pretending to implement them.
     return new Proxy(value, { get: (target, key) => key in target ? Reflect.get(target, key) : unsupported(`${name}.${String(key)}`) }) as T;
@@ -105,14 +109,14 @@ export class GuiPluginHost {
         this.appearance[1]({ ...input });
     }
 
-    install(id: string, bundle: PluginGuiBundle): void {
+    install(id: string, bundle: PluginGuiBundle, native?: NativeGuiSession): void {
         const previous = this.instances.get(id);
-        if (this.ended || (previous?.status === 'active' && previous.revision === bundle.revision)) return;
+        if (this.ended || (previous?.status === 'active' && previous.revision === bundle.revision && previous.native?.active !== false)) { native?.dispose(); return; }
         if (previous) { this.instances.delete(id); this.release(previous); }
-        const instance: Instance = { id, revision: bundle.revision, controller: new AbortController(), status: 'active', cleanups: new Set(), contributions: new Set(), iconChanges: createSignal(0), commands: [], panels: [], settings: [], menus: [] };
+        const instance: Instance = { id, native, revision: bundle.revision, controller: new AbortController(), status: 'active', cleanups: new Set(), contributions: new Set(), iconChanges: createSignal(0), commands: [], panels: [], settings: [], menus: [] };
         this.instances.set(id, instance);
         try {
-            const definition = evaluateGuiBundle(bundle.code);
+            const definition = evaluateGuiBundle(bundle.code, native?.activation.os);
             createRoot((dispose) => {
                 instance.dispose = dispose;
                 instance.root = getOwner()!;
@@ -120,7 +124,7 @@ export class GuiPluginHost {
                     value: instance.context = this.context(instance, definition, bundle.options),
                     get children() {
                         instance.owner = getOwner()!;
-                        const result: unknown = untrack(() => definition.setup!(instance.context!));
+                        const result: unknown = untrack(() => definition.setup?.(instance.context!));
                         if (typeof result === 'function') instance.cleanups.add(() => { void Promise.resolve((result as Gui.Cleanup)()).catch((error) => { instance.error = String(error); }); });
                         else if (result !== undefined) {
                             if (result && typeof result === 'object' && 'then' in result) void Promise.resolve(result).catch(() => {});
@@ -160,6 +164,7 @@ export class GuiPluginHost {
 
     private release(instance: Instance): void {
         instance.controller.abort();
+        instance.native?.dispose();
         for (const cleanup of [...instance.cleanups]) { try { cleanup(); } catch (error) { instance.error ??= String(error); } }
         instance.cleanups.clear();
         guardCleanups(instance.root, (error) => { instance.error ??= String(error); });
@@ -174,6 +179,7 @@ export class GuiPluginHost {
     private fail(instance: Instance, error: unknown): void {
         if (instance.status === 'failed' || this.instances.get(instance.id) !== instance) return;
         instance.status = 'failed'; instance.error = error instanceof Error ? error.message : String(error);
+        if (error instanceof NativeGuiError) instance.errorCode = error.code;
         this.release(instance); this.publish();
     }
     uninstall(id: string): void {
@@ -248,7 +254,8 @@ export class GuiPluginHost {
         });
         const context = partial<Gui.SetupContext<Gui.Plugin.Definition>>('ctx', {
             id: instance.id, options, signal: instance.controller.signal, client: this.options.client, storage, stores,
-            app: { name: 'yuri', version: '', channel: 'local', platform: 'web', packaged: false }, desktop: undefined,
+            app: { name: 'yuri', version: instance.native?.activation.app.version ?? '', channel: instance.native?.activation.app.packaged ? 'prod' : 'local', platform: instance.native ? 'desktop' : 'web', packaged: instance.native?.activation.app.packaged ?? false },
+            desktop: instance.native ? partial<Gui.Desktop>('desktop', { os: instance.native.activation.os }) : undefined,
             t, plural: (key, count, params) => {
                 const category = new Intl.PluralRules(this.appearance[0]().locale).select(count);
                 const selected = `${key}.${category}`;
@@ -301,10 +308,12 @@ export class GuiPluginHost {
                 entry.live[1]({ status: 'active', value, generation: ++entry.generation });
                 return this.own(instance, () => { if (entry.provider !== instance) return; entry.provider = undefined; entry.live[1]({ status: 'inactive', reason: instance.status === 'failed' ? 'failed' : 'disabled' }); });
             },
-            use: <T extends Gui.Token>(token: T) => this.contract(token.id, token.kind === 'ipc').live[0] as Accessor<Gui.Live<Gui.TokenValue<T>>>,
+            use: <T extends Gui.Token>(token: T) => (token.kind === 'ipc' && instance.native
+                ? instance.native.token(token).live : this.contract(token.id, token.kind === 'ipc').live[0]) as Accessor<Gui.Live<Gui.TokenValue<T>>>,
             main: <S extends Gui.IpcSpec>(token: Gui.Ipc<S>) => {
-                if (!(token.id === instance.id || token.id.startsWith(`${instance.id}.`))) throw new Error('IPC must belong to the plugin');
-                return new Proxy({ state: () => undefined }, { get: (target, key) => key === 'state' ? target.state : key === 'on' ? () => unsupported('native IPC events') : () => Promise.reject(new Error('Unsupported GUI host API: native IPC')) }) as Gui.IpcClient<S>;
+                if (!(token.id === instance.id || token.id.startsWith(`${instance.id}.`))) throw new NativeGuiError('GUI_PLUGIN_FORBIDDEN', 'IPC must belong to the plugin');
+                if (instance.native) return instance.native.token(token).value;
+                return new Proxy({ state: () => undefined }, { get: (target, key) => key === 'state' ? target.state : key === 'on' ? () => { throw new NativeGuiError('GUI_PLUGIN_UNSUPPORTED'); } : () => Promise.reject(new NativeGuiError('GUI_PLUGIN_UNSUPPORTED')) }) as Gui.IpcClient<S>;
             },
             sessions: { current: this.session[0], list: () => { const session = this.session[0](); return session ? [session] : []; } },
             screen: { current: () => this.session[0]() ? this.screen : undefined }, layout,
@@ -374,7 +383,7 @@ export class GuiPluginHost {
             return { key: `${instance.id}:${tab.id}`, pluginId: instance.id, title: tab.title, file, inline: Boolean(file && this.fileViews.has(file)), active: layout?.shown === true && layout.active === `${instance.id}:${tab.id}` };
         }));
         this.snapshot = Object.freeze({
-            plugins: freezeRows(instances.map(({ id, revision, status, error, iconError }) => ({ id, revision, status, error: error ?? iconError }))),
+            plugins: freezeRows(instances.map(({ id, revision, status, error, errorCode, iconError }) => ({ id, revision, status, error: error ?? iconError, ...(errorCode ? { errorCode } : {}) }))),
             commands: freezeRows(active.flatMap((instance) => instance.commands.filter((command) => !command.hidden))), panels: freezeRows(panels),
             settings: freezeRows(active.flatMap((instance) => instance.settings.map((page) => ({ key: `${instance.id}:${page.id}`, pluginId: instance.id, title: page.title })))),
             menuItems: freezeRows(active.flatMap((instance) => instance.menus.map((menu) => ({ key: `${instance.id}:${menu.id}`, title: menu.title, description: menu.description, run: () => { void this.invoke(instance, () => menu.run()); } })))),
