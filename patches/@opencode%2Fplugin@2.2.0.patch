@@ -1,0 +1,15 @@
+diff --git a/package.json b/package.json
+index 25d514cdcbe700748d1b34724e1de7cc5f3f57d0..5fbc908f0a0f4a739fa54649785be838bae364cc 100644
+--- a/package.json
++++ b/package.json
+@@ -42,6 +42,10 @@
+       "types": "./dist/gui/main.d.ts"
+     },
+     "./gui/host": null,
++    "./gui/yuri-host": {
++      "types": "./dist/gui/internal.d.ts",
++      "import": "./dist/gui/internal.js"
++    },
+     "./gui/builtin": null,
+     "./gui/file": {
+       "import": "./dist/gui/file.js",

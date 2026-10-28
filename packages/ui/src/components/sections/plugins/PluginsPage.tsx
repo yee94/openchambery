@@ -1,4 +1,5 @@
 import React from 'react';
+import { GuiPluginsManager } from '@/components/gui-plugins/GuiPluginsManager';
 import { usePluginsQuery } from '@/queries/pluginQueries';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -153,7 +154,8 @@ export const PluginsPage: React.FC = () => {
 
   if (!selectedId) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <SettingsPageLayout>
+        <GuiPluginsManager />
         <div className="text-center text-muted-foreground">
           <Icon name="plug" className="mx-auto mb-3 h-12 w-12 opacity-50" />
           <p className="typography-body">{t('settings.plugins.page.empty.select')}</p>
@@ -161,7 +163,7 @@ export const PluginsPage: React.FC = () => {
             {t('settings.plugins.page.empty.add')}
           </p>
         </div>
-      </div>
+      </SettingsPageLayout>
     );
   }
 
@@ -209,6 +211,7 @@ export const PluginsPage: React.FC = () => {
 
     return (
       <SettingsPageLayout>
+        <GuiPluginsManager />
         <SettingsActionHeader actions={<>
           <Button variant="outline" size="sm" onClick={handleEntryDiscard} disabled={!isDirty || isSaving}>{t('settings.plugins.page.action.discard')}</Button>
           <Button size="sm" onClick={() => void handleEntrySave()} disabled={!isDirty || !optionsValid || isSaving} aria-busy={isSaving}>{t('settings.plugins.page.action.save')}</Button>
@@ -315,6 +318,7 @@ export const PluginsPage: React.FC = () => {
 
     return (
       <SettingsPageLayout>
+        <GuiPluginsManager />
         <SettingsActionHeader actions={<>
           <Button variant="outline" size="sm" onClick={handleFileDiscard} disabled={isSaving || isLoadingFile}>{t('settings.plugins.page.action.discard')}</Button>
           <Button size="sm" onClick={() => void handleFileSave()} disabled={!isDirty || isSaving || isLoadingFile} aria-busy={isSaving}>{t('settings.plugins.page.action.save')}</Button>
@@ -358,10 +362,11 @@ export const PluginsPage: React.FC = () => {
   }
 
   return (
-    <div className="flex h-full items-center justify-center">
+    <SettingsPageLayout>
+      <GuiPluginsManager />
       <div className="text-center text-muted-foreground">
         <Icon name="loader-4" className="mx-auto mb-3 h-6 w-6 animate-spin opacity-50" />
       </div>
-    </div>
+    </SettingsPageLayout>
   );
 };

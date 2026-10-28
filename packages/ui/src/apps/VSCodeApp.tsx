@@ -2,6 +2,7 @@ import React from 'react';
 import { AgentManagerView } from '@/components/views/agent-manager';
 import { FireworksProvider } from '@/contexts/FireworksContext';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
+import { GuiPluginsProvider } from '@/lib/gui-plugins/GuiPluginsProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
@@ -97,6 +98,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
     <ErrorBoundary>
       <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''} bootstrapDirectory={!(newSessionDraftOpen && currentSessionId === null)}>
         <RuntimeAPIProvider apis={apis}>
+          <GuiPluginsProvider>
           <FireworksProvider>
             <TooltipProvider delayDuration={300} skipDelayDuration={150}>
               <div className="h-full text-foreground bg-background">
@@ -107,6 +109,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
               </div>
             </TooltipProvider>
           </FireworksProvider>
+          </GuiPluginsProvider>
         </RuntimeAPIProvider>
       </SyncProvider>
     </ErrorBoundary>

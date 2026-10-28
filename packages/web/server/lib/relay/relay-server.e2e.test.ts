@@ -36,6 +36,14 @@ import { VolcengineTranscriptionSession } from '../dictation/volcengine-session.
 import { openRuntimeWebSocket } from '../../../../ui/src/lib/relay/runtime-socket.ts';
 import { refreshRuntimeUrlAuthToken } from '../../../../ui/src/lib/runtime-auth.ts';
 import { requestSpeechSession } from '../../../../ui/src/lib/voice/direct-session.ts';
+import { createGuiClient } from '../../../../ui/src/lib/opencode/gui.ts';
+import { createWebFilesAPI } from '../../../src/api/files.ts';
+
+// Web's source aliases are not exported Node package subpaths. Forward them to
+// the real implementations so this Node E2E exercises the same transport singleton.
+vi.mock('@yuriai/ui/lib/runtime-fetch', () => import('../../../../ui/src/lib/runtime-fetch.ts'));
+vi.mock('@yuriai/ui/lib/runtime-file-resource', () => import('../../../../ui/src/lib/runtime-file-resource.ts'));
+vi.mock('@yuriai/ui/lib/runtime-file-download', () => import('../../../../ui/src/lib/runtime-file-download.ts'));
 
 const timeoutMs = 10_000;
 const previewPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64');
@@ -162,8 +170,19 @@ const startOrigin = async () => {
   const mediaDirectory = await mkdtemp(path.join(os.tmpdir(), 'relay-video-'));
   const videoPath = path.join(mediaDirectory, 'clip.mp4');
   await fsPromises.writeFile(videoPath, Buffer.from('0123456789'));
+  const previewPath = path.join(mediaDirectory, '中文 预览.preview');
+  const previewContent = '远端 初始内容';
+  await fsPromises.writeFile(previewPath, previewContent);
+  // Generated plugin assets are not required for a clean checkout's relay tests.
+  // Set YURI_RELAY_GUI_BUNDLE to validate an external plugin's built CJS through this same chain.
+  const guiCode = process.env.YURI_RELAY_GUI_BUNDLE
+    ? await fsPromises.readFile(process.env.YURI_RELAY_GUI_BUNDLE, 'utf8')
+    : `module.exports.default={setup(){}};/*${'large plugin bundle 中文\n'.repeat(110_000)}*/`;
+  const guiBundle = { code: guiCode, revision: crypto.createHash('sha256').update(guiCode).digest('hex'), options: {} };
+  const pluginInventory = [{ id: 'preview-fixture', source: { type: 'package', target: 'preview-fixture', version: '0.1.0' }, features: { gui: true }, state: { status: 'active' } }];
+  const guiRequests: string[] = [];
   const rawFiles = express();
-  registerFsRoutes({ get: (route: string, handler: express.RequestHandler) => { if (route === '/api/fs/raw') rawFiles.get(route, handler); }, post() {}, put() {} }, {
+  registerFsRoutes({ get: (route: string, handler: express.RequestHandler) => { if (['/api/fs/raw', '/api/fs/stat', '/api/fs/read'].includes(route)) rawFiles.get(route, handler); }, post() {}, put() {} }, {
     fsPromises, os, path, spawn, crypto: globalThis.crypto, normalizeDirectoryPath: (value: string) => value,
     resolveProjectDirectory: async () => ({ directory: mediaDirectory }), buildAugmentedPath: () => '',
     resolveGitBinaryForSpawn: () => 'git', yuriUserConfigRoot: mediaDirectory,
@@ -245,10 +264,26 @@ const startOrigin = async () => {
         });
         return;
       }
+      if ((pathname === '/api/plugin' || pathname === '/api/plugin/gui') && req.method === 'GET') {
+        await uiAuth.requireAuth(req, res, () => {
+          const url = new URL(req.url ?? '/', 'http://origin');
+          if (!req.headers['x-yuri-relay-connection'] || url.searchParams.has('location[directory]')
+            || (pathname.endsWith('/gui') && url.searchParams.get('id') !== 'preview-fixture')) {
+            res.status(400).end(); return;
+          }
+          guiRequests.push(pathname);
+          res.json({ data: pathname.endsWith('/gui') ? guiBundle : pluginInventory });
+        });
+        return;
+      }
+      if (pathname === '/api/fs/stat' || pathname === '/api/fs/read') {
+        await uiAuth.requireAuth(req, res, () => rawFiles(req, rawRes));
+        return;
+      }
       if (pathname === '/api/fs/raw' && req.method === 'GET') {
         await uiAuth.requireAuth(req, res, () => {
           const filePath = new URL(req.url ?? '/', 'http://origin').searchParams.get('path');
-          if (filePath === videoPath) { rawFiles(req, rawRes); return; }
+          if (filePath === videoPath || filePath === previewPath) { rawFiles(req, rawRes); return; }
           if (filePath !== '/remote/icons-zoom.png' || !req.headers['x-yuri-relay-connection']) {
             res.status(404).end(); return;
           }
@@ -302,7 +337,7 @@ const startOrigin = async () => {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as net.AddressInfo).port;
   return {
-    port, videoPath, bearerRequests, observedOrigins, getHostSubscriptions: () => hostSubscriptions,
+    port, videoPath, previewPath, previewContent, guiBundle, pluginInventory, guiRequests, bearerRequests, observedOrigins, getHostSubscriptions: () => hostSubscriptions,
     stop: async () => {
       dictation.stop();
       for (const client of wss.clients) client.terminate();
@@ -518,6 +553,41 @@ describe('private relay compiled-process boundary', () => {
       configureRuntimeUrlResolver({ apiBaseUrl: 'https://relay-runtime.example' });
       setRuntimeBearerToken('client-token');
       adoptRelayTunnel({ relayUrl: relay.url, serverId: identity.serverId, hostEncPubJwk: identity.hostEncPubJwk }, client);
+      vi.stubGlobal('window', { location: new URL('https://relay-runtime.example'), addEventListener() {}, removeEventListener() {} });
+      try {
+        const gui = createGuiClient(new AbortController().signal);
+        const files = createWebFilesAPI({ getDirectory: () => path.dirname(origin.previewPath) });
+        expect(Buffer.byteLength(origin.guiBundle.code)).toBeGreaterThan(2_270_000);
+        for (const route of ['/api/plugin', '/api/plugin/gui?id=preview-fixture', `/api/fs/stat?path=${encodeURIComponent(origin.previewPath)}`, `/api/fs/raw?path=${encodeURIComponent(origin.previewPath)}`]) {
+          expect((await client.fetch(route)).status).toBe(401);
+          expect((await client.fetch(route, { headers: { authorization: 'Bearer invalid-token' } })).status).toBe(401);
+        }
+        expect((await gui.plugin.list()).data).toEqual(origin.pluginInventory);
+        expect((await gui.plugin.gui({ id: 'preview-fixture' })).data).toEqual(origin.guiBundle);
+        const initialStat = await files.statFile(origin.previewPath, { fingerprint: true });
+        expect(initialStat).toMatchObject({ isFile: true, size: Buffer.byteLength(origin.previewContent) });
+        expect(await files.readFile(origin.previewPath)).toMatchObject({ content: origin.previewContent, exists: true });
+        expect(await files.readFile(origin.previewPath, { optional: true })).toMatchObject({ content: origin.previewContent, exists: true });
+        const updated = '远端 更新后的内容 ✓';
+        await fsPromises.writeFile(origin.previewPath, updated);
+        const updatedStat = await files.statFile(origin.previewPath, { fingerprint: true });
+        expect(updatedStat.size).toBe(Buffer.byteLength(updated));
+        expect(updatedStat.sha256).not.toBe(initialStat.sha256);
+        expect(await files.readFile(origin.previewPath)).toMatchObject({ content: updated });
+        const beforeRestart = relay;
+        relay = undefined;
+        await stopRelay(beforeRestart);
+        await eventually(() => client!.getStatus().state !== 'connected', 'client did not observe Relay shutdown');
+        relay = await startCompiledRelay(binary, port);
+        await eventually(() => host!.getStatus().state === 'connected' && client!.getStatus().state === 'connected', 'GUI tunnel did not reconnect');
+        // Retain the actual SDK client across reconnection, rather than replacing it.
+        expect((await gui.plugin.list()).data).toEqual(origin.pluginInventory);
+        expect((await gui.plugin.gui({ id: 'preview-fixture' })).data).toEqual(origin.guiBundle);
+        expect(await files.readFile(origin.previewPath)).toMatchObject({ content: updated });
+        expect(origin.guiRequests).toEqual(['/api/plugin', '/api/plugin/gui', '/api/plugin', '/api/plugin/gui']);
+      } finally {
+        vi.unstubAllGlobals();
+      }
       await verifyStreamingAsrOverRelay();
       // Only the external synthesizer is mocked: runtime routing, auth, Host route,
       // encrypted tunnel and compiled Relay process all remain real.

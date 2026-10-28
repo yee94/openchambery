@@ -47,6 +47,7 @@ import { useSync } from '@/sync/use-sync';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
 import { AboutDialog } from '@/components/ui/AboutDialog';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
+import { GuiPluginsProvider } from '@/lib/gui-plugins/GuiPluginsProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useUIStore } from '@/stores/useUIStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
@@ -1078,6 +1079,7 @@ function App({ apis }: AppProps) {
     <ErrorBoundary>
       <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''} bootstrapDirectory={bootstrapDirectory}>
         <RuntimeAPIProvider apis={apis}>
+          <GuiPluginsProvider>
           <FireworksProvider>
               <TooltipProvider delayDuration={300} skipDelayDuration={150}>
                 <div className={isDesktopRuntime ? 'h-full text-foreground bg-transparent' : 'h-full text-foreground bg-background'}>
@@ -1106,6 +1108,7 @@ function App({ apis }: AppProps) {
                 </div>
               </TooltipProvider>
           </FireworksProvider>
+          </GuiPluginsProvider>
         </RuntimeAPIProvider>
       </SyncProvider>
     </ErrorBoundary>

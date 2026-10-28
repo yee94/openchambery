@@ -28,6 +28,7 @@ export const isLikelyFileReferencePath = (value: string): boolean => {
     if (!value || value.startsWith('--') || value.includes('://')) {
         return false;
     }
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) && !/^[A-Za-z]:[\\/]/.test(value)) return false;
     if (/[<>]/.test(value) || /\s{2,}/.test(value)) {
         return false;
     }
@@ -104,7 +105,17 @@ const stripTrailingReference = (value: string): string => {
 };
 
 export const parseFileReference = (value: string): ParsedFileReference | null => {
-    const trimmed = trimPathCandidate(value);
+    let trimmed = trimPathCandidate(value);
+    if (/^file:/i.test(trimmed)) {
+        try {
+            const url = new URL(trimmed);
+            if (url.protocol !== 'file:' || url.search || url.username || url.password) return null;
+            let path = decodeURIComponent(url.pathname);
+            if (url.hostname && url.hostname !== 'localhost') path = `//${url.hostname}${path}`;
+            else if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1);
+            trimmed = path + url.hash;
+        } catch { return null; }
+    }
     if (!trimmed) {
         return null;
     }

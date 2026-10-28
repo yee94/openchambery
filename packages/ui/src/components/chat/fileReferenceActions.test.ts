@@ -51,6 +51,7 @@ import {
   getResolvedReference,
   probeFileReference,
   openFileReference,
+  openFileReferenceFromElement,
   resetFileReferenceStatCacheForTests,
   shouldOfferFileReference,
   type OpenFileReferenceOptions,
@@ -168,6 +169,26 @@ describe('fileReferenceActions', () => {
     });
     expect(editorOpenFileMock).not.toHaveBeenCalled();
     expect(openContextFileMock).toHaveBeenCalledWith('/tmp', '/tmp/report.html', { viewerMode: 'preview' });
+  });
+
+  test.each([
+    ['/work/中文 report.eficy', '/work/中文 report.eficy'],
+    ['file:///work/%E4%B8%AD%E6%96%87%20report.eficy', '/work/中文 report.eficy'],
+    ['file:///C:/work/%E4%B8%AD%E6%96%87%20report.eficy', 'C:/work/中文 report.eficy'],
+    ['C:\\work\\中文 report.eficy', 'C:/work/中文 report.eficy'],
+    ['\\\\server\\share\\report.eficy', '//server/share/report.eficy'],
+    ['file://server/share/report.eficy', '//server/share/report.eficy'],
+  ])('opens local plugin file %s in the existing file tab', async (href, path) => {
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', href);
+    anchor.textContent = '查看预览';
+    await openFileReferenceFromElement(anchor, { effectiveDirectory: '/session' });
+    expect(openContextFileMock).toHaveBeenCalledWith('/session', path);
+  });
+
+  test.each(['https://example.com/a.eficy', 'mailto:a.eficy', 'file:///work/%ZZ.eficy'])('does not treat %s as a local file', async (href) => {
+    await openFileReference(href, false, { effectiveDirectory: '/session' });
+    expect(openContextFileMock).not.toHaveBeenCalled();
   });
 
   test('opens a file outside the session directory with no grant and no warning', async () => {

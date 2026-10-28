@@ -1,5 +1,6 @@
 import '@/lib/brand-storage-bootstrap';
 import React from 'react';
+import { GuiFileLinkBridge } from '@/components/gui-plugins/GuiFileLinkBridge';
 import { LoadingImage } from '@/components/ui/LoadingImage';
 import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
 import { useEvent } from '@reactuses/core';
@@ -3377,7 +3378,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const renderFloatingFileControls = ({
     exitFullscreenOnly = false,
     layout = 'floating',
-  }: { exitFullscreenOnly?: boolean; layout?: 'floating' | 'docked' } = {}) => {
+    previewToggle,
+  }: { exitFullscreenOnly?: boolean; layout?: 'floating' | 'docked'; previewToggle?: React.ReactNode } = {}) => {
     if (!selectedFile) {
       return null;
     }
@@ -3557,7 +3559,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           </>
         )}
 
-        {canUseShikiFileView && canEdit && !isHtml && (
+        {previewToggle}
+        {!previewToggle && canUseShikiFileView && canEdit && !isHtml && (
           <PreviewToggleButton
             currentMode={textViewMode === 'view' ? 'preview' : 'edit'}
             onToggle={() => {
@@ -3782,6 +3785,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   };
 
   const fileViewer = (
+    <GuiFileLinkBridge path={selectedFile?.path ?? ''} base={root || undefined} active={Boolean(selectedFile && isActive && (!isMobile || showMobilePageContent))}>
+    {({ preview: guiPreview, toggle: guiToggle }) => (
     <div
       className="relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden"
     >
@@ -3965,14 +3970,14 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
               </span>
             ) : null}
             <div className="ml-auto min-w-0 shrink-0 overflow-x-auto">
-              {renderFloatingFileControls({ layout: 'docked' })}
+              {guiPreview ? guiToggle : renderFloatingFileControls({ layout: 'docked', previewToggle: guiToggle })}
             </div>
           </div>
         ) : null}
 
       </div>
 
-      <div className="flex-1 min-h-0 min-w-0 relative">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         {selectedFile && !isSearchOpen && !(settingsExpandedEditorToolbar && !isMobile) && (
           <div
             ref={floatingToolbarRef}
@@ -3982,10 +3987,11 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
               setIsFloatingToolbarOpen(false);
             }}
           >
-            {isFloatingToolbarOpen ? (
-              renderFloatingFileControls()
+            {guiPreview ? guiToggle : isFloatingToolbarOpen ? (
+              renderFloatingFileControls({ previewToggle: guiToggle })
             ) : (
               <div className="flex items-center gap-1">
+                {guiToggle}
                 {isMarkdown ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -4036,7 +4042,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
             )}
           </div>
         )}
-        <ScrollableOverlay outerClassName="h-full min-w-0" className="h-full min-w-0">
+        {guiPreview ?? <ScrollableOverlay outerClassName="h-full min-w-0" className="h-full min-w-0">
           {!selectedFile ? (
             <div className="p-3 typography-ui text-muted-foreground">{t('filesView.editor.pickFileFromTree')}</div>
           ) : (fileLoading || isImageAssetAuthLoading || isPdfAssetAuthLoading) ? (
@@ -4249,9 +4255,11 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
               )}
             </div>
           )}
-        </ScrollableOverlay>
+        </ScrollableOverlay>}
       </div>
     </div>
+    )}
+    </GuiFileLinkBridge>
   );
 
   const hasTree = Boolean(root && childrenByDir[root]);

@@ -1,4 +1,5 @@
 import React from 'react';
+import { GuiFileLinkBridge } from '@/components/gui-plugins/GuiFileLinkBridge';
 import { LoadingImage } from '@/components/ui/LoadingImage';
 import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
 import { createPortal } from 'react-dom';
@@ -529,6 +530,7 @@ const MobileFileDetail: React.FC<{
   // Selection actions (add to chat / new session / copy) surface for text
   // selected inside the file preview, including PierreFile's shadow DOM.
   const contentContainerRef = React.useRef<HTMLDivElement>(null);
+  const base = useEffectiveDirectory();
   const imagePath = isImageFile(path) && !path.toLowerCase().endsWith('.svg') ? path : '';
   const imageResource = useResolvedImageResource(imagePath, getParentDirectory(path) ?? '', 'preview');
   const [failedImageSrc, setFailedImageSrc] = React.useState('');
@@ -662,6 +664,8 @@ const MobileFileDetail: React.FC<{
   ) : null;
 
   return (
+    <GuiFileLinkBridge path={path} base={base ?? undefined}>
+    {({ preview, toggle }) => (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
       {!hideHeader ? (
         <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
@@ -676,15 +680,17 @@ const MobileFileDetail: React.FC<{
           <div className="min-w-0 flex-1">
             <h2 className="truncate typography-ui-header text-foreground">{imageFilename}</h2>
           </div>
+          {toggle}
           {fileActions}
         </header>
       ) : (
         <MobileSheetHeaderActions>
+          {toggle}
           {fileActions}
         </MobileSheetHeaderActions>
       )}
       <div ref={contentContainerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-        {html ? (
+        {preview ?? (html ? (
           htmlFullscreen && typeof document !== 'undefined'
             ? createPortal(htmlViewer, document.body)
             : htmlViewer
@@ -713,7 +719,7 @@ const MobileFileDetail: React.FC<{
           </ScrollShadow>
         ) : (
           <MobileTextFile path={path} content={content} />
-        )}
+        ))}
       </div>
       <TextSelectionMenu containerRef={contentContainerRef} />
       {imagePopup.open ? (
@@ -726,6 +732,8 @@ const MobileFileDetail: React.FC<{
         </React.Suspense>
       ) : null}
     </div>
+    )}
+    </GuiFileLinkBridge>
   );
 };
 

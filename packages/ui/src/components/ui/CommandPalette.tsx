@@ -1,4 +1,5 @@
 import React from 'react';
+import { GuiPluginCommands } from '@/components/gui-plugins/GuiPluginCommands';
 import { useEvent, useEventListener } from '@reactuses/core';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -727,6 +728,7 @@ export const CommandPalette = React.memo(function CommandPalette({ presentation 
               </CommandEmpty>
             ) : null}
 
+            {isCommandPaletteOpen && resultsSettled ? <GuiPluginCommands query={liveTrimmed} onSelect={close} /> : null}
             {resultsSettled ? groupOrder.map((groupKey) => {
               if (groupKey === 'commands' && visibleCommands.length > 0) {
                 return (

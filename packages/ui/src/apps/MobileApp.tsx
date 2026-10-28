@@ -32,6 +32,7 @@ import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { getMobileWindowMotionController, MOBILE_SESSIONS_WINDOW_ID } from '@/components/ui/MobileWindowMotionRegistry';
 import { MobileSessionStatusBar } from '@/components/chat/MobileSessionStatusBar';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
+import { GuiPluginsProvider } from '@/lib/gui-plugins/GuiPluginsProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
@@ -3927,6 +3928,7 @@ export function MobileApp({ apis }: MobileAppProps) {
     <ErrorBoundary>
       <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''} bootstrapDirectory={!(newSessionDraftOpen && currentSessionId === null)}>
         <RuntimeAPIProvider apis={apis}>
+          <GuiPluginsProvider>
           <TooltipProvider delayDuration={300} skipDelayDuration={150}>
             <div className="h-full bg-background text-foreground">
               <SessionStartupCoordinator />
@@ -3945,6 +3947,7 @@ export function MobileApp({ apis }: MobileAppProps) {
               {isInitialized ? <ContentIndexOnboarding /> : null}
             </div>
           </TooltipProvider>
+          </GuiPluginsProvider>
         </RuntimeAPIProvider>
       </SyncProvider>
     </ErrorBoundary>
