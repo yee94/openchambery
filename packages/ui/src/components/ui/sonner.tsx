@@ -117,7 +117,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "group/toast toast !flex !min-w-[min(var(--width),calc(100vw-2rem))] !max-w-[calc(100vw-2rem)] !items-center !rounded-[var(--yuri-toast-radius,var(--radius-xl))] !border-0 !px-[var(--yuri-toast-padding-x,0.875rem)] !py-[var(--yuri-toast-padding-y,0.75rem)] !gap-[var(--yuri-toast-gap,0.625rem)] !text-foreground",
           content: "!min-w-0 !flex-1 !text-left",
           title: "typography-ui-label !font-medium !text-foreground",
-          description: "typography-meta !text-muted-foreground !mt-0.5",
+          description: "typography-meta !text-muted-foreground !mt-0",
           actionButton:
             "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--yuri-toast-action-background,var(--surface-muted))] !text-[var(--yuri-toast-action-foreground,var(--foreground))] hover:!opacity-85 !px-2 !py-1 typography-meta !font-medium transition-opacity",
           cancelButton:
