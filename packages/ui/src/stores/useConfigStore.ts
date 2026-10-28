@@ -1101,10 +1101,9 @@ export const useConfigStore = create<ConfigStore>()(
                         return;
                     }
 
-                    // Reuse only the matching directory projection.
-                    if (!snapshotHadProviders || options?.refreshProviders) {
-                        await get().loadProviders({ directory: fromDirectoryKey(directoryKey), source: options?.source ?? 'activateDirectory', forceRefresh: options?.refreshProviders });
-                    }
+                    // A projection can outlive Query invalidation while inactive.
+                    // Ensure on demand: fresh queries reuse data without a request.
+                    await get().loadProviders({ directory: fromDirectoryKey(directoryKey), source: options?.source ?? 'activateDirectory', forceRefresh: options?.refreshProviders });
 
                     if (getRuntimeGeneration() !== generation || get().activeDirectoryKey !== directoryKey) {
                         // Activation advertised an agent load before awaiting providers.
@@ -1120,9 +1119,7 @@ export const useConfigStore = create<ConfigStore>()(
                         }
                         return;
                     }
-                    if (!snapshotHadAgents) {
-                        await get().loadAgents({ directory: fromDirectoryKey(directoryKey), source: 'activateDirectory' });
-                    }
+                    await get().loadAgents({ directory: fromDirectoryKey(directoryKey), source: 'activateDirectory' });
                 },
 
                 invalidateProviderCache: (directory) => {

@@ -1794,16 +1794,17 @@ describe('useConfigStore provider persistence', () => {
       },
     });
 
-    await useConfigStore.getState().activateDirectory(OTHER_DIRECTORY);
+    const activation = useConfigStore.getState().activateDirectory(OTHER_DIRECTORY);
 
     expect(useConfigStore.getState().providerConfigLoadingByDirectory[OTHER_DIRECTORY]).toBe(false);
     expect(useConfigStore.getState().agentConfigLoadingByDirectory[OTHER_DIRECTORY]).toBe(false);
 
     pendingProviders.resolve({ providers: [providerResponse('fresh')], default: {} });
     pendingAgents.resolve([testAgent('review')]);
+    await activation;
   });
 
-  test('cached directory activation reuses Providers until an explicit refresh is requested', async () => {
+  test('cached projection without a Query entry is revalidated on activation and supports explicit refresh', async () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       directoryScoped: {
@@ -1814,10 +1815,10 @@ describe('useConfigStore provider persistence', () => {
       },
     });
     await useConfigStore.getState().activateDirectory(OTHER_DIRECTORY);
-    expect(getProvidersCalls).toBe(0);
+    expect(getProvidersCalls).toBe(1);
     liveProviderIdsByDirectory.set(OTHER_DIRECTORY, 'fresh');
     await useConfigStore.getState().activateDirectory(OTHER_DIRECTORY, { refreshProviders: true, source: 'test:explicitRefresh' });
-    expect(getProvidersCalls).toBe(1);
+    expect(getProvidersCalls).toBe(2);
     expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['fresh']);
   });
 
@@ -1873,6 +1874,26 @@ describe('useConfigStore provider persistence', () => {
     await useConfigStore.getState().loadAgents({ directory: OTHER_DIRECTORY, source: 'test:emptyOverlay' });
     expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
     expect(useConfigStore.getState().agentConfigLoadingByDirectory[OTHER_DIRECTORY]).not.toBe(true);
+  });
+
+  test('directory activation refreshes invalidated catalogs but reuses fresh queries', async () => {
+    useConfigStore.setState({ isConnected: true });
+    liveProviderId = 'warm';
+    liveAgents = [testAgent('build')];
+    await useConfigStore.getState().activateDirectory(DIRECTORY);
+    const providerCalls = getProvidersCalls;
+    const agentCalls = listAgentsCalls;
+    await useConfigStore.getState().activateDirectory(DIRECTORY);
+    expect(getProvidersCalls).toBe(providerCalls);
+    expect(listAgentsCalls).toBe(agentCalls);
+    await queryClient.invalidateQueries({ refetchType: 'none' });
+    liveProviderId = 'updated';
+    liveAgents = [testAgent('plan')];
+    await useConfigStore.getState().activateDirectory(DIRECTORY);
+    expect(getProvidersCalls).toBe(providerCalls + 1);
+    expect(listAgentsCalls).toBe(agentCalls + 1);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['updated']);
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['plan']);
   });
 
   test('initializeApp force-refreshes a warm Provider Query snapshot', async () => {

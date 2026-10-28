@@ -1,6 +1,6 @@
 {
   "name": "yuri-monorepo",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "AI workspace for coding, personal assistants, and recurring tasks across desktop, mobile, browser, and VS Code",
   "private": true,
   "type": "module",
