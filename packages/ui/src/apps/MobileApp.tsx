@@ -1393,6 +1393,7 @@ const MobileInstancesSurface: React.FC<{
           asked for (or until a row's edit button opens it). */}
       <SettingsGroup
         label={editingConnection ? t('mobile.instances.editTitle') : t('mobile.instances.addTitle')}
+        cardClassName={!formOpen && !editingConnection ? '!bg-background' : undefined}
       >
         {!formOpen && !editingConnection ? (
           <div className="yuri-settings-group-row flex flex-col items-stretch gap-2">
@@ -1410,7 +1411,7 @@ const MobileInstancesSurface: React.FC<{
               ) : null}
               <Button
                 type="button"
-                variant={qrScanSupported ? 'ghost' : 'outline'}
+                variant="ghost"
                 size="lg"
                 className="h-12 w-full"
                 onClick={() => { setError(null); setFormOpen(true); }}

@@ -688,7 +688,7 @@ const parseConfigSyncResult = (value: unknown): DesktopSshConfigSyncResult | nul
   const providerCredentials = parseConfigSyncProviderCredentials(value.providerCredentials);
   if (value.providerCredentials !== null && providerCredentials === null) return null;
 
-  const magpieWarnings = asStringArray(value.magpieWarnings).filter((entry) => entry === 'sign_in_required' || entry === 'agent_settings_skipped');
+  const magpieWarnings = asStringArray(value.magpieWarnings).filter((entry) => entry === 'sign_in_required' || entry === 'plugin_install_failed' || entry === 'agent_settings_skipped');
   return { ok: true, files, directories, deletes, totalBytes, agentsRoot, providerCredentials,
     ...(magpieWarnings.length ? { magpieWarnings } : {}) };
 };
