@@ -82,8 +82,6 @@ type Props = {
   collapsedProjects: Set<string>;
   hideDirectoryControls: boolean;
   projectRepoStatus: Map<string, boolean | null>;
-  isDesktopShellRuntime: boolean;
-  stuckProjectHeaders: Set<string>;
   mobileVariant: boolean;
   alwaysShowActions: boolean;
   toggleProject: (id: string) => void;
@@ -95,7 +93,6 @@ type Props = {
   syncProjectSessions: (id: string) => void;
   openProjectEditDialog: (id: string) => void;
   removeProject: (id: string) => void;
-  projectHeaderSentinelRefs: React.MutableRefObject<Map<string, HTMLDivElement | null>>;
   projectReorderEnabled?: boolean;
   reorderProjects: (activeId: string, overId: string) => void;
   projectSortOrder: ProjectSortOrder;
@@ -256,8 +253,6 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
                     isCollapsed={props.collapsedProjects.has(projectKey)}
                     isActiveProject={projectKey === props.activeProjectId}
                     isRepo={Boolean(props.projectRepoStatus.get(projectKey))}
-                    isDesktopShellRuntime={props.isDesktopShellRuntime}
-                    isStuck={props.stuckProjectHeaders.has(projectKey)}
                     hideDirectoryControls={props.hideDirectoryControls}
                     mobileVariant={props.mobileVariant}
                     alwaysShowActions={props.alwaysShowActions}
@@ -270,7 +265,6 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
                     syncProjectSessions={props.syncProjectSessions}
                     openProjectEditDialog={props.openProjectEditDialog}
                     removeProject={props.removeProject}
-                    projectHeaderSentinelRefs={props.projectHeaderSentinelRefs}
                     openSidebarMenuKey={props.openSidebarMenuKey === `project:${projectKey}` ? props.openSidebarMenuKey : null}
                     setOpenSidebarMenuKey={props.setOpenSidebarMenuKey}
                     projectReorderEnabled={props.projectReorderEnabled}
@@ -294,10 +288,10 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
 }
 
 type ProjectSectionProps = Pick<Props,
-  'homeDirectory' | 'isDesktopShellRuntime' | 'hideDirectoryControls' | 'mobileVariant' | 'alwaysShowActions' |
+  'homeDirectory' | 'hideDirectoryControls' | 'mobileVariant' | 'alwaysShowActions' |
   'toggleProject' | 'setActiveProjectIdOnly' | 'setActiveMainTab' | 'setSessionSwitcherOpen' |
   'openNewSessionDraft' | 'openNewWorktreeDialog' | 'syncProjectSessions' | 'openProjectEditDialog' | 'removeProject' |
-  'projectHeaderSentinelRefs' | 'openSidebarMenuKey' | 'setOpenSidebarMenuKey' | 'projectReorderEnabled' |
+  'openSidebarMenuKey' | 'setOpenSidebarMenuKey' | 'projectReorderEnabled' |
   'projectSortOrder' | 'isInlineEditing' | 'setGroupOrderByProject' | 'renderGroupSessions'
 > & {
   project: ProjectSection['project'];
@@ -305,7 +299,6 @@ type ProjectSectionProps = Pick<Props,
   isCollapsed: boolean;
   isActiveProject: boolean;
   isRepo: boolean;
-  isStuck: boolean;
   scrollContainerRef: React.RefObject<HTMLElement | null>;
 };
 
@@ -339,7 +332,6 @@ const SidebarProjectSection = React.memo(function SidebarProjectSection(props: P
   const onSyncSessions = useEvent(() => props.syncProjectSessions(projectKey));
   const onRenameStart = useEvent(() => props.openProjectEditDialog(projectKey));
   const onClose = useEvent(() => props.removeProject(projectKey));
-  const sentinelRef = useEvent((el: HTMLDivElement | null) => { props.projectHeaderSentinelRefs.current.set(projectKey, el); });
   const onGroupDragEnd = useEvent((event: DragEndEvent) => {
     if (isInlineEditing) return;
     const { active, over } = event;
@@ -377,10 +369,10 @@ const SidebarProjectSection = React.memo(function SidebarProjectSection(props: P
       projectDescription={formatPathForDisplay(project.normalizedPath, props.homeDirectory)}
       projectIcon={project.icon} projectColor={project.color} projectIconImage={project.iconImage}
       isCollapsed={isCollapsed} isActiveProject={props.isActiveProject} isSessionsLoading={isSessionsLoading || isSessionsRefreshing}
-      isRepo={props.isRepo} isDesktopShell={props.isDesktopShellRuntime} isStuck={props.isStuck}
+      isRepo={props.isRepo}
       hideDirectoryControls={props.hideDirectoryControls} mobileVariant={props.mobileVariant} alwaysShowActions={props.alwaysShowActions}
       onToggle={onToggle} onNewSession={onNewSession} onNewWorktreeSession={onNewWorktreeSession}
-      onSyncSessions={onSyncSessions} onRenameStart={onRenameStart} onClose={onClose} sentinelRef={sentinelRef}
+      onSyncSessions={onSyncSessions} onRenameStart={onRenameStart} onClose={onClose}
       showCreateButtons openSidebarMenuKey={props.openSidebarMenuKey} setOpenSidebarMenuKey={props.setOpenSidebarMenuKey}
       reorderEnabled={props.projectReorderEnabled ?? false}
     >

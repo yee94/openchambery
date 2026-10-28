@@ -61,11 +61,11 @@ it('skips project hook and body work across 50 unrelated parent commits, and inv
     hasLeadingSection: false, sectionsForRender: [section], projectSections: [section], activeProjectId: 'project',
     showOnlyMainWorkspace: false, hasSessionSearchQuery: false, emptyState: null, searchEmptyState: null,
     renderGroupSessions, homeDirectory: null, collapsedProjects: new Set(), hideDirectoryControls: false,
-    projectRepoStatus: new Map(), isDesktopShellRuntime: false, stuckProjectHeaders: new Set(), mobileVariant: false,
+    projectRepoStatus: new Map(), mobileVariant: false,
     alwaysShowActions: true, toggleProject: noop, setActiveProjectIdOnly: noop, setActiveMainTab: noop,
     setSessionSwitcherOpen: noop, openNewSessionDraft: onNewSession, openNewWorktreeDialog: noop,
     syncProjectSessions: noop, openProjectEditDialog: noop, removeProject: noop,
-    projectHeaderSentinelRefs: { current: new Map() }, reorderProjects: noop, projectSortOrder: 'manual',
+    reorderProjects: noop, projectSortOrder: 'manual',
     getOrderedGroups: (_id, groups) => groups, setGroupOrderByProject: noop, openSidebarMenuKey: null,
     setOpenSidebarMenuKey: noop, isInlineEditing: false,
   };

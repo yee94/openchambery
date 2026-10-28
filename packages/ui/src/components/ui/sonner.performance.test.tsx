@@ -22,7 +22,7 @@ test('toast pinning ignores transcript scroll/stream mutations and still repairs
     await settle();
     const item = host.querySelector<HTMLElement>('[data-sonner-toast]')!;
     expect(item).not.toBeNull();
-    expect(host.querySelector('[data-sonner-toaster]')?.getAttribute('data-x-position')).toBe('left');
+    expect(host.querySelector('[data-sonner-toaster]')?.getAttribute('data-x-position')).toBe('right');
     expect(host.querySelector('[data-sonner-toaster]')?.getAttribute('data-y-position')).toBe('bottom');
     const shadow = item.style.getPropertyValue('box-shadow');
     expect(item.style.getPropertyPriority('box-shadow')).toBe('important');
