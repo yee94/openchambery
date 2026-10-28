@@ -1564,6 +1564,8 @@ export const settingsDict = {
   'settings.remoteInstances.page.sync.note.excluded': 'Nie synchronizowane: dane sesji, pamięci podręczne, node_modules, pliki blokad.',
   'settings.remoteInstances.page.sync.section.directories': 'Katalogi',
   'settings.remoteInstances.page.sync.section.providerCredentials': 'Klucze dostawców',
+  'settings.remoteInstances.page.sync.hint.providerCredentials': 'Zapisane klucze i logowania',
+  'settings.remoteInstances.page.sync.hint.magpie': 'Konfiguracja, klucze, logowania',
   'settings.remoteInstances.page.sync.section.magpie': 'Konfiguracja i autoryzacje Magpie',
   'settings.remoteInstances.page.sync.magpie.signInRequired': 'Magpie zostało zsynchronizowane. Zaloguj się na urządzeniu docelowym do kont bez przenośnych danych logowania lub nadal niedostępnych.',
   'settings.remoteInstances.page.sync.magpie.agentsSkipped': 'Pominięto część ustawień agentów Magpie, ponieważ agenci lub modele są niedostępne na urządzeniu docelowym.',

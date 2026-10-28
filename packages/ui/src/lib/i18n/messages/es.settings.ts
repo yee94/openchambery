@@ -1267,6 +1267,8 @@ export const settingsDict = {
   "settings.remoteInstances.page.sync.section.files": "Archivos",
   "settings.remoteInstances.page.sync.section.directories": "Directorios",
   "settings.remoteInstances.page.sync.section.providerCredentials": "Claves del proveedor",
+  "settings.remoteInstances.page.sync.hint.providerCredentials": "Claves e inicios de sesión guardados",
+  "settings.remoteInstances.page.sync.hint.magpie": "Configuración, claves, sesiones",
   "settings.remoteInstances.page.sync.section.magpie": "Configuración y autorizaciones de Magpie",
   "settings.remoteInstances.page.sync.magpie.signInRequired": "Magpie se ha sincronizado. Inicia sesión en el destino en las cuentas sin credenciales transferibles o que sigan sin estar disponibles.",
   "settings.remoteInstances.page.sync.magpie.agentsSkipped": "Se omitieron algunos ajustes de agentes de Magpie porque los agentes o modelos no están disponibles en el destino.",

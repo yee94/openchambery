@@ -9,13 +9,12 @@ const indexCss = readFileSync(join(here, '../index.css'), 'utf-8');
 const sonnerSource = readFileSync(join(here, '../components/ui/sonner.tsx'), 'utf-8');
 
 describe('mobile toast visual contract', () => {
-  test('keeps desktop elevation as the fallback and uses the shared glass shadow on the front mobile toast', () => {
+  test('keeps desktop elevation as the fallback and uses a quiet contact shadow on mobile', () => {
     expect(sonnerSource).toContain('var(--yuri-toast-shadow, inset 0 1px');
     expect(sonnerSource).toContain(
       'backgroundColor: "var(--yuri-toast-background, var(--surface-elevated))"',
     );
-    expect(mobileCss).toContain('--yuri-toast-shadow: var(--yuri-mobile-glass-shadow);');
-    expect(mobileCss).not.toMatch(/--yuri-toast-shadow:\s*0 5px 12px -9px/);
+    expect(mobileCss).toContain('--yuri-toast-shadow: 0 2px 8px -3px');
     expect(mobileCss).toContain('--yuri-toast-background: var(--yuri-mobile-glass-fill);');
     expect(mobileCss).toContain('--yuri-toast-background-rear-near: var(--yuri-mobile-glass-fill);');
     expect(mobileCss).toContain('--yuri-toast-background-rear-far: var(--yuri-mobile-glass-fill);');
@@ -41,9 +40,9 @@ describe('mobile toast visual contract', () => {
 
   test('scopes compact material and quiet actions to mobile-capable web and native roots', () => {
     expect(mobileCss).toContain(':root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)');
-    expect(sonnerSource).toContain('var(--yuri-toast-action-background,var(--primary-base))');
-    expect(mobileCss).toContain('--yuri-toast-action-foreground: var(--primary-base);');
-    expect(mobileCss).toMatch(/data-sonner-toast\]\[data-styled="true"\][^{]*\{[\s\S]*?padding: 0\.5rem 0\.625rem !important;/);
+    expect(sonnerSource).toContain('var(--yuri-toast-action-background,var(--surface-muted))');
+    expect(mobileCss).toContain('--yuri-toast-action-foreground: var(--muted-foreground);');
+    expect(mobileCss).toMatch(/data-sonner-toast\]\[data-styled="true"\][^{]*\{[\s\S]*?padding: 0\.25rem 0\.625rem !important;/);
     expect(mobileCss).toMatch(
       /data-sonner-toaster\]\[data-x-position="center"\][^{]*\{[\s\S]*?transform: none !important;/,
     );

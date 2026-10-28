@@ -79,6 +79,7 @@ export const toast: typeof sonnerToast = Object.assign(
     const [message, data] = args
     triggerMobileHaptic()
     return sonnerToast.error(message, {
+      duration: 5000,
       ...data,
       action: data?.action || {
         label: 'Copy',
@@ -90,6 +91,7 @@ export const toast: typeof sonnerToast = Object.assign(
     const [message, data] = args
     triggerMobileHaptic()
     return sonnerToast.warning(message, {
+      duration: 5000,
       ...data,
       action: data?.action || {
         label: 'Copy',

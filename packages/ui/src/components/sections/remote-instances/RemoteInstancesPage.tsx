@@ -547,24 +547,35 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                 if (phase === 'review') void runCompareRemote(direction, next);
               }}
             />
-            {t('settings.remoteInstances.page.sync.section.providerCredentials')}
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate">{t('settings.remoteInstances.page.sync.section.providerCredentials')}</span>
+              <span className="truncate typography-micro text-muted-foreground">
+                {t('settings.remoteInstances.page.sync.hint.providerCredentials')}
+              </span>
+            </span>
           </label>
+
+          {preview?.plan.magpieAvailable ? (
+            <label className="flex items-center gap-2 typography-meta">
+              <Checkbox
+                checked={selections.magpie === true}
+                disabled={isApplying}
+                ariaLabel={t('settings.remoteInstances.page.sync.section.magpie')}
+                onChange={(checked) => {
+                  const next = { ...selections, magpie: checked };
+                  setSelections(next);
+                  void runCompareRemote(direction, next);
+                }}
+              />
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate">{t('settings.remoteInstances.page.sync.section.magpie')}</span>
+                <span className="truncate typography-micro text-muted-foreground">
+                  {t('settings.remoteInstances.page.sync.hint.magpie')}
+                </span>
+              </span>
+            </label>
+          ) : null}
         </div>
-        {preview?.plan.magpieAvailable && (
-          <SettingsGroup description={t('settings.remoteInstances.page.sync.magpie.description')}>
-            <SettingsToggleRow
-              checked={selections.magpie === true}
-              disabled={isApplying || phase !== 'review'}
-              label={t('settings.remoteInstances.page.sync.section.magpie')}
-              ariaLabel={t('settings.remoteInstances.page.sync.section.magpie')}
-              onChange={(checked) => {
-                const next = { ...selections, magpie: checked };
-                setSelections(next);
-                void runCompareRemote(direction, next);
-              }}
-            />
-          </SettingsGroup>
-        )}
 
         <div className="space-y-2">
           {SYNC_STEP_KEYS.map((key, index) => {
@@ -661,7 +672,11 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                     <div className="flex h-8 items-center gap-2 px-2">
                       <Icon name="shield-keyhole" className="size-3.5 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate typography-micro text-foreground">
+                        <span className="sr-only">{t('settings.remoteInstances.page.sync.section.providerCredentials')}: </span>
                         {t('settings.remoteInstances.page.sync.section.providerCredentials')}
+                        <span className="ml-2 typography-micro text-muted-foreground">
+                          {t('settings.remoteInstances.page.sync.hint.providerCredentials')}
+                        </span>
                       </span>
                       <span className="shrink-0 tabular-nums typography-micro text-muted-foreground">
                         {formatSyncBytes(plan.providerCredentials.bytes)}
@@ -677,8 +692,11 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                   {plan.magpie ? (
                     <div className="flex h-8 items-center gap-2 px-2">
                       <Icon name="tools" className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate typography-micro text-foreground">
+                      <span className="min-w-0 flex-1 truncate typography-micro text-foreground" title={t('settings.remoteInstances.page.sync.hint.magpie')}>
                         {t('settings.remoteInstances.page.sync.section.magpie')}
+                        <span className="ml-2 typography-micro text-muted-foreground">
+                          {t('settings.remoteInstances.page.sync.hint.magpie')}
+                        </span>
                       </span>
                     </div>
                   ) : null}

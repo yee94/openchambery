@@ -1267,6 +1267,8 @@ export const settingsDict = {
   "settings.remoteInstances.page.sync.section.files": "Файли",
   "settings.remoteInstances.page.sync.section.directories": "Каталоги",
   "settings.remoteInstances.page.sync.section.providerCredentials": "Ключі провайдера",
+  "settings.remoteInstances.page.sync.hint.providerCredentials": "Збережені ключі та входи",
+  "settings.remoteInstances.page.sync.hint.magpie": "Конфігурація, ключі, входи",
   "settings.remoteInstances.page.sync.section.magpie": "Конфігурація та авторизації Magpie",
   "settings.remoteInstances.page.sync.magpie.signInRequired": "Magpie синхронізовано. Увійдіть на цільовому пристрої до облікових записів без переносних даних входу або тих, що досі недоступні.",
   "settings.remoteInstances.page.sync.magpie.agentsSkipped": "Частину налаштувань агентів Magpie пропущено, оскільки агенти або моделі недоступні на цільовому пристрої.",

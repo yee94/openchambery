@@ -554,7 +554,7 @@ export function MobileProjectsHome({
                 <Button
                   type="button"
                   size="mobileIcon"
-                  className="yuri-mobile-round-control"
+                  className="yuri-mobile-round-control yuri-mobile-home-create"
                   aria-label={t('mobile.projects.menu.label')}
                 >
                   <Icon

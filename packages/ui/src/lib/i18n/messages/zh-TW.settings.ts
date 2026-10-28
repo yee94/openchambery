@@ -1156,6 +1156,8 @@
   'settings.remoteInstances.page.sync.section.files': '檔案',
   'settings.remoteInstances.page.sync.section.directories': '目錄',
   'settings.remoteInstances.page.sync.section.providerCredentials': '供應商金鑰',
+  'settings.remoteInstances.page.sync.hint.providerCredentials': '已儲存的金鑰與登入憑證',
+  'settings.remoteInstances.page.sync.hint.magpie': '設定、金鑰、登入授權',
   'settings.remoteInstances.page.sync.section.magpie': 'Magpie 設定與授權',
   'settings.remoteInstances.page.sync.magpie.signInRequired': 'Magpie 已同步。部分帳戶沒有可移轉的登入憑證或仍無法使用，請在目標端登入這些帳戶。',
   'settings.remoteInstances.page.sync.magpie.agentsSkipped': '部分 Magpie Agent 設定已略過：目標端未安裝對應 Agent，或相關模型暫不可用。',

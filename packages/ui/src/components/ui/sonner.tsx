@@ -5,7 +5,7 @@ import { Toaster as Sonner } from "sonner"
 import type { ToasterProps } from "sonner"
 import { Icon } from "@/components/icon/Icon"
 
-// Mobile sets --yuri-toast-shadow to the shared glass shadow. The pin must
+// Mobile sets --yuri-toast-shadow to a quiet contact shadow. The pin must
 // read that token; a hardcoded shadow here would flatten custom toasts.
 const SHADOW_DARK =
   "var(--yuri-toast-shadow, inset 0 1px 0 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.36), 0 1px 1px -0.5px rgba(0,0,0,0.22), 0 3px 3px -1.5px rgba(0,0,0,0.20), 0 6px 6px -3px rgba(0,0,0,0.16))"
@@ -127,11 +127,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme={isDark ? "dark" : "light"}
       className="toaster group"
       closeButton={false}
+      duration={3500}
       icons={TOAST_ICONS}
       toastOptions={{
         classNames: {
           toast:
-            "group/toast toast !flex !min-w-[min(var(--width),calc(100vw-2rem))] !max-w-[calc(100vw-2rem)] !items-center !rounded-[var(--radius-xl)] !border-0 !px-3.5 !py-3 !gap-2.5 !text-foreground",
+            "group/toast toast !flex !min-w-[min(var(--width),calc(100vw-2rem))] !max-w-[calc(100vw-2rem)] !items-center !rounded-[var(--yuri-toast-radius,var(--radius-xl))] !border-0 !px-[var(--yuri-toast-padding-x,0.875rem)] !py-[var(--yuri-toast-padding-y,0.75rem)] !gap-[var(--yuri-toast-gap,0.625rem)] !text-foreground",
           content: "!min-w-0 !flex-1 !text-left",
           title: "typography-ui-label !font-medium !text-foreground",
           description: "typography-meta !text-muted-foreground !mt-0.5",

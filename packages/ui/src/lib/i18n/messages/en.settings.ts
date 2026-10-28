@@ -1300,6 +1300,8 @@ export const settingsDict = {
   'settings.remoteInstances.page.sync.section.files': 'Files',
   'settings.remoteInstances.page.sync.section.directories': 'Directories',
   'settings.remoteInstances.page.sync.section.providerCredentials': 'Provider keys',
+  'settings.remoteInstances.page.sync.hint.providerCredentials': 'Saved keys and sign-ins',
+  'settings.remoteInstances.page.sync.hint.magpie': 'Config, keys, sign-ins',
   'settings.remoteInstances.page.sync.section.magpie': 'Magpie configuration and authorizations',
   'settings.remoteInstances.page.sync.magpie.signInRequired': 'Magpie was synced. Some accounts have no transferable sign-in or remain unavailable; sign in to those accounts on the destination.',
   'settings.remoteInstances.page.sync.magpie.agentsSkipped': 'Some Magpie agent settings were skipped because the agents or models are unavailable on the destination.',

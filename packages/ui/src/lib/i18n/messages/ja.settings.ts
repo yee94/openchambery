@@ -1300,6 +1300,8 @@ export const settingsDict = {
   'settings.remoteInstances.page.sync.section.files': 'ファイル',
   'settings.remoteInstances.page.sync.section.directories': 'ディレクトリ',
   'settings.remoteInstances.page.sync.section.providerCredentials': 'プロバイダーキー',
+  'settings.remoteInstances.page.sync.hint.providerCredentials': '保存済みのキーとサインイン情報',
+  'settings.remoteInstances.page.sync.hint.magpie': '設定、キー、サインイン情報',
   'settings.remoteInstances.page.sync.section.magpie': 'Magpie 設定と認証情報',
   'settings.remoteInstances.page.sync.magpie.signInRequired': 'Magpie を同期しました。移行できる認証情報がないか、まだ利用できないアカウントは、同期先でログインしてください。',
   'settings.remoteInstances.page.sync.magpie.agentsSkipped': '同期先にエージェントがないか、モデルが利用できないため、一部の Magpie エージェント設定をスキップしました。',

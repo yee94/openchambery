@@ -1267,6 +1267,8 @@ export const settingsDict = {
   'settings.remoteInstances.page.sync.section.files': '파일',
   'settings.remoteInstances.page.sync.section.directories': '디렉터리',
   'settings.remoteInstances.page.sync.section.providerCredentials': '공급자 키',
+  'settings.remoteInstances.page.sync.hint.providerCredentials': '저장된 키와 로그인 정보',
+  'settings.remoteInstances.page.sync.hint.magpie': '설정, 키, 로그인 정보',
   'settings.remoteInstances.page.sync.section.magpie': 'Magpie 설정 및 인증 정보',
   'settings.remoteInstances.page.sync.magpie.signInRequired': 'Magpie가 동기화되었습니다. 이전 가능한 인증 정보가 없거나 아직 사용할 수 없는 계정은 대상에서 로그인하세요.',
   'settings.remoteInstances.page.sync.magpie.agentsSkipped': '대상에 에이전트가 설치되지 않았거나 모델을 사용할 수 없어 일부 Magpie 에이전트 설정을 건너뛰었습니다.',

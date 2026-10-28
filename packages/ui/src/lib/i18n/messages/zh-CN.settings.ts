@@ -1267,6 +1267,8 @@ export const settingsDict = {
   'settings.remoteInstances.page.sync.section.files': '文件',
   'settings.remoteInstances.page.sync.section.directories': '目录',
   'settings.remoteInstances.page.sync.section.providerCredentials': '供应商密钥',
+  'settings.remoteInstances.page.sync.hint.providerCredentials': '已保存的密钥与登录凭据',
+  'settings.remoteInstances.page.sync.hint.magpie': '配置、密钥、登录授权',
   'settings.remoteInstances.page.sync.section.magpie': 'Magpie 配置与授权',
   'settings.remoteInstances.page.sync.magpie.signInRequired': 'Magpie 已同步。部分账户没有可迁移的登录凭据或仍不可用，请在目标端登录这些账户。',
   'settings.remoteInstances.page.sync.magpie.agentsSkipped': '部分 Magpie Agent 设置已跳过：目标端未安装对应 Agent，或相关模型暂不可用。',

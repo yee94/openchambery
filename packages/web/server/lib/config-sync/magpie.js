@@ -12,6 +12,27 @@ const exists = async (file) => {
   catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null; throw error; }
 };
 
+// Magpie plugins may print diagnostics on stderr while accounts --json still exits 0.
+// runCli merges streams for restore pattern matching, so recover the top-level JSON array.
+export const parseMagpieAccountsJson = (raw) => {
+  const text = String(raw || '').replace(/\x1b\[[0-9;]*m/g, '');
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '[' && (i === 0 || text[i - 1] === '\n' || text[i - 1] === '\r')) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) throw new Error('Unable to read Magpie accounts');
+  try {
+    const accounts = JSON.parse(text.slice(start));
+    if (!Array.isArray(accounts)) throw new Error();
+    return accounts;
+  } catch {
+    throw new Error('Unable to read Magpie accounts');
+  }
+};
+
 // Raw CLI output may contain provider names, paths or credentials. Never forward it.
 const runCli = (binary, args, { input = '', env, timeout = 600_000 } = {}) => new Promise((resolve, reject) => {
   const child = spawn(binary, args, { env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -207,7 +228,7 @@ export function createMagpieSync({
         const backup = await fs.readFile(file);
         let authorization;
         try {
-          const accounts = JSON.parse(await run(binary, ['accounts', '--json'], { env }));
+          const accounts = parseMagpieAccountsJson(await run(binary, ['accounts', '--json'], { env }));
           authorization = await collectMagpieAuth(await dataDir(binary), accounts);
         } catch { throw new Error('Unable to export Magpie authorizations'); }
         const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v2', passphrase, backup: backup.toString('base64'), authorization }));
@@ -247,7 +268,7 @@ export function createMagpieSync({
                 await run(binary, ['accounts', 'import', 'codex', credentialFile, '--yes'], { env });
               } finally { await fs.rm(credentialFile, { force: true }); }
             });
-            const accounts = JSON.parse(await run(binary, ['accounts', '--json'], { env }));
+            const accounts = parseMagpieAccountsJson(await run(binary, ['accounts', '--json'], { env }));
             verifyMagpieAuth(decoded.authorization, accounts);
             const configured = JSON.parse(await fs.readFile(path.join(dir, 'providers.json'), 'utf8').catch((error) => {
               if (error.code === 'ENOENT') return '{"providers":[]}';
@@ -262,8 +283,8 @@ export function createMagpieSync({
               output = await run(binary, ['restore', file], { env, input: `${decoded.passphrase}\n` });
               if (/Couldn't add the plugin|Needs a key|Library:.*couldn't/i.test(output)) throw new Error();
             }
-          } catch {
-            throw new Error('Magpie authorization sync or verification failed; some configuration and accounts may already be applied. Retry to finish.');
+          } catch (error) {
+            throw new Error('Magpie authorization sync or verification failed; some configuration and accounts may already be applied. Retry to finish.', { cause: error });
           }
         }
         const magpieWarnings = [];

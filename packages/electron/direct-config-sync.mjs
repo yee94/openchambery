@@ -92,7 +92,11 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
         method: 'PUT', headers: { ...headers, 'Content-Type': 'application/octet-stream' }, body: payload,
       });
       const result = await response.json().catch(() => null);
-      if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'Magpie sync failed on destination');
+      if (!response.ok || result?.ok !== true) {
+        throw new Error(result?.error || 'Magpie sync failed on destination', {
+          cause: typeof result?.detail === 'string' && result.detail.trim() ? new Error(result.detail.trim()) : undefined,
+        });
+      }
       return result;
     },
 

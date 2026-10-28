@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { createMagpieSync } from './magpie.js';
+import { createMagpieSync, parseMagpieAccountsJson } from './magpie.js';
 import { planOpenCodeConfigSync, planOpenCodeConfigSyncFromInventory } from './plan.js';
 import { applyConfigSyncPlan } from './engine.js';
 
@@ -23,6 +23,12 @@ const write = async (file, content = '{}') => {
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))); });
 
 describe('Magpie discovery and native transfer', () => {
+  it('recovers accounts JSON when plugin diagnostics precede the array on merged streams', () => {
+    expect(parseMagpieAccountsJson('2026/10/28 10:45:30 plugin [error]: Grok is not signed in\n[{"agent":"cursor","user":"a@example.invalid"}]'))
+      .toEqual([{ agent: 'cursor', user: 'a@example.invalid' }]);
+    expect(() => parseMagpieAccountsJson('no json here')).toThrow('Unable to read Magpie accounts');
+  });
+
   it('hides config-only sources until Magpie is installed, without installing during preview', async () => {
     const { home, options } = await machine();
     const fetchImpl = vi.fn();
@@ -122,7 +128,7 @@ describe('Magpie discovery and native transfer', () => {
     ]));
     const payload = await createMagpieSync({ ...source.options, run: async (_binary, args) => {
       if (args[0] === '--version') return 'magpie 0.1.1319';
-      if (args[0] === 'accounts') return '[{"agent":"astra"},{"agent":"codex","user":"fixture@example.invalid"}]';
+      if (args[0] === 'accounts') return '2026/10/28 plugin [error]: Grok is not signed in\n[{"agent":"astra"},{"agent":"codex","user":"fixture@example.invalid"}]';
       await write(args[1], '{"format":"magpie-backup"}');
       return '';
     } }).download();

@@ -4791,7 +4791,11 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       let magpieResult;
       if (magpiePayload) {
         if (!plan.magpie) throw new Error('Magpie was not selected');
-        magpieResult = await getLocalSyncExecutor().importMagpie(magpiePayload);
+        try {
+          magpieResult = await getLocalSyncExecutor().importMagpie(magpiePayload);
+        } catch (error) {
+          throw error?.cause instanceof Error ? new Error(`${error.message}: ${error.cause.message}`) : error;
+        }
       }
       if (configTar) await extractTarGzBuffer(configTar, path.join(home, '.config', 'opencode'));
       if (agentsTar) await extractTarGzBuffer(agentsTar, home);
