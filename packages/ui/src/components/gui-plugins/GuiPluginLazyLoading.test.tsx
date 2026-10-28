@@ -178,3 +178,12 @@ it('preserves source after bundle failure and refresh mounts the real inline pre
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(state.gui).toHaveBeenCalledTimes(3);
 });
+
+it('reports a real plugin render failure inside the opened file surface', async () => {
+  state.gui.mockResolvedValue({ data: { ...bundle, code: bundle.code.replace("const node = document.createElement('pre');", "throw new Error('preview render failed');") } });
+  await start();
+  await click('open-file');
+  await until(() => expect(container.querySelector('[data-gui-file-view] [role="alert"]')?.textContent).toBe('preview render failed'));
+  expect(container.querySelector('[data-source]')?.textContent).toBe(source);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});

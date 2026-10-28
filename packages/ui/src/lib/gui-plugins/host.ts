@@ -32,7 +32,7 @@ type Instance = {
     id: string; revision: string; controller: AbortController; status: 'active' | 'failed'; error?: string;
     context?: Gui.SetupContext<Gui.Plugin.Definition>; owner?: Owner; root?: Owner; dispose?: () => void;
     cleanups: Set<() => void>; contributions: Set<Contribution>;
-    iconChanges: ReturnType<typeof createSignal<number>>;
+    iconChanges: ReturnType<typeof createSignal<number>>; iconError?: string;
     commands: CommandView[]; panels: PanelEntry[]; settings: Gui.SettingsPage[]; menus: Gui.SessionPanelMenuItem[];
 };
 type LayoutState = { open: string[]; active: string | null; shown: boolean; scroll: Map<string, { x: number; y: number }> };
@@ -135,7 +135,17 @@ export class GuiPluginHost {
                     try {
                         const icons = [...instance.contributions].filter((entry) => entry.registry === GUI_FILE_ICON_REGISTRY).map((entry) => entry.read()).filter((value) => value !== undefined);
                         this.fileIcons.replace(instance.id, icons);
-                    } catch (error) { untrack(() => this.fail(instance, error)); }
+                        if (instance.iconError !== undefined) untrack(() => {
+                            instance.iconError = undefined;
+                            this.publish();
+                        });
+                    } catch (error) {
+                        untrack(() => {
+                            this.fileIcons.remove(instance.id);
+                            instance.iconError = error instanceof Error ? error.message : String(error);
+                            this.publish();
+                        });
+                    }
                 }));
                 if (!instance.controller.signal.aborted) runWithOwner(instance.owner!, () => createRenderEffect(() => {
                     this.changes[0](); this.session[0](); this.appearance[0]();
@@ -254,7 +264,19 @@ export class GuiPluginHost {
                 const contribution = createRoot((stop) => {
                     dispose = stop;
                     contributionOwner = getOwner()!;
-                    const read = createMemo(() => typeof item === 'function' ? (item as () => T | undefined)() : item);
+                    const evaluate = () => typeof item === 'function' ? (item as () => T | undefined)() : item;
+                    let read: Accessor<unknown>;
+                    if (registry.id === GUI_FILE_ICON_REGISTRY) {
+                        const result = createMemo(() => {
+                            try { return { ok: true as const, value: evaluate() }; }
+                            catch (error) { return { ok: false as const, error }; }
+                        });
+                        read = () => {
+                            const current = result();
+                            if (!current.ok) throw current.error;
+                            return current.value;
+                        };
+                    } else read = createMemo(evaluate);
                     if (registry.id === 'style') {
                         const style = document.createElement('style');
                         document.head.append(style);
@@ -352,7 +374,7 @@ export class GuiPluginHost {
             return { key: `${instance.id}:${tab.id}`, pluginId: instance.id, title: tab.title, file, inline: Boolean(file && this.fileViews.has(file)), active: layout?.shown === true && layout.active === `${instance.id}:${tab.id}` };
         }));
         this.snapshot = Object.freeze({
-            plugins: freezeRows(instances.map(({ id, revision, status, error }) => ({ id, revision, status, error }))),
+            plugins: freezeRows(instances.map(({ id, revision, status, error, iconError }) => ({ id, revision, status, error: error ?? iconError }))),
             commands: freezeRows(active.flatMap((instance) => instance.commands.filter((command) => !command.hidden))), panels: freezeRows(panels),
             settings: freezeRows(active.flatMap((instance) => instance.settings.map((page) => ({ key: `${instance.id}:${page.id}`, pluginId: instance.id, title: page.title })))),
             menuItems: freezeRows(active.flatMap((instance) => instance.menus.map((menu) => ({ key: `${instance.id}:${menu.id}`, title: menu.title, description: menu.description, run: () => { void this.invoke(instance, () => menu.run()); } })))),

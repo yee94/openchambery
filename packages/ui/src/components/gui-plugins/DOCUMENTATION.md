@@ -8,6 +8,12 @@ the normalized absolute file path; an inline-owned panel never opens a modal.
 an inline file owner. `GuiPluginWindow` supplies Dialog/Sheet for those standalone
 panels and settings pages only.
 
+Explicit message file links and Changes' open-file actions navigate to the file
+surface without a file-read or plugin-support preflight. Read failures stay in
+that opened file tab; plugin render failures appear there through the bridge.
+Changes row selection still defaults to diff. Background link probes annotate
+inferred references but cannot veto explicit Markdown file-link navigation.
+
 `GuiPluginMount` gives the host one empty DOM container. React never reconciles
 the foreign descendants. Changing host, contribution key or contribution kind,
 the owning plugin's readiness revision, closing the window, or removing the contribution

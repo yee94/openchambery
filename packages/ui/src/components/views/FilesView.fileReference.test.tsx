@@ -129,6 +129,18 @@ afterEach(async () => {
 });
 
 describe('file reference failure lifecycle', () => {
+  test('a custom file reference opens its tab before reading and keeps the read error inline', async () => {
+    const failure = deferred<{ content: string }>();
+    harness.files.readFile.mockReturnValue(failure.promise);
+    await act(async () => reactRoot.render(<ContextPanel directory="/repo" />));
+    await act(async () => openFileReference('/repo/report.eficy', false, { effectiveDirectory: '/repo' }));
+    expect(activeFilePath()).toBe('/repo/report.eficy');
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('report.eficy');
+    await act(async () => failure.reject(new Error('file read unavailable')));
+    expect(activeFilePath()).toBe('/repo/report.eficy');
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('file read unavailable');
+  });
+
   test('native browser opacity follows tab visibility and clears on unmount', async () => {
     vi.stubGlobal('__YURI_ELECTRON__', true);
     await act(async () => {

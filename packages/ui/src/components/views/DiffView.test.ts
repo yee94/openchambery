@@ -168,9 +168,12 @@ describe('DiffView per-file row action contract', () => {
     expect(diffViewSource).toContain('onOpenFile?: (filePath: string) => void');
     expect(diffViewSource).toContain('onOpenFile={openDiffFilePreview}');
     expect(diffViewSource).toContain('diffView.actions.openFilePreview');
-    // Dedicated mobile routes through the mobile file sheet; desktop validates then opens.
+    // Dedicated mobile routes through the mobile file sheet; desktop opens before reading.
     expect(diffViewSource).toContain('mobileActions.openFile({ path: absolutePath })');
     expect(diffViewSource).toContain('openContextFile(effectiveDirectory, absolutePath)');
+    const previewAction = diffViewSource.slice(diffViewSource.indexOf('const openDiffFilePreview ='), diffViewSource.indexOf('const renderStackedDiffView ='));
+    expect(previewAction).not.toContain('validateContextFileOpen');
+    expect(diffViewSource).not.toContain('validateContextFileOpen');
   });
 });
 

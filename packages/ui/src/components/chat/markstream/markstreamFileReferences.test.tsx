@@ -7,7 +7,17 @@ import { resetFileReferenceStatCacheForTests } from '../fileReferenceActions';
 
 const { openContextFile, runtimeFetch } = vi.hoisted(() => ({ openContextFile: vi.fn(), runtimeFetch: vi.fn() }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch }));
-vi.mock('@/stores/useUIStore', () => ({ useUIStore: { getState: () => ({ openContextFile }) } }));
+vi.mock('@/stores/useUIStore', () => ({ useUIStore: Object.assign(
+  (select: (state: { isMobile: boolean }) => unknown) => select({ isMobile: false }),
+  { getState: () => ({ openContextFile }) },
+) }));
+vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/repo' }));
+vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock('@/contexts/useThemeSystem', () => ({ useOptionalThemeSystem: () => undefined }));
+vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ runtime: { isVSCode: false } }) }));
+vi.mock('../message/toolRenderers', () => ({}));
+vi.mock('../message/parts/VirtualizedCodeBlock', () => ({ VirtualizedCodeBlock: () => null }));
+vi.mock('@/components/code/WorkerHighlightedCode', () => ({ WorkerHighlightedCode: () => null }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement;
@@ -44,6 +54,15 @@ test('a failed relay probe does not block mobile markdown preview navigation', a
   await act(async () => link.dispatchEvent(event));
   expect(event.defaultPrevented).toBe(true);
   expect(openContextFile).toHaveBeenCalledWith('/repo', '/repo/docs/report.md');
+});
+
+test('legacy markdown opens an explicit custom-extension link before probing succeeds', async () => {
+  const { MarkdownRenderer } = await import('../MarkdownRendererImpl');
+  await act(async () => root.render(<MarkdownRenderer content="[report](/repo/report.eficy)" messageId="file-link" isAnimated={false} />));
+  const link = host.querySelector('a')!;
+  expect(link).toBeTruthy();
+  await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+  expect(openContextFile).toHaveBeenCalledWith('/repo', '/repo/report.eficy');
 });
 
 test.each(['mobile', 'desktop'] as const)('directory anchors cannot reload the %s application', async (surface) => {

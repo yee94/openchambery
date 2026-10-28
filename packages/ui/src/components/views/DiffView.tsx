@@ -35,7 +35,6 @@ import { PierreDiffViewer } from './PierreDiffViewer';
 import { useDeviceInfo } from '@/lib/device';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Icon } from "@/components/icon/Icon";
-import { getContextFileOpenFailureMessage, validateContextFileOpen } from '@/lib/contextFileOpenGuard';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
@@ -1074,7 +1073,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     navigationRequestKey,
 }) => {
     const { t } = useI18n();
-    const { git, files } = useRuntimeAPIs();
+    const { git } = useRuntimeAPIs();
     const fallbackDirectory = useEffectiveDirectory();
     const effectiveDirectory = (typeof directory === 'string' && directory.trim())
         ? directory.trim()
@@ -1749,12 +1748,6 @@ export const DiffView: React.FC<DiffViewProps> = ({
                 : getFirstChangedModifiedLine(diffForNavigation.original, diffForNavigation.modified));
 
             const absolutePath = toAbsolutePath(effectiveDirectory, filePath);
-            const openValidation = await validateContextFileOpen(files, absolutePath);
-            if (!openValidation.ok) {
-                toast.error(getContextFileOpenFailureMessage(openValidation.reason));
-                return;
-            }
-
             openContextFileAtLine(
                 effectiveDirectory,
                 absolutePath,
@@ -1764,7 +1757,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         } finally {
             setOpeningEditorFilePath((current) => (current === filePath ? null : current));
         }
-    }, [activeDiffStaged, effectiveDirectory, files, git, openContextFileAtLine, setDiff]);
+    }, [activeDiffStaged, effectiveDirectory, git, openContextFileAtLine, setDiff]);
 
     /**
      * Jump from a diff file row to the file viewer. Any file type is allowed;
@@ -1783,13 +1776,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             return;
         }
 
-        void validateContextFileOpen(files, absolutePath).then((validation) => {
-            if (!validation.ok) {
-                toast.error(getContextFileOpenFailureMessage(validation.reason));
-                return;
-            }
-            openContextFile(effectiveDirectory, absolutePath);
-        });
+        openContextFile(effectiveDirectory, absolutePath);
     });
 
     const renderStackedDiffView = () => {

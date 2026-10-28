@@ -41,13 +41,22 @@ describe('GUI plugin host with the actual official Solid SDK', () => {
         expect(value.fileIcons.get('card.eficy')).toBeUndefined();
     });
 
-    it('isolates invalid icon contributions to their plugin', () => {
+    it('keeps file previews active when optional icon validation fails', () => {
         const value = host();
         value.install('valid', bundle(`ctx.add(G.Registry.define('yuri.file-icon'),{id:'icon',extensions:['eficy'],svg:'<svg xmlns="http://www.w3.org/2000/svg"/>'});`));
         const current = value.fileIcons.get('a.eficy');
-        value.install('invalid', bundle(`ctx.add(G.Registry.define('yuri.file-icon'),{id:'icon',extensions:['eficy'],svg:'https://example.com/icon.svg'});`));
-        expect(value.getSnapshot().plugins.find((plugin) => plugin.id === 'invalid')?.status).toBe('failed');
+        value.setSession({ id: 'one', directory: '/work' });
+        value.install('invalid', bundle(`
+            ctx.add(G.Registry.define('yuri.file-icon'),{id:'icon',extensions:['eficy'],svg:'https://example.com/icon.svg'});
+            ctx.add(G.LinkHandler,{match:link=>link.href.endsWith('.eficy'),open:link=>ctx.layout.open('invalid:'+link.href,link.session)});
+            ctx.add(G.Panel,{id:'files',region:'side',list:({open})=>open.map(id=>({id,title:id,file:id})),render:()=>null});
+        `));
+        expect(value.getSnapshot().plugins.find((plugin) => plugin.id === 'invalid')?.status).toBe('active');
+        expect(value.getSnapshot().plugins.find((plugin) => plugin.id === 'invalid')?.error).toBeTruthy();
         expect(value.fileIcons.get('a.eficy')).toBe(current);
+        value.registerFileView('/work/report.eficy');
+        expect(value.openLink({ href: '/work/report.eficy' })).toBe(true);
+        expect(value.filePanel('/work/report.eficy')?.pluginId).toBe('invalid');
     });
 
     it('does zero icon parsing, encoding or notification for unrelated session/layout updates', () => {
@@ -73,6 +82,59 @@ describe('GUI plugin host with the actual official Solid SDK', () => {
             expect(encode).not.toHaveBeenCalled();
             expect(parse).not.toHaveBeenCalled();
         } finally { encode.mockRestore(); parse.mockRestore(); Reflect.deleteProperty(globalThis, '__guiIconCounts'); }
+    });
+
+    it('retracts stale icons on invalid reactive replacement without disabling commands', () => {
+        const value = host();
+        value.install('icons', bundle(`
+            const [invalid,setInvalid]=S.createSignal(false);
+            ctx.add(G.Registry.define('yuri.file-icon'),()=>({id:'icon',extensions:['eficy'],svg:invalid()?'invalid':'<svg xmlns="http://www.w3.org/2000/svg"/>'}));
+            ctx.add(G.Command,{id:'toggle',title:'Toggle',run(){setInvalid(v=>!v)}});
+        `));
+        expect(value.fileIcons.get('a.eficy')).toBeDefined();
+        value.runCommand('icons.toggle');
+        expect(value.fileIcons.get('a.eficy')).toBeUndefined();
+        expect(value.getSnapshot().plugins[0]).toMatchObject({ status: 'active', error: expect.any(String) });
+        expect(value.getSnapshot().commands).toHaveLength(1);
+        value.runCommand('icons.toggle');
+        expect(value.fileIcons.get('a.eficy')).toBeDefined();
+        expect(value.getSnapshot().plugins[0].error).toBeUndefined();
+    });
+
+    it('isolates throwing icon accessors during setup and reactive updates, then clears their recovered diagnostic', () => {
+        const value = host();
+        value.install('icons', bundle(`
+            const [broken,setBroken]=S.createSignal(true);
+            ctx.add(G.Registry.define('yuri.file-icon'),()=>{
+                if(broken()) throw new Error('icon accessor failed');
+                return {id:'icon',extensions:['eficy'],svg:'<svg xmlns="http://www.w3.org/2000/svg"/>'};
+            });
+            ctx.add(G.Command,{id:'toggle',title:'Toggle',run(){setBroken(v=>!v)}});
+        `));
+        expect(value.getSnapshot().plugins[0]).toMatchObject({ status: 'active', error: 'icon accessor failed' });
+        expect(value.getSnapshot().commands).toHaveLength(1);
+        expect(value.fileIcons.get('a.eficy')).toBeUndefined();
+        value.runCommand('icons.toggle');
+        expect(value.getSnapshot().plugins[0].error).toBeUndefined();
+        expect(value.fileIcons.get('a.eficy')).toBeDefined();
+        value.runCommand('icons.toggle');
+        expect(value.getSnapshot().plugins[0]).toMatchObject({ status: 'active', error: 'icon accessor failed' });
+        expect(value.fileIcons.get('a.eficy')).toBeUndefined();
+    });
+
+    it('preserves non-icon diagnostics when an icon recovers and still fails non-icon setup accessors', () => {
+        const value = host();
+        value.install('icons', bundle(`
+            const [broken,setBroken]=S.createSignal(true);
+            const stop=ctx.add(G.Style,()=>{ S.onCleanup(()=>{throw new Error('style cleanup failed')}); return ''; });
+            ctx.add(G.Registry.define('yuri.file-icon'),()=>({id:'icon',extensions:['eficy'],svg:broken()?'invalid':'<svg xmlns="http://www.w3.org/2000/svg"/>'}));
+            ctx.add(G.Command,{id:'recover',title:'Recover',run(){stop();setBroken(false)}});
+        `));
+        value.runCommand('icons.recover');
+        expect(value.fileIcons.get('a.eficy')).toBeDefined();
+        expect(value.getSnapshot().plugins[0]).toMatchObject({ status: 'active', error: expect.stringContaining('style cleanup failed') });
+        value.install('broken', bundle(`ctx.add(G.Command,()=>{throw new Error('command accessor failed')});`));
+        expect(value.getSnapshot().plugins.find((plugin) => plugin.id === 'broken')).toMatchObject({ status: 'failed', error: 'command accessor failed' });
     });
 
     it('updates reactive icons and retracts manually released contributions', () => {

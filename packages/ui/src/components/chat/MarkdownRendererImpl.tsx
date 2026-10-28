@@ -51,6 +51,7 @@ import {
   openFileReferenceFromElement,
   probeFileReference,
   shouldOfferFileReference,
+  type OpenFileReferenceOptions,
 } from './fileReferenceActions';
 import {
   BLOCK_PATH_TOKEN_SELECTOR,
@@ -75,11 +76,13 @@ const useExternalLinkInteractions = ({
   enabled,
   effectiveDirectory,
   openInAppBrowser,
+  fileReference,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   enabled?: boolean;
   effectiveDirectory?: string;
   openInAppBrowser?: (directory: string, url: string) => void;
+  fileReference?: OpenFileReferenceOptions;
 }) => {
   const handleClick = useEvent((event: MouseEvent) => {
     if (enabled === false) {
@@ -112,6 +115,9 @@ const useExternalLinkInteractions = ({
     if (isLocalPathHref(href)) {
       event.preventDefault();
       event.stopPropagation();
+      if (fileReference && getResolvedReference(href, fileReference.effectiveDirectory)) {
+        void openFileReferenceFromElement(anchor, fileReference);
+      }
       return;
     }
     if (!isExternalHttpUrl(href)) {
@@ -1267,6 +1273,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     containerRef,
     effectiveDirectory,
     openInAppBrowser,
+    fileReference: enableFileReferences && !isStreaming ? { effectiveDirectory, editor, preferRuntimeEditor: runtime.isVSCode, onShowPopup } : undefined,
   });
   const {
     reconcileMarkdownImageResources,
@@ -1414,6 +1421,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
     enabled: !disableLinkSafety,
     effectiveDirectory,
     openInAppBrowser,
+    fileReference: enableFileReferences ? { effectiveDirectory, editor, preferRuntimeEditor: runtime.isVSCode, onShowPopup } : undefined,
   });
   const {
     reconcileMarkdownImageResources,
