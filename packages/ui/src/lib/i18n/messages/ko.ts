@@ -3,6 +3,9 @@ import { settingsDict } from './ko.settings';
 
 export const dict: Record<I18nKey, string> = {
   'guiPlugins.loading': '인터페이스 플러그인 불러오는 중…',
+  'guiPlugins.preview.loadingTitle': '미리보기 준비 중',
+  'guiPlugins.preview.loadingDescription': '처음 열 때는 시간이 조금 걸릴 수 있습니다',
+  'guiPlugins.preview.viewSource': '소스 보기',
   'guiPlugins.title': '인터페이스 플러그인',
   'guiPlugins.error': '플러그인 작업에 실패했습니다.',
   'guiPlugins.close': '닫기',
@@ -1447,6 +1450,8 @@ export const dict: Record<I18nKey, string> = {
   'filesView.error.previewUnavailable': '미리보기를 사용할 수 없음',
   'filesView.error.switchToEditMode': '문제를 수정하려면 편집 모드로 전환하세요.',
   'filesView.error.readFileFailed': '파일 읽기 실패',
+  'filesView.binary.description': '이 바이너리 파일은 텍스트로 표시할 수 없습니다.',
+  'filesView.binary.openSystemApp': '시스템 앱으로 열기',
   'filesView.editor.htmlPreviewTitle': 'HTML 미리보기',
   'filesView.diagram.closeDiagramView': '다이어그램 보기 닫기',
   'filesView.diagram.saveDiagram': '다이어그램 저장',

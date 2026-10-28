@@ -341,6 +341,10 @@ mapping is applied, including during initialization. Directory switches expose
 only that directory's projections and loading flags. Late results update only
 their own directory, with per-resource request epochs and runtime generations.
 Prewarm loads only the active directory, never enumerating projects/locations.
+Directory activation always ensures the directory's Provider and Agent queries:
+fresh Query data is reused, while invalidated or absent data is fetched even when
+a prior UI projection exists. Reconnect invalidation never eagerly reloads
+persisted inactive directory scopes.
 Empty/partial startup catalogs do not erase model, agent or thinking intent;
 catalog absence never rewrites saved settings. Configured default model strings
 `provider/model#variant` and objects `{ providerID, model, variant }` share

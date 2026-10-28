@@ -18,6 +18,7 @@ import { useResolvedImageResource } from '@/components/chat/imageSource';
 import type { ToolPopupContent } from '@/components/chat/message/types';
 import { TextSelectionMenu } from '@/components/chat/message/TextSelectionMenu';
 import { PIERRE_RUNTIME_BASE_CSS } from '@/components/views/PierreDiffViewer';
+import { BinaryFileFallback } from '@/components/views/BinaryFileFallback';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -201,22 +202,27 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
     enabled: Boolean(browserDirectory && normalizedDebouncedQuery),
   });
 
+  const needsFileStat = Boolean(filePath && (!isImageFile(filePath) || filePath.toLowerCase().endsWith('.svg')));
+  // Read-only preview: watch for external changes (agent edits the file being
+  // viewed) and refetch content when stat moves. Scroll position is preserved
+  // because the preview container is not remounted on content updates.
+  const fileStatQuery = useFileStatWatcher({
+    scopeDirectory: root,
+    path: filePath,
+  }, {
+    enabled: needsFileStat,
+  });
+  const isBinary = needsFileStat && fileStatQuery.data?.isBinary === true;
   const shouldReadFile = Boolean(
     filePath
     && files.readFile
+    && fileStatQuery.data
+    && !fileStatQuery.error
+    && !isBinary
     && (!isHtmlFile(filePath) || htmlViewMode === 'source')
     && (!isImageFile(filePath) || filePath.toLowerCase().endsWith('.svg')),
   );
   const fileQuery = useFileContentQuery({
-    scopeDirectory: root,
-    path: filePath,
-  }, {
-    enabled: shouldReadFile,
-  });
-  // Read-only preview: watch for external changes (agent edits the file being
-  // viewed) and refetch content when stat moves. Scroll position is preserved
-  // because the preview container is not remounted on content updates.
-  useFileStatWatcher({
     scopeDirectory: root,
     path: filePath,
   }, {
@@ -236,12 +242,13 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
   const fileContent = fileQuery.data && fileQuery.data.length > MAX_MOBILE_FILE_CHARS
     ? `${fileQuery.data.slice(0, MAX_MOBILE_FILE_CHARS)}\n\n${t('mobile.files.file.truncated')}`
     : fileQuery.data ?? '';
-  const fileError = filePath && !files.readFile
+  const readError = fileStatQuery.error ?? fileQuery.error;
+  const fileError = needsFileStat && (!files.statFile || (!isBinary && !files.readFile))
     ? t('mobile.files.error.readUnavailable')
-    : fileQuery.error
-      ? fileQuery.error instanceof Error ? fileQuery.error.message : t('filesView.error.readFileFailed')
+    : readError
+      ? readError instanceof Error ? readError.message : t('filesView.error.readFileFailed')
       : null;
-  const isLoadingFile = shouldReadFile && fileQuery.isFetching;
+  const isLoadingFile = !fileError && ((needsFileStat && !fileStatQuery.data) || (shouldReadFile && fileQuery.isFetching));
 
   const openDirectory = (directory: string) => {
     setQuery('');
@@ -295,6 +302,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
           content={fileContent}
           error={fileError}
           isLoading={isLoadingFile}
+          isBinary={isBinary}
           hideHeader={hideFileHeader}
           htmlViewMode={htmlViewMode}
           onHtmlViewModeChange={setHtmlViewMode}
@@ -447,6 +455,7 @@ const MobileSearchResults: React.FC<{
 
 const MobileFileDetailActions: React.FC<{
   path: string;
+  canUseText: boolean;
   htmlViewMode: HtmlViewMode;
   htmlFullscreen: boolean;
   onToggleHtmlViewMode: () => void;
@@ -455,6 +464,7 @@ const MobileFileDetailActions: React.FC<{
   onCopyContent: () => void;
 }> = ({
   path,
+  canUseText,
   htmlViewMode,
   htmlFullscreen,
   onToggleHtmlViewMode,
@@ -467,7 +477,7 @@ const MobileFileDetailActions: React.FC<{
 
   return (
     <>
-      {html ? (
+      {html && canUseText ? (
         <>
           <Button
             type="button"
@@ -491,7 +501,7 @@ const MobileFileDetailActions: React.FC<{
           )}
         </>
       ) : null}
-      {!isImageFile(path) && !html ? (
+      {canUseText && !isImageFile(path) && !html ? (
         <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
           <Icon name="file-copy" className="size-4" />
         </Button>
@@ -508,6 +518,7 @@ const MobileFileDetail: React.FC<{
   content: string;
   error: string | null;
   isLoading: boolean;
+  isBinary: boolean;
   hideHeader?: boolean;
   htmlViewMode: HtmlViewMode;
   onHtmlViewModeChange: (mode: HtmlViewMode) => void;
@@ -519,6 +530,7 @@ const MobileFileDetail: React.FC<{
   content,
   error,
   isLoading,
+  isBinary,
   hideHeader = false,
   htmlViewMode,
   onHtmlViewModeChange,
@@ -607,6 +619,7 @@ const MobileFileDetail: React.FC<{
   const fileActions = (
     <MobileFileDetailActions
       path={path}
+      canUseText={!isBinary && !isLoading && !error}
       htmlViewMode={htmlViewMode}
       htmlFullscreen={htmlFullscreen}
       onToggleHtmlViewMode={toggleHtmlViewMode}
@@ -690,7 +703,9 @@ const MobileFileDetail: React.FC<{
         </MobileSheetHeaderActions>
       )}
       <div ref={contentContainerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-        {preview ?? (html ? (
+        {preview ?? (isBinary ? (
+          <BinaryFileFallback key={path} path={path} />
+        ) : html && !isLoading && !error ? (
           htmlFullscreen && typeof document !== 'undefined'
             ? createPortal(htmlViewer, document.body)
             : htmlViewer

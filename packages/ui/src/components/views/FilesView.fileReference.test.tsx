@@ -6,14 +6,28 @@ import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
 import { useUIStore } from '@/stores/useUIStore';
 
 const harness = vi.hoisted(() => ({
-  files: { readFile: vi.fn(), listDirectory: vi.fn(), statFile: vi.fn(), writeFile: vi.fn() },
+  files: { readFile: vi.fn(), listDirectory: vi.fn(), statFile: vi.fn(), writeFile: vi.fn(), downloadFile: vi.fn() },
   runtime: { isDesktop: false },
+  local: false,
+  pluginPreview: false,
+  openDesktopPath: vi.fn(),
   noop: () => {},
   empty: [],
   t: (key: string) => key,
 }));
 
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: harness.t }) }));
+vi.mock('@/lib/desktop', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/desktop')>(),
+  isDesktopLocalOriginActive: () => harness.local,
+  openDesktopPath: harness.openDesktopPath,
+}));
+vi.mock('@/components/gui-plugins/GuiFileLinkBridge', () => ({
+  GuiFileLinkBridge: ({ children }: { children: (view: { preview: React.ReactNode; toggle: React.ReactNode }) => React.ReactNode }) => children({
+    preview: harness.pluginPreview ? <div data-testid="plugin-preview">Plugin preview</div> : null,
+    toggle: null,
+  }),
+}));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: vi.fn(async () => new Response('{}')) }));
 vi.mock('@/stores/useOpenInAppsStore', () => ({
   useOpenInAppsStore: (selector: (state: unknown) => unknown) => selector({ availableApps: harness.empty, initialize: harness.noop }),
@@ -109,6 +123,11 @@ async function open(path: string, atLine = false) {
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   harness.files.readFile.mockReset();
+  harness.runtime.isDesktop = false;
+  harness.local = false;
+  harness.pluginPreview = false;
+  harness.openDesktopPath.mockReset().mockResolvedValue(true);
+  harness.files.downloadFile.mockReset().mockResolvedValue(undefined);
   harness.files.writeFile.mockReset().mockResolvedValue({ success: true });
   harness.files.statFile.mockReset().mockImplementation(async (path: string) => ({ path, size: 9, isFile: true }));
   harness.files.listDirectory.mockClear();
@@ -126,6 +145,76 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe('binary file fallback', () => {
+  test.each(['/repo/installer.dmg', '/repo/data.unknown', '/repo/binary.md'])('does not read or edit authoritative binary %s', async (path) => {
+    harness.files.statFile.mockImplementation(async (requested: string) => ({ path: requested, isFile: true, size: 9_000_000, isBinary: true }));
+    await open(path);
+    await act(async () => reactRoot.render(<FilePanel />));
+    expect(harness.files.readFile).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid="editor"]')).toBeNull();
+    expect(host.textContent).toContain('filesView.binary.description');
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, metaKey: true })));
+    expect(harness.files.writeFile).not.toHaveBeenCalled();
+    expect(harness.openDesktopPath).not.toHaveBeenCalled();
+    await clickButton('sidebarFilesTree.menu.save');
+    expect(harness.files.downloadFile).toHaveBeenCalledWith(path);
+  });
+
+  test.each([true, false])('system open requires explicit action on a local desktop (%s)', async (local) => {
+    harness.runtime.isDesktop = true;
+    harness.local = local;
+    harness.files.statFile.mockResolvedValue({ path: '/repo/installer.dmg', isFile: true, size: 50, isBinary: true });
+    await open('/repo/installer.dmg');
+    await act(async () => reactRoot.render(<FilePanel />));
+    expect(harness.openDesktopPath).not.toHaveBeenCalled();
+    expect(host.textContent?.includes('filesView.binary.openSystemApp')).toBe(local);
+    if (local) {
+      await clickButton('filesView.binary.openSystemApp');
+      expect(harness.openDesktopPath).toHaveBeenCalledWith('/repo/installer.dmg');
+    }
+  });
+
+  test('a plugin preview wins over binary fallback without a text read', async () => {
+    harness.pluginPreview = true;
+    harness.files.statFile.mockResolvedValue({ path: '/repo/asset.custom', isFile: true, size: 50, isBinary: true });
+    await open('/repo/asset.custom');
+    await act(async () => reactRoot.render(<FilePanel />));
+    expect(host.querySelector('[data-testid="plugin-preview"]')).not.toBeNull();
+    expect(host.textContent).not.toContain('filesView.binary.description');
+    expect(harness.files.readFile).not.toHaveBeenCalled();
+  });
+
+  test('stat failure is an inline failure, not permission to read text', async () => {
+    harness.files.statFile.mockRejectedValue(new Error('stat offline'));
+    await open('/outside/file.unknown');
+    await act(async () => reactRoot.render(<FilePanel />));
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('stat offline');
+    expect(harness.files.readFile).not.toHaveBeenCalled();
+    expect(harness.files.statFile).toHaveBeenCalledWith('/outside/file.unknown', expect.objectContaining({ allowOutsideWorkspace: true, directory: '/repo' }));
+  });
+
+  test('a stale stat completion cannot start reading the old file or replace a newer binary', async () => {
+    const stale = deferred<{ path: string; isFile: boolean; size: number; isBinary: boolean }>();
+    harness.files.statFile.mockImplementation((path: string) => path === '/repo/old.unknown' ? stale.promise : Promise.resolve({ path, isFile: true, size: 50, isBinary: true }));
+    await open('/repo/old.unknown');
+    await act(async () => reactRoot.render(<FilePanel />));
+    await open('/repo/new.dmg');
+    await act(async () => stale.resolve({ path: '/repo/old.unknown', isFile: true, size: 50, isBinary: false }));
+    expect(harness.files.readFile).not.toHaveBeenCalled();
+    expect(host.textContent).toContain('filesView.binary.description');
+    expect(host.querySelector('h1')?.textContent).toBe('/repo/new.dmg');
+  });
+
+  test('unknown suffix text remains readable after successful stat', async () => {
+    harness.files.statFile.mockResolvedValue({ path: '/repo/data.unusual', isFile: true, size: 12, isBinary: false });
+    harness.files.readFile.mockResolvedValue({ content: 'readable text' });
+    await open('/repo/data.unusual');
+    await act(async () => reactRoot.render(<FilePanel />));
+    expect(host.querySelector('[data-testid="editor"]')?.textContent).toBe('readable text');
+    expect(harness.files.statFile).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('file reference failure lifecycle', () => {

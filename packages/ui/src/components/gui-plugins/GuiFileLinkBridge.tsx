@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/icon/Icon';
 import { guiPluginReadinessKey } from './readiness';
 import { GuiPluginMount } from './GuiPluginMount';
+import { GuiPreviewLoading } from './GuiPreviewLoading';
 
 export function GuiFileLinkBridge({ path, base, active = true, children }: {
   path: string;
@@ -28,6 +29,7 @@ export function GuiFileLinkBridge({ path, base, active = true, children }: {
   const preview = Boolean(panel && sourceIdentity !== identity);
   const failure = error || inventory.find((plugin) => plugin.enabled && plugin.error)?.error
     || snapshot.plugins.find((plugin) => plugin.status === 'failed')?.error;
+  const preparing = active && !preview && loading && !failure && sourceIdentity !== identity;
 
   React.useEffect(() => {
     if (active && path && !requested && anchor.current && !anchor.current.closest('[inert], [hidden], [aria-hidden="true"]')) requestLoad();
@@ -63,24 +65,23 @@ export function GuiFileLinkBridge({ path, base, active = true, children }: {
     open(false);
   }, [active, loading, host, path, base, readyVersion, available, snapshot.sessionKey, open]);
 
-  const label = t(preview ? 'filesView.editor.switchToEditMode' : 'filesView.editor.switchToPreviewMode');
-  const toggle = active && (panel || feedback) ? (
-    <Button variant="ghost" size="icon" aria-label={label} title={label} disabled={!host || loading}
+  const label = t(preview || preparing ? 'filesView.editor.switchToEditMode' : 'filesView.editor.switchToPreviewMode');
+  const toggle = active && (panel || feedback || preparing) ? (
+    <Button variant="ghost" size="icon" aria-label={label} title={label} disabled={!host && !preparing}
       onClick={() => {
-        if (preview) setSourceIdentity(identity);
+        if (preview || preparing) setSourceIdentity(identity);
         else { setSourceIdentity(null); open(true); }
       }}>
-      <Icon name={preview ? 'eye' : 'eye-off'} className="size-4" aria-hidden="true" />
+      <Icon name={preview || preparing ? 'eye' : 'eye-off'} className="size-4" aria-hidden="true" />
     </Button>
   ) : null;
   const content = preview && host && panel
     ? <GuiPluginMount host={host} contributionKey={panel.key} kind="panel" revision={JSON.stringify([guiPluginReadinessKey(snapshot.plugins, panel.pluginId), snapshot.sessionKey])} />
-    : null;
+    : preparing ? <GuiPreviewLoading onViewSource={() => setSourceIdentity(identity)} /> : null;
 
   return (
     <div ref={anchor} className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col" data-gui-file-view={path}>
       {feedback ? <span role="status" className="shrink-0 px-3 py-1 break-words typography-meta text-muted-foreground">{feedback}</span> : null}
-      {active && !preview && loading ? <span role="status" aria-busy="true" className="shrink-0 px-3 py-2 typography-meta text-muted-foreground">{t('guiPlugins.loading')}</span> : null}
       {active && !preview && failure ? <div className="flex shrink-0 items-center gap-2 px-3 py-2">
         <span role="alert" className="min-w-0 flex-1 break-words typography-meta text-[var(--status-error)]">{failure}</span>
         <Button size="sm" disabled={loading} onClick={refresh}>{t('guiPlugins.refresh')}</Button>

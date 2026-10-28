@@ -3,6 +3,9 @@ import { settingsDict } from './en.settings';
 export const dict = {
   'guiPlugins.title': 'Interface plugins',
   'guiPlugins.loading': 'Loading interface plugins…',
+  'guiPlugins.preview.loadingTitle': 'Preparing preview',
+  'guiPlugins.preview.loadingDescription': 'Opening for the first time may take a moment',
+  'guiPlugins.preview.viewSource': 'View source',
   'guiPlugins.error': 'The plugin action failed.',
   'guiPlugins.close': 'Close',
   'guiPlugins.closePanel': 'Close {title}',
@@ -1445,6 +1448,8 @@ export const dict = {
   'filesView.error.previewUnavailable': 'Preview unavailable',
   'filesView.error.switchToEditMode': 'Switch to edit mode to fix the issue.',
   'filesView.error.readFileFailed': 'Failed to read file',
+  'filesView.binary.description': 'This binary file cannot be displayed as text.',
+  'filesView.binary.openSystemApp': 'Open in system app',
   'filesView.editor.htmlPreviewTitle': 'HTML Preview',
   'filesView.diagram.closeDiagramView': 'Close diagram view',
   'filesView.diagram.saveDiagram': 'Save diagram',

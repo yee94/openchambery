@@ -3,6 +3,9 @@ import { settingsDict } from './uk.settings';
 
 export const dict: Record<I18nKey, string> = {
   'guiPlugins.loading': 'Завантаження плагінів інтерфейсу…',
+  'guiPlugins.preview.loadingTitle': 'Підготовка попереднього перегляду',
+  'guiPlugins.preview.loadingDescription': 'Перше відкриття може зайняти трохи часу',
+  'guiPlugins.preview.viewSource': 'Переглянути вихідний код',
   'guiPlugins.title': 'Плагіни інтерфейсу',
   'guiPlugins.error': 'Не вдалося виконати дію плагіна.',
   'guiPlugins.close': 'Закрити',
@@ -1413,6 +1416,8 @@ export const dict: Record<I18nKey, string> = {
   "filesView.error.previewUnavailable": "Попередній перегляд недоступний",
   "filesView.error.switchToEditMode": "Перейдіть у режим редагування, щоб усунути проблему.",
   "filesView.error.readFileFailed": "Не вдалося прочитати файл",
+  "filesView.binary.description": "Цей двійковий файл неможливо відобразити як текст.",
+  "filesView.binary.openSystemApp": "Відкрити в системній програмі",
   "filesView.editor.htmlPreviewTitle": "Попередній перегляд HTML",
   "filesView.diagram.closeDiagramView": "Закрити перегляд діаграми",
   "filesView.diagram.saveDiagram": "Зберегти діаграму",

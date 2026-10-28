@@ -3,6 +3,9 @@ import { settingsDict } from './zh-CN.settings';
 
 export const dict: Record<I18nKey, string> = {
   'guiPlugins.loading': '正在加载界面插件…',
+  'guiPlugins.preview.loadingTitle': '正在准备预览',
+  'guiPlugins.preview.loadingDescription': '首次打开可能需要一点时间',
+  'guiPlugins.preview.viewSource': '查看源码',
   'guiPlugins.title': '界面插件',
   'guiPlugins.error': '插件操作失败。',
   'guiPlugins.close': '关闭',
@@ -1410,6 +1413,8 @@ export const dict: Record<I18nKey, string> = {
   'filesView.error.previewUnavailable': '预览不可用',
   'filesView.error.switchToEditMode': '请切换到编辑模式修复问题。',
   'filesView.error.readFileFailed': '读取文件失败',
+  'filesView.binary.description': '此二进制文件无法作为文本显示。',
+  'filesView.binary.openSystemApp': '用系统应用打开',
   'filesView.editor.htmlPreviewTitle': 'HTML 预览',
   'filesView.diagram.closeDiagramView': '关闭图表视图',
   'filesView.diagram.saveDiagram': '保存图表',

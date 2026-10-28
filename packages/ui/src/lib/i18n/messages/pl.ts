@@ -3,6 +3,9 @@ import { settingsDict } from './pl.settings';
 
 export const dict: Record<I18nKey, string> = {
   'guiPlugins.loading': 'Ładowanie wtyczek interfejsu…',
+  'guiPlugins.preview.loadingTitle': 'Przygotowywanie podglądu',
+  'guiPlugins.preview.loadingDescription': 'Pierwsze otwarcie może chwilę potrwać',
+  'guiPlugins.preview.viewSource': 'Pokaż kod źródłowy',
   'guiPlugins.title': 'Wtyczki interfejsu',
   'guiPlugins.error': 'Działanie wtyczki nie powiodło się.',
   'guiPlugins.close': 'Zamknij',
@@ -2161,6 +2164,8 @@ export const dict: Record<I18nKey, string> = {
   'filesView.error.jsonViewerUnavailable': 'Podgląd JSON jest niedostępny',
   'filesView.error.previewUnavailable': 'Podgląd jest niedostępny',
   'filesView.error.readFileFailed': 'Nie udało się odczytać pliku',
+  'filesView.binary.description': 'Tego pliku binarnego nie można wyświetlić jako tekstu.',
+  'filesView.binary.openSystemApp': 'Otwórz w aplikacji systemowej',
   'filesView.error.switchToEditMode': 'Przełącz do trybu edycji, aby naprawić problem.',
   'filesView.error.switchToTextMode': 'Przełącz do trybu tekstowego, aby zobaczyć surową zawartość.',
   'filesView.state.loading': 'Ładowanie...',

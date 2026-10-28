@@ -138,15 +138,16 @@ afterEach(async () => {
   container.remove();
 });
 
-it('defers the CJS bundle until file opening, preserves source while pending, and reopens without another request', async () => {
+it('defers the CJS bundle until file opening, presents preview preparation, and reopens without another request', async () => {
   let complete!: (value: { data: typeof bundle }) => void;
   state.gui.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
   await start();
   await click('open-file');
   await until(() => expect(state.gui).toHaveBeenCalledOnce());
   expect(context.requested).toBe(true);
-  expect(container.querySelector('[role="status"]')?.textContent).toBe('guiPlugins.loading');
-  expect(container.querySelector('[data-source]')?.textContent).toBe(source);
+  expect(container.querySelector('[role="status"]')?.textContent).toBe('guiPlugins.preview.loadingTitleguiPlugins.preview.loadingDescription');
+  expect(container.querySelector('[data-gui-preview-loading] svg')).not.toBeNull();
+  expect(container.querySelector('[data-source]')).toBeNull();
   expect(container.querySelector('[data-preview]')).toBeNull();
   expect(state.files!.readFile).not.toHaveBeenCalled();
   await act(async () => complete({ data: bundle }));
@@ -161,6 +162,21 @@ it('defers the CJS bundle until file opening, preserves source while pending, an
   expect(context.host).toBe(host);
   expect(state.gui).toHaveBeenCalledOnce();
   expect(state.list).toHaveBeenCalledOnce();
+});
+
+it('lets users read source during preparation without a late preview taking over', async () => {
+  let complete!: (value: { data: typeof bundle }) => void;
+  state.gui.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+  await start();
+  await click('open-file');
+  await until(() => expect(state.gui).toHaveBeenCalledOnce());
+  await click('guiPlugins.preview.viewSource');
+  expect(container.querySelector('[data-source]')?.textContent).toBe(source);
+  expect(container.querySelector('[data-gui-preview-loading]')).toBeNull();
+  await act(async () => complete({ data: bundle }));
+  await until(() => expect(context.loading).toBe(false));
+  expect(container.querySelector('[data-source]')?.textContent).toBe(source);
+  expect(container.querySelector('[data-preview]')).toBeNull();
 });
 
 it('preserves source after bundle failure and refresh mounts the real inline preview', async () => {

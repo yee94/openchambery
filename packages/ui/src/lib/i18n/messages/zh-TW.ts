@@ -3,6 +3,9 @@ import { settingsDict } from './zh-TW.settings';
 
 export const dict: Record<I18nKey, string> = {
   'guiPlugins.loading': '正在載入介面外掛程式…',
+  'guiPlugins.preview.loadingTitle': '正在準備預覽',
+  'guiPlugins.preview.loadingDescription': '首次開啟可能需要一點時間',
+  'guiPlugins.preview.viewSource': '檢視原始碼',
   'guiPlugins.title': '介面外掛',
   'guiPlugins.error': '外掛操作失敗。',
   'guiPlugins.close': '關閉',
@@ -1420,6 +1423,8 @@ export const dict: Record<I18nKey, string> = {
   'filesView.error.previewUnavailable': '預覽無法使用',
   'filesView.error.switchToEditMode': '請切換到編輯模式修復問題。',
   'filesView.error.readFileFailed': '讀取檔案失敗',
+  'filesView.binary.description': '此二進位檔案無法以文字顯示。',
+  'filesView.binary.openSystemApp': '使用系統應用程式開啟',
   'filesView.editor.htmlPreviewTitle': 'HTML 預覽',
   'filesView.diagram.closeDiagramView': '關閉圖表檢視',
   'filesView.diagram.saveDiagram': '儲存圖表',

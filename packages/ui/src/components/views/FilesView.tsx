@@ -31,6 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { CodeMirrorEditor } from '@/components/ui/CodeMirrorEditor';
 import { GoToLineDialog } from './GoToLineDialog';
 import { PreviewToggleButton } from './PreviewToggleButton';
+import { BinaryFileFallback } from './BinaryFileFallback';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import type { ToolPopupContent } from '@/components/chat/message/types';
 import { attachmentCitationDisplay } from '@/composer/inline-visual';
@@ -54,7 +55,7 @@ import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { cn, getModifierLabel, getRevealLabelKey, hasModifier } from '@/lib/utils';
 import { getLanguageFromExtension, getImageMimeType, isDrawioFile, isHtmlFile, isImageFile, isPdfFile } from '@/lib/toolHelpers';
 import { acquireRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken, subscribeRuntimeUrlAuthToken } from '@/lib/runtime-auth';
-import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
+import { getRuntimeApiBaseUrl, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { getOutsideFileGrant } from '@/lib/outsideFileGrants';
 import { DiagramEditor } from '@/components/diagram';
@@ -79,7 +80,7 @@ import { Icon } from "@/components/icon/Icon";
 import { useMessageTTS } from '@/hooks/useMessageTTS';
 import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
-import { openDesktopFileInApp, openDesktopPath } from '@/lib/desktop';
+import { isDesktopLocalOriginActive, openDesktopFileInApp, openDesktopPath } from '@/lib/desktop';
 import { useOpenInAppsStore } from '@/stores/useOpenInAppsStore';
 import { eventMatchesShortcut, formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
@@ -99,6 +100,7 @@ type FileStatSnapshot = {
   path: string;
   size: number;
   mtimeMs?: number;
+  isBinary?: boolean;
 };
 
 type SelectedLineRange = {
@@ -924,6 +926,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const desktopImageBlobUrlRef = React.useRef<string>('');
 
   const [loadedFilePath, setLoadedFilePath] = React.useState<string | null>(null);
+  const [binaryFilePath, setBinaryFilePath] = React.useState<string | null>(null);
+  const isSelectedBinary = Boolean(selectedFilePath && binaryFilePath === selectedFilePath);
   const [failedFilePath, setFailedFilePath] = React.useState<string | null>(null);
 
   const [draftContent, setDraftContent] = React.useState('');
@@ -1615,6 +1619,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         path: result.path,
         size: result.size,
         mtimeMs: result.mtimeMs,
+        isBinary: result.isBinary,
       };
     }
     return null;
@@ -1659,6 +1664,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const isDirty = draftContent !== displayedContent;
 
   const saveDraft = React.useCallback(async () => {
+    if (isSelectedBinary || fileLoading || fileError || loadedFilePath !== selectedFile?.path) return false;
     if (!selectedFile || !files.writeFile) {
       toast.error(t('filesView.toast.savingNotSupported'));
       return false;
@@ -1706,7 +1712,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     } finally {
       setIsSaving(false);
     }
-  }, [draftContent, fileContent, files, isDirty, loadedFileLineEnding, loadedFilePath, readFileStat, selectedFile, t]);
+  }, [draftContent, fileContent, files, isDirty, loadedFileLineEnding, loadedFilePath, readFileStat, selectedFile, t, isSelectedBinary, fileLoading, fileError]);
 
   React.useEffect(() => {
     if (!isDirty) {
@@ -1827,13 +1833,14 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   });
 
   const loadSelectedFile = useEvent(async (node: FileNode) => {
+    const transport = getRuntimeTransportIdentity();
     const loadId = activeFileLoadIdRef.current + 1;
     activeFileLoadIdRef.current = loadId;
     const isCurrentLoad = () => {
       if (!root) return false;
       const rootState = useFilesViewTabsStore.getState().byRoot[root];
       const currentPath = boundTargetPath ?? rootState?.selectedPath ?? rootState?.openPaths[0] ?? null;
-      return activeFileLoadIdRef.current === loadId && currentPath === node.path;
+      return activeFileLoadIdRef.current === loadId && currentPath === node.path && transport === getRuntimeTransportIdentity();
     };
 
     setFileError(null);
@@ -1842,6 +1849,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     setLoadedFilePath(null);
 
     const selectedIsImage = isImageFile(node.path);
+    setBinaryFilePath(null);
     const isSvg = node.path.toLowerCase().endsWith('.svg');
     const selectedIsPdf = isPdfFile(node.path);
 
@@ -1883,9 +1891,23 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     };
 
     activeFileLoadPathRef.current = node.path;
-    await readFile(node.path, readOptions)
+    await readFileStat(node.path, readOptions)
+      .then(async (stat) => {
+        if (!isCurrentLoad()) return;
+        if (!stat) throw new Error(t('filesView.error.readFileFailed'));
+        lastLoadedFileStatRef.current = stat;
+        if (stat.isBinary) {
+          setBinaryFilePath(node.path);
+          setFileContent('');
+          setDraftContent('');
+          setLoadedFilePath(node.path);
+          clearFailedFileNavigation(node.path);
+          return;
+        }
+        return readFile(node.path, readOptions);
+      })
       .then((content) => {
-        if (!isCurrentLoad()) {
+        if (!isCurrentLoad() || content === undefined) {
           return;
         }
         const editorContent = normalizeEditorLineEndings(content);
@@ -1897,13 +1919,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           ? `${editorContent.slice(0, MAX_VIEW_CHARS)}\n\n… truncated …`
           : editorContent);
         setLoadedFilePath(node.path);
-        void readFileStat(node.path, readOptions)
-          .then((stat) => {
-            if (stat && isCurrentLoad()) {
-              lastLoadedFileStatRef.current = stat;
-            }
-          })
-          .catch(() => {});
       })
       .catch((error) => {
         if (!isCurrentLoad()) {
@@ -2095,7 +2110,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
             && latestStat.mtimeMs !== previousStat.mtimeMs;
           const changedBySize = latestStat.size !== previousStat.size;
 
-          if (!changedByMtime && !changedBySize) {
+          if (!changedByMtime && !changedBySize && latestStat.isBinary === previousStat.isBinary) {
             return;
           }
 
@@ -2444,7 +2459,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       && !fileLoading
       && !fileError
       && !isSelectedImage
-      && !isSelectedPdf,
+      && !isSelectedPdf
+      && !isSelectedBinary,
   );
 
   const displaySelectedPath = React.useMemo(() => {
@@ -2500,13 +2516,13 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     useUIStore.getState().setActiveMainTab('chat');
   }, [addCodeSelectionAttachment, draftContent, selectedFile, setPendingInputText]);
 
-  const canCopy = Boolean(selectedFile && (!isSelectedImage || isSelectedSvg) && !isSelectedPdf && fileContent.length > 0);
+  const canCopy = Boolean(selectedFile && !isSelectedBinary && (!isSelectedImage || isSelectedSvg) && !isSelectedPdf && fileContent.length > 0);
   const canCopyPath = Boolean(selectedFile && displaySelectedPath.length > 0);
-  const canEdit = Boolean(selectedFile && !selectedFileIsOutsideWorkspace && !isSelectedImage && !isSelectedPdf && files.writeFile && fileContent.length <= MAX_VIEW_CHARS);
-  const isMarkdown = Boolean(selectedFile?.path && isMarkdownFile(selectedFile.path));
-  const isHtml = Boolean(selectedFile?.path && isHtmlFile(selectedFile.path));
-  const isDrawio = Boolean(selectedFile?.path && isDrawioFile(selectedFile.path));
-  const isTextFile = Boolean(selectedFile && !isSelectedImage && !isSelectedPdf);
+  const canEdit = Boolean(selectedFile && !isSelectedBinary && !fileLoading && !fileError && loadedFilePath === selectedFilePath && !selectedFileIsOutsideWorkspace && !isSelectedImage && !isSelectedPdf && files.writeFile && fileContent.length <= MAX_VIEW_CHARS);
+  const isMarkdown = Boolean(!isSelectedBinary && selectedFile?.path && isMarkdownFile(selectedFile.path));
+  const isHtml = Boolean(!isSelectedBinary && selectedFile?.path && isHtmlFile(selectedFile.path));
+  const isDrawio = Boolean(!isSelectedBinary && selectedFile?.path && isDrawioFile(selectedFile.path));
+  const isTextFile = Boolean(selectedFile && !isSelectedBinary && !isSelectedImage && !isSelectedPdf);
   const canUseShikiFileView = isTextFile && !isMarkdown && !isDrawio && !(isHtml && htmlViewMode === 'preview');
   const isEditingFile = (isMarkdown && mdViewMode === 'edit')
     || (isHtml && htmlViewMode === 'edit')
@@ -3460,7 +3476,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           </Button>,
         ) : null}
 
-        <DropdownMenu onOpenChange={handleToolbarDropdownOpenChange}>
+        {runtime.isDesktop && isDesktopLocalOriginActive() && <DropdownMenu onOpenChange={handleToolbarDropdownOpenChange}>
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="inline-flex">
@@ -3500,9 +3516,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
-        </DropdownMenu>
+        </DropdownMenu>}
 
-        {!isSelectedImage && !isSelectedPdf && (
+        {isTextFile && (
           <>
             {withTooltip(wrapLines ? t('filesView.editor.disableLineWrap') : t('filesView.editor.enableLineWrap'),
               <Button
@@ -4061,6 +4077,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
               <div>{fileError}</div>
               {failedFilePath === selectedFilePath && <Button variant="outline" size="sm" className="mt-2" onClick={retrySelectedFile}>{t('contextPanel.preview.actions.retry')}</Button>}
             </div>
+          ) : isSelectedBinary ? (
+            <BinaryFileFallback key={selectedFilePath} path={selectedFilePath} />
           ) : isSelectedImage && selectedFile ? (
             renderImagePreview(selectedFile)
           ) : isSelectedPdf ? (
@@ -4435,6 +4453,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
               <div>{fileError}</div>
               {failedFilePath === selectedFilePath && <Button variant="outline" size="sm" className="mt-2" onClick={retrySelectedFile}>{t('contextPanel.preview.actions.retry')}</Button>}
             </div>
+          ) : isSelectedBinary ? (
+            <BinaryFileFallback key={selectedFilePath} path={selectedFilePath} />
           ) : isSelectedImage ? (
             renderImagePreview(selectedFile, { fullHeight: true })
           ) : isSelectedPdf ? (

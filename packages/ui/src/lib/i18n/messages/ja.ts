@@ -3,6 +3,9 @@ import { settingsDict } from './ja.settings';
 
 export const dict: Record<I18nKey, string> = {
   'guiPlugins.loading': 'インターフェースプラグインを読み込み中…',
+  'guiPlugins.preview.loadingTitle': 'プレビューを準備しています',
+  'guiPlugins.preview.loadingDescription': '初めて開くときは少し時間がかかることがあります',
+  'guiPlugins.preview.viewSource': 'ソースを表示',
   'guiPlugins.title': '画面プラグイン',
   'guiPlugins.error': 'プラグインの操作に失敗しました。',
   'guiPlugins.close': '閉じる',
@@ -1440,6 +1443,8 @@ export const dict: Record<I18nKey, string> = {
   'filesView.error.previewUnavailable': 'プレビューは利用できません',
   'filesView.error.switchToEditMode': '編集モードに切り替えて問題を修正してください。',
   'filesView.error.readFileFailed': 'ファイルの読み込みに失敗しました',
+  'filesView.binary.description': 'このバイナリファイルはテキストとして表示できません。',
+  'filesView.binary.openSystemApp': 'システムのアプリで開く',
   'filesView.editor.htmlPreviewTitle': 'HTMLプレビュー',
   'filesView.diagram.closeDiagramView': 'ダイアグラムビューを閉じる',
   'filesView.diagram.saveDiagram': 'ダイアグラムを保存',

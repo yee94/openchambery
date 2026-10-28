@@ -12,7 +12,7 @@
 
 官方 npm SDK 2.2.0 没有公开 `gui/host` 导出。Yuri 的受控依赖 patch 只开放 `gui/yuri-host` 内部 context，让 host 与官方 `usePlugin` / `bindPlugin` 共用真实 `PluginContext`、`PanelContext` 和 lifetime。它是**宿主实现细节**，第三方插件始终只 import 官方公开 SDK。升级 SDK 必须重新验证 patch 与单实例 Solid 语义。
 
-GUI 的 client/schema 使用固定 2.2.0 npm alias，与应用现有会话 SDK 分离；`lib/opencode/gui.ts` 保留官方请求、runtime auth、Relay 与取消信号，并拒绝旧 runtime generation 的调用。没有新增 Yuri 服务端路由。
+GUI 的 client/schema 使用固定 2.2.0 npm alias，与应用现有会话 SDK 分离；`lib/opencode/gui.ts` 保留官方请求、runtime auth、Relay 与取消信号，并拒绝旧 runtime generation 的调用。GUI bundle 的窄传输优化由 Yuri Web/VS Code 代理拥有，不改变官方 SDK 解码后的契约。
 
 Provider 的会话目录来自 `useCurrentSessionEntity(sessionID)` 的匹配会话元数据（live 优先、global active 补充），不读取全局目录选择。冷加载或切换到尚未解析的会话时传入空 session，等待现有同步管线补齐身份；不复用上个会话目录，也不新增独立 lookup。全局项目选择变化不得重绑定当前 host session，真实会话目录迁移则更新文件作用域。
 
@@ -72,13 +72,21 @@ ctx.add(FileIcon, {
 
 GUI inventory 采用**当前连接服务的全局插件列表**。不把项目 plugins 当成窗口 GUI 代码来源；不能把列表请求失败视为空列表成功。服务切换必须清理旧贡献、client、监听与作用域状态。
 
-启动仅观察 inventory 和读取启用偏好，不 import host、不下载 GUI bundle。`useGuiPlugins()` 暴露 `requested` 与幂等 `requestLoad()`；首次文件预览、命令面板或插件管理器打开时请求当前 transport 的 GUI。需求触发后加载 inventory 中所有 enabled 且服务端 active 的 `features.gui` 插件，不按文件后缀推定能力、不增加 manifest 协议。没有 enabled GUI 时不创建 host；禁用项不下载。关闭入口保留需求、host 和已安装实例，重开复用同一 Query/cache；成功空 inventory 仍撤销 host。
+首屏先观察 inventory 和读取启用偏好。存在 enabled 且服务端 active 的 GUI 时，通过 `requestIdleCallback`（最长等待 2 秒；不支持时延后 1 秒）启动预加载与安装，不再等第一次点击。`useGuiPlugins()` 保留 `requested` 与幂等 `requestLoad()`；文件预览、命令面板或插件管理器的显式需求跳过空闲等待。加载当前服务 inventory 中所有 enabled 且 active 的 `features.gui` 插件，不扫描历史项目，不按文件后缀推定能力；禁用项不下载。关闭入口保留需求、host 和已安装实例，重开复用同一 Query/cache；成功空 inventory 仍撤销 host。空闲任务随停用、transport 切换或卸载取消，并在启动时再次核对 transport。
 
 需求一直保留至 transport 改变或 Provider 卸载。切换清零 `requested`、取消旧 client 并销毁 host，迟到 inventory/bundle 不得进入新 host；仍挂载的入口观察 `requested` 并重新调用 `requestLoad()`。未请求时 `refresh()` 只刷新列表和偏好；已请求时可重试 host、bundle 与失败 setup，成功插件依靠原 host 的 revision 去重保持挂载。
 
 `loading` 覆盖 inventory pending、偏好未解析，以及已请求后的 host/bundle 获取与同步安装等待，失败结束该阶段等待。全局错误通过 `error` 暴露，bundle 错误保留在 `inventory[].error`，setup/render 失败由 `snapshot.plugins` 表达。各插件独立安装和失败；入口应在 host/snapshot 就绪变化时尝试链接，不以全部插件的 `loading` 结束作为成功插件可用的门槛。
 
 Inventory 和 bundle 都由 TanStack Query 持有，键为 `[transport, 'plugins', 'gui', null, ...]`，复用既有 `plugin.updated`/配置更新/重连失效管线，无另起轮询。加载 bundle 失败保留上次实例；成功空列表或服务端明确 failed 撤销对应实例。bundle revision 变化清理并替换，保持标签；相同 revision 的 active 实例不重启，failed 实例可手动刷新重试。GUI 开关先写入实例作用域存储，成功后才更新界面。
+
+### 持久代码与校验
+
+端侧只持久化 GUI 代码和 revision 校验 token，不持久化插件 options。持久键按缓存 schema、GUI ABI、稳定 runtime 身份和插件 ID 隔离；transport/generation 只用于取消和迟到结果隔离，不作为磁盘分区，不在日常切换服务时删除缓存。代码使用 `runtimeFileStore` 的完整 Blob 事务及共享容量淘汰（单项 32 MiB、总计 256 MiB/128 项）；缓存不可用、损坏或淘汰时降级为完整网络读取。
+
+精确 GUI GET 通过 `X-Yuri-Gui-Revision` 发送已有 token。Yuri 代理每次读取上游当前 bundle，以 revision 的 SHA-256 生成响应 token；匹配时返回 HTTP 200、`X-Yuri-Gui-Code: cached` 及空 `code`，保留本次权威 revision/options。客户端在 SDK 解码前补回持久代码。未匹配、无缓存或旧 host 则完整下载。请求失败不能用磁盘代码冒充新鲜成功，冷启动必须校验后才执行；已运行实例在刷新失败时继续保留。响应使用 `private, no-store`，不把 options 留在浏览器 HTTP 缓存中。
+
+因此缓存未被淘汰且 revision 未变时，Yuri→客户端不重复传输代码；Yuri→OpenCode 仍须获取完整 bundle。npm 版本不能替代 revision，配置变化和本地插件修改由上游 revision 覆盖。bundle 请求最多并发两个；这限制网络工作量，不能为任意第三方同步 setup 提供硬 CPU 时限。每个插件独立就绪并 apply，不能等待全部插件完成才允许预览。iframe 的执行堆、组件初始化和 HTTPS 依赖由插件及浏览器 HTTP 缓存拥有，不属于此代码缓存。
 
 服务端 `.` 与 GUI `./gui-experimental` 是同包的两个独立部分。技能由服务端 `ctx.skill.transform` 注册，工具由 `ctx.tool.transform` 注册；GUI 开关只影响窗口贡献。远程服务也必须安装 server part，本地 GUI 不能代替远端 skill/tool 注册。
 
@@ -100,7 +108,7 @@ SDK 2.2.0 的文件接口是 `ctx.screen.current()?.file` 或面板的 `props.sc
 
 使用本目录 focused Vitest 测试检查 host、bundle、files、preferences 和 storage。生产集成必须再验证真实 React/Solid 挂载、CSP、服务连接与文件事件；静态类型通过不代表所有平台可用。
 
-`packages/ui/vitest.config.ts` 内联 Solid 和插件 SDK，使 happy-dom 测试与浏览器使用同一 owner graph；不需要额外 NODE_OPTIONS。`host.test.ts`、`files.test.ts` 验证注册、文件刷新、错误恢复、会话隔离和清理。`react.test.tsx` 验证启动 50 次 rerender 零 host import/零 bundle、并发需求合并、关闭重开复用、禁用/无 GUI、慢 bundle loading、失败重试及 transport 迟到隔离；另覆盖全局目录切换零会话同步、冷加载元数据、真实目录迁移、切会话等待与旧会话迟到更新隔离。
+`packages/ui/vitest.config.ts` 内联 Solid 和插件 SDK，使 happy-dom 测试与浏览器使用同一 owner graph；不需要额外 NODE_OPTIONS。`host.test.ts`、`files.test.ts` 验证注册、文件刷新、错误恢复、会话隔离和清理。`react.test.tsx` 验证空闲前 50 次 rerender 零 host import/零 bundle、空闲预加载后点击复用、空闲取消与迟到隔离、并发需求合并、关闭重开复用、禁用/无 GUI、慢 bundle loading、失败重试及 transport 迟到隔离；另覆盖全局目录切换零会话同步、冷加载元数据、真实目录迁移、切会话等待与旧会话迟到更新隔离。
 
 真实 Chromium 已验证生产 host 与完整 Provider/管理器/文件桥/React modal 加载同一 CJS；桌面关闭和重新启用、移动 viewport + touch 下共享 Sheet 均可渲染。文件边界和服务响应使用验收夹具，此证据不等于 live OpenCode AI 调用、原生 Electron/iOS/Android 或 VS Code 实机验收。
 

@@ -2,6 +2,9 @@ import { settingsDict } from './fr.settings';
 
 export const dict = {
   'guiPlugins.loading': 'Chargement des extensions d’interface…',
+  'guiPlugins.preview.loadingTitle': 'Préparation de l’aperçu',
+  'guiPlugins.preview.loadingDescription': 'La première ouverture peut prendre un peu de temps',
+  'guiPlugins.preview.viewSource': 'Voir le code source',
   'guiPlugins.title': 'Extensions d’interface',
   'guiPlugins.error': 'L’action de l’extension a échoué.',
   'guiPlugins.close': 'Fermer',
@@ -1210,6 +1213,8 @@ export const dict = {
   'filesView.error.previewUnavailable': 'Aperçu indisponible',
   'filesView.error.switchToEditMode': 'Passez en mode édition pour résoudre le problème.',
   'filesView.error.readFileFailed': 'Échec de la lecture du fichier',
+  'filesView.binary.description': 'Ce fichier binaire ne peut pas être affiché sous forme de texte.',
+  'filesView.binary.openSystemApp': 'Ouvrir avec l’application système',
   'filesView.editor.htmlPreviewTitle': 'Aperçu HTML',
   'contextUsage.aria.label': 'Utilisation du contexte',
   'contextUsage.pending': 'En attente de mise à jour',

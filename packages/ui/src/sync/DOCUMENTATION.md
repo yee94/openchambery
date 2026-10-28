@@ -1,5 +1,14 @@
 # Sync architecture, event handling & store update rules
 
+Configuration reconnect/events invalidate matching Query catalogs, but imperative
+Provider/Agent projections refresh only the currently selected directory. Persisted
+`directoryScoped` selection keys never constitute live demand: enumerating them
+would boot every historical OpenCode Location on `server.connected`. Inactive
+catalogs remain stale until directory activation ensures them. Mounted Query
+observers retain their ordinary active-refetch behavior. The production event
+dispatcher is covered with 61 historical scopes and a 50-event reconnect burst in
+`config-reconnect-demand.test.ts`.
+
 Mobile transcript demand keeps correctness reads enabled: opening/observing a
 session, authored-user anchor recovery (up to four extra projection pages),
 reconnect/terminal authority refresh, durable-seed exact revalidation, send

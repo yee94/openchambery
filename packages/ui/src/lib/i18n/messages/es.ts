@@ -3,6 +3,9 @@ import { settingsDict } from './es.settings';
 
 export const dict: Record<I18nKey, string> = {
   'guiPlugins.loading': 'Cargando complementos de interfaz…',
+  'guiPlugins.preview.loadingTitle': 'Preparando la vista previa',
+  'guiPlugins.preview.loadingDescription': 'La primera vez que se abre puede tardar un momento',
+  'guiPlugins.preview.viewSource': 'Ver código fuente',
   'guiPlugins.title': 'Complementos de interfaz',
   'guiPlugins.error': 'La acción del complemento ha fallado.',
   'guiPlugins.close': 'Cerrar',
@@ -1413,6 +1416,8 @@ export const dict: Record<I18nKey, string> = {
   "filesView.error.previewUnavailable": "Vista previa no disponible",
   "filesView.error.switchToEditMode": "Cambia al modo de edición para resolver el problema.",
   "filesView.error.readFileFailed": "No se pudo leer el archivo",
+  "filesView.binary.description": "Este archivo binario no se puede mostrar como texto.",
+  "filesView.binary.openSystemApp": "Abrir con la aplicación del sistema",
   "filesView.editor.htmlPreviewTitle": "Vista previa HTML",
   "filesView.diagram.closeDiagramView": "Cerrar vista de diagrama",
   "filesView.diagram.saveDiagram": "Guardar diagrama",

@@ -110,6 +110,20 @@ export function GuiPluginsProvider({ children }: { children: React.ReactNode }) 
   const wantsHost = requested && hasGui && (hasEnabled || host !== null);
 
   React.useEffect(() => {
+    if (requested || !hasEnabled || !inventory.some((plugin) => plugin.enabled && activeIds.has(plugin.id))) return;
+    // Give initial navigation and input priority; explicit demand bypasses this idle wait.
+    const start = () => {
+      if (getRuntimeTransportIdentity() === transport) requestLoad();
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      const task = window.requestIdleCallback(start, { timeout: 2_000 });
+      return () => window.cancelIdleCallback(task);
+    }
+    const task = window.setTimeout(start, 1_000);
+    return () => window.clearTimeout(task);
+  }, [requested, hasEnabled, inventory, activeIds, transport, requestLoad]);
+
+  React.useEffect(() => {
     if (!wantsHost) return;
     const controller = new AbortController();
     let loaded: GuiPluginHost | undefined;

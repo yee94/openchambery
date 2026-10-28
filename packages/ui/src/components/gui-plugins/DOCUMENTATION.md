@@ -54,9 +54,17 @@ closing and reopening a file reuses the loaded host and bundle queries.
 The standard inventory only declares `features.gui`; file matchers are registered
 by plugin setup. The first demand therefore loads enabled GUI plugins, not a
 guessed extension-specific plugin. Server-only and disabled plugins are excluded.
-File views display loading feedback above usable source content, then mount a
-matching preview inline. Ready handlers may render while other bundles are still
-pending. Failed loading exposes reload next to the error and keeps source usable;
+File views place `GuiPreviewLoading` in their existing preview slot, keeping file
+tabs and toolbars in place. The centered, transparent file-content canvas reserves
+at least 240px and inherits the file surface rather than adding a card. A decorative
+SVG animates content-line opacity with CSS only; reduced-motion disables it. A
+localized title and first-open hint describe preview preparation without implementation
+terminology or cache assumptions. “View source” and the toolbar source toggle remain
+usable before a host exists; source choice is retained for the file/base/session
+identity, so a late preview cannot take over. Discovery completion without a match
+removes the loading canvas and restores ordinary source with no plugin controls.
+Ready handlers may render and switch to/from source while other bundles are still
+pending. Failed loading removes the preparation canvas, exposes reload next to the error and keeps source usable;
 the command group also exposes loading and retry, while the manager retains its
 existing reload control. Runtime changes reset demand; mounted entrypoints request
 the new runtime explicitly.
@@ -91,7 +99,7 @@ actual mobile gestures, native focus, network bundle loading or runtime transpor
 
 `GuiPluginLazyLoading.test.tsx` additionally composes the real provider, file bridge,
 host and a minimal standard CJS fixture. It covers cold startup without downloads,
-delayed bundle loading with source fallback, inline file-content rendering, warm
+delayed bundle loading with a source action, retained source choice, inline file-content rendering, warm
 reopening and failed download/reload. SDK/file I/O and the standalone surface are
 fixtures; plugin-specific runtimes and browser execution belong to the independent
 plugin projects.

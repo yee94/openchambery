@@ -169,6 +169,7 @@ export const useFileStatWatcher = (
     staleTime: 0,
   });
 
+  const watchIdentity = JSON.stringify(fileContentQueryKey(input, transport));
   const watchedPathRef = React.useRef<string | null>(null);
   const previousSignatureRef = React.useRef<string | null>(null);
 
@@ -178,17 +179,18 @@ export const useFileStatWatcher = (
       return;
     }
     // A path switch starts a fresh watch baseline — never compare stats across files.
-    if (watchedPathRef.current !== input.path) {
-      watchedPathRef.current = input.path ?? null;
+    if (watchedPathRef.current !== watchIdentity) {
+      watchedPathRef.current = watchIdentity;
       previousSignatureRef.current = null;
     }
-    const signature = `${stat.size}:${stat.mtimeMs ?? ''}`;
+    const signature = `${stat.size}:${stat.mtimeMs ?? ''}:${stat.isBinary ?? ''}`;
     const previous = previousSignatureRef.current;
     previousSignatureRef.current = signature;
-    if (previous === null || previous === signature) {
+    if (previous === null || previous === signature || stat.isBinary) {
       return;
     }
     const client = options.client ?? queryClient;
     void client.invalidateQueries({ queryKey: fileContentQueryKey(input, transport) });
   });
+  return statQuery;
 };

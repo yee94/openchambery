@@ -265,7 +265,7 @@ describe('foreign DOM ownership', () => {
 });
 
 describe('file link routing', () => {
-  test('requests GUI code only for a visible active file and keeps source usable during loading', async () => {
+  test('requests GUI code only for a visible active file and offers source during loading', async () => {
     state.context = { ...context(), host: null, requested: false, loading: true };
     updateSnapshot({ plugins: [] });
     const view = (active: boolean) => <GuiFileLinkBridge path="/remote/中文 页面.eficy" active={active}><pre>source</pre></GuiFileLinkBridge>;
@@ -275,11 +275,61 @@ describe('file link routing', () => {
     expect(context().requestLoad).not.toHaveBeenCalled();
     await render(view(true));
     expect(context().requestLoad).toHaveBeenCalledOnce();
-    expect(container.querySelector('[role="status"]')?.textContent).toBe('guiPlugins.loading');
-    expect(container.textContent).toContain('source');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('guiPlugins.preview.loadingTitleguiPlugins.preview.loadingDescription');
+    expect(container.querySelector('[data-gui-preview-loading] svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('[data-gui-preview-loading]')?.className).toContain('min-h-[240px]');
+    expect(container.querySelector('pre')).toBeNull();
     state.context = { ...context(), requested: true };
     for (let index = 0; index < 50; index++) await render(view(true));
     expect(context().requestLoad).toHaveBeenCalledOnce();
+    await click('guiPlugins.preview.viewSource');
+    expect(container.querySelector('[data-gui-preview-loading]')).toBeNull();
+    expect(container.querySelector('pre')?.textContent).toBe('source');
+  });
+
+  test('loading occupies the existing preview slot and source choice survives a ready panel', async () => {
+    state.context = { ...context(), host: null, loading: true };
+    updateSnapshot({ plugins: [] });
+    const view = (path = '/workspace/a.preview') => <GuiFileLinkBridge path={path}>{({ preview, toggle }) => <>
+      <header data-file-toolbar>{toggle}</header><main>{preview ?? <pre>source</pre>}</main>
+    </>}</GuiFileLinkBridge>;
+    await render(view());
+    expect(container.querySelector('main [data-gui-preview-loading]')).not.toBeNull();
+    expect(container.querySelector('header [data-gui-preview-loading]')).toBeNull();
+    await click('filesView.editor.switchToEditMode');
+    expect(container.querySelector('main pre')?.textContent).toBe('source');
+    state.context = { ...context(), host: fixture.host };
+    updateSnapshot({ plugins: [{ id: 'demo', revision: 'one', status: 'active' }], panels: [{ key: 'demo:a', pluginId: 'demo', title: 'Preview', inline: true, active: true, file: '/workspace/a.preview' }] });
+    await render(view());
+    expect(container.querySelector('[data-gui-preview-loading]')).toBeNull();
+    expect(container.querySelector('[data-gui-plugin-mount]')).toBeNull();
+    expect(container.querySelector('pre')?.textContent).toBe('source');
+    await click('filesView.editor.switchToPreviewMode');
+    expect(container.textContent).toContain('external:demo:a');
+    updateSnapshot({ panels: [] });
+    await render(view('/workspace/b.preview'));
+    expect(container.querySelector('[data-gui-preview-loading]')).not.toBeNull();
+  });
+
+  test('unmatched files leave loading when discovery finishes and expose ordinary source without controls', async () => {
+    fixture.methods.openLink.mockReturnValue(false);
+    state.context = { ...context(), loading: true };
+    const view = () => <GuiFileLinkBridge path="a.txt"><pre>source</pre></GuiFileLinkBridge>;
+    await render(view());
+    expect(container.querySelector('[data-gui-preview-loading]')).not.toBeNull();
+    state.context = { ...context(), loading: false };
+    await render(view());
+    expect(container.querySelector('[data-gui-preview-loading]')).toBeNull();
+    expect(container.querySelector('pre')?.textContent).toBe('source');
+    expect(container.querySelector('button')).toBeNull();
+  });
+
+  test('a failed bundle exposes source and error instead of covering it with another pending bundle', async () => {
+    state.context = { ...context(), loading: true, inventory: [{ id: 'demo', enabled: true, error: 'Download failed' }] };
+    await render(<GuiFileLinkBridge path="a.txt"><pre>source</pre></GuiFileLinkBridge>);
+    expect(container.querySelector('[data-gui-preview-loading]')).toBeNull();
+    expect(container.querySelector('pre')?.textContent).toBe('source');
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Download failed');
   });
 
   test('shows failed bundle loading with retry and restores an inline preview without a modal', async () => {
@@ -306,6 +356,12 @@ describe('file link routing', () => {
     await render(<GuiFileLinkBridge path="/remote/a.eficy" />);
     expect(container.textContent).toContain('external:demo:a');
     expect(container.querySelector('[aria-busy]')).toBeNull();
+    expect(container.querySelector('[data-gui-preview-loading]')).toBeNull();
+    await click('filesView.editor.switchToEditMode');
+    expect(container.querySelector('[data-gui-plugin-mount]')).toBeNull();
+    expect(container.querySelector('[data-gui-preview-loading]')).toBeNull();
+    await click('filesView.editor.switchToPreviewMode');
+    expect(container.textContent).toContain('external:demo:a');
   });
 
   test('renders a file panel inline, switches to source and back, and never opens a window', async () => {

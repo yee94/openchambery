@@ -42,6 +42,7 @@ let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;
 let context: ReturnType<typeof useGuiPlugins>;
+let idleTasks: Map<number, IdleRequestCallback>;
 const plugin = { id: 'dsl', features: { gui: true }, source: { type: 'package', target: 'example-dsl' }, state: { status: 'active' } };
 const bundle = { code: 'exports.default={setup(){}}', revision: 'one', options: {} };
 const Probe = () => { context = useGuiPlugins(); return null; };
@@ -62,6 +63,10 @@ const load = async () => {
 };
 
 beforeEach(() => {
+  idleTasks = new Map();
+  let idleID = 0;
+  vi.stubGlobal('requestIdleCallback', vi.fn((callback: IdleRequestCallback) => { idleTasks.set(++idleID, callback); return idleID; }));
+  vi.stubGlobal('cancelIdleCallback', vi.fn((id: number) => idleTasks.delete(id)));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.transport = 'host-a'; state.hosts.length = 0; state.signals.length = 0; state.hostFailure = false;
   state.directory = '/project'; state.sessionID = 'session-a';
@@ -76,9 +81,10 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   client.clear(); container.remove();
+  vi.unstubAllGlobals();
 });
 
-it('starts with inventory only across 50 rerenders, and refresh does not request a host or bundle', async () => {
+it('keeps initial render light across 50 rerenders before idle preload starts', async () => {
   await act(async () => draw()); await settle();
   for (let index = 0; index < 50; index++) await act(async () => draw());
   expect(context.requested).toBe(false);
@@ -90,6 +96,33 @@ it('starts with inventory only across 50 rerenders, and refresh does not request
   expect(state.gui).not.toHaveBeenCalled();
   expect(state.hostImports).not.toHaveBeenCalled();
   expect(state.hosts).toHaveLength(0);
+});
+
+it('preloads and installs at idle, so the first file demand reuses the ready host', async () => {
+  await act(async () => draw()); await settle();
+  expect(idleTasks.size).toBe(1);
+  await act(async () => {
+    for (const callback of [...idleTasks.values()]) callback({ didTimeout: false, timeRemaining: () => 10 });
+  });
+  await settle(); await settle();
+  expect(context.requested).toBe(true);
+  expect(state.gui).toHaveBeenCalledOnce();
+  expect(state.hosts[0].install).toHaveBeenCalledWith('dsl', bundle);
+  await act(async () => draw(2)); await settle();
+  expect(state.gui).toHaveBeenCalledOnce();
+  expect(state.hosts).toHaveLength(1);
+});
+
+it('cancels idle preload when disabled or switched, and ignores a stale idle callback', async () => {
+  await act(async () => draw()); await settle();
+  const stale = [...idleTasks.values()][0];
+  await act(async () => context.setEnabled('dsl', false));
+  expect(idleTasks.size).toBe(0);
+  state.transport = 'host-b';
+  await act(async () => draw()); await settle();
+  await act(async () => stale({ didTimeout: true, timeRemaining: () => 0 }));
+  expect(context.requested).toBe(false);
+  expect(state.gui).not.toHaveBeenCalled();
 });
 
 it('coalesces concurrent consumers and keeps warm activation when all consumers close and reopen', async () => {

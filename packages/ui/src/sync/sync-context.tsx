@@ -2176,21 +2176,14 @@ const configLiveRefresh = createConfigLiveRefresh({
   refreshProjections: async (directory, domains) => {
     if (!domains.has('providers') && !domains.has('agents')) return;
     const store = useConfigStore.getState();
-    const transport = getRuntimeTransportIdentity();
-    const generation = getRuntimeGeneration();
-    const directories = new Set([
-      ...Object.keys(store.directoryScoped),
-      ...(opencodeClient.getDirectory() ? [opencodeClient.getDirectory()!] : []),
+    const currentDirectory = opencodeClient.getDirectory();
+    // Persisted selection scopes are history, not demand. Query invalidation
+    // already marks inactive catalogs stale; activation ensures them on revisit.
+    if (!currentDirectory || (directory && normalizePath(directory) !== normalizePath(currentDirectory))) return;
+    await Promise.all([
+      ...(domains.has('providers') ? [store.loadProviders({ directory: currentDirectory, source: 'config-event', forceRefresh: true, allowEmpty: true })] : []),
+      ...(domains.has('agents') ? [store.loadAgents({ directory: currentDirectory, source: 'config-event', forceRefresh: true })] : []),
     ]);
-    const loaded = [...directories].filter((value) => value && value !== '__global__'
-      && (!directory || normalizePath(value) === normalizePath(directory)));
-    for (let index = 0; index < loaded.length; index += 4) {
-      if (getRuntimeTransportIdentity() !== transport || getRuntimeGeneration() !== generation) return;
-      await Promise.all(loaded.slice(index, index + 4).flatMap((value) => [
-        ...(domains.has('providers') ? [store.loadProviders({ directory: value, source: 'config-event', forceRefresh: true, allowEmpty: true })] : []),
-        ...(domains.has('agents') ? [store.loadAgents({ directory: value, source: 'config-event', forceRefresh: true })] : []),
-      ]));
-    }
   },
   onError: () => console.warn('[sync] Configuration refresh failed; retaining previous catalogs'),
 });

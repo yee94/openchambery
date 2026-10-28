@@ -29,7 +29,7 @@ vi.mock('@/lib/relay/runtime-tunnel', () => ({ isRelayModeActive: () => true }))
 vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/workspace' }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ files: { readFile: vi.fn() } }) }));
 vi.mock('@/queries/fileQueries', () => ({
-  useFileDirectoryQuery: () => ({}), useFileSearchQuery: () => ({}), useFileContentQuery: () => ({}), useFileStatWatcher: () => {},
+  useFileDirectoryQuery: () => ({}), useFileSearchQuery: () => ({}), useFileContentQuery: () => ({}), useFileStatWatcher: () => ({}),
 }));
 vi.mock('@/mobile/mobileBackNavigation', () => ({ useMobileBackRoute: () => {} }));
 vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (s: unknown) => unknown) => select({ isMobile: true, pendingFileFocusPath: null, setPendingFileFocusPath: () => {} }) }));

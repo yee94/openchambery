@@ -1,25 +1,82 @@
 import { OpenCode } from '@yuriai/opencode-gui-client';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
-import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { guiBundleCache, isGuiRevisionToken } from '@/lib/gui-plugins/bundle-cache';
+
+const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
 /** The GUI ABI is pinned independently of the application's session client. */
 export function createGuiClient(signal: AbortSignal) {
   const identity = getRuntimeTransportIdentity();
   const generation = getRuntimeGeneration();
+  const runtime = getRuntimeKey();
+  const current = () => identity === getRuntimeTransportIdentity() && generation === getRuntimeGeneration() && runtime === getRuntimeKey();
   return OpenCode.make({
     baseUrl: new URL(getRuntimeUrlResolver().api('/'), window.location.href).href,
-    fetch: (input, init) => {
-      if (signal.aborted || identity !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration()) {
-        return Promise.reject(new DOMException('Plugin runtime ended', 'AbortError'));
+    fetch: async (input, init) => {
+      if (signal.aborted || !current()) {
+        throw new DOMException('Plugin runtime ended', 'AbortError');
       }
       const url = new URL(input instanceof Request ? input.url : input.toString());
       const target = new URL(getRuntimeUrlResolver().api(`${url.pathname}${url.search}`), window.location.href);
       const request = new Request(target, input instanceof Request ? input : init);
-      return runtimeFetch(request, {
+      const requestInit = {
         ...init,
         signal: AbortSignal.any([signal, request.signal, ...(init?.signal ? [init.signal] : [])]),
-      });
+      };
+      const id = url.searchParams.get('id');
+      if ((init?.method ?? request.method).toUpperCase() !== 'GET' || url.pathname !== '/api/plugin/gui' || !id) {
+        return runtimeFetch(request, requestInit);
+      }
+      const lifetime = new AbortController();
+      const stop = subscribeRuntimeEndpointChanged(() => { if (!current()) lifetime.abort(); });
+      const requestSignal = AbortSignal.any([requestInit.signal, lifetime.signal]);
+      const assertCurrent = () => {
+        requestSignal.throwIfAborted();
+        if (!current()) throw new DOMException('Plugin runtime ended', 'AbortError');
+      };
+      try {
+        const cached = await guiBundleCache.read(runtime, id, requestSignal);
+        assertCurrent();
+        const fetchBundle = async (token?: string) => {
+          assertCurrent();
+          const headers = new Headers(init?.headers ?? request.headers);
+          headers.delete('X-Yuri-Gui-Revision');
+          headers.delete('If-None-Match');
+          if (token) headers.set('X-Yuri-Gui-Revision', token);
+          return runtimeFetch(request, { ...requestInit, signal: requestSignal, headers, cache: 'no-store' });
+        };
+        let response = await fetchBundle(cached?.token);
+        assertCurrent();
+        if (response.headers.get('X-Yuri-Gui-Code') === 'cached'
+          && (!cached || response.headers.get('X-Yuri-Gui-Revision') !== cached.token)) {
+          await response.body?.cancel();
+          response = await fetchBundle();
+          assertCurrent();
+        }
+        if (response.status !== 200) return response;
+        const payload: unknown = await response.clone().json();
+        assertCurrent();
+        if (!object(payload) || !object(payload.data) || typeof payload.data.code !== 'string'
+          || typeof payload.data.revision !== 'string' || !object(payload.data.options)) {
+          throw new Error('Invalid GUI bundle response');
+        }
+        const token = response.headers.get('X-Yuri-Gui-Revision');
+        if (response.headers.get('X-Yuri-Gui-Code') === 'cached') {
+          if (!cached || token !== cached.token || payload.data.code !== '') throw new Error('Invalid GUI code cache response');
+          payload.data.code = cached.code;
+          const headers = new Headers(response.headers);
+          headers.delete('content-length');
+          headers.delete('content-encoding');
+          response = Response.json(payload, { status: 200, headers });
+        } else if (isGuiRevisionToken(token) && payload.data.code) {
+          assertCurrent();
+          await guiBundleCache.write(runtime, id, { code: payload.data.code, token }, requestSignal);
+        }
+        assertCurrent();
+        return response;
+      } finally { stop(); }
     },
   });
 }
