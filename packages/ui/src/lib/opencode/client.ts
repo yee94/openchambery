@@ -94,6 +94,7 @@ const CONFIG_CACHE_TTL_MS = 10_000;
 const OPENCODE_HEALTH_TIMEOUT_MS = 4_000;
 const OPENCODE_HEALTH_CACHE_TTL_MS = 3_000;
 const OPENCODE_HEALTH_FAILURE_CACHE_TTL_MS = 1_000;
+const LIVE_LOCATIONS_TTL_MS = 1_500;
 const LIST_AGENTS_TIMEOUT_MS = 12_000;
 
 /**
@@ -511,6 +512,7 @@ class OpencodeService {
   private healthInFlight: Map<string, Promise<boolean>> = new Map();
   private healthCache: Map<string, { healthy: boolean; expiresAt: number }> = new Map();
   private healthCacheGeneration = 0;
+  private liveLocationsFlight: { promise: Promise<Set<string> | null>; expiresAt: number } | null = null;
   /**
    * Per-session serial boundary for switchModel/switchAgent + prompt.
    * Same-session concurrent sends must not interleave switches (wrong model).
@@ -543,6 +545,7 @@ class OpencodeService {
     this.clearConfigCache();
     this.listDirectoryCache.clear();
     this.clearHealthCache();
+    this.liveLocationsFlight = null;
   }
 
   /** Expose the raw SDK client for direct use (e.g., SyncProvider) */
@@ -556,6 +559,10 @@ class OpencodeService {
   }
 
   async checkLocationReleaseUse(directory: string, signal: AbortSignal): Promise<'free' | 'busy'> {
+    const normalized = this.normalizeCandidatePath(directory);
+    const live = await this.listLiveLocationDirectories();
+    // Probing a Location that is not booted would boot it just to evict it.
+    if (live && normalized && !live.has(normalized)) return 'free';
     const client = this.getScopedSdkClient(directory);
     const input = { location: { directory } };
     const [shells, forms] = await Promise.all([
@@ -563,6 +570,48 @@ class OpencodeService {
       client.form.list(input, { signal }),
     ]);
     return shells.data.some((shell) => shell.status === 'running') || forms.data.length > 0 ? 'busy' : 'free';
+  }
+
+  /**
+   * Directories whose upstream Location is already booted. Pending forms and
+   * permissions live in Location memory, so other directories cannot hold any;
+   * a scoped list there would boot a full Location that upstream never evicts.
+   * Listing reads the Location map without booting. A reconnect burst across
+   * many child stores shares one short-lived flight. Null when unreadable.
+   */
+  private listLiveLocationDirectories(): Promise<Set<string> | null> {
+    const now = Date.now();
+    if (this.liveLocationsFlight && this.liveLocationsFlight.expiresAt > now) {
+      return this.liveLocationsFlight.promise;
+    }
+    const promise = this.client.debug.location.list()
+      .then((entries) => {
+        if (!Array.isArray(entries)) return null;
+        const live = new Set<string>();
+        for (const entry of entries) {
+          const normalized = this.normalizeCandidatePath(entry?.directory ?? null);
+          if (normalized) live.add(normalized);
+        }
+        return live;
+      })
+      .catch(() => null);
+    this.liveLocationsFlight = { promise, expiresAt: now + LIVE_LOCATIONS_TTL_MS };
+    return promise;
+  }
+
+  /** Normalized candidate directories, reduced to live Locations when that set is readable. */
+  private async resolveBlockingRequestDirectories(directories?: Array<string | null | undefined>): Promise<string[]> {
+    const unique = new Set<string>();
+    for (const entry of directories ?? []) {
+      const normalized = this.normalizeCandidatePath(entry ?? null);
+      if (normalized) unique.add(normalized);
+    }
+    if (unique.size === 0) return [];
+    const live = await this.listLiveLocationDirectories();
+    // Unreadable live set (older server, transient failure): keep the scoped
+    // lists so a failed probe never hides pending requests.
+    if (!live) return Array.from(unique);
+    return Array.from(unique).filter((directory) => live.has(directory));
   }
 
   async releaseLocation(directory: string, signal: AbortSignal): Promise<void> {
@@ -1984,15 +2033,7 @@ class OpencodeService {
     // Try unscoped first (server may return global pending items).
     fetches.push(fetchForDirectory(null));
 
-    const uniqueDirectories = new Set<string>();
-    for (const entry of options?.directories ?? []) {
-      const normalized = this.normalizeCandidatePath(entry ?? null);
-      if (normalized) {
-        uniqueDirectories.add(normalized);
-      }
-    }
-
-    for (const directory of uniqueDirectories) {
+    for (const directory of await this.resolveBlockingRequestDirectories(options?.directories)) {
       fetches.push(fetchForDirectory(directory));
     }
 
@@ -2082,15 +2123,7 @@ class OpencodeService {
     // Try unscoped first (server may return global pending items).
     fetches.push(fetchForDirectory(null));
 
-    const uniqueDirectories = new Set<string>();
-    for (const entry of options?.directories ?? []) {
-      const normalized = this.normalizeCandidatePath(entry ?? null);
-      if (normalized) {
-        uniqueDirectories.add(normalized);
-      }
-    }
-
-    for (const directory of uniqueDirectories) {
+    for (const directory of await this.resolveBlockingRequestDirectories(options?.directories)) {
       fetches.push(fetchForDirectory(directory));
     }
 

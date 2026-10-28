@@ -220,6 +220,7 @@ executions and rows without a session; missing session association is not proof
 of execution failure. Such rows remain unresolved rather than inventing a result.
 Recovery checks live `session.active` before examining terminal messages or Host
 goal state. Active, unavailable, malformed, and incomplete results remain pending.
+A session OpenCode confirms deleted (`SessionNotFoundError`) settles as `error`.
 Only confirmed terminal evidence finalizes history, with duration through the
 time recovery observes completion. It neither dispatches a new prompt nor sends
 a second completion notification.
@@ -358,6 +359,10 @@ Every actual run (timer or manual):
        after multiple incomplete idle probes.
      - `session.active` / `message.list` failures stay **unknown** (keep
        polling under the watchdog); they never masquerade as idle success.
+       Exception: a declared `SessionNotFoundError` (or HTTP 404) from
+       `message.list` / `session.get` is confirmed terminal evidence and
+       finalizes as `error: 'session not found'`, so recovery stops polling
+       deleted sessions. Transport failures never match.
      - Assistant `error` (and terminal finish `error` / `length` /
        `content-filter`) finalizes as `error`.
       - Goal-enabled runs: settle via Host goal terminal status when the store

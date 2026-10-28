@@ -28,9 +28,6 @@ export function createQuestionAutoDelegateRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   readSettingsFromDiskMigrated,
-  sanitizeProjects,
-  /** Optional: session-index / worktree inventory directories. */
-  listIndexedDirectories,
   broadcastGlobalUiEvent,
   broadcastYuriEvent,
   fetchImpl = fetch,
@@ -124,32 +121,19 @@ export function createQuestionAutoDelegateRuntime({
           return null;
         }
       },
+      /**
+       * Forms live in Location memory, so only live Locations can hold pending
+       * forms. A scoped `/form` on any other directory boots a full Location
+       * that upstream never evicts; never list projects or indexed directories.
+       * @returns {Promise<string[]|null>} null when the live set is unreadable.
+       */
       async listDirectories() {
+        const result = await upstream('/debug/location');
+        if (!result.ok || !Array.isArray(result.body)) return null;
         const dirs = new Set();
-        try {
-          const settings = await readSettingsFromDiskMigrated();
-          const projects = typeof sanitizeProjects === 'function'
-            ? (sanitizeProjects(settings?.projects ?? []) || [])
-            : (Array.isArray(settings?.projects) ? settings.projects : []);
-          for (const project of projects) {
-            const path = asTrimmedString(project?.path);
-            if (path) dirs.add(path);
-          }
-        } catch {
-          // Project list failure is not fatal when index inventory exists.
-        }
-        if (typeof listIndexedDirectories === 'function') {
-          try {
-            const indexed = await listIndexedDirectories();
-            if (Array.isArray(indexed)) {
-              for (const directory of indexed) {
-                const path = asTrimmedString(directory);
-                if (path) dirs.add(path);
-              }
-            }
-          } catch {
-            // ignore index failures — core marks partial when inventory empty+failed
-          }
+        for (const entry of result.body) {
+          const path = asTrimmedString(entry?.directory);
+          if (path) dirs.add(path);
         }
         return Array.from(dirs);
       },

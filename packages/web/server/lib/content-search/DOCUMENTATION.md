@@ -38,6 +38,13 @@ queue populated by live events. Each dirty session is read by ID and refreshes i
 own messages; unrelated sessions incur no upstream work. Initialization failures
 retry using committed per-session checkpoints. Explicit `sync()` remains deliberate
 catalog reconciliation; automatic scheduling uses incremental mode.
+The event-identity hotfix adds `search_coverage.event_identity_repaired` without
+changing existing runtime keys or deleting results. Older completed indexes perform
+one bounded thirty-day catalog reconciliation to recover updates dropped by the
+old event fence. Unchanged checkpoints are reused; changed/missing sessions are
+refetched with the same two-worker limit. Partial failures preserve old hits and
+retry after thirty seconds, including after restart. Only successful reconciliation
+sets the durable repair marker; subsequent warm starts resume dirty work only.
 Already verified unchanged sessions are reused, including
 sessions with no searchable text. Each session now commits an `indexed_at`
 completion timestamp atomically with its projection, source update time and
@@ -88,8 +95,11 @@ during the fetch survives for another pass. Thirty-second retries are scheduled
 only for unfinished initialization or pending dirty sessions, never idle catalog
 polling. Deleted-session events and confirmed 404 remove that session; a time-bounded
 catalog is not authoritative absence for unvisited IDs. Indexing does not depend on
-any UI session being opened. Runtime identity is owned by the Host session index;
-in-flight results are rejected if it changes. Stop aborts reads and drains the
+any UI session being opened. The persisted partition is owned by the Host session
+index; the incoming event fence is checked against the message queue's runtime key,
+the same provider used by the global hub. These are distinct hash namespaces and
+must never be compared to each other. Old-runtime events remain rejected;
+in-flight results are rejected if the index partition changes. Stop aborts reads and drains the
 active pass before closing SQLite.
 
 `GET /api/yuri/content-search?q=...&limit=30` returns `{hits,index}`.

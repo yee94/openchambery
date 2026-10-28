@@ -223,6 +223,39 @@ describe('scheduled-tasks history recovery', () => {
     }
   });
 
+  it('settles running history whose session was deleted upstream and stops polling it', async () => {
+    vi.useFakeTimers();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scheduled-missing-'));
+    const store = createScheduledTaskRunHistoryStore({ dbPath: path.join(dir, 'runs.sqlite') });
+    for (const id of ['missing', 'offline']) {
+      store.startRun({ id, projectId: 'project-1', taskId: id, startedAt: Date.now() - 1000 });
+      store.attachSession(id, `ses_${id}`);
+    }
+    const messageList = vi.fn(async ({ sessionID }) => {
+      if (sessionID === 'ses_missing') {
+        throw Object.assign(new Error('SessionNotFoundError'), { _tag: 'SessionNotFoundError', name: 'SessionNotFoundError', sessionID });
+      }
+      throw new TypeError('fetch failed');
+    });
+    makeOpenCodeV2Client.mockReturnValue({ session: { active: vi.fn(async () => ({})) }, message: { list: messageList } });
+    const runtime = createRuntime(vi.fn(async () => ({ task: null })), { runHistoryStore: store });
+    try {
+      await runtime.start();
+      await vi.advanceTimersByTimeAsync(0);
+      const runs = () => Object.fromEntries(store.listRuns().runs.map((run) => [run.id, run]));
+      expect(runs().missing).toMatchObject({ status: 'error', error: 'session not found' });
+      expect(runs().offline.status).toBe('running');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(messageList.mock.calls.filter(([args]) => args.sessionID === 'ses_missing')).toHaveLength(1);
+      expect(runs().offline.status).toBe('running');
+    } finally {
+      runtime.stop();
+      store.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+      vi.useRealTimers();
+    }
+  });
+
   it('discards recovery results arriving after stop', async () => {
     let resolveMessages;
     const messages = new Promise((resolve) => { resolveMessages = resolve; });

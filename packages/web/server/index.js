@@ -1019,18 +1019,6 @@ questionAutoDelegateRuntime = createQuestionAutoDelegateRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   readSettingsFromDiskMigrated,
-  sanitizeProjects,
-  listIndexedDirectories: async () => {
-    try {
-      const snap = sessionIndexServiceRef?.snapshot?.();
-      const directories = Array.isArray(snap?.directories) ? snap.directories : [];
-      return directories
-        .map((entry) => (typeof entry?.directory === 'string' ? entry.directory.trim() : ''))
-        .filter(Boolean);
-    } catch {
-      return [];
-    }
-  },
   broadcastGlobalUiEvent,
   broadcastYuriEvent: broadcastQuestionAutoDelegateTip,
   onUserTakeover: ({ sessionID, directory }) => {
@@ -1600,6 +1588,7 @@ async function main(options = {}) {
   const contentSearch = createGlobalContentSearch({
     dataDir: path.dirname(resolveSessionIndexDbPath({ sessionIndexDbPath }, YURI_DATA_DIR)),
     getRuntimeKey: () => sessionIndexService.getRuntimeKey(),
+    getEventRuntimeKey: () => messageQueueService?.getRuntimeKey() ?? null,
     buildOpenCodeUrl, getOpenCodeAuthHeaders, waitForReady: waitForOpenCodeReady,
   });
   const unsubscribeContentSearch = globalMessageStreamHub.subscribeEvent((event) => contentSearch.runtime.observe(event));

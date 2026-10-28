@@ -3,10 +3,10 @@ import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { createContentSearchService } from './service.js';
 import { createContentSearchRuntime } from './runtime.js';
 
-export function createGlobalContentSearch({ dataDir, getRuntimeKey, buildOpenCodeUrl, getOpenCodeAuthHeaders, waitForReady }) {
+export function createGlobalContentSearch({ dataDir, getRuntimeKey, getEventRuntimeKey, buildOpenCodeUrl, getOpenCodeAuthHeaders, waitForReady }) {
   const service = createContentSearchService({ dbPath: path.join(dataDir, 'content-search.sqlite') });
   const client = () => makeOpenCodeV2Client({ baseUrl: buildOpenCodeUrl('/', ''), authHeaders: getOpenCodeAuthHeaders() });
-  const runtime = createContentSearchRuntime({ service, getRuntimeKey,
+  const runtime = createContentSearchRuntime({ service, getRuntimeKey, getEventRuntimeKey,
     getSession: ({ sessionID, signal }) => client().session.get({ sessionID }, { signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) }),
     listSessions: async ({ signal, ...query }) => {
       await waitForReady();

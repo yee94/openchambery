@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import net from 'node:net';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './managed-process-registry.js';
 import { evaluateOpenCodeHealthBody } from './opencode2-pin.js';
@@ -592,6 +593,23 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
    * @param {object | null | undefined} migrationGate
    * @param {number | null | undefined} expectedGeneration
    */
+  // Health checks run every 15s; spawnSync `--version` blocks the event loop.
+  // Re-read only when the binary file is replaced (upgrade changes mtime/size).
+  let cliVersionCache = { key: '', version: null };
+  const readCliVersionCached = (binaryPath) => {
+    let key;
+    try {
+      const stat = fs.statSync(binaryPath);
+      key = `${binaryPath}\0${stat.mtimeMs}\0${stat.size}`;
+    } catch {
+      return readOpenCode2BinaryVersion(binaryPath) || null;
+    }
+    if (cliVersionCache.key === key) return cliVersionCache.version;
+    const version = readOpenCode2BinaryVersion(binaryPath) || null;
+    if (version) cliVersionCache = { key, version };
+    return version;
+  };
+
   const refreshRuntimeContractFromProbe = (
     probe,
     migrationGate = state.v1Migration,
@@ -608,7 +626,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const binaryPath = typeof process.env.OPENCODE_BINARY === 'string'
       ? process.env.OPENCODE_BINARY.trim()
       : '';
-    const cliVersion = binaryPath ? (readOpenCode2BinaryVersion(binaryPath) || null) : null;
+    const cliVersion = binaryPath ? readCliVersionCached(binaryPath) : null;
     const contract = evaluateRuntimeContract({
       serveVersion: probe?.version ?? null,
       cliVersion,
