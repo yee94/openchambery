@@ -84,6 +84,30 @@ export function createContentSearchRuntime({ service, getRuntimeKey, getEventRun
       state.total = sessions.length;
       state.completed = 0;
       const recentIDs = new Set(sessions.map((session) => session.id));
+      // A time-bounded catalog cannot classify pending IDs outside its pages.
+      // Resolve those IDs directly so excluded children/expired roots cannot
+      // keep initialization dirty forever. Failed reads remain pending.
+      if (scanCatalog && !completeCatalog) for (const sessionID of pendingDirty) if (!recentIDs.has(sessionID)) {
+        try {
+          const session = await getSession({ sessionID, signal });
+          if (!current()) return;
+          if (!session?.id || !Number.isFinite(session.time?.updated)) throw new Error('Invalid dirty session');
+          if (!session.parentID && session.time.updated >= state.since && !deleted.has(sessionID)) {
+            sessions.push(session);
+            recentIDs.add(sessionID);
+          } else {
+            service.removeSession(runtime, sessionID);
+            dirty.delete(sessionID);
+          }
+        } catch (error) {
+          if (!current()) return;
+          if ((error?.status ?? error?.response?.status) === 404) {
+            service.removeSession(runtime, sessionID);
+            dirty.delete(sessionID);
+          } else state.failed++;
+        }
+      }
+      state.total = sessions.length;
       if (scanCatalog && completeCatalog) for (const id of pendingDirty) if (!recentIDs.has(id)) {
         dirty.delete(id);
         service.acknowledge(runtime, id, revisions.get(id));

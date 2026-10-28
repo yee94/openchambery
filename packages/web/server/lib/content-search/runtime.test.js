@@ -2,6 +2,25 @@ import { expect, test, vi } from 'vitest';
 import { createContentSearchService } from './service.js';
 import { createContentSearchRuntime } from './runtime.js';
 
+test('bounded backfill drains excluded dirty children without repeating the catalog scan', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  const day = 86400000;
+  const now = 40 * day;
+  service.markDirty('host', 'child');
+  const listSessions = vi.fn(async () => ({ data: [{ id: 'old', time: { updated: 1 } }], cursor: { next: 'older' } }));
+  const runtime = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', now: () => now,
+    listSessions, getSession: async () => ({ id: 'child', parentID: 'parent', time: { updated: now } }),
+    listMessages: vi.fn(),
+  });
+  try {
+    await runtime.sync({ incremental: true });
+    expect(service.pending('host')).toEqual([]);
+    expect(runtime.status().initializationRequired).toBe(false);
+    await runtime.sync({ incremental: true });
+    expect(listSessions).toHaveBeenCalledTimes(1);
+  } finally { await runtime.stop(); service.close(); }
+});
+
 test('warm startup and idle time do not scan history; durable dirty events refresh only their session', async () => {
   vi.useFakeTimers();
   const service = createContentSearchService({ dbPath: ':memory:' });

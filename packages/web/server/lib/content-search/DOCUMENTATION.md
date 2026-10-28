@@ -35,7 +35,11 @@ timestamps, not installation/version timestamps or browser onboarding flags.
 An absent completion marker requires initialization. A completed runtime does not
 walk the catalog on startup or on a timer. It resumes only the durable dirty-session
 queue populated by live events. Each dirty session is read by ID and refreshes its
-own messages; unrelated sessions incur no upstream work. Initialization failures
+own messages; unrelated sessions incur no upstream work. Initialization passes
+resolve pending IDs outside a bounded catalog through `session.get`; excluded
+children and expired sessions leave the dirty queue, while failed reads retain it.
+This prevents filtered-out dirty IDs from keeping initialization in a rescan loop.
+Initialization failures
 retry using committed per-session checkpoints. Explicit `sync()` remains deliberate
 catalog reconciliation; automatic scheduling uses incremental mode.
 The event-identity hotfix adds `search_coverage.event_identity_repaired` without

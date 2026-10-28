@@ -301,6 +301,9 @@ export const createSessionIndexSyncRuntime = ({
         active.push(session);
       }
 
+      if (hitPageBudget && active.length < SESSION_LIMIT) {
+        throw new Error('Directory scan incomplete; retaining prior session index');
+      }
       const oldest = active[active.length - 1];
       const cursorNumber = lastCursorToken && Number.isFinite(Number(lastCursorToken))
         ? Number(lastCursorToken)
