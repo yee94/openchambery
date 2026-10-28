@@ -3,11 +3,12 @@
 The Host owns `content-search.sqlite` alongside the session index. This index is
 independent of browser transcript caches and includes all projects exposed by the
 active OpenCode runtime. `session.list` is called without a project/directory
-filter; opaque cursors are followed until exhausted. The default coverage is
+filter during initial backfill; descending opaque cursors stop at the thirty-day
+boundary or exhaustion. The default coverage is
 messages created in the last thirty days in recently updated root sessions.
 Sessions with a non-empty `parentID` (subagents) are excluded before message
 fetching and progress counting. Only root IDs enter the authoritative pruning
-set, so a successful catalog scan also removes previously indexed subagent
+set, so a fully exhausted catalog scan also removes previously indexed subagent
 messages, FTS entries and checkpoints. Failed catalog reads preserve the old index.
 
 Two workers page native `message.list` directly, normalize via the shared server
@@ -31,12 +32,13 @@ and checkpoint until a complete replacement succeeds.
 `search_coverage` durably records each runtime's `indexStartedAt`,
 `indexCompletedAt`, `coveredSince`, and `verifiedAt`. These are index operation
 timestamps, not installation/version timestamps or browser onboarding flags.
-An absent completion marker requires initialization. Every startup still walks
-the authoritative complete OpenCode catalog and compares each recent session's
-updated time and indexed boundary; a prior global completion never bypasses
-that check. Missing, stale, or insufficient-coverage checkpoints are refreshed in
-the background after the first successful initialization, without clearing its
-completion marker or reopening onboarding. Already verified unchanged sessions are reused, including
+An absent completion marker requires initialization. A completed runtime does not
+walk the catalog on startup or on a timer. It resumes only the durable dirty-session
+queue populated by live events. Each dirty session is read by ID and refreshes its
+own messages; unrelated sessions incur no upstream work. Initialization failures
+retry using committed per-session checkpoints. Explicit `sync()` remains deliberate
+catalog reconciliation; automatic scheduling uses incremental mode.
+Already verified unchanged sessions are reused, including
 sessions with no searchable text. Each session now commits an `indexed_at`
 completion timestamp atomically with its projection, source update time and
 coverage boundary. Existing databases gain this nullable column and the coverage
@@ -60,7 +62,7 @@ coverage (for example after a system-clock correction).
 The status response adds `initializationRequired` and these durable timestamps.
 `updatedAt` remains the current process's latest completed pass, including partial
 passes; clients must not confuse it with successful durable completion. A warm
-startup may be `pending` with `initializationRequired: false`; discovered gaps
+startup may be `pending` with `initializationRequired: false`; queued dirty sessions
 remain background work. `initializationRequired` indicates unfinished first-time
 initialization, not whether the latest incremental pass has caught up. No
 UI-triggered import or OpenCode database conversion is needed:
@@ -80,8 +82,12 @@ dismissal; runtime changes recheck. Older Hosts without the new status fields
 keep their existing behavior. VS Code's direct OpenCode connection has no Host
 FTS service and does not mount this step.
 
-Global upstream events mark sessions dirty and coalesce a scan within one second;
-a 30-second reconciliation discovers missed events. Indexing does not depend on
+Global upstream events durably mark sessions dirty and coalesce work within one
+second. Successful writes acknowledge only the captured dirty revision, so an event
+during the fetch survives for another pass. Thirty-second retries are scheduled
+only for unfinished initialization or pending dirty sessions, never idle catalog
+polling. Deleted-session events and confirmed 404 remove that session; a time-bounded
+catalog is not authoritative absence for unvisited IDs. Indexing does not depend on
 any UI session being opened. Runtime identity is owned by the Host session index;
 in-flight results are rejected if it changes. Stop aborts reads and drains the
 active pass before closing SQLite.

@@ -1,6 +1,77 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { createContentSearchService } from './service.js';
 import { createContentSearchRuntime } from './runtime.js';
+
+test('warm startup and idle time do not scan history; durable dirty events refresh only their session', async () => {
+  vi.useFakeTimers();
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  service.beginInitialization('host', 1);
+  service.completeInitialization('host', 0, 2);
+  const listSessions = vi.fn(async () => ({ data: [], cursor: {} }));
+  const getSession = vi.fn(async ({ sessionID }) => ({ id: sessionID, time: { updated: Date.now() } }));
+  const listMessages = vi.fn(async () => ({ data: [], cursor: {} }));
+  let runtime = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', listSessions, getSession, listMessages });
+  try {
+    runtime.start();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(listSessions).not.toHaveBeenCalled();
+    expect(listMessages).not.toHaveBeenCalled();
+    runtime.observe({ payload: { type: 'message.updated', data: { sessionID: 'one' } } });
+    await runtime.stop();
+    runtime = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', listSessions, getSession, listMessages });
+    runtime.start();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(listSessions).not.toHaveBeenCalled();
+    expect(getSession).toHaveBeenCalledTimes(1);
+    expect(getSession.mock.calls[0][0].sessionID).toBe('one');
+    expect(listMessages).toHaveBeenCalledTimes(1);
+  } finally { await runtime.stop(); service.close(); vi.useRealTimers(); }
+});
+
+test('initial history stops at thirty days without pruning unseen sessions as deleted', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  const day = 86400000;
+  const now = 40 * day;
+  service.replaceSession('host', { id: 'unseen', time: { updated: now } }, [], 0);
+  const listSessions = vi.fn(async () => ({ data: [
+    { id: 'recent', time: { updated: now } },
+    { id: 'old', time: { updated: now - 31 * day } },
+  ], cursor: { next: 'older-history' } }));
+  const listMessages = vi.fn(async () => ({ data: [], cursor: {} }));
+  const runtime = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', now: () => now, listSessions, listMessages });
+  try {
+    await runtime.sync();
+    expect(listSessions).toHaveBeenCalledTimes(1);
+    expect(listMessages).toHaveBeenCalledTimes(1);
+    expect(listMessages.mock.calls[0][0].sessionID).toBe('recent');
+    expect(service.updated('host', 'unseen')).toBe(now);
+    expect(runtime.status().initializationRequired).toBe(false);
+  } finally { await runtime.stop(); service.close(); }
+});
+
+test('an event received while indexing survives acknowledgement and retries only that session', async () => {
+  const service = createContentSearchService({ dbPath: ':memory:' });
+  service.beginInitialization('host', 1);
+  service.completeInitialization('host', 0, 2);
+  const listSessions = vi.fn();
+  let reads = 0;
+  const runtime = createContentSearchRuntime({ service, getRuntimeKey: () => 'host', now: () => 100,
+    listSessions, getSession: async ({ sessionID }) => ({ id: sessionID, time: { updated: 10 } }),
+    listMessages: async () => {
+      if (++reads === 1) runtime.observe({ payload: { type: 'message.updated', data: { sessionID: 's' } } });
+      return { data: [], cursor: {} };
+    },
+  });
+  try {
+    runtime.observe({ payload: { type: 'message.updated', data: { sessionID: 's' } } });
+    await runtime.sync({ incremental: true });
+    expect(service.pending('host')).toHaveLength(1);
+    await runtime.sync({ incremental: true });
+    expect(reads).toBe(2);
+    expect(service.pending('host')).toEqual([]);
+    expect(listSessions).not.toHaveBeenCalled();
+  } finally { await runtime.stop(); service.close(); }
+});
 
 test('indexes only roots and prunes legacy subagents after a complete catalog, including dirty children', async () => {
   const service = createContentSearchService({ dbPath: ':memory:' });

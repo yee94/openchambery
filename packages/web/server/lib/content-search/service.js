@@ -22,6 +22,7 @@ export function createContentSearchService({ dbPath }) {
     CREATE TABLE IF NOT EXISTS search_message(id INTEGER PRIMARY KEY, runtime TEXT, session TEXT, message TEXT, role TEXT, created REAL, body TEXT, UNIQUE(runtime,session,message));
     CREATE INDEX IF NOT EXISTS search_message_scope ON search_message(runtime,session);
     CREATE TABLE IF NOT EXISTS search_coverage(runtime TEXT PRIMARY KEY, started_at REAL NOT NULL, completed_at REAL, since REAL, verified_at REAL);
+    CREATE TABLE IF NOT EXISTS search_dirty(runtime TEXT, id TEXT, revision INTEGER NOT NULL, PRIMARY KEY(runtime,id));
     CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(body, content='search_message', content_rowid='id', tokenize='trigram');
     CREATE TRIGGER IF NOT EXISTS search_insert AFTER INSERT ON search_message BEGIN
       INSERT INTO search_fts(rowid,body) VALUES(new.id,new.body); END;
@@ -40,8 +41,18 @@ export function createContentSearchService({ dbPath }) {
   const removeSession = db.transaction((runtime, id) => {
     remove.run(runtime, id);
     db.prepare('DELETE FROM search_session WHERE runtime=? AND id=?').run(runtime, id);
+    db.prepare('DELETE FROM search_dirty WHERE runtime=? AND id=?').run(runtime, id);
   });
   return {
+    markDirty(runtime, id) {
+      db.prepare('INSERT INTO search_dirty(runtime,id,revision) VALUES(?,?,1) ON CONFLICT(runtime,id) DO UPDATE SET revision=revision+1').run(runtime, id);
+    },
+    pending(runtime) {
+      return db.prepare('SELECT id,revision FROM search_dirty WHERE runtime=?').all(runtime);
+    },
+    acknowledge(runtime, id, revision) {
+      return db.prepare('DELETE FROM search_dirty WHERE runtime=? AND id=? AND revision=?').run(runtime, id, revision).changes > 0;
+    },
     coverage(runtime) {
       return db.prepare('SELECT started_at AS indexStartedAt, completed_at AS indexCompletedAt, since AS coveredSince, verified_at AS verifiedAt FROM search_coverage WHERE runtime=?').get(runtime)
         ?? { indexStartedAt: null, indexCompletedAt: null, coveredSince: null, verifiedAt: null };
@@ -73,7 +84,7 @@ export function createContentSearchService({ dbPath }) {
     prune: db.transaction((runtime, since, ids) => {
       db.prepare('DELETE FROM search_message WHERE runtime=? AND created<?').run(runtime, since);
       db.prepare('UPDATE search_session SET since=MAX(since,?) WHERE runtime=? AND since IS NOT NULL').run(since, runtime);
-      for (const row of db.prepare('SELECT id FROM search_session WHERE runtime=?').all(runtime)) {
+      if (ids) for (const row of db.prepare('SELECT id FROM search_session WHERE runtime=?').all(runtime)) {
         if (!ids.has(row.id)) removeSession(runtime, row.id);
       }
     }),

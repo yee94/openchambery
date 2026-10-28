@@ -7,6 +7,7 @@ export function createGlobalContentSearch({ dataDir, getRuntimeKey, buildOpenCod
   const service = createContentSearchService({ dbPath: path.join(dataDir, 'content-search.sqlite') });
   const client = () => makeOpenCodeV2Client({ baseUrl: buildOpenCodeUrl('/', ''), authHeaders: getOpenCodeAuthHeaders() });
   const runtime = createContentSearchRuntime({ service, getRuntimeKey,
+    getSession: ({ sessionID, signal }) => client().session.get({ sessionID }, { signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) }),
     listSessions: async ({ signal, ...query }) => {
       await waitForReady();
       return client().session.list(query, { signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) });
