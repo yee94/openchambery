@@ -173,17 +173,18 @@ export const loadSessionIndexSnapshot = async (
 
 export const startSessionIndexBackgroundSync = async (
   directories: string[],
+  options?: { startup?: boolean },
 ): Promise<SessionIndexSnapshot | null> => {
   if (typeof window === 'undefined') return null;
   const normalized = [...new Set(directories.map(normalizePath).filter(Boolean))].sort();
-  const key = JSON.stringify([sessionIndexRequestScope(), normalized]);
+  const key = JSON.stringify([sessionIndexRequestScope(), normalized, options?.startup === true]);
   const existing = sessionIndexSyncInflight.get(key);
   if (existing) return existing;
   const flight = (async () => {
     const response = await runtimeFetch('/api/yuri/session-index/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ directories: normalized }),
+      body: JSON.stringify(options?.startup ? { startup: true } : { directories: normalized }),
     });
     if (response.status === 501) return null;
     await ensureOk(response);

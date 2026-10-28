@@ -77,7 +77,8 @@ jobs:
       - name: Get bundled OpenCode CLI version
         id: opencode_cli_version
         run: |
-          VERSION=$(node -p "require('./package.json').dependencies['@opencode-ai/sdk']")
+          VERSION=$(node --input-type=module -e "import { createOpenCodeUpdateDiscovery } from './packages/web/server/lib/opencode/update-discovery.js'; console.log(await createOpenCodeUpdateDiscovery()());")
+          echo "YURI_OPENCODE2_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Cache bundled OpenCode CLI artifact

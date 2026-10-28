@@ -654,10 +654,11 @@ attachments. Query/local storage accelerate paint only; server SQLite + GET
 remain authoritative. A failed authoritative GET keeps the last good seed; a
 successful empty snapshot clears rows under the existing merge rules; a
 501/unsupported `null` must not be written as a successful empty storage entry.
-Directory planning and background root refresh still wait for registered
-settings hydration so the project catalog and active directory are complete,
-then refresh known root/worktree directories through the bounded scheduler
-(with priority — see below), write one transaction batch, and release normal
+Startup requests one Host-owned 30-day historical backfill, with persisted
+runtime-scoped completion and page checkpoints. It does not submit the project
+or worktree catalog, nor schedule a deferred catalog refresh. Later startups read
+the local index; normal live events maintain it. Backfill pages commit atomically,
+then release normal
 global and directory bootstrap. Concurrent early + startup hydrate callers
 share one in-flight GET. A runtime that reports the capability as unsupported
 uses the existing bounded SDK-backed path. Desktop main splash dismisses when a
@@ -669,11 +670,12 @@ settled (so an empty list is not shown before the restore attempt finishes).
 
 | Condition | Immediate POST `/session-index/sync` set | Blocking `startupSyncProgress` | Deferred (P1) |
 |---|---|---|---|
-| No SQLite cache (`hasCachedSessionIndex=false`) | Full catalog (all registered projects + worktrees + cached dirs) | Yes — wait until root sync settles | None |
-| Cache hit + resolvable active directory | **P0 only**: project that owns `useDirectoryStore.currentDirectory` + that project's known worktrees | No — hydrate returns cache; progress stays idle after restore | Remaining catalog directories via `syncSessionsForDirectories` in a cancellable background task |
-| Cache hit but active directory missing/unmatched | Full catalog (safe fallback) | No | None |
+| No SQLite cache (`hasCachedSessionIndex=false`) | `{ startup: true }`, no directory set | Yes — wait until backfill settles | None |
+| Cache hit | `{ startup: true }`; Host skips completed backfill | No — hydrate returns cache | None |
 
-P1 reuses the existing server enqueue + tip/GET observer path
+Only explicitly unsupported Hosts retain the legacy P0/P1 SDK fallback. Network
+failure must preserve the local index rather than trigger catalog-wide fallback.
+That fallback's P1 reuses the existing server enqueue + tip/GET observer path
 (`startSessionIndexBackgroundSync` / `syncSessionsForDirectories`); it must not
 introduce a parallel sync pipeline. The only allowed client-side browser cache
 for session-index is the transport/runtime-scoped Query + startup snapshot

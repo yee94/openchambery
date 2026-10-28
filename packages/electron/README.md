@@ -67,7 +67,7 @@ New links use `yuri://`. Packaged OS registration and runtime handlers also acce
 Relay config sync runs in the renderer (`packages/ui/src/lib/relay/relay-config-sync.ts`) because the E2EE tunnel client is UI-owned. Main process helpers pack/extract local tars (`desktop_relay_sync_pack_local` / `desktop_relay_sync_apply_local`) and append `relay:<serverId>` run records. `credentialPayload` carries versioned V2 credential bytes; `providerCredentials` carries metadata. Only the current credential API protocol is supported. Local credential operations use authenticated local-host HTTP so OTA backends resolve their own OpenCode service client. Identity is pinned to `serverId`; a changed fingerprint fails with `relay_identity_changed`.
 | `scripts/electron-dev.mjs` | Desktop dev launcher with Vite HMR support |
 | `scripts/build-web-assets.mjs` | Builds `packages/web` and stages UI assets into `resources/web-dist` |
-| `scripts/prepare-opencode-cli.mjs` | Downloads the pinned OpenCode CLI from npm platform packages (`@opencode/cli-<os>-<arch>`) and stages it into `resources/opencode-cli` |
+| `scripts/prepare-opencode-cli.mjs` | Resolves latest stable OpenCode 2.x from npm platform packages (`@opencode/cli-<os>-<arch>`) and stages it into `resources/opencode-cli` |
 | `scripts/bundle-main.mjs` | Bundles Electron main code into `dist-bundle/main.mjs` for packaging |
 | `scripts/rebuild-native.mjs` | Rebuilds native modules against the Electron runtime |
 | `scripts/package.mjs` | Runs `electron-builder`, with unsigned Windows builds when signing env is missing |
@@ -105,7 +105,7 @@ bun run electron:build
 That runs, in order:
 
 1. `build:web-assets` to build the web UI and copy it into `packages/electron/resources/web-dist`.
-2. `prepare:opencode-cli` to download/cache the pinned OpenCode CLI from npm platform packages and copy it into `packages/electron/resources/opencode-cli`.
+2. `prepare:opencode-cli` to resolve latest stable OpenCode 2.x, download/cache its npm platform package and copy it into `packages/electron/resources/opencode-cli`. CI resolves once per job and passes that version to cache, prepare and verify; local verification compares packaged binaries with the staged binary.
 3. `bundle:main` to create `packages/electron/dist-bundle/main.mjs`.
 4. `rebuild:native` to rebuild native modules for Electron.
 5. `package.mjs` to run `electron-builder`.
@@ -291,7 +291,7 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 | `YURI_HMR_UI_PORT` | Preferred Vite UI port for desktop dev, default `5173` |
 | `YURI_HMR_API_PORT` | Preferred API port for desktop dev, default `3901` |
 | `YURI_RUNTIME=desktop` | Set by Electron before starting the web server |
-| `YURI_OPENCODE_CLI_VERSION` / `YURI_OPENCODE2_VERSION` | Optional packaging override for the bundled OpenCode CLI version; defaults to `PINNED_OPENCODE2_VERSION` in `packages/web/server/lib/opencode/opencode2-pin.js`. SSH installs independently resolve latest stable 2.x. |
+| `YURI_OPENCODE_CLI_VERSION` / `YURI_OPENCODE2_VERSION` | Optional exact stable 2.x packaging override; otherwise resolves latest stable 2.x. Verification uses the override or staged binary, never a separately fetched release. SSH installs independently resolve latest stable 2.x. |
 | `YURI_TARGET_ARCH` | Explicit desktop package architecture (`x64` or `arm64`); Linux requires it to match the native host |
 | `YURI_DESKTOP_PROFILE` | Packaging profile: unset/`release` (CI default) or `preview` (local side-by-side QA build; distinct identity, PREVIEW icon, isolated Yuri data dir). Prefer `bun run electron:build:preview` for local Desktop packages. |
 | `YURI_DATA_DIR` | Yuri server data root. Preview/dev set this under Electron `userData` when unset so they do not share `~/.config/yuri` with the release app. |

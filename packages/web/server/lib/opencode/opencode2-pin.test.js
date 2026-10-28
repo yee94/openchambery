@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   OPENCODE2_NPM_PACKAGE,
-  PINNED_OPENCODE2_VERSION,
   compareOpenCode2Versions,
   evaluateOpenCodeHealthBody,
   isAcceptableOpenCode2HealthVersion,
@@ -12,6 +11,8 @@ import {
   rejectOpenCode1xUpgradeTarget,
   resolveOpenCode2UpgradeTarget,
 } from './opencode2-pin.js';
+
+const PINNED_OPENCODE2_VERSION = '2.0.23';
 
 describe('opencode2 pin (ticket 12)', () => {
   it('rejects 1.x version strings and accepts the pinned v2', () => {
@@ -25,11 +26,11 @@ describe('opencode2 pin (ticket 12)', () => {
     expect(isOpenCode1xVersion(null)).toBe(false);
   });
 
-  it('throws on 1.x upgrade targets and defaults empty to the pin', () => {
+  it('throws on 1.x or unresolved upgrade targets', () => {
     expect(() => rejectOpenCode1xUpgradeTarget('1.18.4')).toThrow(/1\.x/);
     expect(() => rejectOpenCode1xUpgradeTarget('1.18.4')).toThrow(expect.objectContaining({ code: 'OPENCODE_UPGRADE_1X_REFUSED' }));
-    expect(resolveOpenCode2UpgradeTarget(undefined)).toBe(PINNED_OPENCODE2_VERSION);
-    expect(resolveOpenCode2UpgradeTarget('')).toBe(PINNED_OPENCODE2_VERSION);
+    expect(() => resolveOpenCode2UpgradeTarget(undefined)).toThrow('Resolve a stable');
+    expect(() => resolveOpenCode2UpgradeTarget('')).toThrow('Resolve a stable');
     expect(resolveOpenCode2UpgradeTarget(PINNED_OPENCODE2_VERSION)).toBe(PINNED_OPENCODE2_VERSION);
     expect(() => resolveOpenCode2UpgradeTarget('1.18.18')).toThrow(/1\.x/);
   });

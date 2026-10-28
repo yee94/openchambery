@@ -108,11 +108,30 @@ describe('installRequiredOpenCode', () => {
         calls.push('ready');
       }),
       readConfiguredBinary: async () => null,
+      resolveLatestVersion: async () => '2.0.23',
       isSharedService: () => false,
       ...overrides,
     };
     return { deps, calls };
   };
+
+  it('resolves a newer stable release instead of installing a compiled-in pin', async () => {
+    const { deps } = createDeps({
+      resolveLatestVersion: vi.fn(async () => '2.2.0'),
+      readBinaryVersion: () => '2.2.0',
+      readServeVersion: vi.fn().mockResolvedValueOnce('2.0.14').mockResolvedValueOnce('2.2.0'),
+    });
+    await expect(installRequiredOpenCode(deps)).resolves.toMatchObject({ upgraded: true, version: '2.2.0' });
+    expect(deps.install).toHaveBeenCalledWith({ version: '2.2.0' });
+  });
+
+  it('does not mutate installation or selection when release discovery fails', async () => {
+    const { deps } = createDeps({ resolveLatestVersion: async () => { throw new Error('offline'); } });
+    await expect(installRequiredOpenCode(deps)).rejects.toThrow('offline');
+    expect(deps.install).not.toHaveBeenCalled();
+    expect(deps.persistBinary).not.toHaveBeenCalled();
+    expect(deps.restart).not.toHaveBeenCalled();
+  });
 
   it('installs 2.0.23 and only succeeds after the running serve is verified', async () => {
     const { deps, calls } = createDeps({
@@ -190,6 +209,7 @@ describe('upgrade screen routes', () => {
       resolveOwnership: async () => ({ ownership: 'owned-cache', guidance: null }),
       readServeVersion,
       readCliVersion: () => '2.0.12',
+      resolveLatestVersion: async () => '2.0.23',
       platformCanInstall: true,
       install: vi.fn(async () => {
         throw new Error('registry unreachable');

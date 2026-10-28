@@ -1311,11 +1311,6 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       ...directories,
       ...get().cachedDirectories,
     ]);
-    if (directorySet.size === 0) {
-      set({ startupSyncProgress: { active: false, phase: 'idle', completed: 0, total: 0 } });
-      const state = get();
-      return { activeSessions: state.activeSessions, archivedSessions: state.archivedSessions };
-    }
     const hasCachedSnapshot = get().hasCachedSessionIndex;
     // With a SQLite cache, only P0 directories hit the immediate /sync POST.
     // Without a cache (first install), keep the full blocking set so the
@@ -1339,7 +1334,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     let initial: SessionIndexSnapshot | null = null;
     const startRuntime = captureSessionIndexRuntime();
     try {
-      initial = await startSessionIndexBackgroundSync([...immediateDirectorySet]);
+      initial = await startSessionIndexBackgroundSync([], { startup: true });
       if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(startRuntime)) {
         return { activeSessions: [], archivedSessions: [] };
       }
@@ -1349,9 +1344,12 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         return { activeSessions: [], archivedSessions: [] };
       }
       console.warn('[GlobalSessions] Failed to start server-side session index sync:', error);
+      set({ startupSyncProgress: { active: false, phase: 'idle', completed: 0, total: 0 } });
+      return snapshot;
     }
 
     const scheduleDeferredSessionIndexSync = () => {
+      if (initial) return;
       if (deferredDirectorySet.size === 0) return;
       const deferredDirectories = [...deferredDirectorySet];
       const schedule = () => {

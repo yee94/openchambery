@@ -95,6 +95,12 @@ const installSdkList = (list: SessionListFn): (() => void) => {
 describe('useGlobalSessionsStore', () => {
   let restoreGetSdkClient: (() => void) | null = null;
   let restoreCheckHealth: (() => void) | null = null;
+  let restoreFetch: (() => void) | null = null;
+  const useUnsupportedIndex = () => {
+    const previous = globalThis.fetch;
+    globalThis.fetch = async () => new Response('{}', { status: 501 });
+    restoreFetch = () => { globalThis.fetch = previous; };
+  };
 
   afterAll(() => {
     mock.restore();
@@ -138,6 +144,8 @@ describe('useGlobalSessionsStore', () => {
     restoreGetSdkClient = null;
     restoreCheckHealth?.();
     restoreCheckHealth = null;
+    restoreFetch?.();
+    restoreFetch = null;
     resetOpenCodeReadiness();
   });
 
@@ -346,6 +354,7 @@ describe('useGlobalSessionsStore', () => {
   });
 
   test('keeps a first run blocked until its initial root-session refresh settles', async () => {
+    useUnsupportedIndex();
     let listStarted = false;
     let resolveList: (value: SessionListResult) => void = () => undefined;
     const list: SessionListFn = () => {
@@ -372,6 +381,7 @@ describe('useGlobalSessionsStore', () => {
   });
 
   test('retries failed first-run directories after adaptive concurrency drops', async () => {
+    useUnsupportedIndex();
     let calls = 0;
     const list: SessionListFn = async () => {
       calls += 1;
@@ -391,6 +401,7 @@ describe('useGlobalSessionsStore', () => {
   });
 
   test('releases startup after the local restore while OpenCode validation continues in background', async () => {
+    useUnsupportedIndex();
     let resolveList: (value: SessionListResult) => void = () => undefined;
     const list: SessionListFn = () => new Promise<SessionListResult>((resolve) => { resolveList = resolve; });
     restoreGetSdkClient = installSdkList(list);
@@ -412,11 +423,11 @@ describe('useGlobalSessionsStore', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-  test('with cache, syncs only priority directories immediately and defers the rest', async () => {
+  test('with cache, requests one-time backfill without enqueuing priority or deferred directories', async () => {
     const originalWindow = globalThis.window;
     const originalFetch = globalThis.fetch;
     const originalGetSdkClient = opencodeClient.getSdkClient;
-    const syncBodies: string[][] = [];
+    const syncBodies: unknown[] = [];
     const cachedA = buildSession('https://share.example/a', { id: 'ses_a', directory: '/repo/a' });
     const cachedB = buildSession('https://share.example/b', { id: 'ses_b', directory: '/repo/b' });
     const snapshot = {
@@ -466,7 +477,7 @@ describe('useGlobalSessionsStore', () => {
         }
         if (pathname === '/api/yuri/session-index/sync') {
           const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { directories?: string[] } : {};
-          syncBodies.push([...(body.directories ?? [])].sort());
+          syncBodies.push(body);
           return new Response(JSON.stringify(snapshot), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
@@ -490,12 +501,10 @@ describe('useGlobalSessionsStore', () => {
 
       expect(finished).toBe(true);
       expect(useGlobalSessionsStore.getState().startupSyncProgress.active).toBe(false);
-      expect(syncBodies).toEqual([['/repo/a']]);
+      expect(syncBodies).toEqual([{ startup: true }]);
 
-      for (let i = 0; i < 100 && syncBodies.length < 2; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(syncBodies).toEqual([['/repo/a'], ['/repo/b']]);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(syncBodies).toEqual([{ startup: true }]);
     } finally {
       useGlobalSessionsStore.getState().resetForRuntimeSwitch();
       opencodeClient.getSdkClient = originalGetSdkClient;
@@ -504,11 +513,11 @@ describe('useGlobalSessionsStore', () => {
     }
   });
 
-  test('without cache, still blocks on a full-directory sync even when priority is provided', async () => {
+  test('without cache, waits for history backfill without submitting the directory catalog', async () => {
     const originalWindow = globalThis.window;
     const originalFetch = globalThis.fetch;
     const originalGetSdkClient = opencodeClient.getSdkClient;
-    const syncBodies: string[][] = [];
+    const syncBodies: unknown[] = [];
     let revision = 1;
     let syncActive = true;
     const emptySnapshot = {
@@ -552,7 +561,7 @@ describe('useGlobalSessionsStore', () => {
         }
         if (pathname === '/api/yuri/session-index/sync') {
           const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { directories?: string[] } : {};
-          syncBodies.push([...(body.directories ?? [])].sort());
+          syncBodies.push(body);
           return new Response(JSON.stringify(emptySnapshot), {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
@@ -573,16 +582,16 @@ describe('useGlobalSessionsStore', () => {
 
       while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
       expect(finished).toBe(false);
-      expect(syncBodies).toEqual([['/repo/a', '/repo/b']]);
+      expect(syncBodies).toEqual([{ startup: true }]);
 
       syncActive = false;
       revision = 2;
       emitYuriTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
       await startup;
       expect(finished).toBe(true);
-      // No deferred second sync when cache miss forces full immediate set.
+      // No deferred directory scan after the one-time history job.
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(syncBodies).toEqual([['/repo/a', '/repo/b']]);
+      expect(syncBodies).toEqual([{ startup: true }]);
     } finally {
       useGlobalSessionsStore.getState().resetForRuntimeSwitch();
       opencodeClient.getSdkClient = originalGetSdkClient;

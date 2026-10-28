@@ -106,6 +106,7 @@ export const createSessionIndexSyncRuntime = ({
   const waiters = new Set();
   let batchDirectories = new Set();
   let revisionTipTimer;
+  let historyQueued = false;
 
   const syncState = () => ({
     active: !stopped && (running || queue.length > 0),
@@ -331,6 +332,52 @@ export const createSessionIndexSyncRuntime = ({
     }
   };
 
+  const fetchHistory = async (task) => {
+    if (stopped || task.runtimeKey !== sessionIndexService.getRuntimeKey()) return 'discarded';
+    const progress = sessionIndexService.getHistoryBackfill() ?? {
+      cutoff: now() - 30 * 24 * 60 * 60 * 1000, cursor: null, complete: false,
+    };
+    if (progress.complete) return 'completed';
+    const controller = new AbortController();
+    currentController = controller;
+    currentWasPreempted = false;
+    const timeout = setTimer(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const url = new URL(buildOpenCodeUrl('/session'));
+      url.searchParams.set('limit', '100');
+      url.searchParams.set('order', 'desc');
+      if (progress.cursor) url.searchParams.set('cursor', progress.cursor);
+      const response = await fetchFn(url, {
+        headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() }, signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`OpenCode history list failed (${response.status})`);
+      const payload = await response.json();
+      if (!Array.isArray(payload?.data)) throw new Error('Invalid OpenCode history page');
+      if (stopped || task.runtimeKey !== sessionIndexService.getRuntimeKey()) return 'discarded';
+      if (payload.data.some((session) => !session?.id || updatedAt(session) <= 0)) {
+        throw new Error('Invalid OpenCode history session');
+      }
+      const recent = payload.data.filter((session) => updatedAt(session) >= progress.cutoff);
+      const cursor = extractSessionListCursorToken(payload.cursor);
+      const complete = recent.length !== payload.data.length || !cursor || payload.data.length === 0;
+      if (!complete && cursor === progress.cursor) throw new Error('Repeated OpenCode history cursor');
+      const sessions = typeof projectSessions === 'function' ? projectSessions(recent) : recent;
+      if (!Array.isArray(sessions)) throw new Error('Invalid history projection');
+      sessionIndexService.commitHistoryPage({
+        sessions, progress: { ...progress, cursor, complete }, expectedRuntimeKey: task.runtimeKey,
+      });
+      return complete ? 'completed' : 'more';
+    } catch (error) {
+      if (stopped || task.runtimeKey !== sessionIndexService.getRuntimeKey()) return 'discarded';
+      if (currentWasPreempted) return 'preempted';
+      throw error;
+    } finally {
+      clearTimer(timeout);
+      if (currentController === controller) currentController = null;
+      currentWasPreempted = false;
+    }
+  };
+
   const fetchChildFlag = async (task) => {
     if (isDirectoryMissing && await isDirectoryMissing(task.directory)) return 'discarded';
     if (stopped || task.runtimeKey !== sessionIndexService.getRuntimeKey()) return 'discarded';
@@ -419,16 +466,32 @@ export const createSessionIndexSyncRuntime = ({
         const task = queue.shift();
         if (!task) break;
         try {
-          const result = await fetchDirectory(task);
+          const result = task.history ? await fetchHistory(task) : await fetchDirectory(task);
+          if (result === 'more') {
+            queue.push(task);
+            notify();
+            continue;
+          }
           if (result === 'preempted') {
             queue.unshift(task);
             await delay(Math.max(0, interactiveUntil - now()));
             continue;
           }
           if (result === 'discarded' || stopped) continue;
+          if (task.history) {
+            historyQueued = false;
+            notify();
+            continue;
+          }
           queuedDirectories.delete(task.directory);
           completedDirectories.add(task.directory);
         } catch (error) {
+          if (task.history) {
+            historyQueued = false;
+            console.warn('[SessionIndex] History backfill paused:', error);
+            notify();
+            continue;
+          }
           queuedDirectories.delete(task.directory);
           failedDirectories.add(task.directory);
           console.warn(`[SessionIndex] Background sync failed for ${task.directory}:`, error);
@@ -437,6 +500,7 @@ export const createSessionIndexSyncRuntime = ({
       }
     } catch (error) {
       for (const task of queue.splice(0)) {
+        if (task.history) { historyQueued = false; continue; }
         queuedDirectories.delete(task.directory);
         failedDirectories.add(task.directory);
       }
@@ -450,7 +514,7 @@ export const createSessionIndexSyncRuntime = ({
     }
   };
 
-  const enqueue = (directories) => {
+  const enqueue = (directories, { startup = false } = {}) => {
     if (stopped) return snapshot();
     const nextRuntimeKey = sessionIndexService.getRuntimeKey();
     if (nextRuntimeKey !== runtimeKey) {
@@ -464,6 +528,15 @@ export const createSessionIndexSyncRuntime = ({
       completedDirectories.clear();
       failedDirectories.clear();
       batchDirectories = new Set();
+      historyQueued = false;
+    }
+    if (startup) {
+      if (!historyQueued && !sessionIndexService.getHistoryBackfill()?.complete) {
+        historyQueued = true;
+        queue.push({ history: true, runtimeKey });
+        void run();
+      }
+      return snapshot();
     }
     const newBatch = !running && queue.length === 0;
     if (newBatch) {
@@ -531,24 +604,6 @@ export const createSessionIndexSyncRuntime = ({
     for (const directory of interruptedDirectories) failedDirectories.add(directory);
     notify(true);
   };
-
-  const cleanupMissingDirectories = async () => {
-    const key = sessionIndexService.getRuntimeKey();
-    let changed = false;
-    try {
-      for (const entry of sessionIndexService.snapshot().directories) {
-        if (stopped || key !== sessionIndexService.getRuntimeKey()) break;
-        if (entry.sessions.length || entry.hasMore) continue;
-        const missing = await isDirectoryMissing(entry.directory);
-        if (stopped || key !== sessionIndexService.getRuntimeKey()) break;
-        if (missing) changed = sessionIndexService.removeEmptyDirectory(entry.directory) || changed;
-      }
-      if (changed && !stopped && key === sessionIndexService.getRuntimeKey()) notify(true);
-    } catch (error) {
-      console.warn('[SessionIndex] Directory cleanup failed:', error);
-    }
-  };
-  if (isDirectoryMissing) void cleanupMissingDirectories();
 
   return { enqueue, noteInteractiveRequest, publishChange, snapshot, waitForChange, stop };
 };

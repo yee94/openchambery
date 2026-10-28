@@ -37,9 +37,9 @@ Question auto-delegation uses the Web-owned `pause-store` as well as the shared 
 - OpenCode configuration persistence: `opencodeConfig.ts` and the raw editor in `bridge-config-runtime.ts` share `packages/web/server/lib/opencode/config-files.js`. Both global JSON/JSONC documents participate; entity edits target their physical source. Custom file and `OPENCODE_CONFIG_DIR`/XDG resolution happen at read time. Structured writes preserve unrelated JSONC comments, validate before writing, retain backups, and atomically replace; parse/IO failures propagate. Raw editor selects custom or highest-precedence global JSONC/JSON, never a merged snapshot. See the owning OpenCode backend document's **Storage and configuration** contract.
   - Plugin mutations persist native V2 `plugins` strings/`{ package, options }` objects. Legacy `plugin` tuples remain readable and migrate on mutation of their source document. Native arrays (including empty arrays) take precedence; saves remove the shadowed legacy key and preserve unrelated settings through the shared atomic writer.
 
-OpenCode client/schema and CLI default install target are `2.0.23`; execution and
+OpenCode client/schema accept compatible 2.x updates and fresh CLI installs resolve latest stable 2.x; execution and
 startup compatibility require the **running service** to be 2.x at `2.0.20` or newer.
-The install pin is not a downgrade policy. An unreadable service version stays
+Existing compatible services are not downgraded. An unreadable service version stays
 unavailable even if the local CLI is compatible.
 
 `opencodeAuth.ts` re-exports the shared host credential adapter. Extension activation

@@ -55,7 +55,9 @@ export const registerSessionIndexRoutes = (app, {
   app.post('/api/yuri/session-index/sync', async (req, res) => {
     if (!sessionIndexSyncRuntime) return unsupported(res);
     const directories = Array.isArray(req.body?.directories) ? req.body.directories : [];
-    const base = sessionIndexSyncRuntime.enqueue(directories);
+    const base = req.body?.startup === true
+      ? sessionIndexSyncRuntime.enqueue([], { startup: true })
+      : sessionIndexSyncRuntime.enqueue(directories);
     if (!hostStoreWired) return res.status(202).json(base);
     // Clients apply this body as a snapshot: same Host archive gate as GET.
     const host = await readHostMap();

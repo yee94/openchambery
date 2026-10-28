@@ -34,11 +34,15 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install OpenCode
+        run: npm install --global @opencode/cli@2
+
       - name: Run opencode
-        uses: anomalyco/opencode/github@77fc88c8ade8e5a620ebbe1197f3a572d29ae91a # github-v1.2.19
+        timeout-minutes: 30
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-        with:
-          model: opencode/gpt-5.2-codex
+        run: |
+          opencode run --standalone --auto --model opencode/gpt-5.2-codex --file "$GITHUB_EVENT_PATH" \
+            "Handle the /oc or /opencode request in the attached GitHub event. Use gh to read the issue or pull request and relevant comments; for pull requests inspect the requested head and diff. Implement changes when requested, publishing them on a branch/PR rather than the default branch. Use gh to post your final answer to the originating issue or pull request. Include validation results and any failure. The event's comment.body is the user's request."

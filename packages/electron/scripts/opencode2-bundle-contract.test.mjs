@@ -4,9 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 
-import { isOpenCode1xVersion } from '../../web/server/lib/opencode/opencode2-pin.js';
 import {
-  PINNED_OPENCODE2_VERSION,
   artifactForOpenCode2,
   bundledOpenCode2BinaryName,
   npmPackageForOpenCode2,
@@ -22,7 +20,6 @@ test('bundled resource uses the official opencode name on every platform', () =>
   assert.equal(bundledOpenCode2BinaryName('win32'), 'opencode.exe');
   assert.equal(artifactForOpenCode2('darwin', { opencode: 'arm64' }).binary, 'opencode');
   assert.match(artifactForOpenCode2('darwin', { opencode: 'arm64' }).name, /opencode-darwin/);
-  assert.equal(isOpenCode1xVersion(PINNED_OPENCODE2_VERSION), false);
 });
 
 test('prepare and verify scripts no longer pull 1.18.x or name the binary opencode', () => {

@@ -688,7 +688,30 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
   `).run(runtimeKey(), directory).changes > 0;
 
   try { reconcileDirectoryAliases(runtimeKey()); } catch (error) { db.close(); throw error; }
+  const historyKey = () => `history_backfill:${runtimeKey()}`;
+  const getHistoryBackfill = () => {
+    const row = db.prepare('SELECT value FROM session_index_meta WHERE key = ?').get(historyKey());
+    return row ? JSON.parse(row.value) : null;
+  };
+  const commitHistoryPage = db.transaction(({ sessions, progress, expectedRuntimeKey }) => {
+    if (expectedRuntimeKey !== runtimeKey()) return false;
+    for (const session of sessions) {
+      // Live events and already indexed summaries win over historical reads.
+      if (!findBySessionId(session.id)) {
+        upsert(session);
+        const directory = normalizeDirectory(session?.location?.directory ?? session?.directory);
+        // The bounded 30-day import is not proof that older history is empty.
+        db.prepare('UPDATE runtime_directory SET has_more = 1 WHERE runtime_key = ? AND directory = ? AND last_full_synced_at = 0')
+          .run(expectedRuntimeKey, directory);
+      }
+    }
+    db.prepare('INSERT OR REPLACE INTO session_index_meta(key, value) VALUES (?, ?)')
+      .run(historyKey(), JSON.stringify(progress));
+    return true;
+  });
   return {
+    getHistoryBackfill,
+    commitHistoryPage,
     replaceDirectory,
     removeEmptyDirectory,
     replaceDirectories,
