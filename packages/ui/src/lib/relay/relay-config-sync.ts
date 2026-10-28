@@ -309,7 +309,7 @@ const createRelayHttpExecutor = (
     async finalize(syncRunId) {
       const result = await jsonFetch('POST', '/api/yuri/config-sync/finalize', { syncRunId });
       return Array.isArray(result.magpieWarnings)
-        ? result.magpieWarnings.filter((entry): entry is string => entry === 'sign_in_required' || entry === 'agent_settings_skipped') : [];
+        ? result.magpieWarnings.filter((entry): entry is string => entry === 'sign_in_required' || entry === 'plugin_install_failed' || entry === 'agent_settings_skipped') : [];
     },
     async abort(syncRunId) {
       await jsonFetch('POST', '/api/yuri/config-sync/abort', { syncRunId }).catch(() => undefined);

@@ -72,6 +72,17 @@ describe('config-sync HTTP routes', () => {
     expect(received).toEqual([payload, payload]);
   });
 
+  it('reports the underlying Magpie failure cause without the transfer envelope', async () => {
+    const { app } = await createApp(undefined, {
+      inventory: async () => ({ available: true, installed: true }),
+      download: async () => Buffer.from('fixture'),
+      import: async () => { throw new Error('Magpie import failed', { cause: new Error('Magpie authorization store is busy; retry sync') }); },
+    });
+    const failed = await request(app).put('/api/yuri/config-sync/magpie')
+      .set('Content-Type', 'application/octet-stream').send(Buffer.from('fixture')).expect(500);
+    expect(failed.body).toEqual({ error: 'Magpie import failed', detail: 'Magpie authorization store is busy; retry sync' });
+  });
+
   it('transfers credential bytes through HTTP without putting values in inventory or filesystem backups', async () => {
     const payload = Buffer.from(JSON.stringify({ format: 'opencode-credentials-v1', entries: [{ fixture: 'private-value' }] }));
     const received = [];

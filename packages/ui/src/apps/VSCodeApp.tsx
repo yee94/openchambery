@@ -85,7 +85,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
               <div className="h-full text-foreground bg-background">
                 <SyncAppEffects embeddedBackgroundWorkEnabled={true} />
                 <AgentManagerView />
-                <Toaster position="top-center" />
+                <Toaster />
               </div>
             </TooltipProvider>
           </RuntimeAPIProvider>
@@ -104,7 +104,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
               <div className="h-full text-foreground bg-background">
                 <SyncAppEffects embeddedBackgroundWorkEnabled={true} />
                 <VSCodeLayout />
-                <Toaster position="top-center" />
+                <Toaster />
                 <ConfigUpdateOverlay />
               </div>
             </TooltipProvider>

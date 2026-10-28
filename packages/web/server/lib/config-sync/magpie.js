@@ -12,6 +12,27 @@ const exists = async (file) => {
   catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null; throw error; }
 };
 
+// Magpie plugins may print diagnostics on stderr while accounts --json still exits 0.
+// runCli merges streams for restore pattern matching, so recover the top-level JSON array.
+export const parseMagpieAccountsJson = (raw) => {
+  const text = String(raw || '').replace(/\x1b\[[0-9;]*m/g, '');
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '[' && (i === 0 || text[i - 1] === '\n' || text[i - 1] === '\r')) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) throw new Error('Unable to read Magpie accounts');
+  try {
+    const accounts = JSON.parse(text.slice(start));
+    if (!Array.isArray(accounts)) throw new Error();
+    return accounts;
+  } catch {
+    throw new Error('Unable to read Magpie accounts');
+  }
+};
+
 // Raw CLI output may contain provider names, paths or credentials. Never forward it.
 const runCli = (binary, args, { input = '', env, timeout = 600_000 } = {}) => new Promise((resolve, reject) => {
   const child = spawn(binary, args, { env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -35,7 +56,14 @@ const runCli = (binary, args, { input = '', env, timeout = 600_000 } = {}) => ne
   child.on('error', () => { clearTimeout(timer); reject(new Error('Unable to start Magpie CLI')); });
   child.on('close', (code) => {
     clearTimeout(timer);
-    if (code !== 0 || exceeded) reject(new Error('Magpie CLI operation failed or timed out'));
+    if (code !== 0 || exceeded) {
+      const error = new Error('Magpie CLI operation failed or timed out');
+      if (!exceeded && code === 1 && args[0] === 'accounts' && args[1] === 'import' && args[2] === 'codex'
+        && /ChatGPT didn't take the refresh token/i.test(output)) {
+        error.code = 'magpie_codex_authorization_rejected';
+      }
+      reject(error);
+    }
     else resolve(output.replace(/\x1b\[[0-9;]*m/g, ''));
   });
   child.stdin.end(input);
@@ -207,7 +235,7 @@ export function createMagpieSync({
         const backup = await fs.readFile(file);
         let authorization;
         try {
-          const accounts = JSON.parse(await run(binary, ['accounts', '--json'], { env }));
+          const accounts = parseMagpieAccountsJson(await run(binary, ['accounts', '--json'], { env }));
           authorization = await collectMagpieAuth(await dataDir(binary), accounts);
         } catch { throw new Error('Unable to export Magpie authorizations'); }
         const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v2', passphrase, backup: backup.toString('base64'), authorization }));
@@ -233,41 +261,59 @@ export function createMagpieSync({
         let output;
         try { output = await run(binary, ['restore', file], { env, input: `${decoded.passphrase}\n` }); }
         catch { throw new Error('Magpie restore failed; some configuration may already have been applied. Retry to finish.'); }
-        if (/Couldn't add the plugin/i.test(output)) throw new Error('Magpie restore partially completed: plugin installation failed. Check the target Magpie plugins.');
+        // Private/unreachable plugin specs can fail while the rest of restore still applies.
+        let pluginInstallFailed = /Couldn't add the plugin/i.test(output);
         if (/Library:.*couldn't/i.test(output)) throw new Error('Magpie restore partially completed: library application failed. Check the target Magpie library.');
         if (/Needs a key/i.test(output)) throw new Error('Magpie restore partially completed: some providers still require API keys.');
         let needsSignIn = /not signed in on this computer/i.test(output);
         if (decoded.format === 'magpie-sync-v2') {
           const dir = await dataDir(binary);
+          const rejected = new Set();
           try {
             await restoreMagpieAuth(dir, decoded.authorization, async (auth) => {
               const credentialFile = path.join(path.dirname(file), 'codex.json');
               try {
                 await fs.writeFile(credentialFile, JSON.stringify(auth), { mode: 0o600, flag: 'wx' });
-                await run(binary, ['accounts', 'import', 'codex', credentialFile, '--yes'], { env });
+                try {
+                  await run(binary, ['accounts', 'import', 'codex', credentialFile, '--yes'], { env });
+                } catch (error) {
+                  if (error.code !== 'magpie_codex_authorization_rejected') throw error;
+                  rejected.add(auth);
+                }
               } finally { await fs.rm(credentialFile, { force: true }); }
             });
-            const accounts = JSON.parse(await run(binary, ['accounts', '--json'], { env }));
-            verifyMagpieAuth(decoded.authorization, accounts);
+            const accounts = parseMagpieAccountsJson(await run(binary, ['accounts', '--json'], { env }));
+            const known = new Set(accounts.map((account) => account.agent));
+            // Skip verification for plugins that never installed and for spent Codex tokens.
+            const expected = {
+              ...decoded.authorization,
+              plugins: Object.fromEntries(Object.entries(decoded.authorization.plugins)
+                .filter(([key]) => !pluginInstallFailed || known.has(key.split('#')[0]))),
+              logins: decoded.authorization.logins.filter((row) => !rejected.has(row.auth)
+                && (!pluginInstallFailed || known.has(row.agent.replace(/^plugin:/, '')))),
+            };
+            verifyMagpieAuth(expected, accounts);
             const configured = JSON.parse(await fs.readFile(path.join(dir, 'providers.json'), 'utf8').catch((error) => {
               if (error.code === 'ENOENT') return '{"providers":[]}';
               throw error;
             }));
             if (!Array.isArray(configured.providers)) throw new Error();
             const signedIn = new Set(accounts.map((account) => account.agent));
-            needsSignIn = decoded.authorization.incomplete || configured.providers.some((provider) =>
+            needsSignIn = rejected.size > 0 || decoded.authorization.incomplete || configured.providers.some((provider) =>
               !provider.hidden && provider.id && !['chat', 'responses', 'anthropic', 'gemini'].some((key) => provider[key])
               && !signedIn.has(provider.id));
             if (/Left as they are/i.test(output)) {
               output = await run(binary, ['restore', file], { env, input: `${decoded.passphrase}\n` });
-              if (/Couldn't add the plugin|Needs a key|Library:.*couldn't/i.test(output)) throw new Error();
+              if (/Couldn't add the plugin/i.test(output)) pluginInstallFailed = true;
+              if (/Needs a key|Library:.*couldn't/i.test(output)) throw new Error();
             }
-          } catch {
-            throw new Error('Magpie authorization sync or verification failed; some configuration and accounts may already be applied. Retry to finish.');
+          } catch (error) {
+            throw new Error('Magpie authorization sync or verification failed; some configuration and accounts may already be applied. Retry to finish.', { cause: error });
           }
         }
         const magpieWarnings = [];
         if (needsSignIn) magpieWarnings.push('sign_in_required');
+        if (pluginInstallFailed) magpieWarnings.push('plugin_install_failed');
         if (/Left as they are/i.test(output)) magpieWarnings.push('agent_settings_skipped');
         return { ok: true, ...(magpieWarnings.length ? { magpieWarnings } : {}) };
       });

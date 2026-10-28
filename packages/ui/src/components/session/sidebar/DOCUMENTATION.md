@@ -341,10 +341,16 @@
 - `hooks/useProjectRepoStatus.ts`: Tracks per-project git-repo state and root branch metadata.
 - `hooks/useProjectSessionLists.ts`: Reads live and archived project buckets from the shared ownership index.
 - `hooks/useSessionFolderCleanup.ts`: Cleans stale folder session IDs by reconciling known sessions/archived scopes.
+- Project headers paint no background of their own. macOS vibrancy requires every
+  inner sidebar surface to stay fully transparent (see `index.css`); an inline
+  `backgroundColor` on the `ContextMenuTrigger` render div (previously applied to
+  every project header, stuck or not) repainted an opaque chip over the frosted
+  surface. Do not reintroduce per-header background/paint styling here, and do not
+  add sticky-header machinery (sentinels + `IntersectionObserver`) unless a header
+  actually needs an opaque stuck state.
 - Folder and session-order cleanup consume the store's complete-catalog ID snapshot (`fullCatalogSessionIds` + generation). Pinned IDs come from the session-index snapshot and need no local prune. Bounded directory snapshots only drive visible rows.
 - Session order is keyed by each group's `folderScopeKey` and stores the drag-time order plus an activity baseline. Manual drag and later session activity are peers on that list: matching baselines keep the saved order; only members whose activity advanced past the baseline (or that are new to the scope) promote to the front by activity while the remaining relative order is preserved. The baseline includes folded rows outside the draggable slice, so their unchanged activity preserves their position. Duplicate/stale activity refreshes preserve drag ranks. A subsequent drag captures the current visual order and a fresh baseline. Legacy orders with a missing baseline use natural activity order until the next drag. Cleanup prunes removed ids from order and activity while retaining survivor baselines. Visual rows, navigation, and sortable items consume the same scope-local effective order from `sessionSortableOrder.ts`.
 - `sessionSortableOrder.ts` derives visible sortable IDs and the shared scope-local comparator from the rendered folder tree, collapsed/search state, Show-more slice, and the effective order above. Reordering stays within one folder or the ungrouped scope; folder drops own cross-folder moves.
-- `hooks/useStickyProjectHeaders.ts`: Tracks which project headers are sticky/stuck via `IntersectionObserver`.
 - Visibility performance (`isVisible` prop): desktop passes `isSidebarOpen`, mobile
   passes `mobileLeftDrawerVisible`. When false, the session row tree unmounts and
   speculative work stops (live session/status aggregates, sticky headers, PR

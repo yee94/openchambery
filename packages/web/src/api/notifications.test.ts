@@ -49,6 +49,22 @@ afterEach(() => {
 });
 
 describe('web notifications API', () => {
+  it('does not request browser notification permission from the send path', async () => {
+    installWindowMock();
+    const created: Array<{ title: string; options?: NotificationOptions }> = [];
+    installNotificationMock((title, options) => created.push({ title, options }));
+    const MockNotification = globalThis.Notification as unknown as MockNotificationConstructor;
+    MockNotification.permission = 'default';
+
+    const { createWebNotificationsAPI } = await import('./notifications');
+    const api = createWebNotificationsAPI();
+
+    await expect(api.notifyAgentCompletion({ title: 'Ready', body: 'Done', tag: 'ready-session' })).resolves.toBe(false);
+
+    expect(MockNotification.requestPermission).not.toHaveBeenCalled();
+    expect(created).toHaveLength(0);
+  });
+
   it('deduplicates repeated foreground notifications by tag', async () => {
     installWindowMock();
     const created: Array<{ title: string; options?: NotificationOptions }> = [];

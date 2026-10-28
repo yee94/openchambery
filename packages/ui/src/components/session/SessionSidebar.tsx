@@ -44,7 +44,6 @@ import { useSidebarPersistence } from './sidebar/hooks/useSidebarPersistence';
 import { useProjectRepoStatus } from './sidebar/hooks/useProjectRepoStatus';
 import { useProjectSessionLists } from './sidebar/hooks/useProjectSessionLists';
 import { createSessionOwnershipIndex } from './sidebar/sessionOwnership';
-import { useStickyProjectHeaders } from './sidebar/hooks/useStickyProjectHeaders';
 import { getGitHubPrStatusKey, usePrVisualSummaryByKeys, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
 import { ProjectEditDialog } from '@/components/layout/ProjectEditDialog';
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
@@ -369,9 +368,6 @@ export const SessionSidebar = React.memo(function SessionSidebar({
 
   const [projectRootBranches, setProjectRootBranches] = React.useState<
     Map<string, string>
-  >(new Map());
-  const projectHeaderSentinelRefs = React.useRef<
-    Map<string, HTMLDivElement | null>
   >(new Map());
   const ignoreIntersectionUntil = React.useRef<number>(0);
 
@@ -2188,13 +2184,6 @@ export const SessionSidebar = React.memo(function SessionSidebar({
     setPrStatusParams,
   ]);
 
-  const stuckProjectHeaders = useStickyProjectHeaders({
-    isDesktopShellRuntime,
-    projectSections,
-    projectHeaderSentinelRefs,
-    enabled: isVisible,
-  });
-
   const renderSessionNode = useStableRenderCallback(
     (
       node: SessionNode,
@@ -2630,8 +2619,6 @@ export const SessionSidebar = React.memo(function SessionSidebar({
         collapsedProjects={collapsedProjects}
         hideDirectoryControls={hideDirectoryControls}
         projectRepoStatus={projectRepoStatus}
-        isDesktopShellRuntime={isDesktopShellRuntime}
-        stuckProjectHeaders={stuckProjectHeaders}
         mobileVariant={mobileVariant}
         alwaysShowActions={alwaysShowSidebarActions}
         toggleProject={toggleProject}
@@ -2643,7 +2630,6 @@ export const SessionSidebar = React.memo(function SessionSidebar({
         syncProjectSessions={syncProjectSessions}
         openProjectEditDialog={setEditingProjectDialogId}
         removeProject={removeProject}
-        projectHeaderSentinelRefs={projectHeaderSentinelRefs}
         projectReorderEnabled={projectSortOrder === 'manual'}
         reorderProjects={reorderProjectsById}
         projectSortOrder={projectSortOrder}

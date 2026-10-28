@@ -28,8 +28,6 @@ export interface SortableProjectItemProps {
   /** True while this project's session directories are still fetching. */
   isSessionsLoading?: boolean;
   isRepo: boolean;
-  isDesktopShell: boolean;
-  isStuck: boolean;
   hideDirectoryControls: boolean;
   mobileVariant: boolean;
   alwaysShowActions: boolean;
@@ -39,7 +37,6 @@ export interface SortableProjectItemProps {
   onSyncSessions: () => void;
   onRenameStart: () => void;
   onClose: () => void;
-  sentinelRef: (el: HTMLDivElement | null) => void;
   children?: React.ReactNode;
   showCreateButtons?: boolean;
   hideHeader?: boolean;
@@ -65,8 +62,6 @@ export const SortableProjectItem = React.memo(function SortableProjectItem({
   isActiveProject,
   isSessionsLoading = false,
   isRepo,
-  isDesktopShell,
-  isStuck,
   hideDirectoryControls,
   alwaysShowActions,
   onToggle,
@@ -75,7 +70,6 @@ export const SortableProjectItem = React.memo(function SortableProjectItem({
   onSyncSessions,
   onRenameStart,
   onClose,
-  sentinelRef,
   children,
   showCreateButtons = true,
   hideHeader = false,
@@ -163,21 +157,11 @@ export const SortableProjectItem = React.memo(function SortableProjectItem({
     >
       {!hideHeader ? (
         <>
-          {isDesktopShell && (
-            <div
-              ref={sentinelRef}
-              data-project-id={id}
-              className="absolute top-0 h-px w-full pointer-events-none"
-              aria-hidden="true"
-            />
-          )}
-
           <ContextMenu open={isContextMenuOpen} onOpenChange={setIsContextMenuOpen}>
             <ContextMenuTrigger
               render={
                 <div
                   className={cn('w-full text-left group/project select-none')}
-                  style={{ backgroundColor: isDesktopShell && isStuck ? 'transparent' : undefined }}
                   onContextMenu={(event) => {
                     // VS Code hides project actions entirely (hideDirectoryControls).
                     if (hideDirectoryControls) return;

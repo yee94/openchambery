@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { createMagpieSync } from './magpie.js';
+import { createMagpieSync, parseMagpieAccountsJson } from './magpie.js';
 import { planOpenCodeConfigSync, planOpenCodeConfigSyncFromInventory } from './plan.js';
 import { applyConfigSyncPlan } from './engine.js';
 
@@ -23,6 +23,12 @@ const write = async (file, content = '{}') => {
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))); });
 
 describe('Magpie discovery and native transfer', () => {
+  it('recovers accounts JSON when plugin diagnostics precede the array on merged streams', () => {
+    expect(parseMagpieAccountsJson('2026/10/28 10:45:30 plugin [error]: Grok is not signed in\n[{"agent":"cursor","user":"a@example.invalid"}]'))
+      .toEqual([{ agent: 'cursor', user: 'a@example.invalid' }]);
+    expect(() => parseMagpieAccountsJson('no json here')).toThrow('Unable to read Magpie accounts');
+  });
+
   it('hides config-only sources until Magpie is installed, without installing during preview', async () => {
     const { home, options } = await machine();
     const fetchImpl = vi.fn();
@@ -122,7 +128,7 @@ describe('Magpie discovery and native transfer', () => {
     ]));
     const payload = await createMagpieSync({ ...source.options, run: async (_binary, args) => {
       if (args[0] === '--version') return 'magpie 0.1.1319';
-      if (args[0] === 'accounts') return '[{"agent":"astra"},{"agent":"codex","user":"fixture@example.invalid"}]';
+      if (args[0] === 'accounts') return '2026/10/28 plugin [error]: Grok is not signed in\n[{"agent":"astra"},{"agent":"codex","user":"fixture@example.invalid"}]';
       await write(args[1], '{"format":"magpie-backup"}');
       return '';
     } }).download();
@@ -153,6 +159,34 @@ describe('Magpie discovery and native transfer', () => {
     expect((await fs.readdir(target.home)).filter((name) => name.startsWith('yuri-magpie-'))).toEqual([]);
   });
 
+  it('treats a spent Codex refresh token as recoverable when the destination already recognizes the account', async () => {
+    const source = await machine();
+    const target = await machine();
+    for (const item of [source, target]) await write(path.join(item.home, '.local/bin/magpie'), 'fixture');
+    const sourceDir = path.join(source.home, '.config/magpie');
+    const targetDir = path.join(target.home, '.config/magpie');
+    await write(path.join(sourceDir, 'providers.json'), '{"providers":[{"id":"codex"}]}');
+    await write(path.join(sourceDir, 'logins.json'), JSON.stringify([
+      { agent: 'codex', user: 'fixture@example.invalid', auth: { tokens: { refresh_token: 'spent-token' } } },
+    ]));
+    const payload = await createMagpieSync({ ...source.options, run: async (_binary, args) => {
+      if (args[0] === '--version') return 'magpie 0.1.1319';
+      if (args[0] === 'accounts') return '[{"agent":"codex","user":"fixture@example.invalid"}]';
+      await write(args[1], '{"format":"magpie-backup"}');
+      return '';
+    } }).download();
+    const run = vi.fn(async (_binary, args) => {
+      if (args[0] === '--version') return 'magpie 0.1.1319';
+      if (args[0] === 'restore') {
+        await write(path.join(targetDir, 'providers.json'), await fs.readFile(path.join(sourceDir, 'providers.json')));
+        return 'restored';
+      }
+      if (args[1] === 'import') throw Object.assign(new Error('Magpie CLI operation failed or timed out'), { code: 'magpie_codex_authorization_rejected' });
+      return '[{"agent":"codex","user":"fixture@example.invalid"}]';
+    });
+    await expect(createMagpieSync({ ...target.options, run }).import(payload)).resolves.toEqual({ ok: true, magpieWarnings: ['sign_in_required'] });
+  });
+
   it('rejects malformed v2 authorization before installing or restoring', async () => {
     const { options } = await machine();
     const run = vi.fn();
@@ -163,6 +197,36 @@ describe('Magpie discovery and native transfer', () => {
     await expect(createMagpieSync({ ...options, run, fetchImpl }).import(payload)).rejects.toThrow('Invalid Magpie sync payload');
     expect(run).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('continues only for a confirmed Codex rejection (rejected=%s)', async (rejected) => {
+    const { home, options } = await machine();
+    const binary = path.join(home, '.local/bin/magpie');
+    await write(binary, `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === '--version') console.log('magpie 0.1.1820');
+else if (args[1] === 'import') {
+  const auth = JSON.parse(fs.readFileSync(args[3], 'utf8'));
+  if (auth.tokens.refresh_token === 'fixture-rejected') {
+    console.error(${JSON.stringify(rejected ? "ChatGPT didn't take the refresh token — expired or signed out" : 'Network connection failed')});
+    process.exitCode = 1;
+  }
+} else if (args[0] === 'accounts') console.log(JSON.stringify([{ agent: 'codex', user: 'second@example.invalid' }, { agent: 'astra' }]));
+else console.log('restored');
+`);
+    await fs.chmod(binary, 0o700);
+    const payload = Buffer.from(JSON.stringify({ format: 'magpie-sync-v2', passphrase: 'a'.repeat(64),
+      backup: Buffer.from('{"format":"magpie-backup"}').toString('base64'),
+      authorization: { plugins: { astra: { type: 'api', key: 'fixture' } }, incomplete: false, logins: [
+        { agent: 'codex', user: 'first@example.invalid', auth: { tokens: { refresh_token: 'fixture-rejected' } } },
+        { agent: 'codex', user: 'second@example.invalid', auth: { tokens: { refresh_token: 'fixture-valid' } } },
+      ] } }));
+    const result = createMagpieSync(options).import(payload);
+    if (rejected) await expect(result).resolves.toEqual({ ok: true, magpieWarnings: ['sign_in_required'] });
+    else await expect(result).rejects.toThrow('authorization sync or verification failed');
+    expect(JSON.parse(await fs.readFile(path.join(home, '.config/magpie/plugin-auth.json'), 'utf8')).astra).toEqual({ type: 'api', key: 'fixture' });
+    expect((await fs.readdir(home)).filter((name) => name.startsWith('yuri-magpie-'))).toEqual([]);
   });
 
   it('retries agent settings after authorizations instead of keeping a pre-login skip warning', async () => {
@@ -185,7 +249,7 @@ describe('Magpie discovery and native transfer', () => {
     const { home, options } = await machine();
     const fetchImpl = vi.fn();
     const run = vi.fn(async (_binary, args) => args[0] === '--version'
-      ? 'magpie 0.1.0' : "Couldn't add the plugin private-fixture-value");
+      ? 'magpie 0.1.0' : 'Library: fixture-library couldn\'t apply');
     const sync = createMagpieSync({ ...options, fetchImpl, run });
     await expect(sync.import(Buffer.from('{}'))).rejects.toThrow('Invalid Magpie sync payload');
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -194,6 +258,41 @@ describe('Magpie discovery and native transfer', () => {
       backup: Buffer.from('{"format":"magpie-backup"}').toString('base64') }));
     await expect(sync.import(payload)).rejects.toThrow('Magpie restore partially completed');
     expect((await fs.readdir(home)).filter((name) => name.startsWith('yuri-magpie-'))).toEqual([]);
+  });
+
+  it('continues when a plugin fails to install and warns instead of aborting', async () => {
+    const source = await machine();
+    const target = await machine();
+    for (const item of [source, target]) await write(path.join(item.home, '.local/bin/magpie'), 'fixture');
+    const sourceDir = path.join(source.home, '.config/magpie');
+    const targetDir = path.join(target.home, '.config/magpie');
+    await write(path.join(sourceDir, 'providers.json'), '{"providers":[{"id":"cursor"},{"id":"private-plugin"}]}');
+    await write(path.join(sourceDir, 'plugin-auth.json'), JSON.stringify({
+      cursor: { type: 'api', key: 'fixture-key' },
+      'private-plugin': { type: 'api', key: 'fixture-private' },
+    }));
+    await write(path.join(sourceDir, 'logins.json'), JSON.stringify([
+      { agent: 'plugin:cursor', user: 'fixture@example.invalid', home: 'cursor', auth: { type: 'api' } },
+      { agent: 'plugin:private-plugin', user: 'secret', home: 'private-plugin', auth: { type: 'api' } },
+    ]));
+    const payload = await createMagpieSync({ ...source.options, run: async (_binary, args) => {
+      if (args[0] === '--version') return 'magpie 0.1.1319';
+      if (args[0] === 'accounts') return '[{"agent":"cursor","user":"fixture@example.invalid"},{"agent":"private-plugin","user":"secret"}]';
+      await write(args[1], '{"format":"magpie-backup"}');
+      return '';
+    } }).download();
+    const run = vi.fn(async (_binary, args) => {
+      if (args[0] === '--version') return 'magpie 0.1.1319';
+      if (args[0] === 'restore') {
+        await write(path.join(targetDir, 'providers.json'), await fs.readFile(path.join(sourceDir, 'providers.json')));
+        return "Couldn't add the plugin private-plugin@latest";
+      }
+      if (args[0] === 'accounts') return '[{"agent":"cursor","user":"fixture@example.invalid"}]';
+      return '';
+    });
+    await expect(createMagpieSync({ ...target.options, run }).import(payload)).resolves.toEqual({
+      ok: true, magpieWarnings: ['sign_in_required', 'plugin_install_failed'],
+    });
   });
 
   it('reports excluded sign-ins as a warning after a successful native restore', async () => {

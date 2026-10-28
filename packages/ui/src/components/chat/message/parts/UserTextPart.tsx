@@ -344,7 +344,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                 <div
                     role="button"
                     tabIndex={0}
-                    className="mt-2 flex cursor-pointer items-center justify-center gap-1 font-sans typography-markdown-body"
+                    className="yuri-user-text-expand flex cursor-pointer items-center justify-start gap-1 text-left font-sans typography-markdown-body text-muted-foreground"
                     aria-expanded={false}
                     onClick={() => setIsExpanded(true)}
                     onKeyDown={(event) => {
@@ -355,7 +355,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                     }}
                 >
                     {t('chat.message.userText.showMore')}
-                    <Icon name="arrow-down-s" className="size-[1em]" />
+                    <Icon name="arrow-down-s" className="size-[1em] shrink-0" />
                 </div>
             )}
         </div>

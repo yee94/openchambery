@@ -21,7 +21,6 @@ import {
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { SettingsActionHeader } from '@/components/sections/shared/SettingsActionHeader';
 import {
@@ -211,9 +210,12 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   const [errorStep, setErrorStep] = React.useState<1 | 2 | null>(null);
   // Snapshot frozen at preview time so apply cannot drift from the reviewed plan.
   const confirmedSelectionsRef = React.useRef<DesktopSshConfigSyncSelections>(EMPTY_SYNC_SELECTIONS);
+  const previewGeneration = React.useRef(0);
+  const previewQueue = React.useRef<Promise<void>>(Promise.resolve());
   const scopeReady = selectionShape != null && selectionsMatchShape(selections, selectionShape);
 
   const resetState = useEvent(() => {
+    previewGeneration.current += 1;
     setStep(1);
     setPhase('scanning-local');
     setDirection('push');
@@ -234,13 +236,18 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       return;
     }
 
-    setStep(2);
+    const generation = ++previewGeneration.current;
+    const previous = previewQueue.current;
+    let release!: () => void;
+    previewQueue.current = new Promise<void>((resolve) => { release = resolve; });
+    if (!preview) setStep(2);
     setPhase('comparing-remote');
     setErrorMessage(null);
     setErrorStep(null);
-    setPreview(null);
 
     try {
+      await previous;
+      if (generation !== previewGeneration.current) return;
       const next = targetKind === 'relay'
         ? (relayHost
           ? await previewRelayConfigSync(relayHost, {
@@ -253,6 +260,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
           direction: nextDirection,
           selections: nextSelections,
         });
+      if (generation !== previewGeneration.current) return;
       if (!next) {
         // Null means no desktop bridge or an unrecognized IPC payload (e.g. a
         // stale Electron main process). Surface it in the dialog instead of
@@ -267,10 +275,13 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       setStep(3);
       setPhase('review');
     } catch (error) {
+      if (generation !== previewGeneration.current) return;
       console.error('[remote-instances] config sync compare-remote failed', error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setErrorStep(2);
       setPhase('error');
+    } finally {
+      release();
     }
   });
 
@@ -283,6 +294,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     }
 
     setStep(1);
+    const generation = ++previewGeneration.current;
     setPhase('scanning-local');
     setErrorMessage(null);
     setErrorStep(null);
@@ -306,6 +318,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
             direction: nextDirection,
           },
       );
+      if (generation !== previewGeneration.current) return;
       if (!plan) {
         // Null means no desktop bridge or an unrecognized IPC payload. Show the
         // failure in the foreground; never close the dialog silently.
@@ -335,6 +348,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       setLocalPlan(plan);
       await runCompareRemote(nextDirection, resolvedSelections);
     } catch (error) {
+      if (generation !== previewGeneration.current) return;
       console.error('[remote-instances] config sync scan-local failed', error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setErrorStep(1);
@@ -348,13 +362,14 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     }
     // Mount/open scan seeds selectionShape; defaults come from buildDefaultSyncSelections.
     void runScanLocal('push');
-  }, [open, instanceId]);
+    return () => { previewGeneration.current += 1; };
+  }, [open, instanceId, targetKind, relayHost, runScanLocal]);
 
   React.useEffect(() => {
     if (!open) {
       resetState();
     }
-  }, [open]);
+  }, [open, resetState]);
 
   const remoteExisting = React.useMemo(() => new Set(preview?.remoteExisting ?? []), [preview]);
   const plan = preview?.plan ?? localPlan;
@@ -367,7 +382,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       || plan.magpie != null),
   );
   const isApplying = phase === 'applying';
-  const isReview = phase === 'review' || (phase === 'applying' && step === 3);
+  const isReview = preview != null;
   const deleteCount = plan
     ? plan.deletes.length + (plan.agentsRoot && preview?.remoteAgentsRootExists ? 1 : 0)
     : 0;
@@ -415,6 +430,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       }
       const notices = [
         ...(result.magpieWarnings?.includes('sign_in_required') ? [t('settings.remoteInstances.page.sync.magpie.signInRequired')] : []),
+        ...(result.magpieWarnings?.includes('plugin_install_failed') ? [t('settings.remoteInstances.page.sync.magpie.pluginInstallFailed')] : []),
         ...(result.magpieWarnings?.includes('agent_settings_skipped') ? [t('settings.remoteInstances.page.sync.magpie.agentsSkipped')] : []),
       ];
       if (notices.length) {
@@ -449,11 +465,12 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="min-h-0 sm:max-w-2xl">
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle>{t('settings.remoteInstances.page.sync.title')}</DialogTitle>
           <DialogDescription>{t('settings.remoteInstances.page.sync.description')}</DialogDescription>
         </DialogHeader>
 
+        <div className="shrink-0 space-y-4">
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -506,7 +523,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
               <label key={item.key} className="flex items-center gap-2 typography-meta">
                 <Checkbox
                   checked={checked}
-                  disabled={isApplying || !scopeReady}
+                  disabled={isApplying || !scopeReady || !preview}
                   ariaLabel={item.label}
                   onChange={(nextChecked) => {
                     if (!scopeReady) return;
@@ -514,7 +531,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                     list[item.index] = nextChecked;
                     const next = { ...selections, [item.kind]: list };
                     setSelections(next);
-                    if (phase === 'review') void runCompareRemote(direction, next);
+                    void runCompareRemote(direction, next);
                   }}
                 />
                 <span className="font-mono">{item.label}</span>
@@ -524,13 +541,13 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
           <label className="flex items-center gap-2 typography-meta">
             <Checkbox
               checked={selections.agentsRoot}
-              disabled={isApplying || !scopeReady}
+              disabled={isApplying || !scopeReady || !preview}
               ariaLabel={t('settings.remoteInstances.page.sync.section.agentsRoot')}
               onChange={(checked) => {
                 if (!scopeReady) return;
                 const next = { ...selections, agentsRoot: checked };
                 setSelections(next);
-                if (phase === 'review') void runCompareRemote(direction, next);
+                void runCompareRemote(direction, next);
               }}
             />
             {t('settings.remoteInstances.page.sync.section.agentsRoot')}
@@ -538,35 +555,40 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
           <label className="flex items-center gap-2 typography-meta">
             <Checkbox
               checked={selections.providerCredentials}
-              disabled={isApplying || !scopeReady}
+              disabled={isApplying || !scopeReady || !preview}
               ariaLabel={t('settings.remoteInstances.page.sync.section.providerCredentials')}
               onChange={(checked) => {
                 if (!scopeReady) return;
                 const next = { ...selections, providerCredentials: checked };
                 setSelections(next);
-                if (phase === 'review') void runCompareRemote(direction, next);
-              }}
-            />
-            {t('settings.remoteInstances.page.sync.section.providerCredentials')}
-          </label>
-        </div>
-        {preview?.plan.magpieAvailable && (
-          <SettingsGroup description={t('settings.remoteInstances.page.sync.magpie.description')}>
-            <SettingsToggleRow
-              checked={selections.magpie === true}
-              disabled={isApplying || phase !== 'review'}
-              label={t('settings.remoteInstances.page.sync.section.magpie')}
-              ariaLabel={t('settings.remoteInstances.page.sync.section.magpie')}
-              onChange={(checked) => {
-                const next = { ...selections, magpie: checked };
-                setSelections(next);
                 void runCompareRemote(direction, next);
               }}
             />
-          </SettingsGroup>
-        )}
+            <span className="min-w-0" title={t('settings.remoteInstances.page.sync.hint.providerCredentials')}>
+              <span className="truncate">{t('settings.remoteInstances.page.sync.section.providerCredentials')}</span>
+            </span>
+          </label>
 
-        <div className="space-y-2">
+          {preview?.plan.magpieAvailable ? (
+            <label className="flex items-center gap-2 typography-meta">
+              <Checkbox
+                checked={selections.magpie === true}
+                disabled={isApplying}
+                ariaLabel={t('settings.remoteInstances.page.sync.section.magpie')}
+                onChange={(checked) => {
+                  const next = { ...selections, magpie: checked };
+                  setSelections(next);
+                  void runCompareRemote(direction, next);
+                }}
+              />
+              <span className="min-w-0" title={t('settings.remoteInstances.page.sync.hint.magpie')}>
+                <span className="truncate">{t('settings.remoteInstances.page.sync.section.magpie')}</span>
+              </span>
+            </label>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap gap-x-4 gap-y-2" aria-busy={phase === 'scanning-local' || phase === 'comparing-remote'}>
           {SYNC_STEP_KEYS.map((key, index) => {
             const target = (index + 1) as SyncWizardStep;
             const status = stepStatus(target);
@@ -608,12 +630,6 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
         {isReview && hasEntries && plan ? (
           <div className="flex min-h-0 flex-col gap-3">
             <div className="overflow-hidden rounded-lg border border-border/60 bg-[var(--surface-elevated)]">
-              <ScrollableOverlay
-                fillContainer={false}
-                disableHorizontal
-                outerClassName="max-h-80"
-                className="max-h-80"
-              >
                 <div className="divide-y divide-border/60">
                   {plan.files.map((entry) => {
                     const willOverwrite = remoteExisting.has(entry.path);
@@ -661,7 +677,11 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                     <div className="flex h-8 items-center gap-2 px-2">
                       <Icon name="shield-keyhole" className="size-3.5 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate typography-micro text-foreground">
+                        <span className="sr-only">{t('settings.remoteInstances.page.sync.section.providerCredentials')}: </span>
                         {t('settings.remoteInstances.page.sync.section.providerCredentials')}
+                        <span className="ml-2 typography-micro text-muted-foreground">
+                          {t('settings.remoteInstances.page.sync.hint.providerCredentials')}
+                        </span>
                       </span>
                       <span className="shrink-0 tabular-nums typography-micro text-muted-foreground">
                         {formatSyncBytes(plan.providerCredentials.bytes)}
@@ -677,8 +697,11 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                   {plan.magpie ? (
                     <div className="flex h-8 items-center gap-2 px-2">
                       <Icon name="tools" className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate typography-micro text-foreground">
+                      <span className="min-w-0 flex-1 truncate typography-micro text-foreground" title={t('settings.remoteInstances.page.sync.hint.magpie')}>
                         {t('settings.remoteInstances.page.sync.section.magpie')}
+                        <span className="ml-2 typography-micro text-muted-foreground">
+                          {t('settings.remoteInstances.page.sync.hint.magpie')}
+                        </span>
                       </span>
                     </div>
                   ) : null}
@@ -701,19 +724,21 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                     </div>
                   ) : null}
                 </div>
-              </ScrollableOverlay>
             </div>
 
             <div className="space-y-1 typography-micro text-muted-foreground">
               {deleteCount > 0 ? (
                 <div>{t('settings.remoteInstances.page.sync.note.deletes', { count: deleteCount })}</div>
               ) : null}
-              <div>{t('settings.remoteInstances.page.sync.note.backup')}</div>
-              <div>{t('settings.remoteInstances.page.sync.note.excluded')}</div>
             </div>
           </div>
         ) : null}
 
+        </div>
+        <div className="shrink-0 space-y-1 typography-micro text-muted-foreground">
+          <div>{t('settings.remoteInstances.page.sync.note.backup')}</div>
+          <div>{t('settings.remoteInstances.page.sync.note.excluded')}</div>
+        </div>
         <DialogFooter className="shrink-0">
           <Button
             type="button"

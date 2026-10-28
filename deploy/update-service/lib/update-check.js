@@ -4,7 +4,7 @@ const VERSION_PATTERN = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+
 const DEFAULT_CHECK_INTERVAL_SECONDS = 3600;
 const MANIFEST_PATH = '/update-manifest.json';
 const RELEASE_DOWNLOAD_BASE = 'https://github.com/yee94/yuri/releases/download';
-const IOS_TESTFLIGHT_PUBLIC_URL = 'https://testflight.apple.com/join/ZCENBHtm';
+const IOS_TESTFLIGHT_PUBLIC_URL = 'https://testflight.apple.com/join/pN5SSHeg';
 
 function responseHeaders(headers = {}) {
   return {

@@ -246,6 +246,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
             type="button"
             variant="mobileGlass"
             size="mobileIcon"
+            className="yuri-mobile-inverse-action"
             aria-label={t('assistants.settings.create')}
             onClick={handleCreate}
           >

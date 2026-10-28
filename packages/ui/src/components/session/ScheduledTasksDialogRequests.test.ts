@@ -368,8 +368,8 @@ describe('ScheduledTasksDialog queries', () => {
     expect(searchButtonContent).toContain("size={mobile ? 'mobileIcon' : 'icon'}");
     expect(searchButtonContent).toContain('onClick={() => setCommandPaletteOpen(true)}');
     expect(projectsHomeContent.match(/size="mobileIcon"/g)).toHaveLength(1);
-    expect(projectsHomeContent).toContain('bg-[var(--primary-base)]');
-    expect(projectsHomeContent).toContain('var(--primary-base)_22%');
+    expect(projectsHomeContent).toContain('variant="mobileGlass"');
+    expect(projectsHomeContent).not.toContain('bg-[var(--primary-base)]');
     expect(projectsHomeContent).not.toContain('onClick={() => {}}');
     expect(buttonContent).toContain('mobileGlass:');
     expect(buttonContent).toContain('mobileIcon: "size-10 min-h-10 min-w-10 rounded-full"');

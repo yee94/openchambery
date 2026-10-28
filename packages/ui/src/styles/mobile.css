@@ -29,7 +29,8 @@
     0 0 2px rgb(0 0 0 / 0.05),
     0 0 12px rgb(0 0 0 / 0.06),
     0 8px 20px -6px rgb(0 0 0 / 0.12),
-    inset 0 1px 0 var(--yuri-mobile-glass-highlight);
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight),
+    inset 0 0 0 0.5px var(--yuri-mobile-glass-highlight);
 }
 
 .dark {
@@ -41,7 +42,8 @@
     0 0 2px rgb(0 0 0 / 0.3),
     0 0 12px rgb(0 0 0 / 0.28),
     0 8px 20px -6px rgb(0 0 0 / 0.4),
-    inset 0 1px 0 var(--yuri-mobile-glass-highlight);
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight),
+    inset 0 0 0 0.5px var(--yuri-mobile-glass-highlight);
 }
 
 /* Projects home floating material. Project capsule, session container, and
@@ -157,7 +159,8 @@
     0 0 2px rgb(0 0 0 / 0.05),
     0 0 12px rgb(0 0 0 / 0.06),
     0 8px 20px -6px rgb(0 0 0 / 0.12),
-    inset 0 1px 0 var(--yuri-mobile-glass-highlight);
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight),
+    inset 0 0 0 0.5px var(--yuri-mobile-glass-highlight);
   /* Card-scale surfaces (project shells, settings cards) share the floating
      control's outside-only shading, softened for the larger footprint. The
      background token stays untouched — only elevation unifies. */
@@ -165,7 +168,8 @@
     0 0 2px rgb(0 0 0 / 0.04),
     0 0 12px rgb(0 0 0 / 0.05),
     0 10px 24px -6px rgb(0 0 0 / 0.1),
-    inset 0 1px 0 var(--yuri-mobile-float-highlight);
+    inset 0 1px 0 var(--yuri-mobile-float-highlight),
+    inset 0 0 0 0.5px var(--yuri-mobile-glass-highlight);
 }
 
 /* In dark mode, elevation should recede into the page instead of casting a
@@ -206,7 +210,8 @@
     0 0 2px rgb(0 0 0 / 0.3),
     0 0 12px rgb(0 0 0 / 0.28),
     0 8px 20px -6px rgb(0 0 0 / 0.4),
-    inset 0 1px 0 var(--yuri-mobile-glass-highlight);
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight),
+    inset 0 0 0 0.5px var(--yuri-mobile-glass-highlight);
   --yuri-mobile-float-highlight: color-mix(
     in srgb,
     var(--surface-elevated) 24%,
@@ -216,7 +221,8 @@
     0 0 2px rgb(0 0 0 / 0.26),
     0 0 12px rgb(0 0 0 / 0.24),
     0 10px 24px -6px rgb(0 0 0 / 0.34),
-    inset 0 1px 0 var(--yuri-mobile-float-highlight);
+    inset 0 1px 0 var(--yuri-mobile-float-highlight),
+    inset 0 0 0 0.5px var(--yuri-mobile-glass-highlight);
 }
 
 .yuri-mobile-floating-bottom-bar-frame {
@@ -1690,7 +1696,7 @@ button.yuri-mobile-worktree-label-trigger:active,
 /*
  * Floating glass control: clean translucent disc + backdrop frost.
  * All shading lives OUTSIDE the disc (ambient + drop); inside only keeps
- * a single top light line. No inner dark shadow — that reads as dirt.
+ * a top light line and thin luminous rim. No inner dark shadow — that reads as dirt.
  */
 .yuri-mobile-floating-action {
   position: relative;
@@ -1716,6 +1722,27 @@ button.yuri-mobile-worktree-label-trigger:active,
 
 .dark .yuri-mobile-floating-action {
   color: var(--surface-foreground);
+}
+
+/* Inverse tint only: keep the shared glass reflection, blur and shadows. */
+.yuri-mobile-floating-action.yuri-mobile-inverse-action {
+  background-color: color-mix(in srgb, var(--surface-foreground) 68%, transparent);
+  color: var(--surface-background);
+}
+
+/* Shared lens reflection stays paint-only; the existing containers own blur. */
+.yuri-mobile-floating-surface,
+.yuri-mobile-glass-surface,
+.yuri-mobile-floating-bottom-bar,
+.yuri-mobile-glass-control,
+.yuri-mobile-floating-action {
+  background-image: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--yuri-mobile-glass-highlight) 32%, transparent),
+    transparent 42%,
+    transparent 72%,
+    color-mix(in srgb, var(--yuri-mobile-glass-highlight) 12%, transparent)
+  );
 }
 
 .yuri-mobile-detail-editor-title {
@@ -2059,10 +2086,9 @@ button.yuri-mobile-worktree-label-trigger:active,
   height: 0;
 }
 
-/* Mobile notifications use the shared glass-control recipe (fill, blur,
-   saturate, shadow) — the same material as the dock and header discs.
-   sonner.tsx pins box-shadow from --yuri-toast-shadow, so that token must
-   be --yuri-mobile-glass-shadow or the pin replaces the elevation.
+/* Shared desktop and mobile notifications use the same glass fill, with
+   edge highlights and a short contact shadow owned by --yuri-toast-shadow.
+   sonner.tsx pins box-shadow from that token.
    Material applies to every toast, including custom undo toasts
    (data-styled=false). WebKit will not backdrop-filter through a
    transformed ancestor or a transformed element: the toaster is centered
@@ -2070,11 +2096,19 @@ button.yuri-mobile-worktree-label-trigger:active,
    Swipe and removal keep Sonner's transforms. Collapsed rear cards keep
    the glass fill and a shorter contact shadow; Sonner's 5% scale /
    0.5rem offset separates the stack. */
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime) {
-  --yuri-toast-background: var(--yuri-mobile-glass-fill);
+:root {
+  --yuri-toast-background: color-mix(in srgb, var(--yuri-mobile-glass-fill) 70%, transparent);
+  --yuri-toast-radius: 0.875rem;
+  --yuri-toast-padding-x: 0.75rem;
+  --yuri-toast-padding-y: 0.625rem;
+  --yuri-toast-gap: 0.625rem;
   --yuri-toast-background-rear-near: var(--yuri-mobile-glass-fill);
   --yuri-toast-background-rear-far: var(--yuri-mobile-glass-fill);
-  --yuri-toast-shadow: var(--yuri-mobile-glass-shadow);
+  --yuri-toast-shadow:
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight),
+    inset 0 0 0 0.5px var(--yuri-mobile-glass-highlight),
+    0 1px 3px -1px color-mix(in srgb, var(--foreground) 12%, transparent),
+    0 6px 14px -8px color-mix(in srgb, var(--foreground) 20%, transparent);
   --yuri-toast-shadow-rear-near: 0 3px 7px -5px
     color-mix(
       in srgb,
@@ -2089,9 +2123,12 @@ button.yuri-mobile-worktree-label-trigger:active,
     );
 }
 
-:root.dark:is(.device-mobile, .device-tablet, .mobile-pointer):not(
-    .desktop-runtime
-  ) {
+:root.dark {
+  --yuri-toast-shadow:
+    inset 0 1px 0 var(--yuri-mobile-glass-highlight),
+    inset 0 0 0 0.5px color-mix(in srgb, var(--yuri-mobile-glass-highlight) 60%, transparent),
+    0 1px 3px -1px color-mix(in srgb, var(--background) 40%, transparent),
+    0 6px 14px -8px color-mix(in srgb, var(--background) 60%, transparent);
   --yuri-toast-shadow-rear-near: 0 3px 7px -5px
     color-mix(
       in srgb,
@@ -2106,8 +2143,9 @@ button.yuri-mobile-worktree-label-trigger:active,
     );
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toaster] {
+  --width: min(320px, calc(100vw - 2rem)) !important;
   --gap: 0.5rem !important;
   --normal-bg: var(--yuri-toast-background);
   --success-bg: var(--yuri-toast-background);
@@ -2115,12 +2153,12 @@ button.yuri-mobile-worktree-label-trigger:active,
   --warning-bg: var(--yuri-toast-background);
   --info-bg: var(--yuri-toast-background);
   --yuri-toast-action-background: transparent;
-  --yuri-toast-action-foreground: var(--primary-base);
+  --yuri-toast-action-foreground: var(--foreground);
   --yuri-toast-cancel-background: transparent;
   --yuri-toast-cancel-foreground: var(--muted-foreground);
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toaster][data-x-position="center"] {
   left: 50% !important;
   width: min(var(--width), calc(100vw - 2rem)) !important;
@@ -2130,12 +2168,16 @@ button.yuri-mobile-worktree-label-trigger:active,
 
 /* Glass lives on the toast element itself, including custom/unstyled
    undo toasts. A child cannot frost through this element's transform. */
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast] {
   border: 0 !important;
-  border-radius: var(--radius-xl) !important;
+  width: var(--width) !important;
+  border-radius: var(--yuri-toast-radius) !important;
   background: var(--yuri-toast-background) !important;
   background-color: var(--yuri-toast-background) !important;
+  background-image: linear-gradient(155deg,
+    color-mix(in srgb, var(--yuri-mobile-glass-highlight) 24%, transparent),
+    transparent 55%) !important;
   -webkit-backdrop-filter:
     blur(var(--yuri-mobile-glass-blur))
     saturate(var(--yuri-mobile-glass-saturate));
@@ -2146,27 +2188,47 @@ button.yuri-mobile-worktree-label-trigger:active,
 
 /* translateY(0) is still a transform. Resting front cards drop it so
    backdrop-filter can sample the page. Swipe and removal opt back in. */
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast][data-mounted="true"][data-front="true"]:not(
     [data-swiping="true"]
   ):not([data-removed="true"]):not([data-swipe-out="true"]) {
   transform: none !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast][data-styled="true"] {
-  min-height: 3.25rem;
-  padding: 0.5rem 0.625rem !important;
-  gap: 0.375rem !important;
+  min-height: 3rem;
+  padding: var(--yuri-toast-padding-y) var(--yuri-toast-padding-x) !important;
+  gap: var(--yuri-toast-gap) !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
+  [data-sonner-toast][data-type="error"] {
+  --yuri-toast-status-color: var(--status-error);
+}
+
+:root
+  [data-sonner-toast][data-type="warning"] {
+  --yuri-toast-status-color: var(--status-warning);
+}
+
+:root
+  [data-sonner-toast][data-type="success"] {
+  --yuri-toast-status-color: var(--status-success);
+}
+
+:root
+  [data-sonner-toast][data-type="info"] {
+  --yuri-toast-status-color: var(--status-info);
+}
+
+:root
   [data-sonner-toast][data-expanded="false"][data-front="false"][data-index="1"] {
   --yuri-toast-shadow: var(--yuri-toast-shadow-rear-near);
   background: var(--yuri-toast-background-rear-near) !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast][data-expanded="false"][data-front="false"][data-index]:not(
     [data-index="1"]
   ) {
@@ -2174,43 +2236,56 @@ button.yuri-mobile-worktree-label-trigger:active,
   background: var(--yuri-toast-background-rear-far) !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-content] {
-  min-width: 0;
-  gap: 0.125rem;
+    min-width: 0;
+  gap: 0.25rem;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-title],
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-description] {
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
+  [data-sonner-toast] [data-title] {
+  font-size: 0.875rem !important;
+  line-height: 1.375rem !important;
+  font-weight: 500 !important;
+}
+
+:root
+  [data-sonner-toast] [data-description] {
+  font-size: 0.75rem !important;
+  line-height: 1.25rem !important;
+}
+
+:root
   [data-sonner-toast]
   [data-icon] {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-inline: 0;
+  justify-content: center;
+  color: var(--yuri-toast-status-color, var(--muted-foreground)) !important;
+}
+
+:root
+  [data-sonner-toast]
+  .yuri-toast-status-icon {
+  display: block;
   width: 1.125rem;
   height: 1.125rem;
-  margin-inline: 0.125rem 0.25rem;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
-  [data-sonner-toast]
-  .yuri-toast-status-icon-desktop {
-  display: none;
-}
-
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
-  [data-sonner-toast]
-  .yuri-toast-status-icon-mobile {
-  display: block;
-}
-
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-button] {
   min-width: 36px;
@@ -2221,13 +2296,14 @@ button.yuri-mobile-worktree-label-trigger:active,
   border: 0 !important;
   border-radius: var(--radius-md) !important;
   background: transparent !important;
-  color: var(--primary-base) !important;
+  color: var(--yuri-toast-action-foreground) !important;
+  font-size: 0.75rem !important;
   transition:
     background-color 160ms ease,
     color 160ms ease;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-cancel] {
   background: transparent !important;
@@ -2235,28 +2311,33 @@ button.yuri-mobile-worktree-label-trigger:active,
 }
 
 @media (hover: hover) {
-  :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  :root
     [data-sonner-toast]
     [data-button]:hover {
     background: var(--interactive-hover) !important;
   }
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-button]:active {
   background: var(--interactive-active) !important;
 }
 
-:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+:root
   [data-sonner-toast]
   [data-button]:focus-visible {
   box-shadow: 0 0 0 2px var(--interactive-focus-ring) !important;
 }
 
 @media (prefers-reduced-transparency: reduce) {
+  .yuri-mobile-floating-action.yuri-mobile-inverse-action {
+    background: var(--surface-foreground);
+  }
+
   .yuri-mobile-glass-surface,
   .yuri-mobile-floating-surface,
+  .yuri-mobile-floating-bottom-bar,
   .yuri-mobile-floating-action,
   .yuri-mobile-glass-control,
   .yuri-composer-autocomplete-surface,
@@ -2283,9 +2364,7 @@ button.yuri-mobile-worktree-label-trigger:active,
     background: var(--surface-elevated);
   }
 
-  :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(
-      .desktop-runtime
-    )
+  :root
     [data-sonner-toast] {
     background: var(--surface-elevated, var(--card)) !important;
     -webkit-backdrop-filter: none;
@@ -2389,6 +2468,11 @@ button.yuri-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime) [data-slot="button"] {
     min-height: 36px;
     min-width: 36px;
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime) .yuri-user-text-expand[role="button"] {
+    min-height: 0;
+    min-width: 0;
   }
 
   :root.mobile-pointer:not(.desktop-runtime) button.yuri-pending-changes-trigger {

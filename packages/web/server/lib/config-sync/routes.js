@@ -25,9 +25,13 @@ export const registerConfigSyncRoutes = (app, deps = {}) => {
         : code === 'sync_payload_too_large' || code === 'sync_too_many_files' ? 413
           : code === 'sync_invalid_kind' ? 400
             : fallbackStatus;
+    // Magpie import failures wrap the actionable native/verification cause; the transfer
+    // envelope itself is never reported, so the nested message is safe to forward.
+    const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message.trim() : '';
     res.status(status).json({
       error: error instanceof Error ? error.message : String(error),
       ...(code ? { code } : {}),
+      ...(cause && cause !== (error instanceof Error ? error.message : '') ? { detail: cause } : {}),
       ...(error?.syncRunId ? { syncRunId: error.syncRunId } : {}),
     });
   };
