@@ -106,7 +106,7 @@ function MobileSessionRowImpl({
           onClick={handleSelect}
           onPointerDown={() => undefined}
         >
-          <span className="min-w-0 flex-1 truncate text-left font-medium text-foreground typography-meta">
+          <span className="yuri-mobile-entity-title min-w-0 flex-1 truncate text-left font-medium text-muted-foreground">
             {session.title}
           </span>
           {session.subtitle ? <span className="text-muted-foreground">{session.subtitle}</span> : null}

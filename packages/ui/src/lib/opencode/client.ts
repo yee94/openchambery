@@ -561,6 +561,7 @@ class OpencodeService {
   async checkLocationReleaseUse(directory: string, signal: AbortSignal): Promise<'free' | 'busy'> {
     const normalized = this.normalizeCandidatePath(directory);
     const live = await this.listLiveLocationDirectories();
+    if (!live) throw new Error('Live Location inventory unavailable');
     // Probing a Location that is not booted would boot it just to evict it.
     if (live && normalized && !live.has(normalized)) return 'free';
     const client = this.getScopedSdkClient(directory);
@@ -608,9 +609,8 @@ class OpencodeService {
     }
     if (unique.size === 0) return [];
     const live = await this.listLiveLocationDirectories();
-    // Unreadable live set (older server, transient failure): keep the scoped
-    // lists so a failed probe never hides pending requests.
-    if (!live) return Array.from(unique);
+    // Failure must preserve the caller's snapshot, never boot historical scopes.
+    if (!live) throw new Error('Live Location inventory unavailable');
     return Array.from(unique).filter((directory) => live.has(directory));
   }
 

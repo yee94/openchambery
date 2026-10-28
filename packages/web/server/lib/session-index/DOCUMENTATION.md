@@ -1,5 +1,9 @@
 # Session Index Runtime
 
+Directory refresh retains its previous snapshot when the pagination budget is
+exhausted before filling the visible root limit. Filtered global pages with a
+continuation are partial results, not authoritative empty directories.
+
 ## Missing local directories
 
 The Host probes local directory existence asynchronously before background root

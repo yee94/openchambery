@@ -41,6 +41,24 @@ const isFullyIdle = (runtime) => (
 );
 
 describe('session index background sync runtime', () => {
+  it('preserves prior directory rows when filtered global pages exhaust the scan budget', async () => {
+    const service = createService([{ directory: '/repo', sessions: [session('existing', 10)] }]);
+    let page = 0;
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      fetchFn: async () => Response.json({ data: [], cursor: { next: `page-${++page}` } }),
+    });
+    try {
+      runtime.enqueue(['/repo']);
+      await waitUntil(() => isFullyIdle(runtime));
+      expect(page).toBe(5);
+      expect(service.replaceDirectory).not.toHaveBeenCalled();
+      expect(service.snapshot().directories[0].sessions[0].id).toBe('existing');
+    } finally { runtime.stop(); }
+  });
   it('does not probe indexed directories at startup', async () => {
     const service = createService([{ directory: '/repo', sessions: [], hasMore: false }]);
     service.removeEmptyDirectory = vi.fn(() => true);

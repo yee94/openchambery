@@ -53,7 +53,7 @@ describe("location release generated SDK chain", () => {
     expect(requests.filter((r) => new URL(r.url).pathname === "/api/debug/location")).toHaveLength(1)
   })
 
-  it("keeps scoped lists when the live set is unreadable", async () => {
+  it("rejects unreadable inventory without probing historical scopes", async () => {
     const requests: Request[] = []
     transport.fetch.mockImplementation(async (input, init) => {
       const request = new Request(input, init)
@@ -61,8 +61,10 @@ describe("location release generated SDK chain", () => {
       if (new URL(request.url).pathname === "/api/debug/location") return new Response("unavailable", { status: 503 })
       return Response.json({ location: { directory: "/cold" }, data: [] })
     })
-    await opencodeClient.listPendingQuestions({ directories: ["/cold"] })
-    expect(requests.some((r) => new URL(r.url).searchParams.get("location[directory]") === "/cold")).toBe(true)
+    await expect(opencodeClient.listPendingQuestions({ directories: ["/cold"] })).rejects.toThrow()
+    await expect(opencodeClient.listPendingPermissions({ directories: ["/cold"] })).rejects.toThrow()
+    await expect(opencodeClient.checkLocationReleaseUse("/cold", new AbortController().signal)).rejects.toThrow()
+    expect(requests.some((r) => new URL(r.url).searchParams.get("location[directory]") === "/cold")).toBe(false)
   })
 
   it.each(["shell", "form"])("protects remote pending %s", async (kind) => {
