@@ -306,18 +306,3 @@ describe('html file references', () => {
         expect(fileReferenceActionsSource).toContain('options.preferRuntimeEditor && options.editor && !htmlPreview');
     });
 });
-
-describe('binary file references', () => {
-    test('routes binary links through the desktop path opener before the context preview', () => {
-        const binaryHandlingStart = fileReferenceActionsSource.indexOf('(isBinary || isApplicationBundle)');
-        const contextPreviewStart = fileReferenceActionsSource.indexOf('const contextDirectory = getContextDirectory', binaryHandlingStart);
-
-        expect(binaryHandlingStart).toBeGreaterThan(-1);
-        const binaryHandling = fileReferenceActionsSource.slice(binaryHandlingStart, contextPreviewStart);
-        expect(binaryHandling).toContain('!isImageFile(resolved.resolvedPath)');
-        expect(binaryHandling).toContain('!isHtmlFile(resolved.resolvedPath)');
-        expect(binaryHandling).toContain('await openDesktopPath(resolved.resolvedPath)');
-        expect(fileReferenceActionsSource).toContain('isMobileSurface');
-        expect(fileReferenceActionsSource).toContain('!isHtmlFile(resolvedPath)');
-    });
-});

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { createImageFingerprintReader } from '../../web/server/lib/fs/image-fingerprint.js';
+import { isBinaryFile } from '../../web/server/lib/fs/binary-file.js';
 const readImageFingerprint = createImageFingerprintReader(fs.promises);
 import { getFsMimeType, normalizeFsPath, resolveFileReadPath, type FsReadPathResolution } from './bridge-fs-helpers-runtime';
 
@@ -47,24 +48,6 @@ const normalizeFsProxyPath = (pathname: string): '/api/fs/stat' | '/api/fs/read'
   if (pathname === '/api/fs/read' || pathname === '/fs/read') return '/api/fs/read';
   if (pathname === '/api/fs/raw' || pathname === '/fs/raw') return '/api/fs/raw';
   return null;
-};
-
-const isBinaryFile = async (filePath: string): Promise<boolean> => {
-  const file = await fs.promises.open(filePath, 'r');
-  try {
-    const sample = Buffer.alloc(8192);
-    const { bytesRead } = await file.read(sample, 0, sample.length, 0);
-    const bytes = sample.subarray(0, bytesRead);
-    if (bytes.includes(0)) return true;
-    try {
-      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      return false;
-    } catch {
-      return true;
-    }
-  } finally {
-    await file.close();
-  }
 };
 
 export const tryHandleLocalFsProxy = async (method: string, requestPath: string): Promise<ApiProxyResponsePayload | null> => {
@@ -119,7 +102,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
     }
 
     if (fsProxyPath === '/api/fs/stat') {
-      const isBinary = await isBinaryFile(resolution.resolvedPath);
+      const isBinary = await isBinaryFile(resolution.resolvedPath, fs.promises);
       return {
         status: 200,
         headers: {

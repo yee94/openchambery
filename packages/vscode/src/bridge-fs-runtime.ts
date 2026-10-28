@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createImageFingerprintReader } from '../../web/server/lib/fs/image-fingerprint.js';
+import { isBinaryFile } from '../../web/server/lib/fs/binary-file.js';
 import type { BridgeResponse } from './bridge';
 const readImageFingerprint = createImageFingerprintReader(fs.promises);
 
@@ -17,24 +18,6 @@ type FsAttachment = {
   mimeType: string;
   size: number;
   dataUrl: string;
-};
-
-const isBinaryFile = async (filePath: string): Promise<boolean> => {
-  const file = await fs.promises.open(filePath, 'r');
-  try {
-    const sample = Buffer.alloc(8192);
-    const { bytesRead } = await file.read(sample, 0, sample.length, 0);
-    const bytes = sample.subarray(0, bytesRead);
-    if (bytes.includes(0)) return true;
-    try {
-      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      return false;
-    } catch {
-      return true;
-    }
-  } finally {
-    await file.close();
-  }
 };
 
 type SkippedAttachment = {
@@ -338,7 +321,7 @@ export async function handleFsBridgeMessage(
             size: stats.size,
             mtimeMs: stats.mtimeMs,
             ...((payload as { fingerprint?: boolean }).fingerprint && stats.size <= 32 * 1024 * 1024 ? { sha256: await readImageFingerprint(resolution.resolvedPath) } : {}),
-            isBinary: await isBinaryFile(resolution.resolvedPath),
+            isBinary: await isBinaryFile(resolution.resolvedPath, fs.promises),
           },
         };
       } catch (error) {

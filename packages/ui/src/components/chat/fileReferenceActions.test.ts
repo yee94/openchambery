@@ -227,25 +227,62 @@ describe('fileReferenceActions', () => {
     );
   });
 
-  test('routes non-preview binary paths through the desktop opener first', async () => {
+  test('opens a binary-classified plugin report in the context panel even when the desktop opener would succeed', async () => {
     openDesktopPathMock.mockResolvedValueOnce(true);
-    await openFileReference('/tmp/notes.bin', true, {
-      effectiveDirectory: '/tmp',
+    await openFileReference('research/KF-ITERATION-REPORT.shadcn.eficy', true, {
+      effectiveDirectory: '/repo',
     });
-    expect(openDesktopPathMock).toHaveBeenCalledWith('/tmp/notes.bin');
-    expect(openContextFileMock).not.toHaveBeenCalled();
+    expect(openContextFileMock).toHaveBeenCalledWith('/repo', '/repo/research/KF-ITERATION-REPORT.shadcn.eficy');
+    expect(openDesktopPathMock).not.toHaveBeenCalled();
+    expect(toastWarningMock).not.toHaveBeenCalled();
   });
 
-  test('falls through to the context panel when the desktop opener cannot handle a binary', async () => {
+  test.each([
+    ['/tmp/notes.bin', true],
+    ['/tmp/Example.app', false],
+    ['/tmp/Example.app', true],
+  ])('opens %s (binary=%s) in the file surface without invoking the desktop opener', async (path, isBinary) => {
+    openDesktopPathMock.mockResolvedValueOnce(true);
+    await openFileReference(path, isBinary, {
+      effectiveDirectory: '/tmp',
+    });
+    expect(openDesktopPathMock).not.toHaveBeenCalled();
+    expect(toastWarningMock).not.toHaveBeenCalled();
+    expect(openContextFileMock).toHaveBeenCalledWith('/tmp', path);
+  });
+
+  test('opens an archive in the context panel without an external-preview warning', async () => {
     openDesktopPathMock.mockResolvedValueOnce(false);
     await openFileReference('/private/var/folders/x/evidence-bundle.tar.gz', true, {
       effectiveDirectory: '/Users/dev/project',
     });
-    expect(openDesktopPathMock).toHaveBeenCalledWith('/private/var/folders/x/evidence-bundle.tar.gz');
-    expect(toastWarningMock).toHaveBeenCalledWith('chat.fileReference.notice.binaryExternal');
+    expect(openDesktopPathMock).not.toHaveBeenCalled();
+    expect(toastWarningMock).not.toHaveBeenCalled();
     expect(openContextFileMock).toHaveBeenCalledWith(
       '/Users/dev/project',
       '/private/var/folders/x/evidence-bundle.tar.gz',
     );
+  });
+
+  test.each([false, true])('honors explicit runtime editor preference for binary=%s with line and column', async (isBinary) => {
+    openDesktopPathMock.mockResolvedValueOnce(true);
+    await openFileReference('/repo/report.eficy:12:3', isBinary, {
+      effectiveDirectory: '/repo',
+      editor: { openFile: editorOpenFileMock } as unknown as OpenFileReferenceOptions['editor'],
+      preferRuntimeEditor: true,
+    });
+    expect(editorOpenFileMock).toHaveBeenCalledWith('/repo/report.eficy', 12, 3);
+    expect(openContextFileMock).not.toHaveBeenCalled();
+    expect(openDesktopPathMock).not.toHaveBeenCalled();
+  });
+
+  test('opens a binary-classified element in the context panel at its referenced line', async () => {
+    openDesktopPathMock.mockResolvedValueOnce(true);
+    const anchor = document.createElement('a');
+    anchor.setAttribute('data-yuri-file-ref', '/repo/report.eficy:12:3');
+    anchor.setAttribute('data-yuri-file-binary', 'true');
+    await openFileReferenceFromElement(anchor, { effectiveDirectory: '/repo' });
+    expect(openContextFileAtLineMock).toHaveBeenCalledWith('/repo', '/repo/report.eficy', 12, 3);
+    expect(openDesktopPathMock).not.toHaveBeenCalled();
   });
 });

@@ -429,6 +429,15 @@ Markstream's delegated primary-click handler prevents document navigation for fi
 
 Markstream links disable the library's global hover tooltip. Desktop uses the shared component-owned Tooltip so unmount removes its portal; mobile omits hover popups to avoid touch-generated mouse events leaving a detached bubble after navigation.
 
+`openFileReference` opens local references in the internal file surface by default,
+including binary-classified plugin files, archives and `.app` bundles. Opening the
+surface does not depend on renderer support or a system application's ability to
+open the path; the file surface owns preview selection and unsupported-file feedback.
+System-app opening belongs to explicit external-open actions, never the default
+reference click. Explicit `preferRuntimeEditor` still routes non-HTML files to the
+provided editor; HTML preview and the shared image popup keep their existing routing.
+The binary argument remains accepted for callers but does not choose an opener.
+
 ## Revert failure feedback
 
 The primary session store reports every revert failure with a localized toast and the original diagnostic; a confirmed missing-message recovery only claims the conversation was refreshed after successful reconciliation. `ChatMessage` consumes the rejected promise and releases its pending action in `finally`. Hosted-surface callbacks report failures at that boundary. Busy errors retain their specific copy.

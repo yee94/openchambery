@@ -14,6 +14,7 @@ import { DEEP_LINK_PROTOCOLS, isAppDeepLink } from './deep-link-protocol.mjs';
 import { LEGACY_UI_PROTOCOL, prepareDesktopMigration, migrateDesktopOrigin } from './brand-migration.mjs';
 import { loadDesktopBackend } from './desktop-backend.mjs';
 import { importHostBrandData } from '@yuriai/web/server/lib/brand-migration.js';
+import { isBinaryFile } from '@yuriai/web/server/lib/fs/binary-file.js';
 import { DesktopInstaller } from './desktop-installer.mjs';
 import electronUpdater from 'electron-updater';
 import { ElectronSshManager, planOpenCodeConfigSync, parseSshCommand } from './ssh-manager.mjs';
@@ -4076,21 +4077,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!targetPath) throw new Error('Path is required');
       const stats = await fsp.stat(targetPath);
       if (!stats.isFile()) return false;
-      const file = await fsp.open(targetPath, 'r');
-      try {
-        const sample = Buffer.alloc(8192);
-        const { bytesRead } = await file.read(sample, 0, sample.length, 0);
-        const bytes = sample.subarray(0, bytesRead);
-        if (bytes.includes(0)) return true;
-        try {
-          new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-          return false;
-        } catch {
-          return true;
-        }
-      } finally {
-        await file.close();
-      }
+      return isBinaryFile(targetPath, fsp);
     }
 
     case 'desktop_open_external_url': {

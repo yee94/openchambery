@@ -14,7 +14,7 @@ Opaque main/Mini Chat windows and the dark native title-bar overlay use Cursor's
 `#1a1a1a` backdrop, matching the shared UI's default dark surface. Vibrancy keeps
 its transparent native backdrop; saved renderer theme choices remain authoritative.
 
-The preload bridge exposes desktop-only APIs to the web UI through `window.__YURI_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler.
+The preload bridge exposes desktop-only APIs to the web UI through `window.__YURI_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler. It shares the Web-owned `fs/binary-file.js` classifier: a UTF-8 code point split by a non-EOF sample is text, while NUL, invalid UTF-8 and incomplete UTF-8 at EOF remain binary.
 
 Startup uses the transparent `icons/source/yuri-mark-black.svg` silhouette, matching the web startup SVG at 120 × 120 CSS pixels centered in the viewport. The web progress indicator is positioned below the logo without participating in centering, so showing progress does not move the mark. Keep the native and web splash geometry and default theme colors aligned.
 

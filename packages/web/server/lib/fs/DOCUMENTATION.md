@@ -6,6 +6,7 @@ Own filesystem API behavior for the web server runtime, including file operation
 ## Entrypoints and structure
 - `packages/web/server/lib/fs/routes.js`: route registration and runtime-owned state for `/api/fs/*` endpoints.
 - `packages/web/server/lib/fs/search.js`: fuzzy filesystem search runtime used by non-FS routes (for example project icon discovery).
+- `packages/web/server/lib/fs/binary-file.js`: shared 8 KiB binary sniff for Web stat, Electron binary-path IPC, and both VS Code stat adapters. Strict UTF-8 decoding permits an incomplete trailing code point only when the opened file's size confirms more bytes remain; NUL, malformed sequences, and incomplete UTF-8 at EOF remain binary. File handles close on every outcome, and filesystem errors propagate.
 
 ## Public exports
 - `registerFsRoutes(app, dependencies)` from `routes.js`

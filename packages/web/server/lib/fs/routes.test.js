@@ -285,6 +285,48 @@ const callMkdir = async (handler, body) => {
 };
 
 describe('fs stat', () => {
+  it.each([
+    ['two-byte code point split after byte 1', Buffer.from('a'.repeat(8191) + 'é'), false],
+    ['Chinese split after byte 2', Buffer.from('a'.repeat(8190) + '好'), false],
+    ['emoji split after byte 1', Buffer.from('a'.repeat(8191) + '😀'), false],
+    ['emoji split after byte 2', Buffer.from('a'.repeat(8190) + '😀'), false],
+    ['emoji split after byte 3', Buffer.from('a'.repeat(8189) + '😀'), false],
+    ['complete Chinese at exact sample EOF', Buffer.from('a'.repeat(8189) + '好'), false],
+    ['empty file', Buffer.alloc(0), false],
+    ['incomplete UTF-8 at short EOF', Buffer.from([0xe5, 0xa5]), true],
+    ['incomplete UTF-8 at exact sample EOF', Buffer.concat([Buffer.alloc(8191, 0x61), Buffer.from([0xe5])]), true],
+    ['invalid leading byte before non-EOF boundary', Buffer.concat([Buffer.from([0xff]), Buffer.alloc(8192, 0x61)]), true],
+    ['NUL before non-EOF boundary', Buffer.concat([Buffer.from([0]), Buffer.alloc(8192, 0x61)]), true],
+    ['invalid continuation at non-EOF boundary', Buffer.concat([Buffer.alloc(8190, 0x61), Buffer.from([0xe5, 0x61, 0x61])]), true],
+    ['overlong sequence at non-EOF boundary', Buffer.concat([Buffer.alloc(8190, 0x61), Buffer.from([0xe0, 0x80, 0x80])]), true],
+    ['surrogate at non-EOF boundary', Buffer.concat([Buffer.alloc(8190, 0x61), Buffer.from([0xed, 0xa0, 0x80])]), true],
+    ['out-of-range code point at non-EOF boundary', Buffer.concat([Buffer.alloc(8190, 0x61), Buffer.from([0xf4, 0x90, 0x80, 0x80])]), true],
+  ])('classifies %s', async (_name, bytes, expected) => {
+    const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'yuri-binary-sample-'));
+    const filePath = path.join(directory, 'report.eficy');
+    try {
+      await fs.promises.writeFile(filePath, bytes);
+      const res = await callStat(registerStat(fs.promises), { path: filePath });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ isBinary: expected });
+    } finally {
+      await fs.promises.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps Chinese UTF-8 crossing the 8192-byte sample boundary previewable', async () => {
+    const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'yuri-binary-sample-'));
+    const filePath = path.join(directory, 'report.shadcn.eficy');
+    try {
+      await fs.promises.writeFile(filePath, 'a'.repeat(8191) + '好' + 'b'.repeat(28573));
+      const res = await callStat(registerStat(fs.promises), { path: filePath });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ size: 36767, isBinary: false });
+    } finally {
+      await fs.promises.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('reports binary content from a bounded byte sample', async () => {
     const file = {
       read: vi.fn(async (buffer) => {
@@ -307,6 +349,7 @@ describe('fs stat', () => {
 
   it('keeps UTF-8 text previewable', async () => {
     const file = {
+      stat: vi.fn(async () => ({ size: 23 })),
       read: vi.fn(async (buffer) => {
         buffer.set(Buffer.from('export const value = 1;'));
         return { bytesRead: 23 };
