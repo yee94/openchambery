@@ -36,6 +36,9 @@ export function createContentSearchService({ dbPath }) {
   if (!sessionColumns.some((column) => column.name === 'indexed_at')) {
     db.exec('ALTER TABLE search_session ADD COLUMN indexed_at REAL');
   }
+  if (!db.prepare('PRAGMA table_info(search_coverage)').all().some((column) => column.name === 'event_identity_repaired')) {
+    db.exec('ALTER TABLE search_coverage ADD COLUMN event_identity_repaired INTEGER NOT NULL DEFAULT 0');
+  }
   const remove = db.prepare('DELETE FROM search_message WHERE runtime=? AND session=?');
   const write = db.prepare('INSERT INTO search_message(runtime,session,message,role,created,body) VALUES(?,?,?,?,?,?)');
   const removeSession = db.transaction((runtime, id) => {
@@ -57,12 +60,15 @@ export function createContentSearchService({ dbPath }) {
       return db.prepare('SELECT started_at AS indexStartedAt, completed_at AS indexCompletedAt, since AS coveredSince, verified_at AS verifiedAt FROM search_coverage WHERE runtime=?').get(runtime)
         ?? { indexStartedAt: null, indexCompletedAt: null, coveredSince: null, verifiedAt: null };
     },
+    needsEventIdentityRepair(runtime) {
+      return db.prepare('SELECT event_identity_repaired FROM search_coverage WHERE runtime=?').get(runtime)?.event_identity_repaired !== 1;
+    },
     beginInitialization(runtime, timestamp) {
       db.prepare(`INSERT INTO search_coverage(runtime,started_at) VALUES(?,?)
         ON CONFLICT(runtime) DO NOTHING`).run(runtime, timestamp);
     },
     completeInitialization(runtime, since, timestamp) {
-      db.prepare(`UPDATE search_coverage SET completed_at=COALESCE(completed_at,?), since=?, verified_at=? WHERE runtime=?`)
+      db.prepare(`UPDATE search_coverage SET completed_at=COALESCE(completed_at,?), since=?, verified_at=?, event_identity_repaired=1 WHERE runtime=?`)
         .run(timestamp, since, timestamp, runtime);
     },
     replaceSession: db.transaction((runtime, session, records, since = null, indexedAt = Date.now()) => {

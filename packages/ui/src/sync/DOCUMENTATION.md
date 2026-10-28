@@ -1620,6 +1620,13 @@ both readers agree on when a frame may shrink.
   scoped to that session); it never invents a `QuestionRequest` from tool
   parts. Ready + `isReconnect:true` triggers Query
   compensation after replay; first ready skips gap compensation.
+- Blocking-request resync lists directory-scoped forms and permissions only in
+  live upstream Locations (`debug.location.list`, one short shared flight per
+  reconnect burst). Those requests live in Location memory, and a scoped list on
+  any other directory boots a full Location that OpenCode never evicts. Child
+  stores created for sidebar rows or events therefore never fan out boots on
+  reconnect. An unreadable live set keeps the scoped lists. The location-release
+  probe likewise skips Locations that are not booted.
 - A real reconnect and every transport switch can gap **every** cached
   transcript in an initialized directory, not just the viewed session.
   Recovery-context capture writes Query checkpoints before replay; ready +

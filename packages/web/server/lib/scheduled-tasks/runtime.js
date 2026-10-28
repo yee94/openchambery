@@ -400,6 +400,15 @@ const extractGoalFromSession = (session) => {
  * must be a real terminal (finish tool-calls / incomplete / model-switch ≠
  * success). History rows are never rewritten here.
  */
+const SESSION_NOT_FOUND_ERROR = 'session not found';
+
+// Real `@opencode/client` throws declared errors by `_tag`; transport failures never match.
+const isSessionNotFoundError = (error) => {
+  if (!error || typeof error !== 'object') return false;
+  if ((error._tag ?? error.name) === 'SessionNotFoundError') return true;
+  return Number(error.status ?? error.statusCode ?? error.response?.status) === 404;
+};
+
 const snapshotSessionOutcome = async ({
   client,
   sessionID,
@@ -474,6 +483,9 @@ const snapshotSessionOutcome = async ({
         }
       } catch (error) {
         if (signal?.aborted) throw error;
+        if (isSessionNotFoundError(error)) {
+          return { outcome: 'error', error: SESSION_NOT_FOUND_ERROR };
+        }
       }
     }
     return { outcome: 'busy' };
@@ -490,6 +502,10 @@ const snapshotSessionOutcome = async ({
     }
   } catch (error) {
     if (signal?.aborted) throw error;
+    // Upstream confirmed the session is gone: terminal, or recovery polls it forever.
+    if (isSessionNotFoundError(error)) {
+      return { outcome: 'error', error: SESSION_NOT_FOUND_ERROR };
+    }
   }
 
   return { outcome: 'busy' };

@@ -26,6 +26,7 @@ const setup = async (pending = []) => {
   let onEvent;
   const fetchImpl = vi.fn(async (url, options) => {
     const path = url.pathname;
+    if (path === '/api/debug/location') return Response.json([{ directory: '/project' }]);
     if (path === '/api/form') return Response.json({ data: pending });
     if (path === '/api/session/ses_test') return Response.json({ data: { id: 'ses_test', location: { directory: '/project' } } });
     if (path === '/api/session/ses_test/form/frm_question') return Response.json({ data: form });
@@ -51,6 +52,30 @@ const setup = async (pending = []) => {
     posts: () => fetchImpl.mock.calls.filter(([, options]) => options.method === 'POST'),
   };
 };
+
+it('reconciles only live Locations and never boots project or indexed directories', async () => {
+  vi.useFakeTimers();
+  const fetchImpl = vi.fn(async (url) => {
+    if (url.pathname === '/api/debug/location') return Response.json([{ directory: '/live' }]);
+    if (url.pathname === '/api/form') return Response.json({ data: [] });
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  });
+  const runtime = createQuestionAutoDelegateRuntime({
+    globalEventHub: { subscribeEvent: () => () => {} },
+    buildOpenCodeUrl: (path) => `http://opencode.test/api${path}`,
+    getOpenCodeAuthHeaders: () => ({}),
+    readSettingsFromDiskMigrated: async () => ({ projects: [{ path: '/project' }, { path: '/other' }] }),
+    fetchImpl,
+    pauseStore: createQuestionPauseStore(pauseDirectory),
+  });
+  runtimes.push(runtime);
+  runtime.start();
+  await vi.advanceTimersByTimeAsync(0);
+  const scoped = fetchImpl.mock.calls
+    .map(([url]) => url.searchParams.get('location[directory]'))
+    .filter(Boolean);
+  expect(scoped).toEqual(['/live']);
+});
 
 it('auto-delegates a native question form after exactly 30 seconds without a UI', async () => {
   const { emit, posts, runtime } = await setup();

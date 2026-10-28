@@ -181,8 +181,8 @@ export interface QuestionAutoDelegateIO {
     body: unknown,
     sessionID: string,
   ): Promise<QuestionAutoDelegateUpstreamResult>;
-  /** Project directories used for reconnect/start reconcile. */
-  listDirectories(): Promise<string[]>;
+  /** Live upstream Location directories for reconnect/start reconcile; null when unreadable. */
+  listDirectories(): Promise<string[] | null>;
   /**
    * Persist-backed enabled flag.
    * - `true` / `false` when readable (absent key ⇒ default true)

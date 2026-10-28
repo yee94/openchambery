@@ -98,7 +98,11 @@ form IO and core, restoring `/api` for origin-only upstream URLs.
 
 ## Reconcile
 
-- Inventory = projects + session-index directories + observed request/event dirs.
+- Inventory = live upstream Locations (`GET /api/debug/location`) + observed request/event dirs.
+  Forms live in Location memory, so other directories cannot hold pending forms;
+  a scoped `form.list` there would boot a Location that upstream never evicts.
+  Never enumerate settings projects or session-index directories. An unreadable
+  live set is an inventory failure, not an empty catalog.
 - Track `successfulDirectories`; only those may settle missing requests.
 - Unscoped list discovers unknowns only; never means “all directories empty”.
 - Unscoped / directory-less pending triggers `ensureSessionLineage(sessionID, hint, requestID)`

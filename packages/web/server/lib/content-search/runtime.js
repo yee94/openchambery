@@ -5,7 +5,7 @@ import { normalizeSessionEventType } from '../session-metadata/session-projectio
 const RETENTION = 30 * 24 * 60 * 60 * 1000;
 const nextCursor = (page) => typeof page?.cursor?.next === 'string' ? page.cursor.next : null;
 
-export function createContentSearchRuntime({ service, getRuntimeKey, listSessions, getSession, listMessages, now = Date.now }) {
+export function createContentSearchRuntime({ service, getRuntimeKey, getEventRuntimeKey = getRuntimeKey, listSessions, getSession, listMessages, now = Date.now }) {
   let stopped = false;
   let flight;
   let timer;
@@ -37,7 +37,7 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
       for (const id of revisions.keys()) dirty.add(id);
       const pendingDirty = new Set(dirty);
       const initialized = service.coverage(runtime).indexCompletedAt !== null;
-      const scanCatalog = !incremental || !initialized;
+      const scanCatalog = !incremental || !initialized || service.needsEventIdentityRepair(runtime);
       const sessions = [];
       const ids = new Set();
       let cursor;
@@ -148,7 +148,7 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
     timer = setTimeout(async () => {
       timer = undefined;
       await sync({ incremental: true });
-      if (service.coverage(getRuntimeKey()).indexCompletedAt === null || service.pending(getRuntimeKey()).length) schedule(30_000);
+      if (service.coverage(getRuntimeKey()).indexCompletedAt === null || service.needsEventIdentityRepair(getRuntimeKey()) || service.pending(getRuntimeKey()).length) schedule(30_000);
     }, delay);
     timer.unref?.();
   };
@@ -156,7 +156,7 @@ export function createContentSearchRuntime({ service, getRuntimeKey, listSession
     sync, status,
     start() { schedule(0); },
     observe(event) {
-      if (event.runtimeIdentity?.runtimeKey && event.runtimeIdentity.runtimeKey !== getRuntimeKey()) return;
+      if (event.runtimeIdentity?.runtimeKey && event.runtimeIdentity.runtimeKey !== getEventRuntimeKey()) return;
       if (state.runtime !== getRuntimeKey()) schedule(0);
       const payload = event.payload?.payload ?? event.payload;
       const type = normalizeSessionEventType(payload?.type ?? '');
