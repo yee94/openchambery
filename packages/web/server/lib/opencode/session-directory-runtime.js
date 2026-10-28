@@ -79,8 +79,8 @@ export const createSessionDirectoryRuntime = ({
     return typeof data.id === 'string' ? { ...event, [field]: projectSession(data) } : event;
   };
 
-  // v2 directory filters are lexical SQL equality. Query the owning project
-  // instead, then retain only the same physical directory (not other worktrees).
+  // v2 directory filters are lexical SQL equality. Read session pages without
+  // booting a Location, then retain only the same physical directory.
   // This also finds old aliases absent from Yuri's bounded index.
   const fetchSessionList = async (input, init) => {
     const url = new URL(input);
@@ -89,17 +89,6 @@ export const createSessionDirectoryRuntime = ({
     const target = requested && localPath(requested);
     if (!target || url.searchParams.has('project')) {
       return fetchFn(input, init);
-    }
-    if (!url.searchParams.has('cursor')) {
-      const locationUrl = new URL(url);
-      locationUrl.pathname = locationUrl.pathname.replace(/\/session\/?$/, '/location');
-      locationUrl.search = '';
-      locationUrl.searchParams.set('location[directory]', target);
-      const response = await fetchFn(locationUrl, init);
-      if (!response.ok) return response;
-      const location = await response.json();
-      if (typeof location?.project?.id !== 'string') throw new Error('Invalid OpenCode location payload');
-      url.searchParams.set('project', location.project.id);
     }
     url.searchParams.delete('directory');
     init?.signal?.throwIfAborted();

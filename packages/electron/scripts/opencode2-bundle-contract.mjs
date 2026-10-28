@@ -1,11 +1,10 @@
 import {
-  PINNED_OPENCODE2_VERSION,
   npmPackageForOpenCode2,
   openCode2BinaryName,
   parseOpenCode2VersionOutput,
 } from '../../web/server/lib/opencode/opencode2-pin.js';
 
-export { PINNED_OPENCODE2_VERSION, npmPackageForOpenCode2, parseOpenCode2VersionOutput };
+export { npmPackageForOpenCode2, parseOpenCode2VersionOutput };
 
 export const BUNDLED_OPENCODE2_DIR = 'opencode-cli';
 

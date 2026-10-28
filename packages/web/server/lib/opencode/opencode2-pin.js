@@ -1,5 +1,4 @@
-// Pinned desktop/runtime opencode2. Upgrade and prepare must not fall back to 1.18.x.
-export const PINNED_OPENCODE2_VERSION = '2.0.23';
+// Runtime compatibility floor, independent of the latest stable installation target.
 export const MINIMUM_OPENCODE2_VERSION = '2.0.20';
 
 // Global npm/bun package that installs the opencode v2 binary (not 1.x opencode-ai).
@@ -66,7 +65,7 @@ export function resolveOpenCode2UpgradeTarget(target) {
     rejectOpenCode1xUpgradeTarget(trimmed);
     return trimmed;
   }
-  return PINNED_OPENCODE2_VERSION;
+  throw new Error('Resolve a stable OpenCode 2.x version before upgrading');
 }
 
 /**
@@ -134,7 +133,7 @@ export function compareOpenCode2Versions(left, right) {
   return 0;
 }
 
-export function isOpenCode2VersionAtLeast(version, minimum = PINNED_OPENCODE2_VERSION) {
+export function isOpenCode2VersionAtLeast(version, minimum = MINIMUM_OPENCODE2_VERSION) {
   if (!isAcceptableOpenCode2HealthVersion(version)) return false;
   return compareOpenCode2Versions(version, minimum) >= 0;
 }

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createOpenCodeUpdateDiscovery } from './update-discovery.js';
 import { configureOpenCodeTerminalPath } from './terminal-path.js';
 import {
-  PINNED_OPENCODE2_VERSION,
+  MINIMUM_OPENCODE2_VERSION,
   compareOpenCode2Versions,
   isAcceptableOpenCode2HealthVersion,
   isOpenCode2VersionAtLeast,
@@ -54,7 +54,7 @@ export function resolveYuriDataDir(env = process.env, homedir = os.homedir) {
   return path.join(home, '.config', 'yuri');
 }
 
-export function installedOpenCode2BinaryPath(version = PINNED_OPENCODE2_VERSION, options = {}) {
+export function installedOpenCode2BinaryPath(version = MINIMUM_OPENCODE2_VERSION, options = {}) {
   const dataDir = options.dataDir || resolveYuriDataDir(options.env, options.homedir);
   return path.join(dataDir, 'opencode-cli', version, openCodeBinaryName(options.platform));
 }
@@ -160,7 +160,10 @@ const findBinary = (root, binaryName) => {
 };
 
 export async function installPinnedOpenCode2Cli(options = {}) {
-  const version = options.version || PINNED_OPENCODE2_VERSION;
+  const version = options.version || await discoverLatestVersion();
+  if (!/^2\.\d+\.\d+$/.test(version) || (!options.version && !isOpenCode2VersionAtLeast(version))) {
+    throw new Error(`Invalid stable OpenCode installation target: ${version}`);
+  }
   const platform = options.platform || process.platform;
   const arch = options.arch || process.arch;
   const dataDir = options.dataDir || resolveYuriDataDir(options.env, options.homedir);
@@ -239,10 +242,10 @@ export async function installPinnedOpenCode2Cli(options = {}) {
 
 /**
  * Reuse any discovered acceptable 2.x CLI. Fresh installs resolve stable 2.x;
- * an explicit pin or an unavailable registry uses the tested version instead.
+ * registry failures remain errors when no usable local installation exists.
  */
 export async function ensurePinnedOpenCode2Cli(input = {}) {
-  const pin = input.pin || PINNED_OPENCODE2_VERSION;
+  const pin = input.pin || MINIMUM_OPENCODE2_VERSION;
   const discoveredPath = typeof input.discoveredPath === 'string' ? input.discoveredPath.trim() : '';
   const autoInstall = input.autoInstall ?? isOpenCode2AutoInstallEnabled(input.env);
   const readVersion = typeof input.readVersion === 'function'
@@ -276,20 +279,15 @@ export async function ensurePinnedOpenCode2Cli(input = {}) {
 
   if (!autoInstall) {
     const error = new Error(
-      `Unable to locate opencode ${pin}. Set OPENCODE_BINARY or install @opencode/cli@${pin}.`,
+      'Unable to locate OpenCode 2. Set OPENCODE_BINARY or install @opencode/cli@2.',
     );
     error.code = 'OPENCODE_CLI_MISSING';
     throw error;
   }
 
-  let target = pin;
-  if (!input.pin) {
-    try {
-      const latest = await (input.resolveLatestVersion || discoverLatestVersion)();
-      if (/^2\.\d+\.\d+$/.test(latest) && isOpenCode2VersionAtLeast(latest, pin)) target = latest;
-    } catch {
-      console.warn('[OpenCode] Latest version lookup failed; using the tested fallback version.');
-    }
+  const target = input.pin || await (input.resolveLatestVersion || discoverLatestVersion)();
+  if (!/^2\.\d+\.\d+$/.test(target) || !isOpenCode2VersionAtLeast(target)) {
+    throw new Error(`Invalid stable OpenCode installation target: ${target}`);
   }
   const installedPath = await install({ ...input, version: target });
   const version = readVersion(installedPath);

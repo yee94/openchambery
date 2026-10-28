@@ -13,7 +13,6 @@
  */
 
 import {
-  PINNED_OPENCODE2_VERSION,
   MINIMUM_OPENCODE2_VERSION,
   compareOpenCode2Versions,
   isAcceptableOpenCode2HealthVersion,
@@ -239,7 +238,7 @@ export function evaluateRuntimeContract(input = {}) {
     versionMismatch,
     minVerifiedVersion: RUNTIME_CONTRACT_MIN_VERIFIED,
     maxVerifiedVersion: null,
-    pinnedVersion: PINNED_OPENCODE2_VERSION,
+    pinnedVersion: null,
     capabilities,
     reasons,
   };
@@ -358,7 +357,7 @@ export function shouldBlockRuntimeContractExecution(method, pathWithQuery, contr
 export function formatRuntimeContractBlockedError(contract) {
   const serve = contract?.serveVersion ?? null;
   const min = contract?.minVerifiedVersion ?? RUNTIME_CONTRACT_MIN_VERIFIED;
-  const pinned = contract?.pinnedVersion ?? PINNED_OPENCODE2_VERSION;
+  const pinned = 'latest stable 2.x';
   const reasons = Array.isArray(contract?.reasons) ? contract.reasons : [];
 
   if (reasons.includes('below-min-verified')) {
@@ -396,7 +395,7 @@ export function runtimeContractExecutionBlockedBody(contract) {
     serveVersion: contract?.serveVersion ?? null,
     minVerifiedVersion: contract?.minVerifiedVersion ?? null,
     maxVerifiedVersion: contract?.maxVerifiedVersion ?? null,
-    pinnedVersion: contract?.pinnedVersion ?? PINNED_OPENCODE2_VERSION,
+    pinnedVersion: null,
     contract: contract ?? null,
   };
 }

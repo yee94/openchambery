@@ -79,6 +79,8 @@ describe('session index routes', () => {
     expect(res.statusCode).toBe(202);
     expect(enqueue).toHaveBeenCalledWith(['/repo/a', '/repo/b']);
     expect(res.body).toMatchObject({ revision: 1, sync: { active: true } });
+    route('POST', '/api/yuri/session-index/sync')({ body: { startup: true, directories: ['/ignored'] } }, res);
+    expect(enqueue).toHaveBeenLastCalledWith([], { startup: true });
   });
 
   it('does not register a long-poll changes route', () => {

@@ -56,6 +56,10 @@ describe('owned runtime upgrade (ticket 12)', () => {
   });
 
   it('upgrade-status exposes manage rights and manual guidance', () => {
+    expect(buildUpgradeStatusSnapshot({
+      ownership: classifyRuntimeOwnership({ binarySource: 'installed', binaryPath: ownedBinary, dataDir }),
+      serveVersion: '2.2.0',
+    })).toMatchObject({ available: null, targetVersion: null });
     const globalStatus = buildUpgradeStatusSnapshot({
       ownership: classifyRuntimeOwnership({ isExternal: false, binarySource: 'path' }),
       serveVersion: '2.0.12',

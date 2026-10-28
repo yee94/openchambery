@@ -3,18 +3,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  PINNED_OPENCODE2_VERSION,
   bundledOpenCode2BinaryName,
   parseOpenCode2VersionOutput,
 } from './opencode2-bundle-contract.mjs';
+import { isOpenCode2VersionAtLeast } from '../../web/server/lib/opencode/opencode2-pin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
 
 const readExpectedVersion = () => {
-  const version = process.env.YURI_OPENCODE2_VERSION || PINNED_OPENCODE2_VERSION;
-  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-    throw new Error(`Expected pinned opencode2 to be an exact version, got: ${version || '(missing)'}`);
+  const version = process.env.YURI_OPENCODE2_VERSION || process.env.YURI_OPENCODE_CLI_VERSION
+    || runVersion(path.join(electronRoot, 'resources', 'opencode-cli', binaryName()));
+  if (!/^2\.\d+\.\d+$/.test(version) || !isOpenCode2VersionAtLeast(version)) {
+    throw new Error(`Expected a compatible stable OpenCode 2.x release, got: ${version || '(missing)'}`);
   }
   return version;
 };

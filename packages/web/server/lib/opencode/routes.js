@@ -285,6 +285,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     isSharedService: () => getIsSharedOpenCodeService() === true,
     install: (options) => installPinnedOpenCode2Cli({ ...options, dataDir: resolveDataDir() }),
     upgradeCli: upgradeOpenCodeCli,
+    resolveLatestVersion: discoverOpenCodeUpdate,
     readBinaryVersion: readOpenCode2BinaryVersion,
   });
 
@@ -343,7 +344,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       if (isOpenCode1xVersion(rawTarget)) {
         return res.status(400).json({
           success: false,
-          error: 'OpenCode upgrade refuses 1.x targets. Only pinned opencode2 is allowed.',
+          error: 'OpenCode upgrade refuses 1.x targets. Only OpenCode 2.x is allowed.',
           errorCode: 'OPENCODE_UPGRADE_1X_REFUSED',
         });
       }

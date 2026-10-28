@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { normalizeTargetArchitecture } from './target-architecture.mjs';
-import { PINNED_OPENCODE2_VERSION, bundledOpenCode2BinaryName, parseOpenCode2VersionOutput } from './opencode2-bundle-contract.mjs';
+import { bundledOpenCode2BinaryName, parseOpenCode2VersionOutput } from './opencode2-bundle-contract.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -146,7 +146,8 @@ const main = () => {
     const result = verifyExtractedPayload({
       root: extractAppImage(appImagePath, temporaryDirectory),
       targetArchitecture: target,
-      expectedOpenCodeVersion: PINNED_OPENCODE2_VERSION,
+      expectedOpenCodeVersion: process.env.YURI_OPENCODE2_VERSION || process.env.YURI_OPENCODE_CLI_VERSION
+        || defaultCliVersion(path.join(electronRoot, 'resources', 'opencode-cli', bundledOpenCode2BinaryName('linux'))),
     });
     console.log(`[electron] verified Linux ${target} AppImage: ${appImagePath}`);
     console.log(`[electron] verified OpenCode CLI ${result.openCodeVersion} and ${result.nativeModuleCount} native modules`);

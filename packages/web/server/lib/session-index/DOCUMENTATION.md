@@ -8,15 +8,15 @@ with an empty result. Remote upstreams never use the Host filesystem as evidence
 permission and I/O errors are not deletion. Checks are not negatively cached, so
 a recreated directory participates in the next requested sync.
 
-Once at startup, the sync runtime checks empty, exhausted indexed
-directories. It removes only directory shells with no summary rows, no child rows,
+Startup does not probe indexed directories. An explicitly requested directory
+refresh removes only missing directory shells with no summary rows, no child rows,
 and no more pages, using one conditional SQLite deletion. Session history and pins
 are preserved. This maintenance does not touch code files or upstream projects.
 Runtime switches and shutdown discard pending checks; successful cleanup publishes
 a revision tip. Snapshot GETs do not perform filesystem scans. Old project paths
 may still be submitted by clients, but pre-scan checks prevent recreating empty
 shells for missing paths. App or external worktree deletion is picked up by the
-next requested sync or startup pass; there is no periodic filesystem polling.
+next requested sync; there is no startup or periodic filesystem polling.
 
 ## Physical directory identity
 
@@ -33,8 +33,8 @@ child membership follows the directory, and the merged head stays bounded to 20.
 Reconciliation failure rolls back the entire index conversion. Rechecking on reads
 also recovers paths unavailable during startup.
 
-Directory lists resolve the upstream location/project, fetch project-scoped pages
-and retain only records whose physical directory matches the requested directory.
+Explicit directory lists fetch session pages without initializing an upstream
+Location and retain only records whose physical directory matches the request.
 This discovers old aliases outside the index without admitting sibling worktrees.
 Opaque next/previous cursors stay upstream-owned; filtered short/empty pages with
 a continuation are partial, not exhausted. The existing five-page sync budget and
@@ -121,9 +121,19 @@ Repeated session summary events whose bounded root summary or child membership
 is unchanged leave directory recency and the public revision unchanged. Root
 events that remain outside the newest-20 bound follow the same no-op path.
 
-`sync-runtime.js` owns cold-start synchronization. The renderer submits all
-known project directories once to `POST /api/yuri/session-index/sync`.
-The runtime processes them sequentially. OpenCode 2.x list is cursor-only (no
+`sync-runtime.js` owns cold-start synchronization. The renderer sends
+`{ startup: true }` to `POST /api/yuri/session-index/sync`, without project paths.
+The Host backfills sessions updated within the last 30 days using a single global
+descending session-list cursor, stopping at the time boundary. It never requests
+Location/config/plugin APIs or probes project paths. Each page and its cursor are
+committed atomically in SQLite under the runtime key; empty success also records
+completion. Subsequent launches perform no upstream history reads after completion.
+Failure/shutdown preserves the last committed cursor for retry. Existing summaries
+win over backfill, and normal create/update/archive/delete events maintain the index.
+Existing databases without this marker receive one bounded backfill without being
+cleared. Manual directory refresh remains a separate explicit operation.
+
+The runtime processes explicit directory refreshes sequentially. OpenCode 2.x list is cursor-only (no
 `start` incremental); each directory fetches active-only pages (`limit=20`)
 after optional Host `projectSessions` overlay. Consecutive archived rows may
 consume further pages within a small page budget so the newest-20 **active**

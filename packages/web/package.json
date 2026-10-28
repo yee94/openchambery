@@ -1,6 +1,6 @@
 {
   "name": "@yuriai/web",
-  "version": "0.2.0-beta.1",
+  "version": "0.2.0-beta.2",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -26,8 +26,8 @@
     "@clack/prompts": "^1.1.0",
     "@earendil-works/pi-agent-core": "0.84.4",
     "@octokit/rest": "^22.0.1",
-    "@opencode/client": "2.0.23",
-    "@opencode/schema": "2.0.23",
+    "@opencode/client": "^2.0.23",
+    "@opencode/schema": "^2.0.23",
     "@simplewebauthn/server": "13.3.1",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.10.0",

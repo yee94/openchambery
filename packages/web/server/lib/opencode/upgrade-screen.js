@@ -8,13 +8,15 @@
  */
 
 import {
-  PINNED_OPENCODE2_VERSION,
   MINIMUM_OPENCODE2_VERSION,
   isAcceptableOpenCode2HealthVersion,
   isOpenCode1xVersion,
   isOpenCode2VersionAtLeast,
   npmPackageForOpenCode2,
 } from './opencode2-pin.js';
+import { createOpenCodeUpdateDiscovery } from './update-discovery.js';
+
+const discoverLatestVersion = createOpenCodeUpdateDiscovery();
 
 /** Oldest OpenCode this Yuri build will enter a session against. */
 export const REQUIRED_OPENCODE_VERSION = MINIMUM_OPENCODE2_VERSION;
@@ -26,11 +28,10 @@ const normalizeVersion = (value) => {
 };
 
 /**
- * Install target is the pin when the pin already satisfies the screen, otherwise
- * the screen minimum. A pin still at 2.0.12 must not be what this screen installs.
+ * Describe the minimum until an installation resolves its remote stable target.
  * @param {string} [pin]
  */
-export function resolveUpgradeScreenTarget(pin = PINNED_OPENCODE2_VERSION) {
+export function resolveUpgradeScreenTarget(pin = REQUIRED_OPENCODE_VERSION) {
   if (isOpenCode2VersionAtLeast(pin, REQUIRED_OPENCODE_VERSION)) return pin;
   return REQUIRED_OPENCODE_VERSION;
 }
@@ -181,7 +182,10 @@ export async function installRequiredOpenCode(deps) {
       409,
     );
   }
-  const target = status.targetVersion;
+  const target = await (deps.resolveLatestVersion || discoverLatestVersion)();
+  if (!/^2\.\d+\.\d+$/.test(target) || !isUpgradeScreenSatisfied(target)) {
+    throw failure('No compatible stable OpenCode release was found.', 'UPGRADE_TARGET_INVALID');
+  }
   const previousBinary = typeof deps.getResolvedBinary === 'function' ? deps.getResolvedBinary() : null;
   const previousSource = typeof deps.getResolvedBinarySource === 'function' ? deps.getResolvedBinarySource() : null;
   const ownership = typeof deps.resolveOwnership === 'function' ? await deps.resolveOwnership() : null;

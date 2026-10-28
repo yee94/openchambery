@@ -365,7 +365,7 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
       getIsExternalOpenCode: () => true,
       getIsSharedOpenCodeService: () => true,
       getActiveSessionCount: () => 1,
-      discoverOpenCodeUpdate: async () => ({ version: '2.0.23' }),
+      discoverOpenCodeUpdate: async () => '2.0.23',
       upgradeOpenCodeCli,
       forceResolvedOpenCodeBinary: vi.fn(),
       restartOpenCode,

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PINNED_OPENCODE2_VERSION } from './opencode2-pin.js';
+const PINNED_OPENCODE2_VERSION = '2.0.23';
 import { configureOpenCodeTerminalPath } from './terminal-path.js';
 import {
   ensurePinnedOpenCode2Cli,
@@ -45,11 +45,11 @@ describe('ensurePinnedOpenCode2Cli', () => {
 
   it.each(['1.18.4', '3.0.0', '2.9.1-beta.1', '2.0.1'])('never chooses an unsuitable fresh-install target %s', async (latest) => {
     const install = vi.fn(async () => '/installed/opencode');
-    await ensurePinnedOpenCode2Cli({ dataDir: createTempDir('yuri-invalid-cli-'), install,
+    await expect(ensurePinnedOpenCode2Cli({ dataDir: createTempDir('yuri-invalid-cli-'), install,
       resolveLatestVersion: async () => latest,
       readVersion: (file) => file === '/installed/opencode' ? PINNED_OPENCODE2_VERSION : '',
-    });
-    expect(install).toHaveBeenCalledWith(expect.objectContaining({ version: PINNED_OPENCODE2_VERSION }));
+    })).rejects.toThrow('Invalid stable OpenCode installation target');
+    expect(install).not.toHaveBeenCalled();
   });
 
   it('reuses the newest verified cache offline instead of reinstalling the pin', async () => {
@@ -67,14 +67,14 @@ describe('ensurePinnedOpenCode2Cli', () => {
     expect(resolveLatestVersion).not.toHaveBeenCalled();
   });
 
-  it('uses the tested pin when the registry is unavailable', async () => {
+  it('reports registry failure without installing an obsolete fallback', async () => {
     const dataDir = createTempDir('yuri-offline-cli-');
     const install = vi.fn(async () => '/installed/opencode');
-    await ensurePinnedOpenCode2Cli({ dataDir, install,
+    await expect(ensurePinnedOpenCode2Cli({ dataDir, install,
       resolveLatestVersion: async () => { throw new Error('offline'); },
       readVersion: (file) => file === '/installed/opencode' ? PINNED_OPENCODE2_VERSION : '',
-    });
-    expect(install).toHaveBeenCalledWith(expect.objectContaining({ version: PINNED_OPENCODE2_VERSION }));
+    })).rejects.toThrow('offline');
+    expect(install).not.toHaveBeenCalled();
   });
 
   it('runs upgrade through the selected launch target and preserves its CLI entry path', async () => {

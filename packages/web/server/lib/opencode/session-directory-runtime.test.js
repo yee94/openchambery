@@ -24,6 +24,71 @@ const session = (id, directory, updated = 1) => ({ id, title: id, location: { di
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 
 describe('physical session directory identity', () => {
+  it('backfills only 30 days once per runtime, resumes failed pages, and never boots locations', async () => {
+    const { real } = fixture();
+    const dbPath = path.join(real, 'index.sqlite');
+    const now = 100 * 24 * 60 * 60 * 1000;
+    let fail = true;
+    let runtimeKey = 'http://localhost:4000';
+    const requests = [];
+    const fetchFn = vi.fn(async (input) => {
+      const url = new URL(input);
+      requests.push(url);
+      expect(url.pathname).toBe('/api/session');
+      expect(url.searchParams.has('directory')).toBe(false);
+      expect(url.searchParams.has('location[directory]')).toBe(false);
+      if (!url.searchParams.has('cursor')) return json({ data: [session('recent', real, now)], cursor: { next: 'second' } });
+      if (fail) return json({}, 503);
+      return json({ data: [session('older', real, now - 31 * 24 * 60 * 60 * 1000)], cursor: { next: 'never-read' } });
+    });
+    const open = () => {
+      const service = createSessionIndexService({ dbPath, getRuntimeConfig: () => ({ apiBaseUrl: runtimeKey }) });
+      const sync = createSessionIndexSyncRuntime({ sessionIndexService: service, now: () => now,
+        buildOpenCodeUrl: (route) => `http://localhost/api${route}`, getOpenCodeAuthHeaders: () => ({}), fetchFn });
+      return { service, sync };
+    };
+    let { service, sync } = open();
+    try {
+      sync.enqueue(Array.from({ length: 31 }, (_, i) => `/unused/${i}`), { startup: true });
+      sync.enqueue([], { startup: true });
+      await vi.waitFor(() => expect(sync.snapshot().sync.active).toBe(false));
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+      expect(service.getHistoryBackfill()).toMatchObject({ cursor: 'second', complete: false });
+      expect(service.findBySessionId('recent')).toBeTruthy();
+      sync.stop(); service.close();
+      ({ service, sync } = open());
+      fail = false;
+      sync.enqueue([], { startup: true });
+      await vi.waitFor(() => expect(sync.snapshot().sync.active).toBe(false));
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+      expect(requests[2].searchParams.get('cursor')).toBe('second');
+      expect(service.getHistoryBackfill().complete).toBe(true);
+      expect(service.findBySessionId('older')).toBeNull();
+      sync.stop(); service.close();
+      ({ service, sync } = open());
+      sync.enqueue([], { startup: true });
+      expect(sync.snapshot().sync.active).toBe(false);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+      runtimeKey = 'https://other.example';
+      expect(service.getHistoryBackfill()).toBeNull();
+    } finally { sync.stop(); service.close(); }
+  });
+
+  it('records an empty backfill as complete and preserves spaces in session directories', async () => {
+    const service = createSessionIndexService({ dbPath: ':memory:' });
+    const fetchFn = vi.fn(async () => json({ data: [], cursor: {} }));
+    const sync = createSessionIndexSyncRuntime({ sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://localhost/api${route}`, getOpenCodeAuthHeaders: () => ({}), fetchFn });
+    try {
+      sync.enqueue([], { startup: true });
+      await vi.waitFor(() => expect(sync.snapshot().sync.active).toBe(false));
+      sync.enqueue([], { startup: true });
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      service.upsert(session('spaces', '/home/example/Library/Mobile Documents/project', Date.now()));
+      expect(service.findBySessionId('spaces').directory).toBe('/home/example/Library/Mobile Documents/project');
+    } finally { sync.stop(); service.close(); }
+  });
+
   it('checks deletion only on the owning local runtime and preserves uncertain failures', async () => {
     let url = 'http://127.0.0.1:4000';
     const stat = vi.fn(async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); });
@@ -67,6 +132,7 @@ describe('physical session directory identity', () => {
       fetchFn,
     });
     try {
+      runtime.enqueue([missing]);
       await vi.waitFor(() => expect(service.snapshot().directories.map(x => x.directory)).not.toContain(missing));
       expect(service.snapshot().directories.map(x => x.directory)).toEqual(expect.arrayContaining([real, history, partial, child]));
       runtime.enqueue([missing, history, partial, child]);
@@ -95,10 +161,10 @@ describe('physical session directory identity', () => {
       requests.push(url);
       expect(init.signal).toBe(controller.signal);
       expect(init.headers).toEqual({ Authorization: 'test-only' });
-      if (url.pathname === '/api/location') return json({ project: { id: 'project-repo' } });
+      expect(url.pathname).toBe('/api/session');
       expect(url.searchParams.has('directory')).toBe(false);
       if (!url.searchParams.has('cursor')) {
-        expect(url.searchParams.get('project')).toBe('project-repo');
+        expect(url.searchParams.has('project')).toBe(false);
         return json({ data: [session('other', other, 30)], cursor: { next: 'page-2' } });
       }
       return json({ data: [session('old-alias', alias, 20), session('real', real, 10)], cursor: { next: 'page-3' } });
@@ -117,8 +183,7 @@ describe('physical session directory identity', () => {
     expect(payload.data.map((row) => row.id)).toEqual(['old-alias', 'real']);
     expect(payload.data.every((row) => row.directory === real && row.location.directory === real)).toBe(true);
     expect(payload.cursor.next).toBe('page-3');
-    expect(requests).toHaveLength(3);
-    expect(requests[0].searchParams.get('location[directory]')).toBe(real);
+    expect(requests).toHaveLength(2);
   });
 
   it('uses the same physical directory for cold sync and later native live events', async () => {

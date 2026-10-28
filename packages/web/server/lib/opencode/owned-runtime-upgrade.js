@@ -14,7 +14,6 @@
 
 import path from 'node:path';
 import {
-  PINNED_OPENCODE2_VERSION,
   compareOpenCode2Versions,
   isOpenCode1xVersion,
   resolveOpenCode2UpgradeTarget,
@@ -176,15 +175,9 @@ export function buildUpgradeStatusSnapshot(input) {
   const serveVersion = normalizeRuntimeVersion(input.serveVersion);
   const cliVersion = normalizeRuntimeVersion(input.cliVersion);
   const currentVersion = serveVersion || cliVersion;
-  let targetVersion = null;
-  try {
-    targetVersion = resolveOpenCode2UpgradeTarget(input.targetVersion ?? PINNED_OPENCODE2_VERSION);
-  } catch {
-    targetVersion = PINNED_OPENCODE2_VERSION;
-  }
-  if (isOpenCode1xVersion(targetVersion)) {
-    targetVersion = PINNED_OPENCODE2_VERSION;
-  }
+  const targetVersion = input.targetVersion
+    ? resolveOpenCode2UpgradeTarget(input.targetVersion)
+    : null;
 
   const contract = input.contract || evaluateRuntimeContract({
     serveVersion,
@@ -201,7 +194,7 @@ export function buildUpgradeStatusSnapshot(input) {
     && !isOpenCode1xVersion(currentVersion)
     && compareOpenCode2Versions(targetVersion, currentVersion) > 0,
   );
-  const available = canManage && newerTarget ? true : (canManage ? false : null);
+  const available = canManage && targetVersion ? newerTarget : null;
 
   /** @type {string | null} */
   let reason = ownership.reason;

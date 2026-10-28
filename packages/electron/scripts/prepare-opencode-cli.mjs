@@ -6,11 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { resolveTargetArchitecture } from './target-architecture.mjs';
 import { toGitBashPath } from './git-bash-path.mjs';
 import {
-  PINNED_OPENCODE2_VERSION,
   bundledOpenCode2BinaryName,
   npmPackageForOpenCode2,
   parseOpenCode2VersionOutput,
 } from './opencode2-bundle-contract.mjs';
+import { createOpenCodeUpdateDiscovery } from '../../web/server/lib/opencode/update-discovery.js';
+import { isOpenCode2VersionAtLeast } from '../../web/server/lib/opencode/opencode2-pin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -32,11 +33,11 @@ const run = (command, args, options = {}) => {
   return result;
 };
 
-const readPinnedOpenCode2Version = () => {
-  const version = process.env.YURI_OPENCODE2_VERSION || process.env.YURI_OPENCODE_CLI_VERSION || PINNED_OPENCODE2_VERSION;
+const resolveOpenCode2Version = async () => {
+  const version = process.env.YURI_OPENCODE2_VERSION || process.env.YURI_OPENCODE_CLI_VERSION || await createOpenCodeUpdateDiscovery()();
   const trimmed = typeof version === 'string' ? version.trim() : '';
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(trimmed)) {
-    throw new Error(`opencode2 must be pinned to an exact version for desktop CLI bundling, got: ${trimmed || '(missing)'}`);
+  if (!/^2\.\d+\.\d+$/.test(trimmed) || !isOpenCode2VersionAtLeast(trimmed)) {
+    throw new Error(`Expected a compatible stable OpenCode 2.x release, got: ${trimmed || '(missing)'}`);
   }
   return trimmed;
 };
@@ -159,7 +160,7 @@ const findBinary = (root, binaryName) => {
 };
 
 const main = async () => {
-  const version = readPinnedOpenCode2Version();
+  const version = await resolveOpenCode2Version();
   const targetArchitecture = resolveTargetArchitecture();
   const binaryName = bundledOpenCode2BinaryName(process.platform);
   const outputBinary = outputBinaryPath(binaryName);
