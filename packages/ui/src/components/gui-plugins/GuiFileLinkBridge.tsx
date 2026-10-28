@@ -7,13 +7,16 @@ import { Icon } from '@/components/icon/Icon';
 import { guiPluginReadinessKey } from './readiness';
 import { GuiPluginMount } from './GuiPluginMount';
 import { GuiPreviewLoading } from './GuiPreviewLoading';
+import { MobileWindowActiveContext } from '@/components/ui/mobile-window-active-context';
 
-export function GuiFileLinkBridge({ path, base, active = true, children }: {
+export function GuiFileLinkBridge({ path, base, active: surfaceActive = true, children }: {
   path: string;
   base?: string;
   active?: boolean;
   children?: React.ReactNode | ((view: { preview: React.ReactNode; toggle: React.ReactNode }) => React.ReactNode);
 }) {
+  const windowActive = React.useContext(MobileWindowActiveContext);
+  const active = surfaceActive && windowActive;
   const { host, snapshot, inventory, loading, error, requested, requestLoad, refresh } = useGuiPlugins();
   const { t } = useI18n();
   const anchor = React.useRef<HTMLDivElement>(null);
@@ -76,7 +79,8 @@ export function GuiFileLinkBridge({ path, base, active = true, children }: {
     </Button>
   ) : null;
   const content = preview && host && panel
-    ? <GuiPluginMount host={host} contributionKey={panel.key} kind="panel" revision={JSON.stringify([guiPluginReadinessKey(snapshot.plugins, panel.pluginId), snapshot.sessionKey])} />
+    ? <GuiPluginMount host={host} contributionKey={panel.key} kind="panel" revision={JSON.stringify([guiPluginReadinessKey(snapshot.plugins, panel.pluginId), snapshot.sessionKey])}
+      fallback={<GuiPreviewLoading onViewSource={() => setSourceIdentity(identity)} />} />
     : preparing ? <GuiPreviewLoading onViewSource={() => setSourceIdentity(identity)} /> : null;
 
   return (

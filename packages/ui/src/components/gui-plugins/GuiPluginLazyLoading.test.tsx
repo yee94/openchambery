@@ -6,6 +6,8 @@ import type { FilesAPI } from '@/lib/api/types';
 import { GuiPluginsProvider } from '@/lib/gui-plugins/GuiPluginsProvider';
 import { useGuiPlugins } from '@/lib/gui-plugins/react';
 import { GuiFileLinkBridge } from './GuiFileLinkBridge';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
+import { mobileWindowStack } from '@/components/ui/MobileWindowStack';
 
 const state = vi.hoisted(() => ({
   list: vi.fn(), gui: vi.fn(), toast: vi.fn(),
@@ -61,12 +63,15 @@ let container: HTMLDivElement;
 let client: QueryClient;
 let context: ReturnType<typeof useGuiPlugins>;
 
-function FileFixture() {
+function FileFixture({ sheet = false }: { sheet?: boolean }) {
   context = useGuiPlugins();
   const [open, setOpen] = React.useState(false);
   return <>
     <button onClick={() => setOpen(!open)}>{open ? 'close-file' : 'open-file'}</button>
-    {open && <GuiFileLinkBridge path={path} base="/workspace"><pre data-source>{source}</pre></GuiFileLinkBridge>}
+    {open && (sheet ? <MobileResizableSheet id="gui-mobile-file" open onOpenChange={setOpen}
+      title="File preview" ariaLabel="File preview" closeAriaLabel="Close" resizeAriaLabel="Resize" initiallyExpanded>
+      <GuiFileLinkBridge path={path} base="/workspace"><pre data-source>{source}</pre></GuiFileLinkBridge>
+    </MobileResizableSheet> : <GuiFileLinkBridge path={path} base="/workspace"><pre data-source>{source}</pre></GuiFileLinkBridge>)}
   </>;
 }
 
@@ -86,8 +91,8 @@ async function until(assertion: () => void) {
   }
 }
 
-async function start() {
-  await act(async () => root.render(<QueryClientProvider client={client}><GuiPluginsProvider><FileFixture /></GuiPluginsProvider></QueryClientProvider>));
+async function start(sheet = false) {
+  await act(async () => root.render(<QueryClientProvider client={client}><GuiPluginsProvider><FileFixture sheet={sheet} /></GuiPluginsProvider></QueryClientProvider>));
   await until(() => {
     expect(context.inventory).toEqual([{ id: 'preview', enabled: true }]);
     expect(context.loading).toBe(false);
@@ -136,6 +141,45 @@ afterEach(async () => {
   await act(async () => root.unmount());
   client.clear();
   container.remove();
+  vi.restoreAllMocks();
+});
+
+it('opens a ready plugin preview when the real mobile sheet becomes the active window', async () => {
+  const matchMedia = window.matchMedia.bind(window);
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+    const result = matchMedia(query);
+    if (query === '(prefers-reduced-motion: reduce)') Object.defineProperty(result, 'matches', { value: true });
+    return result;
+  });
+  state.gui.mockResolvedValue({ data: bundle });
+  await start(true);
+  await act(async () => context.requestLoad());
+  await until(() => expect(context.snapshot.plugins).toMatchObject([{ id: 'preview', status: 'active' }]));
+  await click('open-file');
+  await until(() => {
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog!.hasAttribute('inert')).toBe(false);
+    expect(dialog!.querySelector('[data-preview]')?.textContent).toBe(source);
+  });
+  expect(context.host!.filePanel(path)).toMatchObject({ inline: true, file: path });
+  expect(state.gui).toHaveBeenCalledOnce();
+  let uncover!: () => void;
+  await act(async () => { uncover = mobileWindowStack.add({ id: 'cover-file', onClose() {} }); });
+  expect(document.querySelector('[data-gui-file-view] [data-preview]')).toBeNull();
+  expect(context.snapshot.panels.filter((panel) => panel.active)).toEqual([]);
+  await act(async () => uncover());
+  await until(() => expect(document.querySelector('[data-gui-file-view] [data-preview]')?.textContent).toBe(source));
+  const toggle = document.querySelector<HTMLButtonElement>('[aria-label="filesView.editor.switchToEditMode"]')!;
+  await act(async () => toggle.click());
+  await act(async () => { uncover = mobileWindowStack.add({ id: 'cover-file', onClose() {} }); });
+  await act(async () => uncover());
+  expect(document.querySelector('[data-gui-file-view] [data-source]')?.textContent).toBe(source);
+  expect(document.querySelector('[data-gui-file-view] [data-preview]')).toBeNull();
+  await click('close-file');
+  await click('open-file');
+  await until(() => expect(document.querySelector('[data-gui-file-view] [data-preview]')?.textContent).toBe(source));
+  expect(state.gui).toHaveBeenCalledOnce();
 });
 
 it('defers the CJS bundle until file opening, presents preview preparation, and reopens without another request', async () => {

@@ -70,7 +70,7 @@ function Activation({ host, id, transport, report }: {
 }
 
 export function GuiPluginsProvider({ children }: { children: React.ReactNode }) {
-  const { files } = useRuntimeAPIs();
+  const { files, viewExport } = useRuntimeAPIs();
   const queryClient = useQueryClient();
   const transport = getRuntimeTransportIdentity();
   const preferenceKey = guiPreferencesKey(getRuntimeKey());
@@ -161,7 +161,7 @@ export function GuiPluginsProvider({ children }: { children: React.ReactNode }) 
     void Promise.all([import('./host'), import('@/lib/opencode/gui'), import('@/components/chat/fileReferenceActions')]).then(([{ GuiPluginHost }, { createGuiClient }, { openFileReference }]) => {
       if (controller.signal.aborted) return;
       loaded = new GuiPluginHost({
-        client: createGuiClient(controller.signal), files, queryClient, transport,
+        client: createGuiClient(controller.signal), files, queryClient, transport, viewExport,
         storage: window.localStorage, ...environment.current,
         focusFile: async (path, directory) => {
           if (!controller.signal.aborted) await openFileReference(path, false, { effectiveDirectory: directory });
@@ -175,7 +175,7 @@ export function GuiPluginsProvider({ children }: { children: React.ReactNode }) 
       setResource((current) => current?.host === loaded ? null : current);
       setBundles((current) => current?.host === loaded ? null : current);
     };
-  }, [wantsHost, files, queryClient, transport, hostAttempt]);
+  }, [wantsHost, files, queryClient, transport, hostAttempt, viewExport]);
 
   React.useLayoutEffect(() => {
     host?.setSession(sessionID && directory ? { id: sessionID, directory } : undefined);

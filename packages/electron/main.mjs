@@ -57,6 +57,7 @@ import { createImageDiskCache } from './image-disk-cache.mjs';
 import { createPreviewLoopbackGateway } from './preview-loopback-gateway.mjs';
 import { createGuiPluginMainHost } from './gui-plugin-host.mjs';
 import { isGuiPluginUiUrl } from './gui-plugin-origin.mjs';
+import { createViewExportHost, isViewExportSender } from './view-export.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -1711,6 +1712,7 @@ const shutdownInProcessServer = () => {
 
   state.shutdownPromise = (async () => {
     try {
+      await viewExportHost.dispose();
       await guiPluginHost.dispose();
       if (handle) {
         await handle.stop({ exitProcess: false, forceCloseConnections: true });
@@ -2033,7 +2035,7 @@ const emitToWindow = (browserWindow, event, detail) => {
   browserWindow.webContents.send('yuri:emit', { event, detail });
 };
 
-// Single-main-window semantics: app-level events (deep links,
+// Single-main-window semantics: app-level events (host deep links,
 // updater progress, SSH status, …) go to the main window only.
 // Additional windows may be attached to a different host instance — routing a
 // session/project open to every window would replay it against the wrong
@@ -2388,8 +2390,49 @@ const confirmConnectDeepLink = async (payload) => {
   }
 };
 
+const isLocalWorkspaceDeepLink = (link) =>
+  Boolean(link?.raw) && ['session', 'new-session', 'new', 'project', 'open-project'].includes(link.type);
+
+const resolveLocalDeepLinkWindow = () => {
+  const existing = BrowserWindow.getAllWindows().find((window) =>
+    !window.isDestroyed() && window.__yuriLabel && window.__yuriMiniChat !== true
+    && !window.__yuriRuntimeConfig?.relayHostId
+    && sameOrigin(window.__yuriRuntimeConfig?.apiBaseUrl, state.sidecarUrl));
+  if (existing) return existing;
+  const url = shouldUsePackagedUi()
+    ? buildPackagedUiUrl('/index.html')
+    : (state.localUiOrigin || state.sidecarUrl || state.localOrigin);
+  return createBrowserWindow({
+    label: nextWindowLabel(),
+    restoreGeometry: false,
+    url,
+    runtimeConfig: {
+      apiBaseUrl: state.sidecarUrl,
+      clientToken: readDesktopLocalClientToken(),
+      requestHeaders: {},
+    },
+  });
+};
+
 const dispatchDeepLink = (link) => {
   if (!link) return;
+  let target;
+  if (isLocalWorkspaceDeepLink(link)) {
+    if (!initialStartupComplete) {
+      pendingDeepLinks.push(link);
+      return;
+    }
+    target = resolveLocalDeepLinkWindow();
+    if (target.webContents.isLoading()) {
+      pendingDeepLinks.push(link);
+      schedulePendingDeepLinkFlush();
+      return;
+    }
+    if (target.isMinimized()) target.restore();
+    target.show();
+    target.focus();
+  }
+  const emit = (event, detail) => emitToWindow(target || resolveMainWindowTarget(), event, detail);
   log.info('[electron] dispatching deep-link', { type: link.type, valueLen: link.value?.length || 0 });
   if (link.type === 'connect') {
     const pairingPayload = parseConnectPairingDeepLinkPayload(link.raw);
@@ -2426,13 +2469,13 @@ const dispatchDeepLink = (link) => {
     return;
   }
   if (link.type === 'session' && link.value) {
-    emitToAllWindows('yuri:open-session', { sessionId: link.value });
+    emit('yuri:open-session', { sessionId: link.value });
     return;
   }
   // Align with OpenCode: yuri://new-session?directory=${path}&prompt=…
   // Also accept bare `new` (mobile vocabulary) and path-form fallbacks.
   if (link.type === 'new-session' || link.type === 'new') {
-    emitToAllWindows('yuri:open-draft-session', {
+    emit('yuri:open-draft-session', {
       directory: link.directory || '',
       projectId: '',
       initialPrompt: link.prompt || '',
@@ -2446,7 +2489,7 @@ const dispatchDeepLink = (link) => {
       log.warn('[electron] open-project deep-link missing directory');
       return;
     }
-    emitToAllWindows('yuri:open-project', { projectPath });
+    emit('yuri:open-project', { projectPath });
     return;
   }
   if (link.type === 'host' && link.value) {
@@ -2457,8 +2500,9 @@ const dispatchDeepLink = (link) => {
 };
 
 const flushPendingDeepLinks = () => {
-  while (pendingDeepLinks.length > 0) {
-    dispatchDeepLink(pendingDeepLinks.shift());
+  for (const link of pendingDeepLinks.splice(0)) {
+    if (isLocalWorkspaceDeepLink(link) || isMainWindowReadyForDeepLink()) dispatchDeepLink(link);
+    else pendingDeepLinks.push(link);
   }
 };
 
@@ -2471,10 +2515,7 @@ const schedulePendingDeepLinkFlush = () => {
   if (!initialStartupComplete || pendingDeepLinks.length === 0 || pendingDeepLinkFlushTimer) return;
   pendingDeepLinkFlushTimer = setTimeout(() => {
     pendingDeepLinkFlushTimer = null;
-    if (isMainWindowReadyForDeepLink()) {
-      flushPendingDeepLinks();
-      return;
-    }
+    flushPendingDeepLinks();
     schedulePendingDeepLinkFlush();
   }, 400);
   if (typeof pendingDeepLinkFlushTimer?.unref === 'function') pendingDeepLinkFlushTimer.unref();
@@ -2484,12 +2525,13 @@ const handleDeepLinks = (urls) => {
   for (const raw of urls) {
     const parsed = parseDeepLink(raw);
     if (!parsed) continue;
-    if (isMainWindowReadyForDeepLink()) {
+    if (initialStartupComplete && (isLocalWorkspaceDeepLink(parsed) || isMainWindowReadyForDeepLink())) {
       dispatchDeepLink(parsed);
     } else {
       pendingDeepLinks.push(parsed);
     }
   }
+  schedulePendingDeepLinkFlush();
 };
 
 const extractInitialDeepLinks = () =>
@@ -2941,6 +2983,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
   const mainWindow = state.mainWindow;
   if (mainWindow && !mainWindow.isDestroyed()) {
     guiPluginHost.invalidateWindow(mainWindow.webContents);
+    viewExportHost.invalidateOwner(mainWindow.webContents);
     mainWindow.__yuriRuntimeConfig = rendererRuntimeConfig;
     mainWindow.__yuriInitScript = state.initScript;
     await navigateWindow(mainWindow, url, { allowAbort: true });
@@ -5210,6 +5253,13 @@ const guiPluginHost = createGuiPluginMainHost({
 });
 ipcMain.handle('yuri:gui-plugin', (event, action, input) => guiPluginHost.dispatch(event, action, input));
 
+const viewExportHost = createViewExportHost({
+  BrowserWindow, session, dialog,
+  authorize: (event) => isViewExportSender(event, BrowserWindow, [state.localOrigin, state.localUiOrigin, state.sidecarUrl]),
+  send: (contents, payload) => contents.send('yuri:view-export:event', payload),
+});
+ipcMain.handle('yuri:view-export', (event, method, input) => viewExportHost.dispatch(event, method, input));
+
 ipcMain.handle('yuri:invoke', async (event, command, args) => {
   if (!isLocalSender(event.sender) && !isRemoteIpcCommandAllowed(command, args)) {
     log.warn(`[ipc] rejected ${command} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
@@ -5675,6 +5725,7 @@ app.on('second-instance', (_event, argv) => {
     ? argv.filter(isAppDeepLink)
     : [];
   if (urls.length > 0) handleDeepLinks(urls);
+  if (urls.some((url) => isLocalWorkspaceDeepLink(parseDeepLink(url)))) return;
   if (!initialStartupComplete) return;
   if (BrowserWindow.getAllWindows().length > 0) {
     focusForegroundWindow();
@@ -5686,6 +5737,7 @@ app.on('second-instance', (_event, argv) => {
 app.on('open-url', (event, url) => {
   event.preventDefault();
   handleDeepLinks([url]);
+  if (isLocalWorkspaceDeepLink(parseDeepLink(url))) return;
   if (!initialStartupComplete) return;
   if (BrowserWindow.getAllWindows().length === 0) {
     void openMainWindow();

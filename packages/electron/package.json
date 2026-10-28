@@ -1,6 +1,6 @@
 {
   "name": "@yuriai/electron",
-  "version": "0.2.0-beta.8",
+  "version": "0.2.0-beta.9",
   "private": true,
   "description": "Electron desktop runtime for Yuri",
   "author": "Yuri",
@@ -47,7 +47,7 @@
     "test:preview-gateway": "vitest run ./preview-loopback-gateway.test.mjs",
     "package": "bun run build:web-assets && bun run prepare:opencode-cli && bun run bundle:main && bun run rebuild:native && node ./scripts/package.mjs",
     "package:preview": "YURI_DESKTOP_PROFILE=preview bun run package",
-    "type-check": "node --check ./main.mjs && node --check ./preload.mjs && node --check ./virtual-asset-protocol.mjs && node --check ./preview-loopback-gateway.mjs",
+    "type-check": "node --check ./main.mjs && node --check ./preload.mjs && node --check ./virtual-asset-protocol.mjs && node --check ./preview-loopback-gateway.mjs && node --check ./view-export.mjs",
     "lint": "node -e \"process.exit(0)\""
   },
   "build": {

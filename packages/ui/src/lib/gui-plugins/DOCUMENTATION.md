@@ -10,6 +10,7 @@
 - `file-icons.ts` 负责窗口级文件扩展名图标索引、SVG 资源校验和独立订阅，不依赖 host snapshot。
 - Web、Electron、VS Code 聊天窗口、hosted/mobile 使用同一个窗口 host。嵌入会话和独立 Agent Manager 不重复加载宿主。只有新版 Electron 的本地实例主 frame 可以申请 native lease；其他运行时、远程/Relay 实例及旧 shell 保持 `app.platform: web`、`desktop: undefined`。获得 lease 后为 `app.platform: desktop`，提供 `desktop.os`（其他 desktop 方法仍明确 unsupported）。若部署的 CSP 禁止 CJS 求值，插件状态显示求值失败，不能绕过 CSP。
 - `native.ts` 负责窗口 IPC codec、响应式 state/live、事件与取消；`native-types.ts` 定义 preload 消息契约。`main-modules.mjs` 仅导出 main 进程使用的固定 ABI 共享模块映射，由 Electron 打包；原生求值、可信代码获取、调用授权与生命周期归 `packages/electron/gui-plugin-host.mjs`，不能导入 renderer bundle。
+- `view-export.ts` 将当前客户端容器的两个 GSAPI 发布为宿主保留的 `yuri.exportPDF`、`yuri.exportLongImage` Contract。实现与跨端传输归 `lib/view-export`；通过 `RuntimeAPIs.viewExport` 注入，不改 `ctx.client`、官方 OpenAPI 或插件 main/IPC。
 
 官方 npm SDK 2.2.0 没有公开 `gui/host` 导出。Yuri 的受控依赖 patch 只开放 `gui/yuri-host` 内部 context，让 host 与官方 `usePlugin` / `bindPlugin` 共用真实 `PluginContext`、`PanelContext` 和 lifetime。它是**宿主实现细节**，第三方插件始终只 import 官方公开 SDK。升级 SDK 必须重新验证 patch 与单实例 Solid 语义。
 
@@ -76,7 +77,11 @@ try {
 
 原生 acquire 的读取/求值失败保留已有实例；main setup 失败清理已注册的资源并向插件管理器报错。异步结果经过 document/lease 与 runtime transport 检查，旧实例不能覆盖新实例。main cleanup 支持异步且等待最多 3 秒；插件直接创建的 BrowserWindow、Node 资源仍需用 `ctx.onCleanup` 或返回 cleanup 管理。
 
-PDF/长图不是宿主专用 API：插件可从标准 main 入口调用 Electron，创建独立导出页，通过 `webContents.printToPDF()` 生成 PDF，并自行处理保存与取消。宿主不注入 Eficy 导出按钮，也不声称支持全部官方 Desktop API。
+PDF/长图现在另有两个独立的容器 GSAPI，使用官方 `Contract.define` / `ctx.use` 获取 `yuri.exportPDF` 与 `yuri.exportLongImage`，不增加 `ctx` 字段，不合并为 `format` 参数。两个能力分别探测和激活；pending/未支持/失败时不展示对应动作。`yuri` 及其子 namespace 为宿主保留，普通插件不能覆盖；错误 token kind 也不能绕过保留契约。
+
+这两个能力属于**当前客户端设备**：新版 Electron、iOS、Android 可以在连接本地、远端或 Relay 时使用。它们只接收有界的静态导出快照，经过容器渲染与系统保存，不执行插件 main、不接收宿主文件路径，且不恢复 window-only 文档的其他原生权限。普通浏览器、hosted mobile、VS Code 与缺少原生实现的旧壳明确不支持。完整输入、进度、取消和平台契约见 [`../view-export/DOCUMENTATION.md`](../view-export/DOCUMENTATION.md)。插件原有标准 main/IPC 仍按前述严格权限规则工作。
+
+宿主按插件生命周期绑定导出任务，卸载/替换/切服务会取消；面板调用者通过 `options.signal` 绑定自身视图生命周期。能力探测在首次使用时进行，每个 host 只探测一次，无轮询，后续无关 render/session 更新不重新探测。探测失败或运行时明确返回 `EXPORT_UNSUPPORTED` 时，对应能力保持 inactive；内容校验、渲染和保存错误继续允许重试，不导致报告预览失败。宿主不注入 Eficy 按钮，入口与进度交互仍由独立插件拥有。
 
 `FileViewer` 注册明确报 unsupported；自定义后缀使用 `LinkHandler + Panel`。文件树结构扩展、composer、宿主设置分区、原生文件动作和完整 Desktop tabs/layout 语义不在首批范围。文件预览按 `PanelTab.file` 的规范化完整路径匹配，直接挂载到已有文件标签页/手机文件详情中，支持切回源码；只有没有内联文件视图承载的独立面板和设置页使用 Dialog/手机 Sheet，不复刻拖拽分屏和最近关闭恢复。
 
@@ -158,6 +163,6 @@ SDK 2.2.0 的文件接口是 `ctx.screen.current()?.file` 或面板的 `props.sc
 
 真实 Chromium 已验证生产 host 与完整 Provider/管理器/文件桥/React modal 加载同一 CJS；桌面关闭和重新启用、移动 viewport + touch 下共享 Sheet 均可渲染。文件边界和服务响应使用验收夹具，此证据不等于 live OpenCode AI 调用、原生 Electron/iOS/Android 或 VS Code 实机验收。
 
-Yuri 只维护通用插件宿主与最小契约测试夹具，不内置示例插件源码、运行时或发布产物。`GuiPluginLazyLoading.test.tsx` 用最小标准 CJS 夹具串联真实 Provider、Host、文件桥和文本预览；插件功能与打包验证属于插件独立仓库。
+Yuri 只维护通用插件宿主与最小契约测试夹具，不内置示例插件源码、运行时或发布产物。`GuiPluginLazyLoading.test.tsx` 用最小标准 CJS 夹具串联真实 Provider、Host、文件桥和文本预览，并覆盖插件先就绪再打开真实 `MobileResizableSheet`、覆盖/恢复窗口、源码选择保留和关闭重开；不能只用裸文件桥或模拟 mobile viewport 代替窗口栈激活回归。插件功能与打包验证属于插件独立仓库。
 
 Eficy 已独立发布为 [`@eficy/opencode2-plugin`](https://www.npmjs.com/package/@eficy/opencode2-plugin)，源码和运行时验收位于 [独立仓库](https://github.com/yee94/opencode-eficy)。远端安装后由标准 inventory/bundle 链路发现，不需要 Yuri 特例或本地源码目录。

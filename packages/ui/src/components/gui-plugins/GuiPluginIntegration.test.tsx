@@ -49,11 +49,19 @@ function makeHost() {
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 let fixture: ReturnType<typeof makeHost>;
-const render = async (node: React.ReactNode) => { await act(async () => root.render(node)); };
+let frames: Map<number, FrameRequestCallback>;
+const frame = async () => {
+  const callbacks = [...frames.values()];
+  frames.clear();
+  await act(async () => { callbacks.forEach((callback) => callback(performance.now())); });
+};
+const settleMount = async () => { await frame(); await frame(); };
+const render = async (node: React.ReactNode) => { await act(async () => root.render(node)); await settleMount(); };
 const click = async (text: string) => {
   const button = [...container.querySelectorAll('button')].find((node) => node.textContent === text || node.getAttribute('aria-label') === text);
   expect(button, text).toBeDefined();
   await act(async () => button!.click());
+  await settleMount();
 };
 const context = () => state.context!;
 const updateSnapshot = (patch: Partial<Context['snapshot']>) => {
@@ -61,6 +69,10 @@ const updateSnapshot = (patch: Partial<Context['snapshot']>) => {
 };
 
 beforeEach(() => {
+  frames = new Map();
+  let frameId = 0;
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { frames.set(++frameId, callback); return frameId; });
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => { frames.delete(id); });
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   fixture = makeHost();
   state.toast.mockClear();
@@ -77,9 +89,44 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.restoreAllMocks();
 });
 
 describe('foreign DOM ownership', () => {
+  test('deferred mounting cancels stale owners and unmounted work, including strict effect replay', async () => {
+    const view = (revision: string) => <React.StrictMode><GuiPluginMount host={fixture.host} kind="panel" contributionKey="a" revision={revision} fallback={<div role="status">Preparing</div>} /></React.StrictMode>;
+    await act(async () => root.render(view('one')));
+    await frame();
+    const stale = [...frames.values()];
+    await act(async () => root.render(view('two')));
+    await act(async () => stale.forEach((callback) => callback(performance.now())));
+    expect(fixture.methods.mountPanel).not.toHaveBeenCalled();
+    await settleMount();
+    expect(fixture.methods.mountPanel).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    await act(async () => root.render(view('three')));
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Preparing');
+    await act(async () => root.render(null));
+    await settleMount();
+    expect(frames.size).toBe(0);
+    expect(fixture.log).toEqual(['mount:panel:a', 'dispose:panel:a']);
+  });
+
+  test('deferred render failure removes loading and partial DOM, then a new revision can retry', async () => {
+    fixture.methods.mountPanel.mockImplementationOnce((_key, node) => {
+      node.textContent = 'partial';
+      throw new Error('render failed');
+    });
+    const view = (revision: string) => <GuiPluginMount host={fixture.host} kind="panel" contributionKey="a" revision={revision} fallback={<div role="status">Preparing</div>} />;
+    await render(view('one'));
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('render failed');
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.textContent).not.toContain('partial');
+    await render(view('two'));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toBe('external:a');
+  });
+
   test.each(['inline', 'standalone'] as const)('%s panel keeps its DOM across 50 unrelated plugin reloads and remounts only its owner', async (surface) => {
     const plugin = { id: 'demo', revision: 'one', status: 'active' as const };
     updateSnapshot({
@@ -265,6 +312,24 @@ describe('foreign DOM ownership', () => {
 });
 
 describe('file link routing', () => {
+  test('a preloaded file preview paints its default SVG before mounting and cancels on source selection', async () => {
+    updateSnapshot({ panels: [{ key: 'demo:a', pluginId: 'demo', title: 'Preview', inline: true, active: true, file: '/workspace/a.eficy' }] });
+    const view = <GuiFileLinkBridge path="/workspace/a.eficy"><pre>source</pre></GuiFileLinkBridge>;
+    await act(async () => root.render(view));
+    expect(container.querySelector('[data-gui-preview-loading] svg')).not.toBeNull();
+    expect(fixture.methods.mountPanel).not.toHaveBeenCalled();
+    await frame();
+    expect(container.querySelector('[data-gui-preview-loading] svg')).not.toBeNull();
+    expect(fixture.methods.mountPanel).not.toHaveBeenCalled();
+    await click('guiPlugins.preview.viewSource');
+    expect(container.querySelector('pre')?.textContent).toBe('source');
+    expect(fixture.methods.mountPanel).not.toHaveBeenCalled();
+    await click('filesView.editor.switchToPreviewMode');
+    expect(container.querySelector('[data-gui-preview-loading]')).toBeNull();
+    expect(container.textContent).toContain('external:demo:a');
+    expect(fixture.methods.mountPanel).toHaveBeenCalledOnce();
+  });
+
   test('requests GUI code only for a visible active file and offers source during loading', async () => {
     state.context = { ...context(), host: null, requested: false, loading: true };
     updateSnapshot({ plugins: [] });

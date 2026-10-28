@@ -13,7 +13,7 @@ import { getRuntimeKey, switchRuntimeEndpoint } from './runtime-switch';
 import { getActiveRelayTunnel, deactivateRelayTunnel } from './relay/runtime-tunnel';
 import { runtimeFetch } from './runtime-fetch';
 import { opencodeClient } from './opencode/client';
-import { isDesktopLocalOriginActive } from './desktop';
+import { getDesktopGuiPluginBridge, getDesktopViewExportBridge, isDesktopLocalOriginActive } from './desktop';
 import { readRuntimeScopedItem } from './runtimeScopedStorage';
 import { resolveTranscriptDurableRuntimeKind } from '../sync/transcript-durable-store-runtime';
 import type { DesktopHost } from './desktopHosts';
@@ -152,6 +152,17 @@ describe.each(['packaged', 'HMR'])('remote-computer worktree routing in %s UI', 
     expect(isDesktopLocalOriginActive()).toBe(false);
     expect(resolveTranscriptDurableRuntimeKind()).toBe('indexeddb');
     expect(readRuntimeScopedItem('lastDirectory', { storage })).toBeNull();
+  });
+
+  it('retains device export across Relay while withdrawing plugin main access', async () => {
+    const guiPlugins = { request: vi.fn(), subscribe: vi.fn() };
+    const viewExport = { request: vi.fn(), subscribe: vi.fn() };
+    Object.assign(Reflect.get(window, '__YURI_DESKTOP__'), { guiPlugins, viewExport });
+    expect(getDesktopGuiPluginBridge()).toBe(guiPlugins);
+    expect(getDesktopViewExportBridge()).toBe(viewExport);
+    await restoreDesktopRelayRuntime(host.id);
+    expect(getDesktopGuiPluginBridge()).toBeUndefined();
+    expect(getDesktopViewExportBridge()).toBe(viewExport);
   });
 
   it('does not let an earlier startup probe overwrite a later explicit remote selection', async () => {

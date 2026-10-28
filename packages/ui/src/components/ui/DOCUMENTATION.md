@@ -98,6 +98,14 @@ Mobile file-detail images fill the available content width at their natural aspe
 
 # Mobile Window Motion
 
+`MobileWindowMotion` publishes its authoritative `isTop` state through the lightweight
+`MobileWindowActiveContext` (default true outside mobile windows). Each portaled window
+owns this context independently, including windows nested under an inactive window's
+React ancestry. File-preview bridges consume it so becoming interactive retriggers
+preview registration after an initial inert mount; covering a window releases its
+preview lease. Animation frames do not update this context. DOM `inert`/`aria-hidden`
+remain the input/accessibility gate, not an observable substitute for this lifecycle.
+
 `MobileResizableSheet.className` forwards overlay-level styling to
 `MobileWindowMotion`. Media saving uses an inline fullscreen control rather than
 an additional sheet.

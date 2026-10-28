@@ -74,6 +74,17 @@ the command group also exposes loading and retry, while the manager retains its
 existing reload control. Runtime changes reset demand; mounted entrypoints request
 the new runtime explicitly.
 
+Ready/preloaded file panels also pass `GuiPreviewLoading` as `GuiPluginMount`'s
+fallback. The mount yields across two animation frames before calling plugin code,
+leaving a paint opportunity for the default SVG even when there is no bundle request.
+The empty foreign container remains measurable; React owns only the sibling loading
+overlay. Source selection, unmount, and owner/revision replacement cancel deferred
+work. Unrelated renders and fallback-copy changes do not restart it. Synchronous
+mount completion hands off to plugin-owned preparation; plugins with asynchronous
+file reads or iframe runtimes must keep their own visible loading surface until
+actual content commit or an actionable error, not merely iframe `load`/runtime-ready.
+Standalone/settings mounts without a fallback retain synchronous layout mounting.
+
 `GuiFileLinkBridge` wraps file content and calls `openLink` with the selected path,
 exact matching and the workspace base. It does not fetch file contents. A matching
 file panel is the default preview, with one icon-only source/edit toggle; normal source/image
@@ -88,7 +99,13 @@ toolbar or header actions through the bridge's render slots. There is no separat
 plugin mode bar, and unmatched files receive no plugin controls.
 Closing or switching the file releases its presentation lease and hides its old
 active plugin panel instead of reopening it as a dialog. Multiple consumers have
-independent leases. Desktop FilesView also passes its active-view state. Inert/hidden ancestors cannot initiate
+independent leases. Desktop FilesView also passes its active-view state. Mobile file
+bridges combine this with `MobileWindowActiveContext`, the owning window's reactive
+top-of-stack state. Initial inert mount, interactive-present, a covering window and
+reactivation therefore release/reacquire the file lease and retry matching without
+waiting for a plugin update. Reading ancestor attributes alone is insufficient: a
+preloaded plugin can be ready before the sheet is admitted to the window stack.
+Source selection survives covering/uncovering. Inert/hidden ancestors cannot initiate
 an automatic preview. Initial plugin registration, a new file/base, host replacement,
 an updated plugin revision, session change or an observed loading cycle retries matching. Panel
 snapshots alone do not.

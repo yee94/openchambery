@@ -13,10 +13,12 @@ import { isLikelyFileReferencePath, parseFileReference } from '@/components/chat
 import { toAbsoluteFilePath } from '@/lib/path-utils';
 import type { NativeGuiSession } from './native';
 import { NativeGuiError, type NativeGuiErrorCode } from './native-errors';
+import type { ViewExportAPI } from '@/lib/view-export/types';
+import { GuiViewExports, isViewExportContract } from './view-export';
 
 export type PluginGuiBundle = PluginGuiOutput['data'];
 type Appearance = { locale: string; mode: 'light' | 'dark'; narrow: boolean };
-type Options = Appearance & { client: OpenCodeClient; files: FilesAPI; queryClient: QueryClient; transport: string; storage: globalThis.Storage; focusFile?: (path: string, directory: string) => Promise<void> };
+type Options = Appearance & { client: OpenCodeClient; files: FilesAPI; queryClient: QueryClient; transport: string; storage: globalThis.Storage; viewExport?: ViewExportAPI; focusFile?: (path: string, directory: string) => Promise<void> };
 type CommandView = { key: string; title: string; description?: string; bind?: string; hidden?: boolean; run: () => void | Promise<void> };
 type PanelView = { key: string; pluginId: string; title: string; active: boolean; file?: string; inline?: boolean };
 export type GuiPluginSnapshot = Readonly<{
@@ -72,8 +74,10 @@ export class GuiPluginHost {
     private contracts = new Map<string, { live: ReturnType<typeof createSignal<Gui.Live<unknown>>>; generation: number; provider?: Instance }>();
     private snapshot: GuiPluginSnapshot = Object.freeze({ plugins: Object.freeze([]), commands: Object.freeze([]), panels: Object.freeze([]), settings: Object.freeze([]), menuItems: Object.freeze([]), activePanel: null });
     private screen: Gui.SessionScreen;
+    private viewExports: GuiViewExports;
 
     constructor(private options: Options) {
+        this.viewExports = new GuiViewExports(options.viewExport);
         this.appearance = createSignal<Appearance>({ locale: options.locale, mode: options.mode, narrow: options.narrow });
         this.storage = new GuiPluginStorage(options.storage, options.transport);
         const currentFile = () => { this.session[0](); return this.files?.api ?? unsupported('screen.file without a session'); };
@@ -116,6 +120,7 @@ export class GuiPluginHost {
         const instance: Instance = { id, native, revision: bundle.revision, controller: new AbortController(), status: 'active', cleanups: new Set(), contributions: new Set(), iconChanges: createSignal(0), commands: [], panels: [], settings: [], menus: [] };
         this.instances.set(id, instance);
         try {
+            if (id === 'yuri' || id.startsWith('yuri.')) throw new Error('The yuri namespace is reserved to the host');
             const definition = evaluateGuiBundle(bundle.code, native?.activation.os);
             createRoot((dispose) => {
                 instance.dispose = dispose;
@@ -197,6 +202,7 @@ export class GuiPluginHost {
         if (this.ended) return;
         this.ended = true;
         batch(() => { for (const id of [...this.instances.keys()]) this.uninstall(id); });
+        this.viewExports.dispose();
         this.files?.dispose(); this.fileIcons.dispose(); this.storage.dispose(); this.layouts.clear(); this.fileViews.clear(); this.contracts.clear(); this.listeners.clear();
     }
 
@@ -301,6 +307,7 @@ export class GuiPluginHost {
             list: <T>(registry: Gui.Registry<T>) => this.list(registry),
             provide: (token, value) => {
                 if (instance.controller.signal.aborted || readSolidContext(LifetimeContext)?.ended) return () => {};
+                if (isViewExportContract(token.id)) throw new Error('Export contracts are provided only by the Yuri host');
                 if (token.kind !== 'contract' || !(token.id === instance.id || token.id.startsWith(`${instance.id}.`))) throw new Error('Contract must belong to the providing plugin');
                 const entry = this.contract(token.id);
                 if (entry.provider) throw new Error(`Contract already provided: ${token.id}`);
@@ -308,8 +315,10 @@ export class GuiPluginHost {
                 entry.live[1]({ status: 'active', value, generation: ++entry.generation });
                 return this.own(instance, () => { if (entry.provider !== instance) return; entry.provider = undefined; entry.live[1]({ status: 'inactive', reason: instance.status === 'failed' ? 'failed' : 'disabled' }); });
             },
-            use: <T extends Gui.Token>(token: T) => (token.kind === 'ipc' && instance.native
-                ? instance.native.token(token).live : this.contract(token.id, token.kind === 'ipc').live[0]) as Accessor<Gui.Live<Gui.TokenValue<T>>>,
+            use: <T extends Gui.Token>(token: T) => (isViewExportContract(token.id)
+                ? token.kind === 'contract' ? this.viewExports.use(token.id, instance.controller.signal) : unsupported('export token must be a Contract')
+                : token.kind === 'ipc' && instance.native ? instance.native.token(token).live
+                    : this.contract(token.id, token.kind === 'ipc').live[0]) as Accessor<Gui.Live<Gui.TokenValue<T>>>,
             main: <S extends Gui.IpcSpec>(token: Gui.Ipc<S>) => {
                 if (!(token.id === instance.id || token.id.startsWith(`${instance.id}.`))) throw new NativeGuiError('GUI_PLUGIN_FORBIDDEN', 'IPC must belong to the plugin');
                 if (instance.native) return instance.native.token(token).value;

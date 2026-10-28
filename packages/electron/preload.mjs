@@ -279,6 +279,14 @@ contextBridge.exposeInMainWorld('__YURI_DESKTOP__', {
       return () => ipcRenderer.removeListener('yuri:gui-plugin:event', listener);
     },
   } : undefined,
+  viewExport: isLocalPage && process.isMainFrame ? {
+    request: (method, input) => ipcRenderer.invoke('yuri:view-export', method, input),
+    subscribe: (handler) => {
+      const listener = (_event, payload) => handler(payload);
+      ipcRenderer.on('yuri:view-export:event', listener);
+      return () => ipcRenderer.removeListener('yuri:view-export:event', listener);
+    },
+  } : undefined,
   invoke: (cmd, args) => ipcRenderer.invoke('yuri:invoke', cmd, args || {}),
   openDialog: (options) => ipcRenderer.invoke('yuri:dialog:open', options || {}),
   grantFileAccess: (filePath) => ipcRenderer.invoke('yuri:file:grant-existing', filePath),

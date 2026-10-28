@@ -18,6 +18,7 @@ import { createWebGitHubAPI } from './github';
 import { createWebClientAuthAPI } from './clientAuth';
 import { createWebConversationsAPI } from './conversations';
 import { createMobileUpdatesAPI } from '@yuriai/ui/lib/mobile-updates/api';
+import { createViewExportAPI } from '@yuriai/ui/lib/view-export/api';
 
 export interface WebAPIsOptions {
   urls?: RuntimeUrlResolver;
@@ -40,6 +41,7 @@ export const createWebAPIs = (options: WebAPIsOptions = {}): RuntimeAPIs => {
 
   return {
   runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
+  viewExport: createViewExportAPI(),
   terminal: createWebTerminalAPI(),
   git: createWebGitAPI(),
   files: createWebFilesAPI({ urls: activeUrls, getDirectory: () => useDirectoryStore.getState().currentDirectory }),

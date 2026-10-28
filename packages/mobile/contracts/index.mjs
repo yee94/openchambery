@@ -7,6 +7,7 @@ import { yuriShareContract } from './yuri-share.mjs'
 import { yuriTabBarContract } from './yuri-tab-bar.mjs'
 import { yuriVirtualAssetContract } from './yuri-virtual-asset.mjs'
 import { yuriVideoContract } from './yuri-video.mjs'
+import { yuriViewExportContract } from './yuri-view-export.mjs'
 
 /** All custom native bridge contracts checked by mobile-release-plan. */
 export const mobileBridgeContracts = [
@@ -19,6 +20,7 @@ export const mobileBridgeContracts = [
   yuriExternalBrowserContract,
   yuriComposerContract,
   yuriTabBarContract,
+  yuriViewExportContract,
 ]
 
 export {
@@ -31,4 +33,5 @@ export {
   yuriTabBarContract,
   yuriVirtualAssetContract,
   yuriVideoContract,
+  yuriViewExportContract,
 }

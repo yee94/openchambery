@@ -17,6 +17,7 @@ android {
         applicationId "com.yee94.yuri"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        testInstrumentationRunner "com.yuri.app.ViewExportInstrumentation"
         versionCode ciVersionCode ? ciVersionCode.toInteger() : 1
         versionName ciVersionName ?: "1.0"
         aaptOptions {

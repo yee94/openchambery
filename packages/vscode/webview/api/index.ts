@@ -9,6 +9,7 @@ import { createVSCodeActionsAPI } from './vscode';
 import { createVSCodeGitHubAPI } from './github';
 import { createVSCodeNotificationsAPI } from './notifications';
 import { createVSCodeConversationsAPI } from './conversations';
+import { unsupportedViewExportAPI } from '@yuriai/ui/lib/view-export/api';
 
 // Stub APIs return sensible defaults instead of throwing
 const createStubTerminalAPI = (): TerminalAPI => ({
@@ -21,6 +22,7 @@ const createStubTerminalAPI = (): TerminalAPI => ({
 
 export const createVSCodeAPIs = (): RuntimeAPIs => ({
   runtime: { platform: 'vscode', isDesktop: false, isVSCode: true, label: 'VS Code Extension' },
+  viewExport: unsupportedViewExportAPI,
   terminal: createStubTerminalAPI(),
   git: createVSCodeGitAPI(),
   files: createVSCodeFilesAPI(),

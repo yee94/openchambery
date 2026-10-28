@@ -1,4 +1,5 @@
 import type { WorktreeMetadata } from '@/types/worktree';
+import type { ViewExportAPI } from '@/lib/view-export/types';
 import type { DraftStarterRef } from '@/lib/draftStarters';
 import type {
   MobileOtaBundleInfo,
@@ -1277,6 +1278,8 @@ export interface ClientAuthAPI {
 }
 
 export interface RuntimeAPIs {
+  /** Client-container exports, independent of the connected server/Relay. */
+  viewExport?: ViewExportAPI;
   runtime: RuntimeDescriptor;
   terminal: TerminalAPI;
   git: GitAPI;

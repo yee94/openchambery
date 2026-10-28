@@ -5,6 +5,7 @@ import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusR
 import { cn } from '@/lib/utils';
 import { markOverlayScrimPress, shouldCommitOverlayScrimDismiss } from './matchingPress';
 import { mobileWindowStack } from './MobileWindowStack';
+import { MobileWindowActiveContext } from './mobile-window-active-context';
 import {
   getMobileWindowMotionFrame,
   getMobileWindowMotionControlledTarget,
@@ -391,7 +392,9 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
       }}
     >
       <div ref={setSurfaceRef} tabIndex={-1} className={cn('yuri-mobile-floating-shell', getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} data-yuri-motion-id={id} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
-        {children}
+        <MobileWindowActiveContext.Provider value={isTop}>
+          {children}
+        </MobileWindowActiveContext.Provider>
       </div>
     </div>
   );

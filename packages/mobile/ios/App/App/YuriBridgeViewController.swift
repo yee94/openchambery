@@ -182,6 +182,7 @@ class YuriBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(YuriNavigationPlugin())
         bridge?.registerPluginInstance(YuriVirtualAssetPlugin())
         bridge?.registerPluginInstance(YuriMediaPlugin())
+        bridge?.registerPluginInstance(YuriViewExportPlugin())
         bridge?.registerPluginInstance(YuriVideoPlugin())
         bridge?.registerPluginInstance(YuriPhysicalScalePlugin())
         bridge?.registerPluginInstance(YuriComposerPlugin())

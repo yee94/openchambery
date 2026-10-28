@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name="com.yuri.app.ViewExportTestDocuments"
+            android:authorities="com.yee94.yuri.debug.test.view-export-evidence"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

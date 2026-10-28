@@ -122,6 +122,61 @@ identity table after retained installations have recovered their data.
 - **Android:** `MainActivity` registers the plugin; on load it installs a `BridgeWebViewClient` subclass that intercepts `yuri-asset://` and returns a streaming `WebResourceResponse` backed by a thread-safe blocking `InputStream` (responses include `X-Content-Type-Options: nosniff`). One reader per asset; a second `openStream` is rejected.
 - **Limits (both platforms):** 120s idle TTL, 16 concurrent assets, 32 MiB per asset, 4 MiB unread queue backpressure (append waits up to 15s), cancel/finish/close and expiry free all queues. Native code never receives host paths, relay credentials, or tunnel keys — only opaque ids and bytes.
 
+## Native GUI View Export
+
+The native method/event surface is registered in `contracts/yuri-view-export.mjs`
+and validated by `mobile-release-plan` before release.
+
+`YuriViewExport` exposes two independent client-container methods, `exportPDF`
+and `exportLongImage`, plus `capabilities`, `cancel` and task-scoped `progress`
+events. Shared UI discovers the installed native implementation through
+`RuntimeAPIs.viewExport`; the GUI host provides the ordinary SDK Contracts
+`yuri.exportPDF` and `yuri.exportLongImage`. Their capabilities are independent
+of the connected OpenCode Host and LAN/Relay transport. A new native build is
+required; hosted browsers and old shells without the plugin hide both actions.
+
+The caller supplies a static HTML snapshot with embedded assets and CSS-pixel
+dimensions. Native code independently validates the payload and renders in a
+separate script/network-disabled WebView, then opens the system document picker.
+Generated files stay in native temporary storage rather than crossing the bridge
+as base64. PDF defaults to paginated A4, optionally Letter, with 24-point margins
+and 96 CSS pixels per inch (shrinking to fit, never enlarging); PNG uses one output
+pixel per CSS pixel. Android advertises 16 MiB HTML, width 8192, height 32768 and
+16,777,216 pixels. iOS advertises lower bounds: 4 MiB HTML, width 2048, height
+32768 and 8,388,608 pixels. Consumers use the returned limits; exceeding a limit
+fails rather than truncating output.
+
+iOS attaches a task-owned WKWebView beneath the app content. PNG captures and
+composes viewport-sized tiles; PDF uses `WKWebView.createPDF` and CoreGraphics
+pagination to retain native text/vector output. Temporary views, files and
+listeners are released on completion or cancellation. An in-flight ImageIO
+encode drains before the owner becomes available for another export. The
+system export-as-copy picker owns file placement and reports completion.
+WebKit can map some Chinese PDF glyphs to radical code points; visual output
+remains intact, but exact text search for those characters is not guaranteed.
+
+Android uses a dedicated attached full-size WebView and does not enable global
+`enableSlowWholeDocumentDraw`. PNG is encoded off the main thread; PDF draws each
+page directly to a PDF Canvas, yielding between pages. The HTML is removed from
+the Capacitor call before opening `ACTION_CREATE_DOCUMENT`, preventing it from
+entering activity-state Binder serialization. Cancelled/failed writes attempt to
+remove their incomplete destination and always release private staging files;
+the task cannot report saved before the output stream closes. A pending native
+picker retains its reservation until its result arrives, so a late result cannot
+be assigned to another export.
+
+See `packages/ui/src/lib/view-export/DOCUMENTATION.md` for the full public
+contract. `test/view-export-android.test.mjs` runs production Java validation;
+its opt-in `YURI_ANDROID_TEST_DEVICE` instrumentation exercises complete PNG,
+PDF text/page structure, save, failure and cancellation on an installed device.
+Android APK compilation alone does not establish rendering or picker correctness.
+
+`test/view-export-ios.test.mjs` is opt-in with `YURI_IOS_TEST_DEVICE` (a booted
+simulator UDID). Its bridge test also needs `YURI_IOS_TEST_PRODUCTS`, the existing
+simulator build-products directory containing Capacitor and Cordova frameworks.
+It compiles the production Swift into isolated probe apps, installs/runs them,
+and removes them afterward; it does not change signing or install the product app.
+
 ## Native Image Save Compatibility
 
 `YuriMedia.saveImage` detects WebP from its ImageIO type and normalizes it

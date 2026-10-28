@@ -48,6 +48,8 @@ Electron owns the in-process server handle. Normal quit, relaunch, vibrancy rela
 
 ## Deep-link compatibility
 
+External project/session links (`project`, `open-project`, `new`, `new-session`, `session`) target a primary local-runtime window, regardless of focus or main-window order. If none exists, main creates a local window with local credentials, waits for loading to finish, then delivers the action and focuses it. Remote/Relay and Mini Chat windows are excluded; saved default-host choices do not control these links. Host/connect links retain their explicit host behavior. This routing change requires an updated desktop installer.
+
 New links use `yuri://`. Packaged OS registration and runtime handlers also accept `openchamber://` and `openchambery://` as receive-only aliases, including cold-start arguments, second-instance arguments and macOS `open-url`. They share the same route handling and pairing-v2 validation; payloads are not rewritten, expired pairing secrets stay invalid, and retired v1 credential links remain rejected. An updated installer is required to register schemes; UI OTA alone cannot do this. When old and new applications coexist, the OS/default-app selection determines the recipient of a legacy scheme.
 
 ## Main Files
@@ -352,16 +354,59 @@ guidance live in `packages/ui/src/lib/gui-plugins/DOCUMENTATION.md`. Host logs r
 codes without plugin arguments or upstream payloads. Plugins can catch unsupported
 native actions and keep their previews usable.
 
-Plugins can use Electron's `BrowserWindow`/`webContents.printToPDF()` through their
-main entry to implement PDF export. Yuri does not implement a plugin-specific
-export button. This capability requires an updated installer (main + preload),
-not only UI OTA; Web, VS Code, mobile and older shells retain window-only behavior.
+Native plugin main entries can use Electron APIs, but the independent container
+view-export contracts below do not execute plugin main. These capabilities require
+an updated installer (main + preload), not only UI OTA.
 
 Focused validation: `bunx vitest run --project @yuriai/electron packages/electron/gui-plugin-host.test.mjs packages/electron/scripts/gui-plugin-evidence.test.mjs`.
 The evidence fixture runs the production preload/window host in real macOS Electron
 with Vite HMR on loopback and bundled UI on the packaged origin and checks generated PDF bytes. Its service
 inventory is mocked; it does not validate a signed installer, Eficy's export UI or
 Windows/Linux runtime behavior.
+
+### Container view export (GSAPI v1)
+
+`view-export.mjs` owns two independent client capabilities, `exportPDF` and
+`exportLongImage`, behind `__YURI_DESKTOP__.viewExport.request/subscribe` and the
+`yuri:view-export` / `yuri:view-export:event` channels. The wire contract is
+`packages/ui/src/lib/view-export/types.ts`. Neither method accepts `format`.
+Inputs are static `{ snapshot: { html, width, height }, filename, taskId }`, with
+optional `pageSize: 'a4' | 'letter'` for PDF. Main independently enforces 16 MiB
+UTF-8 HTML, 8192 × 32768 dimension bounds and 16,777,216 output pixels.
+
+Only an owned, allowlisted application main-frame document qualifies. The capability
+is intentionally available when that app connects to remote/Relay or enters GUI
+window-only mode; remote pages, iframes and same-origin preview/file/API routes are
+rejected. Existing GUI native-main and all other IPC gates remain unchanged.
+The preload has no generic native execution or destination-path API.
+
+Each export creates an ephemeral isolated session and a sandboxed, preload-free
+renderer with JavaScript disabled. CSP, request filtering, denied permissions and
+navigation/window guards block external resources. Only fixed host readiness code
+runs through CDP. PNG capture includes the entire declared snapshot at one output
+pixel per CSS pixel; PDF uses paginated A4 (default) or Letter with 24 pt (1/3 inch)
+margins on every side. PDF maps 96 CSS pixels to 72 pt, never enlarges content, and
+shrinks only when its width exceeds the printable page width. Progress carries the
+task ID and real stage, with no estimated percentages. A native save picker chooses
+the destination. Bytes are written to an exclusive sibling staging file and atomically
+renamed; `saved` is returned only after that commit. Failures return `EXPORT_*`
+envelopes without paths or snapshot content.
+
+One task per owner is allowed. Cancel, owner navigation/destruction, runtime switches
+and shutdown tear down rendering and discard late results. Electron's save dialog
+has no abort API: if cancellation happens while the picker is open, its eventual
+selection is ignored and the owner remains busy until the user closes the picker.
+The short atomic rename commit is non-cancellable, so a committed file returns
+`saved` rather than a misleading cancellation. Shutdown awaits active task cleanup.
+
+Focused validation:
+`bunx vitest run --project @yuriai/electron packages/electron/view-export.test.mjs packages/electron/scripts/view-export-evidence.test.mjs`.
+The real Electron fixture exercises the production host/preload under loopback Vite
+HMR and packaged `yuri-ui://` origins, verifies multipage A4/Letter PDF and the bottom
+pixels of a complete long PNG, blocked snapshot network/script behavior, cancellation
+and route denial. It substitutes the native picker destination; it does not prove
+OS chooser interaction, signed packaging, or Windows/Linux behavior. Set
+`YURI_TEST_EVIDENCE_DIR` to retain generated PDFs/PNG and JSON evidence.
 
 Renderer code should call the desktop bridge exposed by `preload.mjs`. Do not import Electron from shared UI code.
 
