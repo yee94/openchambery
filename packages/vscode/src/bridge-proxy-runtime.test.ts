@@ -1,4 +1,4 @@
-import { describe, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import assert from 'node:assert/strict';
 import type { BridgeContext } from './bridge';
 import type { ConnectionStatus, OpenCodeManager } from './opencode';
@@ -52,6 +52,80 @@ const createManagerCtx = (initial: { status: ConnectionStatus; url: string | nul
 };
 
 const ctx = createManagerCtx({ status: 'connected', url: 'http://127.0.0.1:3902' }).ctx;
+
+describe('VS Code GUI code-only revision protocol', () => {
+  test('shares the host protocol while preserving current options, upstream failures and request scope', async () => {
+    const originalFetch = globalThis.fetch;
+    const seen: { url: string; headers: Headers; signal: AbortSignal | null | undefined }[] = [];
+    let revision = 'r1';
+    let options = { current: 1 };
+    let status = 200;
+    type Result = { status: number; headers: Record<string, string>; bodyText?: string };
+    const call = async (headers: Record<string, string> = {}, path = '/plugin/gui?id=one&location%5Bdirectory%5D=%2Fworkspace') => {
+      const response = await handleProxyBridgeMessage({ id: `gui-${seen.length}`, type: 'api:proxy', payload: { method: 'GET', path, headers } }, ctx, deps);
+      return response?.data as Result;
+    };
+    try {
+      globalThis.fetch = (async (input, init) => {
+        seen.push({ url: String(input), headers: new Headers(init?.headers), signal: init?.signal });
+        return new Response(JSON.stringify({ location: { directory: '/workspace' }, data: { code: 'bundle-code', revision, options } }), {
+          status, headers: { 'content-type': 'application/json', 'x-upstream': 'kept' },
+        });
+      }) as typeof fetch;
+      const first = await call();
+      const token = first.headers['x-yuri-gui-revision'];
+      expect(token).toMatch(/^[a-f0-9]{64}$/);
+      expect(JSON.parse(first.bodyText!).data.code).toBe('bundle-code');
+      options = { current: 2 };
+      const second = await call({ 'X-Yuri-Gui-Revision': token, 'If-None-Match': '*', 'x-opencode-directory': '/workspace' });
+      expect(second.status).toBe(200);
+      expect(second.headers).toMatchObject({ 'x-yuri-gui-code': 'cached', 'x-yuri-gui-revision': token, 'cache-control': 'private, no-store', 'x-upstream': 'kept' });
+      expect(JSON.parse(second.bodyText!).data).toEqual({ code: '', revision, options });
+      expect(seen).toHaveLength(2);
+      expect(seen[1].url).toBe('http://127.0.0.1:3902/api/plugin/gui?id=one&location%5Bdirectory%5D=%2Fworkspace');
+      expect(seen[1].headers.get('x-yuri-gui-revision')).toBeNull();
+      expect(seen[1].headers.get('if-none-match')).toBeNull();
+      expect(seen[1].headers.get('x-opencode-directory')).toBe('/workspace');
+      expect(seen[1].signal).toBeInstanceOf(AbortSignal);
+      revision = 'r2';
+      const changed = await call({ 'x-yuri-gui-revision': token });
+      expect(changed.headers['x-yuri-gui-code']).toBeUndefined();
+      expect(JSON.parse(changed.bodyText!).data.code).toBe('bundle-code');
+      status = 401;
+      const failure = await call({ 'x-yuri-gui-revision': token });
+      expect(failure.status).toBe(401);
+      expect(failure.headers['x-yuri-gui-revision']).toBeUndefined();
+      expect(JSON.parse(failure.bodyText!).data.code).toBe('bundle-code');
+      status = 200;
+      const other = await call({ 'x-yuri-gui-revision': token }, '/api/plugin?id=one');
+      expect(other.headers['x-yuri-gui-code']).toBeUndefined();
+      expect(other.headers['x-yuri-gui-revision']).toBeUndefined();
+      expect(seen).toHaveLength(5);
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
+  test('keeps bridge cancellation authoritative instead of returning cached success', async () => {
+    const originalFetch = globalThis.fetch;
+    let dispatched!: () => void;
+    const started = new Promise<void>((resolve) => { dispatched = resolve; });
+    try {
+      globalThis.fetch = (async (_input, init) => {
+        dispatched();
+        return await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+        });
+      }) as typeof fetch;
+      const pending = handleProxyBridgeMessage({ id: 'gui-abort', type: 'api:proxy', payload: {
+        method: 'GET', path: '/api/plugin/gui?id=one', headers: { 'x-yuri-gui-revision': 'a'.repeat(64) },
+      } }, ctx, deps);
+      await started;
+      await handleProxyBridgeMessage({ id: 'abort', type: 'api:proxy:abort', payload: { requestID: 'gui-abort' } }, ctx, deps);
+      const result = await pending;
+      expect(result?.data).toMatchObject({ status: 502 });
+      expect((result?.data as { headers: Record<string, string> }).headers['x-yuri-gui-code']).toBeUndefined();
+    } finally { globalThis.fetch = originalFetch; }
+  });
+});
 
 describe('VS Code OpenCode upstream /api path restore', () => {
   test('keeps /api paths and restores missing prefix for legacy roots', () => {

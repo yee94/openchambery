@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import type { OpenCodeClient } from '@yuriai/opencode-gui-client';
+import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 
 let activeBundles = 0;
 const pendingBundles: Array<() => void> = [];
@@ -40,12 +41,22 @@ export const guiInventoryOptions = (transport: string, client?: OpenCodeClient) 
 export const guiBundleOptions = (transport: string, id: string, client?: OpenCodeClient) => queryOptions({
   queryKey: [transport, 'plugins', 'gui', null, 'bundle', id],
   queryFn: async ({ signal }) => {
+    const identity = getRuntimeTransportIdentity();
+    const generation = getRuntimeGeneration();
+    const runtime = getRuntimeKey();
+    const assertCurrent = () => {
+      signal.throwIfAborted();
+      if (identity !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration() || runtime !== getRuntimeKey()) {
+        throw new DOMException('Plugin runtime ended', 'AbortError');
+      }
+    };
     const api = client ?? (await import('@/lib/opencode/gui')).createGuiClient(signal);
+    assertCurrent();
     const release = await acquireBundleSlot(signal);
     try {
-      signal.throwIfAborted();
+      assertCurrent();
       const result = await api.plugin.gui({ id }, { signal });
-      signal.throwIfAborted();
+      assertCurrent();
       return result.data;
     } finally { release(); }
   },

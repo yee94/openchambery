@@ -149,8 +149,9 @@ const FILE_STAT_WATCH_INTERVAL_MS = 2_000;
 
 /**
  * Watch an open file for external changes while a read-only preview is active.
- * Polls stat (cheap) and invalidates the content query only when size or
- * mtime actually moved, mirroring the desktop FilesView poll behavior.
+ * Returns the stat query for classification without a duplicate metadata read.
+ * Polls stat (cheap) and invalidates text content only when size, mtime or
+ * binary classification moved, mirroring the desktop FilesView poll behavior.
  * No-op when the runtime lacks statFile.
  */
 export const useFileStatWatcher = (

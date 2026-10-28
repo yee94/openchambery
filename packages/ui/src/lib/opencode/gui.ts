@@ -48,10 +48,12 @@ export function createGuiClient(signal: AbortSignal) {
           return runtimeFetch(request, { ...requestInit, signal: requestSignal, headers, cache: 'no-store' });
         };
         let response = await fetchBundle(cached?.token);
+        let revalidated = !!cached;
         assertCurrent();
         if (response.headers.get('X-Yuri-Gui-Code') === 'cached'
           && (!cached || response.headers.get('X-Yuri-Gui-Revision') !== cached.token)) {
           await response.body?.cancel();
+          revalidated = false;
           response = await fetchBundle();
           assertCurrent();
         }
@@ -64,7 +66,7 @@ export function createGuiClient(signal: AbortSignal) {
         }
         const token = response.headers.get('X-Yuri-Gui-Revision');
         if (response.headers.get('X-Yuri-Gui-Code') === 'cached') {
-          if (!cached || token !== cached.token || payload.data.code !== '') throw new Error('Invalid GUI code cache response');
+          if (!revalidated || !cached || token !== cached.token || payload.data.code !== '') throw new Error('Invalid GUI code cache response');
           payload.data.code = cached.code;
           const headers = new Headers(response.headers);
           headers.delete('content-length');

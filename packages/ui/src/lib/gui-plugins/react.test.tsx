@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   list: vi.fn(), gui: vi.fn(), hostImports: vi.fn(), signals: [] as AbortSignal[], hostFailure: false,
   hosts: [] as Array<{ install: ReturnType<typeof vi.fn>; uninstall: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; setSession: ReturnType<typeof vi.fn> }>,
 }));
-vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => state.transport, getRuntimeKey: () => state.transport }));
+vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => state.transport, getRuntimeKey: () => state.transport, getRuntimeGeneration: () => 0 }));
 vi.mock('@/lib/instanceScopedStorage', () => ({ instanceScopedStorageKey: (key: string, runtime: string) => `${runtime}:${key}` }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ files: state.files }) }));
 vi.mock('@/sync/session-ui-store', () => ({ useSessionUIStore: (select: (value: object) => unknown) => select({ currentSessionId: state.sessionID }) }));
@@ -122,6 +122,16 @@ it('cancels idle preload when disabled or switched, and ignores a stale idle cal
   await act(async () => draw()); await settle();
   await act(async () => stale({ didTimeout: true, timeRemaining: () => 0 }));
   expect(context.requested).toBe(false);
+  expect(state.gui).not.toHaveBeenCalled();
+});
+
+it.each(['server-only', 'failed', 'disabled'] as const)('does not schedule background work for %s plugins', async (kind) => {
+  if (kind === 'server-only') state.list.mockResolvedValue({ data: [{ ...plugin, features: { server: true } }] });
+  if (kind === 'failed') state.list.mockResolvedValue({ data: [{ ...plugin, state: { status: 'failed', error: 'setup failed' } }] });
+  if (kind === 'disabled') localStorage.setItem('host-a:gui-plugins.disabled', '["dsl"]');
+  await act(async () => draw()); await settle();
+  expect(idleTasks.size).toBe(0);
+  expect(state.hosts).toHaveLength(0);
   expect(state.gui).not.toHaveBeenCalled();
 });
 

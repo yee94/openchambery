@@ -70,12 +70,19 @@ export const runtimeFileStore = {
     meta.put({ ...entry, used: Date.now() });
     return new Blob([value], { type: entry.mime });
   }, signal),
-  write: async (key: string, blob: Blob, signal: AbortSignal, tags?: string[]): Promise<void> => {
+  write: async (key: string, blob: Blob, signal: AbortSignal, tags?: string[], replaceTag?: string): Promise<void> => {
     const value = await blob.arrayBuffer();
     signal.throwIfAborted();
     if (value.byteLength > 32 * 1024 * 1024) throw new Error('File exceeds complete-body cache budget');
     await transaction(async (meta, bytes) => {
-      const entries = (await requestValue<Metadata[]>(meta.getAll())).filter((entry) => entry.key !== key)
+      const entries = (await requestValue<Metadata[]>(meta.getAll())).filter((entry) => {
+        if (entry.key === key) return false;
+        if (replaceTag !== undefined && entry.tags?.includes(replaceTag)) {
+          meta.delete(entry.key); bytes.delete(entry.key);
+          return false;
+        }
+        return true;
+      })
         .sort((a, b) => a.used - b.used);
       let size = entries.reduce((total, entry) => total + entry.size, value.byteLength);
       let count = entries.length + 1;
@@ -86,7 +93,7 @@ export const runtimeFileStore = {
       }
       bytes.put(value, key);
       const existing = await requestValue<Metadata | undefined>(meta.get(key));
-      meta.put({ key, size: value.byteLength, mime: blob.type, used: Date.now(), tags: [...new Set([...(existing?.tags ?? []), ...(tags ?? [])])] } satisfies Metadata);
+      meta.put({ key, size: value.byteLength, mime: blob.type, used: Date.now(), tags: [...new Set([...(existing?.tags ?? []), ...(tags ?? []), ...(replaceTag === undefined ? [] : [replaceTag])])] } satisfies Metadata);
     }, signal);
   },
   clear: (): Promise<void> => transaction(async (meta, bytes) => { meta.clear(); bytes.clear(); }),

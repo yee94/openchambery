@@ -1,5 +1,6 @@
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { isSensitiveCredentialResponse } from './credential-boundary.js';
+import { preparePluginGuiRequest, projectPluginGuiResponse } from './plugin-gui-response.js';
 import { registerSessionDeliveryRoute } from './session-delivery-runtime.js';
 import { stripSessionMessageNativePayload } from '../session-turn-pages/native-payload.js';
 
@@ -1363,5 +1364,36 @@ export const registerOpenCodeProxy = (app, deps) => {
   });
 
   app.use('/api', applyProxyResponseDeadline);
+  app.use('/api', async (req, res, next) => {
+    if (req.method !== 'GET' || req.path !== '/plugin/gui') return next();
+    const upstreamPath = toUpstreamOpenCodeApiPath(req.url);
+    const gui = preparePluginGuiRequest(req.method, upstreamPath, normalizeForwardedDirectoryHeaders(
+      collectForwardProxyHeaders(req.headers, getOpenCodeAuthHeaders()),
+    ));
+    if (!gui) return next();
+
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.once('aborted', abort);
+    res.once('close', abort);
+    try {
+      const upstream = await fetch(buildOpenCodeUrl(upstreamPath, ''), {
+        method: req.method, headers: gui.headers, signal: controller.signal, redirect: 'manual',
+      });
+      const response = await projectPluginGuiResponse(upstream, gui.revision);
+      const body = Buffer.from(await response.arrayBuffer());
+      if (res.writableEnded || res.destroyed) return;
+      res.status(response.status);
+      applyForwardProxyResponseHeaders(response.headers, res);
+      res.end(body);
+    } catch (error) {
+      if (!controller.signal.aborted && !req[PROXY_TIMEOUT_MARKER]) {
+        sendProxyErrorResponse(res, isProxyTimeoutError(error) ? 504 : 503);
+      }
+    } finally {
+      req.off('aborted', abort);
+      res.off('close', abort);
+    }
+  });
   app.use('/api', apiProxy);
 };

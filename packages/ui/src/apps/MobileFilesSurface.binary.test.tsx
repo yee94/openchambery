@@ -7,7 +7,7 @@ import { fileStatQueryOptions } from '@/queries/fileQueries';
 import { MobileFilesSurface } from './MobileFilesSurface';
 
 const state = vi.hoisted(() => ({
-  files: { readFile: vi.fn(), statFile: vi.fn(), downloadFile: vi.fn() },
+  files: { readFile: vi.fn(), statFile: vi.fn(), downloadFile: vi.fn(), listDirectory: vi.fn(), search: vi.fn(), createDirectory: vi.fn() },
   runtime: { isDesktop: false },
   plugin: false,
   t: (key: string) => key,
@@ -110,7 +110,7 @@ test('watcher changing text to binary disables content refetch even with unchang
   await render(path);
   await settle();
   expect(state.files.readFile).toHaveBeenCalledTimes(1);
-  const options = fileStatQueryOptions(state.files as Parameters<typeof fileStatQueryOptions>[0], { scopeDirectory: '/workspace', path });
+  const options = fileStatQueryOptions(state.files, { scopeDirectory: '/workspace', path });
   await act(async () => queryClient.setQueryData(options.queryKey, { path, isFile: true, size: 10, mtimeMs: 1, isBinary: true }));
   await settle();
   expect(host.textContent).toContain('filesView.binary.description');
@@ -127,4 +127,31 @@ test('late stat for an old path never enables its content after navigation', asy
   await settle();
   expect(host.textContent).toContain('filesView.binary.description');
   expect(state.files.readFile).not.toHaveBeenCalled();
+});
+
+test('a cached text classification must be revalidated before a newly opened file can read text', async () => {
+  const path = '/workspace/replaced.unknown';
+  const options = fileStatQueryOptions(state.files, { scopeDirectory: '/workspace', path });
+  queryClient.setQueryData(options.queryKey, { path, isFile: true, size: 10, isBinary: false });
+  let resolve!: (value: unknown) => void;
+  state.files.statFile.mockReturnValue(new Promise((done) => { resolve = done; }));
+  await render(path);
+  expect(state.files.readFile).not.toHaveBeenCalled();
+  await act(async () => resolve({ path, isFile: true, size: 4_000_000_000, isBinary: true }));
+  await settle();
+  expect(host.textContent).toContain('filesView.binary.description');
+  expect(state.files.readFile).not.toHaveBeenCalled();
+});
+
+test('cached binary classification does not hide a failed stat revalidation behind download fallback', async () => {
+  const path = '/workspace/cached.dmg';
+  const options = fileStatQueryOptions(state.files, { scopeDirectory: '/workspace', path });
+  queryClient.setQueryData(options.queryKey, { path, isFile: true, size: 500, isBinary: true });
+  state.files.statFile.mockRejectedValue(new Error('stat revalidation offline'));
+  await render(path);
+  expect(host.textContent).toContain('stat revalidation offline');
+  expect(host.textContent).not.toContain('filesView.binary.description');
+  expect(host.textContent).not.toContain('sidebarFilesTree.menu.save');
+  expect(state.files.readFile).not.toHaveBeenCalled();
+  expect(state.files.downloadFile).not.toHaveBeenCalled();
 });

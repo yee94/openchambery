@@ -1,5 +1,6 @@
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { isSensitiveCredentialResponse } from '../../web/server/lib/opencode/credential-boundary.js';
+import { preparePluginGuiRequest, projectPluginGuiResponse } from '../../web/server/lib/opencode/plugin-gui-response.js';
 import { stripSessionMessageNativePayload } from '../../web/server/lib/session-turn-pages/native-payload.js';
 import {
   isOpenCodeExecutionPermitted,
@@ -201,9 +202,13 @@ const performApiProxyFetch = async (
   body: Buffer | undefined,
   signal: AbortSignal | undefined,
   deps: Pick<ProxyRuntimeDeps, 'collectHeaders'>,
+  gui: ReturnType<typeof preparePluginGuiRequest> = null,
 ): Promise<ApiProxyResponsePayload> => {
   try {
-    const response = await fetch(targetUrl, { method, headers, body, signal });
+    const upstream = await fetch(targetUrl, { method, headers: gui?.headers ?? headers, body, signal,
+      ...(gui ? { redirect: 'manual' as const } : {}),
+    });
+    const response = gui ? await projectPluginGuiResponse(upstream, gui.revision) : upstream;
     const responseHeaders = collectProxyResponseHeaders(response.headers, deps);
     if (shouldReturnTextBody(response.headers)) {
       return { status: response.status, headers: responseHeaders, bodyText: await response.text() };
@@ -371,6 +376,7 @@ export async function handleProxyBridgeMessage(
           requestBody,
           abortController.signal,
           deps,
+          preparePluginGuiRequest(normalizedMethod, upstreamPath, requestHeaders),
         );
 
         if (

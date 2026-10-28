@@ -43,20 +43,25 @@ Plugin keyboard shortcuts and slash-command autocomplete are not supported in
 this first version. Command-palette and manager actions are the available command
 entry points; contributed shortcut bindings are not installed by this UI.
 
-## Deferred loading
+## Preloading and preview preparation
 
-The provider initially fetches inventory only. A visible, active file bridge,
+The provider initially fetches inventory, then preloads active enabled GUI plugins
+at browser idle (2s timeout, 1s timer fallback). A visible, active file bridge,
 the mounted Plugins manager, or the open command-palette plugin group calls
-`requestLoad()`. Closed command palettes and inactive/inert/hidden file views
-must not trigger GUI downloads. Demand is retained for the current runtime so
-closing and reopening a file reuses the loaded host and bundle queries.
+`requestLoad()` to bypass that wait. Closed command palettes and inactive/inert/hidden
+file views do not initiate demand themselves. Demand is retained for the current
+runtime so closing and reopening a file reuses the installed host and bundle queries.
+Persistent code is revalidated before installation; its transport and freshness
+contract belongs to `lib/gui-plugins/DOCUMENTATION.md`.
 
 The standard inventory only declares `features.gui`; file matchers are registered
-by plugin setup. The first demand therefore loads enabled GUI plugins, not a
+by plugin setup. Preload or explicit demand therefore loads enabled GUI plugins, not a
 guessed extension-specific plugin. Server-only and disabled plugins are excluded.
 File views place `GuiPreviewLoading` in their existing preview slot, keeping file
 tabs and toolbars in place. The centered, transparent file-content canvas reserves
-at least 240px and inherits the file surface rather than adding a card. A decorative
+at least 240px (including under the global mobile flex min-height reset) and inherits
+the file surface rather than adding a card. The source action uses a visible keyboard
+focus background even where global styles suppress focus rings. A decorative
 SVG animates content-line opacity with CSS only; reduced-motion disables it. A
 localized title and first-open hint describe preview preparation without implementation
 terminology or cache assumptions. “View source” and the toolbar source toggle remain
@@ -73,6 +78,10 @@ the new runtime explicitly.
 exact matching and the workspace base. It does not fetch file contents. A matching
 file panel is the default preview, with one icon-only source/edit toggle; normal source/image
 content remains the fallback when no panel matches or the plugin is disabled.
+Authoritative binary stat results use the shared file-view `BinaryFileFallback`
+instead of reading or editing UTF-8; this fallback and its explicit system-open /
+runtime-download actions are owned outside GUI plugins. Plugin previews retain
+priority over that state. See `packages/ui/README.md#file-preview-fallback`.
 Source mode releases the Solid mount while retaining the parent editor draft.
 FilesView and MobileFileDetail place the toggle in their existing floating/docked
 toolbar or header actions through the bridge's render slots. There is no separate

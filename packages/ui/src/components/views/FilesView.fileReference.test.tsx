@@ -155,7 +155,7 @@ describe('binary file fallback', () => {
     expect(harness.files.readFile).not.toHaveBeenCalled();
     expect(host.querySelector('[data-testid="editor"]')).toBeNull();
     expect(host.textContent).toContain('filesView.binary.description');
-    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, metaKey: true })));
+    await act(async () => host.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, metaKey: true, bubbles: true })));
     expect(harness.files.writeFile).not.toHaveBeenCalled();
     expect(harness.openDesktopPath).not.toHaveBeenCalled();
     await clickButton('sidebarFilesTree.menu.save');
@@ -214,6 +214,17 @@ describe('binary file fallback', () => {
     await act(async () => reactRoot.render(<FilePanel />));
     expect(host.querySelector('[data-testid="editor"]')?.textContent).toBe('readable text');
     expect(harness.files.statFile).toHaveBeenCalledTimes(1);
+  });
+
+  test('repeated metadata polls never read a large binary as text', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    harness.files.statFile.mockResolvedValue({ path: '/repo/installer.dmg', isFile: true, size: 4_000_000_000, mtimeMs: 1, isBinary: true });
+    await open('/repo/installer.dmg');
+    await act(async () => reactRoot.render(<FilePanel />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100_000); });
+    expect(harness.files.statFile.mock.calls.length).toBeGreaterThanOrEqual(50);
+    expect(harness.files.readFile).not.toHaveBeenCalled();
+    expect(harness.files.writeFile).not.toHaveBeenCalled();
   });
 });
 

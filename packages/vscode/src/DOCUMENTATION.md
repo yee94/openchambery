@@ -123,6 +123,7 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
 
 - `bridge-proxy-runtime.ts`
   - Proxy route handlers (`api:proxy`, `api:session:message`) with injected helper dependencies.
+  - Exact GUI reads reuse Web's `opencode/plugin-gui-response.js` code-only revision protocol after the current upstream fetch. `X-Yuri-Gui-Revision` is a lowercase SHA-256 revision token, never an upstream conditional header. A matching valid 200 keeps fresh `data.options` and all other envelope fields, replacing only `data.code` with `''` plus `X-Yuri-Gui-Code: cached`; no 304 and no host cache. Successful GUI responses are `private, no-store`, and ordinary clients retain full bodies. Query/auth/cancellation and failure status/body handling stay with the generic bridge. See the OpenCode module documentation for the wire contract.
   - Execution writes (`prompt`, `message`, …) re-check the current connected
     permit immediately before upstream fetch; interrupt/abort and reads keep the
     waited URL path. Status leaving `connected` after wait must not forward writes.

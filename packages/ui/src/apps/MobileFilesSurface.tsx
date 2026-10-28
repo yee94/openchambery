@@ -217,6 +217,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
     filePath
     && files.readFile
     && fileStatQuery.data
+    && fileStatQuery.isFetchedAfterMount
     && !fileStatQuery.error
     && !isBinary
     && (!isHtmlFile(filePath) || htmlViewMode === 'source')
@@ -248,7 +249,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
     : readError
       ? readError instanceof Error ? readError.message : t('filesView.error.readFileFailed')
       : null;
-  const isLoadingFile = !fileError && ((needsFileStat && !fileStatQuery.data) || (shouldReadFile && fileQuery.isFetching));
+  const isLoadingFile = !fileError && ((needsFileStat && (!fileStatQuery.data || !fileStatQuery.isFetchedAfterMount)) || (shouldReadFile && fileQuery.isFetching));
 
   const openDirectory = (directory: string) => {
     setQuery('');
@@ -703,7 +704,7 @@ const MobileFileDetail: React.FC<{
         </MobileSheetHeaderActions>
       )}
       <div ref={contentContainerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-        {preview ?? (isBinary ? (
+        {preview ?? (isBinary && !isLoading && !error ? (
           <BinaryFileFallback key={path} path={path} />
         ) : html && !isLoading && !error ? (
           htmlFullscreen && typeof document !== 'undefined'

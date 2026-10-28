@@ -84,6 +84,8 @@ Inventory 和 bundle 都由 TanStack Query 持有，键为 `[transport, 'plugins
 
 端侧只持久化 GUI 代码和 revision 校验 token，不持久化插件 options。持久键按缓存 schema、GUI ABI、稳定 runtime 身份和插件 ID 隔离；transport/generation 只用于取消和迟到结果隔离，不作为磁盘分区，不在日常切换服务时删除缓存。代码使用 `runtimeFileStore` 的完整 Blob 事务及共享容量淘汰（单项 32 MiB、总计 256 MiB/128 项）；缓存不可用、损坏或淘汰时降级为完整网络读取。
 
+revision 更新原位覆盖同 key。GUI 写入通过 `runtimeFileStore.write` 的可选第五参 `replaceTag`，使用不含 schema/ABI 的稳定分组 `JSON.stringify(['gui-code', runtime, pluginId])`：同一个 readwrite 事务写入新代码并删除同 tag 的其他 key，升级 schema/ABI 后也只保留该组一份代码；写入或清理失败全部回滚，保留旧代码。清理不匹配其他插件、其他 runtime 或图片；共享容量淘汰规则仍生效。已有同 key 未标记记录在下次写入时补 tag，无历史已发布 schema 的推测迁移。
+
 精确 GUI GET 通过 `X-Yuri-Gui-Revision` 发送已有 token。Yuri 代理每次读取上游当前 bundle，以 revision 的 SHA-256 生成响应 token；匹配时返回 HTTP 200、`X-Yuri-Gui-Code: cached` 及空 `code`，保留本次权威 revision/options。客户端在 SDK 解码前补回持久代码。未匹配、无缓存或旧 host 则完整下载。请求失败不能用磁盘代码冒充新鲜成功，冷启动必须校验后才执行；已运行实例在刷新失败时继续保留。响应使用 `private, no-store`，不把 options 留在浏览器 HTTP 缓存中。
 
 因此缓存未被淘汰且 revision 未变时，Yuri→客户端不重复传输代码；Yuri→OpenCode 仍须获取完整 bundle。npm 版本不能替代 revision，配置变化和本地插件修改由上游 revision 覆盖。bundle 请求最多并发两个；这限制网络工作量，不能为任意第三方同步 setup 提供硬 CPU 时限。每个插件独立就绪并 apply，不能等待全部插件完成才允许预览。iframe 的执行堆、组件初始化和 HTTPS 依赖由插件及浏览器 HTTP 缓存拥有，不属于此代码缓存。

@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   files: null as FilesAPI | null,
   session: { id: 'lazy-session', directory: '/workspace' },
 }));
-vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => 'lazy-runtime', getRuntimeKey: () => 'lazy-runtime' }));
+vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => 'lazy-runtime', getRuntimeKey: () => 'lazy-runtime', getRuntimeGeneration: () => 0 }));
 vi.mock('@/lib/instanceScopedStorage', () => ({ instanceScopedStorageKey: (key: string, runtime: string) => `${runtime}:${key}` }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ files: state.files }) }));
 vi.mock('@/sync/session-ui-store', () => ({ useSessionUIStore: (select: (value: { currentSessionId: string }) => unknown) => select({ currentSessionId: state.session.id }) }));

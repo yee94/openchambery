@@ -114,6 +114,32 @@ the central decorative mark. `assets/brand/yuri/build_wordmark.py` regenerates t
 master artwork and synchronizes this bundled SVG. The welcome's connection/history
 actions retain their existing shared sheet and modal behavior.
 
+## File preview fallback
+
+`FilesView` and `MobileFilesSurface` retain the inline GUI-plugin preview as the
+outermost preview choice. The ordinary text fallback first reads authoritative
+`FilesAPI.statFile` metadata; a binary result never triggers a UTF-8 content read,
+editor or save. Unknown suffixes still display text when stat permits it. Stat
+failure/unavailable capability is an error, not evidence of a text file. Existing
+image/PDF rendering stays on its asset path.
+
+`components/views/BinaryFileFallback.tsx` owns the shared non-text state. Local
+desktop users explicitly choose “Open in system app”; both its visibility and
+the existing `openDesktopPath` boundary require the active local origin. Remote
+desktop, web, mobile and VS Code use `FilesAPI.downloadFile` when supplied by
+their runtime. Opening a file tab never triggers either action automatically.
+
+Mobile reuses the stat watcher query for classification instead of adding a
+second metadata read, and revalidates cached classification on opening a file.
+Runtime/scope/path/read-options remain part of its query
+identity; binary transitions disable text refetch. Desktop preserves outside-file
+read options/grants for stat and content and rejects stale stat completions before
+starting a content read. Binary files keep metadata-only external-change watching.
+
+The file-reference and mobile binary tests cover skipped reads/writes, explicit
+actions, plugin precedence, stat failures and stale completions. They do not prove
+real OS app opening, native mobile downloads or remote/Relay transfer behavior.
+
 ## Validation
 
 Use `bun run --cwd packages/ui type-check`, `lint`, and `test`.
