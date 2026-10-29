@@ -3190,6 +3190,57 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('lists scheduled tasks across projects and patches only the model of one task through the connected catalog', async () => {
+    const directory = root();
+    const patches = [];
+    const synced = [];
+    const stored = {
+      proj_a: [{ id: 'task_a', name: 'Weekly', enabled: true, schedule: { kind: 'daily', times: ['09:00'], timezone: 'Asia/Shanghai' }, execution: { prompt: 'review notes', providerID: 'magpie-cursor', modelID: 'gemini-3.8-flash' } }],
+      proj_b: [{ id: 'task_b', name: 'Report', enabled: true, schedule: { kind: 'daily', times: ['22:00'] }, execution: { prompt: 'daily report', providerID: 'magpie-magpie', modelID: 'auto-gemini-3.8-flash' } }],
+    };
+    let listed;
+    let missing;
+    let updated;
+    const service = setup(directory, {
+      provider: { list: async () => ({ data: [{ id: 'magpie-magpie', name: 'Magpie' }] }) },
+      model: { list: async () => ({ data: [{ providerID: 'magpie-magpie', id: 'auto-gemini-3.8-flash', name: 'Gemini 3.8 Flash' }] }) },
+    }, {
+      listProjects: async () => [{ id: 'proj_a', path: path.join(directory, 'a') }, { id: 'proj_b', path: path.join(directory, 'b') }, { id: 'proj_bad', path: path.join(directory, 'bad') }],
+      listScheduledTasks: async (projectID) => {
+        if (projectID === 'proj_bad') throw new Error('unreadable');
+        return stored[projectID];
+      },
+      patchScheduledTask: async (projectID, taskID, patch) => {
+        patches.push({ projectID, taskID, patch });
+        const task = stored[projectID]?.find((item) => item.id === taskID);
+        if (!task) return { task: null, tasks: [] };
+        return { task: { ...task, execution: { ...task.execution, ...patch.execution } }, tasks: [] };
+      },
+      syncScheduledTaskProject: async (projectID) => { synced.push(projectID); },
+      runContactTurn: async ({ tools }) => {
+        listed = await tools.find((tool) => tool.name === 'list_scheduled_tasks').execute('call_list', { query: 'magpie-cursor' });
+        const update = tools.find((tool) => tool.name === 'update_scheduled_task');
+        missing = await update.execute('call_missing', { projectID: 'proj_a', taskID: 'task_a', model: 'missing/not-real' });
+        updated = await update.execute('call_update', { projectID: 'proj_a', taskID: 'task_a', model: 'magpie-magpie/auto-gemini-3.8-flash' });
+        return { text: 'done', bubbles: ['done'], cards: [updated.details.card], tools };
+      },
+    });
+    const host = service.createAssistant(assistantInput);
+    await settleSend(service, host.id, { messageID: 'client_update_schedule', parts: [{ type: 'text', text: '把定时任务的模型换成 magpie 的' }] });
+    expect(listed.details).toEqual({
+      tasks: [expect.objectContaining({ id: 'task_a', projectID: 'proj_a', providerID: 'magpie-cursor', modelID: 'gemini-3.8-flash' })],
+      partial: true,
+      failed: [{ projectID: 'proj_bad', projectPath: path.join(directory, 'bad') }],
+    });
+    expect(missing.details.error).toBe('model_not_found');
+    expect(patches).toEqual([{ projectID: 'proj_a', taskID: 'task_a', patch: { execution: { providerID: 'magpie-magpie', modelID: 'auto-gemini-3.8-flash' } } }]);
+    expect(synced).toEqual(['proj_a']);
+    expect(JSON.parse(updated.content[0].text).task).toMatchObject({ id: 'task_a', providerID: 'magpie-magpie', modelID: 'auto-gemini-3.8-flash' });
+    const page = service.contactMessages(host.id);
+    expect(page.messages.some((message) => message.parts.some((part) => part.type === 'card' && part.cardType === 'schedule' && part.taskID === 'task_a'))).toBe(true);
+    service.close();
+  });
+
   it('creates a scheduled task from schedule_task and persists the schedule card', async () => {
     const directory = root();
     const upserts = [];

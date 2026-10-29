@@ -193,6 +193,13 @@ describe('contact tool protocol', () => {
     expect(result.protocolError).toEqual(expect.any(String));
   });
 
+  it('names the unavailable tool and the allowed tools so the correction can recover', () => {
+    const result = parseContactToolCalls('\`\`\`yuri-tool\n{"name":"list_cron","arguments":{}}\n\`\`\`', ['read', 'bash']);
+    expect(result.toolCalls).toEqual([]);
+    expect(result.protocolError).toContain('"list_cron" is not an available tool');
+    expect(result.protocolError).toContain('read, bash');
+  });
+
   it('rejects a truncated explicit tool fence without executing an earlier call', () => {
     const result = parseContactToolCalls('{"name":"read","arguments":{"path":"sample.md"}}\n\`\`\`yuri-tool\n{"name":"read"', ['read']);
     expect(result.toolCalls).toEqual([]);
@@ -231,6 +238,7 @@ describe('contact tool protocol', () => {
       CREATE_ASSISTANT_TOOL_NAME,
     ]);
     expect(detectRequestedContactTools('每天 18:00 排一个 ping 定时任务', tools)).toEqual([SCHEDULE_TASK_TOOL_NAME]);
+    expect(detectRequestedContactTools('把定时任务里的模型换成 magpie 的', [...tools, 'list_scheduled_tasks'])).toEqual(['list_scheduled_tasks']);
     expect(detectRequestedContactTools('建会话写一个文件', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
     expect(detectRequestedContactTools('对，你直接派给那个项目组，再建个会话去修这个问题', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
     expect(detectRequestedContactTools('继续这个会话修 login', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
@@ -280,10 +288,18 @@ describe('contact tool protocol', () => {
       name: 'bash',
       arguments: { command: 'pwd' },
     });
-    expect(parseContactToolCalls(
-      '```yuri-tool\n{"name":"glob","arguments":{"pattern":"*"}}\n```',
-      ['glob', 'bash'],
-    ).toolCalls).toEqual([]);
+  });
+
+  it('runs shell-style aliases through bash instead of rejecting them', () => {
+    const parse = (call) => parseContactToolCalls(`\`\`\`yuri-tool\n${JSON.stringify(call)}\n\`\`\``, ['bash', 'read']).toolCalls;
+    expect(parse({ name: 'shell', arguments: { command: 'pwd' } })).toEqual([{ name: 'bash', arguments: { command: 'pwd' } }]);
+    const [grep] = parse({ name: 'grep', arguments: { pattern: "it's", path: 'src' } });
+    expect(grep.name).toBe('bash');
+    expect(grep.arguments.command).toContain("-e 'it'\\''s' 'src'");
+    expect(parse({ name: 'ls', arguments: {} })[0].arguments.command).toBe("ls -la '.'");
+    expect(parse({ name: 'glob', arguments: { pattern: '*.json' } })[0].arguments.command).toContain("rg --files -g '*.json' '.'");
+    // Without bash the aliases stay unavailable.
+    expect(parseContactToolCalls('```yuri-tool\n{"name":"grep","arguments":{"pattern":"x"}}\n```', ['read']).protocolError).toContain('"grep" is not an available tool');
   });
 
   it('tells DeepSeek to call tools from natural language, not slash commands', () => {
@@ -438,6 +454,8 @@ describe('createContactTools', () => {
       UPDATE_DEFAULT_PROMPT_TOOL_NAME,
       CREATE_ASSISTANT_TOOL_NAME,
       SCHEDULE_TASK_TOOL_NAME,
+      'list_scheduled_tasks',
+      'update_scheduled_task',
       MESSAGE_ASSISTANT_TOOL_NAME,
       ASSIGN_SESSION_TOOL_NAME,
       WATCH_SESSION_TOOL_NAME,
