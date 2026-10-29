@@ -256,7 +256,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
   });
 
-  app.put('/api/projects/:projectId/scheduled-tasks', async (req, res) => {
+  const saveTask = async (req, res) => {
     const projectID = parseProjectID(req);
     if (!projectID) {
       return res.status(400).json({ error: 'projectId is required' });
@@ -267,6 +267,13 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
       return res.status(400).json(envelopeError);
     }
     const taskInput = req.body.task;
+    if (req.method === 'PATCH' && (
+      Object.keys(taskInput).some((key) => !['id', 'name', 'enabled', 'schedule', 'execution'].includes(key))
+      || (taskInput.enabled !== undefined && typeof taskInput.enabled !== 'boolean')
+      || ['schedule', 'execution'].some((key) => taskInput[key] !== undefined && !isPlainObject(taskInput[key]))
+    )) {
+      return res.status(400).json({ error: 'Invalid task patch' });
+    }
 
     try {
       const project = await findProjectByID(projectID);
@@ -281,10 +288,17 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
 
       const taskID = asNonEmptyString(taskInput.id);
       const existingTask = taskID ? await readExistingTask(projectID, taskID) : null;
+      const partial = req.method === 'PATCH';
+      if (partial && !existingTask) {
+        return res.status(404).json({ error: 'Schedule not found' });
+      }
       if (req.scheduledTaskCreateOnly === true && existingTask) {
         return res.status(409).json({ error: 'Task already exists', code: SCHEDULE_CONFLICT_CODE });
       }
-      const guard = scheduledTaskWriteGuard(existingTask, taskInput);
+      const guard = scheduledTaskWriteGuard(existingTask, partial ? {
+        ...existingTask, ...taskInput,
+        execution: { ...existingTask.execution, ...taskInput.execution },
+      } : taskInput);
       if (guard.needsCatalog) {
         const refusal = await verifyConnectedModel(project, guard);
         if (refusal) {
@@ -292,7 +306,9 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
         }
       }
 
-      const upserted = await projectConfigRuntime.upsertScheduledTask(
+      const upserted = partial ? await projectConfigRuntime.patchScheduledTask(
+        projectID, taskID, taskInput, { expected: guard.expected },
+      ) : await projectConfigRuntime.upsertScheduledTask(
         projectID,
         taskInput,
         guard.expected ? { expected: guard.expected } : undefined,
@@ -328,7 +344,9 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
       }
       return res.status(statusCode).json({ error: message });
     }
-  });
+  };
+  app.put('/api/projects/:projectId/scheduled-tasks', saveTask);
+  app.patch('/api/projects/:projectId/scheduled-tasks', saveTask);
 
   app.delete('/api/projects/:projectId/scheduled-tasks/:taskId', async (req, res) => {
     const projectID = parseProjectID(req);

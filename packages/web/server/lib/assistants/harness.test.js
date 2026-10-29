@@ -17,8 +17,52 @@ import {
   runContactTurn,
 } from './harness.js'
 import { PI_CODING_TOOL_NAMES } from './pi-tools.js'
+import { createChatCompletion as gatewayCompletion } from '../llm/completions.js'
 
 describe('createContactStreamFn', () => {
+  it('continues eight real Agent tool rounds through gateway recovery without replaying completed tools', async () => {
+    vi.useFakeTimers()
+    try {
+      const getAssistantSettings = vi.fn(async () => ({ id: 'a', name: 'Fixture', defaultPrompt: 'fixture' }))
+      const tools = createContactTools({ readAssistantSettings: getAssistantSettings, currentAssistant: { id: 'a', name: 'Fixture' } })
+      let round = 0
+      const attempts = new Map()
+      const remove = vi.fn(async () => {})
+      const generate = vi.fn(async ({ sessionID, prompt }) => {
+        const index = Number(sessionID.slice(4))
+        const attempt = (attempts.get(index) || 0) + 1
+        attempts.set(index, attempt)
+        expect((prompt.match(/Yuri tool result name=get_assistant_settings call=/g) || []).length).toBe(index - 1)
+        // More than the old three-attempt limit, and longer than its 90s deadline.
+        if ((index === 3 && attempt <= 9) || (index === 4 && attempt <= 3)) return { text: '' }
+        const text = index <= 8
+          ? '```yuri-tool\n{"name":"get_assistant_settings","arguments":{}}\n```'
+          : '```yuri-final\n{"status":"complete","text":"Verified all eight steps."}\n```'
+        return { text: JSON.stringify({ text }) }
+      })
+      const client = {
+        agent: { get: async () => ({ data: { id: 'yuri-text', permissions: [{ action: '*', resource: '*', effect: 'deny' }] } }) },
+        session: { create: async () => ({ id: `ses_${++round}` }), generate, remove, interrupt: vi.fn() },
+      }
+      const completion = (input) => gatewayCompletion({
+        ...input, buildOpenCodeUrl: () => 'http://127.0.0.1:4096', getOpenCodeAuthHeaders: () => ({}),
+        clientFactory: () => client, ensureTempDirectory: async () => '/tmp/yuri-text',
+        loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'm' }] }),
+      })
+      const outcome = runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm' }, history: [], userText: 'Run eight lookups in order.',
+        tools, createChatCompletion: completion, signal: new AbortController().signal,
+      }).then(value => ({ value }), error => ({ error }))
+      await vi.advanceTimersByTimeAsync(200_000)
+      expect(await outcome).toMatchObject({ value: { text: 'Verified all eight steps.' } })
+      expect(getAssistantSettings).toHaveBeenCalledTimes(8)
+      expect(round).toBe(9)
+      expect(generate).toHaveBeenCalledTimes(21)
+      expect(remove).toHaveBeenCalledTimes(9)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
   it('forwards the assistant variant while keeping private reasoning out of bubbles', async () => {
     const onBubbleDelta = vi.fn();
     const completion = vi.fn(async ({ onTextDelta }) => {
@@ -30,7 +74,10 @@ describe('createContactStreamFn', () => {
       history: [], userText: '你好', createChatCompletion: completion, onBubbleDelta,
     });
     expect(completion.mock.calls.length).toBeGreaterThan(0);
-    for (const [request] of completion.mock.calls) expect(request.body.variant).toBe('high');
+    for (const [request] of completion.mock.calls) {
+      expect(request.body.variant).toBe('high');
+      expect(request).toMatchObject({ timeoutMs: 0, retryEmptyTextUntilCancelled: true, textEnvelope: true });
+    }
     expect(result.bubbles).toEqual(['已完成。']);
     expect(JSON.stringify(onBubbleDelta.mock.calls)).not.toContain('Private reasoning');
   });

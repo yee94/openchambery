@@ -99,6 +99,9 @@ export async function createChatCompletion({
   persistSessionMetadata = null,
   onSystemSessionPersisted = null,
   signal = null,
+  timeoutMs,
+  retryEmptyTextUntilCancelled = false,
+  textEnvelope = false,
 }) {
   signal?.throwIfAborted();
   if (!isRecord(body)) throw new LlmError('validation_error', 400, 'JSON body is required');
@@ -153,6 +156,9 @@ export async function createChatCompletion({
       persistSessionMetadata,
       onSystemSessionPersisted,
       signal,
+      timeoutMs,
+      retryEmptyTextUntilCancelled,
+      textEnvelope,
     });
   } catch (error) {
     if (error instanceof LlmError) throw error;

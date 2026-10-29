@@ -155,6 +155,70 @@ describe('built-in session skill with authenticated Host', () => {
     expect(authorizeScheduledTaskSkillRequest({ method: 'POST', headers: { authorization: auth.Authorization }, socket: { remoteAddress: '192.0.2.1' } }, auth)).toBe(false);
   });
 
+  it('lists all projects with this session first and manages another session task by project and ID', async () => {
+    const other = await commands(await create('b'));
+    const otherTask = (await run(other.create, task)).value.task;
+    const cmd = await commands(await create());
+    const own = (await run(cmd.create, { ...task, projectId: 'b', name: 'Own cross-project task' })).value.task;
+    const listed = await run(cmd.list);
+    expect(listed.value.failedProjectIds).toEqual([]);
+    expect(listed.value.tasks.map(({ id }) => id)).toEqual([own.id, otherTask.id]);
+    expect(listed.value.tasks[0]).toMatchObject({ projectId: 'b', own: true, currentProject: false });
+    expect(listed.value.tasks[1].own).toBe(false);
+    expect(listed.stdout).not.toContain(task.execution.prompt);
+
+    const target = { projectId: 'b', taskId: otherTask.id };
+    const before = (await run(cmd.get, target)).value.task;
+    expect(before.execution.prompt).toBe(task.execution.prompt);
+    const updated = await run(cmd.update, { ...target, name: 'Renamed', schedule: { times: ['10:00'] }, execution: { prompt: 'New prompt' } });
+    expect(updated.code).toBe(0);
+    const after = (await run(cmd.get, target)).value.task;
+    expect(after).toMatchObject({ name: 'Renamed', sourceSessionID: before.sourceSessionID,
+      schedule: { kind: 'daily', times: ['10:00'], timezone: 'UTC' },
+      execution: { ...before.execution, prompt: 'New prompt' },
+    });
+    expect((await run(cmd.resume, target)).value.task.enabled).toBe(true);
+    expect((await run(cmd.pause, target)).value.task.enabled).toBe(false);
+    expect((await run(cmd.delete, target)).value).toMatchObject({ deleted: true, projectId: 'b', taskId: otherTask.id });
+    expect((await run(cmd.get, target)).value.error).toContain('404');
+    expect((await run(cmd.update, { ...target, name: 'No recreation' })).value.error).toContain('404');
+    expect((await store.listScheduledTasks('b')).map(({ id }) => id)).toEqual([own.id]);
+  });
+
+  it('keeps colliding IDs project-scoped and permits global reads without a current project', async () => {
+    for (const projectId of ['a', 'b']) {
+      await store.upsertScheduledTask(projectId, { ...task, id: 'same-id', execution: { ...task.execution, providerID: 'test', modelID: 'model' } });
+    }
+    const session = await ui.session.create({ location: { directory: root } });
+    const cmd = await commands(session);
+    expect((await run(cmd.list)).value.tasks).toHaveLength(2);
+    expect((await run(cmd.list, { projectId: 'b' })).value.tasks).toHaveLength(1);
+    expect((await run(cmd.delete, { taskId: 'same-id' })).value.error).toContain('404');
+    expect((await run(cmd.delete, { projectId: 'b', taskId: 'same-id' })).code).toBe(0);
+    expect(await store.listScheduledTasks('a')).toHaveLength(1);
+    expect(await store.listScheduledTasks('b')).toHaveLength(0);
+    expect((await run(cmd.create, { ...task, projectId: 'b' })).code).toBe(0);
+  });
+
+  it('preserves partial global reads and fails writes for unknown projects or disconnected models', async () => {
+    const cmd = await commands(await create());
+    const saved = (await run(cmd.create, task)).value.task;
+    const target = { projectId: 'a', taskId: saved.id };
+    expect((await run(cmd.update, { ...target, execution: { modelID: 'unconnected' } })).value.error).toContain('400');
+    expect((await store.listScheduledTasks('a'))[0].execution.modelID).toBe('model');
+    expect((await run(cmd.pause, { ...target, projectId: 'unknown' })).value.error).toContain('404');
+    expect((await run(cmd.update, { ...target, execution: null })).value.error).toContain('400');
+    const original = store.listScheduledTasks;
+    vi.spyOn(store, 'listScheduledTasks').mockImplementation(async (id) => {
+      if (id === 'b') throw new Error('Unavailable');
+      return original(id);
+    });
+    const listed = await run(cmd.list);
+    expect(listed.code).toBe(0);
+    expect(listed.value.failedProjectIds).toEqual(['b']);
+    expect(listed.value.tasks.map(({ id }) => id)).toEqual([saved.id]);
+  });
+
   it('rejects sessions created outside this Host', async () => {
     const session = await sdk.session.create({ location: { directory: root } });
     const response = await fetch(`${origin}${SCHEDULED_TASK_SKILL_PATH}`, { method: 'POST', headers: { 'content-type': 'application/json', ...auth }, body: JSON.stringify({ operation: 'check', sessionID: session.id }) });

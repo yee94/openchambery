@@ -34,7 +34,6 @@ vi.mock('@/components/ui', () => ({ toast: { error: state.toast } }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 // Keep Dialog dependencies out of this happy-dom fixture; assert real host inline ownership below.
 vi.mock('./GuiPluginSurface', () => ({ GuiPluginSurface: () => null }));
-vi.mock('./GuiPluginLoadingNotice', () => ({ GuiPluginLoadingNotice: () => null }));
 
 const source = 'File preview fixture';
 const bundle = {

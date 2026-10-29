@@ -127,6 +127,68 @@ function textSessionClient({ generate = vi.fn(async () => ({ text: 'reply' })), 
 }
 
 describe('generateOpenCodeText — text path', () => {
+  it.each(['json', 'fenced', 'plain'])('decodes the contact text envelope (%s) without changing tool arguments', async (format) => {
+    const text = '```yuri-tool\n' + JSON.stringify({ name: 'edit', arguments: { path: 'task.json', edits: [{ oldText: '"model": "old"', newText: '"model": "new"' }] } }) + '\n```'
+    const json = JSON.stringify({ text })
+    const { client, generate } = textSessionClient({ generate: vi.fn(async () => ({ text: format === 'plain' ? text : format === 'fenced' ? `\`\`\`json\n${json}\n\`\`\`` : json })) })
+    const result = await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096', getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'p', modelID: 'm', messages: [{ role: 'user', content: 'update' }],
+      clientFactory: () => client, ensureTempDirectory: async () => '/tmp/yuri-text', textEnvelope: true,
+    })
+    expect(result.text).toBe(text)
+    expect(generate.mock.calls[0][0].prompt).toContain('Transport requirement:')
+  })
+
+  it('keeps a contact generation alive past 90s and repeated empty replies until it recovers', async () => {
+    vi.useFakeTimers()
+    try {
+      const times = []
+      const { client, generate, remove } = textSessionClient({ generate: vi.fn(async () => {
+        times.push(Date.now())
+        return { text: times.length <= 9 ? (times.length % 2 ? '' : JSON.stringify({ text: '  ' })) : 'recovered' }
+      }) })
+      const outcome = generateOpenCodeText({
+        buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({}), providerID: 'p', modelID: 'm',
+        messages: [{ role: 'user', content: 'continue' }],
+        clientFactory: () => client, ensureTempDirectory: async () => '/tmp/yuri-text',
+        timeoutMs: 0, retryEmptyTextUntilCancelled: true, textEnvelope: true,
+      }).then(value => ({ value }), error => ({ error }))
+      await vi.advanceTimersByTimeAsync(180_000)
+      expect(await outcome).toMatchObject({ value: { text: 'recovered' } })
+      expect(generate).toHaveBeenCalledTimes(10)
+      expect(times.slice(1).map((time, i) => time-times[i])).toEqual([500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000])
+      expect(remove).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('can cancel persistent empty-text recovery after the old deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const controller = new AbortController()
+      const { client, generate, remove, interrupt } = textSessionClient({ generate: vi.fn(async () => ({ text: '' })) })
+      const outcome = generateOpenCodeText({
+        buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({}), providerID: 'p', modelID: 'm',
+        messages: [{ role: 'user', content: 'continue' }],
+        clientFactory: () => client, ensureTempDirectory: async () => '/tmp/yuri-text',
+        timeoutMs: 0, retryEmptyTextUntilCancelled: true, signal: controller.signal,
+      }).then(value => ({ value }), error => ({ error }))
+      await vi.advanceTimersByTimeAsync(100_000)
+      expect(remove).not.toHaveBeenCalled()
+      const count = generate.mock.calls.length
+      controller.abort()
+      expect(await outcome).toMatchObject({ error: { name: 'AbortError' } })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(generate).toHaveBeenCalledTimes(count)
+      expect(remove).toHaveBeenCalledTimes(1)
+      expect(interrupt).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
   it.each([
     { name: 'deny-all alone', suffix: [] },
     { name: 'appended browser deny', suffix: [{ action: 'browser', resource: '*', effect: 'deny' }] },
@@ -258,7 +320,7 @@ describe('generateOpenCodeText — text path', () => {
     expect(agentGet).toHaveBeenCalledTimes(1)
   })
 
-  it('surfaces session.generate errors and still removes the session', async () => {
+  it.each([false, true])('surfaces session.generate errors and still removes the session (persistent=%s)', async (retryEmptyTextUntilCancelled) => {
     const { client, remove, generate } = textSessionClient({
       generate: vi.fn(async () => { throw new Error('Request is missing x-opencode-session') }),
     })
@@ -268,6 +330,7 @@ describe('generateOpenCodeText — text path', () => {
       providerID: 'opencode-go',
       modelID: 'deepseek-v4-flash',
       messages: [{ role: 'user', content: 'hi' }],
+      retryEmptyTextUntilCancelled,
       clientFactory: () => client,
       ensureTempDirectory: async () => '/tmp/yuri-text',
     })).rejects.toMatchObject({ code: 'upstream_error', message: 'Request is missing x-opencode-session' })

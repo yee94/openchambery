@@ -24,7 +24,6 @@ vi.mock('@/lib/opencode/gui', () => ({ createGuiClient: () => ({ plugin: { list:
 vi.mock('@/components/ui', () => ({ toast: { error: vi.fn() } }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 vi.mock('./GuiPluginSurface', () => ({ GuiPluginSurface: () => null }));
-vi.mock('./GuiPluginLoadingNotice', () => ({ GuiPluginLoadingNotice: () => null }));
 
 const bundle = { revision: 'perf-one', options: {}, code: `
  const G = require('@opencode/plugin/gui'); const S = require('solid-js');

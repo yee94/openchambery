@@ -394,6 +394,9 @@ const normalizeTaskForStorage = (value, options) => {
     schedule,
     execution,
     state,
+    ...(asNonEmptyString(existingTask?.sourceSessionID ?? value.sourceSessionID)
+      ? { sourceSessionID: asNonEmptyString(existingTask?.sourceSessionID ?? value.sourceSessionID) }
+      : {}),
   };
 };
 
@@ -609,7 +612,7 @@ export const createProjectConfigRuntime = (deps) => {
     });
   };
 
-  const patchScheduledTask = async (projectID, taskID, patch) => {
+  const patchScheduledTask = async (projectID, taskID, patch, { expected } = {}) => {
     return withProjectWriteLock(projectID, async () => {
       const normalizedTaskID = asNonEmptyString(taskID);
       if (!normalizedTaskID) {
@@ -618,6 +621,7 @@ export const createProjectConfigRuntime = (deps) => {
 
       const current = await readProjectConfigForMutation(projectID);
       const taskIndex = current.scheduledTasks.findIndex((task) => task.id === normalizedTaskID);
+      assertScheduledTaskExpected(taskIndex >= 0 ? current.scheduledTasks[taskIndex] : null, expected);
       if (taskIndex === -1) {
         return { task: null, tasks: current.scheduledTasks };
       }

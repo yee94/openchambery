@@ -18,18 +18,29 @@ import type { NativeGuiActivation } from './native-types';
 import { NativeGuiError, requestNativeGui } from './native-errors';
 import { afterGuiPaint, createGuiInstallQueue } from './scheduling';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import { guiDownloadProgress } from './download-progress';
 const noop = () => {};
 const noopSubscribe = () => noop;
 const message = (error: unknown): string | null => error ? error instanceof Error ? error.message : String(error) : null;
 type BundleState = { loading: boolean; error: string | null };
 
 const Surface = React.lazy(() => import('@/components/gui-plugins/GuiPluginSurface').then((module) => ({ default: module.GuiPluginSurface })));
-const LoadingNotice = React.lazy(() => import('@/components/gui-plugins/GuiPluginLoadingNotice').then((module) => ({ default: module.GuiPluginLoadingNotice })));
 
 function SurfaceFailure() {
   const { t } = useI18n();
   React.useEffect(() => { toast.error(t('guiPlugins.failed')); }, [t]);
+  return null;
+}
+
+function LoadErrors({ error, inventory }: Pick<GuiPluginsContextValue, 'error' | 'inventory'>) {
+  const { t } = useI18n();
+  const reported = React.useRef(new Set<string>());
+  React.useEffect(() => {
+    const errors = [error, ...inventory.map((plugin) => plugin.error ? `${plugin.id}: ${plugin.error}` : null)].filter((value): value is string => Boolean(value));
+    for (const detail of errors) {
+      if (!reported.current.has(detail)) toast.error(t('guiPlugins.failed'), { description: detail });
+    }
+    reported.current = new Set(errors);
+  }, [error, inventory, t]);
   return null;
 }
 
@@ -93,7 +104,6 @@ export function GuiPluginsProvider({ children, ready = true }: { children: React
   const { files, viewExport } = useRuntimeAPIs();
   const queryClient = useQueryClient();
   const transport = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeTransportIdentity, getRuntimeTransportIdentity);
-  const downloading = React.useSyncExternalStore(guiDownloadProgress.subscribe, () => guiDownloadProgress.pending(transport), () => false);
   const preferenceKey = guiPreferencesKey(getRuntimeKey());
   const [paintedTransport, setPaintedTransport] = React.useState<string | null>(null);
   const painted = ready && paintedTransport === transport;
@@ -235,7 +245,7 @@ export function GuiPluginsProvider({ children, ready = true }: { children: React
     {children}
     {host && inventory.filter((plugin) => plugin.enabled && activeIds.has(plugin.id)).map((plugin) =>
       <Activation key={plugin.id} host={host} id={plugin.id} transport={transport} report={report} schedule={installQueue.run} />)}
-    {painted && <ErrorBoundary key={`notice:${transport}`} fallback={<SurfaceFailure />}><React.Suspense fallback={null}><LoadingNotice pending={downloading} error={value.error} inventory={inventory} /></React.Suspense></ErrorBoundary>}
+    {painted && <LoadErrors key={transport} error={value.error} inventory={inventory} />}
     {host && <ErrorBoundary key={`surface:${transport}`} fallback={<SurfaceFailure />}><React.Suspense fallback={null}><Surface /></React.Suspense></ErrorBoundary>}
     </GuiFileIconsContext.Provider>
   </GuiPluginsContext.Provider>;

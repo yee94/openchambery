@@ -11,6 +11,22 @@ return the timestamp actually inserted, and snapshot tests require a finite valu
 
 ## Transient contact errors
 
+Contact model requests have no Yuri generation time limit (`timeoutMs: 0`).
+Empty text-only model replies recover in the same generation call with capped
+exponential backoff (500ms up to 30s), without an attempt limit, until a reply or
+cancellation. The current turn remains `running`; prior tool calls/results and
+published bubbles stay intact. Only the model request is repeated, never the
+Agent loop or previously committed tool operations. User stop and service
+shutdown still cancel the work. Provider errors and invalid response protocols
+remain explicit failures, not invented completion. Host restart does not resume
+this in-memory turn, and provider-owned time limits are outside this policy.
+
+The text gateway requests and decodes a JSON text envelope for contact replies,
+including tool follow-ups and terminal summaries. Application tool arguments and
+final declarations then pass through the existing parser unchanged; an envelope
+is transport framing, not permission to bypass tool/protocol validation. See
+`../llm/DOCUMENTATION.md` for generation recovery and attachment-path behavior.
+
 Contact-turn failures are delivered through `yuri:contact-turn-end` only,
 never inserted into the durable contact transcript. The store rejects `status:error`
 writes and atomically deletes legacy error messages and their parts during startup;

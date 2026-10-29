@@ -15,15 +15,15 @@ until persisted splash colors or the resolved runtime theme are available.
 
 The mobile HTML also includes the canonical 120 × 120 logo inside `#root` before
 JavaScript loads. React replaces it on first commit. GUI plugin discovery and
-installation wait for the usable shell and a paint opportunity; their loading
-notice can continue in the background and never owns the application startup gate.
+installation wait for the usable shell and a paint opportunity; plugin loading
+stays in the background without a global dialog or sheet and never owns the application startup gate.
 `OpenCodeUpgradeScreen` supplies a React logo while its first check or runtime
 recheck is pending, and a logo Suspense fallback plus error boundary for the app.
 This prevents createRoot from replacing static branding with an empty commit.
 The web timeout removes its static overlay only after React has committed content;
 mini-chat's in-root logo is replaced by React without a destructive timeout.
-Cached GUI revision checks and installation stay silent; only authoritative code
-download progress can open the optional plugin notice.
+GUI revision checks, code downloads and installation stay silent; failures retain
+their existing error feedback, and file previews own their local loading state.
 
 The full-text index startup screen keeps the same transparent 120 × 120 CSS-pixel logo at the viewport center as the desktop/web splash. Its progress ring is concentric with the logo; percentage, description, and background action occupy an independently scrolling area below it. The fullscreen dialog must not scale during entrance or exit, and progress/text changes must never reposition the logo.
 

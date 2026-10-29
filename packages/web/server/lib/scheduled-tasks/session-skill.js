@@ -82,7 +82,7 @@ export const registerScheduledTaskSessionSkill = (app, {
       await client.session.instructions.entry.put({
         sessionID: created.id,
         key: SCHEDULED_TASK_SKILL_KEY,
-        value: `Yuri built-in skill: scheduled tasks. When the user asks to turn this conversation into a scheduled/recurring task, load the skill by running:\n${scheduledTaskSkillCommand(executable, script, encoded, 'describe')}\nThe result supplies the workflow and authenticated create/list commands bound to this session. Do not ask for credentials or project IDs.`,
+        value: `Yuri built-in skill: scheduled tasks. When the user asks to create, find, edit, pause, resume or delete scheduled tasks (including other projects and global tasks), load the skill by running:\n${scheduledTaskSkillCommand(executable, script, encoded, 'describe')}\nThe result supplies the workflow and authenticated task-management commands. Prefer this session's tasks when the target is unspecified. Do not ask for credentials or project IDs.`,
       });
       return res.json({ data: created });
     } catch {
@@ -107,7 +107,7 @@ export const registerScheduledTaskSessionSkill = (app, {
     }
     try {
       const { sessionID, operation, input, taskID } = req.body ?? {};
-      if (typeof sessionID !== 'string' || !sessionID || !['check', 'describe', 'list', 'create'].includes(operation)) {
+      if (typeof sessionID !== 'string' || !sessionID || !['check', 'describe', 'list', 'get', 'create', 'update', 'pause', 'resume', 'delete'].includes(operation)) {
         return res.status(400).json({ error: 'Invalid skill request' });
       }
       const client = createClient();
@@ -117,29 +117,72 @@ export const registerScheduledTaskSessionSkill = (app, {
       }
       if (operation === 'check') return res.json({ ready: true });
       const directoryResult = await validateDirectoryPath(session.location?.directory);
-      if (!directoryResult?.ok) return res.status(409).json({ error: 'Session directory unavailable' });
-      const directory = directoryResult.directory;
+      const directory = directoryResult?.ok ? directoryResult.directory : null;
       const settings = await readSettingsFromDiskMigrated();
-      const project = await selectScheduledTaskProject(path, validateDirectoryPath, sanitizeProjects(settings.projects || []), directory, [directory]);
-      if (!project) return res.status(409).json({ error: 'Session does not belong to a configured project' });
+      const projects = sanitizeProjects(settings?.projects || []);
+      const currentProject = directory ? await selectScheduledTaskProject(path, validateDirectoryPath, projects, directory, [directory]) : null;
       if (operation === 'describe') {
         const { skill } = await prepareResources();
-        return res.json({ skill, project: { id: project.id, name: project.name }, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        return res.json({ skill, project: currentProject ? { id: currentProject.id, name: currentProject.name } : null,
+          projects: projects.map(({ id, name }) => ({ id, name })), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
       }
-      const route = `/api/projects/${encodeURIComponent(project.id)}/scheduled-tasks`;
+      const payload = input ?? {};
+      const allowed = operation === 'create' ? ['projectId', 'name', 'enabled', 'schedule', 'execution']
+        : operation === 'update' ? ['projectId', 'taskId', 'name', 'enabled', 'schedule', 'execution']
+          : operation === 'list' ? ['projectId'] : ['projectId', 'taskId'];
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+        || Object.keys(payload).some((key) => !allowed.includes(key))
+        || (payload.projectId !== undefined && (typeof payload.projectId !== 'string' || !payload.projectId.trim()))
+        || (payload.enabled !== undefined && typeof payload.enabled !== 'boolean')
+        || ['schedule', 'execution'].some((key) => payload[key] !== undefined && (!payload[key] || typeof payload[key] !== 'object' || Array.isArray(payload[key])))) {
+        return res.status(400).json({ error: 'Invalid task input' });
+      }
+      const project = payload.projectId === undefined ? currentProject : projects.find(({ id }) => id === payload.projectId);
+      const globalList = operation === 'list' && payload.projectId === undefined;
+      if (!globalList && !project) return res.status(404).json({ error: 'Configured project not found; choose a project from describe' });
+      const targetID = payload.taskId;
+      if (!['create', 'list'].includes(operation) && (typeof targetID !== 'string' || !targetID.trim())) {
+        return res.status(400).json({ error: 'taskId is required' });
+      }
+      let route = globalList ? '/api/yuri/scheduled-tasks' : `/api/projects/${encodeURIComponent(project.id)}/scheduled-tasks`;
+      const json = res.json.bind(res);
+      res.json = (result) => {
+        if (res.statusCode >= 400) return json(result);
+        if (operation === 'list') {
+          const rows = globalList ? result.tasks : result.tasks.map((task) => ({ projectId: project.id, task }));
+          const tasks = rows.map(({ projectId, task }) => ({ ...task, projectId,
+            own: task.sourceSessionID === sessionID,
+            currentProject: projectId === currentProject?.id,
+          })).sort((a, b) => Number(b.own) - Number(a.own) || Number(b.currentProject) - Number(a.currentProject));
+          return json({ tasks, failedProjectIds: result.failedProjectIds ?? [] });
+        }
+        if (operation === 'get') {
+          const task = result.tasks.find(({ id }) => id === targetID);
+          return task ? json({ projectId: project.id, task }) : res.status(404).json({ error: 'Schedule not found' });
+        }
+        return json({ ...result, projectId: project.id, ...(operation === 'delete' ? { deleted: true, taskId: targetID } : {}) });
+      };
       if (operation === 'create') {
-        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some((key) => !['name', 'enabled', 'schedule', 'execution'].includes(key)) || typeof taskID !== 'string' || !/^[0-9a-f-]{36}$/.test(taskID)) {
+        if (typeof taskID !== 'string' || !/^[0-9a-f-]{36}$/.test(taskID)) {
           return res.status(400).json({ error: 'Expected a new task' });
         }
-        const execution = input.execution;
+        const { projectId: _projectId, ...taskInput } = payload;
+        const execution = taskInput.execution;
         if (!execution || typeof execution !== 'object' || Array.isArray(execution)) return res.status(400).json({ error: 'Execution is required' });
-        const model = session.model ?? (await client.model.default({ directory })).data;
-        req.body = { task: { ...input, id: taskID, execution: {
+        const model = session.model ?? (await client.model.default({ directory: project.path })).data;
+        req.body = { task: { ...taskInput, id: taskID, sourceSessionID: sessionID, execution: {
           providerID: model?.providerID, modelID: model?.id, agent: session.agent, variant: model?.variant,
           ...execution,
         } } };
         req.method = 'PUT';
         req.scheduledTaskCreateOnly = true;
+      } else if (['update', 'pause', 'resume'].includes(operation)) {
+        const { projectId: _projectId, taskId: _taskId, ...patch } = payload;
+        req.body = { task: { ...(operation === 'update' ? patch : { enabled: operation === 'resume' }), id: targetID } };
+        req.method = 'PATCH';
+      } else if (operation === 'delete') {
+        route += `/${encodeURIComponent(targetID)}`;
+        req.method = 'DELETE';
       } else {
         req.method = 'GET';
       }

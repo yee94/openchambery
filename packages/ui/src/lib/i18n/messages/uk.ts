@@ -7,8 +7,6 @@ export const dict: Record<I18nKey, string> = {
   'guiPlugins.preview.loadingDescription': 'Перше відкриття може зайняти трохи часу',
   'guiPlugins.preview.viewSource': 'Переглянути вихідний код',
   'guiPlugins.title': 'Плагіни інтерфейсу',
-  'guiPlugins.loadingNecessary': 'Завантаження необхідних плагінів',
-  'guiPlugins.continueBackground': 'Продовжити у фоні',
   'guiPlugins.error': 'Не вдалося виконати дію плагіна.',
   'guiPlugins.close': 'Закрити',
   'guiPlugins.closePanel': 'Закрити {title}',

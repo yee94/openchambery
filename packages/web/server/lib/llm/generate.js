@@ -8,6 +8,7 @@ const GENERATE_TIMEOUT_MS = 90_000;
 const AGENT_READY_WAIT_MS = 5_000;
 const AGENT_READY_POLL_MS = 250;
 const EMPTY_TEXT_RETRY_DELAYS_MS = [500, 1_000];
+const TEXT_ENVELOPE_INSTRUCTION = 'Transport requirement: serialize your entire next assistant response as a JSON object with exactly one string field "text". Put all requested yuri-message/yuri-tool/yuri-final fences INSIDE that JSON string, escaping newlines and quotes. This is data generation, not a native function call. Do not call native tools. Return only the JSON object, never an empty response.';
 /** Single attachment payload cap (decoded bytes). Composer UI allows larger drafts; gateway enforces this. */
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_INLINE_FILE_CHARS = 100_000;
@@ -480,29 +481,44 @@ async function withThrowawaySession({
 }
 
 /**
- * Text-only generation through `session.generate`: one model call with the
+ * Text-only generation through `session.generate`: one model call per attempt with the
  * session's provider context (so session-scoped providers such as OpenCode Go
  * work), no tool loop, and no messages written to the session.
  */
-async function generateViaSessionGenerate({ client, prompt, signal, ...sessionOptions }) {
+async function generateViaSessionGenerate({ client, prompt, signal, retryEmptyTextUntilCancelled, textEnvelope, ...sessionOptions }) {
+  const requestPrompt = textEnvelope ? `${prompt}\n\n${TEXT_ENVELOPE_INSTRUCTION}` : prompt;
   return withThrowawaySession({ client, signal, ...sessionOptions }, async (sessionID) => {
     for (let attempt = 0; ; attempt += 1) {
       signal?.throwIfAborted();
       let result;
       try {
-        result = await client.session.generate({ sessionID, prompt }, { signal });
+        result = await client.session.generate({ sessionID, prompt: requestPrompt }, { signal });
       } catch (error) {
         rethrowIfAborted(error, signal);
         failGenerate(clientErrorMessage(error, 'OpenCode session.generate failed'));
       }
       signal?.throwIfAborted();
-      const text = typeof result?.text === 'string'
+      let text = typeof result?.text === 'string'
         ? result.text.trim()
         : typeof result?.data?.text === 'string'
           ? result.data.text.trim()
           : '';
+      if (textEnvelope && text) {
+        const json = text.replace(/^```json\s*\n([\s\S]*)\n```$/u, '$1');
+        try {
+          const envelope = JSON.parse(json);
+          if (envelope && typeof envelope === 'object' && !Array.isArray(envelope)
+            && Object.keys(envelope).length === 1 && typeof envelope.text === 'string') {
+            text = envelope.text.trim();
+          }
+        } catch {
+          // Some models still emit the unwrapped protocol; the contact parser validates it.
+        }
+      }
       if (text) return { text, source: 'session.generate' };
-      const delayMs = EMPTY_TEXT_RETRY_DELAYS_MS[attempt];
+      const delayMs = retryEmptyTextUntilCancelled
+        ? Math.min(500 * (2 ** Math.min(attempt, 6)), 30_000)
+        : EMPTY_TEXT_RETRY_DELAYS_MS[attempt];
       if (delayMs === undefined) failGenerate('OpenCode session.generate returned no text');
       // This call produces text only; retrying it cannot replay application tools.
       await new Promise((resolve, reject) => {
@@ -613,7 +629,7 @@ async function promptAttachmentSession({ client, sessionID, prompt, imageFiles, 
  *
  * Both paths run in a throwaway session owned by a verified deny-all agent in
  * the LLM temp directory, and the session is removed afterwards.
- * - Pure text: `session.generate` (single model call, nothing written).
+ * - Pure text: `session.generate` (one model call per attempt, nothing written).
  * - Vision image attachments: `session.prompt` + wait + message list.
  * - Non-vision: keep `[image: …]` descriptions; never forward image bytes.
  *
@@ -622,7 +638,7 @@ async function promptAttachmentSession({ client, sessionID, prompt, imageFiles, 
  * `session.generate` cannot emit live deltas (no fake typewriter).
  *
  * Optional `signal` from the contact continuation is combined with the generator
- * deadline. Cancellation still runs throwaway-session cleanup.
+ * deadline (`timeoutMs: 0` disables it). Cancellation still runs throwaway-session cleanup.
  */
 export async function generateOpenCodeText({
   buildOpenCodeUrl,
@@ -640,6 +656,8 @@ export async function generateOpenCodeText({
   onSystemSessionPersisted = null,
   signal: parentSignal = null,
   timeoutMs = GENERATE_TIMEOUT_MS,
+  retryEmptyTextUntilCancelled = false,
+  textEnvelope = false,
 }) {
   parentSignal?.throwIfAborted?.();
   if (!providerID || !modelID) {
@@ -664,14 +682,14 @@ export async function generateOpenCodeText({
   const client = makeClient({ baseUrl, headers, clientFactory });
 
   const controller = new AbortController();
-  const deadlineMs = positiveMs(timeoutMs, GENERATE_TIMEOUT_MS);
+  const deadlineMs = timeoutMs === 0 ? 0 : positiveMs(timeoutMs, GENERATE_TIMEOUT_MS);
   const requestSignal = parentSignal
     ? AbortSignal.any([parentSignal, controller.signal])
     : controller.signal;
-  const timeout = setTimeout(() => {
+  const timeout = deadlineMs === 0 ? null : setTimeout(() => {
     controller.abort(new Error(`OpenCode LLM generate timed out after ${deadlineMs}ms`));
   }, deadlineMs);
-  timeout.unref?.();
+  timeout?.unref?.();
 
   const sessionOptions = {
     client,
@@ -714,6 +732,8 @@ export async function generateOpenCodeText({
       workingDirectory,
       agentName: TEXT_AGENT_NAME,
       prompt,
+      retryEmptyTextUntilCancelled,
+      textEnvelope,
     });
   } finally {
     clearTimeout(timeout);

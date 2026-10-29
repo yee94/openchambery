@@ -453,6 +453,9 @@ export function createContactStreamFn(createChatCompletion, {
           const publicReader = createPublicMessageReader(publishPublicMessage);
           const result = await createChatCompletion({
             signal,
+            timeoutMs: 0,
+            retryEmptyTextUntilCancelled: true,
+            textEnvelope: true,
             body: {
               model: `${model.provider === 'yuri' ? '' : `${model.provider}/`}${model.id}`.replace(/^\//, '') || model.name,
               providerID: typeof model.name === 'string' && model.name.includes('/')

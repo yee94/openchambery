@@ -7,8 +7,6 @@ export const dict: Record<I18nKey, string> = {
   'guiPlugins.preview.loadingDescription': '首次打开可能需要一点时间',
   'guiPlugins.preview.viewSource': '查看源码',
   'guiPlugins.title': '界面插件',
-  'guiPlugins.loadingNecessary': '正在加载必要插件中',
-  'guiPlugins.continueBackground': '后台继续',
   'guiPlugins.error': '插件操作失败。',
   'guiPlugins.close': '关闭',
   'guiPlugins.closePanel': '关闭 {title}',

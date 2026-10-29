@@ -169,9 +169,9 @@ GUI inventory 采用**当前连接服务的全局插件列表**。不把项目 p
 
 存在 enabled 且服务端 active 的 GUI 时，通过 `requestIdleCallback`（最长等待 2 秒；不支持时延后 1 秒）启动预加载，不再等第一次点击。`useGuiPlugins()` 保留 `requested` 与幂等 `requestLoad()`；文件预览、命令面板或插件管理器的显式需求只跳过空闲等待。宿主动态导入前再让出绘制机会；`scheduling.ts` 串行调度已取得 bundle 的同步安装，每个插件独立跨双 rAF/任务边界，不把网络/IPC 等待加入串行队列。加载当前服务 inventory 中所有 enabled 且 active 的 `features.gui` 插件，不扫描历史项目，不按文件后缀推定能力；禁用项不下载。关闭入口保留需求、host 和已安装实例，重开复用同一 Query/cache；成功空 inventory 仍撤销 host。空闲、绘制和安装任务随停用、transport 切换或卸载取消，并在执行前再次核对 transport；inventory 在动态导入前后及响应后检查 generation。
 
-桌面 Dialog / 手机 fit-content Sheet 统一提示“正在加载必要插件中”，提供“后台继续”。提示只订阅 `download-progress.ts` 的瞬时传输进度：磁盘缓存读取确认无有效代码时，或权威响应头确认需要完整代码（包括新 revision、旧服务兼容、缓存协议失配重取）时才进入下载状态。已有缓存的版本校验始终静默，inventory、宿主 import、安装 Promise 不能触发弹窗。下载持续 500ms 后仍未结束才显示，避免短任务闪现；该展示延迟不用于推定缓存命中。下载结束/失败/abort 释放对应 transport 的计数，runtime 切换不复用旧进度，并取消旧提示的待展示计时器。
+GUI inventory、代码下载、缓存版本校验和安装全部后台静默执行，不显示全局 Dialog、手机 Sheet 或加载 toast，不提供“后台继续”入口。下载进度不另设全局计数或展示计时器；网络取消和迟到隔离仍由 Query/client 的生命周期负责。
 
-关闭只隐藏提示，不取消加载；本轮 runtime 不再重复弹出，代码获取结束自动关闭。inventory、host、bundle 失败使用现有 toast 明确反馈；setup/render 错误仍由 Surface 按所属插件报告。两个懒加载 UI 各有局部 ErrorBoundary，chunk/render 失败不能替换主界面。加载提示不参与任何应用 startup gate，文件预览继续使用自己的局部 loading。
+inventory、host、bundle 失败由 Provider 的 `LoadErrors` 使用现有 toast 明确反馈，同一 runtime 的持续错误去重；setup/render 错误仍由 Surface 按所属插件报告。懒加载 Surface 保留局部 ErrorBoundary，chunk/render 失败不能替换主界面。插件加载不参与任何应用 startup gate，文件预览继续使用自己的局部 loading。
 
 这是共享 Solid/DOM 主线程宿主的协作调度，不是 Worker 并行执行：单个第三方 CJS 求值或同步 setup 仍可产生长任务，无法被调度器抢占。保证的是主界面先完成绘制、不同插件之间让出绘制、异步下载互不阻塞；不承诺任意第三方同步代码的硬 CPU 时限。
 

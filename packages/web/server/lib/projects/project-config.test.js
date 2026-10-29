@@ -21,6 +21,32 @@ const createRuntime = async () => {
 };
 
 describe('project-config runtime', () => {
+  it('preserves task provenance and rejects stale guarded patches without recreating deleted tasks', async () => {
+    const { runtime, cleanup } = await createRuntime();
+    try {
+      const { task } = await runtime.upsertScheduledTask('p', {
+        name: 'Task', enabled: false, sourceSessionID: 'ses_creator',
+        schedule: { kind: 'daily', time: '09:00', timezone: 'UTC' },
+        execution: { prompt: 'run', providerID: 'openai', modelID: 'gpt-4.1' },
+      });
+      const { expected } = scheduledTaskWriteGuard(task, { ...task, enabled: true });
+      await runtime.patchScheduledTask('p', task.id, { execution: { modelID: 'different' } });
+      await expect(runtime.patchScheduledTask('p', task.id, { enabled: true }, { expected })).rejects.toMatchObject({ code: SCHEDULE_CONFLICT_CODE });
+      const current = (await runtime.listScheduledTasks('p'))[0];
+      expect(current.enabled).toBe(false);
+      await runtime.upsertScheduledTask('p', { ...current, name: 'UI edit', sourceSessionID: 'ses_other' });
+      await runtime.updateScheduledTaskState('p', task.id, { lastStatus: 'success' });
+      expect((await runtime.listScheduledTasks('p'))[0].sourceSessionID).toBe('ses_creator');
+      await expect(runtime.patchScheduledTask('p', task.id, { execution: { prompt: '' } })).rejects.toThrow();
+      expect((await runtime.listScheduledTasks('p'))[0].execution.prompt).toBe('run');
+      await runtime.deleteScheduledTask('p', task.id);
+      await expect(runtime.patchScheduledTask('p', task.id, { enabled: true }, { expected })).rejects.toMatchObject({ code: SCHEDULE_CONFLICT_CODE });
+      expect(await runtime.listScheduledTasks('p')).toEqual([]);
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('guards recovery writes against a newer run inside the project write lock', async () => {
     const { runtime, cleanup } = await createRuntime();
     try {

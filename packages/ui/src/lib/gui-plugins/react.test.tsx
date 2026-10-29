@@ -6,7 +6,6 @@ import { GuiPluginsProvider } from './GuiPluginsProvider';
 import { useGuiPlugins } from './react';
 import { openFileReference } from '@/components/chat/fileReferenceActions';
 import type { NativeGuiBridge } from './native-types';
-import { guiDownloadProgress } from './download-progress';
 
 const state = vi.hoisted(() => ({
   transport: 'host-a', directory: '/project', sessionID: 'session-a' as string | null,
@@ -15,7 +14,7 @@ const state = vi.hoisted(() => ({
   nativeBridge: undefined as NativeGuiBridge | undefined,
   windowBridge: undefined as NativeGuiBridge | undefined,
   focusFile: undefined as undefined | ((path: string, directory: string) => Promise<void>),
-  list: vi.fn(), gui: vi.fn(), hostImports: vi.fn(), signals: [] as AbortSignal[], hostFailure: false, noticeFailure: false, noticePending: false,
+  list: vi.fn(), gui: vi.fn(), hostImports: vi.fn(), toastError: vi.fn(), signals: [] as AbortSignal[], hostFailure: false, surfaceFailure: false,
   hosts: [] as Array<{ install: ReturnType<typeof vi.fn>; uninstall: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; setSession: ReturnType<typeof vi.fn> }>,
 }));
 vi.mock('@/lib/runtime-switch', () => ({
@@ -35,10 +34,9 @@ vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (value: object) => 
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ locale: 'en', t: (key: string) => key }) }));
 vi.mock('@/components/chat/fileReferenceActions', () => ({ openFileReference: vi.fn(async () => {}) }));
 vi.mock('@/lib/opencode/gui', () => ({ createGuiClient: (signal: AbortSignal) => { state.signals.push(signal); return { plugin: { list: state.list, gui: state.gui } }; } }));
-vi.mock('@/components/gui-plugins/GuiPluginSurface', () => ({ GuiPluginSurface: () => null }));
-vi.mock('@/components/gui-plugins/GuiPluginLoadingNotice', () => ({ GuiPluginLoadingNotice: ({ pending }: { pending: boolean }) => {
-  state.noticePending = pending;
-  if (state.noticeFailure) throw new Error('notice chunk failed');
+vi.mock('sonner', () => ({ toast: { error: state.toastError } }));
+vi.mock('@/components/gui-plugins/GuiPluginSurface', () => ({ GuiPluginSurface: () => {
+  if (state.surfaceFailure) throw new Error('surface chunk failed');
   return null;
 } }));
 vi.mock('./host', () => { state.hostImports(); return {
@@ -89,8 +87,8 @@ beforeEach(() => {
   state.transport = 'host-a'; state.hosts.length = 0; state.signals.length = 0; state.hostFailure = false;
   state.nativeBridge = undefined;
   state.windowBridge = undefined;
-  state.noticeFailure = false;
-  state.noticePending = false;
+  state.surfaceFailure = false;
+  state.toastError.mockReset();
   state.directory = '/project'; state.sessionID = 'session-a';
   state.sessions = { 'session-a': { id: 'session-a', directory: '/project' } };
   state.list.mockReset().mockResolvedValue({ data: [plugin] });
@@ -108,16 +106,6 @@ it('does not discover plugins while the application is still starting, even with
   expect(container.textContent).toContain('main UI');
   expect(state.list).not.toHaveBeenCalled();
   expect(state.hosts).toHaveLength(0);
-});
-it('isolates a failed lazy plugin surface from the main application', async () => {
-  const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-  state.noticeFailure = true;
-  try {
-    await act(async () => root.render(<QueryClientProvider client={client}><GuiPluginsProvider><button>main UI</button></GuiPluginsProvider></QueryClientProvider>));
-    await settle();
-    expect(errors).toHaveBeenCalled();
-    expect(container.textContent).toBe('main UI');
-  } finally { errors.mockRestore(); }
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -139,19 +127,41 @@ it('keeps initial render light across 50 rerenders before idle preload starts', 
   expect(state.hosts).toHaveLength(0);
 });
 
-it('keeps inventory, cached validation and host waits silent; only code download progress opens the notice', async () => {
+it('keeps slow plugin loading silent across instance switches', async () => {
   state.gui.mockImplementation(() => new Promise(() => {}));
   await load();
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
   expect(context.loading).toBe(true);
-  expect(state.noticePending).toBe(false);
-  const controller = new AbortController();
-  await act(async () => { guiDownloadProgress.begin('host-a', controller.signal); });
-  expect(state.noticePending).toBe(true);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(state.toastError).not.toHaveBeenCalled();
   state.transport = 'host-b';
   await act(async () => draw()); await settle();
-  expect(state.noticePending).toBe(false);
-  await act(async () => controller.abort());
-  expect(guiDownloadProgress.pending('host-a')).toBe(false);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(state.toastError).not.toHaveBeenCalled();
+});
+
+it('isolates a failed lazy plugin surface from the main application', async () => {
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  state.surfaceFailure = true;
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><GuiPluginsProvider><Demand /><button>main UI</button></GuiPluginsProvider></QueryClientProvider>));
+    await settle(); await settle();
+    expect(errors).toHaveBeenCalled();
+    expect(container.textContent).toBe('main UI');
+  } finally { errors.mockRestore(); }
+});
+
+it('reports load failures once per runtime without a loading dialog', async () => {
+  state.list.mockRejectedValue(new Error('offline'));
+  await act(async () => draw()); await settle();
+  expect(state.toastError).toHaveBeenCalledExactlyOnceWith('guiPlugins.failed', { description: 'offline' });
+  await act(async () => draw()); await settle();
+  expect(state.toastError).toHaveBeenCalledOnce();
+  state.transport = 'host-b';
+  await act(async () => { window.dispatchEvent(new CustomEvent('yuri:runtime-endpoint-changed')); });
+  await settle();
+  expect(state.toastError).toHaveBeenCalledTimes(2);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
 
 it('unloads on an endpoint event without waiting for a parent render when the next instance has no GUI', async () => {

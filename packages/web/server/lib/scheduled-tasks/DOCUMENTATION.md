@@ -43,7 +43,7 @@ HTTP envelope and uses the official client to create the session and put one
 `yuri.scheduled-task` instruction entry. This is an on-demand built-in
 workflow, not a globally installed native `skill` registration: the entry names
 one `describe` command; its result supplies `SESSION_SKILL.md` and bound
-create/list commands. No repository/global OpenCode files are modified. Existing
+list/get/create/update/pause/resume/delete commands. No repository/global OpenCode files are modified. Existing
 sessions and sessions created directly in OpenCode are not enrolled.
 
 The self-contained helper is published atomically into a content-addressed Host
@@ -56,13 +56,26 @@ non-browser POSTs with the current shared-service Basic credential, and then
 checks the authoritative session's Host binding. That credential does not grant
 access through ordinary UI routes. Credentials are re-read on every invocation.
 
-The bridge resolves project ownership from `session.location.directory`, not
-model-supplied IDs or shell cwd. Create defaults come from the current session
-model/agent, then its location's model default. The bridge dispatches into the
+The bridge resolves the default project from `session.location.directory`, not
+shell cwd. Explicit `projectId` selects any configured project on this Host.
+Global list is the aggregate of those projects, retaining project-scoped task IDs
+and `failedProjectIds`; it works even outside a configured session project.
+New tasks persist optional `sourceSessionID`; legacy tasks have no inferred owner.
+Lists rank this session's tasks first, then its project, then other projects.
+This is a targeting preference, not an authorization boundary. The helper's list
+omits execution prompts; explicit `get` returns the full task for editing.
+Create defaults come from the current session model/agent, then the target
+project's model default. The bridge dispatches into the
 same project CRUD router as the UI, retaining catalog checks, write guards and
 scheduler sync semantics. The create-only flag prevents replacing an existing
 ID. Unknown writes report the generated ID for read-back and are never retried;
 `schedulerSynced:false` remains committed success.
+
+Updates use the shared PATCH route: catalog checks apply to model changes and
+resume, partial fields merge under the project write lock, and the catalog guard
+rejects changed model/enabled/existence snapshots. Missing tasks are never recreated.
+Pause/resume change `enabled`; delete retains the ordinary UI deletion semantics.
+The task's `sourceSessionID` survives edits and scheduler state writes.
 
 Failed capability preparation fails admission visibly. A confirmed newly created
 session is removed on failure; if removal cannot be confirmed (or the caller
@@ -79,7 +92,7 @@ managed-plugin path. Fork/import and existing sessions are not retrofitted.
 The Host must remain running to serve the skill and schedule tasks.
 
 `session-skill.test.js` covers real password-enabled Host auth, the advertised
-subprocess commands, durable task read-back, project isolation, caller-independent
+subprocess commands, durable task read-back, cross-project management and preference ordering, caller-independent
 model defaults, denied origins/credentials, preflight failures and rollback.
 
 ## Files
@@ -262,6 +275,7 @@ finalized history (including later chat continuation) is never reopened.
   - `GET /api/projects/:projectId/scheduled-tasks`
   - `PUT /api/projects/:projectId/scheduled-tasks` — body must be `{ task }`. A bare task, `{ tasks: [] }`, or `{ task: [] }` is HTTP 400 with `expected` describing that envelope. After the project and goal checks, creates, provider/model changes, and disabled→enabled transitions load the connected catalog for `project.path` through `loadConnectedCatalog` / `isConnectedModel` (`ModelInfo.id`, not the internal `modelID`). An unconnected model is HTTP 400 and is not written. Catalog failure is HTTP 503 and is not written. Renames and disables that keep the stored provider/model are allowed when the catalog is down. The route passes the pre-read existence, provider, model, and enabled snapshot into the project-config write lock; a mismatch is HTTP 409 and is not written. Scheduler sync failure does not roll back a committed write. `GET /api/config/catalog/providers` remains HTTP 502 when its upstream catalog fails.
   - `DELETE /api/projects/:projectId/scheduled-tasks/:taskId`
+  - `PATCH /api/projects/:projectId/scheduled-tasks` — `{ task: { id, ...patch } }`; requires an existing task, preserves omitted fields, and applies PUT's catalog/write-guard/scheduler semantics. Schedule and execution fields merge under the write lock.
   - `POST /api/projects/:projectId/scheduled-tasks/:taskId/run`
   - `GET /api/yuri/scheduled-tasks/status`
   - `GET /api/yuri/events`

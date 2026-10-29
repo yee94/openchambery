@@ -47,12 +47,31 @@ call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.
    text is prepended into `prompt`.
 4. Always `session.remove` in `finally` (interrupt first on abort/timeout).
 
-Empty text responses are retried at most twice, after 500ms and 1000ms, in the
-same throwaway session with the same prompt. All attempts and backoff share the
-original generation deadline (90s by default); cancellation interrupts backoff
-immediately. Only empty responses are retried, not thrown upstream errors or
-attachment/tool execution. Exhaustion preserves the explicit upstream error.
+By default, empty text responses are retried at most twice, after 500ms and
+1000ms, in the same throwaway session with the same prompt. All attempts and
+backoff share the original generation deadline (90s by default).
+
+Internal callers may pass `timeoutMs: 0` to disable that deadline and
+`retryEmptyTextUntilCancelled: true` to recover empty text without an attempt
+limit. Backoff doubles from 500ms to a maximum of 30s. Contact turns use both
+options, including tool follow-ups and terminal-operation summaries. Cancellation
+interrupts requests and backoff immediately, then interrupts/removes the
+throwaway session. Thrown upstream errors still surface; authentication/config
+errors are not silently retried. This does not remove provider-owned deadlines.
 Application tools execute outside this text-only call and are not replayed.
+
+Contacts also pass `textEnvelope: true`: the text-only prompt requests a JSON
+object with one `text` string containing the full application response. Decode
+that exact envelope (optionally in a `json` fence) before contact protocol
+validation. Preserve unwrapped responses for the existing contact parser, since
+live models sometimes ignore the transport envelope. Do not unwrap arbitrary
+objects or recursively parse tool arguments. This avoids depending solely on
+bare tool-like text surviving a text-only generation endpoint; real DeepSeek
+multi-tool runs previously returned empty text or only progress at this boundary.
+The attachment path retains its existing streaming protocol.
+
+These three options are in-process arguments, never read from HTTP request
+bodies. Other utility/public gateway calls retain their bounded defaults.
 
 `generate.text` (sessionless) is not used: session-scoped providers such as
 OpenCode Go reject calls without a session (`x-opencode-session`).
