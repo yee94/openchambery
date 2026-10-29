@@ -208,6 +208,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['updates', 'version', 'ota'],
   },
   {
+    id: 'about.host-update',
+    page: 'about',
+    titleKey: 'settings.yuri.about.hostUpdate.title',
+    descriptionKey: 'settings.yuri.about.hostUpdate.description',
+    keywords: ['remote', 'host', 'relay', 'beta', 'ota', 'version'],
+  },
+  {
     id: 'about.feedback',
     page: 'about',
     titleKey: 'settings.yuri.about.actions.submitFeedback',

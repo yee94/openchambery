@@ -10,6 +10,12 @@ export interface WebUiServerController {
   getGuiPluginClient: () => import('@opencode/client').OpenCodeClient;
   isReady: () => boolean;
   restartOpenCode: () => Promise<void>;
+  hostUpdates: {
+    get: (channel?: 'stable' | 'beta') => Promise<unknown>;
+    start: (request: { version: string; channel: 'stable' | 'beta'; planId: string; allowDowngrade?: boolean }) => Promise<unknown>;
+    isBusy: () => boolean;
+    progress: (percent: number) => void;
+  };
   stop: (options?: { exitProcess?: boolean; forceCloseConnections?: boolean }) => Promise<void>;
 }
 
@@ -23,6 +29,17 @@ export interface StartWebUiServerOptions {
   transcriptCacheDbPath?: string | null;
   messageQueueDbPath?: string | null;
   messageQueueAttachmentRoot?: string | null;
+  hostUpdateStateFile?: string;
+  getHostUpdateVersion?: () => string;
+  hostUpdateAdapter?: {
+    host: 'cli' | 'electron';
+    supported: boolean;
+    reason?: string | null;
+    channel?: () => 'stable' | 'beta' | null;
+    inspect?: (channel: 'stable' | 'beta') => Promise<unknown>;
+    assertReady?: () => void | Promise<void>;
+    execute?: (context: unknown) => Promise<void>;
+  };
   /**
    * Optional process-local lock for settings persistence (Electron in-process).
    * When provided, every settings write/migrate joins this exclusive chain so

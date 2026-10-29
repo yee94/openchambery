@@ -269,6 +269,7 @@ export function ScheduledTasksDialog() {
     <MobileResizableSheet
       id="scheduled-tasks"
       open={open}
+      initiallyExpanded
       title={t('sessions.scheduledTasks.dialog.title')}
       ariaLabel={t('sessions.scheduledTasks.dialog.title')}
       closeAriaLabel={t('mobile.surface.closeAria')}
@@ -854,18 +855,6 @@ export function ScheduledTasksWorkspace({
       {isMobileTab ? <MobileTabPageHeader title={t('sessions.scheduledTasks.dialog.title')} /> : null}
       {isMobilePanel && !isMobileTab ? (
         <MobileSheetHeaderActions>
-          {editorMode !== 'closed' ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-11 shrink-0 rounded-lg"
-              onClick={() => handleCancelEditor(false)}
-              aria-label={t('header.actions.backAria')}
-            >
-              <Icon name="arrow-left" className="size-5" />
-            </Button>
-          ) : null}
           {editorMode === 'edit' && selectedTaskEntry ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

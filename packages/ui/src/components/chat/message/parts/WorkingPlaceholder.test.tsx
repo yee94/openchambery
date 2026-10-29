@@ -47,6 +47,22 @@ describe('WorkingPlaceholder status stickiness', () => {
 
   const text = () => container.textContent ?? '';
 
+  test.each([false, true])('mobile status uses the tool-row icon gap (retry=%s)', async (retry) => {
+    await act(async () => {
+      root.render(React.createElement(WorkingPlaceholder, {
+        isMobile: true,
+        isWorking: true,
+        statusText: 'Running command',
+        retryInfo: retry ? { attempt: 1 } : undefined,
+      }));
+    });
+
+    const iconSlot = container.querySelector('[data-testid="orb"]')?.parentElement;
+    expect(iconSlot?.classList.contains('w-4')).toBe(true);
+    expect(iconSlot?.parentElement?.classList.contains('gap-1.5')).toBe(true);
+    expect(iconSlot?.parentElement?.classList.contains('gap-1')).toBe(false);
+  });
+
   test('specific → generic does not switch within 1200ms (queued)', async () => {
     await render({
       isWorking: true,

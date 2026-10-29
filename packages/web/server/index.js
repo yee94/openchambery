@@ -120,6 +120,9 @@ import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.j
 import { attachHttpServerConnectionTracker } from './lib/opencode/http-server-connections.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { createRemoteClientAuthRuntime } from './lib/client-auth/remote-clients.js';
+import { createHostUpdateRuntime } from './lib/host-update/runtime.js';
+import { createCliUpdateAdapter } from './lib/host-update/cli.js';
+import { getOrCreateInstallId } from './lib/package-manager.js';
 import { applyRuntimeCorsHeaders } from './lib/request-cors.js';
 import { createClientPairingRuntime } from './lib/client-auth/pairing.js';
 import { createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
@@ -1759,8 +1762,24 @@ async function main(options = {}) {
   // loopback port). The pairing routes registered here only read the
   // relay candidate lazily at request time, so a late-bound holder is enough.
   let relayServiceInstance = null;
+  const updateAdapter = options.hostUpdateAdapter ?? (process.versions.electron ? {
+    host: 'electron', supported: false, reason: 'desktop_update_controller_unavailable',
+  } : createCliUpdateAdapter({
+    packageRoot: path.resolve(__dirname, '..'), dataDir: YURI_DATA_DIR,
+    currentVersion: YURI_VERSION,
+    getPort: () => tunnelRuntimeContext.getActivePort(),
+    shutdown: async () => { await controller.stop({ exitProcess: false, forceCloseConnections: true }); process.exit(0); },
+  }));
+  const hostUpdates = createHostUpdateRuntime({
+    adapter: updateAdapter,
+    stateFile: options.hostUpdateStateFile ?? (() => path.join(YURI_DATA_DIR, 'run', `host-update-${tunnelRuntimeContext.getActivePort()}.json`)),
+    currentVersion: options.getHostUpdateVersion ?? (() => YURI_VERSION),
+    getServerId: async () => await relayServiceInstance?.getServerId()
+      ?? `${getOrCreateInstallId('web')}:${tunnelRuntimeContext.getActivePort()}`,
+  });
 
   const bootstrapResult = bootstrapRuntime.setupBaseRoutes(app, {
+    hostUpdates,
     process,
     yuriVersion: YURI_VERSION,
     runtimeName: process.env.YURI_RUNTIME || 'web',
@@ -2155,8 +2174,9 @@ async function main(options = {}) {
     relayReconcileTimer.unref?.();
   }
 
-  return {
+  const controller = {
     expressApp: app,
+    hostUpdates,
     httpServer: server,
     getPort: () => tunnelRuntimeContext.getActivePort(),
     getOpenCodePort: () => openCodePort,
@@ -2233,6 +2253,7 @@ async function main(options = {}) {
       });
     }
   };
+  return controller;
 }
 
 runCliEntryIfMain({

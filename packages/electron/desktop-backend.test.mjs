@@ -7,6 +7,20 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DesktopOta } from './desktop-ota.mjs';
 
+test('installed backend loads its real server entry under Node without mocked imports', async () => {
+  const loader = new URL('./desktop-backend.mjs', import.meta.url).href;
+  const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
+    import { loadDesktopBackend } from ${JSON.stringify(loader)};
+    const backend = await loadDesktopBackend();
+    if (typeof backend.startWebUiServer !== 'function' || typeof backend.mintOutsideFileGrant !== 'function') {
+      throw new Error('Desktop backend entry is incomplete');
+    }
+    console.log('backend import OK');
+    process.exit(0);
+  `], { timeout: 15000 });
+  expect(stdout).toContain('backend import OK');
+});
+
 test('OTA backend resolves ESM and createRequire dependencies from the installed package', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'desktop-backend-'));
   try {

@@ -23,6 +23,10 @@ Files above 32 MiB omit the optional fingerprint. Non-optional webview text read
 
 Standalone webviews explicitly return 501 for the Host-owned `/api/sessions/:id/delivery` projection. Shared UI then reads the native OpenCode inbox and compaction projection; admitted steer rows remain visible without local queue history. Host-backed web/Electron/mobile clients use the server-owned delivery projection.
 
+Standalone webviews also return explicit 501 for `/api/system/update`: an
+extension connected directly to OpenCode cannot self-update a Yuri Host. The
+Host-backed remote update control remains available on web/Electron/mobile.
+
 The webview's ordinary completion notifications share the dependency-free `web/server/lib/notifications/family-completion-gate.js` with Host notifications. SDK `session.active` plus `session.get` ancestry must confirm the entire root family idle before delivery. Starts/terminal events drive the barrier; a bounded pending-only retry handles failed reads or missed events. The existing child/system-session suppression and notification settings apply at delivery. Runtime switches reset pending/dedup state, and webview unload disposes the barrier. See the Notifications module documentation for the complete contract.
 
 Hash-prefixed prompt text is literal. The snippet configuration bridge and local CRUD/expansion implementation have been removed, matching the shared composer and Web runtime.

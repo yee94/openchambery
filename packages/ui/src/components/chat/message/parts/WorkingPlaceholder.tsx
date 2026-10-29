@@ -238,7 +238,7 @@ export function WorkingPlaceholder({
         aria-live="polite"
         aria-label={retryLabel}
       >
-        <span className={`flex min-w-0 items-center ${isMobile ? "gap-1 typography-meta !text-[length:var(--text-meta)]" : "gap-1.5 typography-ui-header"}`}>
+        <span className={`flex min-w-0 items-center gap-1.5 ${isMobile ? "typography-meta !text-[length:var(--text-meta)]" : "typography-ui-header"}`}>
           <span className={`inline-flex flex-none items-center justify-center ${isMobile ? 'h-5 w-4' : 'h-6 w-3.5'}`}>
             <MorphOrb isMobile={isMobile} />
           </span>
@@ -267,7 +267,7 @@ export function WorkingPlaceholder({
       aria-label={label}
       data-waiting={displayedPermission ? 'true' : undefined}
     >
-      <span className={`flex min-w-0 items-center ${isMobile ? "gap-1 typography-meta !text-[length:var(--text-meta)]" : "gap-1.5 typography-ui-header"}`}>
+      <span className={`flex min-w-0 items-center gap-1.5 ${isMobile ? "typography-meta !text-[length:var(--text-meta)]" : "typography-ui-header"}`}>
         <span className={`inline-flex flex-none items-center justify-center ${isMobile ? 'h-5 w-4' : 'h-6 w-3.5'}`}>
           <MorphOrb isMobile={isMobile} />
         </span>

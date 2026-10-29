@@ -86,6 +86,13 @@ new URLs or new protocol defaults.
 
 ## Runtime contract integration
 
+The Host version row in About and the desktop remote-instance menu share
+`HostVersionUpdate`. It checks `/api/system/update` through the active runtime,
+shows an update dot, and confirms an exact version/channel/plan before remote
+update/restart. OTA, native installer and CLI package updates remain Host-owned;
+beta-to-stable rollback is explicitly disclosed. Runtime-scoped Query state keeps
+progress across reconnects and rejects stale mutations after a Host switch.
+
 Desktop host-picker actions keep their popup visible during SSH preparation and
 show the polled SSH phase inline. Switch, connect and new-window actions share a
 synchronous local guard and disabled controls until completion; failures leave the

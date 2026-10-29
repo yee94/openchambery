@@ -1,21 +1,12 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useEvent } from '@reactuses/core';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
-import { Icon } from "@/components/icon/Icon";
-import { cn } from '@/lib/utils';
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { ensureHostUpdateSnapshot, refreshHostUpdateSnapshot, startHostUpdate } from '@/queries/hostUpdateQueries';
 import type { UpdateInfo, UpdateProgress } from '@/lib/desktop';
-import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
-import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
-import { runtimeFetch } from '@/lib/runtime-fetch';
+import { useI18n } from '@/lib/i18n';
 import { useUpdateStore } from '@/stores/useUpdateStore';
+import { UpdateDialogView, type UpdateDialogModel } from './UpdateDialogView';
 
 type WebUpdateState = 'idle' | 'updating' | 'restarting' | 'reconnecting' | 'error';
 
@@ -34,155 +25,36 @@ interface UpdateDialogProps {
 }
 
 const GITHUB_RELEASES_URL = 'https://github.com/yee94/yuri/releases';
-
-type ChangelogSection = {
-  version: string;
-  date: string;
-  start: number;
-  end: number;
-  raw: string;
-};
-
-type ParsedChangelog =
-  | {
-      kind: 'raw';
-      title: string;
-      content: string;
-    }
-  | {
-      kind: 'sections';
-      title: string;
-      sections: Array<{ version: string; dateLabel: string; content: string }>;
-    };
-
-function formatIsoDateForUI(isoDate: string): string {
-  const d = new Date(`${isoDate}T00:00:00`);
-  if (Number.isNaN(d.getTime())) {
-    return isoDate;
-  }
-  return new Intl.DateTimeFormat(getCurrentIntlLocale(), {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(d);
-}
-
-function stripChangelogHeading(sectionRaw: string): string {
-  return sectionRaw.replace(/^## \[[^\]]+\] - \d{4}-\d{2}-\d{2}\s*\n?/, '').trim();
-}
-
-function processChangelogMentions(content: string): string {
-  // Convert @username to markdown links so they can be styled via css
-  return content.replace(/(^|[^a-zA-Z0-9])@([a-zA-Z0-9-]+)/g, '$1[@$2](https://github.com/$2)');
-}
-
-function compareSemverDesc(a: string, b: string): number {
-  const pa = a.split('.').map((v) => Number.parseInt(v, 10));
-  const pb = b.split('.').map((v) => Number.parseInt(v, 10));
-  for (let i = 0; i < 3; i += 1) {
-    const da = Number.isFinite(pa[i]) ? (pa[i] as number) : 0;
-    const db = Number.isFinite(pb[i]) ? (pb[i] as number) : 0;
-    if (da !== db) {
-      return db - da;
-    }
-  }
-  return 0;
-}
-
-function parseChangelogSections(body: string): ChangelogSection[] {
-  const re = /^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})\s*$/gm;
-  const matches: Array<{ version: string; date: string; start: number }> = [];
-
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(body)) !== null) {
-    matches.push({
-      version: m[1] ?? '',
-      date: m[2] ?? '',
-      start: m.index,
-    });
-  }
-
-  if (matches.length === 0) {
-    return [];
-  }
-
-  return matches.map((match, idx) => {
-    const end = matches[idx + 1]?.start ?? body.length;
-    const raw = body.slice(match.start, end).trim();
-    return { version: match.version, date: match.date, start: match.start, end, raw };
-  });
-}
-
-type InstallWebUpdateResult = {
-  success: boolean;
-  error?: string;
-  autoRestart?: boolean;
-};
-
+type InstallWebUpdateResult = { success: boolean; error?: string; autoRestart?: boolean };
 const WEB_UPDATE_POLL_INTERVAL_MS = 2000;
 const WEB_UPDATE_MAX_WAIT_MS = 10 * 60 * 1000;
+type UpdateScope = { transport: string; generation: number };
+const isCurrentUpdateScope = (scope: UpdateScope) => scope.transport === getRuntimeTransportIdentity() && scope.generation === getRuntimeGeneration();
 
-async function installWebUpdate(): Promise<InstallWebUpdateResult> {
+async function installWebUpdate(version: string | undefined, scope: UpdateScope): Promise<InstallWebUpdateResult> {
   try {
-    const response = await runtimeFetch('/api/yuri/update-install', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      return { success: false, error: data.error || `Server error: ${response.status}` };
-    }
-
-    const data = await response.json().catch(() => ({}));
-    return {
-      success: true,
-      autoRestart: data.autoRestart !== false,
-    };
+    if (!isCurrentUpdateScope(scope)) return { success: false };
+    const plan = await ensureHostUpdateSnapshot(scope.transport, scope.generation);
+    if (!isCurrentUpdateScope(scope) || !version || !plan.supported || plan.update?.version !== version || plan.update.rollback) return { success: false };
+    await startHostUpdate(plan, scope.transport, scope.generation);
+    return { success: true, autoRestart: true };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : undefined };
   }
 }
 
-async function isServerReachable(): Promise<boolean> {
-  try {
-    const response = await runtimeFetch('/health', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
 async function waitForUpdateApplied(
-  previousVersion?: string,
+  targetVersion: string | undefined,
+  scope: UpdateScope,
   maxAttempts = Math.ceil(WEB_UPDATE_MAX_WAIT_MS / WEB_UPDATE_POLL_INTERVAL_MS),
   intervalMs = WEB_UPDATE_POLL_INTERVAL_MS,
 ): Promise<boolean> {
   for (let i = 0; i < maxAttempts; i++) {
+    if (!isCurrentUpdateScope(scope)) return false;
     try {
-      const response = await runtimeFetch('/api/yuri/update-check', {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
-      if (response.ok) {
-        const data = await response.json().catch(() => null);
-        if (data && data.available === false) {
-          return true;
-        }
-        if (
-          data &&
-          typeof data.currentVersion === 'string' &&
-          typeof previousVersion === 'string' &&
-          data.currentVersion !== previousVersion
-        ) {
-          return true;
-        }
-      } else if ((response.status === 401 || response.status === 403) && await isServerReachable()) {
-        return true;
-      }
+      const data = await refreshHostUpdateSnapshot(scope.transport, scope.generation);
+      if (data.operation?.status === 'failed') return false;
+      if (data.currentVersion === targetVersion && data.operation?.status === 'succeeded' && isCurrentUpdateScope(scope)) return true;
     } catch {
       // Server may be restarting
     }
@@ -191,398 +63,100 @@ async function waitForUpdateApplied(
   return false;
 }
 
+/** Adapts the existing client updater lifecycle to the shared presentation. */
 export const UpdateDialog: React.FC<UpdateDialogProps> = ({
-  open,
-  onOpenChange,
-  info,
-  downloading,
-  downloaded,
-  progress,
-  error,
-  onDownload,
-  onRestart,
-  runtimeType = 'desktop',
+  open, onOpenChange, info, downloading, downloaded, progress, error, onDownload, onRestart, runtimeType = 'desktop',
 }) => {
   const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
   const [webUpdateState, setWebUpdateState] = useState<WebUpdateState>('idle');
   const [webError, setWebError] = useState<string | null>(null);
   const otaDownloadSkipped = useUpdateStore((state) => state.otaDownloadSkipped);
-
-  const releaseUrl = info?.releaseUrl
-    || (info?.version ? `${GITHUB_RELEASES_URL}/tag/v${info.version}` : GITHUB_RELEASES_URL);
+  const releaseUrl = info?.releaseUrl || (info?.version ? `${GITHUB_RELEASES_URL}/tag/v${info.version}` : GITHUB_RELEASES_URL);
   // Mobile follows the check protocol: only open a URL the decision provided.
   const protocolExternalUrl = info?.downloadUrl;
-
-  const progressPercent = progress?.total
-    ? Math.round((progress.downloaded / progress.total) * 100)
-    : 0;
-
   const isWebRuntime = runtimeType === 'web';
   const isMobileRuntime = runtimeType === 'mobile';
   const showProtocolExternalLink = isMobileRuntime && info?.manualUpdate === true && Boolean(protocolExternalUrl);
   const isInAppMobileOta = isMobileRuntime && info?.inAppApply === true;
   const isManualDesktopUpdate = runtimeType === 'desktop' && info?.manualUpdate === true;
-  const updateCommand = info?.updateCommand || 'yuri update';
-
+  const isWebUpdating = webUpdateState !== 'idle' && webUpdateState !== 'error';
+  const releaseLinkUrl = isMobileRuntime ? protocolExternalUrl : releaseUrl;
   const handleDialogOpenChange = useEvent((nextOpen: boolean) => {
-    if (!nextOpen && isInAppMobileOta && downloaded) {
-      useUpdateStore.getState().dismiss();
-    }
+    if (!nextOpen && isInAppMobileOta && downloaded) useUpdateStore.getState().dismiss();
     onOpenChange(nextOpen);
   });
-
-  const handleLater = useEvent(() => {
-    useUpdateStore.getState().dismiss();
-    onOpenChange(false);
-  });
-
   // Reset state when dialog closes
   useEffect(() => {
-    if (!open) {
-      setWebUpdateState('idle');
-      setWebError(null);
-    }
+    if (!open) { setWebUpdateState('idle'); setWebError(null); }
   }, [open]);
-
-  const handleCopyCommand = async () => {
-    const result = await copyTextToClipboard(updateCommand);
-    if (result.ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleOpenExternal = useCallback(async (url: string) => {
-    await openExternalUrl(url);
-  }, []);
-  const handleWebUpdate = useCallback(async () => {
-    setWebUpdateState('updating');
-    setWebError(null);
-
-    const result = await installWebUpdate();
-
+  const handleWebUpdate = useEvent(async () => {
+    const scope = { transport: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() };
+    setWebUpdateState('updating'); setWebError(null);
+    const result = await installWebUpdate(info?.version, scope);
+    if (!isCurrentUpdateScope(scope)) return;
     if (!result.success) {
-      setWebUpdateState('error');
-      setWebError(result.error || t('updateDialog.error.updateFailed'));
-      return;
+      setWebUpdateState('error'); setWebError(result.error || t('updateDialog.error.updateFailed')); return;
     }
-
     if (result.autoRestart) {
       setWebUpdateState('restarting');
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
-
     setWebUpdateState('reconnecting');
-
-    const applied = await waitForUpdateApplied(info?.currentVersion);
-
-    if (applied) {
-      window.location.reload();
-    } else {
-      setWebUpdateState('error');
-      setWebError(t('updateDialog.error.takingLonger'));
+    const applied = await waitForUpdateApplied(info?.version, scope);
+    if (!isCurrentUpdateScope(scope)) return;
+    if (applied) window.location.reload();
+    else { setWebUpdateState('error'); setWebError(t('updateDialog.error.takingLonger')); }
+  });
+  const handleAction = useEvent((id: string) => {
+    switch (id) {
+      case 'download':
+        onDownload();
+        if (runtimeType === 'desktop') onOpenChange(false);
+        break;
+      case 'restart': onRestart(); break;
+      case 'later': useUpdateStore.getState().dismiss(); onOpenChange(false); break;
+      case 'open-external': {
+        const url = isMobileRuntime ? protocolExternalUrl : releaseUrl;
+        if (url) void openExternalUrl(url);
+        break;
+      }
+      case 'web-update': void handleWebUpdate(); break;
     }
-  }, [info?.currentVersion, t]);
-
-  const handleMobileUpdate = useCallback(() => {
-    if (!protocolExternalUrl) return;
-    void handleOpenExternal(protocolExternalUrl);
-  }, [handleOpenExternal, protocolExternalUrl]);
-
-  const isWebUpdating = webUpdateState !== 'idle' && webUpdateState !== 'error';
-
-  const changelog = useMemo<ParsedChangelog | null>(() => {
-    if (!info?.body) {
-      return null;
+  });
+  const actions: UpdateDialogModel['actions'] = [];
+  // Desktop / in-app mobile OTA buttons
+  if (!isWebRuntime && (!isMobileRuntime || isInAppMobileOta)) {
+    if (!isManualDesktopUpdate && !downloaded && !downloading) actions.push({ id: 'download', icon: 'download', label: isInAppMobileOta ? t('updateDialog.actions.applyOtaNow') : t('updateDialog.actions.downloadUpdate') });
+    if (isManualDesktopUpdate && !downloaded && !downloading) actions.push({ id: 'open-external', icon: 'external-link', label: t('updateDialog.actions.openMobileUpdate') });
+    if (downloading) actions.push({ id: 'downloading', icon: 'loader', loading: true, disabled: true, label: t('updateDialog.status.downloading') });
+    if (downloaded) {
+      if (isInAppMobileOta) actions.push({ id: 'later', variant: 'ghost', label: t('updateDialog.actions.later') });
+      actions.push({ id: 'restart', icon: 'restart', label: t('updateDialog.actions.restartToUpdate') });
     }
+  }
+  if (isMobileRuntime && !isInAppMobileOta && showProtocolExternalLink) actions.push({ id: 'open-external', icon: 'external-link', label: t('updateDialog.actions.openMobileUpdate') });
+  if (isWebRuntime) actions.push(isWebUpdating
+    ? { id: 'updating', icon: 'loader', loading: true, disabled: true, label: t('updateDialog.status.updating') }
+    : { id: 'web-update', icon: 'download', label: t('updateDialog.actions.updateNow') });
 
-    const body = info.body.trim();
-    if (!body) {
-      return null;
-    }
-
-    const sections = parseChangelogSections(body);
-
-    if (sections.length === 0) {
-      return {
-        kind: 'raw',
-        title: t('updateDialog.changelog.title'),
-        content: processChangelogMentions(body),
-      };
-    }
-
-    const sorted = [...sections].sort((a, b) => compareSemverDesc(a.version, b.version));
-    return {
-      kind: 'sections',
-      title: t('updateDialog.changelog.title'),
-      sections: sorted.map((section) => ({
-        version: section.version,
-        dateLabel: formatIsoDateForUI(section.date),
-        content: processChangelogMentions(stripChangelogHeading(section.raw) || body),
-      })),
-    };
-  }, [info?.body, t]);
-
-  return (
-    <Dialog open={open} onOpenChange={isWebUpdating ? undefined : handleDialogOpenChange}>
-      <DialogContent className="max-w-4xl gap-0 p-4 sm:p-5 bg-background border-[var(--interactive-border)]" showCloseButton={true}>
-        
-        {/* Header Section */}
-        <div className="mb-3 pr-8 sm:mb-4">
-          <DialogTitle className="flex items-center gap-2">
-            <Icon name="download-cloud" className="h-5 w-5 text-[var(--primary-base)]" />
-            <span className="font-semibold text-foreground">
-              {webUpdateState === 'restarting' || webUpdateState === 'reconnecting'
-                ? t('updateDialog.header.updating')
-                : t('updateDialog.header.updateAvailable')}
-            </span>
-          </DialogTitle>
-
-          {/* Version Diff */}
-          {(info?.currentVersion || info?.version) && (
-            <div className="mt-1.5 flex items-center gap-1.5 pl-7 font-mono text-[11px] leading-4 tracking-[-0.01em] tabular-nums sm:text-xs">
-              {info?.currentVersion && (
-                <span className="text-muted-foreground/75">{info.currentVersion}</span>
-              )}
-              {info?.currentVersion && info?.version && (
-                <span className="text-muted-foreground/40">→</span>
-              )}
-              {info?.version && (
-                <span className="font-medium text-[var(--primary-base)]">{info.version}</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Content Body */}
-        <div className="space-y-3 sm:space-y-4">
-
-          {/* Web update progress */}
-          {isWebRuntime && isWebUpdating && (
-            <div className="rounded-lg bg-[var(--surface-elevated)]/30 p-5 border border-[var(--surface-subtle)]">
-              <div className="flex items-center gap-3">
-                <Icon name="loader" className="h-5 w-5 animate-spin text-[var(--primary-base)]" />
-                <div className="typography-ui-label text-foreground">
-                  {webUpdateState === 'updating' && t('updateDialog.status.installingUpdate')}
-                  {webUpdateState === 'restarting' && t('updateDialog.status.serverRestarting')}
-                  {webUpdateState === 'reconnecting' && t('updateDialog.status.waitingForServer')}
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t('updateDialog.status.autoReloadHint')}
-              </p>
-            </div>
-          )}
-
-          {/* Changelog Rendering */}
-          {changelog && !isWebUpdating && (
-            <section className="overflow-hidden rounded-xl border border-[var(--surface-subtle)] bg-[var(--surface-elevated)]/20">
-              <div className="flex items-center gap-2 border-b border-[var(--surface-subtle)] px-3.5 py-2.5 sm:px-4 sm:py-3">
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary-base)]" aria-hidden="true" />
-                <h3 className="typography-ui-caption font-medium text-muted-foreground">
-                  {changelog.title}
-                </h3>
-              </div>
-              <ScrollableOverlay
-                className="max-h-[min(42dvh,22rem)] p-0 sm:max-h-[400px]"
-                fillContainer={false}
-              >
-                {changelog.kind === 'raw' ? (
-                  <div
-                    className="break-words p-3.5 text-[13px] leading-[1.65] text-foreground sm:p-4 sm:text-sm [&_.markdown-content]:leading-[1.65] [&_a]:!text-[var(--primary-base)] [&_a]:!no-underline [&_a:hover]:!underline"
-                    onClickCapture={(e) => {
-                      const target = e.target as HTMLElement;
-                      const a = target.closest('a');
-                      if (a && a.href) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        void handleOpenExternal(a.href);
-                      }
-                    }}
-                  >
-                    <SimpleMarkdownRenderer content={changelog.content} disableLinkSafety={true} enableFileReferences={false} />
-                  </div>
-                ) : (
-                  <div className="divide-y divide-[var(--surface-subtle)]">
-                    {changelog.sections.map((section) => (
-                      <div key={section.version} className="p-3.5 sm:p-4">
-                        <div className="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 sm:mb-3">
-                          <span className="rounded-md bg-[var(--primary-base)]/10 px-1.5 py-0.5 font-mono text-[11px] font-medium leading-4 text-[var(--primary-base)] tabular-nums sm:text-xs">
-                            v{section.version}
-                          </span>
-                          <span className="text-[11px] leading-4 text-muted-foreground/75 sm:text-xs">
-                            {section.dateLabel}
-                          </span>
-                        </div>
-                        <div
-                          className="break-words text-[13px] leading-[1.65] text-foreground sm:text-sm [&_.markdown-content]:leading-[1.65] [&_a]:!text-[var(--primary-base)] [&_a]:!no-underline [&_a:hover]:!underline"
-                          onClickCapture={(e) => {
-                            const target = e.target as HTMLElement;
-                            const a = target.closest('a');
-                            if (a && a.href) {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void handleOpenExternal(a.href);
-                            }
-                          }}
-                        >
-                          <SimpleMarkdownRenderer content={section.content} disableLinkSafety={true} enableFileReferences={false} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </ScrollableOverlay>
-            </section>
-          )}
-
-          {/* Web runtime fallback command */}
-          {isWebRuntime && webUpdateState === 'error' && (
-            <div className="space-y-2 mt-4">
-              <div className="flex items-center gap-2 typography-meta text-muted-foreground">
-                <Icon name="terminal" className="h-4 w-4" />
-                <span>{t('updateDialog.fallback.updateViaTerminal')}</span>
-              </div>
-              <div className="flex items-center gap-2 p-1 pl-3 bg-[var(--surface-elevated)]/50 rounded-md border border-[var(--surface-subtle)]">
-                <code className="flex-1 font-mono text-sm text-foreground overflow-x-auto whitespace-nowrap">
-                  {updateCommand}
-                </code>
-                <button
-                  onClick={handleCopyCommand}
-                  className={cn(
-                    'flex items-center justify-center p-2 rounded',
-                    'text-muted-foreground hover:text-foreground hover:bg-[var(--interactive-hover)]',
-                    'transition-colors',
-                    copied && 'text-[var(--status-success)]'
-                  )}
-                  title={copied ? t('updateDialog.actions.copied') : t('updateDialog.actions.copyCommand')}
-                >
-                  {copied ? (
-                    <Icon name="check" className="h-4 w-4" />
-                  ) : (
-                    <Icon name="clipboard" className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Desktop / in-app mobile OTA progress bar */}
-          {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloading && (
-            <div className="mt-3 space-y-2 rounded-lg border border-[var(--surface-subtle)] bg-[var(--surface-elevated)]/20 px-3.5 py-3 sm:mt-4 sm:px-4">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-muted-foreground sm:text-[13px]">{t('updateDialog.status.downloadingPayload')}</span>
-                <span className="shrink-0 font-mono text-[11px] leading-4 text-foreground tabular-nums sm:text-xs">{progressPercent}%</span>
-              </div>
-              <div className="h-1 overflow-hidden rounded-full bg-[var(--surface-subtle)] sm:h-1.5">
-                <div
-                  className="h-full rounded-full bg-[var(--primary-base)] transition-all duration-300"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Error display */}
-          {(error || webError) && (
-            <div className="p-3 mt-4 bg-[var(--status-error-background)] border border-[var(--status-error-border)] rounded-lg">
-              <p className="text-sm text-[var(--status-error)]">{error || webError}</p>
-            </div>
-          )}
-        </div>
-
-        {isInAppMobileOta && downloaded && otaDownloadSkipped && (
-          <div className="mt-4 flex items-center gap-2 rounded-lg border border-[var(--status-success-border)] bg-[var(--status-success-background)] px-3 py-2.5 text-sm text-[var(--status-success)]">
-            <Icon name="check" className="h-4 w-4 shrink-0" />
-            <span>{t('updateDialog.status.otaBundleReused')}</span>
-          </div>
-        )}
-
-        {/* Action Footer */}
-        <div className="mt-4 flex items-center justify-between gap-4">
-          {(!isMobileRuntime || showProtocolExternalLink) ? (
-            <a
-              href={isMobileRuntime ? protocolExternalUrl : releaseUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 typography-ui-label text-muted-foreground hover:text-foreground transition-colors shrink-0"
-            >
-              <Icon name="external-link" className="h-4 w-4" />
-              GitHub
-            </a>
-          ) : (
-            <span />
-          )}
-
-          <div className="flex-1 flex justify-end">
-            {/* Desktop / in-app mobile OTA buttons */}
-            {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && !isManualDesktopUpdate && !downloaded && !downloading && (
-              <Button onClick={() => {
-                onDownload();
-                if (runtimeType === 'desktop') onOpenChange(false);
-              }} size="default">
-                <Icon name="download" className="h-4 w-4" />
-                {isInAppMobileOta
-                  ? t('updateDialog.actions.applyOtaNow')
-                  : t('updateDialog.actions.downloadUpdate')}
-              </Button>
-            )}
-
-            {!isWebRuntime && !isMobileRuntime && isManualDesktopUpdate && !downloaded && !downloading && (
-              <Button onClick={() => void handleOpenExternal(releaseUrl)} size="default">
-                <Icon name="external-link" className="h-4 w-4" />
-                {t('updateDialog.actions.openMobileUpdate')}
-              </Button>
-            )}
-
-            {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloading && (
-              <Button disabled size="default">
-                <Icon name="loader" className="h-4 w-4 animate-spin" />
-                {t('updateDialog.status.downloading')}
-              </Button>
-            )}
-
-            {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloaded && (
-              <div className="flex items-center gap-2">
-                {isInAppMobileOta && (
-                  <Button onClick={handleLater} variant="ghost" size="default">
-                    {t('updateDialog.actions.later')}
-                  </Button>
-                )}
-                <Button onClick={onRestart} size="default">
-                  <Icon name="restart" className="h-4 w-4" />
-                  {t('updateDialog.actions.restartToUpdate')}
-                </Button>
-              </div>
-            )}
-
-            {isMobileRuntime && !isInAppMobileOta && showProtocolExternalLink && (
-              <Button
-                onClick={handleMobileUpdate}
-                size="default"
-              >
-                <Icon name="external-link" className="h-4 w-4" />
-                {t('updateDialog.actions.openMobileUpdate')}
-              </Button>
-            )}
-
-            {isWebRuntime && !isWebUpdating && (
-              <Button onClick={handleWebUpdate} size="default">
-                <Icon name="download" className="h-4 w-4" />
-                {t('updateDialog.actions.updateNow')}
-              </Button>
-            )}
-
-            {isWebRuntime && isWebUpdating && (
-              <Button disabled size="default">
-                <Icon name="loader" className="h-4 w-4 animate-spin" />
-                {t('updateDialog.status.updating')}
-              </Button>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+  const model: UpdateDialogModel = {
+    title: webUpdateState === 'restarting' || webUpdateState === 'reconnecting' ? t('updateDialog.header.updating') : t('updateDialog.header.updateAvailable'),
+    currentVersion: info?.currentVersion, version: info?.version, body: info?.body,
+    hideChangelog: isWebUpdating, dismissible: !isWebUpdating,
+    error: error || webError,
+    fallbackCommand: isWebRuntime && webUpdateState === 'error' ? info?.updateCommand || 'yuri update' : undefined,
+    notice: isInAppMobileOta && downloaded && otaDownloadSkipped ? t('updateDialog.status.otaBundleReused') : undefined,
+    releaseLink: (!isMobileRuntime || showProtocolExternalLink) && releaseLinkUrl ? { url: releaseLinkUrl, label: 'GitHub' } : undefined,
+    actions,
+  };
+  if (isWebRuntime && isWebUpdating) model.status = {
+    kind: 'activity', label: webUpdateState === 'updating' ? t('updateDialog.status.installingUpdate')
+      : webUpdateState === 'restarting' ? t('updateDialog.status.serverRestarting') : t('updateDialog.status.waitingForServer'),
+    detail: t('updateDialog.status.autoReloadHint'),
+  };
+  if (!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloading) model.status = {
+    kind: 'download', label: t('updateDialog.status.downloadingPayload'),
+    progress: progress?.total ? Math.round(progress.downloaded / progress.total * 100) : 0,
+  };
+  return <UpdateDialogView open={open} onOpenChange={handleDialogOpenChange} model={model} onAction={handleAction} />;
 };
