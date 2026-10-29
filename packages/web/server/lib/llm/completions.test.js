@@ -2,19 +2,23 @@ import { describe, expect, it, vi } from 'vitest'
 import { LlmError, createChatCompletion } from './completions.js'
 
 describe('createChatCompletion', () => {
+  it.each([{}, [{ id: 1, function: { name: 'read', arguments: '{}' } }]])('rejects malformed native tool calls before inference: %j', async (tool_calls) => {
+    const generateText = vi.fn();
+    await expect(createChatCompletion({ generateText, body: { model: 'p/m', messages: [{ role: 'assistant', content: '', tool_calls }] } })).rejects.toMatchObject({ code: 'validation_error', statusCode: 400 });
+    expect(generateText).not.toHaveBeenCalled();
+  });
   it('forwards internal long-running generation options without accepting them from HTTP bodies', async () => {
     const generateText = vi.fn(async () => ({ text: 'done' }))
     const base = {
       generateText,
       loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'm' }] }),
-      body: { model: 'p/m', messages: [{ role: 'user', content: 'hi' }], timeoutMs: 0, retryEmptyTextUntilCancelled: true, textEnvelope: true },
+      body: { model: 'p/m', messages: [{ role: 'user', content: 'hi' }], timeoutMs: 0, retryEmptyTextUntilCancelled: true },
     }
     await createChatCompletion(base)
     expect(generateText.mock.calls[0][0].timeoutMs).toBeUndefined()
     expect(generateText.mock.calls[0][0].retryEmptyTextUntilCancelled).not.toBe(true)
-    expect(generateText.mock.calls[0][0].textEnvelope).not.toBe(true)
-    await createChatCompletion({ ...base, timeoutMs: 0, retryEmptyTextUntilCancelled: true, textEnvelope: true })
-    expect(generateText.mock.calls[1][0]).toMatchObject({ timeoutMs: 0, retryEmptyTextUntilCancelled: true, textEnvelope: true })
+    await createChatCompletion({ ...base, timeoutMs: 0, retryEmptyTextUntilCancelled: true })
+    expect(generateText.mock.calls[1][0]).toMatchObject({ timeoutMs: 0, retryEmptyTextUntilCancelled: true })
   })
   it.each(['high', 'medium', null, ''])('forwards variant %s with default compatibility', async (variant) => {
     const generateText = vi.fn(async () => ({ text: 'done' }));

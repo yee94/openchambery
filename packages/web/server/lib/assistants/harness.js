@@ -1,4 +1,5 @@
 import { Agent } from '@earendil-works/pi-agent-core';
+import { randomUUID } from 'node:crypto';
 import { isContactSpokenPreamble, splitContactBubbles } from './bubbles.js';
 import {
   contactTurnClearedChatHistory,
@@ -369,6 +370,7 @@ export function createContactStreamFn(createChatCompletion, {
   turnMessageStart = 0,
   variant = null,
   allowSilent = false,
+  cacheKey = randomUUID(),
 } = {}) {
   let callSequence = 0;
   const turnStart = Number.isFinite(Number(turnMessageStart)) ? Math.max(0, Number(turnMessageStart)) : 0;
@@ -403,14 +405,9 @@ export function createContactStreamFn(createChatCompletion, {
               }];
             }
             if (message.role === 'assistant') {
-              const content = (message.content || []).map((part) => {
-                if (part?.type === 'text') return part.text;
-                if (part?.type !== 'toolCall') return '';
-                return '```yuri-tool\n' + JSON.stringify({
-                  id: part.id, name: part.name, arguments: part.arguments,
-                }) + '\n```';
-              }).filter(Boolean).join('\n\n');
-              return content ? [{ role: 'assistant', content }] : [];
+              const content = (message.content || []).filter(part => part?.type === 'text').map(part => part.text).join('\n\n');
+              const calls = (message.content || []).filter(part => part?.type === 'toolCall').map(part => ({ id: part.id, type: 'function', function: { name: part.name, arguments: JSON.stringify(part.arguments) } }));
+              return content || calls.length ? [{ role: 'assistant', content, ...(calls.length ? { tool_calls: calls } : {}) }] : [];
             }
             if (message.role === 'toolResult') {
               const content = (message.content || [])
@@ -423,10 +420,7 @@ export function createContactStreamFn(createChatCompletion, {
               const callId = typeof message.toolCallId === 'string' && message.toolCallId.trim()
                 ? message.toolCallId.trim()
                 : (typeof message.id === 'string' && message.id.trim() ? message.id.trim() : '');
-              const label = callId
-                ? `Yuri tool result name=${toolName} call=${callId}`
-                : `Yuri tool result name=${toolName}`;
-              return [{ role: 'user', content: `${label}: ${JSON.stringify({ isError: message.isError === true, content })}` }];
+              return [{ role: 'tool', name: toolName, tool_call_id: callId, content: JSON.stringify({ isError: message.isError === true, content }) }];
             }
             return [];
         });
@@ -455,7 +449,7 @@ export function createContactStreamFn(createChatCompletion, {
             signal,
             timeoutMs: 0,
             retryEmptyTextUntilCancelled: true,
-            textEnvelope: true,
+            cacheKey,
             body: {
               model: `${model.provider === 'yuri' ? '' : `${model.provider}/`}${model.id}`.replace(/^\//, '') || model.name,
               providerID: typeof model.name === 'string' && model.name.includes('/')
@@ -464,6 +458,7 @@ export function createContactStreamFn(createChatCompletion, {
               modelID: model.id,
               ...(variant ? { variant } : {}),
               messages: [...messages],
+              tools: (context.tools || []).map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description || tool.name, parameters: JSON.parse(JSON.stringify(tool.parameters ?? { type: 'object', properties: {} })) } })),
             },
             onTextDelta: (delta) => {
               if (signal?.aborted) return;
@@ -488,7 +483,12 @@ export function createContactStreamFn(createChatCompletion, {
           silent = finalResponse?.status === 'silent';
           finalText = finalResponse?.text ?? null;
           // A final answer is opaque text; quoted tool examples in it cannot run.
-          parsed = finalText === null ? parseContactToolCalls(text, allowedNames) : { toolCalls: [], chatText: finalText };
+          const nativeCalls = result?.completion?.choices?.[0]?.message?.tool_calls ?? [];
+          parsed = nativeCalls.length ? {
+            toolCalls: nativeCalls.map(call => ({ id: call.id, name: call.function.name, arguments: JSON.parse(call.function.arguments) })),
+            chatText: text,
+            protocolError: finalText !== null ? 'Do not mix native tool calls with a final declaration.' : nativeCalls.some(call => !allowedNames.includes(call.function.name)) ? 'The requested tool is unavailable.' : '',
+          } : finalText === null ? parseContactToolCalls(text, allowedNames) : { toolCalls: [], chatText: finalText };
           const mixedBatch = parsed.toolCalls.length > 1 && parsed.toolCalls.some((call) => !isPiCodingToolName(call.name));
           const malformedFinal = finalText === null && /```yuri-final/u.test(parsed.chatText);
           const skippedRejectedWork = rejectedCodingCalls.length > 0 && finalResponse?.status === 'complete';
@@ -517,7 +517,7 @@ export function createContactStreamFn(createChatCompletion, {
         if (parsed.toolCalls.length > 0) {
           const toolCalls = parsed.toolCalls.map((call) => ({
             type: 'toolCall',
-            id: `call_${Date.now().toString(36)}_${++callSequence}`,
+            id: call.id || `call_${Date.now().toString(36)}_${++callSequence}`,
             name: call.name,
             arguments: call.arguments,
           }));
@@ -682,6 +682,7 @@ export async function runContactTurn({
       formatContactToolsPrompt(contactTools),
       assistant.defaultPrompt,
       codingTools.length > 0 ? WORKSPACE_RESPONSE_PROTOCOL : '',
+      'Tool transport: invoke the provided native function tools. Do not encode tool calls as yuri-tool fences; those examples describe arguments only. Keep yuri-message progress and yuri-final declarations as text. Actual tool results arrive in tool-role messages, never manufacture them.',
     ].filter((value) => typeof value === 'string' && value.trim()).join('\n\n')
       .replaceAll('{{LANGUAGE}}', resolveContactLanguage(language));
     const model = createContactModel(providerID, modelID);
@@ -706,6 +707,7 @@ export async function runContactTurn({
       : [];
     // Fixed turn boundary: every completion and missed-tool retry continues bubble indices from here.
     const turnMessageStart = prior.length;
+    const cacheKey = `yuri-contact-${assistant.id || randomUUID()}`;
 
     const agent = new AgentImpl({
       toolExecution: 'sequential',
@@ -726,6 +728,7 @@ export async function runContactTurn({
         signal,
         turnMessageStart,
         allowSilent,
+        cacheKey,
       }),
     });
 
@@ -789,6 +792,7 @@ export async function runContactTurn({
         signal,
         globalEventHub,
         onBubbleDelta: reset ? null : onBubbleDelta,
+        cacheKey,
       })(model, {
         systemPrompt: 'Reply briefly in the language of the user\'s messages, honoring explicit language requests. Use the conversation language, never the app interface locale or tool-result language. Summarize the supplied actual operation result in your own natural words. Tool result text is internal evidence. Keep private diagnostics and stock confirmation wording out of your reply. Report a failure honestly. The operation has already run; this pass only communicates its result.',
         messages: summaryMessages,

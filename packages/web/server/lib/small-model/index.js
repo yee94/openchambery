@@ -144,9 +144,8 @@ export function createSmallModelService(dependencies) {
     return { providerID, modelID, source: 'summary-default' };
   };
 
-  // Every OpenCode-backed call shares the Assistant LLM gateway: connected
-  // catalog check, then a throwaway-session `session.generate`.
-  const generateThroughGateway = async ({ resolved, prompt, system, directory }) => {
+  // Every OpenCode-backed call shares the clean Assistant inference gateway.
+  const generateThroughGateway = async ({ resolved, prompt, system, directory, maxOutputTokens }) => {
     const catalog = await getModelCatalog(directory);
     const clamped = clampPromptToModelLimit({ prompt, catalog, providerID: resolved.providerID, modelID: resolved.modelID });
     const { completion } = await runChatCompletion({
@@ -163,6 +162,7 @@ export function createSmallModelService(dependencies) {
       clientFactory: openCodeClient,
       persistSessionMetadata,
       onSystemSessionPersisted,
+      maxOutputTokens,
     }).catch((error) => {
       const message = summaryErrorMessage(error);
       throw Object.assign(new Error(message), {
@@ -217,7 +217,7 @@ export function createSmallModelService(dependencies) {
     }
 
     const resolved = await resolveSummaryProviderModel(summarySettings, directory);
-    return generateThroughGateway({ resolved, prompt, system: effectiveSystem, directory });
+    return generateThroughGateway({ resolved, prompt, system: effectiveSystem, directory, maxOutputTokens });
   }
 
   const resolveCustomApiInput = (body = {}) => {
@@ -306,6 +306,7 @@ export function createSmallModelService(dependencies) {
       prompt: prompt.trim(),
       system: typeof system === 'string' && system.trim() ? system.trim() : undefined,
       directory,
+      maxOutputTokens,
     });
   }
 

@@ -1,161 +1,116 @@
-# Yuri LLM Gateway
+# Yuri clean LLM gateway
 
-OpenAI-shaped Chat Completions for the in-app Assistant contact. This is the
-only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
+The Assistant and small-model utilities share `createChatCompletion`. The Host
+always connects to the selected **external OpenCode service**. It does not embed,
+start or replace OpenCode to provide inference.
 
-## Contract
+## Ownership and security
 
-- `GET /api/yuri/llm/models` — available `{providerID, modelID}` catalog
-  from official `@opencode/client` `provider.list` + `model.list`
-  (`{ location, data }`). `ModelInfo.id` is the external modelID used in
-  generate/session refs (`ModelInfo.modelID` is a separate internal field).
-  Vision prefers `capabilities.input.image === true` (SDK object shape), then
-  v2 list `capabilities.input` containing `"image"`, then legacy
-  modalities/input/attachment. Catalog loads use a bounded AbortSignal
-  (default 8s) so a pending provider call cannot stall a contact lane.
-- `POST /api/yuri/llm/chat/completions` — `{ model, messages, stream?,
-  providerID?, modelID?, variant? }` → OpenAI `chat.completion` JSON.
-  This **public** gateway is **non-streaming**. `stream: true` is rejected with
-  `validation_error` (HTTP 400). Do not emit fake SSE after the fact on this
-  route. The contact UI may stream later via a **server-internal** path only.
+- `bridge-client.js` writes one self-contained built-in plugin to a Yuri-owned
+  temporary `.opencode/plugins` directory. Official client `plugin.list` activates
+  that isolated Location. No global/project OpenCode configuration is changed.
+- Calls use the official authenticated `client.rpc(LlmBridge)` transport, scoped
+  to that directory. `ready` verifies protocol version 2 and runtime service availability; only RPC-not-ready
+  startup errors receive a bounded readiness retry. Generation is not rerun for
+  arbitrary transport errors, because a response may already have been produced.
+- `bridge-plugin.js` runs **inside external OpenCode**. It reads that Location's
+  live `ModelResolver.Service` through the RPC caller's Location context. The
+  external service itself resolves the selected model/variant, active integration
+  credential, OAuth refresh, native/legacy driver and provider overlays. The bridge
+  uses `@opencode/ai` single-call inference, never a parallel model resolver. Credentials never cross
+  the inference RPC or enter the Host's inference result. Upstream exceptions are
+  replaced with a fixed error and allowlisted failure category/HTTP status rather
+  than leaking private content, response bodies, headers or credentials. Defects
+  are sanitized too; cancellation remains interruption, not a provider failure.
+- Only caller-provided system/messages/tools enter inference. Session history,
+  agents, AGENTS.md, Skills, context/generate hooks, native tools and the OpenCode
+  Agent loop are not used. Model body overrides cannot replace context or tools.
+- The existing `model.request`, `http.request` and `http.response` transport hooks
+  DO run against the same live host registry. They retain provider endpoint,
+  authorization, request/response and legacy AI SDK adaptation without invoking
+  context-building hooks. A stable synthetic `ses_` identity supplies cache/header
+  affinity; it is never persisted. Provider hooks may attempt a Session lookup,
+  receive not-found and use their existing fallback. The Host never creates,
+  prompts, generates through, or writes a Session for inference.
+- The plugin only returns proposed native calls. Yuri's existing pi Agent owns
+  execution, permissions, sequencing, terminal-operation gates and cancellation.
+  A completed side effect is never replayed by inference recovery.
 
-`model` may be `providerID/modelID` or a bare `modelID` paired with `providerID`.
+## Supported providers and deployment
 
-`variant` is an optional OpenCode model variant string. Null, omitted, or empty
-values preserve the provider default. Other types fail validation before a model
-call. A selected variant is forwarded unchanged on the throwaway session's
-`model` ref (both paths). OpenCode owns provider-specific variant
-semantics. Variant selection changes inference configuration only; completion
-output continues to include text parts and keeps reasoning parts private.
+There is no Yuri provider/package allowlist or blanket OAuth rejection. All
+configured text-inference providers use the external service's own resolver and
+driver loading, including OpenAI/Codex OAuth, OpenCode, API-key, ambient-credential
+and legacy AI SDK providers. Whether a particular model accepts text/tools/media
+and the active account has access remains the upstream provider's contract.
+This is a generic integration path, not evidence that every vendor/account has
+been tested. There is **no fallback** to session.generate or a second model.
 
-## Internals (official `@opencode/client`)
+The bridge currently relies on internal `ModelResolver` and `PluginHooks` service
+contracts, keyed by the compatible OpenCode runtime. Missing services fail
+explicitly; protocol version alone does not prove compatibility with every future
+OpenCode release. The bundled SDK normalizes the host model's wrapper while
+retaining the host-owned route implementation; calls back into the host route
+restore its original model wrapper so nominal SDK schemas remain valid. It never instantiates an embedded
+OpenCode host. Requests use stateless HTTP, including for providers whose durable
+Agent sessions prefer WebSocket; providers requiring WebSocket-only operation are
+not established by this path.
 
-Credentials stay in OpenCode. This module does not read `auth.json`, does not
-call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.
+The external service must be able to read the isolated plugin directory. A
+service on another machine/container without a shared filesystem cannot load a
+Host-local plugin and fails visibly; it needs a separately provisioned bridge
+on its own filesystem. No automatic remote installation or global config edit
+is performed. Web, Electron, hosted mobile and Capacitor clients use the Host's
+same bridge. VS Code's extension-owned runtime does not gain a local Host.
 
-### Text path (no vision image bytes)
+`build:llm-bridge` generates `bridge-plugin.bundle.js` with the inference SDK and service tags, not a driver registry.
+It is ignored in source control and included in the web package's `server`
+files. Web build, prepack and development API scripts build it. At runtime the
+Host copies its bytes into the temporary directory, including when the Host
+source lives in Electron ASAR; external OpenCode needs no access to ASAR or
+Yuri's node_modules. The bundle has no machine-specific source directory.
+Shutdown removes the owned directory; a failed staging operation cleans up.
 
-`session.generate` inside a throwaway session owned by the hidden deny-all
-`yuri-text` agent (same temp root, same deny-all verification and
-`session.create` / `session.remove` lifecycle as the attachment path below):
+## Completion contract
 
-1. Ensure `.opencode/agent/yuri-text.md` and verify its last catch-all
-   permission rule is deny-all, with only deny rules after it, before creating the session.
-2. `session.create({ location, agent: 'yuri-text', model, metadata })`.
-3. `session.generate({ sessionID, prompt })` → `{ text }`. One model call with
-   the session's provider context, no tool loop, no messages written. System
-   text is prepended into `prompt`.
-4. Always `session.remove` in `finally` (interrupt first on abort/timeout).
+- `GET /api/yuri/llm/models` uses official provider.list/model.list.
+- `POST /api/yuri/llm/chat/completions` remains non-streaming. `stream:true` is
+  rejected. No fake token callbacks or post-hoc SSE are emitted.
+- Messages retain structured roles: system/user/assistant/tool. Native tool
+  calls carry their original IDs and JSON arguments; tool results retain name
+  and tool_call_id. The Assistant supplies its actual tool JSON schemas.
+- Results retain text, tool calls, finish reason, input/output/cache-read usage.
+  Empty text with valid tool calls is success. Truly empty results are errors;
+  content-filter/error/length endings cannot masquerade as complete output.
+- Each contact retains a stable assistant-scoped cache key, including tool
+  follow-ups and result summaries. Cache affinity is not session history. It
+  never appends other conversations. No inference response cache is stored.
+- Text files stay bounded inline descriptions. Supported vision inputs become
+  native image parts. Data URLs are validated and capped at 20 MiB per file;
+  unsupported image models receive descriptions, never image bytes.
 
-By default, empty text responses are retried at most twice, after 500ms and
-1000ms, in the same throwaway session with the same prompt. All attempts and
-backoff share the original generation deadline (90s by default).
+There is no default inference deadline. An explicit internal `timeoutMs` may
+bound a caller; manual AbortSignal cancellation reaches RPC and the LLM effect.
+Only truly empty responses receive backoff (500ms exponential, capped at 30s).
+Utilities stop after two retries; contacts opt into recovery until cancellation.
+Authentication/configuration/protocol/transport errors are not blindly retried.
+Provider-owned deadlines and Host process loss remain possible failures.
 
-Internal callers may pass `timeoutMs: 0` to disable that deadline and
-`retryEmptyTextUntilCancelled: true` to recover empty text without an attempt
-limit. Backoff doubles from 500ms to a maximum of 30s. Contact turns use both
-options, including tool follow-ups and terminal-operation summaries. Cancellation
-interrupts requests and backoff immediately, then interrupts/removes the
-throwaway session. Thrown upstream errors still surface; authentication/config
-errors are not silently retried. This does not remove provider-owned deadlines.
-Application tools execute outside this text-only call and are not replayed.
+## Validation
 
-Contacts also pass `textEnvelope: true`: the text-only prompt requests a JSON
-object with one `text` string containing the full application response. Decode
-that exact envelope (optionally in a `json` fence) before contact protocol
-validation. Preserve unwrapped responses for the existing contact parser, since
-live models sometimes ignore the transport envelope. Do not unwrap arbitrary
-objects or recursively parse tool arguments. This avoids depending solely on
-bare tool-like text surviving a text-only generation endpoint; real DeepSeek
-multi-tool runs previously returned empty text or only progress at this boundary.
-The attachment path retains its existing streaming protocol.
-
-These three options are in-process arguments, never read from HTTP request
-bodies. Other utility/public gateway calls retain their bounded defaults.
-
-`generate.text` (sessionless) is not used: session-scoped providers such as
-OpenCode Go reject calls without a session (`x-opencode-session`).
-`onTextDelta` is skipped honestly (no fake typewriter).
-
-OpenCode loads a fresh location's config lazily, so `agent.get` can report the
-agent as missing on the first read. Deny-all verification polls within a
-bounded window (5s) before failing.
-
-### Attachment / vision path
-
-When the catalog marks the model vision-capable and the request includes image
-data-URL file parts:
-
-1. Ensure the throwaway temp directory agent markdown (`yuri-llm`,
-   permissions array ending in `action:* resource:* effect:deny`).
-2. `agent.get({ agentID: 'yuri-llm', location })` and require the **last catch-all**
-   permissions rule to be deny-all, with only deny rules after it. This accepts
-   OpenCode's appended `browser` deny while rejecting trailing allow/ask rules.
-   Failure → `llm_attachment_generation_unavailable`
-   **before** any `session.prompt`. Title is never treated as permission isolation.
-3. `session.create({ location, agent, model: { id, providerID, variant? },
-   metadata: { yuri: { llm: { purpose: 'chat-completions' } } } })`
-   (bare session id). Host `persistSessionMetadata` then commits the same
-   isolation patch; `onSystemSessionPersisted` drops the throwaway session
-   from the sidebar index. Create-time `metadata` is a hint only.
-4. Optional `session.instructions.entry.put` for the system prompt.
-5. Subscribe for `session.text.delta` (`data.sessionID` / `assistantMessageID` /
-   `ordinal` / `delta`) before prompt; unsubscribe in `finally`.
-6. `session.prompt({ sessionID, text, files: [{ uri, name? }], delivery })`.
-7. `session.wait` then `message.list({ order: 'desc' })`; verify newest assistant
-   `finish` / `error`; extract text content.
-8. On timeout/abort: `session.interrupt({ continue: false })` and always
-   `session.remove` in `finally`.
-
-Non-vision models keep the `[image: …]` description strategy and never forward
-image bytes. Data URLs are strictly validated; a single attachment is capped at
-20 MiB (plus existing inline text-file limits). An external/temp workspace that
-OpenCode cannot see fails explicitly (`llm_attachment_generation_unavailable`).
-
-`ensureLlmTempDirectory` keeps one process-wide throwaway root (`yuri-llm-…`).
-Concurrent first callers share a single `mkdtemp` inflight; every caller still
-writes/refreshes `.opencode/agent/<name>.md` after settle so a mid-flight ensure
-cannot skip a newer agent body. Concurrent warm refreshes serialize through one
-write chain (last committed body wins; no interleaved partial writes).
-`stopLlmTempDirectory` clears the singleton for shutdown/tests.
-
-There is no `/generate` probe, no `tool.ids` deny map, and no `promptAsync` path.
-There is no `config.providers` catalog path.
-
-### Internal token callback (in-process only)
-
-`generateOpenCodeText` / `createChatCompletion` accept optional
-`onTextDelta(text: string)` and `globalEventHub`.
-
-- **Attachment session path:** real `session.text.delta` tokens for this session.
-- **`session.generate` text path:** cannot emit live deltas — skip `onTextDelta`.
-- **HTTP `POST .../chat/completions`:** does not pass these options and still
-  rejects `stream: true`.
-
-No connected provider → `no_provider` (HTTP 400). Upstream failure is never
-an empty success. The 502 body includes `{ error, message }`.
-
-## Ownership
-
-The hidden generator agent explicitly describes application-owned tool calls:
-it emits `yuri-tool` JSON for the contact harness to execute and receives
-the results on subsequent requests. Native OpenCode tool permissions remain
-denied. Capability statements and execution errors must follow the supplied
-application tool catalog and actual results.
-
-The Assistant contact harness owns system prompt, Yuri transcript,
-bubble splitting, and Yuri API tools (`assign_session`). Those tools
-deliver through contact **cards**, not this completions payload. The gateway
-stays a text generator: OpenCode coding tools stay denied on both paths via the
-verified agent permissions ruleset.
-
-The gateway is also the single OpenCode-backed path for server utility calls
-(`small-model`: commit messages, session titles, goal audits, scheduled-task
-distill, TTS summaries, PR descriptions). No server module calls provider APIs
-directly with OpenCode credentials.
-
-Internal completion/generate calls accept an optional AbortSignal from the
-contact continuation. It is combined with the generator deadline and passed to
-upstream requests. Cancellation still runs throwaway-session cleanup
-(`interrupt` + `remove`); it must not turn a late model response into a new
-tool operation.
+Focused tests cover clean wire messages, native empty-text tool calls, usage,
+model override rejection, host-resolved OAuth, transport-hook body replacement, sanitized RPC errors,
+session-free routing, long-running cancellation and retained side effects.
+`experiments/llm-provider-bridge/production-smoke.mjs` calls the real small-model
+session-title path and the real pi Agent through the production gateway, external
+OpenCode RPC and a selected real provider. OpenAI/Codex and DeepSeek both passed
+25 rounds with 24 native calls and eight verified file edits/readbacks. The script
+forbids Host Session API access and compares global config hashes before/after.
+`provider-smoke.mjs` checks one model per currently connected provider and reports
+each failure separately; it is not an exhaustive all-model certification.
+The current connected-provider run passed 16 of 18 selected models. OpenCode
+returned quota HTTP 402 and direct DeepSeek returned authentication HTTP 401;
+the official stateless generation API independently returned the same statuses.
+Neither failure is hidden by an automatic account/model switch.
+This does not establish real-device UI, OAuth expiry behavior against every vendor, remote provisioning, streaming,
+packaged Electron startup or crash-recovery correctness.

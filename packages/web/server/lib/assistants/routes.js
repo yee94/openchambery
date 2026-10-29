@@ -1,7 +1,6 @@
 import { AssistantError, createAssistantsService } from './service.js';
 import { isSafeInlineImageMime } from './contact-attachments.js';
 import { createChatCompletion } from '../llm/completions.js';
-import { ensureLlmTempDirectory } from '../llm/temp-directory.js';
 import { setAssignedSessionSettleHandler } from '../session-goal/runtime.js';
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 
@@ -17,8 +16,7 @@ export const registerAssistantRoutes = (app, dependencies) => {
       baseUrl: dependencies.buildOpenCodeUrl('/', '').replace(/\/$/, ''),
       authHeaders: dependencies.getOpenCodeAuthHeaders(),
     }),
-    ensureTempDirectory: ensureLlmTempDirectory,
-    // Attachment-session generate may subscribe for session.text.delta (contact harness).
+    // Contact activity continues through the existing event hub; inference executes no OpenCode tools.
     globalEventHub: input?.globalEventHub ?? dependencies.globalEventHub,
     persistSessionMetadata: dependencies.persistSessionMetadata,
     onSystemSessionPersisted: dependencies.onSystemSessionPersisted,

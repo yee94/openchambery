@@ -9,6 +9,13 @@ Full project overview, screenshots, and all features: [github.com/yee94/yuri](ht
 
 ## Repository HMR development
 
+Assistant and Summary AI inference uses the external OpenCode service through a
+built-in RPC plugin staged in an isolated temporary Location, never by editing
+global OpenCode config. `bun run build:llm-bridge` builds the self-contained plugin;
+web build/prepack/development API scripts run it. See
+`server/lib/llm/DOCUMENTATION.md` for supported authentication/protocol adapters and
+the shared-filesystem requirement for external services.
+
 The in-process server controller exposes `getGuiPluginClient()` only to its desktop
 owner. It resolves the current authenticated OpenCode client for native GUI plugin
 inventory and bundle reads; this client is never an HTTP or renderer IPC response.

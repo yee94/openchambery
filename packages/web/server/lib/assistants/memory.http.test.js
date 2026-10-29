@@ -23,9 +23,9 @@ const listen = async (app) => {
 const final = (text) => ({ text: '```yuri-final\n' + JSON.stringify({ status: 'complete', text }) + '\n```' });
 const call = (name, args) => ({ text: '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```' });
 const resultFor = (body, name) => {
-  const row = body.messages.findLast((m) => m.content?.startsWith(`Yuri tool result name=${name} `));
+  const row = body.messages.findLast((m) => m.role === 'tool' && m.name === name);
   if (!row) return null;
-  return JSON.parse(row.content.slice(row.content.indexOf(': ') + 2));
+  return JSON.parse(row.content);
 };
 const setup = async (existingDirectory = null) => {
   const directory = existingDirectory || fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-memory-http-'));

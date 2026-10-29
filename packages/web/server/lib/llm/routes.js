@@ -1,7 +1,6 @@
 import { createChatCompletion, LlmError } from './completions.js';
 import { loadConnectedCatalog } from './catalog.js';
 import { OpenCode } from '@opencode/client';
-import { ensureLlmTempDirectory } from './temp-directory.js';
 
 const fail = (res, error) => {
   const code = error instanceof LlmError ? error.code : error?.code || 'internal_error';
@@ -39,7 +38,6 @@ export const registerLlmRoutes = (app, dependencies) => {
         buildOpenCodeUrl: dependencies.buildOpenCodeUrl,
         getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders,
         clientFactory: client,
-        ensureTempDirectory: ensureLlmTempDirectory,
         persistSessionMetadata: dependencies.persistSessionMetadata,
         onSystemSessionPersisted: dependencies.onSystemSessionPersisted,
       }))

@@ -8,6 +8,12 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the Yuri web server in the same Electron main process. There is no separate sidecar subprocess for the Yuri server.
 
+Assistant/Summary inference still uses the external OpenCode service. The web
+package builds a self-contained LLM bridge bundle and copies its bytes out of
+ASAR to a temporary plugin Location. No embedded OpenCode host or global config
+mutation is introduced. See `packages/web/server/lib/llm/DOCUMENTATION.md` for
+provider/authentication limits; packaged startup remains a separate validation.
+
 `main.mjs` uses `desktop-backend.mjs` to load the selected OTA backend or the installed `@yuriai/web/server/index.js`, then calls `startWebUiServer()`. The Electron window loads the UI from the local server in development, or from the selected OTA/builtin assets in packaged builds.
 
 Opaque main/Mini Chat windows and the dark native title-bar overlay use Cursor's

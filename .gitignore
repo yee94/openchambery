@@ -85,3 +85,4 @@ test-results/
 
 # Electron icon release backups (never ship build artifacts)
 packages/electron/resources/icons/*.release-backup
+packages/web/server/lib/llm/bridge-plugin.bundle.js

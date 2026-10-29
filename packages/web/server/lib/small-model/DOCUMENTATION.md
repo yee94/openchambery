@@ -24,9 +24,7 @@ runtime API.
   obtains a single lazy instance from `server/index.js` (`getSmallModelService`)
   and injects it into feature routes, session assist/title/goal, and scheduled
   tasks. Tests may inject `getModelCatalog`, `openCodeClientFactory`, and
-  `createChatCompletion`. The host also injects `persistSessionMetadata` /
-  `onSystemSessionPersisted` so gateway throwaway sessions stay out of the
-  sidebar index.
+  `createChatCompletion`. The gateway performs no temporary Session creation.
 - `resolve.js` — model selection over the connected catalog only, mirroring
   OpenCode's `getSmallModel` chain:
   0. Yuri's own settings override (Settings → Sessions → Small Model):
@@ -87,10 +85,11 @@ runtime API.
 | Every other purpose | `resolve.js` over the connected catalog → LLM gateway |
 
 The LLM gateway checks the model against the connected catalog (`no_provider`
-otherwise) and runs `session.generate` in a throwaway session owned by the
-hidden deny-all `yuri-text` agent in the shared LLM temp directory
-(see `llm/DOCUMENTATION.md`). One model call with the session's provider
-context, no tool loop, no messages written; the session is removed afterwards.
+otherwise), then uses the built-in clean-inference plugin over authenticated RPC
+to the external OpenCode service (see `llm/DOCUMENTATION.md`). No Session API,
+agent prompt, Skills, session history or tool loop is involved. Output-token
+limits are forwarded. Unsupported provider/authentication adapters fail explicitly
+instead of falling back to the previous session.generate path.
 `restrictToPreferredProvider` forbids resolution from switching away from the
 session's provider unless the model came from an explicit choice (settings
 override, OpenCode config, or request `model`).
@@ -101,15 +100,10 @@ instead of silently switching models.
 
 ### Skills / clean context boundary
 
-OpenCode always loads skill *guidance* via `SkillInstructions.load` into the
-system prompt (`packages/core/src/session/context.ts`). Availability is filtered
-by `Permission.evaluate("skill", skill.id, agent.permissions)` — a deny-all
-`action: "*"` rule therefore excludes every skill from the available list, so
-the guidance renders as "No skills are currently available." Skill **body**
-content is only injected when the skill tool runs; deny-all also blocks that
-tool. Global `~/.agents/skills` may still be *discovered* by the OpenCode
-instance, but they are not listed or loadable under this agent. Project-level
-skills are absent because the temp directory has none.
+Only the explicit utility system/prompt messages are sent. OpenCode may discover
+its global configuration/plugins to resolve the selected model, but neither skill
+guidance nor bodies, AGENTS.md, agent instructions or Session history are part of
+the inference input. Clean inference does not use the Session context builder.
 
 ## Registration
 
@@ -117,7 +111,7 @@ skills are absent because the temp directory has none.
 `{ buildOpenCodeUrl, getOpenCodeAuthHeaders, persistSessionMetadata,
 onSystemSessionPersisted }` into the factory (and the service into session
 assist/title/goal, scheduled tasks, and `createFeatureRoutesRuntime`). Server
-`stop()` calls `stopLlmTempDirectory()` to remove the shared LLM temp root.
+`stop()` calls `stopLlmBridgeDirectory()` to remove the isolated plugin directory.
 
 ## Summary AI settings
 

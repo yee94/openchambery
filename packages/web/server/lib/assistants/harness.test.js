@@ -18,6 +18,7 @@ import {
 } from './harness.js'
 import { PI_CODING_TOOL_NAMES } from './pi-tools.js'
 import { createChatCompletion as gatewayCompletion } from '../llm/completions.js'
+import { generateOpenCodeText } from '../llm/generate.js'
 
 describe('createContactStreamFn', () => {
   it('continues eight real Agent tool rounds through gateway recovery without replaying completed tools', async () => {
@@ -27,26 +28,21 @@ describe('createContactStreamFn', () => {
       const tools = createContactTools({ readAssistantSettings: getAssistantSettings, currentAssistant: { id: 'a', name: 'Fixture' } })
       let round = 0
       const attempts = new Map()
-      const remove = vi.fn(async () => {})
-      const generate = vi.fn(async ({ sessionID, prompt }) => {
-        const index = Number(sessionID.slice(4))
+      const generate = vi.fn(async ({ messages }) => {
+        const index = messages.filter(message => message.role === 'tool').length + 1
+        round = Math.max(round, index)
         const attempt = (attempts.get(index) || 0) + 1
         attempts.set(index, attempt)
-        expect((prompt.match(/Yuri tool result name=get_assistant_settings call=/g) || []).length).toBe(index - 1)
+        expect(messages.filter(message => message.role === 'tool' && message.name === 'get_assistant_settings')).toHaveLength(index - 1)
         // More than the old three-attempt limit, and longer than its 90s deadline.
         if ((index === 3 && attempt <= 9) || (index === 4 && attempt <= 3)) return { text: '' }
-        const text = index <= 8
-          ? '```yuri-tool\n{"name":"get_assistant_settings","arguments":{}}\n```'
-          : '```yuri-final\n{"status":"complete","text":"Verified all eight steps."}\n```'
-        return { text: JSON.stringify({ text }) }
+        return index <= 8
+          ? { text: '', toolCalls: [{ id: `call_${index}`, name: 'get_assistant_settings', arguments: {} }], finishReason: 'tool-calls' }
+          : { text: '```yuri-final\n{"status":"complete","text":"Verified all eight steps."}\n```', toolCalls: [], finishReason: 'stop' }
       })
-      const client = {
-        agent: { get: async () => ({ data: { id: 'yuri-text', permissions: [{ action: '*', resource: '*', effect: 'deny' }] } }) },
-        session: { create: async () => ({ id: `ses_${++round}` }), generate, remove, interrupt: vi.fn() },
-      }
       const completion = (input) => gatewayCompletion({
         ...input, buildOpenCodeUrl: () => 'http://127.0.0.1:4096', getOpenCodeAuthHeaders: () => ({}),
-        clientFactory: () => client, ensureTempDirectory: async () => '/tmp/yuri-text',
+        generateText: (input) => generateOpenCodeText({ ...input, generateCompletion: generate }),
         loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'm' }] }),
       })
       const outcome = runContactTurn({
@@ -58,7 +54,6 @@ describe('createContactStreamFn', () => {
       expect(getAssistantSettings).toHaveBeenCalledTimes(8)
       expect(round).toBe(9)
       expect(generate).toHaveBeenCalledTimes(21)
-      expect(remove).toHaveBeenCalledTimes(9)
       expect(vi.getTimerCount()).toBe(0)
     } finally { vi.useRealTimers() }
   })
@@ -76,7 +71,8 @@ describe('createContactStreamFn', () => {
     expect(completion.mock.calls.length).toBeGreaterThan(0);
     for (const [request] of completion.mock.calls) {
       expect(request.body.variant).toBe('high');
-      expect(request).toMatchObject({ timeoutMs: 0, retryEmptyTextUntilCancelled: true, textEnvelope: true });
+      expect(request).toMatchObject({ timeoutMs: 0, retryEmptyTextUntilCancelled: true });
+      expect(typeof request.cacheKey).toBe('string');
     }
     expect(result.bubbles).toEqual(['已完成。']);
     expect(JSON.stringify(onBubbleDelta.mock.calls)).not.toContain('Private reasoning');
@@ -128,7 +124,7 @@ describe('createContactStreamFn', () => {
       currentAssistant: { id: 'a', name: 'Config' },
     })
     const completion = vi.fn(async ({ body }) => {
-      const result = body.messages.find((m) => m.content.includes('Yuri tool result name=update_default_prompt'))
+      const result = body.messages.find((m) => m.role === 'tool' && m.name === 'update_default_prompt')
       if (result) {
         expect(result.content).toContain('Default prompt saved.')
         return { text: '```yuri-final\n{"status":"complete","text":"提示词已保存，接下来的对话会按这个设置回复。"}\n```' }
@@ -233,7 +229,7 @@ describe('createContactStreamFn', () => {
       expect(system).toContain('small, clearly scoped configuration changes directly')
       expect(system).toContain('walk its parent directories')
       expect(system).toContain('Look up existing OpenCode conversations with list_sessions')
-      const result = body.messages.find((message) => typeof message.content === 'string' && message.content.includes('tool result name=read'))
+      const result = body.messages.find((message) => message.role === 'tool' && message.name === 'read')
       if (result) {
         expect(result.content).toContain('configured value')
         return { completion: { choices: [{ message: { content: '```yuri-final\n{"status":"complete","text":"configured value"}\n```' } }] } }
@@ -607,7 +603,7 @@ describe('runContactTurn', () => {
       expect(result.text).toBe(example)
       expect(createChatCompletion).toHaveBeenCalledTimes(3)
       const messages = createChatCompletion.mock.calls[1][0].body.messages
-      const emptyResult = messages.find((message) => message.content.includes('tool result name=bash'))
+      const emptyResult = messages.find((message) => message.role === 'tool' && message.name === 'bash')
       expect(emptyResult).toBeTruthy()
       expect(emptyResult.content).toContain('"isError":false')
     } finally {
@@ -639,11 +635,11 @@ describe('runContactTurn', () => {
       expect(result.text).toBe('已写入并验证。')
       expect(createChatCompletion).toHaveBeenCalledTimes(4)
       const lastRequest = createChatCompletion.mock.calls.at(-1)[0].body.messages
-      const calls = lastRequest.filter((m) => m.role === 'assistant').map((m) => m.content).join('\n')
+      const calls = JSON.stringify(lastRequest.filter((m) => m.role === 'assistant'))
       expect(calls).toContain('"name":"read"')
       expect(calls).toContain('"name":"write"')
-      expect(calls).toContain('"path":"result.txt"')
-      const results = lastRequest.filter((m) => m.role === 'user' && m.content.includes('tool result name='))
+      expect(lastRequest.flatMap(message => message.tool_calls ?? []).map(call => JSON.parse(call.function.arguments))).toContainEqual(expect.objectContaining({ path: 'result.txt' }))
+      const results = lastRequest.filter((m) => m.role === 'tool')
       expect(results).toHaveLength(3)
       expect(results.at(-1).content).toContain('verified note')
       expect(onBubbleDelta.mock.calls.map((call) => call[1]).join('')).not.toContain('我先')
@@ -744,7 +740,7 @@ describe('runContactTurn', () => {
       // Tool call/result association: after read, the next completion sees a named tool result.
       const secondMessages = createChatCompletion.mock.calls[1][0].body.messages
       const toolResultTurn = secondMessages.find((message) => (
-        message.role === 'user' && typeof message.content === 'string' && message.content.includes('tool result name=read')
+        message.role === 'tool' && message.name === 'read'
       ))
       expect(toolResultTurn).toBeTruthy()
       expect(toolResultTurn.content).toMatch(/Read project docs|documentation/i)
@@ -814,7 +810,7 @@ describe('runContactTurn', () => {
       }
       const last = body.messages.at(-1)
       const lastText = typeof last?.content === 'string' ? last.content : ''
-      if (lastText.includes('tool result name=list_projects') || lastText.includes('Registered projects')) {
+      if (body.messages.at(-1)?.name === 'list_projects' || lastText.includes('Registered projects')) {
         return {
           completion: {
             choices: [{

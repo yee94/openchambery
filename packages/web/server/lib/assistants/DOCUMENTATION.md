@@ -174,6 +174,17 @@ and keep their existing error result handling.
 
 **Workspace response and loop protocol**
 
+- Inference uses the external OpenCode clean RPC bridge (`../llm/DOCUMENTATION.md`),
+  never session.generate/session.prompt. Actual JSON schemas, native assistant
+  tool_calls and tool-role results retain their call IDs across turns. Textless
+  native tool calls continue the existing sequential pi loop. Progress/final
+  declarations remain application text; older text-call records are still parsed
+  by the existing validator but are no longer the requested tool transport.
+- The contact's own explicit system prompt still includes its selected persona,
+  workspace tools and discovered skill instructions. This is application-owned
+  context, not hidden OpenCode Agent context. Summaries receive only their explicit
+  system/prompt. Native inference is currently one-shot, not token-streaming.
+
 - Public progress uses leading `yuri-message` fences containing single-line JSON `{ "text": "..." }`. A complete, valid public record emits a `done:true` bubble immediately during generation, before the following tool/final output completes. Incomplete records and ordinary raw tokens stay private. Each public record is capped at 2,000 text characters and the incomplete-record buffer at 8 KiB. The parser reads only consecutive prefix records, so quoted tool examples cannot become public events.
 - The model is prompted to announce its next action and report verified milestones during execution, then give a short final outcome. Public messages share the existing SSE, durable contact rows, and turn-global indices across web, desktop, VS Code, hosted mobile, and Capacitor. No timer narration, tool logs, progress widgets, or synthetic chat messages are added. Timing of model-authored milestones remains model policy; the transport guarantees immediate delivery once an explicit public record arrives.
 - Completion notifications use the latest spoken message, keeping earlier progress out of the final notification body. Transcript persistence reconciles by stable bubble IDs and adds only remaining messages.

@@ -2222,10 +2222,10 @@ async function main(options = {}) {
         // best-effort shutdown of the dictation worker
       }
       try {
-        const { stopLlmTempDirectory } = await import('./lib/llm/temp-directory.js');
-        await stopLlmTempDirectory();
+        const { stopLlmBridgeDirectory } = await import('./lib/llm/bridge-client.js');
+        await stopLlmBridgeDirectory();
       } catch {
-        // best-effort cleanup of the LLM generator temp OpenCode directory
+        // best-effort cleanup of the isolated LLM bridge directory
       }
       return gracefulShutdown({
         exitProcess: shutdownOptions.exitProcess ?? false,
