@@ -9,7 +9,7 @@ import { useCurrentSessionEntity } from '@/sync/sync-context';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
 import { ThemeSystemContext } from '@/contexts/theme-system-context';
-import { getRuntimeKey, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { getRuntimeKey, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { guiBundleOptions, guiInventoryOptions } from '@/queries/guiPluginQueries';
 import { guiPreferencesKey, readDisabledPlugins, writePluginEnabled } from './preferences';
 import { GuiFileIconsContext, GuiPluginsContext, getEmptySnapshot, type GuiPluginsContextValue } from './react';
@@ -92,7 +92,7 @@ function Activation({ host, id, transport, report, schedule }: {
 export function GuiPluginsProvider({ children, ready = true }: { children: React.ReactNode; ready?: boolean }) {
   const { files, viewExport } = useRuntimeAPIs();
   const queryClient = useQueryClient();
-  const transport = getRuntimeTransportIdentity();
+  const transport = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeTransportIdentity, getRuntimeTransportIdentity);
   const downloading = React.useSyncExternalStore(guiDownloadProgress.subscribe, () => guiDownloadProgress.pending(transport), () => false);
   const preferenceKey = guiPreferencesKey(getRuntimeKey());
   const [paintedTransport, setPaintedTransport] = React.useState<string | null>(null);

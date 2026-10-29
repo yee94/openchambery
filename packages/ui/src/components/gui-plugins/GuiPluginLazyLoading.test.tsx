@@ -10,11 +10,18 @@ import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { mobileWindowStack } from '@/components/ui/MobileWindowStack';
 
 const state = vi.hoisted(() => ({
+  transport: 'lazy-runtime',
   list: vi.fn(), gui: vi.fn(), toast: vi.fn(),
   files: null as FilesAPI | null,
   session: { id: 'lazy-session', directory: '/workspace' },
 }));
-vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => 'lazy-runtime', getRuntimeKey: () => 'lazy-runtime', getRuntimeGeneration: () => 0 }));
+vi.mock('@/lib/runtime-switch', () => ({
+  getRuntimeTransportIdentity: () => state.transport, getRuntimeKey: () => state.transport, getRuntimeGeneration: () => 0,
+  subscribeRuntimeEndpointChanged: (callback: () => void) => {
+    window.addEventListener('yuri:runtime-endpoint-changed', callback);
+    return () => window.removeEventListener('yuri:runtime-endpoint-changed', callback);
+  },
+}));
 vi.mock('@/lib/instanceScopedStorage', () => ({ instanceScopedStorageKey: (key: string, runtime: string) => `${runtime}:${key}` }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ files: state.files }) }));
 vi.mock('@/sync/session-ui-store', () => ({ useSessionUIStore: (select: (value: { currentSessionId: string }) => unknown) => select({ currentSessionId: state.session.id }) }));
@@ -122,6 +129,7 @@ async function expectPreview() {
 }
 
 beforeEach(() => {
+  state.transport = 'lazy-runtime';
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   localStorage.clear();
   state.list.mockReset().mockResolvedValue({ data: [plugin] });
@@ -143,6 +151,35 @@ afterEach(async () => {
   client.clear();
   container.remove();
   vi.restoreAllMocks();
+});
+
+it.each([false, true])('removes mounted plugin DOM and contributions when switching to an instance without GUI (sheet=%s)', async (sheet) => {
+  const matchMedia = window.matchMedia.bind(window);
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+    const result = matchMedia(query);
+    if (query === '(prefers-reduced-motion: reduce)') Object.defineProperty(result, 'matches', { value: true });
+    return result;
+  });
+  state.gui.mockResolvedValue({ data: bundle });
+  await start(sheet);
+  await click('open-file');
+  await until(() => expect(document.querySelector('[data-preview]')?.textContent).toBe(source));
+  const oldHost = context.host!;
+  state.list.mockResolvedValue({ data: [] });
+  await act(async () => {
+    state.transport = 'empty-runtime';
+    window.dispatchEvent(new CustomEvent('yuri:runtime-endpoint-changed'));
+  });
+  await until(() => {
+    expect(context.host).toBeNull();
+    expect(context.inventory).toEqual([]);
+    expect(context.loading).toBe(false);
+    expect(document.querySelector('[data-preview]')).toBeNull();
+    expect(document.querySelector('[data-source]')?.textContent).toBe(source);
+  });
+  expect(oldHost.getSnapshot().plugins).toEqual([]);
+  expect(oldHost.getSnapshot().panels).toEqual([]);
+  expect(state.gui).toHaveBeenCalledOnce();
 });
 
 it('keeps the main file action usable while inventory and bundle reads are suspended', async () => {

@@ -1,11 +1,11 @@
 import React from 'react';
+import { useTimeoutFn } from '@reactuses/core';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/i18n';
 import { useDeviceInfo } from '@/lib/device';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
-import { afterGuiPaint } from '@/lib/gui-plugins/scheduling';
 
 export function GuiPluginLoadingNotice({ pending, error, inventory }: {
   pending: boolean;
@@ -15,15 +15,13 @@ export function GuiPluginLoadingNotice({ pending, error, inventory }: {
   const { t } = useI18n();
   const { isMobile } = useDeviceInfo();
   const [dismissed, setDismissed] = React.useState(false);
-  const [paintedPending, setPaintedPending] = React.useState(false);
+  const [delayedPending, setDelayedPending] = React.useState(false);
+  const [, startNotice, stopNotice] = useTimeoutFn(() => setDelayedPending(true), 500, { immediate: false });
   React.useEffect(() => {
-    if (!pending || dismissed) { setPaintedPending(false); return; }
-    const controller = new AbortController();
-    void afterGuiPaint(controller.signal).then(() => {
-      if (!controller.signal.aborted) setPaintedPending(true);
-    }).catch(() => {});
-    return () => controller.abort();
-  }, [pending, dismissed]);
+    setDelayedPending(false);
+    if (pending && !dismissed) startNotice();
+    return stopNotice;
+  }, [pending, dismissed, startNotice, stopNotice]);
   const reported = React.useRef(new Set<string>());
   React.useEffect(() => {
     const errors = [error, ...inventory.map((plugin) => plugin.error ? `${plugin.id}: ${plugin.error}` : null)].filter((value): value is string => Boolean(value));
@@ -32,7 +30,7 @@ export function GuiPluginLoadingNotice({ pending, error, inventory }: {
     }
     reported.current = new Set(errors);
   }, [error, inventory, t]);
-  const open = pending && paintedPending && !dismissed;
+  const open = pending && delayedPending && !dismissed;
   const onOpenChange = (next: boolean) => { if (!next) setDismissed(true); };
   const title = t('guiPlugins.loadingNecessary');
   const action = <Button onClick={() => setDismissed(true)}>{t('guiPlugins.continueBackground')}</Button>;

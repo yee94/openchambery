@@ -24,7 +24,7 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); });
 const draw = async (pending: boolean, runtime = 'a', error: string | null = null) => {
   await act(async () => root.render(<GuiPluginLoadingNotice key={runtime} pending={pending} error={error} inventory={[]} />));
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, pending ? 550 : 40)); });
 };
 
 it.each([false, true])('dismisses only the notice for the current runtime, and reports failures (mobile=%s)', async (mobile) => {
@@ -49,5 +49,14 @@ it('does not flash for a download that settles before the paint boundary', async
   await act(async () => root.render(<GuiPluginLoadingNotice pending error={null} inventory={[]} />));
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   await draw(false);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+it.each([false, true])('keeps short downloads silent and cancels their pending notice (mobile=%s)', async (mobile) => {
+  state.mobile = mobile;
+  await act(async () => root.render(<GuiPluginLoadingNotice pending error={null} inventory={[]} />));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await draw(false);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 550)); });
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });

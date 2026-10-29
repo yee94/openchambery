@@ -18,7 +18,13 @@ const state = vi.hoisted(() => ({
   list: vi.fn(), gui: vi.fn(), hostImports: vi.fn(), signals: [] as AbortSignal[], hostFailure: false, noticeFailure: false, noticePending: false,
   hosts: [] as Array<{ install: ReturnType<typeof vi.fn>; uninstall: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; setSession: ReturnType<typeof vi.fn> }>,
 }));
-vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => state.transport, getRuntimeKey: () => state.transport, getRuntimeGeneration: () => 0 }));
+vi.mock('@/lib/runtime-switch', () => ({
+  getRuntimeTransportIdentity: () => state.transport, getRuntimeKey: () => state.transport, getRuntimeGeneration: () => 0,
+  subscribeRuntimeEndpointChanged: (callback: () => void) => {
+    window.addEventListener('yuri:runtime-endpoint-changed', callback);
+    return () => window.removeEventListener('yuri:runtime-endpoint-changed', callback);
+  },
+}));
 vi.mock('@/lib/desktop', () => ({ getDesktopGuiPluginBridge: () => state.nativeBridge, getDesktopGuiPluginWindowBridge: () => state.windowBridge ?? state.nativeBridge }));
 vi.mock('@/lib/instanceScopedStorage', () => ({ instanceScopedStorageKey: (key: string, runtime: string) => `${runtime}:${key}` }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ files: state.files }) }));
@@ -148,6 +154,24 @@ it('keeps inventory, cached validation and host waits silent; only code download
   expect(guiDownloadProgress.pending('host-a')).toBe(false);
 });
 
+it('unloads on an endpoint event without waiting for a parent render when the next instance has no GUI', async () => {
+  await load();
+  const previous = state.hosts[0];
+  expect(previous.install).toHaveBeenCalledOnce();
+  state.list.mockResolvedValue({ data: [] });
+  await act(async () => {
+    state.transport = 'host-b';
+    window.dispatchEvent(new CustomEvent('yuri:runtime-endpoint-changed'));
+  });
+  await settle();
+  expect(previous.dispose).toHaveBeenCalledOnce();
+  expect(previous.uninstall).toHaveBeenCalledWith('dsl');
+  expect(context.host).toBeNull();
+  expect(context.inventory).toEqual([]);
+  expect(context.requested).toBe(false);
+  expect(state.hosts).toHaveLength(1);
+});
+
 it('waits for trusted main activation and installs the authoritative bundle without renderer code in IPC', async () => {
   let complete!: (value: unknown) => void;
   const request = vi.fn<NativeGuiBridge['request']>(() => new Promise((resolve) => { complete = resolve; }));
@@ -164,13 +188,20 @@ it('waits for trusted main activation and installs the authoritative bundle with
   state.hosts[0].install.mock.calls[0][2].dispose();
 });
 
-it('releases a late native activation after disable instead of installing it', async () => {
+it.each(['disable', 'switch'])('releases a late native activation after %s instead of installing it', async (action) => {
   let complete!: (value: unknown) => void;
   const request = vi.fn<NativeGuiBridge['request']>((action) => action === 'acquire'
     ? new Promise((resolve) => { complete = resolve; }) : Promise.resolve());
   state.nativeBridge = { request, subscribe: () => () => {} };
   await load();
-  await act(async () => context.setEnabled('dsl', false));
+  await act(async () => {
+    if (action === 'disable') context.setEnabled('dsl', false);
+    else {
+      state.transport = 'host-b';
+      state.list.mockResolvedValue({ data: [] });
+      window.dispatchEvent(new CustomEvent('yuri:runtime-endpoint-changed'));
+    }
+  });
   await act(async () => complete({ ok: true, value: { lease: 'late', bundle, os: 'macos', app: { version: '1', packaged: false } } }));
   await settle();
   expect(state.hosts[0].install).not.toHaveBeenCalled();

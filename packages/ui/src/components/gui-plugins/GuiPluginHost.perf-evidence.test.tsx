@@ -11,7 +11,7 @@ import { GuiPluginHost } from '@/lib/gui-plugins/host';
 
 const state = vi.hoisted(() => ({ list: vi.fn(), gui: vi.fn(), files: null as FilesAPI | null,
   session: { id: 'perf-session', directory: '/workspace' } }));
-vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => 'perf-runtime', getRuntimeKey: () => 'perf-runtime', getRuntimeGeneration: () => 0 }));
+vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => 'perf-runtime', getRuntimeKey: () => 'perf-runtime', getRuntimeGeneration: () => 0, subscribeRuntimeEndpointChanged: () => () => {} }));
 vi.mock('@/lib/instanceScopedStorage', () => ({ instanceScopedStorageKey: (key: string, runtime: string) => `${runtime}:${key}` }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ files: state.files, runtime: { isVSCode: false } }) }));
 vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/workspace' }));
