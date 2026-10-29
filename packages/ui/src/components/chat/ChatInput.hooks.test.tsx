@@ -8,6 +8,10 @@ import ts from 'typescript';
 import { afterEach, expect, it, vi } from 'vitest';
 import { buildHighlightParts, mentionRangesToHighlightRanges, tokenizeMarkdown } from './composerHighlight';
 import { highlightFencedCode } from './composerCodeHighlight';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/icon/Icon';
+import { VoiceActivityIcon } from '@/components/dictation/VoiceActivityIcon';
+import { cn } from '@/lib/utils';
 
 const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'ChatInput.tsx'), 'utf8');
 const ast = ts.createSourceFile('ChatInput.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -44,6 +48,28 @@ function surface<Props extends object>(body: string, scope: Record<string, unkno
 const host = document.createElement('div');
 const root = createRoot(host);
 afterEach(async () => { await act(async () => root.render(null)); vi.restoreAllMocks(); });
+
+it('uses the shared filled recording disc in the compact mobile composer', async () => {
+    const Surface = surface<{ desktopRecording: boolean }>(`
+        const { desktopRecording } = props;
+        ${declarations.get('mobileDictationTrigger')}
+        return mobileDictationTrigger;
+    `, {
+        Button, Icon, VoiceActivityIcon, cn,
+        isMobile: true, holdToTalkEnabled: true,
+        footerIconButtonClass: '', iconSizeClass: 'size-5',
+        resolvedDraftBusy: false, mobileDictationActive: false, dictationHint: null,
+        currentSessionId: 'session', newSessionDraftOpen: false, t: (key: string) => key,
+    });
+    for (const recording of [false, true, false]) {
+        await act(async () => root.render(<Surface desktopRecording={recording} />));
+        expect(host.querySelector('button')?.getAttribute('aria-pressed')).toBe(String(recording));
+        expect(host.querySelector('use')?.getAttribute('href')).toBe(recording ? '#yuri-mic-fill' : '#yuri-mic');
+        const disc = [...host.querySelectorAll('span')].find(span => span.classList.contains('bg-[var(--voice-active-fill)]'));
+        expect(Boolean(disc)).toBe(recording);
+        if (recording) expect(disc?.classList.contains('rounded-full')).toBe(true);
+    }
+});
 
 it.each([
     [true, true, 'primary', true, false],

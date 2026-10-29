@@ -10,6 +10,7 @@ import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { applyNativeComposerAccessoryVar, canUseNativeIosComposer, getNativeIosComposerPlugin, handoffNativeComposerSendToWeb, resolveComposerInsertCaret } from '@/lib/native-ios-composer';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 import { DesktopDictationButton } from '@/components/dictation/DesktopDictationButton';
+import { VoiceActivityIcon } from '@/components/dictation/VoiceActivityIcon';
 import { HoldToTalkComposer } from '@/components/dictation/HoldToTalkComposer';
 import { useHoldToTalkInput } from '@/components/dictation/useHoldToTalkInput';
 import { isDictationCaptureSupported } from '@/lib/dictation/use-dictation-audio-source';
@@ -6938,7 +6939,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             disabled={!desktopRecording && (resolvedDraftBusy || mobileDictationActive || dictationHint !== null || (!currentSessionId && !newSessionDraftOpen))}
             onClick={() => window.dispatchEvent(new Event('yuri:mobile-dictation-toggle'))}
         >
-            <Icon name="mic" className={cn(iconSizeClass, desktopRecording && 'text-[var(--voice-active-fill)]')} />
+            <VoiceActivityIcon kind="mic" active={desktopRecording} className={iconSizeClass} />
         </Button>
     ) : null;
 

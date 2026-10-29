@@ -91,7 +91,8 @@ not rerun its dictation/audio Hooks or callback synchronization effects; local
 recording state and subscribed settings still update the leaf normally.
 Mobile footer microphones reuse this leaf with `interactionMode="mobile"` and
 the same inline provisional-text decoration. Compact and expanded controls share
-one capture owner. Mobile capture only finalizes on another microphone click;
+one capture owner and the same filled `VoiceActivityIcon` recording disc and halos.
+Mobile capture only finalizes on another microphone click;
 blur, touch elsewhere, scrolling, visibility changes and keyboard actions do not
 stop it. No dictation overlay or desktop keyboard hint is mounted for this entry
 point. Draft/runtime disposal retains the existing cleanup boundary.
