@@ -199,6 +199,7 @@ export function MobileTabsRoot({
         data-mobile-navigation-underlay="true"
         aria-hidden={topSecondaryPage ? true : undefined}
         inert={topSecondaryPage ? true : undefined}
+        data-mobile-navigation-parked={topSecondaryPage ? 'true' : undefined}
         className="flex h-full min-h-0 flex-1 flex-col"
       >
         {MOBILE_TABS.map((tab) => {
@@ -223,22 +224,24 @@ export function MobileTabsRoot({
             </section>
           );
         })}
-      </div>
 
-      {showTabBar ? (
-        <div
-          data-mobile-navigation-dock-underlay="true"
-          aria-hidden={topSecondaryPage || nativeTabBarAdopted ? true : undefined}
-          inert={topSecondaryPage || nativeTabBarAdopted ? true : undefined}
-        >
-          {showWebTabBar ? (
-            <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} tabMarks={{
-              assistant: assistantMark === 'loading' ? 'loading' : null,
-              scheduled: scheduledMark === 'loading' ? 'loading' : null,
-            }} />
-          ) : null}
-        </div>
-      ) : null}
+        {/* The fixed web dock lives inside the parked underlay so a pushed page
+            also suspends it; otherwise it paints below a keyboard-shrunk shell. */}
+        {showTabBar ? (
+          <div
+            data-mobile-navigation-dock-underlay="true"
+            aria-hidden={topSecondaryPage || nativeTabBarAdopted ? true : undefined}
+            inert={topSecondaryPage || nativeTabBarAdopted ? true : undefined}
+          >
+            {showWebTabBar ? (
+              <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} tabMarks={{
+                assistant: assistantMark === 'loading' ? 'loading' : null,
+                scheduled: scheduledMark === 'loading' ? 'loading' : null,
+              }} />
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
       {visibleSecondaryPages.map((page, index) => {
         const active = index === visibleSecondaryPages.length - 1;

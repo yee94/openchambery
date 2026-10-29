@@ -1,6 +1,6 @@
 export const settingsDict = {
   'settings.yuri.about.hostUpdate.title': '更新当前实例',
-  'settings.yuri.about.hostUpdate.description': '更新当前连接的 Host，而非本设备。重启时连接会短暂断开。',
+  'settings.yuri.about.hostUpdate.description': '更新已连接的 Host，重启后自动重连。',
   'settings.yuri.about.hostUpdate.available': '有可用更新',
   'settings.yuri.about.hostUpdate.confirm': '更新并重启',
   'settings.yuri.about.hostUpdate.reconnecting': '正在等待 Host 重新连接…',

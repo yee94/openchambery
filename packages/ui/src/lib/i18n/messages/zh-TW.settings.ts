@@ -1,6 +1,6 @@
 ﻿export const settingsDict = {
   'settings.yuri.about.hostUpdate.title': '更新目前實例',
-  'settings.yuri.about.hostUpdate.description': '更新目前連線的 Host，而非本裝置。重新啟動時連線會短暫中斷。',
+  'settings.yuri.about.hostUpdate.description': '更新已連線的 Host，重新啟動後自動重連。',
   'settings.yuri.about.hostUpdate.available': '有可用更新',
   'settings.yuri.about.hostUpdate.confirm': '更新並重新啟動',
   'settings.yuri.about.hostUpdate.reconnecting': '正在等待 Host 重新連線…',

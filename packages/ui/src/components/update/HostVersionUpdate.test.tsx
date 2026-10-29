@@ -69,6 +69,31 @@ it('shows the ongoing task instead of starting another update, including reconne
   expect(fixture.fetch.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
 });
 
+it('treats the restart gap as reconnecting and completes the watched task at 100% once the new Host answers', async () => {
+  const restarting = { id: 'op', version: '2.0.1', status: 'restarting', progress: 100 };
+  fixture.fetch.mockResolvedValue(Response.json({ ...snapshot(), update: null, operation: restarting }));
+  await render(); await open();
+  fixture.fetch.mockResolvedValue(new Response('', { status: 404 }));
+  await act(async () => { await client.invalidateQueries(); await settle(); });
+  expect(document.body.textContent).toContain('Waiting for the Host to reconnect');
+  expect(document.body.textContent).not.toContain(en['settings.yuri.about.hostUpdate.unsupported']);
+  fixture.fetch.mockResolvedValue(Response.json({ ...snapshot(), currentVersion: '2.0.1', update: null, operation: { ...restarting, status: 'succeeded' } }));
+  await act(async () => { await client.invalidateQueries(); await settle(); });
+  expect(document.body.textContent).toContain('Update complete');
+  expect(document.body.textContent).toContain('100%');
+});
+
+it('fails a stranded status request instead of pinning the poll forever', async () => {
+  vi.useFakeTimers();
+  try {
+    fixture.fetch.mockImplementation(() => new Promise(() => {}));
+    const result = client.fetchQuery(hostUpdateQueryOptions('host-a', 1));
+    const assertion = expect(result).rejects.toThrow('host_update_timeout');
+    await vi.advanceTimersByTimeAsync(8_000);
+    await assertion;
+  } finally { vi.useRealTimers(); }
+});
+
 it('keeps a good version snapshot but blocks confirmation after a failed refresh', async () => {
   await render();
   fixture.fetch.mockRejectedValue(new Error('offline'));

@@ -16,6 +16,7 @@ export type HostUpdateSnapshot = {
   update: null | { version: string; releaseNotes: string | null; kind: HostUpdateOperation['kind']; planId: string; rollback: boolean; restartRequired: boolean };
   operation: HostUpdateOperation | null;
 };
+const HOST_UPDATE_REQUEST_TIMEOUT_MS = 8_000;
 export const isHostUpdateActive = (operation: HostUpdateOperation | null | undefined) => Boolean(operation && !['succeeded', 'failed'].includes(operation.status));
 
 function assertScope(transport: string, generation: number) {
@@ -25,12 +26,30 @@ export const hostUpdateQueryOptions = (transport = getRuntimeTransportIdentity()
   queryKey: [transport, 'host-update', generation, channel ?? 'current'] as const,
   queryFn: async ({ signal }: { signal: AbortSignal }): Promise<HostUpdateSnapshot> => {
     assertScope(transport, generation);
-    const response = await runtimeFetch(`/api/system/update${channel ? `?channel=${channel}` : ''}`, { headers: { Accept: 'application/json' }, signal });
-    if ([404, 501].includes(response.status)) throw new Error('host_update_unsupported');
-    const body = await response.json();
-    assertScope(transport, generation);
-    if ((!response.ok && response.status !== 502) || typeof body.serverId !== 'string' || typeof body.supported !== 'boolean' || !['cli', 'electron'].includes(body.host)) throw new Error('Host update check failed');
-    return body;
+    // A request stranded on a restarting Host (or a native fetch that ignores
+    // abort) would otherwise pin the in-flight query and stop every later poll.
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener('abort', abort, { once: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        (async () => {
+          const response = await runtimeFetch(`/api/system/update${channel ? `?channel=${channel}` : ''}`, { headers: { Accept: 'application/json' }, signal: controller.signal });
+          if ([404, 501].includes(response.status)) throw new Error('host_update_unsupported');
+          const body = await response.json();
+          assertScope(transport, generation);
+          if ((!response.ok && response.status !== 502) || typeof body.serverId !== 'string' || typeof body.supported !== 'boolean' || !['cli', 'electron'].includes(body.host)) throw new Error('Host update check failed');
+          return body as HostUpdateSnapshot;
+        })(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => { controller.abort(); reject(new Error('host_update_timeout')); }, HOST_UPDATE_REQUEST_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+    }
   },
   staleTime: 60_000,
   retry: false,
@@ -46,8 +65,11 @@ export const refreshHostUpdateSnapshot = (transport = getRuntimeTransportIdentit
   queryClient.fetchQuery({ ...hostUpdateQueryOptions(transport, generation, channel), staleTime: 0 });
 export const useHostUpdate = (transport: string, generation: number, channel?: UpdateChannel) => useQuery({
   ...hostUpdateQueryOptions(transport, generation, channel),
-  refetchInterval: (query) => query.state.error?.message === 'host_update_unsupported' ? false
-    : query.state.error ? 15_000 : isHostUpdateActive(query.state.data?.operation) ? 2_000 : 5 * 60_000,
+  // While a task is active, keep probing through the restart gap (including
+  // transient 404/timeouts) until the new Host reports the terminal state.
+  refetchInterval: (query) => isHostUpdateActive(query.state.data?.operation) ? 2_000
+    : query.state.error?.message === 'host_update_unsupported' ? false
+    : query.state.error ? 15_000 : 5 * 60_000,
   refetchIntervalInBackground: false,
 });
 

@@ -1,6 +1,6 @@
 export const settingsDict = {
   'settings.yuri.about.hostUpdate.title': '연결된 인스턴스 업데이트',
-  'settings.yuri.about.hostUpdate.description': '이 기기가 아닌 연결된 Host를 업데이트합니다. 다시 시작하는 동안 연결이 잠시 끊깁니다.',
+  'settings.yuri.about.hostUpdate.description': '연결된 Host를 업데이트하고 재시작 후 다시 연결합니다.',
   'settings.yuri.about.hostUpdate.available': '업데이트 사용 가능',
   'settings.yuri.about.hostUpdate.confirm': '업데이트 후 다시 시작',
   'settings.yuri.about.hostUpdate.reconnecting': 'Host 재연결을 기다리는 중…',

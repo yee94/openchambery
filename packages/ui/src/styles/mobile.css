@@ -225,6 +225,14 @@
     inset 0 0 0 0.5px var(--yuri-mobile-glass-highlight);
 }
 
+/* A pushed secondary page fully covers the root tabs and their fixed web dock.
+   Skip their style, layout, and paint while covered (DOM, drafts, and scroll
+   state stay mounted); the native back driver reveals them only for a page-back. */
+[data-mobile-navigation-parked="true"]:not([data-mobile-back-revealing="true"]) {
+  visibility: hidden;
+  content-visibility: hidden;
+}
+
 .yuri-mobile-floating-bottom-bar-frame {
   pointer-events: none;
   position: fixed;
