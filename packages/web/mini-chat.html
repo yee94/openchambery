@@ -60,6 +60,8 @@
       html[data-splash-variant='dark'] { --splash-background: var(--splash-background-dark); }
 
       #initial-loading {
+        display: grid;
+        place-items: center;
         background-color: var(--splash-background);
         height: 100vh;
         width: 100%;
@@ -72,27 +74,16 @@
         opacity: 0;
         pointer-events: none;
       }
+      .dark #initial-loading img { filter: invert(1); }
     </style>
 
     <script type="module" src="/src/mini-chat-main.tsx"></script>
   </head>
   <body class="h-full bg-background text-foreground">
     <div id="root" class="h-full">
-      <!-- Themed backdrop until the mini-chat React app is ready (dismissed in
-           ElectronMiniChatApp). No logo here on purpose — the content renders
-           the single Yuri cube itself. -->
-      <div id="initial-loading"></div>
+      <!-- React replaces the static logo with its startup state on first commit. -->
+      <div id="initial-loading"><img src="../ui/src/assets/brand/yuri-mark-black.svg" width="120" height="120" alt="Yuri" /></div>
     </div>
 
-    <script>
-      // Safety net: never let the splash hang if the app fails to dismiss it.
-      setTimeout(function() {
-        var loading = document.getElementById('initial-loading');
-        if (loading) {
-          loading.classList.add('fade-out');
-          setTimeout(function() { loading.remove(); }, 300);
-        }
-      }, 8000);
-    </script>
   </body>
 </html>

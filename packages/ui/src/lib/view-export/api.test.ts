@@ -102,6 +102,33 @@ describe('client-container export boundary', () => {
         expect(f.request.mock.calls.every(([method]) => method === 'capabilities')).toBe(true);
     });
 
+    it.each(['exportPDF', 'exportLongImage'] as const)('%s enforces negotiated UTF-8 byte boundaries', async (method) => {
+        for (const advertisedMiB of [16, 100]) {
+            const maxHTMLBytes = advertisedMiB * 1024 * 1024;
+            const request = vi.fn(async (name: string) => name === 'capabilities'
+                ? { ...available, limits: { ...VIEW_EXPORT_LIMITS, maxHTMLBytes: advertisedMiB * 1024 * 1024 } }
+                : { status: 'saved' });
+            const subscribe = vi.fn(async () => () => {});
+            const api = createViewExportAPI(async () => ({ request, subscribe }));
+            expect((await api.capabilities()).limits.maxHTMLBytes).toBe(maxHTMLBytes);
+            const html = '界'.repeat(Math.floor(maxHTMLBytes / 3)) + 'a'.repeat(maxHTMLBytes % 3);
+            expect(html.length).toBeLessThan(maxHTMLBytes);
+            await expect(api[method]({ ...input, snapshot: { ...input.snapshot, html } })).resolves.toEqual({ status: 'saved' });
+            await expect(api[method]({ ...input, snapshot: { ...input.snapshot, html: html + 'a' } })).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
+            expect(request.mock.calls.filter(([name]) => name === method)).toHaveLength(1);
+            expect(subscribe).toHaveBeenCalledOnce();
+            request.mockClear();
+        }
+    });
+
+    it('clamps larger native HTML limits to the shared transport ceiling', async () => {
+        const api = createViewExportAPI(async () => ({
+            request: async () => ({ ...available, limits: { ...VIEW_EXPORT_LIMITS, maxHTMLBytes: 101 * 1024 * 1024 } }),
+            subscribe: async () => () => {},
+        }));
+        expect((await api.capabilities()).limits.maxHTMLBytes).toBe(100 * 1024 * 1024);
+    });
+
     it('detects formats independently and does not infer native support from a JS proxy', async () => {
         environment.native = true; environment.available = true;
         const remove = vi.fn(async () => {});

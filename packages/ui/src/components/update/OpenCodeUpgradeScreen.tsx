@@ -3,6 +3,7 @@ import { useEvent } from '@reactuses/core';
 import { YuriLogo } from '@/components/ui/YuriLogo';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { DesktopHostSwitcherInline } from '@/components/desktop/DesktopHostSwitcher';
 import { useI18n } from '@/lib/i18n';
 import { subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
@@ -95,8 +96,9 @@ export const OpenCodeUpgradeScreen: React.FC<React.PropsWithChildren> = ({ child
     }
   });
 
-  if (!checked) return null;
-  if (!incompatible || !status) return <>{children}</>;
+  const startup = <main data-startup-logo className="flex min-h-dvh items-center justify-center bg-background text-foreground"><YuriLogo width={120} height={120} isAnimated /></main>;
+  if (!checked) return startup;
+  if (!incompatible || !status) return <ErrorBoundary><React.Suspense fallback={startup}>{children}</React.Suspense></ErrorBoundary>;
 
   const outdated = Boolean(status.version?.startsWith('2.'));
   const descriptionKey = status.installation === 'bundled'

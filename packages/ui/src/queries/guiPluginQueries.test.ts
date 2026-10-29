@@ -11,6 +11,18 @@ beforeEach(() => { runtime.transport = 'host-a'; runtime.generation = 0; });
 afterEach(() => vi.useRealTimers());
 
 describe('GUI plugin snapshots', () => {
+  it('rejects late inventory after a runtime switch instead of caching it as current', async () => {
+    let finish!: (value: unknown) => void;
+    const list = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+    const client = new QueryClient();
+    const options = { ...guiInventoryOptions('host-a', { plugin: { list } } as unknown as OpenCodeClient), retry: false };
+    const result = client.fetchQuery(options).catch(() => 'stale');
+    runtime.transport = 'host-b';
+    finish({ data: [] });
+    expect(await result).toBe('stale');
+    expect(client.getQueryData(options.queryKey)).toBeUndefined();
+    client.clear();
+  });
   it('loads the global inventory through the SDK, preserves failures, and keeps runtime keys apart', async () => {
     const data = [{ id: 'dsl', features: { gui: true }, source: { type: 'local', path: '/plugins/dsl' }, state: { status: 'active' } }];
     const list = vi.fn().mockResolvedValue({ data });

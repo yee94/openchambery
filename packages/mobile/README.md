@@ -142,7 +142,7 @@ Generated files stay in native temporary storage rather than crossing the bridge
 as base64. PDF defaults to paginated A4, optionally Letter, with 24-point margins
 and 96 CSS pixels per inch (shrinking to fit, never enlarging); PNG uses one output
 pixel per CSS pixel. Android advertises 16 MiB HTML, width 8192, height 32768 and
-16,777,216 pixels. iOS advertises lower bounds: 4 MiB HTML, width 2048, height
+16,777,216 pixels. iOS advertises 100 MiB HTML (UTF-8 bytes), width 2048, height
 32768 and 8,388,608 pixels. Consumers use the returned limits; exceeding a limit
 fails rather than truncating output.
 

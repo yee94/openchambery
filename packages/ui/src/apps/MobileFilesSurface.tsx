@@ -507,9 +507,11 @@ const MobileFileDetailActions: React.FC<{
           <Icon name="file-copy" className="size-4" />
         </Button>
       ) : null}
-      <Button type="button" variant="ghost" size="icon" onClick={onCopyPath} aria-label={t('mobile.files.copyPathAria')}>
-        <Icon name="clipboard" className="size-4" />
-      </Button>
+      {(!canUseText || isImageFile(path) || html) ? (
+        <Button type="button" variant="ghost" size="icon" onClick={onCopyPath} aria-label={t('mobile.files.copyPathAria')}>
+          <Icon name="clipboard" className="size-4" />
+        </Button>
+      ) : null}
     </>
   );
 };

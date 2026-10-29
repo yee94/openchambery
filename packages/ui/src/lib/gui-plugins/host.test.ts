@@ -16,6 +16,80 @@ const bundle = (setup: string, revision = '1', declarations = ''): PluginGuiBund
 afterEach(() => { for (const item of hosts.splice(0)) item.dispose(); localStorage.clear(); document.body.replaceChildren(); });
 
 describe('GUI plugin host with the actual official Solid SDK', () => {
+    it('keeps mounted tab consumers quiet across unrelated derivations without freezing changed fields or accessors', () => {
+        const value = host();
+        value.setSession({ id: 'one', directory: '/work' });
+        const counts = { plain: 0, accessor: 0, mutable: 0 };
+        Reflect.set(globalThis, '__guiTabCounts', counts);
+        try {
+            value.install('tabs', bundle(`
+                const [title, setTitle] = S.createSignal('before');
+                const mutable = {id:'mutable', title:'before'};
+                ctx.add(G.Command, {id:'rename', title:'Rename', run(){setTitle('after')}});
+                ctx.add(G.Panel, {id:'p', region:'side', list(){
+                    const captured = title();
+                    mutable.title = captured;
+                    return [{id:'plain', title:captured}, {id:'accessor', get title(){return captured}}, mutable];
+                }, render(props){
+                    const node = document.createElement('span');
+                    S.createRenderEffect(() => {globalThis.__guiTabCounts[props.tab.id]++; node.textContent = props.tab.title});
+                    return node;
+                }});
+            `));
+            const plain = document.createElement('div'), accessor = document.createElement('div'), mutable = document.createElement('div');
+            const stopPlain = value.mountPanel('tabs:plain', plain), stopAccessor = value.mountPanel('tabs:accessor', accessor);
+            const stopMutable = value.mountPanel('tabs:mutable', mutable);
+            const original = plain.firstChild;
+            for (let n = 0; n < 50; n++) value.install('unrelated', bundle('', String(n)));
+            expect(counts.plain).toBe(1);
+            expect(counts.mutable).toBe(1);
+            expect(plain.firstChild).toBe(original);
+            value.runCommand('tabs.rename');
+            expect(counts.plain).toBe(2);
+            expect(plain.textContent).toBe('after');
+            expect(accessor.textContent).toBe('after');
+            expect(mutable.textContent).toBe('after');
+            expect(counts.mutable).toBe(2);
+            expect(plain.firstChild).toBe(original);
+            stopPlain(); stopAccessor(); stopMutable();
+            const stopped = { ...counts };
+            value.setAppearance({locale:'en',mode:'light',narrow:false});
+            value.uninstall('tabs');
+            expect(counts).toEqual(stopped);
+        } finally { Reflect.deleteProperty(globalThis, '__guiTabCounts'); }
+    });
+
+    it('publishes synchronous empty and failed session snapshots and ignores released or late actions', async () => {
+        const value = host();
+        const snapshots: ReturnType<GuiPluginHost['getSnapshot']>[] = [];
+        value.subscribe(() => snapshots.push(value.getSnapshot()));
+        value.setSession({id:'empty',directory:'/work'});
+        expect(snapshots.at(-1)?.sessionKey).toBe('test-runtime\nempty');
+        value.install('failure', bundle(`throw new Error('setup failed')`));
+        expect(value.getSnapshot().plugins[0].status).toBe('failed');
+        value.setSession({id:'failed',directory:'/work'});
+        expect(snapshots.at(-1)?.sessionKey).toBe('test-runtime\nfailed');
+        value.uninstall('failure');
+        expect(snapshots.at(-1)?.plugins).toEqual([]);
+        value.install('late', bundle(`
+            globalThis.__guiLateAction = () => ctx.layout.open('late:tab', ctx.sessions.current());
+            ctx.add(G.Command, {id:'fail',title:'Fail',async run(){await Promise.resolve(); throw new Error('late failure')}});
+        `));
+        const pending = value.runCommand('late.fail');
+        value.uninstall('late');
+        const empty = value.getSnapshot();
+        (Reflect.get(globalThis, '__guiLateAction') as () => void)();
+        await pending;
+        expect(value.getSnapshot()).toBe(empty);
+        value.setSession(undefined);
+        expect(snapshots.at(-1)?.sessionKey).toBeUndefined();
+        const ended = snapshots.length;
+        value.dispose();
+        value.setSession({id:'ignored',directory:'/work'});
+        expect(snapshots).toHaveLength(ended);
+        Reflect.deleteProperty(globalThis, '__guiLateAction');
+    });
+
     it('owns custom file icon registration through reload, failure, disable and disposal', () => {
         const value = host();
         const icon = (color: string) => `ctx.add(G.Registry.define('yuri.file-icon'),{id:'icon',extensions:['eficy'],svg:'<svg xmlns="http://www.w3.org/2000/svg"><path fill="${color}" d="M0 0h16v16z"/></svg>'});`;

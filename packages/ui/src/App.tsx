@@ -366,6 +366,7 @@ function App({ apis }: AppProps) {
 
   const bootOutcomeKnown = bootInjectionStatus === 'valid';
   const bootViewIsMain = bootView?.screen === 'main';
+  const [startupShellVisible, setStartupShellVisible] = React.useState(false);
 
   // Splash dismissal: use the authoritative loading gate from desktopBoot.
   // Desktop shells strictly require a valid boot outcome before dismissing.
@@ -401,8 +402,9 @@ function App({ apis }: AppProps) {
         loadingElement.classList.add('fade-out');
         removalTimer = setTimeout(() => {
           loadingElement.remove();
+          setStartupShellVisible(true);
         }, 300);
-      }
+      } else setStartupShellVisible(true);
     }, 150);
 
     return () => {
@@ -1079,7 +1081,7 @@ function App({ apis }: AppProps) {
     <ErrorBoundary>
       <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''} bootstrapDirectory={bootstrapDirectory}>
         <RuntimeAPIProvider apis={apis}>
-          <GuiPluginsProvider>
+          <GuiPluginsProvider ready={startupShellVisible && isInitialized && embeddedBackgroundWorkEnabled}>
           <FireworksProvider>
               <TooltipProvider delayDuration={300} skipDelayDuration={150}>
                 <div className={isDesktopRuntime ? 'h-full text-foreground bg-transparent' : 'h-full text-foreground bg-background'}>

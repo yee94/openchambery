@@ -3,6 +3,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { guiBundleCache, isGuiRevisionToken } from '@/lib/gui-plugins/bundle-cache';
+import { guiDownloadProgress } from '@/lib/gui-plugins/download-progress';
 
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
@@ -36,9 +37,12 @@ export function createGuiClient(signal: AbortSignal) {
         requestSignal.throwIfAborted();
         if (!current()) throw new DOMException('Plugin runtime ended', 'AbortError');
       };
+      let finishDownload: (() => void) | undefined;
+      const downloading = () => { finishDownload ??= guiDownloadProgress.begin(identity, requestSignal); };
       try {
         const cached = await guiBundleCache.read(runtime, id, requestSignal);
         assertCurrent();
+        if (!cached) downloading();
         const fetchBundle = async (token?: string) => {
           assertCurrent();
           const headers = new Headers(init?.headers ?? request.headers);
@@ -54,10 +58,14 @@ export function createGuiClient(signal: AbortSignal) {
           && (!cached || response.headers.get('X-Yuri-Gui-Revision') !== cached.token)) {
           await response.body?.cancel();
           revalidated = false;
+          downloading();
           response = await fetchBundle();
           assertCurrent();
         }
         if (response.status !== 200) return response;
+        // Headers are authoritative: a full response now needs code bytes, even
+        // when a previous revision was available on disk. Revalidation is silent.
+        if (response.headers.get('X-Yuri-Gui-Code') !== 'cached') downloading();
         const payload: unknown = await response.clone().json();
         assertCurrent();
         if (!object(payload) || !object(payload.data) || typeof payload.data.code !== 'string'
@@ -78,7 +86,7 @@ export function createGuiClient(signal: AbortSignal) {
         }
         assertCurrent();
         return response;
-      } finally { stop(); }
+      } finally { finishDownload?.(); stop(); }
     },
   });
 }

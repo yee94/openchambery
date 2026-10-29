@@ -3929,7 +3929,7 @@ export function MobileApp({ apis }: MobileAppProps) {
     <ErrorBoundary>
       <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''} bootstrapDirectory={!(newSessionDraftOpen && currentSessionId === null)}>
         <RuntimeAPIProvider apis={apis}>
-          <GuiPluginsProvider>
+          <GuiPluginsProvider ready={isInitialized}>
           <TooltipProvider delayDuration={300} skipDelayDuration={150}>
             <div className="h-full bg-background text-foreground">
               <SessionStartupCoordinator />

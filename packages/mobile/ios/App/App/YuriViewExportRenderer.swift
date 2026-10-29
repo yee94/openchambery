@@ -10,7 +10,7 @@ struct YuriViewExportError: Error {
 }
 
 struct YuriViewExportRequest {
-    static let limits = ["maxHTMLBytes": 4 * 1024 * 1024, "maxWidth": 2048,
+    static let limits = ["maxHTMLBytes": 100 * 1024 * 1024, "maxWidth": 2048,
                          "maxHeight": 32768, "maxPixels": 8 * 1024 * 1024]
     let taskId: String
     let html: String

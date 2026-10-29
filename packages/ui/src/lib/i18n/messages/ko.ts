@@ -7,6 +7,8 @@ export const dict: Record<I18nKey, string> = {
   'guiPlugins.preview.loadingDescription': '처음 열 때는 시간이 조금 걸릴 수 있습니다',
   'guiPlugins.preview.viewSource': '소스 보기',
   'guiPlugins.title': '인터페이스 플러그인',
+  'guiPlugins.loadingNecessary': '필수 플러그인을 불러오는 중',
+  'guiPlugins.continueBackground': '백그라운드에서 계속',
   'guiPlugins.error': '플러그인 작업에 실패했습니다.',
   'guiPlugins.close': '닫기',
   'guiPlugins.closePanel': '{title} 닫기',

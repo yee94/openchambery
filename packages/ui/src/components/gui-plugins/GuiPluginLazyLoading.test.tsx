@@ -27,6 +27,7 @@ vi.mock('@/components/ui', () => ({ toast: { error: state.toast } }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 // Keep Dialog dependencies out of this happy-dom fixture; assert real host inline ownership below.
 vi.mock('./GuiPluginSurface', () => ({ GuiPluginSurface: () => null }));
+vi.mock('./GuiPluginLoadingNotice', () => ({ GuiPluginLoadingNotice: () => null }));
 
 const source = 'File preview fixture';
 const bundle = {
@@ -142,6 +143,27 @@ afterEach(async () => {
   client.clear();
   container.remove();
   vi.restoreAllMocks();
+});
+
+it('keeps the main file action usable while inventory and bundle reads are suspended', async () => {
+  let inventory!: (value: { data: typeof plugin[] }) => void;
+  let finish!: (value: { data: typeof bundle }) => void;
+  state.list.mockImplementationOnce(() => new Promise((resolve) => { inventory = resolve; }));
+  state.gui.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  await act(async () => root.render(<QueryClientProvider client={client}><GuiPluginsProvider><FileFixture /></GuiPluginsProvider></QueryClientProvider>));
+  await until(() => expect(state.list).toHaveBeenCalledOnce());
+  await click('open-file');
+  expect(container.textContent).toContain('close-file');
+  expect(context.host).toBeNull();
+  await act(async () => inventory({ data: [plugin] }));
+  await until(() => expect(state.gui).toHaveBeenCalledOnce());
+  await click('close-file');
+  expect(container.textContent).toContain('open-file');
+  expect(context.loading).toBe(true);
+  await act(async () => finish({ data: bundle }));
+  await until(() => expect(context.loading).toBe(false));
+  await click('open-file');
+  await expectPreview();
 });
 
 it('opens a ready plugin preview when the real mobile sheet becomes the active window', async () => {

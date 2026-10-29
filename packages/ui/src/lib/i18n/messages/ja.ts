@@ -7,6 +7,8 @@ export const dict: Record<I18nKey, string> = {
   'guiPlugins.preview.loadingDescription': '初めて開くときは少し時間がかかることがあります',
   'guiPlugins.preview.viewSource': 'ソースを表示',
   'guiPlugins.title': '画面プラグイン',
+  'guiPlugins.loadingNecessary': '必要なプラグインを読み込み中',
+  'guiPlugins.continueBackground': 'バックグラウンドで続行',
   'guiPlugins.error': 'プラグインの操作に失敗しました。',
   'guiPlugins.close': '閉じる',
   'guiPlugins.closePanel': '{title} を閉じる',

@@ -15,10 +15,12 @@ import type { NativeGuiSession } from './native';
 import { NativeGuiError, type NativeGuiErrorCode } from './native-errors';
 import type { ViewExportAPI } from '@/lib/view-export/types';
 import { GuiViewExports, isViewExportContract } from './view-export';
+import { createGuiToasts } from './toast';
+import type { toast } from 'sonner';
 
 export type PluginGuiBundle = PluginGuiOutput['data'];
 type Appearance = { locale: string; mode: 'light' | 'dark'; narrow: boolean };
-type Options = Appearance & { client: OpenCodeClient; files: FilesAPI; queryClient: QueryClient; transport: string; storage: globalThis.Storage; viewExport?: ViewExportAPI; focusFile?: (path: string, directory: string) => Promise<void> };
+type Options = Appearance & { client: OpenCodeClient; files: FilesAPI; queryClient: QueryClient; transport: string; storage: globalThis.Storage; viewExport?: ViewExportAPI; toast?: typeof toast; focusFile?: (path: string, directory: string) => Promise<void> };
 type CommandView = { key: string; title: string; description?: string; bind?: string; hidden?: boolean; run: () => void | Promise<void> };
 type PanelView = { key: string; pluginId: string; title: string; active: boolean; file?: string; inline?: boolean };
 export type GuiPluginSnapshot = Readonly<{
@@ -48,6 +50,20 @@ function partial<T extends object>(name: string, value: Partial<T>): T {
     return new Proxy(value, { get: (target, key) => key in target ? Reflect.get(target, key) : unsupported(`${name}.${String(key)}`) }) as T;
 }
 const freezeRows = <T extends object>(rows: T[]) => Object.freeze(rows.map((row) => Object.freeze(row)));
+
+// Only reuse plain data tabs; accessor closures may have changed even when their current values match.
+type PanelTabSnapshot = { tab: Gui.PanelTab; fields: PropertyDescriptorMap | undefined };
+function samePanelTab(previous: PanelTabSnapshot, next: PanelTabSnapshot): boolean {
+    if (!previous.fields || !next.fields) return false;
+    const keys = Reflect.ownKeys(previous.fields);
+    if (keys.length !== Reflect.ownKeys(next.fields).length) return false;
+    return keys.every((key) => {
+        const a = previous.fields![key];
+        const b = next.fields![key];
+        return b !== undefined && 'value' in a && 'value' in b && Object.is(a.value, b.value)
+            && a.enumerable === b.enumerable && a.configurable === b.configurable && a.writable === b.writable;
+    });
+}
 
 function guardCleanups(owner: Owner | undefined, report: (error: unknown) => void): void {
     if (!owner) return;
@@ -88,7 +104,12 @@ export class GuiPluginHost {
 
     subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
     getSnapshot = (): GuiPluginSnapshot => this.snapshot;
-    private changed() { this.changes[1]((value) => value + 1); }
+    private changed(ensurePublished = false) {
+        const previous = this.snapshot;
+        this.changes[1]((value) => value + 1);
+        // Active derivations publish synchronously; empty/failed hosts still need a snapshot.
+        if (ensurePublished && previous === this.snapshot) this.publish();
+    }
 
     setSession(session: { id: string; directory: string } | undefined): void {
         if (this.ended) return;
@@ -102,8 +123,9 @@ export class GuiPluginHost {
             id: session.id, directory: session.directory, key: `${this.options.transport}\n${session.id}`, tab: session.id,
             server, pending: false, visit: {}, location: { directory: session.directory },
         })) : undefined;
+        const snapshot = this.snapshot;
         this.session[1](mounted);
-        this.publish();
+        if (snapshot === this.snapshot) this.publish();
     }
 
     setAppearance(input: Appearance): void {
@@ -163,8 +185,7 @@ export class GuiPluginHost {
                 }));
             });
         } catch (error) { this.fail(instance, error); }
-        this.changed();
-        this.publish();
+        this.changed(true);
     }
 
     private release(instance: Instance): void {
@@ -196,7 +217,7 @@ export class GuiPluginHost {
             layout.open = layout.open.filter((key) => !key.startsWith(`${id}:`));
             if (layout.active?.startsWith(`${id}:`)) layout.active = null;
         }
-        this.changed(); this.publish();
+        this.changed(true);
     }
     dispose(): void {
         if (this.ended) return;
@@ -260,6 +281,7 @@ export class GuiPluginHost {
         });
         const context = partial<Gui.SetupContext<Gui.Plugin.Definition>>('ctx', {
             id: instance.id, options, signal: instance.controller.signal, client: this.options.client, storage, stores,
+            toast: createGuiToasts(instance.controller.signal, this.options.toast),
             app: { name: 'yuri', version: instance.native?.activation.app.version ?? '', channel: instance.native?.activation.app.packaged ? 'prod' : 'local', platform: instance.native ? 'desktop' : 'web', packaged: instance.native?.activation.app.packaged ?? false },
             desktop: instance.native ? partial<Gui.Desktop>('desktop', { os: instance.native.activation.os }) : undefined,
             t, plural: (key, count, params) => {
@@ -454,7 +476,7 @@ export class GuiPluginHost {
         const file = this.filePath(path, base);
         const count = this.fileViews.get(file) ?? 0;
         this.fileViews.set(file, count + 1);
-        if (count === 0) { this.changed(); this.publish(); }
+        if (count === 0) this.changed(true);
         let released = false;
         return () => {
             if (released || this.ended) return;
@@ -468,7 +490,7 @@ export class GuiPluginHost {
                 if (layout?.active && this.snapshot.panels.some((panel) => panel.key === layout.active && panel.file === file)) layout.shown = false;
                 this.fileViews.delete(file);
             }
-            this.changed(); this.publish();
+            this.changed(true);
         };
     }
 
@@ -500,7 +522,7 @@ export class GuiPluginHost {
         const previousActive = layout.active, previousShown = layout.shown, previousLength = layout.open.length;
         if (!layout.open.includes(key)) { if (layout.open.length >= 64) throw new Error('GUI panel tab limit exceeded'); layout.open = [...layout.open, key]; }
         if (options?.tab !== 'append') { layout.active = key; layout.shown = !(this.appearance[0]().narrow && options?.background); }
-        if (previousActive !== layout.active || previousShown !== layout.shown || previousLength !== layout.open.length) { this.changed(); this.publish(); }
+        if (previousActive !== layout.active || previousShown !== layout.shown || previousLength !== layout.open.length) this.changed(true);
         const entry = this.panel(key);
         if (session.key === this.session[0]()?.key && entry && options?.tab !== 'append') void this.invoke(entry.plugin, () => entry.panel.focus?.({ ...this.props(key), restored: false }));
     }
@@ -513,15 +535,22 @@ export class GuiPluginHost {
         const props = entry && current ? { tab: entry.tab, session: current, screen: this.screen } : undefined;
         layout.open = layout.open.filter((item) => item !== key);
         if (layout.active === key) layout.active = layout.open.at(-1) ?? null;
-        this.changed(); this.publish();
+        this.changed(true);
         if (entry && props) void this.invoke(entry.plugin, () => entry.panel.close?.(props));
     }
     closePanel(key: string): void { const session = this.session[0](); if (session) this.closeFor(key, session); }
-    hidePanel(): void { const session = this.session[0](); if (!session) return; const layout = this.layout(session); if (!layout.shown) return; layout.shown = false; this.changed(); this.publish(); }
+    hidePanel(): void { const session = this.session[0](); if (!session) return; const layout = this.layout(session); if (!layout.shown) return; layout.shown = false; this.changed(true); }
     private panel(key: string): PanelEntry | undefined { return [...this.instances.values()].flatMap((instance) => instance.panels).find((entry) => `${entry.plugin.id}:${entry.tab.id}` === key); }
-    private props(key: string): Gui.PanelProps {
+    private props(key: string, mounted = false): Gui.PanelProps {
         const initial = this.panel(key)?.tab;
-        const currentTab = () => { this.views[0](); return this.panel(key)?.tab ?? initial ?? unsupported('panel no longer listed'); };
+        const readTab = () => { this.views[0](); return this.panel(key)?.tab ?? initial ?? unsupported('panel no longer listed'); };
+        // The memo belongs to the mounted view, never a focus/close invocation's setup owner.
+        const selected = mounted ? createMemo((): PanelTabSnapshot => {
+            const tab = readTab();
+            // Capture descriptors now so in-place data changes cannot mutate the equality baseline.
+            return { tab, fields: Object.getPrototypeOf(tab) === Object.prototype ? Object.getOwnPropertyDescriptors(tab) : undefined };
+        }, undefined, { equals: samePanelTab }) : undefined;
+        const currentTab = selected ? () => selected().tab : readTab;
         const currentSession = () => this.session[0]() ?? unsupported('panel without session');
         return { get tab() { return currentTab(); }, get session() { return currentSession(); }, screen: this.screen };
     }
@@ -540,7 +569,7 @@ export class GuiPluginHost {
                 onCleanup(value.model.watch(value.file));
                 void value.model.sync(value.file).catch(() => {});
             });
-            return untrack(() => entry.panel.render(this.props(key)));
+            return untrack(() => entry.panel.render(this.props(key, true)));
         };
         const stop = this.mount(entry.plugin, element, () => createComponent(PanelContext.Provider, {
             value: {

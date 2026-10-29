@@ -2,6 +2,8 @@ import { settingsDict } from './en.settings';
 
 export const dict = {
   'guiPlugins.title': 'Interface plugins',
+  'guiPlugins.loadingNecessary': 'Loading required plugins',
+  'guiPlugins.continueBackground': 'Continue in background',
   'guiPlugins.loading': 'Loading interface plugins…',
   'guiPlugins.preview.loadingTitle': 'Preparing preview',
   'guiPlugins.preview.loadingDescription': 'Opening for the first time may take a moment',

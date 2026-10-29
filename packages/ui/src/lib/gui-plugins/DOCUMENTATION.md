@@ -11,6 +11,7 @@
 - Web、Electron、VS Code 聊天窗口、hosted/mobile 使用同一个窗口 host。嵌入会话和独立 Agent Manager 不重复加载宿主。只有新版 Electron 的本地实例主 frame 可以申请 native lease；其他运行时、远程/Relay 实例及旧 shell 保持 `app.platform: web`、`desktop: undefined`。获得 lease 后为 `app.platform: desktop`，提供 `desktop.os`（其他 desktop 方法仍明确 unsupported）。若部署的 CSP 禁止 CJS 求值，插件状态显示求值失败，不能绕过 CSP。
 - `native.ts` 负责窗口 IPC codec、响应式 state/live、事件与取消；`native-types.ts` 定义 preload 消息契约。`main-modules.mjs` 仅导出 main 进程使用的固定 ABI 共享模块映射，由 Electron 打包；原生求值、可信代码获取、调用授权与生命周期归 `packages/electron/gui-plugin-host.mjs`，不能导入 renderer bundle。
 - `view-export.ts` 将当前客户端容器的两个 GSAPI 发布为宿主保留的 `yuri.exportPDF`、`yuri.exportLongImage` Contract。实现与跨端传输归 `lib/view-export`；通过 `RuntimeAPIs.viewExport` 注入，不改 `ctx.client`、官方 OpenAPI 或插件 main/IPC。
+- `toast.ts` 实现官方窗口 `ctx.toast` 的纯文本子集；Provider 注入现有全局 Sonner，不创建插件容器、远端调用或 OS 通知。
 
 官方 npm SDK 2.2.0 没有公开 `gui/host` 导出。Yuri 的受控依赖 patch 只开放 `gui/yuri-host` 内部 context，让 host 与官方 `usePlugin` / `bindPlugin` 共用真实 `PluginContext`、`PanelContext` 和 lifetime。它是**宿主实现细节**，第三方插件始终只 import 官方公开 SDK。升级 SDK 必须重新验证 patch 与单实例 Solid 语义。
 
@@ -35,6 +36,7 @@ Provider 的会话目录来自 `useCurrentSessionEntity(sessionID)` 的匹配会
 | i18n / store | 声明式翻译、schema codec、持久状态和重载保留的 memory，按 transport/plugin 边界隔离；暂不支持 `from` 迁移和跨窗口实时同步 |
 | sessions / files / layout | 已实现的当前会话、文件和面板操作；不推定所有 Host API 成员可用 |
 | RPC | 通过当前连接服务的官方 client 调用服务端插件契约 |
+| toast | 官方 `ctx.toast.show`，当前客户端的全局提示；支持纯文本、default/success/error/loading、duration/persistent 和 dismiss，icon/actions 明确 unsupported |
 
 本地 Electron 支持 `main`、`ctx.main(Ipc)`、`ctx.use(Ipc)`、schema 编解码、每窗口 state/events、调用取消及 `os` 限制；其他运行时仍拒绝 native IPC、main-only 和带 `os` 限制的定义。未支持 `WebContentsView`/embeds、server sources、slots、原生菜单及其他未实现 Host API。访问未支持能力必须产生可见错误，不能用空对象或成功 no-op 冒充支持。
 
@@ -91,6 +93,32 @@ PDF/长图现在另有两个独立的容器 GSAPI，使用官方 `Contract.defin
 
 插件 setup、render、异步动作失败应归属对应插件，不阻断其他插件。原生模块占位仅用于让跨进程 CJS 顶层声明可求值，不代表原生能力已实现，也不是代码沙箱。
 
+## 全局 toast
+
+[官方 V2 GUI Toasts](https://opencode.ai/v2/docs/build/plugins/gui#toasts) 和当前 SDK 2.2.0 已定义 `ctx.toast`，因此不新增 `yuri.toast` Contract，也不借用导出契约。
+
+```ts
+// Plugin.setup(ctx) 或 usePlugin() 返回的同一个官方 context：
+try {
+    await saveReport();
+} catch (error) {
+    ctx.toast.show({
+        title: ctx.t('report.saveFailed'),
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'error',
+    });
+}
+
+const pending = ctx.toast.show({ title: ctx.t('report.saving'), variant: 'loading', persistent: true });
+try { await saveReport(); } finally { pending.dismiss(); }
+```
+
+`show({ title: string, description?: string, variant?: 'default' | 'success' | 'error' | 'loading', duration?: number, persistent?: boolean })` 返回 `{ dismiss(): void }`。默认 5000ms，duration 为有限非负毫秒，persistent 忽略超时。相同插件仍显示的相同提示复用 toast，其他插件互不覆盖。内容只以字符串渲染，不接受 HTML/React 节点或透传任意 Sonner options；`icon/actions` 当前明确抛 `GUI_PLUGIN_UNSUPPORTED`，不静默忽略。非法输入抛 `GUI_PLUGIN_INVALID_INPUT`；注入不可用时明确 unsupported。
+
+提示属于插件生命周期，组件卸载不关闭它；插件停用、替换、失败、切服务或 host dispose 会关闭已有提示并撤销旧 show 方法。卸载后调用旧 show 返回无副作用的 dismiss handle。普通插件不能占用 `yuri` namespace。所有共享 UI 端（web、desktop、hosted/Capacitor mobile、VS Code）使用同一窗口提示实现，远端/Relay 不影响能力；`ctx.attention.notify` 系统通知不在本次范围。Host 测试/嵌入通过 `toast` option 注入 `import { toast } from 'sonner'`，不依赖 native lease。
+
+移动端沿用 MobileApp 的 safe-area top-center 全局 Toaster，与文件 Sheet 分离；Sheet 的 inert/aria-hidden 只作用于自身窗口，提示不随下层文件面板隐藏。`toast.test.ts` 覆盖生命周期、跨插件隔离、去重、错误输入、保留 namespace 和 sink 失败隔离；浏览器层叠/可读性需要真实 Sheet 验收，不能由这些单元测试推定。
+
 ## 文件类型图标注册
 
 官方 SDK 2.2.0 没有 `FileIcon` 内置注册表。插件通过公开的 `Registry.define<T>('yuri.file-icon')` 声明 Yuri 消费的自定义贡献，仍使用同一个标准 `./gui-experimental` 包，无单独入口；其他宿主没有该 registry consumer 时可以忽略它。
@@ -119,7 +147,15 @@ ctx.add(FileIcon, {
 
 GUI inventory 采用**当前连接服务的全局插件列表**。不把项目 plugins 当成窗口 GUI 代码来源；不能把列表请求失败视为空列表成功。服务切换必须清理旧贡献、client、监听与作用域状态。
 
-首屏先观察 inventory 和读取启用偏好。存在 enabled 且服务端 active 的 GUI 时，通过 `requestIdleCallback`（最长等待 2 秒；不支持时延后 1 秒）启动预加载与安装，不再等第一次点击。`useGuiPlugins()` 保留 `requested` 与幂等 `requestLoad()`；文件预览、命令面板或插件管理器的显式需求跳过空闲等待。加载当前服务 inventory 中所有 enabled 且 active 的 `features.gui` 插件，不扫描历史项目，不按文件后缀推定能力；禁用项不下载。关闭入口保留需求、host 和已安装实例，重开复用同一 Query/cache；成功空 inventory 仍撤销 host。空闲任务随停用、transport 切换或卸载取消，并在启动时再次核对 transport。
+启动不依赖 GUI inventory、client、host 或插件代码。应用通过 `ready` 提供主界面就绪条件：桌面/Web 等初始 splash 撤除且配置初始化完成，移动端等已连接的主界面配置初始化完成。Provider 保留 children，双 rAF 后再启用 inventory Query；显式文件需求也不能绕过这个首屏绘制门槛。移动 HTML 自带 120×120 Logo，位于 React root 内，在应用模块尚未执行时可见，首次 React commit 自然替换，不使用定时移除。
+
+存在 enabled 且服务端 active 的 GUI 时，通过 `requestIdleCallback`（最长等待 2 秒；不支持时延后 1 秒）启动预加载，不再等第一次点击。`useGuiPlugins()` 保留 `requested` 与幂等 `requestLoad()`；文件预览、命令面板或插件管理器的显式需求只跳过空闲等待。宿主动态导入前再让出绘制机会；`scheduling.ts` 串行调度已取得 bundle 的同步安装，每个插件独立跨双 rAF/任务边界，不把网络/IPC 等待加入串行队列。加载当前服务 inventory 中所有 enabled 且 active 的 `features.gui` 插件，不扫描历史项目，不按文件后缀推定能力；禁用项不下载。关闭入口保留需求、host 和已安装实例，重开复用同一 Query/cache；成功空 inventory 仍撤销 host。空闲、绘制和安装任务随停用、transport 切换或卸载取消，并在执行前再次核对 transport；inventory 在动态导入前后及响应后检查 generation。
+
+桌面 Dialog / 手机 fit-content Sheet 统一提示“正在加载必要插件中”，提供“后台继续”。提示只订阅 `download-progress.ts` 的瞬时传输进度：磁盘缓存读取确认无有效代码时，或权威响应头确认需要完整代码（包括新 revision、旧服务兼容、缓存协议失配重取）时才进入下载状态。已有缓存的版本校验始终静默，inventory、宿主 import、安装 Promise 不能触发弹窗。下载跨过双 rAF 后仍未结束才显示，避免极短任务闪现；该绘制延迟不用于推定缓存命中。下载结束/失败/abort 释放对应 transport 的计数，runtime 切换不复用旧进度。
+
+关闭只隐藏提示，不取消加载；本轮 runtime 不再重复弹出，代码获取结束自动关闭。inventory、host、bundle 失败使用现有 toast 明确反馈；setup/render 错误仍由 Surface 按所属插件报告。两个懒加载 UI 各有局部 ErrorBoundary，chunk/render 失败不能替换主界面。加载提示不参与任何应用 startup gate，文件预览继续使用自己的局部 loading。
+
+这是共享 Solid/DOM 主线程宿主的协作调度，不是 Worker 并行执行：单个第三方 CJS 求值或同步 setup 仍可产生长任务，无法被调度器抢占。保证的是主界面先完成绘制、不同插件之间让出绘制、异步下载互不阻塞；不承诺任意第三方同步代码的硬 CPU 时限。
 
 需求一直保留至 transport 改变或 Provider 卸载。切换清零 `requested`、取消旧 client 并销毁 host，迟到 inventory/bundle 不得进入新 host；仍挂载的入口观察 `requested` 并重新调用 `requestLoad()`。未请求时 `refresh()` 只刷新列表和偏好；已请求时可重试 host、bundle 与失败 setup，成功插件依靠原 host 的 revision 去重保持挂载。
 
@@ -150,6 +186,8 @@ SDK 2.2.0 的文件接口是 `ctx.screen.current()?.file` 或面板的 `props.sc
 挂载 snapshot 的 panel/settings 提供明确 `pluginId`；仅所属插件 revision 或会话变化使对应 Solid 内容重挂。链接匹配仍跟踪全插件 readiness，以发现新增 handler。重复打开/隐藏/关闭及仍有其他消费者的文件 lease 释放不重新派生/通知；真实布局变化才传播，显式 focus 行为保留。
 
 宿主性能回归以 64 文件的独立订阅为尺度：单文件更新不得唤醒其他文件，50 次无关插件更新不得重挂当前 DOM，同内容保存不通知消费者。浏览器验收分开记录保存→显示的轮询延迟、读取完成→DOM 更新耗时、空白帧、节点替换及滚动/选区稳定性；2 秒轮询不是亚秒实时性承诺，第三方插件自己的 render 实现由其独立项目验收。
+
+布局/文件 lease 的同步变更复用已由 Solid 派生发布的 snapshot，只有尚未发布时才补发；空 host、失败插件和清理仍同步发布权威状态，不把通知延后到 microtask。挂载视图的 `props.tab` 通过 owner 内 memo 选择当前 tab：普通数据属性完全相同的 plain object 保持引用，避免全局 views 版本变化唤醒无关插件 effect；含 getter/setter 的替代对象不做值相等复用，防止保留旧闭包。focus/close 的瞬时 props 不创建该 memo。`GuiPluginHost.perf-evidence.test.tsx` 使用真实 Provider/Markdown/文件桥与可计数 CJS 夹具，守护流式更新零插件调用、关闭多文件零无关文件 effect、同内容 stat 更新零 effect；这不是完整 Eficy runtime 或真实浏览器延迟证据。
 
 插件在 render/effect 内读取 `props.session`、`props.tab`，不能在初始化时解构并冻结它们。挂载贡献必须提供真实 SDK context 和共享 Solid owner；`usePlugin()` 在外部抛错，`bindPlugin()` 将跨插件组件固定到提供方 context。停用、卸载、切会话和切服务后，旧请求不得覆盖新文件，旧 owner 必须撤销注册与观察。
 

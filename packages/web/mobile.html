@@ -10,8 +10,8 @@
       // paint. Without this the WebView shows its default (light) canvas until React mounts
       // and the theme CSS variables are applied a frame later, which flashed
       // white -> default-theme -> resolved-theme on every cold launch. Mirrors the same
-      // pre-paint logic in index.html, but the mobile shell has no `#initial-loading`
-      // overlay, so we paint the document background directly. Bundled-only: reads the
+      // pre-paint logic in index.html; the mobile logo lives inside the React root,
+      // so we paint the document background directly. Bundled-only: reads the
       // theme the app itself persisted to localStorage; no server involved.
       (function () {
         try {
@@ -64,8 +64,13 @@
     </script>
 
     <script type="module" src="/src/mobile-main.tsx"></script>
+    <style>.dark #mobile-startup-logo img { filter: invert(1); }</style>
   </head>
   <body class="h-full bg-background text-foreground">
-    <div id="root" class="h-full"></div>
+    <div id="root" class="h-full">
+      <div id="mobile-startup-logo" style="position:fixed;inset:0;display:grid;place-items:center" aria-label="Yuri">
+        <img src="../ui/src/assets/brand/yuri-mark-black.svg" width="120" height="120" alt="Yuri" />
+      </div>
+    </div>
   </body>
 </html>

@@ -6,6 +6,8 @@ export const dict = {
   'guiPlugins.preview.loadingDescription': 'La première ouverture peut prendre un peu de temps',
   'guiPlugins.preview.viewSource': 'Voir le code source',
   'guiPlugins.title': 'Extensions d’interface',
+  'guiPlugins.loadingNecessary': 'Chargement des extensions nécessaires',
+  'guiPlugins.continueBackground': 'Continuer en arrière-plan',
   'guiPlugins.error': 'L’action de l’extension a échoué.',
   'guiPlugins.close': 'Fermer',
   'guiPlugins.closePanel': 'Fermer {title}',

@@ -31,8 +31,19 @@ const acquireBundleSlot = (signal: AbortSignal): Promise<() => void> => new Prom
 export const guiInventoryOptions = (transport: string, client?: OpenCodeClient) => queryOptions({
   queryKey: [transport, 'plugins', 'gui', null, 'inventory'],
   queryFn: async ({ signal }) => {
+    const generation = getRuntimeGeneration();
+    const assertCurrent = () => {
+      signal.throwIfAborted();
+      if (transport !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration()) {
+        throw new DOMException('Plugin runtime ended', 'AbortError');
+      }
+    };
+    assertCurrent();
     const api = client ?? (await import('@/lib/opencode/gui')).createGuiClient(signal);
-    return (await api.plugin.list(undefined, { signal })).data;
+    assertCurrent();
+    const result = await api.plugin.list(undefined, { signal });
+    assertCurrent();
+    return result.data;
   },
   staleTime: 5_000,
   retry: 1,

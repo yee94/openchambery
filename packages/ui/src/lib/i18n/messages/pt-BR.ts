@@ -7,6 +7,8 @@ export const dict: Record<I18nKey, string> = {
   'guiPlugins.preview.loadingDescription': 'A primeira abertura pode demorar um pouco',
   'guiPlugins.preview.viewSource': 'Ver código-fonte',
   'guiPlugins.title': 'Plugins de interface',
+  'guiPlugins.loadingNecessary': 'Carregando os plugins necessários',
+  'guiPlugins.continueBackground': 'Continuar em segundo plano',
   'guiPlugins.error': 'A ação do plugin falhou.',
   'guiPlugins.close': 'Fechar',
   'guiPlugins.closePanel': 'Fechar {title}',

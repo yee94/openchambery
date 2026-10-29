@@ -33,7 +33,7 @@ even if an abort arrives concurrently. A closed view ignores UI updates.
 
 ## Snapshot and native protocol
 
-Callers capture their own live DOM (including iframe content from within that iframe) into `{ html, width, height }`: a static self-contained HTML fragment, inline styles and data assets. No remote URL, arbitrary file path or JavaScript execution. Each renderer must enforce an isolated document, disable scripts/network/navigation, and bound resources independently of UI checks. Limits: HTML UTF-8 16 MiB, width 8192 CSS px, height 32768 CSS px, total 16,777,216 pixels. Native implementations may advertise lower limits. PNG is at one output pixel per CSS pixel. PDF defaults to paginated A4, with optional Letter.
+Callers capture their own live DOM (including iframe content from within that iframe) into `{ html, width, height }`: a static self-contained HTML fragment, inline styles and data assets. No remote URL, arbitrary file path or JavaScript execution. Each renderer must enforce an isolated document, disable scripts/network/navigation, and bound resources independently of UI checks. Shared transport ceilings: HTML UTF-8 100 MiB, width 8192 CSS px, height 32768 CSS px, total 16,777,216 pixels. Effective limits are the minimum of these ceilings and native capabilities. Electron and Android advertise 16 MiB HTML; iOS advertises 100 MiB HTML, width 2048 CSS px, height 32768 CSS px and 8,388,608 pixels. PNG is at one output pixel per CSS pixel. PDF defaults to paginated A4, with optional Letter.
 
 PDF uses 24-point margins on every side and 96 CSS pixels per inch (72 PDF
 points per inch). Narrow content is not enlarged; wider content is scaled down

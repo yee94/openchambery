@@ -7,6 +7,8 @@ export const dict: Record<I18nKey, string> = {
   'guiPlugins.preview.loadingDescription': '首次開啟可能需要一點時間',
   'guiPlugins.preview.viewSource': '檢視原始碼',
   'guiPlugins.title': '介面外掛',
+  'guiPlugins.loadingNecessary': '正在載入必要外掛',
+  'guiPlugins.continueBackground': '在背景繼續',
   'guiPlugins.error': '外掛操作失敗。',
   'guiPlugins.close': '關閉',
   'guiPlugins.closePanel': '關閉 {title}',

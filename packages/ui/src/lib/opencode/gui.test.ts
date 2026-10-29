@@ -4,6 +4,7 @@ import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolv
 import { setRuntimeBearerToken } from '@/lib/runtime-auth';
 import { adoptRelayTunnel, deactivateRelayTunnel } from '@/lib/relay/runtime-tunnel';
 import { runtimeFileStore } from '@/lib/runtime-file-store';
+import { guiDownloadProgress } from '@/lib/gui-plugins/download-progress';
 
 const identity = vi.hoisted(() => ({ value: 'host-a', generation: 0, runtime: 'paired-a', listeners: new Set<() => void>() }));
 const disk = vi.hoisted(() => new Map<string, Blob>());
@@ -44,6 +45,37 @@ const bundleResponse = (code = 'module.exports={setup(){}}', token = tokenA, opt
 const requestHeaders = (input: Request | string, init?: RequestInit) => new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
 
 describe('durable GUI code revalidation', () => {
+  it('reports only missing or replaced code bytes, never a cached revision check', async () => {
+    let headers!: (response: Response) => void;
+    fetchMock.mockImplementation(() => new Promise(resolve => { headers = resolve; }));
+    const api = createGuiClient(new AbortController().signal);
+    const cold = api.plugin.gui({ id: 'dsl' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(guiDownloadProgress.pending('host-a')).toBe(true);
+    headers(bundleResponse('old'));
+    await cold;
+    expect(guiDownloadProgress.pending('host-a')).toBe(false);
+
+    const warm = api.plugin.gui({ id: 'dsl' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(guiDownloadProgress.pending('host-a')).toBe(false);
+    headers(bundleResponse('', tokenA, {}, true));
+    await warm;
+    expect(guiDownloadProgress.pending('host-a')).toBe(false);
+
+    let body!: ReadableStreamDefaultController<Uint8Array>;
+    const changed = api.plugin.gui({ id: 'dsl' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(guiDownloadProgress.pending('host-a')).toBe(false);
+    headers(new Response(new ReadableStream({ start(controller) { body = controller; } }), {
+      headers: { 'Content-Type': 'application/json', 'X-Yuri-Gui-Revision': tokenB },
+    }));
+    await vi.waitFor(() => expect(guiDownloadProgress.pending('host-a')).toBe(true));
+    body.enqueue(new TextEncoder().encode(JSON.stringify({ data: { code: 'new', revision: 'new', options: {} } })));
+    body.close();
+    await changed;
+    expect(guiDownloadProgress.pending('host-a')).toBe(false);
+  });
   it('reuses disk across client restart and direct/relay generations, while options always come from authority', async () => {
     fetchMock.mockResolvedValueOnce(bundleResponse('code-one', tokenA, { password: 'never-persist' }));
     const first = await createGuiClient(new AbortController().signal).plugin.gui({ id: 'dsl' });

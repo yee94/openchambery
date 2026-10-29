@@ -60,7 +60,14 @@ final class ViewExportProbe: UIResponder, UIApplicationDelegate {
         // A narrow snapshot keeps its physical scale instead of being enlarged
         // into thousands of pages by the page-width ratio.
         _ = try YuriViewExportRequest(input(width: 1, height: 32768), pdf: true)
-        try rejected(input(html: String(repeating: "a", count: 4 * 1024 * 1024 + 1)), "EXPORT_TOO_LARGE")
+        let htmlLimit = 100 * 1024 * 1024
+        require(YuriViewExportRequest.limits["maxHTMLBytes"] == htmlLimit, "wrong HTML byte limit")
+        let boundaryHTML = String(repeating: "界", count: htmlLimit / 3) + String(repeating: "a", count: htmlLimit % 3)
+        require(boundaryHTML.utf8.count == htmlLimit && boundaryHTML.count < htmlLimit, "UTF-8 boundary fixture")
+        for pdf in [false, true] {
+            _ = try YuriViewExportRequest(input(html: boundaryHTML), pdf: pdf)
+            try rejected(input(html: boundaryHTML + "a"), "EXPORT_TOO_LARGE", pdf: pdf)
+        }
         try rejected(input(html: "<iframe srcdoc='unsafe'></iframe>"), "EXPORT_FORBIDDEN")
         try rejected(input(html: "<script>alert(1)</script>"), "EXPORT_FORBIDDEN")
         var bad = input()

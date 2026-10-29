@@ -7,6 +7,7 @@ import { OpenCodeUpgradeScreen } from './OpenCodeUpgradeScreen';
 
 const fixture = vi.hoisted(() => ({
   fetch: vi.fn(),
+  switched: () => {},
 }));
 
 vi.mock('@/lib/i18n', () => ({
@@ -22,7 +23,7 @@ vi.mock('@/lib/runtime-fetch', () => ({
   runtimeFetch: (...args: unknown[]) => fixture.fetch(...args),
 }));
 vi.mock('@/lib/runtime-switch', () => ({
-  subscribeRuntimeEndpointChanged: () => () => {},
+  subscribeRuntimeEndpointChanged: (listener: () => void) => { fixture.switched = listener; return () => {}; },
 }));
 vi.mock('@/components/ui/YuriLogo', () => ({
   YuriLogo: () => <div data-logo="true" />,
@@ -69,6 +70,31 @@ describe('parseUpgradeScreenStatus', () => {
 });
 
 describe('OpenCodeUpgradeScreen', () => {
+  test('keeps visible content from the static root through checks, suspense, errors and runtime switches', async () => {
+    host.innerHTML = '<div data-static-logo>Yuri</div>';
+    let checked!: (value: Response) => void;
+    fixture.fetch.mockImplementation(() => new Promise(resolve => { checked = resolve; }));
+    let loaded!: (value: { default: React.ComponentType }) => void;
+    const Lazy = React.lazy(() => new Promise<{ default: React.ComponentType }>(resolve => { loaded = resolve; }));
+    await act(async () => root.render(<OpenCodeUpgradeScreen><Lazy /></OpenCodeUpgradeScreen>));
+    expect(host.querySelector('[data-static-logo]')).toBeNull();
+    expect(host.querySelector('[data-logo]')).not.toBeNull();
+    await act(async () => checked(Response.json(status({ state: 'compatible' }))));
+    expect(host.querySelector('[data-logo]')).not.toBeNull();
+    await act(async () => loaded({ default: () => <button>usable</button> }));
+    expect(host.textContent).toBe('usable');
+    await act(async () => fixture.switched());
+    expect(host.querySelector('[data-logo]')).not.toBeNull();
+    await act(async () => checked(Response.json(status({ state: 'compatible' }))));
+    expect(host.textContent).toBe('usable');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const Failed = React.lazy(() => Promise.reject(new Error('chunk unavailable')));
+    try {
+      await act(async () => root.render(<OpenCodeUpgradeScreen><Failed /></OpenCodeUpgradeScreen>));
+      expect(host.textContent).toContain('chunk unavailable');
+      expect(host.childElementCount).toBeGreaterThan(0);
+    } finally { error.mockRestore(); }
+  });
   test('shows the gate below 2.0.15 and stays off it at 2.0.15', async () => {
     fixture.fetch.mockResolvedValue(Response.json(status({})));
     await act(async () => {

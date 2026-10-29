@@ -8,7 +8,7 @@ import type {
 } from './types';
 
 export const VIEW_EXPORT_LIMITS: ViewExportLimits = Object.freeze({
-    maxHTMLBytes: 16 * 1024 * 1024, maxWidth: 8192, maxHeight: 32768, maxPixels: 16 * 1024 * 1024,
+    maxHTMLBytes: 100 * 1024 * 1024, maxWidth: 8192, maxHeight: 32768, maxPixels: 16 * 1024 * 1024,
 });
 
 class ViewExportError extends Error {
