@@ -763,6 +763,140 @@ describe('managed SSH relay host defaults', () => {
   });
 });
 
+describe('managed SSH server lifecycle', () => {
+  const fixture = () => {
+    const manager = new ElectronSshManager({ settingsFilePath: '/unused/settings.json', appVersion: '1.2.3', emit: () => undefined });
+    const calls = [];
+    const running = new Map([[23469, { runtime: 'ssh-remote', yuriVersion: '1.2.3' }]]);
+    manager.ensureManagedNodeRuntime = async () => {};
+    manager.currentRemoteYuriVersion = async () => '1.2.3';
+    manager.ensureRemoteYuriNativeBinding = async () => {};
+    manager.ensureRemoteOpenCodeCli = async () => {};
+    manager.installYuriManaged = async () => { calls.push('install'); };
+    manager.runManagedRemoteCommand = async (_parsed, _control, command) => {
+      if (command === 'yuri status --json') return JSON.stringify({ instances: [...running.keys()].map((port) => ({ port, runtime: 'cli' })) });
+      throw new Error(`Unexpected command: ${command}`);
+    };
+    manager.probeRemoteSystemInfo = async (_parsed, _control, port) => {
+      if (!running.has(port)) throw new Error('offline');
+      return running.get(port);
+    };
+    manager.stopRemoteServer = async (_parsed, _control, port) => { calls.push(`stop:${port}`); running.delete(port); };
+    manager.startRemoteServerManaged = async (_parsed, _control, _instance, port) => {
+      calls.push(`start:${port}`);
+      running.set(port, { runtime: 'ssh-remote', yuriVersion: '1.2.3' });
+      return { port, uiPassword: 'fixture-password' };
+    };
+    manager.ephemeralUiPasswords.set('target', 'fixture-password');
+    const instance = { id: 'target', remoteYuri: { mode: 'managed', keepRunning: true } };
+    return { manager, calls, running, instance };
+  };
+
+  test('reconnect discovers and reuses a retained daemon without a preferred port', async () => {
+    const { manager, calls, running, instance } = fixture();
+    await manager.ensureRemoteServer(instance, {}, 'control');
+    await manager.ensureRemoteServer(instance, {}, 'control');
+    expect(calls).toEqual([]);
+    expect(running.size).toBe(1);
+  });
+
+  test('upgrade stops the running daemon before replacing its installation and restarts on the same port', async () => {
+    const { manager, calls, running, instance } = fixture();
+    manager.currentRemoteYuriVersion = async () => '1.2.2';
+    await manager.ensureRemoteServer(instance, {}, 'control');
+    expect(calls).toEqual(['stop:23469', 'install', 'start:23469']);
+    expect(running.size).toBe(1);
+  });
+
+  test('a stale process is restarted even when the package on disk is already current', async () => {
+    const { manager, calls, running, instance } = fixture();
+    running.get(23469).yuriVersion = '1.2.2';
+    await manager.ensureRemoteServer(instance, {}, 'control');
+    expect(calls).toEqual(['stop:23469', 'start:23469']);
+  });
+
+  test('a shell restart without the ephemeral password replaces rather than duplicates the retained daemon', async () => {
+    const { manager, calls, running, instance } = fixture();
+    manager.ephemeralUiPasswords.clear();
+    await manager.ensureRemoteServer(instance, {}, 'control');
+    expect(calls).toEqual(['stop:23469', 'start:23469']);
+    expect(running.size).toBe(1);
+  });
+
+  test('consolidates SSH daemons while preserving manually launched web servers', async () => {
+    const { manager, calls, running, instance } = fixture();
+    running.set(23470, { runtime: 'ssh-remote', yuriVersion: '1.2.3' });
+    running.set(8080, { runtime: 'web', yuriVersion: '1.2.3' });
+    await manager.ensureRemoteServer(instance, {}, 'control');
+    expect(calls).toEqual(['stop:23470']);
+    expect([...running.keys()]).toEqual([23469, 8080]);
+  });
+
+  test('failed shutdown blocks upgrade and replacement', async () => {
+    const { manager, calls, instance } = fixture();
+    manager.currentRemoteYuriVersion = async () => '1.2.2';
+    manager.stopRemoteServer = async () => { throw new Error('shutdown failed'); };
+    await expect(manager.ensureRemoteServer(instance, {}, 'control')).rejects.toThrow('shutdown failed');
+    expect(calls).toEqual([]);
+  });
+
+  test('failed discovery never becomes an empty server list', async () => {
+    const { manager, calls, instance } = fixture();
+    manager.runManagedRemoteCommand = async () => { throw new Error('status unavailable'); };
+    await expect(manager.ensureRemoteServer(instance, {}, 'control')).rejects.toThrow('status unavailable');
+    expect(calls).toEqual([]);
+  });
+
+  test('unidentified registered servers block creation of another daemon', async () => {
+    const { manager, calls, running, instance } = fixture();
+    running.set(23469, {});
+    await expect(manager.ensureRemoteServer(instance, {}, 'control')).rejects.toThrow('Cannot identify');
+    expect(calls).toEqual([]);
+  });
+
+  test('rejected retained credentials replace the daemon on its existing port', async () => {
+    const { manager, calls, instance } = fixture();
+    const probe = manager.probeRemoteSystemInfo;
+    let rejected = false;
+    manager.probeRemoteSystemInfo = async (parsed, control, port, password) => {
+      if (password && !rejected) { rejected = true; throw new Error('authentication failed'); }
+      return probe(parsed, control, port);
+    };
+    await manager.ensureRemoteServer(instance, {}, 'control');
+    expect(calls).toEqual(['stop:23469', 'start:23469']);
+  });
+
+  test('external mode remains probe-only', async () => {
+    const { manager, calls, instance } = fixture();
+    instance.remoteYuri = { mode: 'external', preferredPort: 23469 };
+    manager.runManagedRemoteCommand = async () => { throw new Error('must not manage external host'); };
+    expect(await manager.ensureRemoteServer(instance, {}, 'control')).toMatchObject({ remotePort: 23469, startedByUs: false });
+    expect(calls).toEqual([]);
+  });
+
+  test.each([
+    { status: 'warning', results: [{ port: 23469, stopped: false }] },
+    { status: 'ok', results: [] },
+    { status: 'ok', results: [{ port: 9999, stopped: true }] },
+  ])('shutdown requires verified completion for the requested port: %j', async (result) => {
+    const { manager } = fixture();
+    manager.runManagedRemoteCommand = async (_parsed, _control, command) => {
+      expect(command).toBe('yuri stop --port 23469 --json');
+      return JSON.stringify(result);
+    };
+    await expect(ElectronSshManager.prototype.stopRemoteServer.call(manager, {}, 'control', 23469)).rejects.toThrow('did not stop');
+  });
+
+  test('verified CLI shutdown succeeds without sending an unauthenticated HTTP request', async () => {
+    const { manager } = fixture();
+    manager.runManagedRemoteCommand = async (_parsed, _control, command) => {
+      expect(command).toBe('yuri stop --port 23469 --json');
+      return JSON.stringify({ status: 'ok', results: [{ port: 23469, stopped: true }] });
+    };
+    await ElectronSshManager.prototype.stopRemoteServer.call(manager, {}, 'control', 23469);
+  });
+});
+
 describe('parseVersionToken', () => {
   test('accepts stable and prerelease CLI versions', () => {
     expect(parseVersionToken('1.18.4')).toBe('1.18.4');

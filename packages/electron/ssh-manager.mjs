@@ -1874,6 +1874,10 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     const healthStatus = parseProbeStatusLine(lines[2], 'HEALTH_STATUS=') || 0;
     const body = lines.slice(3).join('\n');
 
+    if (yuriPassword && authStatus !== 200) {
+      throw new Error(`Remote Yuri UI authentication failed (auth status ${authStatus})`);
+    }
+
     if (isLivenessHttpStatus(infoStatus)) {
       if (isAuthHttpStatus(infoStatus)) {
         if (yuriPassword && authStatus !== 200) {
@@ -1931,13 +1935,37 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     return buildRelayHostFlag(instance);
   }
 
+  async discoverManagedRemoteServers(parsed, controlPath) {
+    const output = await this.runManagedRemoteCommand(parsed, controlPath, 'yuri status --json');
+    const status = JSON.parse(output);
+    if (!Array.isArray(status.instances)) throw new Error('Invalid remote Yuri status');
+    const servers = [];
+    for (const instance of status.instances) {
+      if (instance.runtime !== 'cli') continue;
+      const port = instance.port;
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid remote Yuri port');
+      const info = await this.probeRemoteSystemInfo(parsed, controlPath, port, null);
+      if (typeof info.runtime !== 'string' || !info.runtime) throw new Error(`Cannot identify remote Yuri on port ${port}`);
+      if (info.runtime === 'ssh-remote') servers.push({ port, info });
+    }
+    return servers;
+  }
+
+  async stopRemoteServer(parsed, controlPath, remotePort) {
+    if (!Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65535) throw new Error('Invalid remote Yuri port');
+    // The CLI verifies registry/PID ownership and waits for process exit, including
+    // its signal fallback when password-protected HTTP shutdown is unavailable.
+    const output = await this.runManagedRemoteCommand(parsed, controlPath, `yuri stop --port ${remotePort} --json`);
+    const result = JSON.parse(output);
+    if (!Array.isArray(result.results) || result.status === 'error' || result.status === 'warning'
+      || !result.results.some((entry) => entry.port === remotePort && entry.stopped === true)) {
+      throw new Error(`Remote Yuri did not stop on port ${remotePort}`);
+    }
+  }
+
   async stopRemoteServerBestEffort(parsed, controlPath, remotePort) {
     try {
-      await runRemoteCommand(
-        parsed,
-        controlPath,
-        `if command -v curl >/dev/null 2>&1; then curl -fsS -X POST http://127.0.0.1:${remotePort}/api/system/shutdown >/dev/null 2>&1 || true; elif command -v wget >/dev/null 2>&1; then wget -qO- --method=POST http://127.0.0.1:${remotePort}/api/system/shutdown >/dev/null 2>&1 || true; fi`,
-      );
+      await this.stopRemoteServer(parsed, controlPath, remotePort);
     } catch {
     }
   }
@@ -2495,6 +2523,25 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     this.setStatus(instance.id, 'remote_probe', 'Checking remote Yuri installation');
     await this.ensureManagedNodeRuntime(parsed, controlPath);
     const installedVersion = await this.currentRemoteYuriVersion(parsed, controlPath);
+    const servers = installedVersion ? await this.discoverManagedRemoteServers(parsed, controlPath) : [];
+    const existing = servers.find((server) => server.port === instance.remoteYuri.preferredPort) || servers[0];
+    const desiredPort = instance.remoteYuri.preferredPort || existing?.port || randomPortCandidate(instance.id);
+    let uiPassword = this.configuredYuriPassword(instance) || this.ephemeralUiPasswords.get(instance.id) || null;
+    let reusable = existing?.port === desiredPort
+      && installedVersion === this.appVersion && existing.info.yuriVersion === this.appVersion
+      && Boolean(uiPassword);
+    if (reusable) {
+      try {
+        await this.probeRemoteSystemInfo(parsed, controlPath, existing.port, uiPassword);
+      } catch {
+        reusable = false;
+      }
+    }
+    // Retained SSH daemons share the remote user's Host data. Drain them before
+    // replacing package files; a failed stop must never spawn another writer.
+    for (const server of servers) {
+      if (!reusable || server.port !== existing.port) await this.stopRemoteServer(parsed, controlPath, server.port);
+    }
     if (!installedVersion) {
       this.setStatus(instance.id, 'installing', 'Installing Yuri on remote host');
       await this.installYuriManaged(parsed, controlPath, this.appVersion, instance.remoteYuri.installMethod);
@@ -2506,44 +2553,18 @@ for (const flags of (kind === 'bash' || kind === 'zsh' || kind === 'fish' ? ['-l
     await this.ensureRemoteOpenCodeCli(parsed, controlPath, instance.remoteYuri.installMethod);
 
     this.setStatus(instance.id, 'server_detecting', 'Detecting managed Yuri server');
-    let remotePort = instance.remoteYuri.preferredPort || null;
-    let startedByUs = false;
-    let uiPassword = this.configuredYuriPassword(instance)
-      || this.ephemeralUiPasswords.get(instance.id)
-      || null;
-    let runningInfo = null;
-    if (remotePort) {
-      try {
-        runningInfo = await this.probeRemoteSystemInfo(parsed, controlPath, remotePort, uiPassword);
-      } catch {
-        remotePort = null;
-        runningInfo = null;
-      }
-    }
-    // Default relay-host SSH remotes cannot reuse a leftover `web` serve.
-    if (remotePort && instanceWantsRelayHost(instance) && !remoteRuntimeCanHostRelay(runningInfo)) {
-      this.setStatus(instance.id, 'server_starting', 'Restarting remote Yuri as a relay host');
-      await this.stopRemoteServerBestEffort(parsed, controlPath, remotePort);
-      const deadline = Date.now() + 8_000;
-      while (Date.now() < deadline) {
-        if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) break;
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-      remotePort = null;
-    }
+    let remotePort = reusable ? existing.port : null;
     if (!remotePort) {
       this.setStatus(instance.id, 'server_starting', 'Starting managed Yuri server');
-      const desiredPort = instance.remoteYuri.preferredPort || randomPortCandidate(instance.id);
       const started = await this.startRemoteServerManaged(parsed, controlPath, instance, desiredPort);
       remotePort = started.port;
       uiPassword = started.uiPassword;
-      startedByUs = true;
       this.ephemeralUiPasswords.set(instance.id, uiPassword);
     }
     if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) {
       throw new Error('Managed Yuri server failed to become reachable');
     }
-    return { remotePort, startedByUs, uiPassword };
+    return { remotePort, startedByUs: true, uiPassword };
   }
 
   async disconnectInternal(id, reportIdle) {
