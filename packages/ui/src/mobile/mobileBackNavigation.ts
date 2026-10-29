@@ -343,6 +343,7 @@ const clearPresentation = (presentation: InteractivePresentation): void => {
     underlay.style.removeProperty('will-change');
     underlay.style.transition = underlayTransition ?? '';
     underlay.style.animation = underlayAnimation ?? '';
+    delete underlay.dataset.mobileBackRevealing;
   }
 };
 
@@ -495,6 +496,8 @@ export const useMobileNavigationDriver = ({
       if (underlay) {
         underlay.style.removeProperty('transform');
         underlay.style.removeProperty('will-change');
+        // A parked root underlay skips rendering; un-park it for the reveal.
+        underlay.dataset.mobileBackRevealing = 'true';
       }
       presentationGeneration += 1;
       presentation = {
