@@ -1,6 +1,6 @@
 export const settingsDict = {
   'settings.yuri.about.hostUpdate.title': '接続先を更新',
-  'settings.yuri.about.hostUpdate.description': 'この端末ではなく接続中の Host を更新します。再起動時に接続が一時的に切断されます。',
+  'settings.yuri.about.hostUpdate.description': '接続中の Host を更新し、再起動後に再接続します。',
   'settings.yuri.about.hostUpdate.available': '更新があります',
   'settings.yuri.about.hostUpdate.confirm': '更新して再起動',
   'settings.yuri.about.hostUpdate.reconnecting': 'Host の再接続を待っています…',

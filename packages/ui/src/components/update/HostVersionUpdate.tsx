@@ -37,8 +37,13 @@ export function HostVersionUpdate({ version, transport, generation, itemId, chan
       if (transport === getRuntimeTransportIdentity() && generation === getRuntimeGeneration()) void client.invalidateQueries({ queryKey: hostUpdateQueryOptions(transport, generation, request.channel).queryKey, exact: true });
     },
   });
+  // Remember the task this view watched so its terminal state finishes the bar
+  // instead of a persisted old result reappearing as fresh progress.
+  const [watchedOperationId, setWatchedOperationId] = React.useState<string | null>(null);
+  if (active && operation && operation.id !== watchedOperationId) setWatchedOperationId(operation.id);
   const show = useEvent(() => { setOpen(true); void query.refetch(); });
-  const unsupported = snapshot?.supported === false || query.error?.message === 'host_update_unsupported';
+  // During an active task a 404/timeout is the restart gap, not a capability answer.
+  const unsupported = snapshot?.supported === false || (!active && query.error?.message === 'host_update_unsupported');
   const failedCheck = query.isError || Boolean(snapshot?.checkError);
   const mutationError = mutation.isError && mutation.variables?.channel === channel;
   const model = toHostUpdateDialogModel(snapshot, {
@@ -46,6 +51,7 @@ export function HostVersionUpdate({ version, transport, generation, itemId, chan
     checking: query.isPending ? 'initial' : query.isFetching ? 'refresh' : false,
     submitting: mutation.isPending,
     failure: unsupported ? 'unsupported' : query.isError && (active || mutationError) ? 'disconnected' : failedCheck || mutationError ? 'check' : null,
+    completed: operation?.status === 'succeeded' && operation.id === watchedOperationId,
   }, t);
   const handleAction = useEvent((id: string) => {
     if (id === 'check') void query.refetch();

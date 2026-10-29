@@ -17,13 +17,18 @@ it('adapts exact versions, Markdown, installation method and rollback warning to
   expect(model.releaseLink).toBeUndefined();
 });
 
-it('uses the shared progress presentation without inventing a percentage and disables duplicate submissions', () => {
+it('maps Host stages to a monotonic overall progress, hides the changelog and disables duplicate submissions', () => {
   const operation = { id: 'operation', planId: 'plan', version: '2.0.9', channel: 'stable' as const, kind: 'installer' as const, status: 'downloading' as const, progress: null, error: null };
-  const model = toHostUpdateDialogModel({ ...snapshot, update: null, operation }, state, t);
-  expect(model.status).toMatchObject({ kind: 'download', progress: null });
+  const model = toHostUpdateDialogModel({ ...snapshot, operation }, state, t);
+  expect(model.status).toMatchObject({ kind: 'download', progress: 5 });
+  expect(model.hideChangelog).toBe(true);
   expect(model.actions.find((action) => action.id === 'confirm')?.disabled).toBe(true);
+  const halfway = toHostUpdateDialogModel({ ...snapshot, update: null, operation: { ...operation, progress: 100 } }, state, t);
+  expect(halfway.status?.progress).toBe(80);
   const reconnecting = toHostUpdateDialogModel({ ...snapshot, update: null, operation: { ...operation, status: 'restarting' } }, { ...state, failure: 'disconnected' }, t);
-  expect(reconnecting.status).toMatchObject({ kind: 'activity', detail: en['settings.yuri.about.hostUpdate.reconnecting'] });
+  expect(reconnecting.status).toMatchObject({ kind: 'activity', progress: 95, detail: en['settings.yuri.about.hostUpdate.reconnecting'] });
+  const done = toHostUpdateDialogModel({ ...snapshot, update: null, operation: { ...operation, status: 'succeeded' } }, { ...state, completed: true }, t);
+  expect(done.status).toMatchObject({ progress: 100, label: en['settings.yuri.about.hostUpdate.status.succeeded'] });
 });
 
 it('keeps unsupported/error/confirmed-empty states distinct and never enables an old plan after failure', () => {

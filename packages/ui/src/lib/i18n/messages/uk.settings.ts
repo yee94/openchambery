@@ -1,6 +1,6 @@
 export const settingsDict = {
   'settings.yuri.about.hostUpdate.title': 'Оновити цей екземпляр',
-  'settings.yuri.about.hostUpdate.description': 'Оновлюється підключений Host, а не цей пристрій. Під час перезапуску з’єднання ненадовго перерветься.',
+  'settings.yuri.about.hostUpdate.description': 'Оновлює підключений Host; після перезапуску з’єднання відновиться.',
   'settings.yuri.about.hostUpdate.available': 'Доступне оновлення',
   'settings.yuri.about.hostUpdate.confirm': 'Оновити й перезапустити',
   'settings.yuri.about.hostUpdate.reconnecting': 'Очікування повторного підключення Host…',

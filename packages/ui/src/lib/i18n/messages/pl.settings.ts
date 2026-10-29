@@ -1,6 +1,6 @@
 export const settingsDict = {
   'settings.yuri.about.hostUpdate.title': 'Zaktualizuj tę instancję',
-  'settings.yuri.about.hostUpdate.description': 'Aktualizuje połączony Host, a nie to urządzenie. Podczas restartu połączenie zostanie na chwilę przerwane.',
+  'settings.yuri.about.hostUpdate.description': 'Aktualizuje połączony Host; po restarcie połączy się ponownie.',
   'settings.yuri.about.hostUpdate.available': 'Dostępna aktualizacja',
   'settings.yuri.about.hostUpdate.confirm': 'Zaktualizuj i uruchom ponownie',
   'settings.yuri.about.hostUpdate.reconnecting': 'Oczekiwanie na ponowne połączenie z Host…',
