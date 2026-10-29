@@ -7,7 +7,7 @@ import { dict as zh } from '@/lib/i18n/messages/zh-CN';
 import { AboutSettings } from './AboutSettings';
 
 const fixture = vi.hoisted(() => ({ locale: 'en', transport: 'host-a', generation: 1, mobile: false, native: false, nativeConfig: vi.fn(), fetch: vi.fn(), listeners: new Set<() => void>() }));
-vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: keyof typeof en, params?: Record<string, string>) => {
+vi.mock('@/lib/i18n', () => ({ getCurrentIntlLocale: () => 'en-US', useI18n: () => ({ t: (key: keyof typeof en, params?: Record<string, string>) => {
   let text: string = (fixture.locale === 'en' ? en : zh)[key] ?? key;
   for (const [name, value] of Object.entries(params ?? {})) text = text.replace(`{${name}}`, value);
   return text;
@@ -26,6 +26,7 @@ vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => fixture.native }));
 vi.mock('@/lib/mobile-updates/native-config', () => ({ readNativeUpdateConfig: () => fixture.nativeConfig() }));
 vi.mock('@/lib/desktop', () => ({ isElectronShell: () => !fixture.native, getDesktopAppVersion: async () => '2.0.7-beta.1' }));
 vi.mock('@/components/ui/UpdateDialog', () => ({ UpdateDialog: () => null }));
+vi.mock('@/components/chat/MarkdownRenderer', () => ({ SimpleMarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }));
 vi.mock('@/lib/mobileAppVersion', () => ({ getMobileClientVersion: async () => '2.0.0', getMobileClientBuildNumber: async () => null, formatMobileClientVersionLabel: (version: string) => version }));
 vi.mock('@/sync/transcript-diagnostics-runtime', () => ({ isTranscriptDiagnosticsEnabled: () => false, setTranscriptDiagnosticsEnabled: vi.fn(), exportAndDownloadClientDiagnostics: vi.fn() }));
 let root: Root;
@@ -36,7 +37,7 @@ beforeEach(() => {
   fixture.locale = 'en'; fixture.transport = 'host-a'; fixture.generation = 1; fixture.mobile = false; fixture.fetch.mockReset();
   fixture.native = false;
   fixture.nativeConfig.mockReset().mockResolvedValue({ channel: 'stable', shellApiVersion: 3 });
-  fixture.fetch.mockImplementation(async (path: string) => Response.json(path.includes('system/info')
+  fixture.fetch.mockImplementation(async (path: string) => path.startsWith('/api/system/update') ? new Response('', { status: 501 }) : Response.json(path.includes('system/info')
     ? { yuriVersion: 'host-version' }
     : { serveVersion: '2.0.14', currentVersion: '2.0.12', canManage: false, management: 'manual-global', guidance: 'server English guidance' }));
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
@@ -61,6 +62,8 @@ it.each(['stable', 'beta'])('uses the installed native %s channel in About', asy
   const toggle = host.querySelector('[data-settings-item="about.beta-updates"] [role="checkbox"]');
   expect(toggle?.getAttribute('aria-checked')).toBe(String(channel === 'beta'));
   expect(fixture.nativeConfig).toHaveBeenCalledTimes(1);
+  const updateChecks = fixture.fetch.mock.calls.filter(([path]) => path.startsWith('/api/system/update'));
+  expect(updateChecks.at(-1)?.[0]).toBe(`/api/system/update?channel=${channel}`);
 });
 it('translates the raw snapshot on locale change without repeating requests', async () => {
   await render(); await render();
@@ -77,7 +80,8 @@ it('keeps both missing webview endpoints as unknown and preserves a good snapsho
   fixture.fetch.mockResolvedValue(new Response('', { status: 404 }));
   await render(); await render();
   expect(host.textContent?.match(/unknown/g)).toHaveLength(2);
-  expect(fixture.fetch).toHaveBeenCalledTimes(2);
+  expect(fixture.fetch.mock.calls.filter(([path]) => path === '/api/system/info')).toHaveLength(1);
+  expect(fixture.fetch.mock.calls.filter(([path]) => path === '/api/opencode/upgrade-status')).toHaveLength(1);
   fixture.fetch.mockImplementation(async () => Response.json({ serveVersion: '2.0.14', management: 'manual-external', canManage: false }));
   await act(async () => { await client.invalidateQueries(); }); await render();
   expect(host.textContent).toContain('2.0.14');

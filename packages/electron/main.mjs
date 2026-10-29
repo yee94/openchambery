@@ -16,6 +16,7 @@ import { loadDesktopBackend } from './desktop-backend.mjs';
 import { importHostBrandData } from '@yuriai/web/server/lib/brand-migration.js';
 import { isBinaryFile } from '@yuriai/web/server/lib/fs/binary-file.js';
 import { DesktopInstaller } from './desktop-installer.mjs';
+import { createDesktopUpdateAdapter } from './host-update.mjs';
 import electronUpdater from 'electron-updater';
 import { ElectronSshManager, planOpenCodeConfigSync, parseSshCommand } from './ssh-manager.mjs';
 import { buildSshEditorUrl, sshEditorAppIds } from './ssh-editor.mjs';
@@ -1661,6 +1662,21 @@ const spawnLocalServer = async () => {
   const { startWebUiServer } = backend;
 
   const handle = await startWebUiServer({
+    hostUpdateStateFile: path.join(app.getPath('userData'), 'host-update.json'),
+    getHostUpdateVersion: () => desktopOta?.version ?? APP_VERSION,
+    hostUpdateAdapter: createDesktopUpdateAdapter({
+      getOperation: () => desktopLocalUpdateOperation,
+      getOta: () => desktopOta, getInstaller: () => desktopInstaller,
+      isSupported: app.isPackaged && !isPreviewDesktop,
+      isBusy: () => state.installingUpdate || desktopUpdateActionBusy,
+      download: async (kind) => { desktopUpdateKind = kind; await downloadPendingUpdate({ remote: true }); },
+      restart: async () => {
+        if (desktopUpdateKind === 'installer') desktopInstaller.assertPending();
+        else await desktopOta.assertPending();
+        prepareDesktopUpdateRestart();
+        await completeDesktopRestart(true);
+      },
+    }),
     port: chosenPort,
     host: bindHost,
     uiPassword: desktopUiPassword || null,
@@ -3332,16 +3348,47 @@ const resolveInitialUrl = async () => {
   return { initialUrl, localOrigin, localUiUrl, bootOutcome, apiBaseUrl, clientToken, requestHeaders };
 };
 
-const downloadPendingUpdate = async () => {
+let desktopUpdateActionBusy = false;
+let desktopLocalUpdateOperation = null;
+const prepareDesktopUpdateRestart = () => {
+  state.quitRequested = true;
+  state.installingUpdate = true;
+  state.quitConfirmationPending = false;
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+    try { debounceWindowStatePersist(state.mainWindow, true); } catch { /* Window teardown can already be in progress. */ }
+  }
+};
+const completeDesktopRestart = async (applyUpdate) => {
+  prepareForQuit({ installingUpdate: applyUpdate });
+  await shutdownBackgroundServices();
+  if (applyUpdate && desktopUpdateKind === 'installer') {
+    desktopInstaller.install();
+    return;
+  }
+  app.relaunch({ args: process.argv.slice(1).filter((arg) => arg !== BACKGROUND_START_ARG) });
+  app.exit(0);
+};
+const beginLocalUpdateOperation = (status) => {
+  desktopLocalUpdateOperation = {
+    id: globalThis.crypto.randomUUID(), planId: '',
+    version: desktopUpdateKind === 'installer' ? desktopInstaller?.version ?? APP_VERSION : desktopOta?.decision?.ota?.bundle?.releaseVersion ?? APP_VERSION,
+    channel: desktopOta?.state.channel ?? (APP_VERSION.includes('-') ? 'beta' : 'stable'),
+    kind: desktopUpdateKind === 'installer' ? 'installer' : 'ota', status, progress: null, error: null,
+  };
+};
+const downloadPendingUpdate = async ({ remote = false } = {}) => {
   if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
   if (state.installingUpdate) throw new Error('An update is already being installed');
+  if (desktopUpdateActionBusy || (!remote && state.serverHandle?.hostUpdates?.isBusy())) throw new Error('An update operation is in progress');
+  desktopUpdateActionBusy = true;
+  if (!remote) beginLocalUpdateOperation('downloading');
   emitToAllWindows('yuri:update-progress', mapUpdaterProgressEvent({ event: 'Started', data: {} }));
   try {
     if (desktopUpdateKind === 'installer') await desktopInstaller.download();
     else await desktopOta.download();
     emitToAllWindows('yuri:update-progress', mapUpdaterProgressEvent({ event: 'Finished', data: {} }));
     emitToAllWindows('yuri:update-ready', { version: desktopUpdateKind === 'installer' ? desktopInstaller.version : desktopOta.state.queued?.releaseVersion, downloaded: true });
-  } finally { setTaskbarProgress(-1); }
+  } finally { desktopUpdateActionBusy = false; if (!remote) desktopLocalUpdateOperation = null; setTaskbarProgress(-1); }
 };
 
 const buildInstalledAppsCachePath = () => path.join(path.dirname(settingsFilePath()), INSTALLED_APPS_CACHE_FILE);
@@ -4417,22 +4464,27 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     }
 
     case 'desktop_check_for_updates': {
-      if (isPreviewDesktop) throw new Error('Preview uses a separate application identity; install Preview updates manually');
-      if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
-      if (state.installingUpdate) throw new Error('An update is already being installed');
-      desktopInstaller.assertIdle();
-      const info = await desktopOta.check(args?.channelOverride);
-      if (info.manualUpdate) {
-        desktopUpdateKind = 'installer';
-        const version = desktopOta.decision.native.version;
-        const result = await desktopInstaller.check(version, {
-          channel: desktopOta.state.channel, rollback: info.isChannelRollback,
-        });
-        return { ...info, ...result, version, manualUpdate: false, inAppApply: false };
-      }
-      desktopInstaller.clear();
-      desktopUpdateKind = 'ota';
-      return info;
+      if (desktopUpdateActionBusy || state.serverHandle?.hostUpdates?.isBusy()) throw new Error('An update operation is in progress');
+      desktopUpdateActionBusy = true;
+      beginLocalUpdateOperation('checking');
+      try {
+        if (isPreviewDesktop) throw new Error('Preview uses a separate application identity; install Preview updates manually');
+        if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
+        if (state.installingUpdate) throw new Error('An update is already being installed');
+        desktopInstaller.assertIdle();
+        const info = await desktopOta.check(args?.channelOverride);
+        if (info.manualUpdate) {
+          desktopUpdateKind = 'installer';
+          const version = desktopOta.decision.native.version;
+          const result = await desktopInstaller.check(version, {
+            channel: desktopOta.state.channel, rollback: info.isChannelRollback,
+          });
+          return { ...info, ...result, version, manualUpdate: false, inAppApply: false };
+        }
+        desktopInstaller.clear();
+        desktopUpdateKind = 'ota';
+        return info;
+      } finally { desktopUpdateActionBusy = false; desktopLocalUpdateOperation = null; }
     }
 
     case 'desktop_ota_ready':
@@ -4446,6 +4498,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return null;
 
     case 'desktop_restart': {
+      if (state.serverHandle?.hostUpdates?.isBusy()) throw new Error('A remote update operation is in progress');
       const updateRestartRequested = args?.applyUpdate === true;
       if (updateRestartRequested) {
         if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
@@ -4455,15 +4508,8 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const applyUpdate = updateRestartRequested;
       log.info(`[electron] desktop_restart applyUpdate=${applyUpdate} packaged=${app.isPackaged}`);
       if (applyUpdate) {
-        state.quitRequested = true;
-        state.installingUpdate = true;
-        state.quitConfirmationPending = false;
-        if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-          try {
-            debounceWindowStatePersist(state.mainWindow, true);
-          } catch {
-          }
-        }
+        beginLocalUpdateOperation('restarting');
+        prepareDesktopUpdateRestart();
       }
       // Defer so the IPC reply flushes before the app starts shutting down.
       // Without this, relaunch can race with the renderer's pending
@@ -4471,14 +4517,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       setImmediate(() => {
         void (async () => {
           try {
-            prepareForQuit({ installingUpdate: applyUpdate });
-            await shutdownBackgroundServices();
-            if (applyUpdate && desktopUpdateKind === 'installer') {
-              desktopInstaller.install();
-              return;
-            }
-            app.relaunch({ args: process.argv.slice(1).filter((arg) => arg !== BACKGROUND_START_ARG) });
-            app.exit(0);
+            await completeDesktopRestart(applyUpdate);
           } catch (err) {
             log.error('[electron] desktop_restart failed', err);
           }
@@ -5355,7 +5394,7 @@ ipcMain.handle('yuri:file:grant-existing', async (event, filePath) => {
 // Virtual asset stream bridge — local UI only. Remote renderers must never
 // mint or feed asset streams (no host path / credential surface either way).
 const requireLocalAssetSender = (event, label) => {
-  if (!isLocalSender(event.sender)) {
+  if (!isGuiPluginWindow(event) || event.senderFrame.url !== event.sender.getURL()) {
     log.warn(`[ipc] rejected ${label} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
     throw new Error('IPC not available for this origin');
   }
@@ -5427,10 +5466,7 @@ ipcMain.handle('yuri:asset:cancel', async (event, payload) => {
 // Preview loopback gateway — local UI only. Separate channels (not on
 // COMMANDS_SAFE_FOR_REMOTE / yuri:invoke). Main is a dumb HTTP/WS pipe.
 const requireLocalPreviewGatewaySender = (event, label) => {
-  if (!isLocalSender(event.sender)) {
-    log.warn(`[ipc] rejected ${label} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
-    throw new Error('IPC not available for this origin');
-  }
+  requireLocalAssetSender(event, label);
 };
 
 const requirePreviewGatewayOwner = (event, label) => {
@@ -5812,6 +5848,8 @@ app.whenReady().then(async () => {
     electronUpdater.autoUpdater.logger = log;
     desktopInstaller = new DesktopInstaller(electronUpdater.autoUpdater, {
       onProgress: (progress) => {
+        if (desktopLocalUpdateOperation) desktopLocalUpdateOperation.progress = progress.percent;
+        state.serverHandle?.hostUpdates?.progress(progress.percent);
         setTaskbarProgress(progress.percent / 100);
         emitToAllWindows('yuri:update-progress', mapUpdaterProgressEvent({ event: 'Progress', data: { downloaded: progress.transferred, total: progress.total } }));
       },
@@ -5823,6 +5861,8 @@ app.whenReady().then(async () => {
       nativeVersion: APP_VERSION,
       requireBackend: true,
       onProgress: (progress) => {
+        if (desktopLocalUpdateOperation) desktopLocalUpdateOperation.progress = progress.downloaded / progress.total * 100;
+        state.serverHandle?.hostUpdates?.progress(progress.downloaded / progress.total * 100);
         setTaskbarProgress(progress.downloaded / progress.total);
         emitToAllWindows('yuri:update-progress', mapUpdaterProgressEvent({ event: 'Progress', data: progress }));
       },

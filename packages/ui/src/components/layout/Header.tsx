@@ -31,7 +31,7 @@ import { useDesktopWindowControlsLayout } from '@/hooks/useDesktopWindowControls
 import { useDesktopWindowFullscreen } from '@/hooks/useDesktopWindowFullscreen';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { WindowsWindowControls } from '@/components/desktop/WindowsWindowControls';
-import { UpdateDialog } from '@/components/ui/UpdateDialog';
+import { ConnectedHostVersionUpdate } from '@/components/update/HostVersionUpdate';
 import { useDeviceInfo, useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn, hasModifier } from '@/lib/utils';
 import { McpDropdownContent } from '@/components/mcp/McpDropdown';
@@ -61,19 +61,17 @@ import type { GitHubAuthStatus } from '@/lib/api/types';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { DesktopHostSwitcherDialog } from '@/components/desktop/DesktopHostSwitcher';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
-import { Button } from '@/components/ui/button';
 import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { resolveServicesPanelIntent } from '@/components/layout/servicesPanelIntent';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { canUseElectronDesktopIPC, getElectronPlatform, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag, type UpdateInfo } from '@/lib/desktop';
-import { desktopHostsGet, getDesktopHostApiUrl, locationMatchesHost, redactSensitiveUrl, supportsDesktopHostRemoteUpdate } from '@/lib/desktopHosts';
-import { desktopSshInstancesGet } from '@/lib/desktopSsh';
+import { canUseElectronDesktopIPC, getElectronPlatform, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag } from '@/lib/desktop';
+import { desktopHostsGet, getDesktopHostApiUrl, locationMatchesHost, redactSensitiveUrl } from '@/lib/desktopHosts';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeBearerTokenSync } from '@/lib/runtime-auth';
-import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
+import { getRuntimeApiBaseUrl, getRuntimeKey, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import type { IconName } from "@/components/icon/icons";
 
 const DESKTOP_HEADER_ICON_BUTTON_CLASS = 'app-region-no-drag inline-flex h-8 w-8 items-center justify-center gap-2 rounded-md typography-ui-label font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 hover:bg-interactive-hover transition-colors';
@@ -274,10 +272,6 @@ type DesktopServicesMenuProps = {
   rateLimitGroups: RateLimitGroup[];
   expandedFamilies: Record<string, string[]>;
   toggleFamilyExpanded: (providerId: string, familyId: string) => void;
-  remoteUpdateInfo: UpdateInfo | null;
-  remoteUpdateChecking: boolean;
-  remoteUpdateError: string | null;
-  onOpenRemoteUpdate: () => void;
   showPredValues: boolean;
   timeFormatPreference: TimeFormatPreference;
   /** Align the panel to the session ··· control (same anchor as the overflow menu). */
@@ -305,10 +299,6 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   rateLimitGroups,
   expandedFamilies,
   toggleFamilyExpanded,
-  remoteUpdateInfo,
-  remoteUpdateChecking,
-  remoteUpdateError,
-  onOpenRemoteUpdate,
   showPredValues,
   timeFormatPreference,
   anchorRef,
@@ -373,28 +363,11 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
 
         {isDesktopApp && desktopServicesTab === 'instance' ? (
           <div>
-            {currentInstanceSupportsUpdate ? (
+            {currentInstanceSupportsUpdate && isDesktopServicesOpen ? (
               <div className="border-b border-[var(--interactive-border)] px-4 py-2.5">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="typography-ui-label font-medium text-foreground">{t('header.services.remoteUpdate.title')}</div>
-                    <div className="typography-micro text-muted-foreground">
-                      {remoteUpdateInfo?.available
-                        ? t('header.services.remoteUpdate.available', { version: remoteUpdateInfo.version || '' })
-                        : remoteUpdateChecking
-                          ? t('header.services.remoteUpdate.checking')
-                          : remoteUpdateError || t('header.services.remoteUpdate.upToDate')}
-                    </div>
-                  </div>
-                  {remoteUpdateInfo?.available ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={onOpenRemoteUpdate}
-                    >
-                      {t('header.services.remoteUpdate.actions.open')}
-                    </Button>
-                  ) : null}
+                  <div className="typography-ui-label font-medium text-foreground">Yuri</div>
+                  <ConnectedHostVersionUpdate />
                 </div>
               </div>
             ) : null}
@@ -806,10 +779,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [isUsageRefreshSpinning, setIsUsageRefreshSpinning] = React.useState(false);
   const [currentInstanceLabel, setCurrentInstanceLabel] = React.useState('Local');
   const [currentInstanceSupportsUpdate, setCurrentInstanceSupportsUpdate] = React.useState(false);
-  const [remoteUpdateDialogOpen, setRemoteUpdateDialogOpen] = React.useState(false);
-  const [remoteUpdateInfo, setRemoteUpdateInfo] = React.useState<UpdateInfo | null>(null);
-  const [remoteUpdateChecking, setRemoteUpdateChecking] = React.useState(false);
-  const [remoteUpdateError, setRemoteUpdateError] = React.useState<string | null>(null);
   const [desktopServicesTab, setDesktopServicesTab] = React.useState<'instance' | 'usage' | 'mcp'>(
     isDesktopApp ? 'instance' : 'usage'
   );
@@ -853,27 +822,18 @@ export const Header: React.FC<HeaderProps> = ({
         setCurrentInstanceSupportsUpdate(false);
         return;
       }
+      const transport = getRuntimeTransportIdentity();
       const cfg = await desktopHostsGet();
-      const localOrigin = window.__YURI_LOCAL_ORIGIN__ || window.location.origin;
+      if (getRuntimeTransportIdentity() !== transport) return;
       const runtimeApiBaseUrl = getRuntimeApiBaseUrl();
-
-      if (runtimeApiBaseUrl && locationMatchesHost(runtimeApiBaseUrl, localOrigin)) {
-        setCurrentInstanceLabel('Local');
-        setCurrentInstanceSupportsUpdate(false);
-        return;
-      }
-
-      const match = cfg.hosts.find((host) => {
+      const runtimeKey = getRuntimeKey();
+      const hostId = runtimeKey.startsWith('host:') ? runtimeKey.slice(5) : null;
+      const match = (hostId ? cfg.hosts.find((host) => host.id === hostId) : undefined) ?? cfg.hosts.find((host) => {
         return runtimeApiBaseUrl ? locationMatchesHost(runtimeApiBaseUrl, getDesktopHostApiUrl(host)) : false;
       });
 
-      if (match && !match.relay) {
-        const sshConfig = await desktopSshInstancesGet();
-        if (getRuntimeApiBaseUrl() !== runtimeApiBaseUrl) return;
-        setCurrentInstanceSupportsUpdate(supportsDesktopHostRemoteUpdate(match, new Set(sshConfig.instances.map((instance) => instance.id))));
-      } else {
-        setCurrentInstanceSupportsUpdate(false);
-      }
+      if (getRuntimeApiBaseUrl() !== runtimeApiBaseUrl) return;
+      setCurrentInstanceSupportsUpdate(Boolean(runtimeApiBaseUrl));
 
       if (match?.label?.trim()) {
         setCurrentInstanceLabel(redactSensitiveUrl(match.label.trim()));
@@ -890,91 +850,6 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => {
     void refreshCurrentInstanceLabel();
   }, [isDesktopApp]);
-
-  const checkRemoteInstanceUpdate = useEvent(async () => {
-    if (!currentInstanceSupportsUpdate) {
-      setRemoteUpdateInfo(null);
-      setRemoteUpdateError(null);
-      return;
-    }
-
-    setRemoteUpdateChecking(true);
-    setRemoteUpdateError(null);
-    try {
-      const params = new URLSearchParams({ appType: 'web', instanceMode: 'remote' });
-      const response = await runtimeFetch(`/api/yuri/update-check?${params.toString()}`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
-      if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}`);
-      }
-      const data = await response.json();
-      setRemoteUpdateInfo({
-        available: data.available ?? false,
-        version: data.version,
-        currentVersion: data.currentVersion ?? 'unknown',
-        body: data.body,
-        nextSuggestedCheckInSec: typeof data.nextSuggestedCheckInSec === 'number' ? data.nextSuggestedCheckInSec : undefined,
-        packageManager: data.packageManager,
-        updateCommand: data.updateCommand,
-      });
-    } catch (error) {
-      setRemoteUpdateInfo(null);
-      setRemoteUpdateError(error instanceof Error ? error.message : t('header.services.remoteUpdate.error'));
-    } finally {
-      setRemoteUpdateChecking(false);
-    }
-  });
-
-  React.useEffect(() => {
-    setRemoteUpdateInfo(null);
-    setRemoteUpdateError(null);
-    setRemoteUpdateDialogOpen(false);
-  }, [currentInstanceSupportsUpdate, currentInstanceLabel]);
-
-  React.useEffect(() => {
-    if (!isDesktopApp || !currentInstanceSupportsUpdate) {
-      return;
-    }
-
-    const initialDelayMs = 3000;
-    const intervalMs = 60 * 60 * 1000;
-    let disposed = false;
-    let timer: number | null = null;
-
-    const schedule = (delayMs: number) => {
-      timer = window.setTimeout(() => {
-        if (disposed || (typeof document !== 'undefined' && document.visibilityState !== 'visible')) {
-          schedule(intervalMs);
-          return;
-        }
-        void checkRemoteInstanceUpdate().finally(() => {
-          if (!disposed) {
-            schedule(intervalMs);
-          }
-        });
-      }, delayMs);
-    };
-
-    schedule(initialDelayMs);
-
-    return () => {
-      disposed = true;
-      if (timer !== null) {
-        window.clearTimeout(timer);
-      }
-    };
-  }, [currentInstanceSupportsUpdate, currentInstanceLabel, isDesktopApp]);
-
-  const openRemoteInstanceUpdate = useEvent(() => {
-    if (!currentInstanceSupportsUpdate) return;
-    if (remoteUpdateInfo?.available) {
-      setRemoteUpdateDialogOpen(true);
-      return;
-    }
-    void checkRemoteInstanceUpdate();
-  });
 
   useQuotaAutoRefresh();
   const selectedModels = useQuotaStore((state) => state.selectedModels);
@@ -1834,10 +1709,6 @@ export const Header: React.FC<HeaderProps> = ({
         rateLimitGroups={rateLimitGroups}
         expandedFamilies={expandedFamilies}
         toggleFamilyExpanded={toggleFamilyExpanded}
-        remoteUpdateInfo={remoteUpdateInfo}
-        remoteUpdateChecking={remoteUpdateChecking}
-        remoteUpdateError={remoteUpdateError}
-        onOpenRemoteUpdate={openRemoteInstanceUpdate}
         timeFormatPreference={timeFormatPreference}
         anchorRef={sessionMenuTriggerRef}
       />
@@ -2398,18 +2269,6 @@ export const Header: React.FC<HeaderProps> = ({
       >
         {isMobile ? renderMobile() : renderDesktop()}
       </header>
-      <UpdateDialog
-        open={currentInstanceSupportsUpdate && remoteUpdateDialogOpen}
-        onOpenChange={setRemoteUpdateDialogOpen}
-        info={remoteUpdateInfo}
-        downloading={false}
-        downloaded={false}
-        progress={null}
-        error={remoteUpdateError}
-        onDownload={() => {}}
-        onRestart={() => {}}
-        runtimeType="web"
-      />
     </>
   );
 };

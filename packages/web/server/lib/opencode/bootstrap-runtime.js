@@ -149,6 +149,8 @@ export const createBootstrapRuntime = (dependencies) => {
     });
 
     registerYuriRoutes(app, {
+      hostUpdates: options.hostUpdates,
+      uiAuthController,
       fs,
       os,
       path,

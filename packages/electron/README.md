@@ -36,9 +36,20 @@ Renderer local-instance checks use the active Host/Relay identity before URL com
 
 Cache limits are 256 MiB / 128 entries, 32 MiB per image and 512 KiB per IPC write. Reservations include incomplete uploads. Native leases are owner-window checked; UI unmount releases the lease but retains the completed file. LRU evicts only entries with neither leases nor active protocol readers, and capacity exhaustion fails rather than deleting pinned resources. Window navigation/destruction releases its leases and deletes partial uploads. Complete entries survive restart; startup removes incomplete/orphan files and validates metadata. A failed stat or a file changed during transfer never commits a reusable entry. Native cache capability changes require an installer. Without disk caching, the shared image owner persists verified bodies to IndexedDB and materializes independent native streams or browser Blob URLs for both inline and preview consumers. HTTP/data/blob sources already supplied by callers remain direct.
 
+Image-cache, virtual-asset and preview-gateway IPC authorize the current application main frame independently of GUI plugin `window-only` restriction and the selected local/remote/Relay runtime. These presentation bridges accept opaque keys/IDs and bounded bytes, not local file paths or credentials; cache lease ownership, byte limits and preview gateway ownership remain enforced. Remote documents, same-origin preview/API documents, subframes and stale frames are rejected. Loading a window-only GUI bundle must not break images or front-end file/report previews. It still revokes native plugin execution/IPC and privileged filesystem, Shell and settings access. This gate fix is installer-owned; UI/backend OTA alone cannot change it.
+
 `scripts/image-cache-evidence.test.mjs` builds the production shared image Hook and runs it in real Electron with the native protocol/IPC/disk implementation. It compares one-use native streaming with cached loads for four 5 MiB PNGs, simultaneous previews and ten remounts, counting downloads/bytes and measuring decode-ready latency. Set `YURI_TEST_EVIDENCE_DIR` to retain `result.json`. This is a controlled-network image lifecycle benchmark, not whole-transcript navigation or phone performance evidence.
 
 ## Shutdown Lifecycle
+
+Authenticated remote clients can use the Host-owned `/api/system/update` GET/POST
+over direct HTTP or Relay. `host-update.mjs` adapts the existing OTA/installer
+chain; main injects it into the in-process server. Read-only checks do not select
+a channel or invalidate staged downloads. Accepted remote operations share the
+desktop updater's exclusion gates and use the normal graceful shutdown before
+relaunch/install. See `../web/server/lib/host-update/DOCUMENTATION.md` for plans,
+beta/rollback, durable status, authorization and CLI support limits. This native
+injection requires a new desktop installer; UI OTA alone cannot add it.
 
 When the shared OTA decision requires a new shell, `desktop-installer.mjs` uses `electron-updater` to download the complete installer in-app and calls `quitAndInstall` after the normal server shutdown. The generic feed is pinned to that exact GitHub release's `full*.yml`, never to a mutable latest feed. Beta eligibility and explicit stable downgrade permission come from the shared decision. Downloads do not install automatically on ordinary quit, and changing the selected update invalidates the install action.
 

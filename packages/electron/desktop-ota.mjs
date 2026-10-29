@@ -112,14 +112,14 @@ export class DesktopOta {
     }
   }
 
-  async check(channelOverride) {
+  async check(channelOverride, { select = true } = {}) {
     if (!this.origin) throw new Error('Yuri update service is not configured (YURI_UPDATE_ORIGIN)');
     if (channelOverride !== undefined && channelOverride !== null && channelOverride !== 'beta' && channelOverride !== 'stable') {
       throw new Error('Invalid OTA channel');
     }
-    const channel = channelOverride ?? (this.nativeVersion.includes('-') ? 'beta' : 'stable');
-    const generation = ++this.generation;
-    if (this.state.channel !== channel) {
+    const channel = channelOverride ?? this.state.channel ?? (this.nativeVersion.includes('-') ? 'beta' : 'stable');
+    const generation = select ? ++this.generation : this.generation;
+    if (select && this.state.channel !== channel) {
       this.selection += 1;
       this.state.channel = channel;
       this.state.queued = null;
@@ -140,10 +140,10 @@ export class DesktopOta {
     if (decision.native.version && parseReleaseVersion(decision.native.version)?.major !== parseReleaseVersion(this.version)?.major) {
       throw new Error('OTA native target crossed release major');
     }
-    if (decision.primaryAction === 'apply_ota') this.validateBundle(decision.ota.bundle, decision.isChannelRollback === true);
-    this.decision = decision;
+    if (decision.primaryAction === 'apply_ota') this.validateBundle(decision.ota.bundle, decision.isChannelRollback === true, channel);
+    if (select) this.decision = decision;
     const bundle = decision.ota.bundle;
-    if (this.state.queued?.bundleId !== bundle?.bundleId) {
+    if (select && this.state.queued?.bundleId !== bundle?.bundleId) {
       this.state.queued = null;
       await this.persist();
     }
@@ -160,7 +160,7 @@ export class DesktopOta {
     };
   }
 
-  validateBundle(bundle, rollback) {
+  validateBundle(bundle, rollback, channel = this.state.channel) {
     const target = parseReleaseVersion(bundle?.releaseVersion);
     const floor = parseReleaseVersion(bundle?.minShellReleaseVersion);
     const current = parseReleaseVersion(this.version);
@@ -174,7 +174,7 @@ export class DesktopOta {
       throw new Error('Invalid desktop OTA URL');
     }
     if (compareReleaseVersions(bundle.releaseVersion, this.version) < 0
-      && !(rollback && this.state.channel === 'stable' && current.beta !== null && target.beta === null)) {
+      && !(rollback && channel === 'stable' && current.beta !== null && target.beta === null)) {
       throw new Error('OTA downgrade is not a stable-channel rollback');
     }
     if (this.state.rejected.includes(bundle.bundleId)) throw new Error('This OTA bundle previously failed to start');

@@ -44,7 +44,7 @@ Provider 的会话目录来自 `useCurrentSessionEntity(sessionID)` 的匹配会
 
 代码来源还必须由本机 OpenCode 生命周期证明为 managed child 或官方 shared service，且 endpoint 是 loopback；外接服务、SSH 转发即使是 localhost 也不取得本机 native 执行权。同源 `/api/preview/*`、`/api/fs/*` 页面不是应用文档，不能调用 native GUI。
 
-远端 GUI 的 `setup`、LinkHandler、Panel 和格式预览继续可用。带本地 preload 的文档在加载 window-only bundle **之前**，必须等待 main 确认 `window-only` 限权：撤销本窗口 native leases/调用，并让既有 local-only desktop IPC gate 拒绝后续请求。限权持续至跨文档导航提交，切会话、hash/path 同文档导航和重新申请 lease 均不能恢复权限；切回 native 能力须重新加载应用文档。真正的远程页面没有本地 GUI bridge，保持 window-only。窗口插件仍不是独立 JS 沙箱；不能在同一文档混合远端窗口代码与本机原生插件权限。独立的本地可信插件访问远端数据通道尚未开放，不能通过移除 Relay 判断来实现。
+远端 GUI 的 `setup`、LinkHandler、Panel 和格式预览继续可用。带本地 preload 的文档在加载 window-only bundle **之前**，必须等待 main 确认 `window-only` 限权：撤销本窗口 native leases/调用，并让本机文件、Shell、设置等特权 desktop IPC gate 拒绝后续请求。限权持续至跨文档导航提交，切会话、hash/path 同文档导航和重新申请 lease 均不能恢复权限；切回 native 能力须重新加载应用文档。图片缓存、虚拟资源流与预览 gateway 属于独立的前端展示能力，不受插件原生降权影响；只允许经过来源、应用路由及当前主 frame 校验的客户端应用文档调用，继续执行资源归属和容量限制，不开放本机路径、凭证或插件 main。图片和 `.eficy` 等前端格式预览必须保持可用；真正的远程页面和预览 iframe 不因此取得本地桥接能力。真正的远程页面没有本地 GUI bridge，保持 window-only。窗口插件仍不是独立 JS 沙箱；不能在同一文档混合远端窗口代码与本机原生插件权限。独立的本地可信插件访问远端数据通道尚未开放，不能通过移除 Relay 判断来实现。
 
 ### 原生拒绝错误契约
 

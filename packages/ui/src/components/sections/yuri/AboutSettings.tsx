@@ -30,6 +30,7 @@ import {
   setTranscriptDiagnosticsEnabled,
 } from '@/sync/transcript-diagnostics-runtime';
 import { SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
+import { HostVersionUpdate } from '@/components/update/HostVersionUpdate';
 
 const GITHUB_URL = 'https://github.com/yee94/yuri';
 const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues/new`;
@@ -258,9 +259,9 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             <span className="typography-ui-label font-mono text-foreground text-right">{currentVersionLabel}</span>
           </SettingsRow>
           <SettingsRow label={t('settings.yuri.about.field.instanceYuriVersion')}>
-            <span className="typography-ui-label font-mono text-foreground text-right">
-              {yuriVersion || t('settings.yuri.about.state.unknown')}
-            </span>
+            <HostVersionUpdate key={`${transport}:${generation}`} transport={transport} generation={generation} itemId="about.host-update"
+              channel={betaUpdatesEnabled ? 'beta' : 'stable'}
+              version={yuriVersion || t('settings.yuri.about.state.unknown')} />
           </SettingsRow>
           <SettingsRow label={t('settings.yuri.about.field.instanceOpenCodeVersion')} description={managementGuidance}>
             <span className="typography-ui-label font-mono text-foreground text-right">

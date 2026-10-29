@@ -50,6 +50,7 @@ Command modules implement user-facing commands and preserve output contracts acr
 - `commands-update.js`
   - Implements `yuri update`.
   - Loads the package-manager helper, performs update flow, and coordinates restart behavior after updates.
+  - HTTP/Relay-initiated exact-version updates instead use the detached Host helper in `server/lib/host-update/`; see its documentation for admission, state recovery and supported launch modes. Never invoke this command inside the serving process to update itself.
 
 ## Shared Helper Modules
 

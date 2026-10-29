@@ -36,6 +36,18 @@ async function fixture(version = '2.1.1-beta.2', nativeVersion = '2.1.0') {
 }
 
 describe('desktop OTA lifecycle', () => {
+  test('remote preview checks do not change channels, pending bundles or the selected decision', async () => {
+    const f = await fixture();
+    await f.ota.check('beta');
+    await f.ota.download();
+    const state = structuredClone(f.ota.state);
+    const decision = f.ota.decision;
+    const disk = await readFile(path.join(f.options.directory, 'state.json'), 'utf8');
+    await f.ota.check('stable', { select: false });
+    expect(f.ota.state).toEqual(state);
+    expect(f.ota.decision).toBe(decision);
+    expect(await readFile(path.join(f.options.directory, 'state.json'), 'utf8')).toBe(disk);
+  });
   test('accepts resources produced by the release metadata writer', async () => {
     const f = await fixture();
     const assets = path.join(f.root, 'assets');

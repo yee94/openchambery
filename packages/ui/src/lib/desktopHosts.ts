@@ -81,11 +81,6 @@ export const isVisibleDesktopHost = (
   return sshInstanceIds.has(host.id);
 };
 
-export const supportsDesktopHostRemoteUpdate = (
-  host: DesktopHost | undefined,
-  sshInstanceIds: ReadonlySet<string>,
-): boolean => Boolean(host && !host.relay && sshInstanceIds.has(host.id));
-
 /**
  * Whether a persisted desktop host should appear as a Settings "链接" row.
  * Local SSH instance mirrors share an id with `desktopSshInstances` and stay

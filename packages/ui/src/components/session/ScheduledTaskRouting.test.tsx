@@ -115,6 +115,8 @@ test('Assistant card opens the exact composite task in the shared draggable shee
   expect(window.location.pathname).toBe(path('project/b'));
   expect(document.querySelector('[data-editor]')?.getAttribute('data-editor')).toBe('project/b:same');
   expect(document.querySelector('[data-mobile-sheet-snap-handle]')).not.toBeNull();
+  expect(document.querySelector('[data-yuri-motion-id="scheduled-tasks"]')?.classList.contains('h-[98dvh]')).toBe(true);
+  expect(document.querySelector('[aria-label="header.actions.backAria"]')).toBeNull();
   expect(useUIStore.getState().scheduledTaskOpenRequest).toBeNull();
   await act(async () => document.querySelector<HTMLButtonElement>('[data-editor] button')!.click());
   const confirm = vi.fn(() => false);
@@ -138,6 +140,7 @@ test('cold links wait for data without mounting a create form; history restores 
   await act(async () => respond(Response.json(snapshot)));
   await flush();
   expect(document.querySelector('[data-editor]')?.getAttribute('data-editor')).toBe('project/a:same');
+  expect(document.querySelector('[data-yuri-motion-id="scheduled-tasks"]')?.classList.contains('h-[98dvh]')).toBe(true);
   await navigate(path('project/b'));
   expect(document.querySelector('[data-editor]')?.getAttribute('data-editor')).toBe('project/b:same');
   await navigate('/assistant/example');

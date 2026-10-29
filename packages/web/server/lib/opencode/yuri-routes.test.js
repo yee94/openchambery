@@ -28,16 +28,16 @@ describe('remote update installation runtime boundary', () => {
   it('rejects the web installer in an Electron-hosted server before any update work', async () => {
     const response = await request(createApp({ electron: '40.0.0' }))
       .post('/api/yuri/update-install');
-    expect(response.status).toBe(403);
-    expect(response.body.error).toMatch(/desktop application/i);
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('update_plan_required');
     expect(checkForUpdates).not.toHaveBeenCalled();
   });
 
-  it('preserves the standalone web server update path', async () => {
+  it('requires an exact plan instead of running an unversioned latest update', async () => {
     const response = await request(createApp({ node: '24.0.0' }))
       .post('/api/yuri/update-install');
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('No update available');
-    expect(checkForUpdates).toHaveBeenCalledOnce();
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('update_plan_required');
+    expect(checkForUpdates).not.toHaveBeenCalled();
   });
 });
