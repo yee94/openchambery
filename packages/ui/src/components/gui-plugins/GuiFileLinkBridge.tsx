@@ -7,19 +7,21 @@ import { Icon } from '@/components/icon/Icon';
 import { guiPluginReadinessKey } from './readiness';
 import { GuiPluginMount } from './GuiPluginMount';
 import { GuiPreviewLoading } from './GuiPreviewLoading';
+import { GuiPreviewActions } from './GuiPreviewActions';
 import { MobileWindowActiveContext } from '@/components/ui/mobile-window-active-context';
 
 export function GuiFileLinkBridge({ path, base, active: surfaceActive = true, children }: {
   path: string;
   base?: string;
   active?: boolean;
-  children?: React.ReactNode | ((view: { preview: React.ReactNode; toggle: React.ReactNode }) => React.ReactNode);
+  children?: React.ReactNode | ((view: { preview: React.ReactNode; toggle: React.ReactNode; controls: React.ReactNode }) => React.ReactNode);
 }) {
   const windowActive = React.useContext(MobileWindowActiveContext);
   const active = surfaceActive && windowActive;
   const { host, snapshot, inventory, loading, error, requested, requestLoad, refresh } = useGuiPlugins();
   const { t } = useI18n();
   const anchor = React.useRef<HTMLDivElement>(null);
+  const [actions] = React.useState(() => document.createElement('div'));
   const lastAttempt = React.useRef<{ host: typeof host; key: string } | null>(null);
   const wasLoading = React.useRef(loading);
   const [feedback, setFeedback] = React.useState<string | null>(null);
@@ -78,8 +80,11 @@ export function GuiFileLinkBridge({ path, base, active: surfaceActive = true, ch
       <Icon name={preview || preparing ? 'eye' : 'eye-off'} className="size-4" aria-hidden="true" />
     </Button>
   ) : null;
+  const controls = toggle ? <div className="flex items-center gap-1">
+    {preview ? <GuiPreviewActions target={actions} /> : null}{toggle}
+  </div> : null;
   const content = preview && host && panel
-    ? <GuiPluginMount host={host} contributionKey={panel.key} kind="panel" revision={JSON.stringify([guiPluginReadinessKey(snapshot.plugins, panel.pluginId), snapshot.sessionKey])}
+    ? <GuiPluginMount host={host} contributionKey={panel.key} kind="panel" actions={actions} revision={JSON.stringify([guiPluginReadinessKey(snapshot.plugins, panel.pluginId), snapshot.sessionKey])}
       fallback={<GuiPreviewLoading onViewSource={() => setSourceIdentity(identity)} />} />
     : preparing ? <GuiPreviewLoading onViewSource={() => setSourceIdentity(identity)} /> : null;
 
@@ -90,8 +95,8 @@ export function GuiFileLinkBridge({ path, base, active: surfaceActive = true, ch
         <span role="alert" className="min-w-0 flex-1 break-words typography-meta text-[var(--status-error)]">{failure}</span>
         <Button size="sm" disabled={loading} onClick={refresh}>{t('guiPlugins.refresh')}</Button>
       </div> : null}
-      {typeof children === 'function' ? children({ preview: content, toggle }) : <>
-        {toggle ? <div className="absolute right-3 top-3 z-30">{toggle}</div> : null}
+      {typeof children === 'function' ? children({ preview: content, toggle, controls }) : <>
+        {controls ? <div className="absolute right-3 top-3 z-30 flex items-center gap-1" data-gui-preview-controls>{controls}</div> : null}
         {content ?? children}
       </>}
     </div>

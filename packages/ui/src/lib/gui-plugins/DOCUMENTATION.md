@@ -93,6 +93,24 @@ PDF/长图现在另有两个独立的容器 GSAPI，使用官方 `Contract.defin
 
 插件 setup、render、异步动作失败应归属对应插件，不阻断其他插件。原生模块占位仅用于让跨进程 CJS 顶层声明可求值，不代表原生能力已实现，也不是代码沙箱。
 
+## 预览操作插槽
+
+官方 SDK 2.2.0 的四个 `Slot` 是窗口/会话级贡献；`session.panel.end` 没有具体预览实例和截图区域。`preview-actions.ts` 因此提供标准 `Contract.define<PreviewActionsAPI, 'yuri.previewActions'>('yuri.previewActions')` / `ctx.use`，不扩展官方 `PanelProps`、不改 SDK。
+
+v1 API 为 `register({ element, capture, render }): () => void`：
+
+- 只能在所属面板的 Solid render/effect owner 中注册。`element` 是当前预览区域（iframe 亦可）；`capture({ signal?, onProgress? })` 返回 Promise `{ html, width, height }`。进度支持 `preparing/capturing/rendering/encoding/saving` 和可选 `completed/total`。
+- `render(surface)` 返回插件拥有的 HTMLElement 操作组，采用正常流布局。`surface` 包含该 `element`、生命周期 `signal` 和 `snapshot(options?)`。点击调用 `snapshot` 时才执行 capture；注册不缓存 HTML 或尺寸。iframe 的隔离通信和序列化由插件负责。
+- 宿主私有 Solid context 持有本次 mount 的内容容器、操作 target 和插件身份；不按 active tab、路径或全局 DOM 查实例。同一 tab 的两份 mount 也互相隔离。capture 前后验证 region 仍属于内容容器；外部工具栏不进入截图区域。
+- 撤销函数幂等；Solid owner 清理、panel unmount、源码切换、插件停用/替换、会话或 runtime 销毁会移除按钮并 abort。快照 await 前后检查取消；插件须把 `surface.signal` 与操作 signal 合并传给后续导出请求，并清理 UI 监听。
+- 契约属于当前客户端，不依赖 native lease、服务端或 Relay，普通插件不能覆盖保留 token。PDF/长图仍分别消费原有两个 GSAPI。
+
+独立 Eficy 注册一个下载菜单，宿主将它和源码按钮集中排版。已发布 `@eficy/opencode2-plugin@0.4.2` 未注册时宿主不额外生成下载按钮；新插件在未提供契约的旧宿主保留原有内联入口，只走一种路径。普通 browser 支持插槽，但无导出 GSAPI 时下载入口隐藏。
+
+`host.test.ts` 覆盖真实 SDK 的同 tab 双 mount 隔离、最新内容、卸载和保留契约；React integration 覆盖集中排版、source/文件切换清理。菜单层叠与尺寸仍需浏览器验收。
+
+Chromium 集成夹具已组合真实 Host、React bridge、MobileResizableSheet、独立 modal 和 Eficy CJS/iframe：390px 移动标题行与 PC 浮动区按钮无重叠，菜单能覆盖预览；点击快照保留最新输入且不含工具栏，源码切换清除动作并取消任务，无原生能力时下载入口隐藏。保存端为受控客户端适配器，不代表真实 Relay 网络或 Electron/iOS/Android 系统保存验收。
+
 ## 全局 toast
 
 [官方 V2 GUI Toasts](https://opencode.ai/v2/docs/build/plugins/gui#toasts) 和当前 SDK 2.2.0 已定义 `ctx.toast`，因此不新增 `yuri.toast` Contract，也不借用导出契约。

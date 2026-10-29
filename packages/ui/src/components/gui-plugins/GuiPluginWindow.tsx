@@ -4,12 +4,13 @@ import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { useDeviceInfo } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 
-export function GuiPluginWindow({ id, open, title, onClose, children }: {
+export function GuiPluginWindow({ id, open, title, onClose, children, actions }: {
   id: string;
   open: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  actions?: ReactNode;
 }) {
   const { isMobile } = useDeviceInfo();
   const { t } = useI18n();
@@ -18,7 +19,7 @@ export function GuiPluginWindow({ id, open, title, onClose, children }: {
     return (
       <MobileResizableSheet id={id} open={open} onOpenChange={onOpenChange}
         title={title} ariaLabel={title} closeAriaLabel={t('guiPlugins.close')}
-        resizeAriaLabel={t('guiPlugins.resize')} initiallyExpanded>
+        resizeAriaLabel={t('guiPlugins.resize')} trailing={actions} initiallyExpanded>
         {children}
       </MobileResizableSheet>
     );

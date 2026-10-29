@@ -3802,7 +3802,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
 
   const fileViewer = (
     <GuiFileLinkBridge path={selectedFile?.path ?? ''} base={root || undefined} active={Boolean(selectedFile && isActive && (!isMobile || showMobilePageContent))}>
-    {({ preview: guiPreview, toggle: guiToggle }) => (
+    {({ preview: guiPreview, controls: guiToggle }) => (
     <div
       className="relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden"
     >
@@ -3974,6 +3974,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         </div>
         ) : null}
 
+
         {/* Row 2: Docked editor toolbar (expanded). Desktop-only opt-in. */}
         {settingsExpandedEditorToolbar && !isMobile && selectedFile ? (
           <div className="flex min-w-0 items-center gap-3 border-t border-border/40 bg-[var(--surface-subtle)] px-3 py-1">
@@ -3985,7 +3986,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
                 {displaySelectedPath}
               </span>
             ) : null}
-            <div className="ml-auto min-w-0 shrink-0 overflow-x-auto">
+            <div className={guiPreview ? 'ml-auto min-w-0 shrink-0' : 'ml-auto min-w-0 shrink-0 overflow-x-auto'}>
               {guiPreview ? guiToggle : renderFloatingFileControls({ layout: 'docked', previewToggle: guiToggle })}
             </div>
           </div>
@@ -3994,7 +3995,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       </div>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        {selectedFile && !isSearchOpen && !(settingsExpandedEditorToolbar && !isMobile) && (
+        {guiPreview && !(settingsExpandedEditorToolbar && !isMobile) ? (
+          <div className="absolute right-3 top-3 z-30 flex items-center gap-1" data-gui-preview-controls>{guiToggle}</div>
+        ) : null}
+        {selectedFile && !guiPreview && !isSearchOpen && !(settingsExpandedEditorToolbar && !isMobile) && (
           <div
             ref={floatingToolbarRef}
             className="absolute right-3 top-3 z-30"
@@ -4003,7 +4007,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
               setIsFloatingToolbarOpen(false);
             }}
           >
-            {guiPreview ? guiToggle : isFloatingToolbarOpen ? (
+            {isFloatingToolbarOpen ? (
               renderFloatingFileControls({ previewToggle: guiToggle })
             ) : (
               <div className="flex items-center gap-1">

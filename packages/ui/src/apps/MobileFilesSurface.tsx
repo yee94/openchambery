@@ -681,7 +681,7 @@ const MobileFileDetail: React.FC<{
 
   return (
     <GuiFileLinkBridge path={path} base={base ?? undefined}>
-    {({ preview, toggle }) => (
+    {({ preview, controls }) => (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
       {!hideHeader ? (
         <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
@@ -696,12 +696,12 @@ const MobileFileDetail: React.FC<{
           <div className="min-w-0 flex-1">
             <h2 className="truncate typography-ui-header text-foreground">{imageFilename}</h2>
           </div>
-          {toggle}
+          {controls}
           {fileActions}
         </header>
       ) : (
         <MobileSheetHeaderActions>
-          {toggle}
+          {controls}
           {fileActions}
         </MobileSheetHeaderActions>
       )}

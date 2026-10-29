@@ -16,6 +16,63 @@ const bundle = (setup: string, revision = '1', declarations = ''): PluginGuiBund
 afterEach(() => { for (const item of hosts.splice(0)) item.dispose(); localStorage.clear(); document.body.replaceChildren(); });
 
 describe('GUI plugin host with the actual official Solid SDK', () => {
+    it('binds action slots to each mounted instance and captures fresh content only on invocation', async () => {
+        const value = host();
+        value.setSession({ id: 'one', directory: '/work' });
+        const surfaces: import('./preview-actions').PreviewActionSurface[] = [];
+        Reflect.set(globalThis, '__previewSurfaces', surfaces);
+        try {
+            value.install('actions', bundle(`
+                const api = ctx.use(G.Contract.define('yuri.previewActions'));
+                ctx.add(G.Panel, {id:'p',region:'side',list:()=>[{id:'a',title:'A'}],render(){
+                    const content = document.createElement('input'); content.value = 'initial';
+                    api().value.register({element:content,capture:async()=>{await globalThis.__previewCaptureDelay; return {html:content.value,width:600,height:800}},render(surface){
+                        globalThis.__previewSurfaces.push(surface);
+                        const button = document.createElement('button'); button.textContent='Export'; return button;
+                    }});
+                    return content;
+                }});
+            `));
+            const first = document.createElement('div'), second = document.createElement('div');
+            const firstActions = document.createElement('div'), secondActions = document.createElement('div');
+            const stopFirst = value.mountPanel('actions:a', first, firstActions);
+            value.mountPanel('actions:a', second, secondActions);
+            expect(firstActions.querySelectorAll('button')).toHaveLength(1);
+            expect(secondActions.querySelectorAll('button')).toHaveLength(1);
+            expect(first.querySelector('button')).toBeNull();
+            first.querySelector('input')!.value = 'changed first';
+            second.querySelector('input')!.value = 'changed second';
+            expect(await surfaces[0].snapshot()).toMatchObject({ html: 'changed first' });
+            expect(await surfaces[1].snapshot()).toMatchObject({ html: 'changed second' });
+            const region = first.querySelector('input')!;
+            second.append(region);
+            await expect(surfaces[0].snapshot()).rejects.toThrow('owning panel');
+            first.append(region);
+            stopFirst();
+            expect(firstActions.children).toHaveLength(0);
+            expect(surfaces[0].signal.aborted).toBe(true);
+            await expect(surfaces[0].snapshot()).rejects.toMatchObject({ name: 'AbortError' });
+            expect(surfaces[1].signal.aborted).toBe(false);
+            expect(await surfaces[1].snapshot()).toMatchObject({ html: 'changed second' });
+            let finishCapture!: () => void;
+            Reflect.set(globalThis, '__previewCaptureDelay', new Promise<void>(resolve => { finishCapture = resolve; }));
+            const pending = surfaces[1].snapshot();
+            value.uninstall('actions');
+            finishCapture();
+            await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+            expect(secondActions.children).toHaveLength(0);
+            expect(surfaces[1].signal.aborted).toBe(true);
+        } finally { Reflect.deleteProperty(globalThis, '__previewSurfaces'); Reflect.deleteProperty(globalThis, '__previewCaptureDelay'); }
+    });
+
+    it('rejects preview action registration outside a mounted panel and protects the host token', () => {
+        const value = host();
+        value.install('outside', bundle(`ctx.use(G.Contract.define('yuri.previewActions'))().value.register({capture:async()=>({}),render:()=>document.createElement('button')})`));
+        expect(value.getSnapshot().plugins[0]).toMatchObject({ status: 'failed', error: expect.stringContaining('owning mounted panel') });
+        value.install('override', bundle(`ctx.provide(G.Contract.define('yuri.previewActions'), {})`));
+        expect(value.getSnapshot().plugins[1]).toMatchObject({ status: 'failed', error: expect.stringContaining('Yuri host') });
+    });
+
     it('keeps mounted tab consumers quiet across unrelated derivations without freezing changed fields or accessors', () => {
         const value = host();
         value.setSession({ id: 'one', directory: '/work' });

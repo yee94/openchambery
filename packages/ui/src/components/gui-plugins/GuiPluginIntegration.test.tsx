@@ -29,7 +29,7 @@ vi.mock('@/components/ui/command', () => ({
 
 function makeHost() {
   const log: string[] = [];
-  const mount = (kind: string) => vi.fn((key: string, node: HTMLElement) => {
+  const mount = (kind: string) => vi.fn((key: string, node: HTMLElement, _actions?: HTMLElement) => {
     log.push(`mount:${kind}:${key}`);
     const child = document.createElement('span');
     child.textContent = `external:${key}`;
@@ -93,6 +93,30 @@ afterEach(async () => {
 });
 
 describe('foreign DOM ownership', () => {
+  test('places plugin actions with the source toggle outside the capture body and removes them in source mode', async () => {
+    fixture.methods.mountPanel.mockImplementation((key, node, actions) => {
+      const content = document.createElement('span'); content.textContent = `preview:${key}`; node.append(content);
+      const action = document.createElement('button'); action.textContent = 'export'; actions!.append(action);
+      return () => { action.remove(); content.remove(); };
+    });
+    updateSnapshot({ panels: [{ key: 'demo:a', pluginId: 'demo', title: 'Preview', inline: true, active: true, file: '/workspace/a.preview' }] });
+    const view = <GuiFileLinkBridge path="/workspace/a.preview">{({ preview, controls }) => <>
+      <header data-file-toolbar>{controls}</header><main>{preview ?? <pre>source</pre>}</main>
+    </>}</GuiFileLinkBridge>;
+    await render(view);
+    expect(container.querySelectorAll('header button')).toHaveLength(2);
+    expect(container.querySelector('main button')).toBeNull();
+    await click('filesView.editor.switchToEditMode');
+    expect(container.querySelectorAll('header button')).toHaveLength(1);
+    expect(container.textContent).not.toContain('export');
+    await click('filesView.editor.switchToPreviewMode');
+    expect(container.querySelectorAll('header button')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-gui-preview-actions] button')).toHaveLength(1);
+    updateSnapshot({ panels: [] });
+    await render(<GuiFileLinkBridge path="/workspace/next.txt"><pre>next</pre></GuiFileLinkBridge>);
+    expect(container.querySelector('button')).toBeNull();
+  });
+
   test('deferred mounting cancels stale owners and unmounted work, including strict effect replay', async () => {
     const view = (revision: string) => <React.StrictMode><GuiPluginMount host={fixture.host} kind="panel" contributionKey="a" revision={revision} fallback={<div role="status">Preparing</div>} /></React.StrictMode>;
     await act(async () => root.render(view('one')));

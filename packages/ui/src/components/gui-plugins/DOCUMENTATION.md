@@ -1,6 +1,12 @@
 # GUI plugin UI boundary
 
 File previews render inside the existing FilesView tab or MobileFileDetail body.
+Host source/preview controls and plugin `yuri.previewActions` contributions share
+one control group outside the capture viewport. Desktop FilesView and the default
+inline bridge float that group at the original top-right position; the opt-in
+docked toolbar keeps the same group. MobileFilesSurface uses its header or
+`MobileSheetHeaderActions`. Standalone mobile panels use the sheet title row;
+desktop dialogs float actions above their panel content.
 `GuiFileLinkBridge` registers that visible file surface before dispatching its
 LinkHandler. The host matches the contribution's explicit `PanelTab.file` against
 the normalized absolute file path; an inline-owned panel never opens a modal.
@@ -14,8 +20,9 @@ that opened file tab; plugin render failures appear there through the bridge.
 Changes row selection still defaults to diff. Background link probes annotate
 inferred references but cannot veto explicit Markdown file-link navigation.
 
-`GuiPluginMount` gives the host one empty DOM container. React never reconciles
-the foreign descendants. Changing host, contribution key or contribution kind,
+`GuiPluginMount` gives the host a content container and a distinct action target.
+`GuiPreviewActions` attaches that target to the owning toolbar. React never
+reconciles foreign descendants. Changing host, contribution key or contribution kind,
 the owning plugin's readiness revision, closing the window, or removing the contribution
 disposes the previous mount. The host should expose its bundle `revision` on each
 snapshot plugin: React may batch uninstall/reinstall into one render, so id/status
@@ -94,8 +101,9 @@ instead of reading or editing UTF-8; this fallback and its explicit system-open 
 runtime-download actions are owned outside GUI plugins. Plugin previews retain
 priority over that state. See `packages/ui/README.md#file-preview-fallback`.
 Source mode releases the Solid mount while retaining the parent editor draft.
-FilesView and MobileFileDetail place the toggle in their existing floating/docked
-toolbar or header actions through the bridge's render slots. There is no separate
+FilesView and MobileFileDetail place the combined `controls` render-prop (plugin
+actions plus source toggle) in their floating/docked toolbar or header.
+`toggle` remains a source-only control for consumers explicitly needing it. There is no separate
 plugin mode bar, and unmatched files receive no plugin controls.
 Closing or switching the file releases its presentation lease and hides its old
 active plugin panel instead of reopening it as a dialog. Multiple consumers have

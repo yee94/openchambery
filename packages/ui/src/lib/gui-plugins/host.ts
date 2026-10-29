@@ -16,6 +16,7 @@ import { NativeGuiError, type NativeGuiErrorCode } from './native-errors';
 import type { ViewExportAPI } from '@/lib/view-export/types';
 import { GuiViewExports, isViewExportContract } from './view-export';
 import { createGuiToasts } from './toast';
+import { createPreviewActions, PREVIEW_ACTIONS_CONTRACT, PreviewActionsContext } from './preview-actions';
 import type { toast } from 'sonner';
 
 export type PluginGuiBundle = PluginGuiOutput['data'];
@@ -279,6 +280,10 @@ export class GuiPluginHost {
                 set: (session, key, value) => { if (instance.controller.signal.aborted) return; const scroll = this.layout(session).scroll; if (!scroll.has(key) && scroll.size >= 128) throw new Error('GUI layout scroll limit exceeded'); scroll.set(key, { ...value }); this.changed(); },
             },
         });
+        const previewActions = createPreviewActions(instance.controller.signal);
+        const previewActionsLive = liveAccessor((): Gui.Live<typeof previewActions> => instance.controller.signal.aborted
+            ? { status: 'inactive', reason: 'disabled' }
+            : { status: 'active', generation: 1, value: previewActions });
         const context = partial<Gui.SetupContext<Gui.Plugin.Definition>>('ctx', {
             id: instance.id, options, signal: instance.controller.signal, client: this.options.client, storage, stores,
             toast: createGuiToasts(instance.controller.signal, this.options.toast),
@@ -329,7 +334,7 @@ export class GuiPluginHost {
             list: <T>(registry: Gui.Registry<T>) => this.list(registry),
             provide: (token, value) => {
                 if (instance.controller.signal.aborted || readSolidContext(LifetimeContext)?.ended) return () => {};
-                if (isViewExportContract(token.id)) throw new Error('Export contracts are provided only by the Yuri host');
+                if (isViewExportContract(token.id) || token.id === PREVIEW_ACTIONS_CONTRACT) throw new Error('Preview/export contracts are provided only by the Yuri host');
                 if (token.kind !== 'contract' || !(token.id === instance.id || token.id.startsWith(`${instance.id}.`))) throw new Error('Contract must belong to the providing plugin');
                 const entry = this.contract(token.id);
                 if (entry.provider) throw new Error(`Contract already provided: ${token.id}`);
@@ -337,7 +342,9 @@ export class GuiPluginHost {
                 entry.live[1]({ status: 'active', value, generation: ++entry.generation });
                 return this.own(instance, () => { if (entry.provider !== instance) return; entry.provider = undefined; entry.live[1]({ status: 'inactive', reason: instance.status === 'failed' ? 'failed' : 'disabled' }); });
             },
-            use: <T extends Gui.Token>(token: T) => (isViewExportContract(token.id)
+            use: <T extends Gui.Token>(token: T) => (token.id === PREVIEW_ACTIONS_CONTRACT
+                ? token.kind === 'contract' ? previewActionsLive : unsupported('preview actions token must be a Contract')
+                : isViewExportContract(token.id)
                 ? token.kind === 'contract' ? this.viewExports.use(token.id, instance.controller.signal) : unsupported('export token must be a Contract')
                 : token.kind === 'ipc' && instance.native ? instance.native.token(token).live
                     : this.contract(token.id, token.kind === 'ipc').live[0]) as Accessor<Gui.Live<Gui.TokenValue<T>>>,
@@ -554,9 +561,10 @@ export class GuiPluginHost {
         const currentSession = () => this.session[0]() ?? unsupported('panel without session');
         return { get tab() { return currentTab(); }, get session() { return currentSession(); }, screen: this.screen };
     }
-    mountPanel(key: string, element: HTMLElement): () => void {
+    mountPanel(key: string, element: HTMLElement, actions?: HTMLElement): () => void {
         const entry = this.panel(key);
         if (!entry) return () => {};
+        const controller = new AbortController();
         const renderPanel = () => {
             const watched = createMemo(() => {
                 this.session[0](); this.changes[0](); this.views[0]();
@@ -569,7 +577,11 @@ export class GuiPluginHost {
                 onCleanup(value.model.watch(value.file));
                 void value.model.sync(value.file).catch(() => {});
             });
-            return untrack(() => entry.panel.render(this.props(key, true)));
+            const renderContent = () => untrack(() => entry.panel.render(this.props(key, true)));
+            return createComponent(PreviewActionsContext.Provider, {
+                value: actions ? { plugin: entry.plugin.controller.signal, signal: controller.signal, content: element, target: actions } : undefined,
+                get children() { return renderContent(); },
+            });
         };
         const stop = this.mount(entry.plugin, element, () => createComponent(PanelContext.Provider, {
             value: {
@@ -581,7 +593,7 @@ export class GuiPluginHost {
             },
             get children() { return renderPanel(); },
         }));
-        const tracked = () => { this.panelMounts.delete(tracked); stop(); };
+        const tracked = () => { this.panelMounts.delete(tracked); controller.abort(); stop(); };
         this.panelMounts.add(tracked);
         return this.own(entry.plugin, tracked);
     }
