@@ -3,6 +3,7 @@ import { useEvent } from '@reactuses/core';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/ui/toast';
 import { UpdateDialogView } from '@/components/ui/UpdateDialogView';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
@@ -27,6 +28,13 @@ export function HostVersionUpdate({ version, transport, generation, itemId, chan
   const snapshot = query.data;
   const operation = snapshot?.operation;
   const active = isHostUpdateActive(operation);
+  // The Host omits update plans while busy. Retain only presentation data in
+  // this runtime/channel scope; commands still require the authoritative plan.
+  const presentationScope = JSON.stringify([transport, generation, channel ?? 'current']);
+  const [presentationPlan, setPresentationPlan] = React.useState<{ scope: string; update: NonNullable<HostUpdateSnapshot['update']> } | null>(null);
+  if (snapshot?.update && (presentationPlan?.scope !== presentationScope || presentationPlan.update !== snapshot.update)) {
+    setPresentationPlan({ scope: presentationScope, update: snapshot.update });
+  }
   const mutation = useMutation({
     mutationFn: ({ plan }: { plan: HostUpdateSnapshot; channel: UpdateChannel | undefined }) => startHostUpdate(plan, transport, generation),
     onSuccess: (operation, request) => {
@@ -37,10 +45,18 @@ export function HostVersionUpdate({ version, transport, generation, itemId, chan
       if (transport === getRuntimeTransportIdentity() && generation === getRuntimeGeneration()) void client.invalidateQueries({ queryKey: hostUpdateQueryOptions(transport, generation, request.channel).queryKey, exact: true });
     },
   });
-  // Remember the task this view watched so its terminal state finishes the bar
-  // instead of a persisted old result reappearing as fresh progress.
+  // Only watch tasks shown in this view; historical success must not close a
+  // newly opened dialog or notify again on later refreshes.
   const [watchedOperationId, setWatchedOperationId] = React.useState<string | null>(null);
-  if (active && operation && operation.id !== watchedOperationId) setWatchedOperationId(operation.id);
+  if (open && active && operation && operation.id !== watchedOperationId) setWatchedOperationId(operation.id);
+  const completed = operation?.status === 'succeeded' && operation.id === watchedOperationId;
+  const successMessage = t('settings.yuri.about.hostUpdate.status.succeeded');
+  React.useEffect(() => {
+    if (!completed || query.isError || transport !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration()) return;
+    setWatchedOperationId(null);
+    setOpen(false);
+    toast.success(successMessage, { id: `host-update:${transport}:${generation}:${watchedOperationId}` });
+  }, [completed, query.isError, transport, generation, watchedOperationId, successMessage]);
   const show = useEvent(() => { setOpen(true); void query.refetch(); });
   // During an active task a 404/timeout is the restart gap, not a capability answer.
   const unsupported = snapshot?.supported === false || (!active && query.error?.message === 'host_update_unsupported');
@@ -51,7 +67,8 @@ export function HostVersionUpdate({ version, transport, generation, itemId, chan
     checking: query.isPending ? 'initial' : query.isFetching ? 'refresh' : false,
     submitting: mutation.isPending,
     failure: unsupported ? 'unsupported' : query.isError && (active || mutationError) ? 'disconnected' : failedCheck || mutationError ? 'check' : null,
-    completed: operation?.status === 'succeeded' && operation.id === watchedOperationId,
+    completed,
+    updateDetails: presentationPlan?.scope === presentationScope ? presentationPlan.update : undefined,
   }, t);
   const handleAction = useEvent((id: string) => {
     if (id === 'check') void query.refetch();

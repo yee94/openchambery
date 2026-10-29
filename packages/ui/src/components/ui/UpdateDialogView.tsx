@@ -19,6 +19,8 @@ export type UpdateDialogModel = {
   methodLabel?: string;
   body?: string | null;
   hideChangelog?: boolean;
+  /** Reserve a viewport-bounded frame and progress slot across Host stages. */
+  stableLayout?: boolean;
   dismissible?: boolean;
   status?: { kind: 'activity' | 'download'; label: string; detail?: string; progress?: number | null };
   error?: string | null;
@@ -120,9 +122,9 @@ export function UpdateDialogView({ open, onOpenChange, model, onAction }: {
     };
   }, [model.body, t]);
   return <Dialog open={open} onOpenChange={model.dismissible === false ? undefined : onOpenChange}>
-    <DialogContent className="max-w-4xl gap-0 p-4 sm:p-5 bg-background border-[var(--interactive-border)]" showCloseButton={true}>
+    <DialogContent className={cn("max-w-4xl gap-0 p-4 sm:p-5 bg-background border-[var(--interactive-border)]", model.stableLayout && "h-[min(38rem,calc(100dvh-2rem))] overflow-hidden transition-[opacity,transform,filter]")} showCloseButton={true}>
       {/* Header Section */}
-      <div className="mb-3 pr-8 sm:mb-4">
+      <div className="mb-3 shrink-0 pr-8 sm:mb-4">
         <DialogTitle className="flex items-center gap-2">
           <Icon name="download-cloud" className="h-5 w-5 text-[var(--primary-base)]" />
           <span className="font-semibold text-foreground">{model.title}</span>
@@ -137,16 +139,16 @@ export function UpdateDialogView({ open, onOpenChange, model, onAction }: {
         {model.description && <DialogDescription className="mt-2">{model.description}</DialogDescription>}
       </div>
       {/* Content Body */}
-      <div className="space-y-3 sm:space-y-4">
+      <div className={model.stableLayout ? "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto sm:gap-4" : "space-y-3 sm:space-y-4"}>
         {model.message && <p role="status" className="typography-ui-label text-muted-foreground">{model.message}</p>}
         {model.warning && <p className="typography-meta text-[var(--status-warning)]">{model.warning}</p>}
         {/* Changelog Rendering */}
-        {changelog && !model.hideChangelog && <section className="overflow-hidden rounded-xl border border-[var(--surface-subtle)] bg-[var(--surface-elevated)]/20">
-          <div className="flex items-center gap-2 border-b border-[var(--surface-subtle)] px-3.5 py-2.5 sm:px-4 sm:py-3">
+        {changelog && !model.hideChangelog && <section className={cn("overflow-hidden rounded-xl border border-[var(--surface-subtle)] bg-[var(--surface-elevated)]/20", model.stableLayout && "flex min-h-0 flex-1 flex-col")}>
+          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--surface-subtle)] px-3.5 py-2.5 sm:px-4 sm:py-3">
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary-base)]" aria-hidden="true" />
             <h3 className="typography-ui-caption font-medium text-muted-foreground">{changelog.title}</h3>
           </div>
-          <ScrollableOverlay className="max-h-[min(42dvh,22rem)] p-0 sm:max-h-[400px]" fillContainer={false}>
+          <ScrollableOverlay className={model.stableLayout ? "p-0" : "max-h-[min(42dvh,22rem)] p-0 sm:max-h-[400px]"} outerClassName={model.stableLayout ? "flex-1" : undefined} fillContainer={Boolean(model.stableLayout)}>
             {changelog.kind === 'raw' ? <div className="break-words p-3.5 text-[13px] leading-[1.65] text-foreground sm:p-4 sm:text-sm [&_.markdown-content]:leading-[1.65] [&_a]:!text-[var(--primary-base)] [&_a]:!no-underline [&_a:hover]:!underline" onClickCapture={handleChangelogClick}>
               <SimpleMarkdownRenderer content={changelog.content} disableLinkSafety={true} enableFileReferences={false} />
             </div> : <div className="divide-y divide-[var(--surface-subtle)]">
@@ -173,32 +175,32 @@ export function UpdateDialogView({ open, onOpenChange, model, onAction }: {
           </div>
         </div>}
         {/* Update progress: fixed-height rows so stage/detail changes never resize the dialog */}
-        {model.status && <div role="status" className="space-y-2">
+        {(model.status || model.stableLayout) && <div role={model.status ? "status" : undefined} className={cn("space-y-2", model.stableLayout && "h-20 shrink-0")}>
           <div className="flex h-5 items-center justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground sm:text-[13px]">
-              {model.status.kind === 'activity' && <Icon name="loader" className="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--primary-base)]" />}
-              <span className="truncate">{model.status.label}</span>
+              {model.status?.kind === 'activity' && <Icon name="loader" className="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--primary-base)]" />}
+              <span className="truncate">{model.status?.label}</span>
             </span>
-            {model.status.progress != null && <span className="shrink-0 font-mono text-[11px] leading-4 text-foreground tabular-nums sm:text-xs">{Math.round(model.status.progress)}%</span>}
+            {model.status?.progress != null && <span className="shrink-0 font-mono text-[11px] leading-4 text-foreground tabular-nums sm:text-xs">{Math.round(model.status.progress)}%</span>}
           </div>
           <div className="h-1 overflow-hidden rounded-full bg-[var(--surface-subtle)] sm:h-1.5">
-            {model.status.progress != null
-              ? <div className="h-full rounded-full bg-[var(--primary-base)] transition-[width] duration-500" style={{ width: `${model.status.progress}%` }} />
+            {!model.status || model.status.progress != null
+              ? <div className="h-full rounded-full bg-[var(--primary-base)] transition-[width] duration-500" style={{ width: `${model.status?.progress ?? 0}%` }} />
               : <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--primary-base)]/60" />}
           </div>
-          <p className="min-h-4 text-xs leading-4 text-muted-foreground">{model.status.detail}</p>
+          <p className={cn("min-h-4 text-xs leading-4 text-muted-foreground", model.stableLayout && "h-8 overflow-y-auto")}>{model.status?.detail}</p>
         </div>}
         {/* Error display */}
         {model.error && <div role="alert" className="p-3 mt-4 bg-[var(--status-error-background)] border border-[var(--status-error-border)] rounded-lg"><p className="text-sm text-[var(--status-error)]">{model.error}</p></div>}
       </div>
       {model.notice && <div className="mt-4 flex items-center gap-2 rounded-lg border border-[var(--status-success-border)] bg-[var(--status-success-background)] px-3 py-2.5 text-sm text-[var(--status-success)]"><Icon name="check" className="h-4 w-4 shrink-0" /><span>{model.notice}</span></div>}
       {/* Action Footer */}
-      <div className="mt-4 flex items-center justify-between gap-4">
-        {model.releaseLink ? <a href={model.releaseLink.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 typography-ui-label text-muted-foreground hover:text-foreground transition-colors shrink-0"><Icon name="external-link" className="h-4 w-4" />{model.releaseLink.label}</a> : <span />}
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-          {model.actions.map((action) => <Button key={action.id} onClick={() => onAction(action.id)} disabled={action.disabled} variant={action.variant ?? 'default'} size="default">
+      <div className="mt-4 flex shrink-0 items-center justify-between gap-4">
+        {model.releaseLink && <a href={model.releaseLink.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 typography-ui-label text-muted-foreground hover:text-foreground transition-colors shrink-0"><Icon name="external-link" className="h-4 w-4" />{model.releaseLink.label}</a>}
+        <div className="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2">
+          {model.actions.map((action) => <Button key={action.id} onClick={() => onAction(action.id)} disabled={action.disabled} variant={action.variant ?? 'default'} size="default" className="min-w-0 shrink" title={action.label}>
             {action.icon && <Icon name={action.icon} className={cn('h-4 w-4', action.loading && 'animate-spin')} />}
-            {action.label}
+            <span className="truncate">{action.label}</span>
           </Button>)}
         </div>
       </div>

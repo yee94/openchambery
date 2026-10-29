@@ -17,11 +17,13 @@ it('adapts exact versions, Markdown, installation method and rollback warning to
   expect(model.releaseLink).toBeUndefined();
 });
 
-it('maps Host stages to a monotonic overall progress, hides the changelog and disables duplicate submissions', () => {
+it('maps Host stages to a monotonic overall progress, keeps the changelog and disables duplicate submissions', () => {
   const operation = { id: 'operation', planId: 'plan', version: '2.0.9', channel: 'stable' as const, kind: 'installer' as const, status: 'downloading' as const, progress: null, error: null };
   const model = toHostUpdateDialogModel({ ...snapshot, operation }, state, t);
   expect(model.status).toMatchObject({ kind: 'download', progress: 5 });
-  expect(model.hideChangelog).toBe(true);
+  expect(model.hideChangelog).not.toBe(true);
+  expect(model.body).toBe(snapshot.update?.releaseNotes);
+  expect(model.stableLayout).toBe(true);
   expect(model.actions.find((action) => action.id === 'confirm')?.disabled).toBe(true);
   const halfway = toHostUpdateDialogModel({ ...snapshot, update: null, operation: { ...operation, progress: 100 } }, state, t);
   expect(halfway.status?.progress).toBe(80);
@@ -29,6 +31,20 @@ it('maps Host stages to a monotonic overall progress, hides the changelog and di
   expect(reconnecting.status).toMatchObject({ kind: 'activity', progress: 95, detail: en['settings.yuri.about.hostUpdate.reconnecting'] });
   const done = toHostUpdateDialogModel({ ...snapshot, update: null, operation: { ...operation, status: 'succeeded' } }, { ...state, completed: true }, t);
   expect(done.status).toMatchObject({ progress: 100, label: en['settings.yuri.about.hostUpdate.status.succeeded'] });
+});
+
+it('retains matching display metadata when busy without turning it into an actionable update plan', () => {
+  const operation = { id: 'operation', planId: 'plan', version: '2.0.9', channel: 'stable' as const, kind: 'installer' as const, status: 'installing' as const, progress: null, error: null };
+  const busy = { ...snapshot, update: null, operation };
+  const model = toHostUpdateDialogModel(busy, { ...state, updateDetails: snapshot.update }, t);
+  expect(model.body).toBe(snapshot.update?.releaseNotes);
+  expect(model.methodLabel).toBe(en['settings.yuri.about.hostUpdate.kind.installer']);
+  expect(model.hideChangelog).not.toBe(true);
+  expect(model.actions.find((action) => action.id === 'confirm')?.disabled).toBe(true);
+  for (const change of [{ planId: 'other' }, { version: '2.0.10' }]) {
+    const unrelated = toHostUpdateDialogModel({ ...busy, operation: { ...operation, ...change } }, { ...state, updateDetails: snapshot.update }, t);
+    expect(unrelated.body).toBe(en['settings.yuri.about.hostUpdate.noNotes']);
+  }
 });
 
 it('keeps unsupported/error/confirmed-empty states distinct and never enables an old plan after failure', () => {
