@@ -429,6 +429,13 @@ Both renderers suppress document navigation for local-path anchors, including ex
 
 Markstream's delegated primary-click handler prevents document navigation for file-path anchors even before existence probing has annotated them, when probing fails, or while file references are disabled during streaming. Explicit file anchors use the shared file opener even if a background probe failed; disabled references remain inert. Mobile consumes file-open requests in its preview surface, and image links use the shared image preview. File probes carry the session directory, cache by runtime/directory/path, and reject failures without caching them as missing files. HTTP(S) links follow the runtime routing above. Coverage: `markstream/markstreamInteractions.test.ts`, `markstream/markstreamFileReferences.test.tsx`, and `fileReferenceActions.test.ts`.
 
+Both Markdown renderers resolve anchor hrefs as URL-encoded references for probing
+and opening. Decode the path once after extracting line fragments; escaped `#` and
+`;` belong to the filename. `file:` URLs already decode in the parser. Raw filesystem
+references (including inline code and Changes paths) remain literal, and malformed
+percent escapes in ordinary hrefs remain literal rather than throwing. Annotated
+Markstream wrappers retain their descendant anchor as the href source.
+
 Markstream links disable the library's global hover tooltip. Desktop uses the shared component-owned Tooltip so unmount removes its portal; mobile omits hover popups to avoid touch-generated mouse events leaving a detached bubble after navigation.
 
 `openFileReference` opens local references in the internal file surface by default,

@@ -73,6 +73,7 @@ import { useDirectoryShowHidden } from '@/lib/directoryShowHidden';
 import { collectExpandableDirectoryPaths, collectUnexpandedDirectoryPaths, isFileTreeExpandAllSettled, shouldCollapseFileTree } from '@/lib/fileTreeExpand';
 import { useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { FilePreviewError } from '@/components/ui/FilePreviewError';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useInputStore } from '@/sync/input-store';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -4077,10 +4078,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
                 </div>
               )
           ) : fileError ? (
-            <div role="alert" className="p-3 typography-ui text-[color:var(--status-error)]">
-              <div>{fileError}</div>
-              {failedFilePath === selectedFilePath && <Button variant="outline" size="sm" className="mt-2" onClick={retrySelectedFile}>{t('contextPanel.preview.actions.retry')}</Button>}
-            </div>
+            <FilePreviewError message={fileError} onRetry={failedFilePath === selectedFilePath ? retrySelectedFile : undefined} />
           ) : isSelectedBinary ? (
             <BinaryFileFallback key={selectedFilePath} path={selectedFilePath} />
           ) : isSelectedImage && selectedFile ? (
@@ -4453,10 +4451,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
                 </div>
               )
           ) : fileError ? (
-            <div role="alert" className="p-4 typography-ui text-[color:var(--status-error)]">
-              <div>{fileError}</div>
-              {failedFilePath === selectedFilePath && <Button variant="outline" size="sm" className="mt-2" onClick={retrySelectedFile}>{t('contextPanel.preview.actions.retry')}</Button>}
-            </div>
+            <FilePreviewError message={fileError} onRetry={failedFilePath === selectedFilePath ? retrySelectedFile : undefined} />
           ) : isSelectedBinary ? (
             <BinaryFileFallback key={selectedFilePath} path={selectedFilePath} />
           ) : isSelectedImage ? (

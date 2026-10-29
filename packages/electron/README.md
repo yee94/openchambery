@@ -177,6 +177,8 @@ macOS packaged Dock icons prefer `resources/icons/Assets.car` (`CFBundleIconName
 bun run --cwd packages/electron generate:macos-icon
 ```
 
+While running, the macOS Dock icon uses the light/dark PNG exports from `resources/icons/source`, following the app's native theme override, including the saved theme at startup. Explicit light/dark choices ignore OS appearance; only System mode follows it. Multiple windows share the existing process-wide native theme (the latest window theme update wins). Preview retains its PREVIEW-badged icon. Finder and the installed bundle retain the asset-catalog icon. This native behavior and its packaged PNG resources require an updated installer.
+
 ## Platform Notes
 
 On macOS, two or more live app windows (including Mini Chat and hidden/minimized windows, excluding DevTools) disable native vibrancy. Main sends `yuri:vibrancy-ready` with `suppressed: true`; preload sets `data-yuri-vibrancy-suppressed`, and shared CSS paints each window with its own opaque theme tokens, even after theme changes or reloads. Closing back to one window restores vibrancy if enabled in settings. This is transient and does not change the saved preference.

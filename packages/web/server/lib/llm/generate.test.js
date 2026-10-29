@@ -259,7 +259,7 @@ describe('generateOpenCodeText — text path', () => {
   })
 
   it('surfaces session.generate errors and still removes the session', async () => {
-    const { client, remove } = textSessionClient({
+    const { client, remove, generate } = textSessionClient({
       generate: vi.fn(async () => { throw new Error('Request is missing x-opencode-session') }),
     })
     await expect(generateOpenCodeText({
@@ -271,11 +271,86 @@ describe('generateOpenCodeText — text path', () => {
       clientFactory: () => client,
       ensureTempDirectory: async () => '/tmp/yuri-text',
     })).rejects.toMatchObject({ code: 'upstream_error', message: 'Request is missing x-opencode-session' })
+    expect(generate).toHaveBeenCalledTimes(1)
     expect(remove).toHaveBeenCalledWith({ sessionID: 'ses_text' })
   })
 
+  it('retries empty text with backoff in the same session and returns only the successful reply', async () => {
+    vi.useFakeTimers()
+    try {
+      const generate = vi.fn()
+        .mockResolvedValueOnce({ text: '   ' })
+        .mockResolvedValueOnce({ data: { text: '' } })
+        .mockResolvedValueOnce({ text: 'updated' })
+      const { client, create, remove, prompt } = textSessionClient({ generate })
+      const result = generateOpenCodeText({
+        buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({}),
+        providerID: 'opencode-go',
+        modelID: 'deepseek-v4-flash',
+        messages: [{ role: 'user', content: 'update schedule' }],
+        clientFactory: () => client,
+        ensureTempDirectory: async () => '/tmp/yuri-text',
+      })
+      const outcome = result.then(value => ({ value }), error => ({ error }))
+      await vi.advanceTimersByTimeAsync(499)
+      expect(generate).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(generate).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(999)
+      expect(generate).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await outcome).toMatchObject({ value: { text: 'updated' } })
+      expect(generate).toHaveBeenCalledTimes(3)
+      expect(generate.mock.calls[1]).toEqual(generate.mock.calls[0])
+      expect(generate.mock.calls[2]).toEqual(generate.mock.calls[0])
+      expect(create).toHaveBeenCalledTimes(1)
+      expect(remove).toHaveBeenCalledTimes(1)
+      expect(prompt).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['cancel', 'deadline'])('stops empty-text backoff on %s and cleans up', async (mode) => {
+    vi.useFakeTimers()
+    try {
+      const controller = new AbortController()
+      const { client, generate, remove, interrupt } = textSessionClient({
+        generate: vi.fn(async () => ({ text: '' })),
+      })
+      const result = generateOpenCodeText({
+        buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({}),
+        providerID: 'opencode-go',
+        modelID: 'deepseek-v4-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+        clientFactory: () => client,
+        ensureTempDirectory: async () => '/tmp/yuri-text',
+        signal: controller.signal,
+        timeoutMs: 750,
+      })
+      const outcome = result.then(value => ({ value }), error => ({ error }))
+      await vi.advanceTimersByTimeAsync(500)
+      expect(generate).toHaveBeenCalledTimes(2)
+      if (mode === 'cancel') controller.abort()
+      else await vi.advanceTimersByTimeAsync(250)
+      expect(await outcome).toMatchObject({ error: mode === 'cancel'
+        ? { name: 'AbortError' }
+        : { message: 'OpenCode LLM generate timed out after 750ms' } })
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(generate).toHaveBeenCalledTimes(2)
+      expect(interrupt).toHaveBeenCalledExactlyOnceWith({ sessionID: 'ses_text', continue: false })
+      expect(remove).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rejects an empty session.generate reply instead of returning blank success', async () => {
-    const { client } = textSessionClient({ generate: vi.fn(async () => ({ text: '   ' })) })
+    const { client, generate, remove } = textSessionClient({ generate: vi.fn(async () => ({ text: '   ' })) })
     await expect(generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
@@ -285,6 +360,8 @@ describe('generateOpenCodeText — text path', () => {
       clientFactory: () => client,
       ensureTempDirectory: async () => '/tmp/yuri-text',
     })).rejects.toMatchObject({ message: 'OpenCode session.generate returned no text' })
+    expect(generate).toHaveBeenCalledTimes(3)
+    expect(remove).toHaveBeenCalledTimes(1)
   })
 
   it('does not invent deltas on the session.generate path', async () => {

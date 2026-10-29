@@ -79,10 +79,11 @@ export const MarkstreamFileReferenceProvider: React.FC<{
 
 const FileReferenceToken: React.FC<{
   raw: string;
+  referenceKind?: 'path' | 'href';
   children?: React.ReactNode;
-}> = ({ raw, children }) => {
+}> = ({ raw, referenceKind, children }) => {
   const ctx = React.useContext(MarkstreamFileReferenceContext);
-  const resolved = getResolvedReference(raw, ctx.effectiveDirectory);
+  const resolved = getResolvedReference(raw, ctx.effectiveDirectory, referenceKind);
   const claimedRef = React.useRef(false);
   if (ctx.enabled && resolved && !claimedRef.current && ctx.slots.used < ctx.slots.limit) {
     ctx.slots.used += 1;
@@ -192,7 +193,7 @@ export function MarkstreamLinkNode(props: React.ComponentProps<typeof LinkNode>)
     <MarkstreamFileReferenceContext.Provider value={{ ...ctx, insideLink: true }}>
       {fileHref
         ? (
-          <FileReferenceToken raw={href}>
+          <FileReferenceToken raw={href} referenceKind="href">
             {content}
           </FileReferenceToken>
         )

@@ -1,4 +1,5 @@
 import React from 'react';
+import { FilePreviewError } from '@/components/ui/FilePreviewError';
 import { GuiFileLinkBridge } from '@/components/gui-plugins/GuiFileLinkBridge';
 import { LoadingImage } from '@/components/ui/LoadingImage';
 import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
@@ -636,7 +637,7 @@ const MobileFileDetail: React.FC<{
     ? (isLoading
       ? <MobileFilesState loading message={t('filesView.state.loading')} />
       : error
-        ? <MobileFilesState message={error} />
+        ? <FilePreviewError message={error} />
         : <MobileTextFile path={path} content={content} />)
     : <MobileHtmlPreview path={path} />;
 
@@ -717,7 +718,7 @@ const MobileFileDetail: React.FC<{
             ? <div className="flex flex-1 items-center justify-center p-4"><ImageLoadingPlaceholder className="aspect-square w-64 max-w-full rounded-lg" /></div>
             : <MobileFilesState loading message={t('filesView.state.loading')} />
         ) : imageError ? (
-          <MobileFilesState message={imageError} />
+          <FilePreviewError message={imageError} />
         ) : isImageFile(path) && previewImageSrc ? (
           <ScrollShadow className="h-full overflow-auto p-4">
             <button
@@ -829,7 +830,7 @@ const MobileHtmlPreview: React.FC<{ path: string }> = ({ path }) => {
   }, [nonce, path, readyKey, relaySrcDoc]);
 
   if (error) {
-    return <MobileFilesState message={error} />;
+    return <FilePreviewError message={error} />;
   }
   if (readyKey !== path) {
     return <MobileFilesState loading message={t('filesView.state.loading')} />;

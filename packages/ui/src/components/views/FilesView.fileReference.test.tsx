@@ -229,6 +229,17 @@ describe('binary file fallback', () => {
 });
 
 describe('file reference failure lifecycle', () => {
+  test('an encoded file link uses the decoded filename for its tab title', async () => {
+    const path = '30 📚 Learning/📚 Knowledge/相机画幅图解.eficy';
+    harness.files.readFile.mockResolvedValue({ content: 'file content' });
+    await act(async () => reactRoot.render(<ContextPanel directory="/repo" />));
+    await act(async () => openFileReference(encodeURI(path), false, { effectiveDirectory: '/repo', referenceKind: 'href' }));
+    expect(activeFilePath()).toBe(`/repo/${path}`);
+    const title = host.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
+    expect(title).toContain('相机画幅图解.eficy');
+    expect(title).not.toContain('%E7');
+  });
+
   test('a custom file reference opens its tab before reading and keeps the read error inline', async () => {
     const failure = deferred<{ content: string }>();
     harness.files.readFile.mockReturnValue(failure.promise);

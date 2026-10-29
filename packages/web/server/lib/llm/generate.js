@@ -7,6 +7,7 @@ const TEXT_AGENT_NAME = 'yuri-text';
 const GENERATE_TIMEOUT_MS = 90_000;
 const AGENT_READY_WAIT_MS = 5_000;
 const AGENT_READY_POLL_MS = 250;
+const EMPTY_TEXT_RETRY_DELAYS_MS = [500, 1_000];
 /** Single attachment payload cap (decoded bytes). Composer UI allows larger drafts; gateway enforces this. */
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_INLINE_FILE_CHARS = 100_000;
@@ -485,20 +486,39 @@ async function withThrowawaySession({
  */
 async function generateViaSessionGenerate({ client, prompt, signal, ...sessionOptions }) {
   return withThrowawaySession({ client, signal, ...sessionOptions }, async (sessionID) => {
-    let result;
-    try {
-      result = await client.session.generate({ sessionID, prompt }, { signal });
-    } catch (error) {
-      rethrowIfAborted(error, signal);
-      failGenerate(clientErrorMessage(error, 'OpenCode session.generate failed'));
+    for (let attempt = 0; ; attempt += 1) {
+      signal?.throwIfAborted();
+      let result;
+      try {
+        result = await client.session.generate({ sessionID, prompt }, { signal });
+      } catch (error) {
+        rethrowIfAborted(error, signal);
+        failGenerate(clientErrorMessage(error, 'OpenCode session.generate failed'));
+      }
+      signal?.throwIfAborted();
+      const text = typeof result?.text === 'string'
+        ? result.text.trim()
+        : typeof result?.data?.text === 'string'
+          ? result.data.text.trim()
+          : '';
+      if (text) return { text, source: 'session.generate' };
+      const delayMs = EMPTY_TEXT_RETRY_DELAYS_MS[attempt];
+      if (delayMs === undefined) failGenerate('OpenCode session.generate returned no text');
+      // This call produces text only; retrying it cannot replay application tools.
+      await new Promise((resolve, reject) => {
+        const onAbort = () => {
+          clearTimeout(timer);
+          signal.removeEventListener('abort', onAbort);
+          reject(signal.reason);
+        };
+        const timer = setTimeout(() => {
+          signal?.removeEventListener('abort', onAbort);
+          resolve();
+        }, delayMs);
+        signal?.addEventListener('abort', onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+      });
     }
-    const text = typeof result?.text === 'string'
-      ? result.text.trim()
-      : typeof result?.data?.text === 'string'
-        ? result.data.text.trim()
-        : '';
-    if (!text) failGenerate('OpenCode session.generate returned no text');
-    return { text, source: 'session.generate' };
   });
 }
 

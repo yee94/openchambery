@@ -47,6 +47,13 @@ call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.
    text is prepended into `prompt`.
 4. Always `session.remove` in `finally` (interrupt first on abort/timeout).
 
+Empty text responses are retried at most twice, after 500ms and 1000ms, in the
+same throwaway session with the same prompt. All attempts and backoff share the
+original generation deadline (90s by default); cancellation interrupts backoff
+immediately. Only empty responses are retried, not thrown upstream errors or
+attachment/tool execution. Exhaustion preserves the explicit upstream error.
+Application tools execute outside this text-only call and are not replayed.
+
 `generate.text` (sessionless) is not used: session-scoped providers such as
 OpenCode Go reject calls without a session (`x-opencode-session`).
 `onTextDelta` is skipped honestly (no fake typewriter).

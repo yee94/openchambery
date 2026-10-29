@@ -65,6 +65,24 @@ test('legacy markdown opens an explicit custom-extension link before probing suc
   expect(openContextFile).toHaveBeenCalledWith('/repo', '/repo/report.eficy');
 });
 
+test.each(['markstream', 'legacy'] as const)('%s probes and opens the decoded Chinese/emoji filename', async (renderer) => {
+  const path = '30 📚 Learning/📚 Knowledge/相机画幅图解.eficy';
+  runtimeFetch.mockResolvedValue({ ok: true, json: async () => ({ exists: true, isBinary: false }) });
+  if (renderer === 'markstream') {
+    await renderLink(encodeURI(path));
+  } else {
+    const { MarkdownRenderer } = await import('../MarkdownRendererImpl');
+    await act(async () => root.render(<MarkdownRenderer content={`[图解](<${path}>)`} messageId="encoded-file-link" isAnimated={false} />));
+  }
+  await act(async () => {
+    await vi.waitFor(() => expect(runtimeFetch.mock.calls.some(([url]) => new URL(url, 'https://example.com').searchParams.get('path') === `/repo/${path}`)).toBe(true));
+  });
+  const link = host.querySelector('a')!;
+  expect(link).not.toBeNull();
+  await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+  expect(openContextFile).toHaveBeenCalledWith('/repo', `/repo/${path}`);
+});
+
 test.each(['mobile', 'desktop'] as const)('directory anchors cannot reload the %s application', async (surface) => {
   window.__YURI_SURFACE__ = surface;
   for (const path of ['/repo/src/', '/repo/src', './src/', 'packages/ui', '/']) {

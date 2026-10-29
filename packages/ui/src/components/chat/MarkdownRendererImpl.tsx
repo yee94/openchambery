@@ -115,7 +115,7 @@ const useExternalLinkInteractions = ({
     if (isLocalPathHref(href)) {
       event.preventDefault();
       event.stopPropagation();
-      if (fileReference && getResolvedReference(href, fileReference.effectiveDirectory)) {
+      if (fileReference && getResolvedReference(href, fileReference.effectiveDirectory, 'href')) {
         void openFileReferenceFromElement(anchor, fileReference);
       }
       return;
@@ -517,7 +517,7 @@ const useFileReferenceInteractions = ({
 
       for (const candidate of Array.from(candidates)) {
         const rawCandidate = extractPathCandidateFromElement(candidate);
-        const resolved = getResolvedReference(rawCandidate, effectiveDirectory);
+        const resolved = getResolvedReference(rawCandidate, effectiveDirectory, candidate.tagName.toLowerCase() === 'a' ? 'href' : 'path');
 
         if (!resolved) {
           clearFileLinkAttributes(candidate);
@@ -544,7 +544,7 @@ const useFileReferenceInteractions = ({
           }
 
           const latestRawCandidate = extractPathCandidateFromElement(candidate);
-          const latestResolved = getResolvedReference(latestRawCandidate, effectiveDirectory);
+          const latestResolved = getResolvedReference(latestRawCandidate, effectiveDirectory, candidate.tagName.toLowerCase() === 'a' ? 'href' : 'path');
           if (!latestResolved || latestResolved.resolvedPath !== resolved.resolvedPath) {
             return;
           }

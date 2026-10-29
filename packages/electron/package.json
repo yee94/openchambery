@@ -1,6 +1,6 @@
 {
   "name": "@yuriai/electron",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Electron desktop runtime for Yuri",
   "author": "Yuri",
@@ -73,6 +73,14 @@
       {
         "from": "resources/icons/source/yuri-mark-black.svg",
         "to": "icons/source/yuri-mark-black.svg"
+      },
+      {
+        "from": "resources/icons/source/yuri-icon-light-1024.png",
+        "to": "icons/source/yuri-icon-light-1024.png"
+      },
+      {
+        "from": "resources/icons/source/yuri-icon-dark-1024.png",
+        "to": "icons/source/yuri-icon-dark-1024.png"
       },
       {
         "from": "resources/icons/tray",

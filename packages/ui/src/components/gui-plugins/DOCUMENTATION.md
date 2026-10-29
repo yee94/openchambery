@@ -20,6 +20,12 @@ that opened file tab; plugin render failures appear there through the bridge.
 Changes row selection still defaults to diff. Background link probes annotate
 inferred references but cannot veto explicit Markdown file-link navigation.
 
+Mobile Changes diff detail exposes the same open-file preview action for every
+extension, including plugin-owned `.eficy` files. It resolves the path against the
+Changes directory and uses `MobileAppActions.openFile`, closing Changes and opening
+the existing file surface/bridge. The action belongs to the detail header or the
+owning sheet's header slot; no plugin-support or diff-read preflight gates it.
+
 `GuiPluginMount` gives the host a content container and a distinct action target.
 `GuiPreviewActions` attaches that target to the owning toolbar. React never
 reconciles foreign descendants. Changing host, contribution key or contribution kind,
@@ -66,6 +72,8 @@ by plugin setup. Preload or explicit demand therefore loads enabled GUI plugins,
 guessed extension-specific plugin. Server-only and disabled plugins are excluded.
 File views place `GuiPreviewLoading` in their existing preview slot, keeping file
 tabs and toolbars in place. The centered, transparent file-content canvas reserves
+its illustration position through the shared `FilePreviewState`, matching the file-error
+canvas regardless of description length or action visibility. It reserves
 at least 240px (including under the global mobile flex min-height reset) and inherits
 the file surface rather than adding a card. The source action uses a visible keyboard
 focus background even where global styles suppress focus rings. A decorative

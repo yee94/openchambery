@@ -87,6 +87,35 @@ describe('fileReferenceActions', () => {
     });
   });
 
+  test.each([false, true])('opens encoded Markdown file links (annotated: %s)', async (annotated) => {
+    const path = '30 📚 Learning/📚 Knowledge/相机画幅图解.eficy';
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', encodeURI(path));
+    const source = annotated ? document.createElement('span') : anchor;
+    if (annotated) {
+      source.setAttribute('data-yuri-file-ref', encodeURI(path));
+      source.append(anchor);
+    }
+    await openFileReferenceFromElement(source, { effectiveDirectory: '/repo' });
+    expect(openContextFileMock).toHaveBeenCalledWith('/repo', `/repo/${path}`);
+  });
+
+  test('decodes href filenames once after parsing line fragments, but preserves raw paths', async () => {
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', 'docs/a%23b%3Bc%2520.md#L12');
+    await openFileReferenceFromElement(anchor, { effectiveDirectory: '/repo' });
+    expect(openContextFileAtLineMock).toHaveBeenCalledWith('/repo', '/repo/docs/a#b;c%20.md', 12, 1);
+    await openFileReference('/repo/literal%20.eficy', false, { effectiveDirectory: '/repo' });
+    expect(openContextFileMock).toHaveBeenCalledWith('/repo', '/repo/literal%20.eficy');
+  });
+
+  test('malformed percent escapes do not crash file-link opening', async () => {
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', 'docs/100%.md');
+    await openFileReferenceFromElement(anchor, { effectiveDirectory: '/repo' });
+    expect(openContextFileMock).toHaveBeenCalledWith('/repo', '/repo/docs/100%.md');
+  });
+
   test('stats through /api/fs/stat and remembers existence', async () => {
     runtimeFetchMock.mockResolvedValue({
       ok: true,

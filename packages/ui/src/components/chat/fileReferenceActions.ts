@@ -26,6 +26,7 @@ type ResolvedFileReference = ParsedFileReference & { resolvedPath: string };
 
 export type OpenFileReferenceOptions = {
   effectiveDirectory: string;
+  referenceKind?: 'path' | 'href';
   editor?: EditorAPI;
   preferRuntimeEditor?: boolean;
   onShowPopup?: (content: ToolPopupContent) => void;
@@ -97,8 +98,14 @@ export const extractPathCandidateFromElement = (element: HTMLElement): string =>
 export const getResolvedReference = (
   rawValue: string,
   effectiveDirectory: string,
+  referenceKind: 'path' | 'href' = 'path',
 ): ResolvedFileReference | null => {
   const parsed = parseFileReference(rawValue);
+  if (parsed && referenceKind === 'href' && !/^file:/i.test(rawValue.trim())) {
+    // Parse line fragments before decoding so escaped # and ; stay in the filename.
+    // file: URLs are already decoded by the parser; ordinary filesystem paths are literal.
+    try { parsed.path = decodeURIComponent(parsed.path); } catch { /* Keep malformed escapes literal. */ }
+  }
   if (!parsed || !isLikelyFileReferencePath(parsed.path)) {
     return null;
   }
@@ -236,7 +243,7 @@ export const openFileReference = async (
   _isBinary: boolean,
   options: OpenFileReferenceOptions,
 ): Promise<void> => {
-  const resolved = getResolvedReference(rawValue, options.effectiveDirectory);
+  const resolved = getResolvedReference(rawValue, options.effectiveDirectory, options.referenceKind);
   if (!resolved) {
     return;
   }
@@ -302,9 +309,10 @@ export const openFileReferenceFromElement = async (
   sourceElement: HTMLElement,
   options: OpenFileReferenceOptions,
 ): Promise<void> => {
-  const raw = sourceElement.getAttribute('data-yuri-file-ref') || extractPathCandidateFromElement(sourceElement);
+  const anchor = sourceElement.matches('a[href]') ? sourceElement : sourceElement.querySelector('a[href]');
+  const raw = anchor?.getAttribute('href') || sourceElement.getAttribute('data-yuri-file-ref') || extractPathCandidateFromElement(sourceElement);
   const isBinary = sourceElement.getAttribute('data-yuri-file-binary') === 'true';
-  await openFileReference(raw, isBinary, options);
+  await openFileReference(raw, isBinary, { ...options, referenceKind: anchor ? 'href' : 'path' });
 };
 
 export const resetFileReferenceStatCacheForTests = (): void => {

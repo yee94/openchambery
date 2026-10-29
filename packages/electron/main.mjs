@@ -2631,6 +2631,21 @@ const readThemeSource = () => {
   return 'system';
 };
 
+let currentDockIconPath;
+const syncMacDockIcon = () => {
+  if (process.platform !== 'darwin' || !app.dock || isPreviewDesktop) return;
+  const variant = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  const iconPath = path.join(resourceRoot(), 'icons', 'source', `yuri-icon-${variant}-1024.png`);
+  if (iconPath === currentDockIconPath) return;
+  try {
+    if (!fs.existsSync(iconPath)) throw new Error(`Missing ${variant} Dock icon`);
+    app.dock.setIcon(iconPath);
+    currentDockIconPath = iconPath;
+  } catch (error) {
+    log.warn('[electron] failed to update Dock icon', error);
+  }
+};
+
 const getWindowIconPath = () => {
   if (process.platform !== 'win32' && process.platform !== 'linux') return undefined;
   const iconFileName = process.platform === 'linux' ? 'icon.png' : 'icon.ico';
@@ -5791,6 +5806,8 @@ app.whenReady().then(async () => {
     loginItemSettings,
   });
   nativeTheme.themeSource = readThemeSource();
+  syncMacDockIcon();
+  nativeTheme.on('updated', syncMacDockIcon);
   if (app.isPackaged && !isPreviewDesktop) {
     electronUpdater.autoUpdater.logger = log;
     desktopInstaller = new DesktopInstaller(electronUpdater.autoUpdater, {

@@ -96,6 +96,10 @@ Coverage: `LoadingImage.test.tsx`, `markstreamImages.test.tsx`, `MobileFilesSurf
 
 Mobile file-detail images fill the available content width at their natural aspect ratio, including their loading frame; tall images scroll within the sheet. Fullscreen media previews portal to the body above mobile sheets (`z-index: 80`) and join `MobileWindowStack` while open on mobile, suspending the underlying sheet's modal input ownership until the preview closes. `imageGeometry.chrome.test.ts` checks width and fullscreen hit testing; `ToolOutputDialog.preview.test.tsx` checks modal ownership and restoration.
 
+File read/preview failures in `FilesView` (including fullscreen) and `MobileFilesSurface` use `FilePreviewError`: a bounded, theme-aware SVG canvas above the error title and wrapping details, with the caller's retry action when available. Error details remain visible and accessible via `role="alert"`; they do not replace the preview with unstructured red text.
+
+`FilePreviewState` owns the shared geometry for `FilePreviewError` and `GuiPreviewLoading`. The 80px illustration slot is centered horizontally and anchored 64px above the content midpoint. Details start 20px below that slot and scroll independently in the remaining space. Copy length and optional actions never move the illustration; the minimum canvas height is 240px on mobile and desktop.
+
 # Mobile Window Motion
 
 `MobileWindowMotion` publishes its authoritative `isTop` state through the lightweight

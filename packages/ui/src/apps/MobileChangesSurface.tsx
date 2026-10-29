@@ -5,6 +5,9 @@ import { Icon } from '@/components/icon/Icon';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
+import { MobileSheetHeaderActions } from '@/components/ui/MobileResizableSheet';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
+import { toAbsoluteFilePath } from '@/lib/path-utils';
 import { ChangesPanel, type ChangesGroupConfig } from '@/components/views/git/ChangesPanel';
 import { DeferredChangesNotice } from '@/components/views/git/DeferredChangesNotice';
 import { isDeferredGitChangesStatus } from '@/components/views/git/deferredChanges';
@@ -598,6 +601,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
       <div ref={mobileNavigationSurfaceRef} className="h-full min-h-0">
         <MobileDiffDetail
           path={route.path}
+          directory={currentDirectory}
           diff={selectedDiff}
           fileExists={selectedFileExists}
           error={selectedDiffError}
@@ -708,6 +712,7 @@ const MobileChangesState: React.FC<{
 
 const MobileDiffDetail: React.FC<{
   path: string;
+  directory: string;
   diff: { original: string; modified: string; isBinary?: boolean } | null;
   fileExists: boolean;
   error: string | null;
@@ -716,13 +721,25 @@ const MobileDiffDetail: React.FC<{
   onBack: () => void;
   onRetry: () => void;
   hideHeader?: boolean;
-}> = ({ path, diff, fileExists, error, loading, targetLine, onBack, onRetry, hideHeader = false }) => {
+}> = ({ path, directory, diff, fileExists, error, loading, targetLine, onBack, onRetry, hideHeader = false }) => {
   const { t } = useI18n();
+  const mobileActions = useMobileAppActions();
   const language = React.useMemo(() => getLanguageFromExtension(path) || 'text', [path]);
+  const previewAction = mobileActions ? (
+    <Button
+      variant="ghost"
+      size="icon"
+      title={t('diffView.actions.openFilePreview')}
+      aria-label={t('diffView.actions.openFilePreview')}
+      onClick={() => mobileActions.openFile({ path: toAbsoluteFilePath(directory, path) })}
+    >
+      <Icon name="eye" className="size-4" />
+    </Button>
+  ) : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
-      {hideHeader ? null : (
+      {hideHeader ? <MobileSheetHeaderActions>{previewAction}</MobileSheetHeaderActions> : (
         <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
           <button
             type="button"
@@ -735,6 +752,7 @@ const MobileDiffDetail: React.FC<{
           <div className="min-w-0 flex-1 px-2">
             <h2 className="truncate typography-ui-header text-foreground">{path}</h2>
           </div>
+          {previewAction}
         </header>
       )}
       <div className="min-h-0 flex-1 overflow-hidden">
