@@ -275,16 +275,17 @@ turn the overlay on (textarea becomes `text-transparent`); a fixed-px
 overlay against a `--dpt`-scaled field looks like the font suddenly grew
 and puts the caret in the wrong place.
 
-## HTML file preview edge-to-edge
+## File preview edge-to-edge
 
-Sheet surfaces reserve bottom safe padding by default (`MobileWindowMotionRecipe` + Capacitor `.pwa-overlay-panel`). HTML preview must paint to the physical bottom without a child negative margin (overflow-hidden body clips it into a light band).
+Sheet surfaces reserve bottom safe padding by default (`MobileWindowMotionRecipe` + Capacitor `.pwa-overlay-panel`). File and plugin previews paint to the physical bottom without a child negative margin (overflow-hidden body clips it into a light band).
 
 | Marker | Owner | Effect |
 |---|---|---|
+| `data-mobile-edge-to-edge-preview="true"` | Mobile file detail (all file types and source), inline plugin preview/preparation, standalone plugin panels | Active non-inert sheet zeros bottom padding and hides `body::after` |
 | `data-mobile-html-preview="true"` | `MobileFilesSurface` sheet HTML viewer (preview mode only) | Active non-inert `[data-yuri-motion-id]:has(...)` zeros `padding-bottom` |
 | `data-mobile-html-fullscreen="true"` | Fullscreen HTML preview portal | Hides home-indicator `body::after` via `:has` |
 
-`body::after` opacity uses structural `:has([data-mobile-overlay-active="true"]:not([inert]) [data-mobile-html-preview="true"])` and `:has([data-mobile-html-fullscreen="true"])` — not a root class toggle — so mode switches and multi-instance close restore automatically. Source mode keeps the default safe pad.
+`body::after` opacity uses structural `:has` with the active non-inert overlay and preview markers — not a root class toggle — so closing or covering a preview restores the default automatically. File detail remains edge-to-edge when switching to source. Other sheets retain their default safe padding.
 
 ## Related owners
 

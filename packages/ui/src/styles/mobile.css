@@ -3305,6 +3305,7 @@ button.yuri-mobile-worktree-label-trigger:active,
      the active (non-inert) sheet preview or fullscreen preview surface. Mode /
      close / multi-instance restore via structural :has — no root class toggle. */
   :root:has([data-mobile-overlay-active="true"]:not([inert]) [data-mobile-html-preview="true"]) body::after,
+  :root:has([data-mobile-overlay-active="true"]:not([inert]) [data-mobile-edge-to-edge-preview="true"]) body::after,
   :root:has([data-mobile-html-fullscreen="true"]) body::after {
     opacity: 0;
   }
@@ -3519,6 +3520,8 @@ button.yuri-mobile-worktree-label-trigger:active,
 /* HTML preview in a sheet must reach the physical bottom. The surface owns the
    default safe pad; a child negative margin cannot paint through body overflow
    clip. Zero pad only while an active (non-inert) sheet hosts html preview. */
+[data-mobile-overlay-active="true"]:not([inert]) [data-yuri-motion-id]:has([data-mobile-edge-to-edge-preview="true"]),
+:root.yuri-capacitor-app [data-mobile-overlay-active="true"]:not([inert]) .pwa-overlay-panel[data-yuri-motion-id]:has([data-mobile-edge-to-edge-preview="true"]),
 [data-mobile-overlay-active="true"]:not([inert]) [data-yuri-motion-id]:has([data-mobile-html-preview="true"]),
 :root.yuri-capacitor-app [data-mobile-overlay-active="true"]:not([inert]) .pwa-overlay-panel[data-yuri-motion-id]:has([data-mobile-html-preview="true"]) {
   padding-bottom: 0 !important;

@@ -683,7 +683,7 @@ const MobileFileDetail: React.FC<{
   return (
     <GuiFileLinkBridge path={path} base={base ?? undefined}>
     {({ preview, controls }) => (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground" data-mobile-edge-to-edge-preview="true">
       {!hideHeader ? (
         <header className="flex h-[var(--yuri-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
           <button

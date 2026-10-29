@@ -43,7 +43,9 @@ export function GuiPluginSurface() {
         ))}
       </div>
       {error ? <div role="alert" className="text-[var(--status-error)]">{error}</div> : null}
-      <GuiPluginMount host={host} contributionKey={active.key} kind="panel" actions={isMobile ? actions : undefined} revision={guiPluginReadinessKey(snapshot.plugins, active.pluginId)} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-mobile-edge-to-edge-preview="true">
+        <GuiPluginMount host={host} contributionKey={active.key} kind="panel" actions={isMobile ? actions : undefined} revision={guiPluginReadinessKey(snapshot.plugins, active.pluginId)} />
+      </div>
       </> : null}
     </GuiPluginWindow>
   );

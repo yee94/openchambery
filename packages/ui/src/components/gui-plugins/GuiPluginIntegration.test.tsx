@@ -341,12 +341,14 @@ describe('file link routing', () => {
     const view = <GuiFileLinkBridge path="/workspace/a.eficy"><pre>source</pre></GuiFileLinkBridge>;
     await act(async () => root.render(view));
     expect(container.querySelector('[data-gui-preview-loading] svg')).not.toBeNull();
+    expect(container.querySelector('[data-mobile-edge-to-edge-preview="true"]')).not.toBeNull();
     expect(fixture.methods.mountPanel).not.toHaveBeenCalled();
     await frame();
     expect(container.querySelector('[data-gui-preview-loading] svg')).not.toBeNull();
     expect(fixture.methods.mountPanel).not.toHaveBeenCalled();
     await click('guiPlugins.preview.viewSource');
     expect(container.querySelector('pre')?.textContent).toBe('source');
+    expect(container.querySelector('[data-mobile-edge-to-edge-preview="true"]')).toBeNull();
     expect(fixture.methods.mountPanel).not.toHaveBeenCalled();
     await click('filesView.editor.switchToPreviewMode');
     expect(container.querySelector('[data-gui-preview-loading]')).toBeNull();

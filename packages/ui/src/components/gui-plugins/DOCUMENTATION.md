@@ -1,6 +1,10 @@
 # GUI plugin UI boundary
 
 File previews render inside the existing FilesView tab or MobileFileDetail body.
+File previews and standalone plugin panels share the mobile edge-to-edge marker;
+their active sheet removes bottom safe padding and the home-indicator overlay.
+This applies to every plugin rather than a hardcoded file extension. Mobile file
+detail retains edge-to-edge layout across preview/source switching.
 Host source/preview controls and plugin `yuri.previewActions` contributions share
 one control group outside the capture viewport. Desktop FilesView and the default
 inline bridge float that group at the original top-right position; the opt-in

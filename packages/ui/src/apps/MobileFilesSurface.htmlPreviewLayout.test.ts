@@ -35,18 +35,21 @@ const WHITE = { r: 255, g: 255, b: 255 };
 const chromeAvailable = Boolean(resolveChrome());
 
 const buildFixtureHtml = (opts: {
-  mode: 'preview' | 'source' | 'inert-preview' | 'default-sheet';
+  mode: 'preview' | 'source' | 'inert-preview' | 'default-sheet' | 'file-preview' | 'inert-file-preview';
   compiledCss: string;
   surfaceClass: string;
   bodyClass: string;
   viewerClass: string;
   safePadPx: number;
 }): string => {
-  const previewMarker = opts.mode === 'preview' || opts.mode === 'inert-preview'
+  const previewMarker = opts.mode === 'file-preview' || opts.mode === 'inert-file-preview'
+    ? ' data-mobile-edge-to-edge-preview="true"'
+    : opts.mode === 'preview' || opts.mode === 'inert-preview'
     ? ' data-mobile-html-preview="true"'
     : '';
-  const overlayActive = opts.mode === 'inert-preview' ? 'false' : 'true';
-  const inertAttr = opts.mode === 'inert-preview' ? ' inert=""' : '';
+  const inert = opts.mode === 'inert-preview' || opts.mode === 'inert-file-preview';
+  const overlayActive = inert ? 'false' : 'true';
+  const inertAttr = inert ? ' inert=""' : '';
   const viewerInner = opts.mode === 'source'
     ? `<div data-testid="source-body" style="flex:1;min-height:0;background:#0b3d0b;color:#fff;overflow:auto">source mode content</div>`
     : `<div class="min-h-0 flex-1 overflow-hidden bg-background">
@@ -203,6 +206,7 @@ describe('MobileFilesSurface HTML preview production layout', () => {
   test('source contracts: markers, no negative margin, structural body::after hide', () => {
     expect(filesSurfaceSource).toContain('data-mobile-html-preview');
     expect(filesSurfaceSource).toContain('data-mobile-html-fullscreen');
+    expect(filesSurfaceSource).toContain('data-mobile-edge-to-edge-preview="true"');
     expect(filesSurfaceSource).not.toContain('yuri-html-file-preview-open');
     expect(filesSurfaceSource).not.toMatch(/mb-\[calc\(-1\*max\(0\.5rem/);
     expect(mobileCssSource).toContain('[data-yuri-motion-id]:has([data-mobile-html-preview="true"])');
@@ -241,7 +245,7 @@ describe('MobileFilesSurface HTML preview production layout', () => {
       try {
         const page = await openPageSession(session, { width: 390, height: 844, standalone: true });
 
-        const runMode = async (mode: 'preview' | 'source' | 'inert-preview') => {
+        const runMode = async (mode: Parameters<typeof buildFixtureHtml>[0]['mode']) => {
           const dir = mkdtempSync(join(root, `${mode}-`));
           const htmlPath = join(dir, 'fixture.html');
           const shotPath = join(dir, 'fixture.png');
@@ -265,6 +269,17 @@ describe('MobileFilesSurface HTML preview production layout', () => {
         const preview = await runMode('preview');
         const source = await runMode('source');
         const inert = await runMode('inert-preview');
+
+        const filePreview = await runMode('file-preview');
+        expect(filePreview.measure.sheetPaddingBottom).toBeLessThanOrEqual(1);
+        expect(filePreview.measure.gapSheetMinusIframe).toBeLessThanOrEqual(2);
+        expect(Number.parseFloat(filePreview.measure.afterOpacity)).toBe(0);
+        const fileBottom = filePreview.pixels.filter((sample: RgbSample) => sample.y >= filePreview.measure.sheetBottom - 4);
+        expect(fileBottom.length).toBeGreaterThan(0);
+        for (const sample of fileBottom) expect(isNearColor(sample, DARK_IFRAME)).toBe(true);
+        const inertFilePreview = await runMode('inert-file-preview');
+        expect(inertFilePreview.measure.sheetPaddingBottom).toBeGreaterThanOrEqual(8);
+        expect(Number.parseFloat(inertFilePreview.measure.afterOpacity)).toBeGreaterThan(0.5);
 
         // Viewport must match device metrics (no 55px chrome clip).
         expect(preview.measure.innerWidth).toBe(390);
