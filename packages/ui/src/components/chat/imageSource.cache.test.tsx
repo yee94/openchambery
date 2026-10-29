@@ -28,7 +28,7 @@ const state = vi.hoisted(() => ({
   endpointListeners: new Set<() => void>(), authListeners: new Set<() => void>(),
   native: false, open: vi.fn(), write: vi.fn(), end: vi.fn(), release: vi.fn(), abort: vi.fn(),
   durable: new Map<string, Blob>(), durableWrite: vi.fn(),
-  diskBridge: undefined as undefined | { acquire: ReturnType<typeof vi.fn>; append: ReturnType<typeof vi.fn>; commit: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> },
+  diskBridge: undefined as undefined | { fileResources?: boolean; lookup?: ReturnType<typeof vi.fn>; acquire: ReturnType<typeof vi.fn>; append: ReturnType<typeof vi.fn>; commit: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> },
   directory: '/workspace',
 }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: state.fetch }));
@@ -89,6 +89,38 @@ const fingerprintFixtures = async (entries: Record<string, Uint8Array<ArrayBuffe
     return new Response(body);
   });
 };
+
+test('remote file reads survive a window-only desktop cache denial', async () => {
+  const bytes = new TextEncoder().encode('remote file contents');
+  await fingerprintFixtures({ '/workspace/readme.txt': bytes });
+  const lookup = vi.fn().mockRejectedValue(new Error("Error invoking remote method 'yuri:image-cache:lookup': Error: IPC not available for this origin"));
+  state.diskBridge = { fileResources: true, lookup, acquire: vi.fn(), append: vi.fn(), commit: vi.fn(), release: vi.fn() };
+  const response = await readRuntimeFile({ path: '/workspace/readme.txt', directory: '/workspace' });
+  expect(await response.text()).toBe('remote file contents');
+  expect(lookup).toHaveBeenCalledTimes(1);
+  expect(state.fetch).toHaveBeenCalledTimes(1);
+  expect(await (await readRuntimeFile({ path: '/workspace/readme.txt', directory: '/workspace' })).text()).toBe('remote file contents');
+  expect(state.fetch).toHaveBeenCalledTimes(1);
+});
+
+test.each([undefined, 'bytes=0-5'])('cache denial preserves runtime failures for range %s', async (range) => {
+  await fingerprintFixtures({ '/workspace/readme.txt': new TextEncoder().encode('remote file contents') });
+  state.diskBridge = { fileResources: true, lookup: vi.fn().mockRejectedValue(new Error('IPC not available for this origin')), acquire: vi.fn(), append: vi.fn(), commit: vi.fn(), release: vi.fn() };
+  state.fetch.mockRejectedValue(new Error('Remote authorization denied'));
+  await expect(readRuntimeFile({ path: '/workspace/readme.txt', directory: '/workspace', range })).rejects.toThrow('Remote authorization denied');
+  expect(state.fetch).toHaveBeenCalledTimes(1);
+});
+
+test('cache denial falls back to a streaming remote range', async () => {
+  await fingerprintFixtures({ '/workspace/readme.txt': new TextEncoder().encode('remote file contents') });
+  state.diskBridge = { fileResources: true, lookup: vi.fn().mockRejectedValue(new Error('IPC not available for this origin')), acquire: vi.fn(), append: vi.fn(), commit: vi.fn(), release: vi.fn() };
+  state.fetch.mockResolvedValue(new Response('remote', { status: 206, headers: { 'Content-Range': 'bytes 0-5/20' } }));
+  const response = await readRuntimeFile({ path: '/workspace/readme.txt', range: 'bytes=0-5' });
+  expect(response.status).toBe(206);
+  expect(await response.text()).toBe('remote');
+  expect(state.fetch).toHaveBeenCalledWith('/api/fs/raw', expect.objectContaining({ headers: expect.objectContaining({ Range: 'bytes=0-5' }) }));
+  expect(state.durableWrite).not.toHaveBeenCalled();
+});
 
 test('inline, file reader, save and destination upload reuse one complete source body', async () => {
   const bytes = new Uint8Array([1, 2, 3, 4]);

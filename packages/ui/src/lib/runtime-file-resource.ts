@@ -170,7 +170,11 @@ const acquireBufferedFile = async (path: string, signal: AbortSignal, readScope:
           }
         } catch { assertScope(); controller.signal.throwIfAborted(); reportPersistenceFallback(); }
         const bridge = getNativeImageCacheBridge();
-        const native = bridge?.fileResources && bridge.lookup ? await bridge.lookup({ key: persistentKey, size: before.size }) : null;
+        const native = bridge?.fileResources && bridge.lookup ? await bridge.lookup({ key: persistentKey, size: before.size }).catch(() => {
+          assertScope(); controller.signal.throwIfAborted();
+          console.warn('Native file cache lookup unavailable; reading from the active runtime.');
+          return null;
+        }) : null;
         if (native && bridge) {
           try {
             const cached = await fetch(native.url, { signal: controller.signal });
@@ -557,7 +561,11 @@ export const readRuntimeFile = async (input: FileResourceRequest): Promise<Respo
     }
     if (blob) { current(); return rangedBlobResponse(stat?.mimeType ? new Blob([blob], { type: stat.mimeType }) : blob, input.range); }
     const bridge = getNativeImageCacheBridge();
-    const native = key && stat && bridge?.fileResources && bridge.lookup ? await bridge.lookup({ key, size: stat.size }) : null;
+    const native = key && stat && bridge?.fileResources && bridge.lookup ? await bridge.lookup({ key, size: stat.size }).catch(() => {
+      current();
+      console.warn('Native file cache lookup unavailable; reading from the active runtime.');
+      return null;
+    }) : null;
     if (native && bridge) {
       try {
         current();
