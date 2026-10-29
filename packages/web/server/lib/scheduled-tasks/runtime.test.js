@@ -387,9 +387,9 @@ describe('scheduled task result handoff', () => {
       expect(input.userText).toContain(task.execution.prompt);
       if (mode === 'failure') expect(input.userText).toContain('upstream failed');
       else expect(input.userText).toContain('Actual research findings');
-      return reviewTaskResult({ ...input, createChatCompletion: async () => ({ text: mode === 'silent'
-        ? '```yuri-final\n{"status":"silent","text":""}\n```'
-        : mode === 'failure' ? '任务执行失败，需要检查服务。' : '资料汇总：有两项值得关注的更新。' }) });
+      return reviewTaskResult({ ...input, createChatCompletion: async () => (mode === 'silent'
+        ? { completion: { choices: [{ message: { content: '', tool_calls: [{ id: 'call_silent', type: 'function', function: { name: 'stay_silent', arguments: '{}' } }] } }] } }
+        : { text: mode === 'failure' ? '任务执行失败，需要检查服务。' : '资料汇总：有两项值得关注的更新。' }) });
     });
     const runtime = createRuntime(null, {
       projectConfigRuntime, listProjects, runHistoryStore: store, notifyTaskRun,

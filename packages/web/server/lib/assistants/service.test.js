@@ -114,6 +114,8 @@ const settleSend = async (service, assistantID, body) => {
   return { ...sent, settled };
 };
 const assistantInput = { name: 'A', providerID: 'p', modelID: 'm' };
+const toolBatch = (calls, content = '') => ({ completion: { choices: [{ message: { content, tool_calls: calls.map(([name, args, id = `call_${name}`]) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })) } }] } });
+const sayThen = (text, name, args) => toolBatch([['notify_user', { text }], [name, args]]);
 
 describe('assistants service', () => {
   it('migrates legacy avatar seeds and persists edits without changing identity', async () => {
@@ -3308,9 +3310,9 @@ describe('assistants service', () => {
         backgroundTurns.push(input);
         return realRunContactTurn({
           ...input,
-          createChatCompletion: async () => ({ text: silent
-            ? '```yuri-final\n{"status":"silent","text":""}\n```'
-            : '资料已整理：本周有两项相关更新。' }),
+          createChatCompletion: async () => (silent
+            ? toolBatch([['stay_silent', {}]])
+            : { text: '资料已整理：本周有两项相关更新。' }),
         });
       }
       await input.tools.find((tool) => tool.name === 'schedule_task').execute('schedule', {
@@ -3747,7 +3749,7 @@ describe('assistants service', () => {
         backgroundTurns.push(input);
         return realRunContactTurn({
           ...input,
-          createChatCompletion: async () => ({ text: '```yuri-message\n{"text":"正在查看该会话的执行结果"}\n```\n```yuri-final\n{"status":"silent","text":""}\n```' }),
+          createChatCompletion: async () => toolBatch([['stay_silent', {}]], '正在查看该会话的执行结果'),
         });
       },
     });
@@ -4901,15 +4903,12 @@ describe('read_session referenced conversation', () => {
   it('real harness two read_session preambles: SSE done bubbles match SQLite 1:1 including duplicates', async () => {
     const directory = root();
     const events = [];
-    const fence = (name, args) => '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
     const replies = [
-      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_a' })}`,
-      `我再读一下\n\n${fence('read_session', { sessionID: 'ses_b' })}`,
-      '```yuri-final\n{"status":"complete","text":"办好了"}\n```',
+      sayThen('我去读一下', 'read_session', { sessionID: 'ses_a' }),
+      sayThen('我再读一下', 'read_session', { sessionID: 'ses_b' }),
+      { text: '办好了' },
     ];
-    const createChatCompletion = vi.fn(async () => ({
-      completion: { choices: [{ message: { content: replies.shift() || '' } }] },
-    }));
+    const createChatCompletion = vi.fn(async () => replies.shift() || { text: '' });
     const service = setup(directory, {
       get: async ({ sessionID }) => ({
         data: { id: sessionID, directory, title: sessionID },
@@ -4956,15 +4955,11 @@ describe('read_session referenced conversation', () => {
     service.close();
   });
 
-  it('persists public model messages before generation and tool completion, with no final replay', async () => {
+  it('persists notify_user messages before tool completion, with no final replay', async () => {
     const directory = root();
     const events = [];
-    let releaseGeneration;
     let releaseTool;
-    const generationGate = new Promise((resolve) => { releaseGeneration = resolve; });
     const toolGate = new Promise((resolve) => { releaseTool = resolve; });
-    const prefix = '```yuri-message\n{"text":"我先读一下会话，确认目前的进展。"}\n```\n';
-    const tool = '```yuri-tool\n{"name":"read_session","arguments":{"sessionID":"ses_progress"}}\n```';
     let calls = 0;
     const read = vi.fn(async () => {
       await toolGate;
@@ -4975,25 +4970,17 @@ describe('read_session referenced conversation', () => {
     }, {
       onContactTurnEvent: (event) => events.push(event),
       runContactTurn: realRunContactTurn,
-      createChatCompletion: async ({ onTextDelta }) => {
-        if (++calls === 1) {
-          onTextDelta(prefix);
-          await generationGate;
-          onTextDelta(tool);
-          return { text: prefix + tool };
-        }
-        return { text: '```yuri-final\n{"status":"complete","text":"这个会话目前为空。"}\n```' };
+      createChatCompletion: async () => {
+        if (++calls === 1) return sayThen('我先读一下会话，确认目前的进展。', 'read_session', { sessionID: 'ses_progress' });
+        return { text: '这个会话目前为空。' };
       },
     });
     const assistant = service.createAssistant(assistantInput);
     try {
       await service.send(assistant.id, { messageID: 'live_public', parts: [{ type: 'text', text: '读一下会话' }] });
-      await vi.waitFor(() => expect(service.contactMessages(assistant.id).messages.some((m) => m.text === '我先读一下会话，确认目前的进展。')).toBe(true));
-      expect(read).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
       expect(service.snapshot().assistants.find((a) => a.id === assistant.id).working).toBe(true);
       expect(events.some((e) => e.type === 'yuri:contact-turn-end')).toBe(false);
-      releaseGeneration();
-      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
       // A fresh snapshot/history read while the actual tool is pending restores the same message.
       expect(service.contactMessages(assistant.id).messages.filter((m) => m.role === 'assistant').map((m) => m.text)).toEqual(['我先读一下会话，确认目前的进展。']);
       releaseTool();
@@ -5002,18 +4989,17 @@ describe('read_session referenced conversation', () => {
       const deltas = events.filter((e) => e.type === 'yuri:contact-bubble-delta' && e.properties.done);
       expect(deltas.map((e) => e.properties.bubbleIndex)).toEqual([0, 1]);
     } finally {
-      releaseGeneration(); releaseTool(); service.close();
+      releaseTool(); service.close();
     }
   });
 
   it('real harness duplicate preambles keep both lines in SSE and SQLite', async () => {
     const directory = root();
     const events = [];
-    const fence = (name, args) => '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
     const replies = [
-      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_dup_a' })}`,
-      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_dup_b' })}`,
-      '```yuri-final\n{"status":"complete","text":"办好了"}\n```',
+      sayThen('我去读一下', 'read_session', { sessionID: 'ses_dup_a' }),
+      sayThen('我去读一下', 'read_session', { sessionID: 'ses_dup_b' }),
+      { text: '办好了' },
     ];
     const service = setup(directory, {
       get: async ({ sessionID }) => ({ data: { id: sessionID, directory, title: sessionID } }),
@@ -5023,9 +5009,7 @@ describe('read_session referenced conversation', () => {
     }, {
       onContactTurnEvent: (event) => events.push(event),
       runContactTurn: realRunContactTurn,
-      createChatCompletion: vi.fn(async () => ({
-        completion: { choices: [{ message: { content: replies.shift() || '' } }] },
-      })),
+      createChatCompletion: vi.fn(async () => replies.shift() || { text: '' }),
     });
     const assistant = service.createAssistant(assistantInput);
     await settleSend(service, assistant.id, {
@@ -5046,17 +5030,14 @@ describe('read_session referenced conversation', () => {
   it('real harness missed-tool retry keeps pre-retry spoken in SSE and SQLite', async () => {
     const directory = root();
     const events = [];
-    const fence = (name, args) => '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
     const replies = [
-      '```yuri-final\n{"status":"complete","text":"好的，我来创建。"}\n```',
-      `这就建好\n\n${fence('create_assistant', { name: 'MissSvc', model: 'p/m' })}`,
+      { text: '好的，我来创建。' },
+      sayThen('这就建好', 'create_assistant', { name: 'MissSvc', model: 'p/m' }),
     ];
     const service = setup(directory, {}, {
       onContactTurnEvent: (event) => events.push(event),
       runContactTurn: realRunContactTurn,
-      createChatCompletion: vi.fn(async () => ({
-        completion: { choices: [{ message: { content: replies.shift() || '' } }] },
-      })),
+      createChatCompletion: vi.fn(async () => replies.shift() || { text: '' }),
     });
     const assistant = service.createAssistant(assistantInput);
     await settleSend(service, assistant.id, {

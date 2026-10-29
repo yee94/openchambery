@@ -20,8 +20,8 @@ const listen = async (app) => {
   closers.push(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
   return `http://127.0.0.1:${server.address().port}`;
 };
-const final = (text) => ({ text: '```yuri-final\n' + JSON.stringify({ status: 'complete', text }) + '\n```' });
-const call = (name, args) => ({ text: '```yuri-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```' });
+const final = (text) => ({ text });
+const call = (name, args) => ({ completion: { choices: [{ message: { content: '', tool_calls: [{ id: `call_${name}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] } }] } });
 const resultFor = (body, name) => {
   const row = body.messages.findLast((m) => m.role === 'tool' && m.name === name);
   if (!row) return null;

@@ -86,22 +86,18 @@ describe('mergeSkillsByName', () => {
 });
 
 describe('formatPiCodingPrompt', () => {
-  it('includes full pi tool argument schemas and distinguishes skills from tools', async () => {
+  it('names the pi coding tools without a schema catalog and distinguishes skills from tools', async () => {
     const cwd = temp();
     const home = temp();
     const runtime = await createPiCodingRuntime(cwd, { homeDir: home });
     const prompt = formatPiCodingPrompt({
       cwd: runtime.cwd,
       skillsPrompt: runtime.skillsPrompt,
-      tools: runtime.tools,
     });
-    expect(prompt).toContain('arguments schema:');
-    expect(prompt).toContain('"path"');
-    expect(prompt).toContain('"content"');
-    expect(prompt).toContain('"edits"');
-    expect(prompt).toContain('"oldText"');
-    expect(prompt).toContain('"newText"');
-    expect(prompt).toContain('"command"');
+    expect(prompt).toContain('read, write, edit, bash');
+    expect(prompt).not.toContain('arguments schema:');
+    expect(prompt).not.toContain('"oldText"');
+    expect(prompt).not.toContain('yuri-tool');
     expect(prompt).toContain('not OpenCode native tools and not MCP');
     expect(prompt).toContain('never invent skill or MCP tool names');
     expect(prompt).toContain('context7');

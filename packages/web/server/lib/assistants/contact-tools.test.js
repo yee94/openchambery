@@ -29,20 +29,28 @@ import {
   formatRegisteredProjectsPrompt,
   matchesProjectQuery,
   normalizeAssignRequestKey,
-  parseContactToolCalls,
+  parseContactNativeToolCalls,
   resolveContactProviderModel,
   resolvePeerAssistant,
-  stripContactToolFences,
   userTextRequestsClearChatHistory,
 } from './contact-tools.js';
 import { attachmentScopeKey } from './assign.js';
 
 describe('contact tool protocol', () => {
+  const nativeCall = (name, args, id = `call_${name}`) => ({
+    id,
+    type: 'function',
+    function: { name, arguments: typeof args === 'string' ? args : JSON.stringify(args) },
+  });
+
   it('recovers shell aliases and names unavailable tools without enabling bash in read-only contexts', () => {
-    const parsed = parseContactToolCalls('```yuri-tool\n{"name":"grep","arguments":{"pattern":"it\u0027s","path":"src"}}\n```', ['bash']);
-    expect(parsed.toolCalls[0]).toMatchObject({ name: 'bash' });
+    const parsed = parseContactNativeToolCalls([nativeCall('grep', { pattern: "it's", path: 'src' })], ['bash']);
+    expect(parsed.toolCalls[0]).toMatchObject({ name: 'bash', id: 'call_grep' });
     expect(parsed.toolCalls[0].arguments.command).toContain("-e 'it'\\''s' 'src'");
-    expect(parseContactToolCalls('```yuri-tool\n{"name":"grep","arguments":{"pattern":"x"}}\n```', ['read']).protocolError).toContain('"grep" is not an available tool');
+    expect(parseContactNativeToolCalls([nativeCall('glob', { pattern: '*' })], ['bash']).toolCalls[0]).toMatchObject({ name: 'bash' });
+    expect(parseContactNativeToolCalls([nativeCall('bash', { command: 'pwd' })], ['bash', ASSIGN_SESSION_TOOL_NAME]).toolCalls)
+      .toEqual([{ name: 'bash', arguments: { command: 'pwd' }, id: 'call_bash' }]);
+    expect(parseContactNativeToolCalls([nativeCall('grep', { pattern: 'x' })], ['read']).protocolError).toContain('"grep" is not an available tool');
     expect(detectRequestedContactTools('把定时任务里的模型换成新的', ['schedule_task', 'list_scheduled_tasks'])).toEqual(['list_scheduled_tasks']);
   });
   it('shows current-instance models with ordered favorites and recents using exact ids', () => {
@@ -68,155 +76,29 @@ describe('contact tool protocol', () => {
     expect(formatConnectedModelsPrompt([], { catalogAvailable: false })).toContain('catalog unavailable')
   })
 
-  it('parses watch_session and stop_session fences', () => {
-    const watchText = '```yuri-tool\n{"name":"watch_session","arguments":{"sessionID":"ses_w"}}\n```';
-    expect(parseContactToolCalls(watchText, [WATCH_SESSION_TOOL_NAME, STOP_SESSION_TOOL_NAME]).toolCalls).toEqual([
-      { name: WATCH_SESSION_TOOL_NAME, arguments: { sessionID: 'ses_w' } },
-    ]);
-    const stopText = '好的 {"name":"stop_session","arguments":{"sessionID":"ses_s"}}';
-    expect(parseContactToolCalls(stopText, [WATCH_SESSION_TOOL_NAME, STOP_SESSION_TOOL_NAME]).toolCalls).toEqual([
-      { name: STOP_SESSION_TOOL_NAME, arguments: { sessionID: 'ses_s' } },
-    ]);
-  });
-
-  it('parses an assign_session fence and strips it from chat text', () => {
-    const text = 'On it.\n\n```yuri-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login","projectPath":"/repo"}}\n```';
-    const parsed = parseContactToolCalls(text, [ASSIGN_SESSION_TOOL_NAME]);
-    expect(parsed.chatText).toBe('On it.');
-    expect(parsed.toolCalls[0]).toEqual({
-      name: ASSIGN_SESSION_TOOL_NAME,
-      arguments: { prompt: 'Fix login', projectPath: '/repo' },
-    });
-    expect(stripContactToolFences(text)).toBe('On it.');
-  });
-
-  it('parses create_assistant and schedule_task fences from natural-language replies', () => {
-    const create = parseContactToolCalls(
-      '好。\n\n```yuri-tool\n{"name":"create_assistant","arguments":{"name":"FlowQA","model":"opencode-go/deepseek-v4-flash"}}\n```',
-      [CREATE_ASSISTANT_TOOL_NAME, SCHEDULE_TASK_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME],
-    );
-    expect(create.chatText).toBe('好。');
-    expect(create.toolCalls[0]).toEqual({
-      name: CREATE_ASSISTANT_TOOL_NAME,
-      arguments: { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' },
-    });
-    const schedule = parseContactToolCalls(
-      '```yuri-tool\n{"name":"schedule_task","arguments":{"name":"Daily ping","prompt":"ping","time":"18:00","timezone":"Asia/Shanghai"}}\n```',
-      [CREATE_ASSISTANT_TOOL_NAME, SCHEDULE_TASK_TOOL_NAME],
-    );
-    const peer = parseContactToolCalls(
-      '```yuri-tool\n{"name":"message_assistant","arguments":{"to":"PeerQA","text":"hello-from-assistant 写好了"}}\n```',
-      [MESSAGE_ASSISTANT_TOOL_NAME],
-    );
-    expect(peer.toolCalls[0]).toEqual({
-      name: MESSAGE_ASSISTANT_TOOL_NAME,
-      arguments: { to: 'PeerQA', text: 'hello-from-assistant 写好了' },
-    });
-    expect(schedule.toolCalls[0]).toEqual({
-      name: SCHEDULE_TASK_TOOL_NAME,
-      arguments: { name: 'Daily ping', prompt: 'ping', time: '18:00', timezone: 'Asia/Shanghai' },
-    });
-  });
-
-  it('parses a bare {name, arguments} object anywhere in the assistant text', () => {
-    const parsed = parseContactToolCalls(
-      '好的，我来直接创建这个助理，不开编码会话。\n{"name":"create_assistant","arguments":{"name":"FlowNL","model":"opencode-go/deepseek-v4-flash"}}',
-      [CREATE_ASSISTANT_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME],
-    );
-    expect(parsed.toolCalls[0]).toEqual({
-      name: CREATE_ASSISTANT_TOOL_NAME,
-      arguments: { name: 'FlowNL', model: 'opencode-go/deepseek-v4-flash' },
-    });
-    expect(parsed.chatText).toContain('好的，我来直接创建这个助理');
-    expect(parsed.chatText).not.toContain('create_assistant');
-  });
-
-  it('accepts the existing single-call fence without a newline', () => {
-    expect(parseContactToolCalls('```yuri-tool {"name":"read","arguments":{"path":"sample.md"}}```', ['read']).toolCalls)
-      .toEqual([{ name: 'read', arguments: { path: 'sample.md' } }]);
-  });
-
-  it('does not execute tool-shaped JSON inside other protocol or example fences', () => {
-    const text = '```yuri-final\n{"status":"complete","text":"done","example":{"name":"bash","arguments":{"command":"pwd"}}}\n```';
-    expect(parseContactToolCalls(text, ['bash'])).toEqual({ chatText: text, toolCalls: [] });
-  });
-
-  it.each(['json\n', '\n', ''])('preserves complete tool payloads in generic fences: %s', (header) => {
-    const call = { name: 'read', arguments: { path: 'sample.md' } };
-    const result = parseContactToolCalls(`Before \`\`\`${header}${JSON.stringify(call)}\`\`\` After`, ['read']);
-    expect(result.toolCalls).toEqual([call]);
-    expect(result.chatText).toBe('Before  After');
-  });
-
-  it('does not run nested or partial tool examples in generic fences', () => {
-    const text = '```json\n{"example":{"name":"bash","arguments":{"command":"pwd"}}}\n```';
-    expect(parseContactToolCalls(text, ['bash'])).toEqual({ chatText: text, toolCalls: [] });
-    const prose = '```\nExample: {"name":"bash","arguments":{"command":"pwd"}}\n```';
-    expect(parseContactToolCalls(prose, ['bash'])).toEqual({ chatText: prose, toolCalls: [] });
-  });
-
-  it('retains every tool call in order across fenced and embedded JSON', () => {
+  it('retains every native tool call in order with its call id', () => {
     const calls = [
       { name: 'read', arguments: { path: 'sample.md' } },
       { name: 'bash', arguments: { command: 'date +%F' } },
-      { name: 'write', arguments: { path: 'result.md', content: 'done' } },
+      { name: 'write', arguments: { path: 'result.md', content: '```json\n{"quoted": "value"}\n```' } },
     ];
-    const text = `Before ${JSON.stringify(calls[0])}\n\n\`\`\`yuri-tool\n${JSON.stringify(calls[1])}\n\`\`\`\nAfter ${JSON.stringify(calls[2])}`;
-    const result = parseContactToolCalls(text, ['read', 'bash', 'write']);
-    expect(result.toolCalls).toEqual(calls);
-    expect(result.chatText).toContain('Before');
-    expect(result.chatText).toContain('After');
-    expect(result.chatText).not.toContain('arguments');
-    expect(result.protocolError).toBeUndefined();
-  });
-
-  it('keeps markdown fences and escaped quotes inside JSON string arguments', () => {
-    const calls = [
-      { name: 'write', arguments: { path: 'note.md', content: '```json\n{"quoted": "value"}\n```' } },
-      { name: 'read', arguments: { path: 'note.md' } },
-    ];
-    const text = calls.map((call) => `\`\`\`yuri-tool\n${JSON.stringify(call)}\n\`\`\``).join('\n');
-    expect(parseContactToolCalls(text, ['read', 'write'])).toEqual({ chatText: '', toolCalls: calls });
-  });
-
-  it('preserves both calls from the observed read-sample and bash-date response', () => {
-    const calls = [
-      { name: 'read', arguments: { path: 'notes/sample.md' } },
-      { name: 'bash', arguments: { command: 'date +%F' } },
-    ];
-    const text = calls.map((call) => `\`\`\`yuri-tool\n${JSON.stringify(call)}\n\`\`\``).join('\n\n');
-    expect(parseContactToolCalls(text, ['read', 'bash'])).toEqual({ chatText: '', toolCalls: calls });
+    const result = parseContactNativeToolCalls(calls.map((call, index) => nativeCall(call.name, call.arguments, `call_${index}`)), ['read', 'bash', 'write']);
+    expect(result).toEqual({ toolCalls: calls.map((call, index) => ({ ...call, id: `call_${index}` })), protocolError: '' });
   });
 
   it.each([
-    '{bad json}',
-    '{"name":"unknown","arguments":{}}',
-    '{"name":"read","arguments":[]}',
-    '',
-  ])('rejects the complete batch when an explicit tool fence is invalid: %s', (invalid) => {
-    const valid = '\`\`\`yuri-tool\n{"name":"read","arguments":{"path":"sample.md"}}\n\`\`\`';
-    const result = parseContactToolCalls(`${valid}\n\`\`\`yuri-tool\n${invalid}\n\`\`\``, ['read']);
+    ['{bad json}', 'must be valid JSON'],
+    [JSON.stringify([]), 'Invalid arguments'],
+  ])('rejects the complete native batch when one call has invalid arguments: %s', (invalid, message) => {
+    const result = parseContactNativeToolCalls([nativeCall('read', { path: 'sample.md' }, 'call_ok'), nativeCall('read', invalid, 'call_bad')], ['read']);
     expect(result.toolCalls).toEqual([]);
-    expect(result.protocolError).toEqual(expect.any(String));
+    expect(result.protocolError).toContain(message);
   });
 
-  it('rejects a truncated explicit tool fence without executing an earlier call', () => {
-    const result = parseContactToolCalls('{"name":"read","arguments":{"path":"sample.md"}}\n\`\`\`yuri-tool\n{"name":"read"', ['read']);
+  it('rejects the complete native batch when one tool is unavailable', () => {
+    const result = parseContactNativeToolCalls([nativeCall('read', { path: 'sample.md' }), nativeCall('unknown', {})], ['read']);
     expect(result.toolCalls).toEqual([]);
-    expect(result.protocolError).toEqual(expect.any(String));
-  });
-
-  it.each(['', '{"name":"read","arguments":{"path":"sample.md"}}\n'])('rejects an unclosed outer JSON object without executing a nested call or valid prefix', (prefix) => {
-    const result = parseContactToolCalls(prefix + '{"example": {"name":"bash","arguments":{"command":"pwd"}}', ['read', 'bash']);
-    expect(result.toolCalls).toEqual([]);
-    expect(result.protocolError).toEqual(expect.any(String));
-  });
-
-  it('does not discover nested JSON arguments or strings as additional tool calls', () => {
-    const nested = { name: 'bash', arguments: { command: 'pwd' } };
-    const call = { name: 'write', arguments: { path: 'result.json', content: JSON.stringify(nested), metadata: nested } };
-    expect(parseContactToolCalls(JSON.stringify(call), ['write', 'bash']).toolCalls).toEqual([call]);
-    expect(parseContactToolCalls(JSON.stringify({ example: nested }), ['bash']).toolCalls).toEqual([]);
+    expect(result.protocolError).toContain('"unknown" is not an available tool');
   });
 
   it('detects 建助理 without treating 不要开编码 session as assign_session', () => {
@@ -281,18 +163,6 @@ describe('contact tool protocol', () => {
     expect(userTextRequestsClearChatHistory('开新对话')).toBe(false);
   });
 
-  it('parses bash fences when the pi coding tools are allowed', () => {
-    const text = '```yuri-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```';
-    expect(parseContactToolCalls(text, ['bash', ASSIGN_SESSION_TOOL_NAME]).toolCalls[0]).toEqual({
-      name: 'bash',
-      arguments: { command: 'pwd' },
-    });
-    expect(parseContactToolCalls(
-      '```yuri-tool\n{"name":"glob","arguments":{"pattern":"*"}}\n```',
-      ['bash'],
-    ).toolCalls[0]).toMatchObject({ name: 'bash' });
-  });
-
   it('tells DeepSeek to call tools from natural language, not slash commands', () => {
     const prompt = formatContactToolsPrompt(createContactTools());
     expect(prompt).toContain('new_conversation');
@@ -322,7 +192,7 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('plain @session:id reference alone is context');
     expect(prompt).toContain('session/new');
     expect(prompt).toContain('LLM memory only');
-    expect(prompt).toContain('Persists');
+    expect(prompt).toContain('persists defaultPrompt');
     expect(prompt).toContain('later turns');
     expect(prompt).not.toContain('/card');
     expect(prompt).not.toContain('/dm');
@@ -331,15 +201,10 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('Never claim you cannot see projects');
     expect(prompt).toContain('One successful assign ends this turn');
     expect(prompt).toContain('application-owned Yuri contact tools');
-    expect(prompt).toContain('arguments schema:');
-    expect(prompt).toContain('"prompt"');
-    expect(prompt).toContain('"projectPath"');
-    expect(prompt).toContain('"providerID"');
-    expect(prompt).toContain('"modelID"');
-    expect(prompt).toContain('"model"');
+    expect(prompt).not.toContain('arguments schema:');
+    expect(prompt).not.toContain('yuri-tool');
+    expect(prompt).not.toContain('Available Yuri tools:');
     expect(prompt).toContain('connected catalog');
-    expect(prompt).toContain('"to"');
-    expect(prompt).toContain('"text"');
   });
 
   it('exposes connected models for assign worker selection without inventing ids', () => {

@@ -52,7 +52,42 @@ const AVATAR_GUIDE = [
   'Only seed is editable here; style, colors, facial features, custom URLs and uploaded images are not supported.',
   'Keep the current avatarSeed to restore it later. Avatar changes preserve identity and conversations.',
 ].join('\n');
-const CONTACT_TOOL_FENCE = 'yuri-tool';
+export const NOTIFY_USER_TOOL_NAME = 'notify_user';
+export const STAY_SILENT_TOOL_NAME = 'stay_silent';
+export const NOTIFY_USER_MAX_CHARS = 2000;
+
+/**
+ * Harness-owned conversation tools. notify_user is the only mid-turn channel to
+ * the user; plain text beside other tool calls stays private. The stream function
+ * publishes notify_user text when the response arrives, so execution only
+ * acknowledges it. stay_silent lets a background review finish without a reply.
+ */
+export function createNotifyUserTool() {
+  return {
+    name: NOTIFY_USER_TOOL_NAME,
+    label: 'Notify user',
+    description: 'Send the user a short progress message while you keep working; batch it with your next tool call. Use only when it tells them something they do not already know: a direction they may want to correct, a finding that matters, a blocker, or that the work will take a while. Never use it to announce the next step or repeat the plan. The final answer is your plain reply, not this tool.',
+    parameters: typeboxObject({ text: typeboxString('Short message in the user language.') }),
+    execute: async (_toolCallId, params) => {
+      const text = typeof params?.text === 'string' ? params.text.trim() : '';
+      if (!text || text.length > NOTIFY_USER_MAX_CHARS) {
+        return { content: [{ type: 'text', text: `notify_user needs 1-${NOTIFY_USER_MAX_CHARS} characters of text.` }], details: { error: 'validation_error' }, terminate: false };
+      }
+      return { content: [{ type: 'text', text: 'Delivered.' }], details: { delivered: true }, terminate: false };
+    },
+  };
+}
+
+export function createStaySilentTool() {
+  return {
+    name: STAY_SILENT_TOOL_NAME,
+    label: 'Stay silent',
+    description: 'End this background review without replying to the user. Call it alone, only when no reply is needed.',
+    parameters: typeboxObject({}),
+    execute: async () => ({ content: [{ type: 'text', text: 'Silent.' }], details: { silent: true }, terminate: true }),
+  };
+}
+
 export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
 export const WATCHED_SESSION_FALLBACK_BUBBLE = 'Watching that coding session.';
 export const STOPPED_SESSION_FALLBACK_BUBBLE = '已停止该会话。';
@@ -119,7 +154,7 @@ const bashAliasCommand = (name, args = {}) => {
   return `if command -v rg >/dev/null 2>&1; then rg --files -g ${shellQuote(pattern)} ${target}; else find ${target} -name ${shellQuote(pattern)}; fi`;
 };
 
-export const MISSED_FENCE_RETRY_USER_TEXT = 'emit the fence now, do not claim success.';
+export const MISSED_FENCE_RETRY_USER_TEXT = 'Call the requested tool now; do not claim success without its result.';
 
 const CREATE_ASSISTANT_INTENT = /建助理|新建[^。\n!]{0,24}助理|创建[^。\n!]{0,24}助理|加一个助理|create (?:an |a new )?assistant|new assistant/iu;
 // Changing or reviewing existing tasks starts with list_scheduled_tasks, not schedule_task.
@@ -404,178 +439,42 @@ const allowedToolName = (name, allowedNames) => {
   return BASH_ALIAS_TOOLS.has(next) && allowedNames.has('bash');
 };
 
-const parseToolPayload = (raw, allowedNames) => {
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  const name = typeof parsed.name === 'string' ? parsed.name.trim() : '';
+const normalizeToolCall = (name, args, allowedNames) => {
   if (!allowedToolName(name, allowedNames)) return null;
-  const args = parsed.arguments;
-  if (args != null && (typeof args !== 'object' || Array.isArray(args))) return null;
-  const normalizedArgs = args && typeof args === 'object' ? args : {};
+  if (args == null || typeof args !== 'object' || Array.isArray(args)) return null;
   if (!allowedNames.has(name) && BASH_ALIAS_TOOLS.has(name)) {
-    const command = bashAliasCommand(name, normalizedArgs);
+    const command = bashAliasCommand(name, args);
     if (!command) return null;
-    const timeout = typeof normalizedArgs.timeout === 'number' ? { timeout: normalizedArgs.timeout } : {};
+    const timeout = typeof args.timeout === 'number' ? { timeout: args.timeout } : {};
     return { name: 'bash', arguments: { command, ...timeout } };
   }
-  return { name, arguments: normalizedArgs };
+  return { name, arguments: args };
 };
 
-const describeRejectedToolPayload = (raw, allowedNames) => {
-  const fallback = 'Invalid or unavailable tool in yuri-tool fence';
-  let parsed;
-  try { parsed = JSON.parse(raw); }
-  catch { return `${fallback}: the payload is not valid JSON.`; }
-  const name = typeof parsed?.name === 'string' ? parsed.name.trim() : '';
-  if (name && !allowedToolName(name, allowedNames)) {
-    return `${fallback}: "${name.slice(0, 80)}" is not an available tool. Use only: ${[...allowedNames].join(', ')}. If no available tool can do the task, say so in a final answer.`;
-  }
-  return `${fallback}: expected {"name":"<tool>","arguments":{...}}.`;
-};
-
+/**
+ * Normalize native function calls: shell-style aliases run through bash, and an
+ * unavailable or malformed call becomes an actionable correction for the model.
+ */
 export function parseContactNativeToolCalls(calls, allowedNames) {
   const allowed = new Set(allowedNames);
   const toolCalls = [];
   for (const call of calls) {
+    const name = typeof call?.function?.name === 'string' ? call.function.name.trim() : '';
     let args;
-    try { args = JSON.parse(call.function.arguments); }
-    catch { return { toolCalls: [], protocolError: 'Tool arguments must be valid JSON.' }; }
-    const raw = JSON.stringify({ name: call.function.name, arguments: args });
-    const parsed = parseToolPayload(raw, allowed);
-    if (!parsed) return { toolCalls: [], protocolError: describeRejectedToolPayload(raw, allowed) };
-    toolCalls.push({ ...parsed, id: call.id });
+    try { args = JSON.parse(call?.function?.arguments || '{}'); }
+    catch { return { toolCalls: [], protocolError: `Arguments for "${name.slice(0, 80)}" must be valid JSON.` }; }
+    const normalized = normalizeToolCall(name, args, allowed);
+    if (!normalized) {
+      return {
+        toolCalls: [],
+        protocolError: name && !allowedToolName(name, allowed)
+          ? `"${name.slice(0, 80)}" is not an available tool. Use only: ${[...allowed].join(', ')}. If no available tool can do the task, say so in your reply.`
+          : `Invalid arguments for "${name.slice(0, 80)}".`,
+      };
+    }
+    toolCalls.push({ ...normalized, id: call.id });
   }
   return { toolCalls, protocolError: '' };
-}
-
-const extractJsonObjectAt = (text, start) => {
-  if (text[start] !== '{') return null;
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let index = start; index < text.length; index += 1) {
-    const character = text[index];
-    if (inString) {
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (character === '\\') {
-        escape = true;
-        continue;
-      }
-      if (character === '"') inString = false;
-      continue;
-    }
-    if (character === '"') {
-      inString = true;
-      continue;
-    }
-    if (character === '{') depth += 1;
-    else if (character === '}') {
-      depth -= 1;
-      if (depth === 0) return text.slice(start, index + 1);
-    }
-  }
-  return null;
-};
-
-const findToolFenceEnd = (text, start) => {
-  let inString = false;
-  let escaped = false;
-  for (let index = start; index < text.length; index += 1) {
-    const character = text[index];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
-      else if (character === '"') inString = false;
-    } else if (character === '"') {
-      inString = true;
-    } else if (text.startsWith('```', index)) {
-      return index;
-    }
-  }
-  return -1;
-};
-
-export function stripContactToolFences(text) {
-  if (typeof text !== 'string') return '';
-  return text.replace(new RegExp(`\`\`\`${CONTACT_TOOL_FENCE}[\\s\\S]*?\`\`\``, 'gu'), '').trim();
-}
-
-export function parseContactToolCalls(text, allowedNames = []) {
-  const allowed = new Set(
-    (Array.isArray(allowedNames) ? allowedNames : [])
-      .filter((name) => typeof name === 'string' && name.trim())
-      .map((name) => name.trim()),
-  );
-  const raw = typeof text === 'string' ? text : '';
-  const toolCalls = [];
-  const visible = [];
-  let visibleStart = 0;
-  for (let index = 0; index < raw.length;) {
-    if (raw.startsWith('```', index)) {
-      const header = raw.slice(index + 3).match(/^([^\r\n`]*)/u)?.[0] || '';
-      const explicit = raw.startsWith(CONTACT_TOOL_FENCE, index + 3)
-        && /[\s{]|^$/u.test(raw[index + 3 + CONTACT_TOOL_FENCE.length] || '');
-      const genericJson = header.trim() === 'json' || header.trim() === '' || header.trimStart().startsWith('{');
-      const payloadStart = index + 3 + (explicit
-        ? CONTACT_TOOL_FENCE.length
-        : header.trimStart().startsWith('{') ? 0 : header.length);
-      const end = explicit || genericJson
-        ? findToolFenceEnd(raw, payloadStart)
-        : raw.indexOf('```', payloadStart);
-      if (explicit) {
-        if (end < 0) {
-          return { chatText: '', toolCalls: [], protocolError: 'Unclosed yuri-tool fence' };
-        }
-        const toolCall = parseToolPayload(raw.slice(payloadStart, end).trim(), allowed);
-        if (!toolCall) {
-          return { chatText: '', toolCalls: [], protocolError: describeRejectedToolPayload(raw.slice(payloadStart, end).trim(), allowed) };
-        }
-        toolCalls.push(toolCall);
-        visible.push(raw.slice(visibleStart, index));
-        visibleStart = end + 3;
-      }
-      if (!explicit && genericJson && end >= 0) {
-        const toolCall = parseToolPayload(raw.slice(payloadStart, end).trim(), allowed);
-        if (toolCall) {
-          toolCalls.push(toolCall);
-          visible.push(raw.slice(visibleStart, index));
-          visibleStart = end + 3;
-        }
-      }
-      // Other fenced prose/examples and final declarations are not tool invocations.
-      index = end < 0 ? raw.length : end + 3;
-      continue;
-    }
-    if (raw[index] !== '{') {
-      index += 1;
-      continue;
-    }
-    const snippet = extractJsonObjectAt(raw, index);
-    if (!snippet) {
-      // Do not reinterpret a nested object from malformed outer JSON as an
-      // operation, or repeatedly scan the same unfinished suffix.
-      return { chatText: '', toolCalls: [], protocolError: 'Unclosed JSON object in tool response' };
-    }
-    const toolCall = parseToolPayload(snippet, allowed);
-    if (toolCall) {
-      toolCalls.push(toolCall);
-      visible.push(raw.slice(visibleStart, index));
-      visibleStart = index + snippet.length;
-    }
-    // Consume the whole outer object even if it is ordinary JSON. Its nested
-    // arguments or example objects must never become additional operations.
-    index += snippet.length;
-  }
-  visible.push(raw.slice(visibleStart));
-  return { chatText: visible.join('').trim(), toolCalls };
 }
 
 const isNegatedAt = (text, index) => INTENT_NEGATION.test(text.slice(Math.max(0, index - 12), index));
@@ -669,7 +568,9 @@ export function detectRequestedContactTools(userText, allowedNames = []) {
 }
 
 export function contactTurnHasToolResult(messages) {
-  return (Array.isArray(messages) ? messages : []).some((message) => message?.role === 'toolResult');
+  return (Array.isArray(messages) ? messages : []).some((message) => (
+    message?.role === 'toolResult' && message.toolName !== NOTIFY_USER_TOOL_NAME
+  ));
 }
 
 const trim = (value, max = 10_000) => {
@@ -777,35 +678,6 @@ export function resolveAssistantTarget(params = {}, assistants = []) {
   return matches[0];
 }
 
-/**
- * Serialize a tool parameter schema for the contact system prompt.
- * Accepts plain JSON-schema-like objects and TypeBox schemas (JSON.stringify).
- * Strips non-enumerable TypeBox markers (~kind / ~optional).
- */
-export function serializeToolParametersForPrompt(parameters) {
-  if (parameters == null) return '{"type":"object","properties":{}}';
-  try {
-    const text = JSON.stringify(parameters, (_key, value) => {
-      if (typeof value === 'function' || typeof value === 'symbol') return undefined;
-      return value;
-    });
-    if (typeof text === 'string' && text.trim() && text !== 'undefined') return text;
-  } catch {
-    // Fall through to empty object schema.
-  }
-  return '{"type":"object","properties":{}}';
-}
-
-/** One catalog line: name, description, and full arguments schema. */
-export function formatApplicationToolCatalogEntry(tool) {
-  if (!tool || typeof tool.name !== 'string' || !tool.name.trim()) return '';
-  const name = tool.name.trim();
-  const description = typeof tool.description === 'string' && tool.description.trim()
-    ? tool.description.trim()
-    : (typeof tool.label === 'string' && tool.label.trim() ? tool.label.trim() : name);
-  return `- ${name}: ${description}\n  arguments schema: ${serializeToolParametersForPrompt(tool.parameters)}`;
-}
-
 export function formatContactToolsPrompt(tools) {
   const list = Array.isArray(tools)
     ? tools.filter((tool) => tool?.name && !isPiCodingToolName(tool.name))
@@ -827,43 +699,7 @@ export function formatContactToolsPrompt(tools) {
     'When they want to stop/abort a running coding session (停止会话 / stop session), call stop_session with sessionID — that calls real OpenCode session.abort.',
     'When they want a scheduled task (排定时任务 / schedule daily ping), call schedule_task.',
     'When they want to tell another assistant (给 PeerQA 说一声 / message PeerQA), call message_assistant.',
-    `Call exactly one Yuri operation tool per reply; coding tools may be batched as described by the workspace protocol.`,
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${NEW_CONVERSATION_TOOL_NAME}","arguments":{}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${CLEAR_CHAT_HISTORY_TOOL_NAME}","arguments":{}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${LIST_PROJECTS_TOOL_NAME}","arguments":{"query":"yuri yee"}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${LIST_SESSIONS_TOOL_NAME}","arguments":{"projectPath":"/path/to/repo","query":"login"}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${GET_ASSISTANT_SETTINGS_TOOL_NAME}","arguments":{}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${UPDATE_DEFAULT_PROMPT_TOOL_NAME}","arguments":{"to":"OpenCode 配置助手","prompt":"Be terse and reply in Chinese."}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${CREATE_ASSISTANT_TOOL_NAME}","arguments":{"name":"FlowQA","model":"opencode-go/deepseek-v4-flash"}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${SCHEDULE_TASK_TOOL_NAME}","arguments":{"name":"Daily ping","prompt":"ping","time":"18:00","timezone":"Asia/Shanghai"}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${MESSAGE_ASSISTANT_TOOL_NAME}","arguments":{"to":"PeerQA","text":"hello-from-assistant 写好了"}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${ASSIGN_SESSION_TOOL_NAME}","arguments":{"prompt":"...","projectPath":"...","model":"provider/model-id"}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${WATCH_SESSION_TOOL_NAME}","arguments":{"sessionID":"ses_example"}}`,
-    '```',
-    `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${STOP_SESSION_TOOL_NAME}","arguments":{"sessionID":"ses_example"}}`,
-    '```',
+    'Call exactly one Yuri operation tool per response; coding tools may be batched.',
     'If the user asked for more than one of these, do them in that order across turns: new_conversation or clear_chat_history, then list_projects, then list_sessions, then get_assistant_settings or update_default_prompt, then create_assistant, then schedule_task, then message_assistant, then watch_session or stop_session, then assign_session.',
     'Prerequisite lookups (list_projects / list_sessions) may run before assign_session / watch_session / stop_session in the same turn. After a successful assign_session or watch_session the turn ends — never call them again in that turn, and do not keep looping tools.',
     'new_conversation advances this contact\'s LLM context boundary only. Stored messages and watches remain. It never calls session/new or createNew.',
@@ -881,13 +717,10 @@ export function formatContactToolsPrompt(tools) {
     'To review or change existing scheduled tasks, call list_scheduled_tasks, then update_scheduled_task with the exact taskID and projectID it returned. Update one task per call and pass only the fields to change.',
     'message_assistant is read-only: it inserts into the other contact transcript. It never runs promptAsync or mutates sessions or files. Never assign through a peer message.',
     'A reply without the tool call does nothing — agreeing in Chinese (好的 / 我来创建 / 我去说一声) is not sending.',
-    'A yuri-message prefix is not required before a tool fence; publish one only when it tells the user something new. Keep private reasoning, tool names, and raw traces out of public messages.',
     'Never say 已创建, 已发送, 已停止, created, scheduled, opened, watched, stopped, or sent unless the tool already returned success.',
     'With an empty registered catalog, first discover the relevant existing workspace through list_sessions and directory lookups, then ask the user to register that workspace in Settings before assignment.',
     'After a tool that changes state succeeds, confirm in one short bubble; lookups need no separate confirmation. The user sees a contact card, not tool traces. After successful assign_session or watch_session the session card plus that short confirm is enough — stop.',
-    'These are application-owned Yuri contact tools (not OpenCode native tools, not MCP, not skill directory entries). Use only the names and argument schemas below:',
-    'Available Yuri tools:',
-    ...list.map((tool) => formatApplicationToolCatalogEntry(tool)).filter(Boolean),
+    'These are application-owned Yuri contact tools (not OpenCode native tools, not MCP, not skill directory entries). Use only the provided tool names and their schemas.',
   ].join('\n');
 }
 
