@@ -87,6 +87,9 @@ function compareSemverTags(a, b) {
 }
 
 function latestBaseTag() {
+  const { version } = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
+  const current = parseSemverTag(`v${version}`)
+  if (!current) throw new Error(`Invalid release version: ${version}`)
   // CI checks out the tag being released, so that tag points at HEAD and
   // would be selected as the highest base — diffing a tag against itself is
   // always empty and every release would read as `ota`. Exclude tags that
@@ -98,10 +101,10 @@ function latestBaseTag() {
       .map((t) => t.trim())
       .filter(Boolean),
   )
-  const tags = git(['tag', '-l', 'v*'])
+  const tags = git(['tag', '--merged', 'HEAD', '-l', 'v*'])
     .split('\n')
     .map((t) => t.trim())
-    .filter((t) => TAG_PATTERN.test(t) && !headTags.has(t))
+    .filter((t) => TAG_PATTERN.test(t) && !headTags.has(t) && parseSemverTag(t)?.major === current.major)
   if (tags.length === 0) {
     return null
   }

@@ -20,6 +20,7 @@ function fixture() {
   copyFileSync(script, path.join(root, 'scripts/mobile-release-plan.mjs'));
   writeFileSync(path.join(root, 'packages/mobile/contracts/index.mjs'), 'export const mobileBridgeContracts = [];');
   writeFileSync(path.join(root, 'packages/mobile/capacitor.config.ts'), 'const config = { shellApiVersion: 2 };');
+  writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '0.1.1' }));
   const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
   git('init');
   git('config', 'user.name', 'Release Test');
@@ -53,4 +54,20 @@ test('a previous release still permits OTA for web-only changes', () => {
 test('an explicitly missing base remains an error', () => {
   const { run } = fixture();
   expect(run('--base', 'v9.9.9').status).not.toBe(0);
+});
+
+test('old higher-major tags cannot raise the shell floor of the current release line', () => {
+  const { root, git, run } = fixture();
+  git('tag', 'v2.1.10');
+  mkdirSync(path.join(root, 'packages/mobile/ios'), { recursive: true });
+  writeFileSync(path.join(root, 'packages/mobile/ios/shell.swift'), 'current shell');
+  git('add', '.');
+  git('-c', 'commit.gpgsign=false', 'commit', '-m', 'Current release line');
+  git('tag', 'v0.1.0');
+  writeFileSync(path.join(root, 'web.txt'), 'web-only fix');
+  git('add', '.');
+  git('-c', 'commit.gpgsign=false', 'commit', '-m', 'Web fix');
+  const result = run();
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ mode: 'ota', baseTag: 'v0.1.0', changedNativePaths: [] });
 });
