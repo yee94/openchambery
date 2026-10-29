@@ -115,6 +115,7 @@ export async function createChatCompletion({
   retryEmptyTextUntilCancelled = false,
   cacheKey,
   maxOutputTokens,
+  validateToolCalls = true,
 }) {
   signal?.throwIfAborted();
   if (!isRecord(body)) throw new LlmError('validation_error', 400, 'JSON body is required');
@@ -207,7 +208,7 @@ export async function createChatCompletion({
   }
   const text = typeof generated?.text === 'string' ? generated.text.trim() : '';
   if (!text && !generated?.toolCalls?.length) throw new LlmError('upstream_error', 502, 'OpenCode returned no assistant text');
-  if (generated.toolCalls?.some(call => !tools.some(tool => tool.name === call.name))) throw new LlmError('upstream_error', 502, 'Model returned an unavailable tool');
+  if (validateToolCalls && generated.toolCalls?.some(call => !tools.some(tool => tool.name === call.name))) throw new LlmError('upstream_error', 502, 'Model returned an unavailable tool');
 
   const model = `${resolved.providerID}/${resolved.modelID}`;
   return {

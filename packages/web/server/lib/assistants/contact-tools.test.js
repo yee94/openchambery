@@ -38,6 +38,13 @@ import {
 import { attachmentScopeKey } from './assign.js';
 
 describe('contact tool protocol', () => {
+  it('recovers shell aliases and names unavailable tools without enabling bash in read-only contexts', () => {
+    const parsed = parseContactToolCalls('```yuri-tool\n{"name":"grep","arguments":{"pattern":"it\u0027s","path":"src"}}\n```', ['bash']);
+    expect(parsed.toolCalls[0]).toMatchObject({ name: 'bash' });
+    expect(parsed.toolCalls[0].arguments.command).toContain("-e 'it'\\''s' 'src'");
+    expect(parseContactToolCalls('```yuri-tool\n{"name":"grep","arguments":{"pattern":"x"}}\n```', ['read']).protocolError).toContain('"grep" is not an available tool');
+    expect(detectRequestedContactTools('把定时任务里的模型换成新的', ['schedule_task', 'list_scheduled_tasks'])).toEqual(['list_scheduled_tasks']);
+  });
   it('shows current-instance models with ordered favorites and recents using exact ids', () => {
     const prompt = formatConnectedModelsPrompt([
       { providerID: 'p', providerName: 'Connected Provider', modelID: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
@@ -282,8 +289,8 @@ describe('contact tool protocol', () => {
     });
     expect(parseContactToolCalls(
       '```yuri-tool\n{"name":"glob","arguments":{"pattern":"*"}}\n```',
-      ['glob', 'bash'],
-    ).toolCalls).toEqual([]);
+      ['bash'],
+    ).toolCalls[0]).toMatchObject({ name: 'bash' });
   });
 
   it('tells DeepSeek to call tools from natural language, not slash commands', () => {
@@ -438,6 +445,8 @@ describe('createContactTools', () => {
       UPDATE_DEFAULT_PROMPT_TOOL_NAME,
       CREATE_ASSISTANT_TOOL_NAME,
       SCHEDULE_TASK_TOOL_NAME,
+      'list_scheduled_tasks',
+      'update_scheduled_task',
       MESSAGE_ASSISTANT_TOOL_NAME,
       ASSIGN_SESSION_TOOL_NAME,
       WATCH_SESSION_TOOL_NAME,

@@ -21,6 +21,63 @@ import { createChatCompletion as gatewayCompletion } from '../llm/completions.js
 import { generateOpenCodeText } from '../llm/generate.js'
 
 describe('createContactStreamFn', () => {
+  it('offers scheduled-task lookup but no mutation or shell tools in read-only turns', async () => {
+    const seen = [];
+    const tools = createContactTools({ listScheduledTasks: vi.fn(), updateScheduledTask: vi.fn() });
+    await runContactTurn({ assistant: { providerID: 'p', modelID: 'm' }, history: [], userText: '后台复盘', tools, readOnly: true,
+      createChatCompletion: async ({ body }) => { seen.push(...body.tools.map(tool => tool.function.name)); return { text: '已检查。' }; },
+    });
+    expect(seen).toContain('list_scheduled_tasks');
+    expect(seen).not.toContain('update_scheduled_task');
+    expect(seen).not.toContain('bash');
+  });
+  it('runs scheduled-task listing and updating through native schemas and the real pi loop', async () => {
+    const listScheduledTasks = vi.fn(async () => ({ tasks: [{ id: 'task1', projectID: 'project1' }] }));
+    const updateScheduledTask = vi.fn(async () => ({ task: { id: 'task1', name: 'Task', schedule: { kind: 'daily', times: ['09:00'] }, execution: { providerID: 'p', modelID: 'm' } } }));
+    const tools = createContactTools({ listScheduledTasks, updateScheduledTask });
+    let round = 0;
+    const completion = input => gatewayCompletion({ ...input,
+      loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'm' }] }),
+      generateText: async ({ messages, tools: schemas }) => {
+        expect(schemas.map(tool => tool.name)).toEqual(expect.arrayContaining(['list_scheduled_tasks', 'update_scheduled_task']));
+        round++;
+        if (round === 1) return { text: '', toolCalls: [{ id: 'list1', name: 'list_scheduled_tasks', arguments: {} }] };
+        expect(messages.some(message => message.role === 'tool' && message.tool_call_id === 'list1')).toBe(true);
+        if (round === 2) return { text: '', toolCalls: [{ id: 'update1', name: 'update_scheduled_task', arguments: { taskID: 'task1', projectID: 'project1', model: 'p/m' } }] };
+        return { text: '```yuri-final\n{"status":"complete","text":"任务已更新。"}\n```', toolCalls: [] };
+      },
+    });
+    const result = await runContactTurn({ assistant: { providerID: 'p', modelID: 'm' }, history: [], userText: '修改定时任务的模型', tools, createChatCompletion: completion });
+    expect(result.text).toBe('任务已更新。');
+    expect(listScheduledTasks).toHaveBeenCalledTimes(1);
+    expect(updateScheduledTask).toHaveBeenCalledExactlyOnceWith({ taskID: 'task1', projectID: 'project1', model: 'p/m' });
+    expect(round).toBe(3);
+  });
+  it('normalizes native shell aliases through the production gateway and preserves call identity', async () => {
+    const completion = input => gatewayCompletion({ ...input,
+      loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'm' }] }),
+      generateText: async () => ({ text: '', toolCalls: [{ id: 'native_alias', name: 'grep', arguments: { pattern: 'needle', path: 'src' } }] }),
+    });
+    const result = await createContactStreamFn(completion)(
+      { name: 'p/m', id: 'm', provider: 'yuri', api: 'openai-completions' },
+      { messages: [{ role: 'user', content: 'Find needle in src' }], tools: [{ name: 'bash', parameters: { type: 'object', properties: { command: { type: 'string' } } } }] },
+    ).result();
+    expect(result.content.at(-1)).toMatchObject({ type: 'toolCall', id: 'native_alias', name: 'bash', arguments: { command: expect.stringContaining("-e 'needle' 'src'") } });
+  });
+
+  it('corrects unavailable native tools with actionable tool names', async () => {
+    const completion = vi.fn()
+      .mockResolvedValueOnce({ completion: { choices: [{ message: { content: '', tool_calls: [{ id: 'bad', function: { name: 'list_cron', arguments: '{}' } }] } }] } })
+      .mockResolvedValueOnce({ completion: { choices: [{ message: { content: '', tool_calls: [{ id: 'good', function: { name: 'list_scheduled_tasks', arguments: '{}' } }] } }] } });
+    const result = await createContactStreamFn(completion)(
+      { name: 'p/m', id: 'm', provider: 'yuri', api: 'openai-completions' },
+      { messages: [], tools: [{ name: 'list_scheduled_tasks' }] },
+    ).result();
+    expect(completion).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(completion.mock.calls[1][0].body.messages)).toContain('list_cron');
+    expect(JSON.stringify(completion.mock.calls[1][0].body.messages)).toContain('list_scheduled_tasks');
+    expect(result.content.at(-1)).toMatchObject({ type: 'toolCall', id: 'good', name: 'list_scheduled_tasks' });
+  });
   it('continues eight real Agent tool rounds through gateway recovery without replaying completed tools', async () => {
     vi.useFakeTimers()
     try {

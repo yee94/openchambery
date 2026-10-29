@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { LlmError, createChatCompletion } from './completions.js'
 
 describe('createChatCompletion', () => {
+  it('keeps tool-name checks strict for HTTP input while allowing internal harness correction', async () => {
+    const input = {
+      body: { model: 'p/m', messages: [{ role: 'user', content: 'lookup' }], validateToolCalls: false },
+      loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'm' }] }),
+      generateText: async () => ({ text: '', toolCalls: [{ id: 'bad', name: 'unknown', arguments: {} }] }),
+    };
+    await expect(createChatCompletion(input)).rejects.toMatchObject({ code: 'upstream_error' });
+    await expect(createChatCompletion({ ...input, validateToolCalls: false })).resolves.toMatchObject({ completion: { choices: [{ message: { tool_calls: [{ id: 'bad' }] } }] } });
+  });
   it.each([{}, [{ id: 1, function: { name: 'read', arguments: '{}' } }]])('rejects malformed native tool calls before inference: %j', async (tool_calls) => {
     const generateText = vi.fn();
     await expect(createChatCompletion({ generateText, body: { model: 'p/m', messages: [{ role: 'assistant', content: '', tool_calls }] } })).rejects.toMatchObject({ code: 'validation_error', statusCode: 400 });

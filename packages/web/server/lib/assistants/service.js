@@ -60,6 +60,7 @@ import {
   normalizeConnectedModels,
   normalizeRegisteredProjects,
   sanitizeRegisteredProject,
+  summarizeScheduledTask,
 } from './contact-tools.js';
 import {
   AssignError,
@@ -236,7 +237,7 @@ const awaitWithDeadline = async (work, ms = CONTACT_CATALOG_DEADLINE_MS, code = 
   }
 };
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, /** Host archive op: ({ sessionID, directory, archivedAt }) => Promise */ archiveSessionHost = null, /** Idempotent Host metadata drop after successful SDK delete */ forgetSessionHost = null, /** Host store write: (sessionId, patch) => Promise */ persistSessionMetadata = null, /** After Host isolation metadata is committed. */ onSystemSessionPersisted = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, patchScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, /** Host archive op: ({ sessionID, directory, archivedAt }) => Promise */ archiveSessionHost = null, /** Idempotent Host metadata drop after successful SDK delete */ forgetSessionHost = null, /** Host store write: (sessionId, patch) => Promise */ persistSessionMetadata = null, /** After Host isolation metadata is committed. */ onSystemSessionPersisted = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -2489,6 +2490,66 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       prompt: upserted?.task?.execution?.prompt || params.prompt,
     };
   };
+  const listScheduledTaskWork = async (params = {}) => {
+    if (typeof listScheduledTasks !== 'function') throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Listing scheduled tasks is unavailable.');
+    const projects = normalizeRegisteredProjects(await listProjects());
+    const scope = typeof params.projectPath === 'string' ? params.projectPath.trim() : '';
+    const scoped = scope ? projects.filter((project) => project.id === scope || path.resolve(project.path) === path.resolve(scope)) : projects;
+    if (scope && scoped.length === 0) throw new AssignError(ASSIGN_CODES.PROJECT_REQUIRED, 'No registered project matches that projectPath.');
+    const query = typeof params.query === 'string' ? params.query.trim().toLowerCase() : '';
+    const tasks = [];
+    const failed = [];
+    for (const project of scoped) {
+      try {
+        const listed = await listScheduledTasks(project.id);
+        if (!Array.isArray(listed)) throw new Error('Invalid scheduled task list');
+        for (const task of listed) {
+          const summary = { ...summarizeScheduledTask(task, project.id), projectPath: project.path };
+          if (query && !JSON.stringify([summary.id, summary.name, summary.providerID, summary.modelID, task?.execution?.prompt]).toLowerCase().includes(query)) continue;
+          tasks.push(summary);
+        }
+      } catch {
+        // One unreadable project must not hide the others.
+        failed.push({ projectID: project.id, projectPath: project.path });
+      }
+    }
+    return { tasks, ...(failed.length > 0 ? { partial: true, failed } : {}) };
+  };
+  const updateScheduledTaskWork = async (row, params, signal) => {
+    signal?.throwIfAborted();
+    if (typeof patchScheduledTask !== 'function') throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Updating a scheduled task is unavailable.');
+    const projects = normalizeRegisteredProjects(await listProjects());
+    if (!projects.some((project) => project.id === params.projectID)) throw new AssignError(ASSIGN_CODES.PROJECT_REQUIRED, 'projectID must be a registered project from list_scheduled_tasks.');
+    const execution = {};
+    if (typeof params.prompt === 'string' && params.prompt.trim()) execution.prompt = params.prompt;
+    if (params.providerID || params.modelID || params.model) {
+      const workerModel = resolveAssignWorkerModel({ providerID: params.providerID, modelID: params.modelID, model: params.model,
+        fallback: { providerID: row.provider_id, modelID: row.model_id }, catalog: await loadAssignCatalog(signal) });
+      execution.providerID = workerModel.providerID;
+      execution.modelID = workerModel.modelID;
+    }
+    const schedule = {};
+    for (const key of ['kind', 'time', 'timezone', 'date', 'cron']) {
+      if (typeof params[key] === 'string' && params[key].trim()) schedule[key] = params[key].trim();
+    }
+    if (typeof params.weekdays === 'string' && params.weekdays.trim()) schedule.weekdays = params.weekdays.split(',').map((item) => Number(item.trim())).filter((item) => Number.isInteger(item));
+    if (schedule.time) schedule.times = [schedule.time];
+    const patch = {
+      ...(typeof params.name === 'string' && params.name.trim() ? { name: params.name.trim() } : {}),
+      ...(params.enabled === 'true' || params.enabled === true ? { enabled: true } : {}),
+      ...(params.enabled === 'false' || params.enabled === false ? { enabled: false } : {}),
+      ...(Object.keys(schedule).length > 0 ? { schedule } : {}),
+      ...(Object.keys(execution).length > 0 ? { execution } : {}),
+    };
+    if (Object.keys(patch).length === 0) throw new AssignError(ASSIGN_CODES.VALIDATION, 'update_scheduled_task needs at least one field to change.');
+    signal?.throwIfAborted();
+    const patched = await patchScheduledTask(params.projectID, params.taskID, patch);
+    if (!patched?.task) throw new AssignError(ASSIGN_CODES.VALIDATION, 'Scheduled task not found. Use an exact taskID from list_scheduled_tasks.');
+    if (typeof syncScheduledTaskProject === 'function') {
+      try { await syncScheduledTaskProject(params.projectID); } catch { /* The saved config stays authoritative; the scheduler reloads it on its next sync. */ }
+    }
+    return { task: patched.task, projectID: params.projectID };
+  };
   const listSessionsFromIndex = (params = {}) => {
     if (!sessionIndexService || typeof sessionIndexService.snapshot !== 'function') {
       throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session index is unavailable.');
@@ -2867,6 +2928,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           deleteSession: (params) => mutateSessionWork('delete', params),
           createAssistant: (toolInput) => createAssistant(toolInput),
           scheduleTask: (params) => scheduleWork(live, params),
+          listScheduledTasks: (params) => listScheduledTaskWork(params),
+          updateScheduledTask: (params) => updateScheduledTaskWork(live, params, controller.signal),
           deliverPeerMessage: (toolInput) => deliverPeerMessage(assistantID, toolInput),
           clearContactMemory: () => {
             const result = clearContactMemory(assistantID, {});
@@ -3224,6 +3287,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             deleteSession: (params) => mutateSessionWork('delete', params),
             createAssistant: (toolInput) => createAssistant(toolInput),
             scheduleTask: (params) => scheduleWork(row, params),
+            listScheduledTasks: (params) => listScheduledTaskWork(params),
+            updateScheduledTask: (params) => updateScheduledTaskWork(row, params, controller.signal),
             deliverPeerMessage: (toolInput) => deliverPeerMessage(row.assistant_id, toolInput),
             clearContactMemory: () => {
               // Cap the watermark at this turn's user ordinal — never global MAX,

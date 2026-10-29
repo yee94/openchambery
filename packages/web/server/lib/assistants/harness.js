@@ -12,6 +12,7 @@ import {
   formatRegisteredProjectsPrompt,
   MISSED_FENCE_RETRY_USER_TEXT,
   parseContactToolCalls,
+  parseContactNativeToolCalls,
   stripContactToolFences,
 } from './contact-tools.js';
 import {
@@ -108,6 +109,7 @@ export const CONTACT_SYSTEM_PROMPT = [
   'Send a progress message when it tells the user something they do not already know: a direction they may want to correct, a finding that matters, a blocker, or that the work will take a while. Skip messages that would only repeat the plan or narrate a step. Keep the final answer to the remaining outcome instead of repeating earlier updates.',
   'Public message protocol: put each user-facing progress message at the START of your response in its own yuri-message JSON fence, with a single-line JSON object {"text":"Your short message"}. Then emit the next tool call or final answer. A closed message fence is delivered immediately while you are still generating. Include only text intended for the user. Tool results are evidence for you to summarize in your own words; never copy their stock confirmation wording into your reply.',
   'Do not expose tool traces, Activity, or editor actions.',
+  'To view, change, enable, or pause existing scheduled tasks (查看/修改/暂停定时任务), use list_scheduled_tasks and then update_scheduled_task with the returned projectID/taskID. schedule_task only creates new tasks.',
   'You have bash, read, write, and edit in the working directory. Use them for pwd, files, and shell. Never say you have no terminal or cannot read files. Ignore any temporary generator workspace in the environment.',
   'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 查看助手设定 / 默认提示词 means get_assistant_settings (pass to="Name" for another assistant), 改默认提示词 / 设置人设 / 改某助手的默认提示词 means update_default_prompt (persists that assistant\'s settings, later turns only; pass to="OpenCode 配置助手" to edit another contact without changing this one), 建助理 means create_assistant, 建会话 / 开个新会话 / 继续会话 means assign_session, 监听会话 means watch_session, 停止/取消/打断会话 means stop_session, 插话 means steer_session, 归档会话 means archive_session, 删除会话 means delete_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
   'You receive the registered project catalog every turn. Match the user goal against project labels and paths and existing OpenCode conversations via list_sessions. Start in the user-configured working directory; managed contacts start in the current server user home directory and can inspect user-global directories with read/bash. When the starting directory has no relevant session, walk its parent directories to find the nearest relevant existing OpenCode workspace using session directory metadata, then search that workspace for the requested project or conversation. Use an unscoped list_sessions lookup when broader context is needed. Prefer the user-configured directory and explicit session context; ask a short question when several relevant targets remain. Keep discovery bounded and use actual tool results as evidence.',
@@ -468,6 +470,7 @@ export function createContactStreamFn(createChatCompletion, {
               if (typeof delta === 'string' && delta && typeof onTextDelta === 'function') onTextDelta(delta);
             },
             globalEventHub,
+            validateToolCalls: false,
           });
           signal?.throwIfAborted();
           text = result?.completion?.choices?.[0]?.message?.content ?? result?.text ?? '';
@@ -485,9 +488,9 @@ export function createContactStreamFn(createChatCompletion, {
           // A final answer is opaque text; quoted tool examples in it cannot run.
           const nativeCalls = result?.completion?.choices?.[0]?.message?.tool_calls ?? [];
           parsed = nativeCalls.length ? {
-            toolCalls: nativeCalls.map(call => ({ id: call.id, name: call.function.name, arguments: JSON.parse(call.function.arguments) })),
+            ...parseContactNativeToolCalls(nativeCalls, allowedNames),
             chatText: text,
-            protocolError: finalText !== null ? 'Do not mix native tool calls with a final declaration.' : nativeCalls.some(call => !allowedNames.includes(call.function.name)) ? 'The requested tool is unavailable.' : '',
+            ...(finalText !== null ? { protocolError: 'Do not mix native tool calls with a final declaration.' } : {}),
           } : finalText === null ? parseContactToolCalls(text, allowedNames) : { toolCalls: [], chatText: finalText };
           const mixedBatch = parsed.toolCalls.length > 1 && parsed.toolCalls.some((call) => !isPiCodingToolName(call.name));
           const malformedFinal = finalText === null && /```yuri-final/u.test(parsed.chatText);
@@ -659,7 +662,7 @@ export async function runContactTurn({
   const modelID = assistant.modelID;
   const cwd = resolveAssistantCwd(assistant);
   const contactTools = Array.isArray(tools)
-    ? tools.filter((tool) => tool && typeof tool.name === 'string' && !isPiCodingToolName(tool.name) && (!readOnly || ['list_projects', 'list_sessions', 'read_session', 'get_assistant_settings', 'search_memory', 'read_memory'].includes(tool.name)))
+    ? tools.filter((tool) => tool && typeof tool.name === 'string' && !isPiCodingToolName(tool.name) && (!readOnly || ['list_projects', 'list_sessions', 'read_session', 'list_scheduled_tasks', 'get_assistant_settings', 'search_memory', 'read_memory'].includes(tool.name)))
     : [];
   let runtime = null;
   let removeAbortListener = null;

@@ -33,6 +33,7 @@ export const registerAssistantRoutes = (app, dependencies) => {
     listScheduledTasks: dependencies.listScheduledTasks,
     sessionIndexService: dependencies.sessionIndexService,
     upsertScheduledTask: dependencies.upsertScheduledTask,
+    patchScheduledTask: dependencies.patchScheduledTask,
     syncScheduledTaskProject: dependencies.syncScheduledTaskProject,
     globalEventHub: dependencies.globalEventHub,
     onRevisionTip: dependencies.onRevisionTip,

@@ -30,6 +30,8 @@ export const ARCHIVE_SESSION_TOOL_NAME = 'archive_session';
 export const DELETE_SESSION_TOOL_NAME = 'delete_session';
 export const CREATE_ASSISTANT_TOOL_NAME = 'create_assistant';
 export const SCHEDULE_TASK_TOOL_NAME = 'schedule_task';
+const LIST_SCHEDULED_TASKS_TOOL_NAME = 'list_scheduled_tasks';
+const UPDATE_SCHEDULED_TASK_TOOL_NAME = 'update_scheduled_task';
 export const MESSAGE_ASSISTANT_TOOL_NAME = 'message_assistant';
 export const NEW_CONVERSATION_TOOL_NAME = 'new_conversation';
 export const CLEAR_CHAT_HISTORY_TOOL_NAME = 'clear_chat_history';
@@ -90,11 +92,38 @@ export function normalizeAssignRequestKey(params = {}) {
   });
 }
 
-const DENIED_CODING_TOOLS = new Set(['glob', 'grep', 'shell', 'find', 'ls', 'powershell']);
+// Common shell-style tool names that models emit from other harnesses. They run
+// through the real bash tool instead of being rejected.
+const BASH_ALIAS_TOOLS = new Set(['shell', 'powershell', 'grep', 'glob', 'find', 'ls']);
+const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
+const aliasString = (args, ...keys) => {
+  for (const key of keys) {
+    if (typeof args?.[key] === 'string' && args[key].trim()) return args[key].trim();
+  }
+  return null;
+};
+const bashAliasCommand = (name, args = {}) => {
+  const command = aliasString(args, 'command', 'cmd', 'script');
+  if (command) return command;
+  const target = shellQuote(aliasString(args, 'path', 'directory', 'dir', 'cwd') || '.');
+  const pattern = aliasString(args, 'pattern', 'query', 'regex', 'name', 'glob');
+  if (name === 'ls') return `ls -la ${target}`;
+  if (!pattern) return null;
+  if (name === 'grep') {
+    const include = aliasString(args, 'include', 'glob', 'filePattern');
+    const quoted = shellQuote(pattern);
+    return include && include !== pattern
+      ? `if command -v rg >/dev/null 2>&1; then rg -n -g ${shellQuote(include)} -e ${quoted} ${target}; else grep -rnE --include=${shellQuote(include)} -e ${quoted} ${target}; fi`
+      : `if command -v rg >/dev/null 2>&1; then rg -n -e ${quoted} ${target}; else grep -rnE -e ${quoted} ${target}; fi`;
+  }
+  return `if command -v rg >/dev/null 2>&1; then rg --files -g ${shellQuote(pattern)} ${target}; else find ${target} -name ${shellQuote(pattern)}; fi`;
+};
 
 export const MISSED_FENCE_RETRY_USER_TEXT = 'emit the fence now, do not claim success.';
 
 const CREATE_ASSISTANT_INTENT = /建助理|新建[^。\n!]{0,24}助理|创建[^。\n!]{0,24}助理|加一个助理|create (?:an |a new )?assistant|new assistant/iu;
+// Changing or reviewing existing tasks starts with list_scheduled_tasks, not schedule_task.
+const UPDATE_SCHEDULED_TASK_INTENT = /(?:改|修改|更新|换|切换|暂停|停用|启用|查看|看看|列出)[^。\n]{0,24}定时任务|定时任务[^。\n]{0,40}(?:改|换成|换为|切换|暂停|停用|启用|有哪些|列表)|(?:update|change|edit|pause|disable|enable|list)[^.\n]{0,24}scheduled tasks?/iu;
 const SCHEDULE_TASK_INTENT = /排定时任务|排个?定时任务|定时任务|schedule (?:a )?(?:daily )?(?:task|ping)|scheduled task|排个?(?:每日)?(?:任务|ping)/iu;
 const ASSIGN_SESSION_INTENT = /(?:建|开)(?:一个|个)?(?:新)?(?:编码\s*)?(?:session|会话)|继续(?:这个|该|那个)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|continue (?:the |this |that )?(?:coding )?session|assign_session/giu;
 const WATCH_SESSION_INTENT = /监听(?:这个|该|那个)?(?:编码\s*)?(?:session|会话)|关注(?:这个|该|那个)?(?:编码\s*)?(?:session|会话)|watch (?:the |this |that )?(?:coding )?session|monitor (?:the |this |that )?(?:coding )?session|watch_session/giu;
@@ -168,6 +197,28 @@ const scheduleTaskParameters = typeboxObject({
   providerID: typeboxOptional(typeboxString('OpenCode provider ID. Defaults to this contact\'s provider.')),
   modelID: typeboxOptional(typeboxString('OpenCode model ID. Defaults to this contact\'s model.')),
   model: typeboxOptional(typeboxString('Optional provider/model string such as opencode-go/deepseek-v4-flash.')),
+});
+
+const listScheduledTasksParameters = typeboxObject({
+  projectPath: typeboxOptional(typeboxString('Registered project path or id to limit the listing. Omit to list every registered project.')),
+  query: typeboxOptional(typeboxString('Optional filter against task name, id, prompt, or provider/model.')),
+});
+
+const updateScheduledTaskParameters = typeboxObject({
+  taskID: typeboxString('Exact task id from list_scheduled_tasks.'),
+  projectID: typeboxString('Exact project id from list_scheduled_tasks.'),
+  name: typeboxOptional(typeboxString('New task name.')),
+  enabled: typeboxOptional(typeboxString('"true" or "false" to enable or pause the task.')),
+  prompt: typeboxOptional(typeboxString('New prompt for the scheduled run.')),
+  providerID: typeboxOptional(typeboxString('New OpenCode provider ID from the connected catalog.')),
+  modelID: typeboxOptional(typeboxString('New OpenCode model ID from the connected catalog.')),
+  model: typeboxOptional(typeboxString('New provider/model string from the connected catalog.')),
+  kind: typeboxOptional(typeboxString('New schedule kind: daily, weekly, once, or cron.')),
+  time: typeboxOptional(typeboxString('New HH:mm local time.')),
+  timezone: typeboxOptional(typeboxString('New IANA timezone.')),
+  date: typeboxOptional(typeboxString('YYYY-MM-DD for kind=once.')),
+  weekdays: typeboxOptional(typeboxString('Comma-separated 0-6 weekdays for kind=weekly.')),
+  cron: typeboxOptional(typeboxString('Cron expression for kind=cron.')),
 });
 
 const messageAssistantParameters = typeboxObject({
@@ -349,8 +400,8 @@ export function boundSessionListLimit(value) {
 const allowedToolName = (name, allowedNames) => {
   if (typeof name !== 'string' || !name.trim()) return false;
   const next = name.trim();
-  if (DENIED_CODING_TOOLS.has(next)) return false;
-  return allowedNames.has(next);
+  if (allowedNames.has(next)) return true;
+  return BASH_ALIAS_TOOLS.has(next) && allowedNames.has('bash');
 };
 
 const parseToolPayload = (raw, allowedNames) => {
@@ -365,8 +416,42 @@ const parseToolPayload = (raw, allowedNames) => {
   if (!allowedToolName(name, allowedNames)) return null;
   const args = parsed.arguments;
   if (args != null && (typeof args !== 'object' || Array.isArray(args))) return null;
-  return { name, arguments: args && typeof args === 'object' ? args : {} };
+  const normalizedArgs = args && typeof args === 'object' ? args : {};
+  if (!allowedNames.has(name) && BASH_ALIAS_TOOLS.has(name)) {
+    const command = bashAliasCommand(name, normalizedArgs);
+    if (!command) return null;
+    const timeout = typeof normalizedArgs.timeout === 'number' ? { timeout: normalizedArgs.timeout } : {};
+    return { name: 'bash', arguments: { command, ...timeout } };
+  }
+  return { name, arguments: normalizedArgs };
 };
+
+const describeRejectedToolPayload = (raw, allowedNames) => {
+  const fallback = 'Invalid or unavailable tool in yuri-tool fence';
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch { return `${fallback}: the payload is not valid JSON.`; }
+  const name = typeof parsed?.name === 'string' ? parsed.name.trim() : '';
+  if (name && !allowedToolName(name, allowedNames)) {
+    return `${fallback}: "${name.slice(0, 80)}" is not an available tool. Use only: ${[...allowedNames].join(', ')}. If no available tool can do the task, say so in a final answer.`;
+  }
+  return `${fallback}: expected {"name":"<tool>","arguments":{...}}.`;
+};
+
+export function parseContactNativeToolCalls(calls, allowedNames) {
+  const allowed = new Set(allowedNames);
+  const toolCalls = [];
+  for (const call of calls) {
+    let args;
+    try { args = JSON.parse(call.function.arguments); }
+    catch { return { toolCalls: [], protocolError: 'Tool arguments must be valid JSON.' }; }
+    const raw = JSON.stringify({ name: call.function.name, arguments: args });
+    const parsed = parseToolPayload(raw, allowed);
+    if (!parsed) return { toolCalls: [], protocolError: describeRejectedToolPayload(raw, allowed) };
+    toolCalls.push({ ...parsed, id: call.id });
+  }
+  return { toolCalls, protocolError: '' };
+}
 
 const extractJsonObjectAt = (text, start) => {
   if (text[start] !== '{') return null;
@@ -426,7 +511,7 @@ export function stripContactToolFences(text) {
 export function parseContactToolCalls(text, allowedNames = []) {
   const allowed = new Set(
     (Array.isArray(allowedNames) ? allowedNames : [])
-      .filter((name) => typeof name === 'string' && name.trim() && !DENIED_CODING_TOOLS.has(name.trim()))
+      .filter((name) => typeof name === 'string' && name.trim())
       .map((name) => name.trim()),
   );
   const raw = typeof text === 'string' ? text : '';
@@ -451,7 +536,7 @@ export function parseContactToolCalls(text, allowedNames = []) {
         }
         const toolCall = parseToolPayload(raw.slice(payloadStart, end).trim(), allowed);
         if (!toolCall) {
-          return { chatText: '', toolCalls: [], protocolError: 'Invalid or unavailable tool in yuri-tool fence' };
+          return { chatText: '', toolCalls: [], protocolError: describeRejectedToolPayload(raw.slice(payloadStart, end).trim(), allowed) };
         }
         toolCalls.push(toolCall);
         visible.push(raw.slice(visibleStart, index));
@@ -524,7 +609,7 @@ const hasNewConversationIntent = (text) => hasIntentMatch(NEW_CONVERSATION_INTEN
 export function detectRequestedContactTools(userText, allowedNames = []) {
   const allowed = new Set(
     (Array.isArray(allowedNames) ? allowedNames : [])
-      .filter((name) => typeof name === 'string' && name.trim() && !DENIED_CODING_TOOLS.has(name.trim()))
+      .filter((name) => typeof name === 'string' && name.trim())
       .map((name) => name.trim()),
   );
   const text = typeof userText === 'string' ? userText : '';
@@ -558,7 +643,9 @@ export function detectRequestedContactTools(userText, allowedNames = []) {
   if (allowed.has(CREATE_ASSISTANT_TOOL_NAME) && CREATE_ASSISTANT_INTENT.test(text)) {
     requested.push(CREATE_ASSISTANT_TOOL_NAME);
   }
-  if (allowed.has(SCHEDULE_TASK_TOOL_NAME) && SCHEDULE_TASK_INTENT.test(text)) {
+  if (allowed.has(LIST_SCHEDULED_TASKS_TOOL_NAME) && UPDATE_SCHEDULED_TASK_INTENT.test(text)) {
+    requested.push(LIST_SCHEDULED_TASKS_TOOL_NAME);
+  } else if (allowed.has(SCHEDULE_TASK_TOOL_NAME) && SCHEDULE_TASK_INTENT.test(text)) {
     requested.push(SCHEDULE_TASK_TOOL_NAME);
   }
   // Prefer explicit stop/watch over generic continue/assign when both could match.
@@ -591,6 +678,17 @@ const trim = (value, max = 10_000) => {
   if (!next || next.length > max) return null;
   return next;
 };
+
+/** Model-facing scheduled-task summary: identity, schedule, model, bounded prompt preview. */
+export function summarizeScheduledTask(task, projectID) {
+  const prompt = typeof task?.execution?.prompt === 'string' ? task.execution.prompt : '';
+  return {
+    id: task?.id ?? null, projectID, name: task?.name ?? null,
+    enabled: task?.enabled !== false, schedule: task?.schedule ?? null,
+    providerID: task?.execution?.providerID ?? null, modelID: task?.execution?.modelID ?? null,
+    promptPreview: prompt.length > 200 ? `${prompt.slice(0, 200)}…` : prompt,
+  };
+}
 
 /** Resolve OpenCode provider/model from tool args or the current contact. */
 export function resolveContactProviderModel(params = {}, fallback = {}) {
@@ -710,7 +808,7 @@ export function formatApplicationToolCatalogEntry(tool) {
 
 export function formatContactToolsPrompt(tools) {
   const list = Array.isArray(tools)
-    ? tools.filter((tool) => tool?.name && !DENIED_CODING_TOOLS.has(tool.name) && !isPiCodingToolName(tool.name))
+    ? tools.filter((tool) => tool?.name && !isPiCodingToolName(tool.name))
     : [];
   if (list.length === 0) return '';
   return [
@@ -779,7 +877,8 @@ export function formatContactToolsPrompt(tools) {
     'steer_session sends text into an existing session with delivery=steer, preserving its model. archive_session archives an existing session; delete_session permanently deletes it. Use exact sessionID from history, references or list_sessions; ask if the target is ambiguous. Only delete when the user requested deletion. These operations call real APIs; never claim success from a spoken promise. assign_session creates a new session when sessionID is omitted, or continues an existing session when supplied.',
     'stop_session calls real OpenCode session.abort for that sessionID and returns the true result. Directory comes from authoritative session metadata. A failure is not a silent success. Do not claim stopped unless the tool returned success.',
     'create_assistant reuses already-connected OpenCode providers (providerID/modelID). Mode is continuous.',
-    'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
+    'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project. It only creates new tasks.',
+    'To review or change existing scheduled tasks, call list_scheduled_tasks, then update_scheduled_task with the exact taskID and projectID it returned. Update one task per call and pass only the fields to change.',
     'message_assistant is read-only: it inserts into the other contact transcript. It never runs promptAsync or mutates sessions or files. Never assign through a peer message.',
     'A reply without the tool call does nothing — agreeing in Chinese (好的 / 我来创建 / 我去说一声) is not sending.',
     'A yuri-message prefix is not required before a tool fence; publish one only when it tells the user something new. Keep private reasoning, tool names, and raw traces out of public messages.',
@@ -917,6 +1016,8 @@ export function createContactTools({
   deleteSession,
   createAssistant,
   scheduleTask,
+  listScheduledTasks,
+  updateScheduledTask,
   deliverPeerMessage,
   clearContactMemory,
   resetContact,
@@ -1408,6 +1509,40 @@ export function createContactTools({
           const fallback = error?.code === 'project_required' ? PROJECT_REQUIRED_MESSAGE : 'Could not create that scheduled task.';
           return toolFailure(error, 'schedule_failed', fallback);
         }
+      },
+    },
+    {
+      name: LIST_SCHEDULED_TASKS_TOOL_NAME,
+      label: 'List scheduled tasks',
+      description: 'List scheduled tasks across registered projects with id, projectID, name, enabled, schedule, provider/model, and a prompt preview. Partial failures list failed projects.',
+      parameters: listScheduledTasksParameters,
+      execute: async (_toolCallId, params) => {
+        try {
+          if (typeof listScheduledTasks !== 'function') throw new AssignError('upstream_error', 'Listing scheduled tasks is unavailable.');
+          const result = await listScheduledTasks(params || {});
+          return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, terminate: false };
+        } catch (error) { return toolFailure(error, 'list_scheduled_tasks_failed', 'Could not list scheduled tasks.'); }
+      },
+    },
+    {
+      name: UPDATE_SCHEDULED_TASK_TOOL_NAME,
+      label: 'Update scheduled task',
+      description: 'Update one existing scheduled task by exact taskID + projectID from list_scheduled_tasks. Pass only fields to change. An explicit model must exist in the connected catalog. Emits a schedule card.',
+      parameters: updateScheduledTaskParameters,
+      execute: async (_toolCallId, params) => {
+        try {
+          if (typeof updateScheduledTask !== 'function') throw new AssignError('upstream_error', 'Updating a scheduled task is unavailable.');
+          const taskID = trim(params?.taskID, 256);
+          const projectID = trim(params?.projectID, 256);
+          if (!taskID || !projectID) throw new AssignError('validation_error', 'update_scheduled_task requires taskID and projectID from list_scheduled_tasks.');
+          const updated = await updateScheduledTask({ ...params, taskID, projectID });
+          const task = updated?.task || {};
+          const card = createScheduleCardPart({ taskID: task.id || taskID, projectID, name: task.name || taskID,
+            kind: task.schedule?.kind, time: task.schedule?.time || task.schedule?.times?.[0],
+            timezone: task.schedule?.timezone, prompt: task.execution?.prompt });
+          emitCard(card);
+          return { content: [{ type: 'text', text: JSON.stringify({ updated: true, task: summarizeScheduledTask(task, projectID) }) }], details: { card, updated }, terminate: false };
+        } catch (error) { return toolFailure(error, 'update_scheduled_task_failed', 'Could not update that scheduled task.'); }
       },
     },
     {

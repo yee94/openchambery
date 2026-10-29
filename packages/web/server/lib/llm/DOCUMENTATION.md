@@ -79,6 +79,9 @@ Shutdown removes the owned directory; a failed staging operation cleans up.
 - Messages retain structured roles: system/user/assistant/tool. Native tool
   calls carry their original IDs and JSON arguments; tool results retain name
   and tool_call_id. The Assistant supplies its actual tool JSON schemas.
+  The contact harness may internally defer tool-name validation to its bounded
+  correction loop (`validateToolCalls: false`); HTTP body fields cannot disable
+  validation, and the harness validates/normalizes every call before execution.
 - Results retain text, tool calls, finish reason, input/output/cache-read usage.
   Empty text with valid tool calls is success. Truly empty results are errors;
   content-filter/error/length endings cannot masquerade as complete output.

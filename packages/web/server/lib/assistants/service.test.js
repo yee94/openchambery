@@ -3190,6 +3190,43 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('lists scheduled tasks with partial failures and updates only the requested model', async () => {
+    const directory = root();
+    const patches = [];
+    const synced = [];
+    const task = { id: 'task_a', name: 'Weekly', enabled: true, schedule: { kind: 'daily', times: ['09:00'] }, execution: { prompt: 'review notes', providerID: 'old', modelID: 'old-model' } };
+    let listed;
+    let missing;
+    let updated;
+    const service = setup(directory, {
+      provider: { list: async () => ({ data: [{ id: 'new-provider' }] }) },
+      model: { list: async () => ({ data: [{ providerID: 'new-provider', id: 'new-model' }] }) },
+    }, {
+      listProjects: async () => [{ id: 'proj_a', path: directory }, { id: 'proj_bad', path: path.join(directory, 'bad') }],
+      listScheduledTasks: async (projectID) => { if (projectID === 'proj_bad') throw new Error('unreadable'); return [task]; },
+      patchScheduledTask: async (projectID, taskID, patch) => {
+        patches.push({ projectID, taskID, patch });
+        return { task: { ...task, execution: { ...task.execution, ...patch.execution } } };
+      },
+      syncScheduledTaskProject: async (projectID) => { synced.push(projectID); },
+      runContactTurn: async ({ tools }) => {
+        listed = await tools.find(tool => tool.name === 'list_scheduled_tasks').execute('call_list', {});
+        const update = tools.find(tool => tool.name === 'update_scheduled_task');
+        missing = await update.execute('call_missing', { projectID: 'proj_a', taskID: 'task_a', model: 'missing/not-real' });
+        updated = await update.execute('call_update', { projectID: 'proj_a', taskID: 'task_a', model: 'new-provider/new-model' });
+        return { text: 'done', bubbles: ['done'], cards: [updated.details.card], tools };
+      },
+    });
+    const host = service.createAssistant(assistantInput);
+    await settleSend(service, host.id, { messageID: 'client_update_schedule', parts: [{ type: 'text', text: '修改定时任务模型' }] });
+    expect(listed.details).toMatchObject({ tasks: [{ id: 'task_a', projectID: 'proj_a' }], partial: true, failed: [{ projectID: 'proj_bad' }] });
+    expect(missing.details.error).toBe('model_not_found');
+    expect(patches).toEqual([{ projectID: 'proj_a', taskID: 'task_a', patch: { execution: { providerID: 'new-provider', modelID: 'new-model' } } }]);
+    expect(synced).toEqual(['proj_a']);
+    expect(updated.details.card).toMatchObject({ taskID: 'task_a' });
+    service.close();
+  });
+
   it('creates a scheduled task from schedule_task and persists the schedule card', async () => {
     const directory = root();
     const upserts = [];
