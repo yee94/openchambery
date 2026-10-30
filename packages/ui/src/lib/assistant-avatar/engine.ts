@@ -190,7 +190,6 @@ export function mountAssistantAvatarRenderer(doc: Document, uid: string, recipe:
   };
 }
 
-const escapeXml = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const path = (points: Point[]) => points.length ? `M${points.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join('L')}Z` : '';
 
 /** Pure export: works in server/SSR as well as browser/native PNG generation. */
