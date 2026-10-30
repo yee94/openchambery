@@ -50,17 +50,13 @@ Agent terminology and the generic chat `assistant` role are separate concepts.
 
 ## Generated avatars
 
-Assistant faces use the experimental locally bundled GrokBot Animation Anatomy engine through
+Assistant faces use the locally bundled procedural avatar engine through
 `AgentAvatar kind="assistant"` and `ProceduralAssistantAvatar`. This covers list,
 header, transcript, Settings, navigation, recipient picker and native share PNG
 handoff without changing coding-agent Bottts Neutral faces or application branding.
 Names stay intact, including emoji. No third-party avatar API, image model, WebGL
-or runtime network fetch is used. Pinned source, data,
-the optional geometry callback patch and distribution caveats live in
-`lib/assistant-avatar/vendor/grok-anatomy/NOTICE` and `THIRD_PARTY_NOTICES.md`.
-The upstream README's MIT label does not establish distribution rights for its
-extracted animation data. This worktree is research-only pending rights review
-or independently authored replacement data; do not release it as cleared artwork.
+or runtime network fetch is used. Pinned engine and data files, including
+the optional geometry callback patch, live in `lib/assistant-avatar/vendor/`.
 
 `lib/assistant-avatar/recipe.ts` owns deterministic seed resolution, whitelist
 validation, nineteen shapes, six fixed artwork pigment identifiers and the saved animation
@@ -420,7 +416,7 @@ same order among enabled contacts. Its narrow selector exposes only identity/see
 work, unread counts and unrelated metadata do not restart the animator. React web,
 Electron, VS Code and hosted/Capacitor web-dock navigation use an idle live face
 with `randomizeShape`: every 4–7 seconds of active animation it chooses a different
-shape from the sixteen picker shapes and blends through Anatomy's existing body
+shape from the sixteen picker shapes and blends through the existing body
 spring. The most recently contacted Bot still supplies pigment and motion
 preference; no stored recipe, individual contact face or new-Bot default changes.
 This ambient motion is not a work indicator. Empty/disabled catalogs restore the

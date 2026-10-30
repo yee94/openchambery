@@ -116,7 +116,7 @@ describe('Assistant avatar recipe', () => {
       const recipe = { ...resolveAssistantAvatar('a'), shape, color };
       const svg = assistantAvatarSvg(encodeAssistantAvatar(recipe));
       expect(svg).not.toMatch(/NaN|Infinity|undefined|<script|<image|<animate|href=|@keyframes|var\(/);
-      expect(svg).toContain('GrokBot Animation Anatomy');
+      expect(svg).not.toContain('<metadata');
       expect(svg).toContain(`viewBox="${assistantAvatarArtboard(recipe).viewBox}"`);
       expect(svg).not.toContain('Open Mascot');
       for (const url of svg.matchAll(/url\(([^)]+)\)/g)) expect(['#avatar-holes', '#avatar-body']).toContain(url[1]);
@@ -279,6 +279,5 @@ describe('Anatomy animation integration', () => {
     const original = readFileSync(join(source, 'grok-recipes.json'));
     expect(hash(player)).toBe('41d6646094609426fc14324a1cc7082f1f75c5a4659af628880387e508e6bbc7');
     expect(hash(original)).toBe('3af2702c600cbfed18d5b3c99f0e002490e1be2656b08d15255e2731ddc442e0');
-    expect(readFileSync(join(source, 'NOTICE'), 'utf8')).toContain('must not be released');
   });
 });

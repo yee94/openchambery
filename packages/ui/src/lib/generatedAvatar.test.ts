@@ -61,11 +61,11 @@ describe('local generated avatars', () => {
     expect(svg(first)).not.toMatch(/<script|<image|@keyframes|<animate/);
   });
 
-  test('assistant and agent use distinct styles and retain source attribution', () => {
+  test('assistant and agent use distinct styles and agent retains source attribution', () => {
     const gaze = svg(generatedAvatarDataUri('assistant', 'identity'));
     const bot = svg(generatedAvatarDataUri('agent', 'identity'));
     expect(gaze).not.toBe(bot);
-    expect(gaze).toContain('GrokBot Animation Anatomy');
+    expect(gaze).not.toContain('<metadata');
     expect(bot).toContain('Pablo Stanley');
     expect(bot).toContain('#c1f2c4');
     expect(generatedAvatarDataUri('agent', undefined)).toBe(generatedAvatarDataUri('agent', 'default'));

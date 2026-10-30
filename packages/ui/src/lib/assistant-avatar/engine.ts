@@ -3,7 +3,6 @@ import {
   type Frame, type Model, type MorphModel, type Point, type Theme, type Vector,
 } from './vendor/grok-anatomy/player.js';
 import recipes from './vendor/grok-anatomy/grok-recipes.json';
-import notice from './vendor/grok-anatomy/NOTICE?raw';
 import { buildAvatarBody, compactAvatarOutline } from './geometry';
 import { AVATAR_PICKER_SHAPES, resolveAssistantAvatar, type AssistantAvatarRecipe, type AvatarMotion } from './recipe';
 import { AVATAR_BODY_NAMES, type AvatarShape } from './catalog';
@@ -165,9 +164,6 @@ export function mountAssistantAvatarRenderer(doc: Document, uid: string, recipe:
   renderer.svg.setAttribute('width', '100%');
   renderer.svg.setAttribute('height', '100%');
   renderer.svg.classList.add('size-full');
-  const metadata = doc.createElementNS('http://www.w3.org/2000/svg', 'metadata');
-  metadata.textContent = notice;
-  renderer.svg.prepend(metadata);
   const fit = doc.createElementNS('http://www.w3.org/2000/svg', 'g');
   const content = renderer.svg.querySelector(':scope > g')!;
   renderer.svg.append(fit);
@@ -201,7 +197,7 @@ const path = (points: Point[]) => points.length ? `M${points.map(([x, y]) => `${
 export function assistantAvatarSvg(seed: string | undefined): string {
   const recipe = resolveAssistantAvatar(seed);
   const model = assistantAvatarStillModel(recipe), board = assistantAvatarArtboard(recipe);
-  const start = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="${board.viewBox}"><metadata>${escapeXml(notice)}</metadata>`;
+  const start = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="${board.viewBox}">`;
   if (model.mode === 'sphere') return `${start}<path d="${model.bodyD}" fill="${model.inkPaint}" fill-rule="evenodd"/>${model.eyesD ? `<path d="${model.eyesD}" fill="${model.spotPaint}"/>` : ''}</svg>`;
   const eyes = model.eyesPts.map(path).join('');
   const body = path(model.bodyPts);

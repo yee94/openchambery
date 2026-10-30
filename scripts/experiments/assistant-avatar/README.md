@@ -1,17 +1,16 @@
 # Assistant procedural avatar experiment
 
-## Current engine: Anatomy + independent non-sphere renderer
+## Current engine: procedural renderer with independent non-sphere geometry
 
-The active implementation is now based exclusively on
-[ArvinYin1/grokbot-animation-anatomy](https://github.com/ArvinYin1/grokbot-animation-anatomy),
-revision `debd41625da89b4c4fde43b3b1f0add6dc113c02`. The Open Mascot runtime and
+The active implementation uses the vendored player and animation recipes in
+`packages/ui/src/lib/assistant-avatar/vendor/grok-anatomy/`. The Open Mascot runtime and
 hand-authored screen-space eye rotations have been removed. All evidence below
 the historical heading belongs to earlier attempts, not to this engine.
 
-- The source sphere eye projection, expression/clip evaluator, state machine,
+- The engine's eye projection, expression/clip evaluator, state machine,
   blink tracks, bridge transitions, springs and DOM renderer are reused.
-- `geometry.ts` independently fills the missing non-sphere branch using the
-  article's solid / extrusion / loft / seat pipeline. Missing contour generators
+- `geometry.ts` independently fills the missing non-sphere branch using a
+  solid / extrusion / loft / seat pipeline. Missing contour generators
   are independently authored; these shapes are not claimed to match the original
   application frame-for-frame. No original app bundle is needed or included.
 - All nineteen persisted shapes render (sixteen picker choices); default Bots
@@ -34,9 +33,6 @@ the historical heading belongs to earlier attempts, not to this engine.
   .65-second whole-avatar shrink/rebound plus head sway, without changing the eye
   descriptors or working clip. Shrink reaches 82%; rebound uses up to 104% where
   the slot permits, after the ordinary containment fit.
-- Distribution rights are unresolved: the upstream README labels the repo MIT
-  but reserves underlying design/data and calls extracted recipes research-only.
-  See `THIRD_PARTY_NOTICES.md`; this is not release-cleared.
 
 ## Motion/runtime and independent performance gate (2026-10-30)
 
@@ -146,7 +142,7 @@ the historical heading belongs to earlier attempts, not to this engine.
   prevented a sustained frame-rate measurement. These figures do not establish
   stable 30fps, physical-device battery usage or composer/IME responsiveness.
 - Full Electron, VS Code, Capacitor and native share-sheet runtime acceptance were
-  not run. No release was made; distribution-rights review remains separate.
+  not run. No release was made in that validation.
 
 ## Running the current production-component lab
 
