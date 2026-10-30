@@ -613,6 +613,71 @@ describe('gitApiHttp status cache', () => {
   });
 });
 
+describe('gitApiHttp status revision', () => {
+  test('echoes the last revision and reuses the previous snapshot when the server reports unchanged', async () => {
+    installWindowMock();
+    const urls: string[] = [];
+    let statusRequestCount = 0;
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      urls.push(url);
+      statusRequestCount += 1;
+      const body = statusRequestCount === 1
+        ? { current: 'main', tracking: null, ahead: 0, behind: 0, files: [{ path: 'a.ts', index: ' ', working_dir: 'M' }], isClean: false, revision: 'full:r1' }
+        : { unchanged: true, revision: 'full:r1' };
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+
+    try {
+      const directory = '/repo-status-revision';
+      const first = await getGitStatus(directory);
+      // Expire the short TTL read cache so the second call reaches the network.
+      const realNow = Date.now;
+      Date.now = () => realNow() + 60_000;
+      let second: Awaited<ReturnType<typeof getGitStatus>>;
+      try {
+        second = await getGitStatus(directory);
+      } finally {
+        Date.now = realNow;
+      }
+
+      expect(urls).toHaveLength(2);
+      expect(urls[0]).not.toContain('since=');
+      expect(urls[1]).toContain('since=full%3Ar1');
+      expect(second).toBe(first);
+      expect(second.files).toHaveLength(1);
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('does not send a revision after a mutation invalidated the status', async () => {
+    installWindowMock();
+    const urls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.startsWith('/api/git/status')) {
+        return new Response(JSON.stringify({ current: 'main', tracking: null, ahead: 0, behind: 0, files: [], isClean: true, revision: 'full:r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+
+    try {
+      const directory = '/repo-status-revision-invalidate';
+      await getGitStatus(directory);
+      await gitFetch(directory, { remote: 'origin' });
+      await getGitStatus(directory);
+
+      const statusUrls = urls.filter((url) => url.startsWith('/api/git/status'));
+      expect(statusUrls).toHaveLength(2);
+      expect(statusUrls.some((url) => url.includes('since='))).toBe(false);
+    } finally {
+      restoreMocks();
+    }
+  });
+});
+
 describe('gitApiHttp worktree list cache', () => {
   test('invalidates cached worktree list after delete', async () => {
     installWindowMock();

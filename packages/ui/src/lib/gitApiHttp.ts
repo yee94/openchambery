@@ -57,6 +57,11 @@ const QUEUE_ACTIVATION_REPAIR_BACKOFF_MS = [0, 500, 1_000, 2_000, 4_000, 8_000, 
 const gitStatusCache = new Map<string, { value: GitStatus; expiresAt: number }>();
 const gitStatusInFlight = new Map<string, Promise<GitStatus>>();
 const gitStatusCacheVersions = new Map<string, number>();
+// Last full snapshot per status key, reused when the server answers `unchanged`
+// for the echoed revision. Bound to the transport and invalidation version so a
+// runtime switch or local mutation always re-reads the full payload.
+const gitStatusSnapshots = new Map<string, { revision: string; value: GitStatus; transport: string; cacheVersion: number }>();
+type GitStatusResponseBody = (GitStatus & { revision?: string }) | { unchanged: true; revision: string };
 const gitRepoCache = new Map<string, { value: boolean; expiresAt: number }>();
 const gitRepoInFlight = new Map<string, Promise<boolean>>();
 const gitPrimaryRootCache = new Map<string, { value: { root: string }; expiresAt: number }>();
@@ -121,6 +126,11 @@ const getStatusCacheVersion = (directory: string): number =>
 const invalidateGitStatusCache = (directory: string): void => {
   const key = normalizeDirectoryKey(directory);
   gitStatusCacheVersions.set(key, getStatusCacheVersion(directory) + 1);
+  for (const cacheKey of Array.from(gitStatusSnapshots.keys())) {
+    if (cacheKey === key || cacheKey.startsWith(`${key}::`)) {
+      gitStatusSnapshots.delete(cacheKey);
+    }
+  }
   for (const cacheKey of Array.from(gitStatusCache.keys())) {
     if (cacheKey === key || cacheKey.startsWith(`${key}::`)) {
       gitStatusCache.delete(cacheKey);
@@ -356,11 +366,32 @@ export async function getGitStatus(directory: string, options?: { mode?: 'light'
 
   const task = (async () => {
     const cacheVersion = getStatusCacheVersion(directory);
-    const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode } : undefined));
+    const transport = getRuntimeTransportIdentity();
+    const snapshot = gitStatusSnapshots.get(key);
+    const reusable = snapshot && snapshot.transport === transport && snapshot.cacheVersion === cacheVersion
+      ? snapshot
+      : null;
+    const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, {
+      ...(mode ? { mode } : {}),
+      ...(reusable ? { since: reusable.revision } : {}),
+    }));
     if (!response.ok) {
       throw new Error(`Failed to get git status: ${response.statusText}`);
     }
-    const payload = await response.json() as GitStatus;
+    const body = await response.json() as GitStatusResponseBody;
+    let payload: GitStatus;
+    if ('unchanged' in body && body.unchanged === true) {
+      if (!reusable || body.revision !== reusable.revision) {
+        throw new Error('Failed to get git status: unexpected unchanged response');
+      }
+      payload = reusable.value;
+    } else {
+      const { revision, ...status } = body as GitStatus & { revision?: string };
+      payload = status;
+      if (typeof revision === 'string' && getStatusCacheVersion(directory) === cacheVersion) {
+        gitStatusSnapshots.set(key, { revision, value: payload, transport, cacheVersion });
+      }
+    }
     if (getStatusCacheVersion(directory) === cacheVersion) {
       gitStatusCache.set(key, {
         value: payload,

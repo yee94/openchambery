@@ -177,6 +177,32 @@ export const extractGitChangedFiles = (
 };
 
 /**
+ * `extractGitChangedFiles` 的计数/合计版本：同一过滤谓词单趟扫描，
+ * 不构造逐文件对象与绝对路径，供折叠态摘要在超大变更集下使用。
+ */
+export const summarizeGitChangedFiles = (
+    files: Array<{ path: string; index: string; working_dir: string }>,
+    diffStats: Record<string, { insertions: number; deletions: number }> | undefined,
+): { count: number; insertions: number; deletions: number } => {
+    let count = 0;
+    let insertions = 0;
+    let deletions = 0;
+    for (const file of files) {
+        const indexStatus = file.index?.trim() ?? '';
+        const workingStatus = file.working_dir?.trim() ?? '';
+        const code = workingStatus || indexStatus;
+        if (!code || code === '!') continue;
+        count += 1;
+        const stats = diffStats?.[file.path];
+        if (stats) {
+            insertions += stats.insertions;
+            deletions += stats.deletions;
+        }
+    }
+    return { count, insertions, deletions };
+};
+
+/**
  * `extractGitChangedFiles(...).length > 0` 的短路版本：
  * 逐文件复用同一过滤谓词，首个命中即返回，避免超大变更集下
  * 为一个布尔值构造全量数组（含绝对路径字符串）。

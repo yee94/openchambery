@@ -116,6 +116,7 @@ The following functions are internal helpers used by exported functions:
 - `diffStats`: Object mapping file paths to `{ insertions, deletions }`. Omitted by light mode and by oversized change sets.
 - `mergeInProgress`: Object with `{ head, message }` if merge in progress.
 - `rebaseInProgress`: Object with `{ headName, onto }` if rebase in progress.
+- `revision`: `/api/git/status` only. Content revision `<light|full>:<sha1 base64url>` of the serialized status for that mode. Clients may echo it as `?since=<revision>`; when the freshly computed snapshot has the same revision the route answers `{ unchanged: true, revision }` without the file list. `getStatus` is still executed on every request, so `unchanged` is authoritative for current state. The shared HTTP client keeps the last snapshot per directory/mode, bound to transport identity and its invalidation version, and drops it on any local mutation. The VS Code runtime computes status in the extension host and never uses this field.
 
 ### Staged and unstaged change handling
 - `status.files` exposes both `index` and `working_dir` codes. Shared UI uses these as separate scopes: staged rows are derived from non-empty `index` statuses, while unstaged rows are derived from `working_dir` statuses and untracked files.

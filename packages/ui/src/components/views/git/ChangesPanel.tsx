@@ -65,7 +65,9 @@ interface ChangesPanelProps {
 }
 
 const CHANGE_LIST_VIRTUALIZE_THRESHOLD = 1000;
-const CHANGE_ROW_ESTIMATE_PX = 34;
+// Header, directory and file rows are all `h-8`. An exact estimate means a newly
+// mounted row measures with zero delta instead of rebuilding every offset.
+const CHANGE_ROW_ESTIMATE_PX = 32;
 const VISIBLE_PREFETCH_LIMIT = 30;
 
 const ROW_PADDING_CLASSNAME = 'pl-0 pr-2';
@@ -245,15 +247,20 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
 
   const rowCount = scrollRows.length;
   const shouldVirtualize = rowCount >= CHANGE_LIST_VIRTUALIZE_THRESHOLD;
+  // Stable identity: the virtualizer rebuilds every row offset whenever
+  // getItemKey changes, so a per-render closure costs O(rows) per scroll frame.
+  const getRowKey = React.useMemo(() => (index: number) => scrollRows[index]?.key ?? index, [scrollRows]);
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: rowCount,
     enabled: shouldVirtualize,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => CHANGE_ROW_ESTIMATE_PX,
     overscan: 12,
-    getItemKey: (index) => scrollRows[index]?.key ?? index,
+    getItemKey: getRowKey,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
+  // Observed viewport size; reading clientHeight in the effect forces layout per scroll step.
+  const viewportHeight = rowVirtualizer.scrollRect?.height ?? 0;
   // First VISIBLE row index drives the visible-path prefetch window (the
   // virtua findItemIndex/onScroll pair this replaces). virtualRows starts at
   // the overscan boundary — up to `overscan` rows above the viewport — so
@@ -295,13 +302,13 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
       scrollRows
         .slice(
           visibleStartIndex,
-          visibleStartIndex + Math.ceil((scrollRef.current?.clientHeight ?? 0) / CHANGE_ROW_ESTIMATE_PX) + VISIBLE_PREFETCH_LIMIT
+          visibleStartIndex + Math.ceil(viewportHeight / CHANGE_ROW_ESTIMATE_PX) + VISIBLE_PREFETCH_LIMIT
         )
         .map((row) => collectFromRow(row))
         .filter((value): value is string => Boolean(value))
         .slice(0, VISIBLE_PREFETCH_LIMIT)
     );
-  }, [onVisiblePathsChange, rowCount, scrollRows, shouldVirtualize, visibleStartIndex]);
+  }, [onVisiblePathsChange, rowCount, scrollRows, shouldVirtualize, viewportHeight, visibleStartIndex]);
 
   const toggleGroupCollapsed = React.useCallback((groupId: string) => {
     setCollapsedGroups((previous) => {
