@@ -55,6 +55,7 @@ const SessionMentionPicker = React.forwardRef<PickerHandle, {
   const result = useQuery({ ...sessionIndexSnapshotQueryOptions(transport), select: selectSessions });
   const sessions = React.useMemo(() => getVisibleSessionMentionCandidates({
     sessions: result.data ?? [], currentSessionId: null, searchQuery: query,
+    limit: query.trim() ? 10 : 3,
   }), [result.data, query]);
   const [highlight, setHighlight] = React.useState({ query, index: 0 });
   const index = Math.min(highlight.query === query ? highlight.index : 0, Math.max(0, sessions.length - 1));

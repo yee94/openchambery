@@ -101,13 +101,42 @@ describe('session mentions', () => {
             sessions,
             currentSessionId: null,
             searchQuery: '',
-        }).map((session) => session.id)).toEqual(['ses_4', 'ses_3', 'ses_2']);
+        }).map((session) => session.id)).toEqual(['ses_4', 'ses_3', 'ses_2', 'ses_1']);
 
         expect(getVisibleSessionMentionCandidates({
             sessions,
             currentSessionId: null,
             searchQuery: 'a',
-        }).map((session) => session.id)).toEqual(['ses_4', 'ses_3', 'ses_2', 'ses_1']);
+        }).map((session) => session.id)).toEqual(['ses_1', 'ses_3', 'ses_2', 'ses_4']);
+    });
+
+    test('retains five recent sessions without a query and all duplicate-title search matches', () => {
+        const sessions = Array.from({ length: 300 }, (_, index) => ({
+            id: `ses_${index}`, title: 'Same title', time: { created: index, updated: index },
+        })) as Session[];
+        expect(getVisibleSessionMentionCandidates({ sessions, currentSessionId: 'ses_299', searchQuery: '' })
+            .map((session) => session.id)).toEqual(['ses_298', 'ses_297', 'ses_296', 'ses_295', 'ses_294']);
+        const matches = getVisibleSessionMentionCandidates({ sessions, currentSessionId: 'ses_299', searchQuery: 'Same title' });
+        expect(matches).toHaveLength(299);
+        expect(matches[0].id).toBe('ses_298');
+        expect(matches.at(-1)?.id).toBe('ses_0');
+        expect(sessions[0].id).toBe('ses_0');
+        expect(getVisibleSessionMentionCandidates({ sessions, currentSessionId: null, searchQuery: 'Same', limit: 10 })).toHaveLength(10);
+    });
+
+    test('ranks title relevance before recency and accepts fuzzy title and literal ID matches', () => {
+        const sessions = [
+            { id: 'ses_contains', title: 'Fix login', time: { updated: 90 } },
+            { id: 'ses_fuzzy', title: 'Log index', time: { updated: 100 } },
+            { id: 'ses_exact_old', title: 'login', time: { updated: 1 } },
+            { id: 'ses_prefix', title: 'Login issue', time: { updated: 80 } },
+            { id: 'ses_exact_new', title: 'login', time: { updated: 2 } },
+        ] as Session[];
+        expect(getVisibleSessionMentionCandidates({ sessions, currentSessionId: null, searchQuery: 'login' })
+            .map((session) => session.id)).toEqual(['ses_exact_new', 'ses_exact_old', 'ses_prefix', 'ses_contains', 'ses_fuzzy']);
+        expect(getVisibleSessionMentionCandidates({ sessions, currentSessionId: null, searchQuery: 'ses_exact_old' })
+            .map((session) => session.id)).toEqual(['ses_exact_old']);
+        expect(getVisibleSessionMentionCandidates({ sessions, currentSessionId: null, searchQuery: 'zzzzzz' })).toEqual([]);
     });
 
     test('sorts sessions with missing timestamps safely', () => {

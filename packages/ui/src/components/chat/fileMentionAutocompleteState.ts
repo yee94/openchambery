@@ -1,4 +1,6 @@
 import type { Session } from '@/lib/opencode/v2-types';
+import fuzzysort from 'fuzzysort';
+import { scoreMentionTitle, scoreSessionMentionId } from '@/lib/composer-autocomplete/mention-rank';
 import type { ProjectFileSearchHit } from '@/lib/opencode/client';
 import { isNpmScopedPackageMention, rankFileMentionSearch, type FileMentionSearchHit } from '@/lib/search/fileMentionSearch';
 import {
@@ -304,17 +306,29 @@ export const getVisibleSessionMentionCandidates = <T extends SessionMentionCandi
     sessions,
     currentSessionId,
     searchQuery,
+    limit,
 }: {
     sessions: readonly T[];
     currentSessionId: string | null;
     searchQuery: string;
+    /** Explicit presentation bound for session-only pickers; mixed search keeps all matches. */
+    limit?: number;
 }): T[] => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
-    return sessions
+    const candidates = sessions
         .filter((session) => session.id !== currentSessionId)
-        .filter((session) => !normalizedQuery || `${session.title ?? ''} ${session.id}`.toLowerCase().includes(normalizedQuery))
-        .sort((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0))
-        .slice(0, normalizedQuery ? 10 : 3);
+        .map((session) => ({
+            session,
+            score: normalizedQuery ? Math.max(
+                scoreMentionTitle(normalizedQuery, session.title ?? '', fuzzysort.single(normalizedQuery, session.title ?? '')?.score ?? 0),
+                scoreSessionMentionId(normalizedQuery, session.id),
+            ) : 0,
+        }))
+        .filter(({ score }) => !normalizedQuery || score > 0)
+        .sort((a, b) => b.score - a.score
+            || (b.session.time?.updated ?? b.session.time?.created ?? 0) - (a.session.time?.updated ?? a.session.time?.created ?? 0))
+        .map(({ session }) => session);
+    return candidates.slice(0, limit ?? (normalizedQuery ? candidates.length : 5));
 };
 
 export const getFileMentionAutocompleteQuery = ({

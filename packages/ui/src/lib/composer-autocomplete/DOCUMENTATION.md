@@ -13,7 +13,7 @@ Assistant contacts also consume `resolveComposerAutocompleteTrigger` through `co
 | Trigger detection (`/`, `@`, paste guard, shell off) | `trigger.ts` |
 | Accept replace range (open trigger token, then live caret) | `trigger.ts` (`resolveComposerAutocompleteReplaceRange`) |
 | Slash-command fuzzy rank | `slash-rank.ts` |
-| Joint `@` Agent / skill name rank | `rows.ts` (`buildMentionRows`) |
+| Joint `@` Agent / skill / session title rank | `rows.ts` (`buildMentionRows`), `mention-rank.ts` |
 | Sprite icon names | `icons.ts` |
 | Flat suggestion rows (titles, badges, icon names) | `rows.ts` |
 | Equal-row commit / emit for native and LS consumers | `visible-rows.ts` |
@@ -26,18 +26,26 @@ Do not fetch files, commands, or skills from this folder. Ranking runs on catalo
 
 `buildMentionRows` owns the single flat order used by web rendering, keyboard/touch
 acceptance and native row emission. Nonempty queries rank Agent and skill names
-together with fuzzysort 3.1.0, threshold 0.5, a 2× case-sensitive `@query` prefix
-boost and a ten-row final limit, following OpenCode TUI reference completion.
+and session titles together with fuzzysort 3.1.0. Case-insensitive exact, prefix,
+substring and fuzzy title matches have descending relevance tiers; fuzzy-only
+matches require score 0.5. Session recency breaks equal-relevance ties, never
+overrides a stronger title match.
 Skill descriptions add a lower-priority, case-insensitive recall tier at the same
-0.5 threshold. Name matches keep their TUI ordering and always precede description-only
+0.5 threshold. Title/name matches always precede description-only
 matches: `@gene` puts `@general` before image-generator skills, followed by skills
 whose descriptions mention “generate”. `@Runmark` can recall `agent-tracker-api`
 through its description. Agent descriptions remain display-only.
 An exact skill can outrank a partial Agent; there is no fixed type priority.
 Empty queries retain catalog order (skills, Agents), followed by recent-file,
-ranked path and session candidates. Sessions fill remaining slots after paths so
-session IDs cannot displace file results. File/path ranking remains with
-`fileMentionSearch`; session suggestions retain their Yuri recency policy.
+ranked path and the five most recent other sessions. Nonempty queries keep all
+matching loaded sessions, including duplicate titles with distinct IDs, rather
+than truncating the combined list to ten rows. The ten-row budget still applies
+to non-session results, so chats cannot consume file/Agent/skill slots. This
+guarantees at least five chats when five match, and older same-title matches
+remain reachable by scrolling. Session IDs use literal substring fallback, below
+title matches; arbitrary fuzzy ID matches are not recalled. File/path ranking
+remains with `fileMentionSearch`. The catalog source is unchanged: this does not
+fetch archived or unloaded historical sessions.
 
 The OpenCode graphical client's `composer/editor/interaction.ts` also searches
 labels only, but then groups by type. This surface deliberately follows the TUI's
