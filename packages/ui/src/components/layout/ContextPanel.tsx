@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Button } from '@/components/ui/button';
@@ -2184,7 +2185,11 @@ const DesktopBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dir
   );
 };
 
-export const ContextPanel: React.FC<{ directory?: string | null }> = ({ directory: directoryOverride }) => {
+export const ContextPanel: React.FC<{
+  directory?: string | null;
+  onReservedWidthChange?: (width: number) => void;
+  fillAvailableSpace?: boolean;
+}> = ({ directory: directoryOverride, onReservedWidthChange, fillAvailableSpace = false }) => {
   const { t } = useI18n();
   const btwSessionId = useSessionUIStore((state) => state.currentSessionId);
   const fallbackDirectory = useEffectiveDirectory() ?? '';
@@ -2210,6 +2215,9 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
   const isOpen = Boolean(panelState?.isOpen && activeTab);
   const isExpanded = Boolean(isOpen && panelState?.expanded);
   const width = clampWidth(panelState?.width ?? CONTEXT_PANEL_DEFAULT_WIDTH);
+  React.useLayoutEffect(() => {
+    onReservedWidthChange?.(isOpen ? (isExpanded ? Infinity : width) : 0);
+  }, [isExpanded, isOpen, onReservedWidthChange, width]);
   const chatSessionIDs = React.useMemo(() => {
     const ids: string[] = [];
     for (const tab of tabs) {
@@ -2316,14 +2324,16 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     return () => window.cancelAnimationFrame(frame);
   }, [isOpen]);
 
-  const applyLiveWidth = React.useCallback((nextWidth: number) => {
+  const applyLiveWidth = useEvent((nextWidth: number) => {
     const panel = panelRef.current;
     if (!panel) {
       return;
     }
 
-    panel.style.setProperty('--yuri-context-panel-width', `${clampWidthToAvailableSpace(nextWidth, panel)}px`);
-  }, []);
+    const liveWidth = clampWidthToAvailableSpace(nextWidth, panel);
+    panel.style.setProperty('--yuri-context-panel-width', `${liveWidth}px`);
+    onReservedWidthChange?.(liveWidth);
+  });
 
   const handleResizeStart = React.useCallback((event: React.PointerEvent) => {
     if (!isOpen || isExpanded || !directoryKey) {
@@ -2339,9 +2349,10 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     activeResizePointerIDRef.current = event.pointerId;
     setIsResizing(true);
     startXRef.current = event.clientX;
-    startWidthRef.current = width;
-    resizingWidthRef.current = width;
-    applyLiveWidth(width);
+    const initialWidth = panelRef.current?.clientWidth || width;
+    startWidthRef.current = initialWidth;
+    resizingWidthRef.current = initialWidth;
+    applyLiveWidth(initialWidth);
     event.preventDefault();
   }, [applyLiveWidth, directoryKey, isExpanded, isOpen, width]);
 
@@ -2880,7 +2891,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
           maxWidth: '100%',
         }
       : {
-          width: 'min(var(--yuri-context-panel-width), 100%)',
+          width: fillAvailableSpace ? '100%' : 'min(var(--yuri-context-panel-width), 100%)',
           minWidth: `min(${CONTEXT_PANEL_MIN_WIDTH}px, 100%)`,
           maxWidth: '100%',
           ['--yuri-context-panel-width' as string]: `${isResizing ? (resizingWidthRef.current ?? width) : width}px`,
@@ -2900,7 +2911,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
           ? 'absolute inset-0 z-20 min-w-0'
           : 'relative h-full flex-shrink-0',
         !isOpen && 'pointer-events-none',
-        isResizing || !isOpen || suppressWidthTransition ? 'transition-none' : 'transition-[width] duration-200 ease-in-out'
+        isResizing || !isOpen || suppressWidthTransition || onReservedWidthChange ? 'transition-none' : 'transition-[width] duration-200 ease-in-out'
       )}
       onKeyDownCapture={handlePanelKeyDownCapture}
       style={panelStyle}

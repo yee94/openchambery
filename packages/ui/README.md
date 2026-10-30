@@ -95,6 +95,12 @@ new URLs or new protocol defaults.
 
 ## Runtime contract integration
 
+The phone Projects header menu lists saved native-mobile instances directly,
+marks the active instance, and switches through the shared mobile connection
+controller in one tap. Busy connections disable switching. A failed connection or
+password challenge opens the existing instance surface; Settings retains instance
+management. With no saved instances, the menu keeps the instance-management entry.
+
 The Host version row in About and the desktop remote-instance menu share
 `HostVersionUpdate`. It checks `/api/system/update` through the active runtime,
 shows an update dot, and confirms an exact version/channel/plan before remote
@@ -141,6 +147,18 @@ welcome page places it in a safe-area-aware top-left header; the portrait remain
 the central decorative mark. `assets/brand/yuri/build_wordmark.py` regenerates the
 master artwork and synchronizes this bundled SVG. The welcome's connection/history
 actions retain their existing shared sheet and modal behavior.
+
+## Desktop conversation width
+
+Desktop `ChatWorkspace` keeps the primary conversation (transcript and composer)
+at least 350 CSS pixels wide while a ContextPanel is open. If the requested panel
+width leaves less space, the primary pane hides without unmounting and the panel
+fills the workspace. Window/sidebar resize, live panel dragging, closing, and
+expansion re-evaluate this local layout; exactly 350px restores the primary pane.
+The saved panel width and draft remain unchanged by automatic collapse. Decisions
+use the requested width, not the filled panel width, to avoid resize feedback loops.
+Split width changes do not animate through unreadable intermediate widths. Phone,
+native-mobile and the separate VS Code layout retain their existing behavior.
 
 ## File preview fallback
 

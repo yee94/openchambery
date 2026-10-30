@@ -164,6 +164,52 @@ describe('MobileProjectsHome header menu', () => {
     root.unmount();
     document.body.innerHTML = '';
   });
+
+  test('lists saved instances directly and switches the selected instance in one click', async () => {
+    const calls: (string | undefined)[] = [];
+    const { root, container } = mount({
+      ...baseProps,
+      onSwitchInstance: (id) => calls.push(id),
+      instanceOptions: [
+        { id: 'local', label: 'Local workstation', active: true, disabled: false },
+        { id: 'remote', label: 'Remote workstation', active: false, disabled: false },
+      ],
+    });
+    clickMenuTrigger(container);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+    expect(findMenuItem('Switch instance')).toBeNull();
+    const current = findMenuItem('Local workstation');
+    expect(current?.getAttribute('aria-disabled')).toBe('true');
+    expect(current?.className).toContain('bg-interactive-selection');
+    expect(current?.querySelector('use[href="#yuri-check"]')).not.toBeNull();
+    act(() => current!.click());
+    expect(calls).toEqual([]);
+
+    const remote = findMenuItem('Remote workstation');
+    expect(remote?.getAttribute('aria-label')).toBe('Switch to Remote workstation');
+    act(() => remote!.click());
+    expect(calls).toEqual(['remote']);
+    act(() => root.unmount());
+    document.body.innerHTML = '';
+  });
+
+  test('disables direct instance switching while a connection is busy', async () => {
+    const calls: (string | undefined)[] = [];
+    const { root, container } = mount({
+      ...baseProps,
+      onSwitchInstance: (id) => calls.push(id),
+      instanceOptions: [{ id: 'remote', label: 'Remote workstation', active: false, disabled: true }],
+    });
+    clickMenuTrigger(container);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const remote = findMenuItem('Remote workstation');
+    expect(remote?.getAttribute('aria-disabled')).toBe('true');
+    act(() => remote!.click());
+    expect(calls).toEqual([]);
+    act(() => root.unmount());
+    document.body.innerHTML = '';
+  });
 });
 
 describe('MobileProjectsHome global pinned group', () => {

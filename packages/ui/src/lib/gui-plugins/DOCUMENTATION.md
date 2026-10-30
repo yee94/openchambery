@@ -199,6 +199,8 @@ SDK 2.2.0 的文件接口是 `ctx.screen.current()?.file` 或面板的 `props.sc
 
 文件预览上限为 UTF-8 128 KiB，单文件模型最多 64 个缓存/观察项；超限显式报错。只有持有 lease 的文件以 2 秒前台 stat Query 观察变化；API owner 与宿主面板 lease 独立。stat/读取失败保留已有内容并标记错误，删除与恢复不会伪装为空成功。存储单项编码上限 2 MiB，失败写入不改变已显示值。
 
+最后一个文件 lease 释放后，再次观察已加载文件会强制重读一次源码，不能把恢复监听时的首个 stat 当作缓存仍然新鲜的证据。宿主与插件 API 共用该重读，同一轮监听新增消费者不重复读取；同内容保留原状态引用，读取失败保留旧内容并暴露错误，显式 force sync 可重试。
+
 响应式订阅按规范化路径及 file/missing/selection/scroll 字段隔离；没有消费者时释放订阅信号。已加载内容刷新不切换 loading，同内容、同错误、同选区和同滚动位置不通知，保留原 FileState/content 引用。并发 force 请求合并为当前读取加一次补读，继续使用 epoch 防止失效请求覆盖新状态。文件内容更新不通过 React 全局 snapshot 发布。
 
 挂载 snapshot 的 panel/settings 提供明确 `pluginId`；仅所属插件 revision 或会话变化使对应 Solid 内容重挂。链接匹配仍跟踪全插件 readiness，以发现新增 handler。重复打开/隐藏/关闭及仍有其他消费者的文件 lease 释放不重新派生/通知；真实布局变化才传播，显式 focus 行为保留。

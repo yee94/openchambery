@@ -34,6 +34,7 @@ import { useMobileNavigationStore } from '../useMobileNavigationStore';
 import {
   MobileProjectsHome,
   type MobileProjectHomeItem,
+  type MobileProjectsHomeProps,
   type MobileSessionTreeNode,
   type MobileWorktreeGroup,
 } from './MobileProjectsHome';
@@ -62,7 +63,8 @@ export type MobileProjectsHomeContainerProps = {
       a plain new-session draft without navigation. */
   onNewSession?: () => void;
   onScanQr?: () => void;
-  onSwitchInstance?: () => void;
+  onSwitchInstance?: MobileProjectsHomeProps['onSwitchInstance'];
+  instanceOptions?: MobileProjectsHomeProps['instanceOptions'];
   className?: string;
 };
 
@@ -76,6 +78,7 @@ export function MobileProjectsHomeContainer({
   onNewSession,
   onScanQr,
   onSwitchInstance,
+  instanceOptions,
   className,
 }: MobileProjectsHomeContainerProps) {
   const { t } = useI18n();
@@ -586,6 +589,7 @@ export function MobileProjectsHomeContainer({
         onNewSession={handleNewSession}
         onScanQr={onScanQr}
         onSwitchInstance={onSwitchInstance}
+        instanceOptions={instanceOptions}
         onToggleProject={handleToggleProject}
         onOpenProjectActions={handleOpenProjectActions}
         onToggleWorktree={handleToggleWorktree}

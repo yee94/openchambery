@@ -7,7 +7,7 @@ import { SidebarTopBar } from './SidebarTopBar';
 import { TitlebarLeftControls } from './TitlebarLeftControls';
 import { RightSidebar } from './RightSidebar';
 import { RightSidebarTabs } from './RightSidebarTabs';
-import { ContextPanel } from './ContextPanel';
+import { ChatWorkspace } from './ChatWorkspace';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { CommandPalette } from '../ui/CommandPalette';
 import { HelpDialog } from '../ui/HelpDialog';
@@ -571,21 +571,18 @@ export const MainLayout: React.FC = () => {
                                     <div className="relative flex flex-1 min-h-0 overflow-hidden bg-background" data-page-scroll-lock="true">
                                 <div className="relative flex flex-1 min-w-0 flex-col overflow-hidden yuri-layout-divider-t bg-background" data-page-scroll-lock="true">
                                     <div className="flex flex-1 min-h-0 overflow-hidden" data-page-scroll-lock="true">
-                                        <div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden" data-page-scroll-lock="true" data-chat-area>
-                                            <main className="flex-1 overflow-hidden bg-background relative" data-page-scroll-lock="true">
-                                                {mountChatKeepAlive && (
-                                                    <div className={cn('absolute inset-0', !isChatActive && 'invisible')}>
-                                                        <ErrorBoundary><ChatView /></ErrorBoundary>
-                                                    </div>
-                                                )}
-                                                {mountChatKeepAlive && secondaryView && (
-                                                    <div className="absolute inset-0">
-                                                        <ErrorBoundary>{secondaryView}</ErrorBoundary>
-                                                    </div>
-                                                )}
-                                            </main>
-                                            <ContextPanel />
-                                        </div>
+                                        <ChatWorkspace>
+                                            {mountChatKeepAlive && (
+                                                <div className={cn('absolute inset-0', !isChatActive && 'invisible')}>
+                                                    <ErrorBoundary><ChatView /></ErrorBoundary>
+                                                </div>
+                                            )}
+                                            {mountChatKeepAlive && secondaryView && (
+                                                <div className="absolute inset-0">
+                                                    <ErrorBoundary>{secondaryView}</ErrorBoundary>
+                                                </div>
+                                            )}
+                                        </ChatWorkspace>
                                     </div>
                                     <BottomTerminalDock isOpen={isBottomTerminalOpen} isMobile={isMobile}>
                                         {isBottomTerminalOpen ? (

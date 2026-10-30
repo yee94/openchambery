@@ -96,7 +96,8 @@ export type MobileProjectsHomeProps = {
   onAddProject: () => void;
   onNewSession: () => void;
   onScanQr?: () => void;
-  onSwitchInstance?: () => void;
+  onSwitchInstance?: (id?: string) => void;
+  instanceOptions?: { id: string; label: string; active: boolean; disabled: boolean }[];
   onToggleProject: (project: MobileProjectHomeItem) => void;
   onOpenProjectActions: (project: MobileProjectHomeItem) => void;
   onToggleWorktree: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
@@ -519,6 +520,7 @@ export function MobileProjectsHome({
   onNewSession,
   onScanQr,
   onSwitchInstance,
+  instanceOptions,
   onToggleProject,
   onOpenProjectActions,
   onToggleWorktree,
@@ -582,7 +584,19 @@ export function MobileProjectsHome({
                     {t('mobile.projects.menu.scanQr')}
                   </DropdownMenuItem>
                 ) : null}
-                {onSwitchInstance ? (
+                {onSwitchInstance && instanceOptions?.length ? instanceOptions.map((instance) => (
+                  <DropdownMenuItem
+                    key={instance.id}
+                    className={cn('min-h-11', instance.active && 'bg-interactive-selection text-interactive-selection-foreground')}
+                    disabled={instance.active || instance.disabled}
+                    aria-label={t('desktopHostSwitcher.actions.switchToAria', { instance: instance.label })}
+                    onSelect={() => onSwitchInstance(instance.id)}
+                  >
+                    <Icon name="server" className="size-4" />
+                    <span className="min-w-0 flex-1 truncate">{instance.label}</span>
+                    {instance.active ? <Icon name="check" className="size-4" /> : null}
+                  </DropdownMenuItem>
+                )) : onSwitchInstance ? (
                   <DropdownMenuItem className="min-h-11" onSelect={handleSwitchInstance}>
                     <Icon name="server" className="size-4" />
                     {t('mobile.projects.menu.switchInstance')}
