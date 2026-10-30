@@ -86,6 +86,12 @@ new URLs or new protocol defaults.
 
 ## Runtime contract integration
 
+The phone Projects header menu lists saved native-mobile instances directly,
+marks the active instance, and switches through the shared mobile connection
+controller in one tap. Busy connections disable switching. A failed connection or
+password challenge opens the existing instance surface; Settings retains instance
+management. With no saved instances, the menu keeps the instance-management entry.
+
 The Host version row in About and the desktop remote-instance menu share
 `HostVersionUpdate`. It checks `/api/system/update` through the active runtime,
 shows an update dot, and confirms an exact version/channel/plan before remote

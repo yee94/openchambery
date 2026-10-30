@@ -21,6 +21,7 @@ import type { MobileTabId } from './mobileTabs';
 import { MobileTabsRoot } from './MobileTabsRoot';
 import { mobileBackNavigationCoordinator } from './mobileBackNavigation';
 import { MobileProjectsHomeContainer } from './projects';
+import type { MobileProjectsHomeProps } from './projects/MobileProjectsHome';
 import { MobileScheduledTab } from './scheduled/MobileScheduledTab';
 import { MobileSettingsTab } from './settings/MobileSettingsTab';
 import { acknowledgeMobileSessionMirror, registerPhoneShellMount, useMobileNavigationStore } from './useMobileNavigationStore';
@@ -29,7 +30,8 @@ export type MobilePhoneShellProps = {
   /** Opens the directory explorer so the user can add a project. */
   onAddProject: () => void;
   onScanQr?: () => void;
-  onSwitchInstance?: () => void;
+  onSwitchInstance?: MobileProjectsHomeProps['onSwitchInstance'];
+  instanceOptions?: MobileProjectsHomeProps['instanceOptions'];
   /** Enables assistants (opens settings at the assistants section). */
   onEnableAssistants: () => void;
   /** Saved-instance management content for the Settings secondary page. */
@@ -71,6 +73,7 @@ export function MobilePhoneShell({
   onAddProject,
   onScanQr,
   onSwitchInstance,
+  instanceOptions,
   onEnableAssistants,
   instancesPage,
   instancesSecondaryPage,
@@ -232,13 +235,14 @@ export function MobilePhoneShell({
           onNewSession={handleNewSessionDraft}
           onScanQr={onScanQr}
           onSwitchInstance={onSwitchInstance}
+          instanceOptions={instanceOptions}
         />
       ),
       assistant: <MobileAssistantTab onEnable={onEnableAssistants} onOpenAssistant={openAssistant} />,
       scheduled: <MobileScheduledTab showHeader={false}>{scheduledTabBody}</MobileScheduledTab>,
       settings: <MobileSettingsTab instancesPage={instancesPage} />,
     }),
-    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onScanQr, onSwitchInstance, onEnableAssistants, instancesPage, scheduledTabBody],
+    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onScanQr, onSwitchInstance, instanceOptions, onEnableAssistants, instancesPage, scheduledTabBody],
   );
 
   const secondaryKind = navigation.secondary?.kind ?? null;

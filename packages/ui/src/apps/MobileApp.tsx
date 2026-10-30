@@ -2316,6 +2316,22 @@ const MobileShell: React.FC<{
     useMobileNavigationStore.getState().openInstances();
   });
 
+  const switchInstanceFromHome = useEvent(async (id?: string) => {
+    if (!id) {
+      openInstancesSecondary();
+      return;
+    }
+    const saved = connection.connections.find((item) => item.id === id);
+    if (!saved || connection.isBusy || isActiveRuntimeConnection(saved)) return;
+    await connection.connect({
+      id: saved.id,
+      candidates: saved.candidates,
+      clientToken: saved.clientToken,
+      label: saved.label,
+    });
+    if (!isActiveRuntimeConnection(saved)) openInstancesSecondary();
+  });
+
   const closeInstancesSecondary = useEvent(() => {
     useMobileNavigationStore.getState().closeSecondary();
   });
@@ -2960,7 +2976,13 @@ const MobileShell: React.FC<{
               className="min-h-0 flex-1"
               onAddProject={() => setDirectoryDialogOpen(true)}
               onScanQr={showCapacitorOnlyFeatures && qrScanSupported ? () => { void scanConnectionFromHome(); } : undefined}
-              onSwitchInstance={showCapacitorOnlyFeatures ? openInstancesSecondary : undefined}
+              onSwitchInstance={showCapacitorOnlyFeatures ? switchInstanceFromHome : undefined}
+              instanceOptions={showCapacitorOnlyFeatures ? connection.connections.map((saved) => ({
+                id: saved.id,
+                label: saved.label,
+                active: isActiveRuntimeConnection(saved),
+                disabled: connection.isBusy,
+              })) : undefined}
               onEnableAssistants={() => {
                 openSettingsSurface('assistants');
               }}
