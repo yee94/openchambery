@@ -210,7 +210,9 @@ describe('native composer autocomplete JS channel', () => {
       mocks.agents = [{ name: 'gene', mode: 'subagent' }];
       await flush(root, render(51));
       expect(document.body.querySelector('[data-mention-id]')?.getAttribute('data-mention-id')).toBe('agent:gene');
-      expect(rank).toHaveBeenCalledTimes(1);
+      // Skills, agents, and sessions rank independently so one catalog refresh
+      // never re-ranks unrelated candidates.
+      expect(rank).toHaveBeenCalledTimes(2);
     } finally {
       rank.mockRestore();
       root.unmount();

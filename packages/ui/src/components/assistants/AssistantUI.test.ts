@@ -190,8 +190,9 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).not.toContain('size={avatarEmoji ? 40 : 38}');
     expect(mobileTab).not.toContain('yuri-mobile-assistant-avatar yuri-mobile-glass-control');
     expect(workingAvatar).not.toContain('className="block"');
-    expect(workingAvatar).toContain('shape="rounded"');
-    expect(workingAvatar).toContain('rounded-[0.5rem]');
+    expect(workingAvatar).toContain('data-assistant-working-avatar=""');
+    expect(workingAvatar).toContain('leading-none');
+    expect(workingAvatar).toContain('<AgentAvatar');
     expect(agentAvatar).toContain("shape = 'rounded'");
     expect(agentAvatar).toContain("shape === 'circle' ? 'rounded-full' : 'rounded-sm'");
     expect(agentAvatar).toContain('data-agent-avatar=""');
@@ -953,11 +954,11 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('useAssistantWorking(assistantID, serverWorking)');
     expect(card).toContain("persisted === 'error' || persisted === 'question' || persisted === 'complete'");
     expect(card).toContain("if (liveType === 'idle') return 'complete'");
-    // Attachment LLM path uses official v2 session.prompt (steer), not promptAsync.
-    expect(generate).toContain('client.session.prompt({');
-    expect(generate).toContain("delivery: 'steer'");
-    expect(generate).not.toContain('client.session.promptAsync');
-    expect(generate).toContain('session.prompt failed');
+    // Attachment LLM path runs through the OpenCode bridge-plugin (native tool calls), not session.prompt.
+    expect(generate).toContain('generateCleanCompletion');
+    expect(generate).toContain('forwardImageParts');
+    expect(generate).not.toContain('session.promptAsync');
+    expect(generate).toContain('LLM inference ended with');
   });
 
 });
