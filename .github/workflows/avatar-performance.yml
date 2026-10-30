@@ -27,8 +27,6 @@ jobs:
   avatar-performance:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      YURI_TEST_EVIDENCE_DIR: ${{ runner.temp }}/avatar-performance
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -42,6 +40,8 @@ jobs:
         run: bunx vitest run --project @yuriai/ui packages/ui/src/lib/assistant-avatar packages/ui/src/components/assistants/ProceduralAssistantAvatar.test.tsx packages/ui/src/components/chat/AgentAvatar.test.tsx
       - name: Isolated browser performance gate
         run: bun run test:avatar-performance
+        env:
+          YURI_TEST_EVIDENCE_DIR: ${{ runner.temp }}/avatar-performance
       - name: Upload measurements
         if: always()
         uses: actions/upload-artifact@v4
