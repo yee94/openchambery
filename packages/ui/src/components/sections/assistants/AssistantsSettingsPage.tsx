@@ -2,8 +2,10 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { useEvent } from '@reactuses/core';
 import { toast } from 'sonner';
-import { publishNativeAssistantCatalog, refreshNativeAssistantCatalog } from '@/apps/MobileShareBridge';
+import { refreshNativeAssistantCatalog } from '@/apps/MobileShareBridge';
 import { AssistantShareWelcome } from '@/components/assistants/AssistantShareWelcome';
+import { AssistantAvatarEditor } from '@/components/assistants/AssistantAvatarEditor';
+import { createDefaultAssistantAvatarSeed } from '@/lib/assistant-avatar/recipe';
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { Icon } from '@/components/icon/Icon';
@@ -27,7 +29,6 @@ import { openScheduledTask } from '@/lib/scheduledTaskNavigation';
 import {
   createAssistant,
   deleteAssistant,
-  fetchAssistantCapability,
   updateAssistant,
   useAssistantCapabilityQuery,
   useAssistantContactMessagesQuery,
@@ -80,7 +81,7 @@ const emptyDraft = (defaultName = ''): AssistantDraft => {
   return {
     enabled: true,
     name: defaultName,
-    avatarSeed: crypto.randomUUID(),
+    avatarSeed: createDefaultAssistantAvatarSeed(crypto.randomUUID()),
     defaultPrompt: '',
     workspacePath: null,
     providerID: defaultModel?.providerID ?? '',
@@ -423,8 +424,6 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
   const projects = useProjectsStore((state) => state.projects);
   const selectedID = useAssistantUIStore((state) => assistantID ?? state.settingsSelectedAssistantID);
   const selectSettingsAssistant = useAssistantUIStore((state) => state.selectSettingsAssistant);
-  const defaultShareAssistant = useAssistantUIStore((state) => state.defaultShareAssistant);
-  const setDefaultShareAssistant = useAssistantUIStore((state) => state.setDefaultShareAssistant);
   const createRequestRevision = useAssistantUIStore((state) => state.createRequestRevision);
   const requestCreate = useAssistantUIStore((state) => state.requestCreate);
   const [draft, setDraft] = React.useState<AssistantDraft>(emptyDraft);
@@ -450,16 +449,10 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
   React.useEffect(() => {
     if (selectedID !== 'new' || createRequestRevision <= handledCreateRequestRef.current) return;
     handledCreateRequestRef.current = createRequestRevision;
-    setDraft(emptyDraft(!snapshot?.assistants.length ? DEFAULT_ASSISTANT_NAME : ''));
+    const nextDraft = emptyDraft(!snapshot?.assistants.length ? DEFAULT_ASSISTANT_NAME : '');
+    setDraft(nextDraft);
     window.requestAnimationFrame(() => document.getElementById('assistant-name')?.focus());
   }, [createRequestRevision, selectedID, snapshot?.assistants.length]);
-
-  React.useEffect(() => {
-    if (snapshotQuery.isSuccess && capabilityQuery.data?.serverInstanceID && defaultShareAssistant?.serverInstanceID === capabilityQuery.data.serverInstanceID
-      && !snapshot?.assistants.some((assistant) => assistant.id === defaultShareAssistant.assistantID)) {
-      setDefaultShareAssistant(null);
-    }
-  }, [capabilityQuery.data, defaultShareAssistant, setDefaultShareAssistant, snapshot?.assistants, snapshotQuery.isSuccess]);
 
   React.useEffect(() => {
     if (snapshotQuery.isSuccess) void refreshNativeAssistantCatalog();
@@ -496,10 +489,6 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
     setSaving(true);
     try {
       await deleteAssistant(selected);
-      if (defaultShareAssistant?.assistantID === selected.id) {
-        const capability = await fetchAssistantCapability();
-        if (capability.serverInstanceID && defaultShareAssistant.serverInstanceID === capability.serverInstanceID) setDefaultShareAssistant(null);
-      }
       if (assistantID === undefined) selectSettingsAssistant(null);
       onItemDeleted?.();
       toast.success(t('assistants.settings.toast.deleted'));
@@ -507,22 +496,6 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
       toast.error(t('assistants.settings.toast.deleteFailed'));
     } finally {
       setSaving(false);
-    }
-  });
-
-  const toggleDefaultShare = useEvent(async (assistantID: string, enabled: boolean) => {
-    if (!enabled) {
-      setDefaultShareAssistant(null);
-      void publishNativeAssistantCatalog();
-      return;
-    }
-    try {
-      const capability = await fetchAssistantCapability();
-      if (!capability.supported || !capability.serverInstanceID) return;
-      setDefaultShareAssistant({ serverInstanceID: capability.serverInstanceID, assistantID });
-      await publishNativeAssistantCatalog();
-    } catch {
-      toast.error(t('assistants.settings.toast.toggleFailed'));
     }
   });
 
@@ -567,13 +540,8 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               {!saveActionContainer ? <Button size="sm" onClick={save} disabled={saving} aria-busy={saving}>{saving ? <Icon name="loader-4" className="size-4 animate-spin" /> : null}{t('assistants.settings.save')}</Button> : null}
             </>}>
               <div className="flex min-w-0 items-center gap-3">
-              <div className="group/avatar relative shrink-0">
+              <div className="shrink-0">
                 <AgentAvatar kind="assistant" name={draft.avatarSeed ?? selected?.id ?? 'new'} size={40} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} shape="rounded" className="rounded-[0.5rem]" />
-                <Button variant="link" size="icon" disabled={saving} className="absolute inset-0 h-full w-full p-0 text-muted-foreground opacity-0 transition-opacity hover:no-underline group-hover/avatar:opacity-100 group-focus-within/avatar:opacity-100 [@media(hover:none)]:opacity-100" aria-label={t('assistants.settings.randomAvatar')} title={t('assistants.settings.randomAvatar')} onClick={() => patchDraft('avatarSeed', crypto.randomUUID())}>
-                  <span className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-[var(--yuri-settings-avatar-action-background)] text-[var(--yuri-settings-avatar-action-foreground)] shadow-sm">
-                    <Icon name="refresh" className="size-3.5" />
-                  </span>
-                </Button>
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="truncate typography-ui-header font-semibold text-foreground">{selected ? selectedPresentation?.displayName : t('assistants.settings.create')}</h2>
@@ -584,6 +552,8 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               </div>
             </SettingsActionHeader>
 
+            <AssistantAvatarEditor seed={draft.avatarSeed ?? selected?.id ?? 'new'} disabled={saving} onChange={(seed) => patchDraft('avatarSeed', seed)} />
+
             <SettingsGroup>
                 <SettingsRow itemId="assistants.name" label={t('assistants.settings.name')}>
                   <Input id="assistant-name" value={draft.name} onChange={(event) => patchDraft('name', event.target.value)} className="min-w-0 flex-1" />
@@ -591,11 +561,9 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
                 <SettingsRow label={t('assistants.settings.enabled')}>
                   <Checkbox checked={draft.enabled} onChange={(value) => patchDraft('enabled', value)} ariaLabel={t('assistants.settings.enabled')} />
                 </SettingsRow>
-                {selected ? (
-                  <SettingsRow itemId="assistants.default-share" label={t('assistants.settings.defaultShare')}>
-                    <Checkbox checked={defaultShareAssistant?.assistantID === selected.id && defaultShareAssistant.serverInstanceID === capabilityQuery.data?.serverInstanceID} onChange={(value) => void toggleDefaultShare(selected.id, value)} ariaLabel={t('assistants.settings.defaultShare')} />
-                  </SettingsRow>
-                ) : null}
+                 <SettingsRow itemId="assistants.model" label={t('assistants.settings.model')}>
+                   <ModelSelector providerId={draft.providerID} modelId={draft.modelID} variant={draft.variant ?? ''} providers={catalogProviders} onChange={(providerID, modelID, variant) => setDraft((current) => ({ ...current, providerID, modelID, variant: variant || null }))} className="yuri-settings-inline-value" />
+                 </SettingsRow>
             </SettingsGroup>
 
             <SettingsField
@@ -613,14 +581,6 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
                 outerClassName="min-h-[240px] max-h-[70vh]"
               />
             </SettingsField>
-
-            <SettingsGroup
-              label={t('assistants.settings.runtime')}
-            >
-                <SettingsRow itemId="assistants.model" label={t('assistants.settings.model')}>
-                  <ModelSelector providerId={draft.providerID} modelId={draft.modelID} variant={draft.variant ?? ''} providers={catalogProviders} onChange={(providerID, modelID, variant) => setDraft((current) => ({ ...current, providerID, modelID, variant: variant || null }))} className="yuri-settings-inline-value" />
-                </SettingsRow>
-            </SettingsGroup>
 
             <SettingsField
               itemId="assistants.workspace"

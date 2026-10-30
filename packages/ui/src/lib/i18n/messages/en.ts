@@ -210,7 +210,7 @@ export const dict = {
   'mobile.nav.settings': 'Settings',
   // Floating tab bar: keep short so 4 items fit on a phone in every locale.
   'mobile.tabs.projects': 'Projects',
-  'mobile.tabs.assistant': 'Agent',
+  'mobile.tabs.assistant': 'Bots',
   'mobile.tabs.scheduled': 'Schedule',
   'mobile.tabs.settings': 'Settings',
   'mobile.tabs.activity.loading': 'In progress',

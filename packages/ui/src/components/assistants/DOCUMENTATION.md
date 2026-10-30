@@ -39,15 +39,115 @@ The token reuses `getSessionMentionToken`; JSON serialization escapes the title 
 
 Focused `AssistantSessionComposer.test.tsx` covers selection, cancellation, IME/paste, mobile touch, query failure/retry, runtime isolation, and bounded row/request counts. `AssistantConversationSurface.scroll.test.tsx` verifies plain-text reference admission, failed-send preservation, and same-ID retry. Physical-device keyboard geometry and live assistant tool execution require integration validation.
 
+## English display naming
+
+The feature's English navigation and Settings name is **Bots**; individual
+contacts use **bot**. English actions, accessibility labels, notifications and
+native share surfaces use the same terminology. Other locales and user-defined
+contact names are unchanged. Internal `assistants` routes, translation keys,
+types, native identifiers and stored data retain their existing names. Coding
+Agent terminology and the generic chat `assistant` role are separate concepts.
+
 ## Generated avatars
 
-Generated Assistant faces now use local DiceBear Gaze, selected explicitly with
-`kind="assistant"` in the shared avatar component. This covers list, header,
-transcript, Settings, recipient picker and native share PNG handoff. Names remain
-intact, including emoji; emoji are no longer extracted or used as Assistant faces.
-Agent faces use Bottts Neutral instead.
-See `../chat/DOCUMENTATION.md#generated-avatars` for generation and native fallback
-contracts.
+Assistant faces use the locally bundled MIT Open Mascot core through
+`AgentAvatar kind="assistant"` and `ProceduralAssistantAvatar`. This covers list,
+header, transcript, Settings, navigation, recipient picker and native share PNG
+handoff without changing coding-agent Bottts Neutral faces or application branding.
+Names stay intact, including emoji. No third-party avatar API, image model, WebGL,
+or Grok/xAI reference assets are used. Source commit, unmodified MIT license and
+integrity hashes live in `lib/assistant-avatar/vendor/open-mascot/` and
+`THIRD_PARTY_NOTICES.md`.
+
+`lib/assistant-avatar/recipe.ts` owns deterministic seed resolution, whitelist
+validation, nineteen shapes, six fixed artwork pigments and the saved animation
+switch. Legacy eye/expression fields remain valid in stored recipes but no longer
+choose the rendered rest-eye specification. Fixed pigments are artwork, not UI
+theme/status colors. A versioned recipe fits the existing opaque, maximum-256-char
+`avatarSeed` field: `yuri-avatar:v1:<shape>:<eyes>:<color>:<expression>:<0|1>:<nonce>`.
+No SQLite migration, extra settings store or network request is required. Existing
+IDs/random seeds remain deterministic; malformed/future recipes are treated as
+opaque seeds, never executable config or URLs. Old UI builds preserve the string
+but paint their old style until upgraded; restoring a saved seed on a new client
+restores the configured face. `update_avatar` still randomizes/restores this string.
+
+The original seven-shape opaque-seed mapping is frozen separately from picker
+order: adding or reordering choices must not change existing contacts. Explicit
+v1 recipes also keep their shape. `silhouettes.ts` adds twelve original connected
+geometric outlines (rounded square, cloud, flower, star, heart, clover, hexagon,
+diamond, triangle, shield, leaf and sparkle), not a vendored third-party character
+catalog. Scattered-dot/crystal bodies are excluded. Each outline is built once at
+module initialization. `buildAssistantAvatarScene` is the shared static/live scene
+entry: legacy shapes retain the upstream renderer byte-for-byte; the new shapes
+reuse upstream eye/motion sampling and deform their complete body/eyes group with
+one affine transform. The full MIT upstream source remains unmodified. Both static
+SVG/native PNG and animated UI use this scene entry, including reduced-motion poses.
+The drop selects the upstream 2D rig for both eyes and body; its body already uses
+that rig, so using projected-3D eyes would let the larger capsules detach on turns.
+
+New Bot drafts use `createDefaultAssistantAvatarSeed`: round body, capsule eyes,
+neutral rest pose and animation enabled; only pigment and nonce vary. The server
+applies the same complete v1 recipe when create omits `avatarSeed`, covering API,
+tool and first-run creation without migrating existing identities. Explicit
+customizations still win.
+
+`AVATAR_EYE_SPEC` is the single rendered eye geometry: width 24, height 58,
+center gap 38 and a slight backslash lean (-10 degrees in SVG coordinates). The
+pair has a fixed rightward offset of 16, vertical offset of -6 and a 14-unit
+left/right height difference. This fuller, closer, staggered pair follows the
+visual relationships studied in DS-Bot, not its character paths or animation code.
+Silhouette-specific seating keeps the same-size eyes inside concave outlines.
+It applies to every
+shape, opaque seed and saved eye-style/expression preference. All expression
+templates use scale 1 and the same eye rotation/offset; only live blinking and
+pose/gaze projection may deform that baseline, never per-Bot random dimensions.
+Static/rest rendering always samples neutral. Legacy metadata is preserved on
+edits rather than destructively rewritten. The active-project comparison and
+measurement references are recorded in the experiment README.
+
+The picker offers sixteen shapes through `AVATAR_PICKER_SHAPES`; tall, compact
+and large are retired from selection only. The nineteen-shape recipe whitelist,
+legacy-seed mapping and renderer still support those stored identities. Editing
+color or other preferences never silently replaces a retired shape.
+
+`AssistantAvatarEditor` previews changes in the existing Settings draft. Save uses
+the ordinary revision-checked Assistant mutation; failed saves retain the draft,
+and leaving discards unsaved changes. Its compact visual picker shows one live
+shape thumbnails, pigment swatches and a compact labelled randomize button, without a visible title, Reset or separate
+preview stage. The existing contact header shows the selected face. Shape targets
+use 44px mobile targets (36px on desktop, 32px artwork), in four mobile columns
+or eight desktop columns. Mobile has wider tile gaps, larger symmetric inner
+padding and a larger randomize label/icon; desktop stays compact. Randomize is absolutely positioned in the card's top-right padding as a
+muted small icon/text button; it reserves no row height. The picker has symmetric
+vertical padding. This replaces the hidden header-avatar
+overlay, and only changes the draft until Save. Shape/color edits preserve any existing hidden eye, rest-expression and
+motion preferences.
+
+Name, enabled state and model selection share the first configuration card.
+There is no manual default-share switch or corresponding Settings search entry.
+Share catalogs mark the first enabled contact in authoritative snapshot order as
+their default, ignoring the retired client preference; disabling/deleting it
+promotes the next eligible entry. Empty/all-disabled catalogs have no target.
+No nonfunctional generation/upload tabs are shown. These selected-entity controls
+are deliberately not indexed in Settings search.
+
+Live list/header/processing faces receive idle or thinking motion from the existing
+live working authority, never from persisted message history. Historical faces,
+pickers, navigation thumbnails and PNG exports remain static. Live SVGs animate
+their three paths directly, without React state updates per frame. Only intersecting,
+foreground, motion-enabled faces subscribe to one shared 30fps clock; offscreen,
+hidden-document, reduced-motion and unmounted faces release it and paint a stable
+rest pose. Mouse movement over a live face adjusts its gaze without a global pointer
+listener. The saved motion-off switch bypasses live observers altogether. At rest,
+all static faces share the existing 128-entry / 1 MiB artwork LRU.
+
+Performance contract: 20 visible live faces share exactly one frame request at up
+to 30 paints/second each; static/history faces schedule zero work; 50 unrelated
+parent renders cause zero observer rebinds or frame writes. Focused recipe,
+frame-clock and mounted-component tests guard this. The isolated production-component
+lab and browser checks are documented in `scripts/experiments/assistant-avatar/README.md`.
+Native PNG generation reuses the same static recipe; actual device share-sheet
+painting, Electron/VS Code and Capacitor runtime acceptance are separate validation.
 
 The Settings refresh icon appears at the avatar's bottom-right on hover or
 keyboard focus (always available on touch) and generates a new `avatarSeed` in the local draft only.
@@ -151,7 +251,7 @@ The Assistant conversation is a Grok-like **contact**, not an OpenCode coding ag
 
 Assistant history entries require `{ sessionID, directory, info, parts }`, where `directory` is `string | null`. The UI retains the server `Message` and `Part` objects, validates entry/message/part session and message identity, renders paged history from oldest to newest, and opens historical sessions when their entry directory is known. Unknown legacy directories retain a null source context, which keeps workspace-dependent source and file actions unavailable.
 
-Assistant faces use `shape="rounded"` and an 8px corner radius across list, header, Settings and transcript. The frame's width/min/max and height/min/max are fixed; `overflow: clip` contains the working Gaze animation without mobile overflow rewrites introducing scrollbars. Artwork is scaled to 1.2 to reduce its internal whitespace. Assistant names are displayed unchanged; all Assistant avatars derive from their stable ID, regardless of emoji in the name. List cards show a name and one latest-message preview line, with model identity confined to Settings detail.
+Assistant face frames retain an 8px corner radius across list, header, Settings and transcript. Width/min/max and height/min/max stay fixed; `overflow: clip` contains the procedural SVG without mobile overflow rewrites introducing scrollbars. The transparent SVG uses a 432-unit viewBox crop around the character. Names are unchanged; faces derive from their saved recipe/seed or stable ID, independently of emoji in the name. List cards show a name and one latest-message preview line, with model identity confined to Settings detail.
 
 The Assistant UI owns the current-runtime Assistant surface. Its product information architecture is an assistant list plus the selected assistant’s **contact** conversation. Desktop uses a flat Scheduled Tasks-style workspace with a soft left assistant list beside the conversation, elevated selected rows, and a light border between panes. Phone navigation makes that hierarchy explicit: the Assistant root tab is a content-height catalog where every Assistant owns an independent shared floating-surface card, and choosing a card opens its full-width conversation as the shared second-level mobile page. Assistant list cards reuse the Project card title typography token for names and keep the prompt as a clamped body line — no model badge on the catalog. The conversation header owns the selected Assistant identity and a quiet trailing Settings gear; desktop uses a breathable identity cluster and a subtle divider, while phone owns Back through the same overlay header. On the dedicated phone shell, the gear pushes `MobileAssistantSettingsPage` above the retained conversation through `pushAssistantSettings`. The route owns its Assistant ID and reuses `AssistantsSettingsPage`; the Settings root tab, global Settings selection, and open-request revision stay unchanged. Header, system, and gesture Back pop this detail through the shared mobile coordinator, revealing the mounted conversation and its draft. The covered conversation is inactive while the detail is open. Desktop and iPad keep `openAssistantSettings`; catalog editing keeps its existing Settings entry. Tapping the Settings tab always returns to the first-level list. On phone the header uses the same overlay `MobileDetailNavigation` fade as session chat, placing the translucent gradient above the scrolling transcript. The contact scroller owns matching top padding (`max(0.625rem, safe-top)` + `--yuri-mobile-detail-navigation-height` + `1.25rem`) so the first bubble can scroll fully above that overlay. Settings runtime selection is model-only — no Agent picker. The root tab owns vertical catalog scrolling and hides native scrollbar chrome, while the conversation owns only its transcript scroll. Each Assistant DTO carries `mode` (`continuous` | `stateless`), the current `sessionID`, `sessionGeneration`, a bounded compatibility `historySessionIDs` window, and `historySessionCount`.
 

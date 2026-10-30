@@ -1,5 +1,12 @@
 # UI Stores
 
+Assistant catalog partitions derive `isDefaultShareTarget` from their first enabled
+entry in authoritative snapshot order, both on refresh and persisted-cache restore.
+The legacy `defaultShareAssistant` field remains readable for compatibility but
+cannot override this rule. Existing native share bridges consume the derived flag;
+no UI switch or separate preference write is needed. Failed catalog refreshes still
+retain the prior complete partition; disabled/all-empty partitions have no target.
+
 Mobile updates use native-authoritative shell metadata through `YuriUpdateConfig`.
 An `install_native_required` decision is actionable only with both a target version
 and an installation URL. Incomplete targets fail the check (`available: false`,

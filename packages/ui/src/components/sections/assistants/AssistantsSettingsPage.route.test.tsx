@@ -52,6 +52,7 @@ vi.mock('@/queries/assistantQueries', () => ({
 import { AssistantsSettingsPage } from './AssistantsSettingsPage';
 import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { normalizeModelIdentifier } from '@/lib/modelIdentifier';
+import { resolveAssistantAvatar } from '@/lib/assistant-avatar/recipe';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement;
@@ -108,6 +109,29 @@ test('route ID owns displayed and saved assistant while the Settings tab selecti
   expect(useAssistantUIStore.getState().settingsSelectedAssistantID).toBe('asst_settings_tab');
 });
 
+test('model selection shares the name/enabled card and no manual share-default control remains', async () => {
+  await act(async () => root.render(<AssistantsSettingsPage assistantID="asst_route" />));
+  const card = host.querySelector('#assistant-name')?.closest('.yuri-settings-group-card');
+  expect(card?.querySelector('[data-settings-item="assistants.model"]')).not.toBeNull();
+  expect(card?.textContent).toContain('assistants.settings.enabled');
+  expect(host.querySelector('[data-settings-item="assistants.default-share"]')).toBeNull();
+  expect(host.textContent).not.toContain('assistants.settings.defaultShare');
+});
+
+test('custom avatar configuration saves atomically with the draft; failed saves preserve the preview', async () => {
+  await act(async () => root.render(<AssistantsSettingsPage assistantID="asst_route" />));
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-avatar-color-option="iris"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-avatar-shape-option="flower"]')!.click());
+  const seed = host.querySelector('[data-avatar-seed]')?.getAttribute('data-avatar-seed') ?? '';
+  expect(resolveAssistantAvatar(seed)).toMatchObject({ color: 'iris', shape: 'flower' });
+  expect(fixture.update).not.toHaveBeenCalled();
+  fixture.update.mockRejectedValueOnce(new Error('revision conflict'));
+  await act(async () => button('assistants.settings.save').click());
+  expect(host.querySelector('[data-avatar-seed]')?.getAttribute('data-avatar-seed')).toBe(seed);
+  await act(async () => button('assistants.settings.save').click());
+  expect(fixture.update).toHaveBeenLastCalledWith(fixture.assistant, expect.objectContaining({ avatarSeed: seed }));
+});
+
 test('mounted settings rehydrates and saves a variant selected inside the model picker', async () => {
   await act(async () => root.render(<AssistantsSettingsPage assistantID="asst_route" />));
   expect(host.querySelector('[data-testid="model-picker"]')?.getAttribute('data-variant')).toBe('medium');
@@ -142,6 +166,23 @@ test('switching to a plain model clears the previous variant when saved', async 
   expect(fixture.update).toHaveBeenCalledWith(fixture.assistant, expect.objectContaining({
     modelID: 'plain-model', variant: null,
   }));
+});
+
+test('new Bot draft defaults to the round capsule face and saves the customized preview', async () => {
+  fixture.snapshot.data.assistants = [];
+  fixture.config.opencodeDefaultModel = 'provider/model';
+  fixture.create.mockResolvedValue(fixture.assistant);
+  useAssistantUIStore.getState().requestCreate();
+  await act(async () => root.render(<AssistantsSettingsPage />));
+  const seed = () => host.querySelector('[data-avatar-seed]')?.getAttribute('data-avatar-seed') ?? '';
+  const initial = seed();
+  expect(resolveAssistantAvatar(initial)).toMatchObject({ shape: 'round', eyes: 'capsule', expression: 'neutral', animate: true });
+  expect(host.querySelector('[data-avatar-shape-option="round"]')?.getAttribute('aria-pressed')).toBe('true');
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-avatar-shape-option="flower"]')!.click());
+  expect(resolveAssistantAvatar(seed()).shape).toBe('flower');
+  const customized = seed();
+  await act(async () => button('assistants.settings.save').click());
+  expect(fixture.create).toHaveBeenLastCalledWith(expect.objectContaining({ avatarSeed: customized }));
 });
 
 test('deleting the route assistant returns through its owner and preserves the Settings tab selection', async () => {

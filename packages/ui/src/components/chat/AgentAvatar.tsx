@@ -3,12 +3,15 @@ import { getAgentColor } from '@/lib/agentColors';
 import { generatedAvatarDataUri, type AvatarKind } from '@/lib/generatedAvatar';
 import { useAgentAvatarPalette } from '@/lib/useAgentAvatarPalette';
 import { cn } from '@/lib/utils';
+import { ProceduralAssistantAvatar } from '@/components/assistants/ProceduralAssistantAvatar';
+import type { AvatarMotion } from '@/lib/assistant-avatar/recipe';
 
 type AgentAvatarProps = {
   /** Agent name seed — drives both pattern and theme color. */
   name: string | undefined;
   kind?: AvatarKind;
   animated?: boolean;
+  motion?: AvatarMotion;
   /** Optional glyph used in place of the generated identicon. */
   emoji?: string;
   size?: number;
@@ -27,7 +30,7 @@ type AgentAvatarProps = {
  * Agents paint their own computed accent color; the plate always carries that
  * accent so its face never drifts from the matching agent badge.
  */
-export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
+const DiceBearAvatar: React.FC<AgentAvatarProps> = React.memo(({
   name,
   kind = 'agent',
   animated = false,
@@ -97,4 +100,11 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
       ) : <img src={avatar} alt="" draggable={false} className="block h-full w-full max-h-full max-w-full object-contain" aria-hidden="true" />}
     </span>
   );
+});
+
+export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(function AgentAvatar(props) {
+  if (props.kind === 'assistant' && !props.emoji) {
+    return <ProceduralAssistantAvatar seed={props.name} size={props.size ?? 16} label={props.label} className={props.className} motion={props.motion ?? (props.animated ? 'thinking' : undefined)} />;
+  }
+  return <DiceBearAvatar {...props} />;
 });

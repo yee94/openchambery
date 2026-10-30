@@ -626,19 +626,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     id: 'assistants.create',
     page: 'assistants',
     titleKey: 'assistants.settings.create',
-    keywords: ['assistant', 'new', 'add'],
+    keywords: ['bot', 'bots', 'assistant', 'new', 'add'],
   },
   {
     id: 'assistants.name',
     page: 'assistants',
     titleKey: 'assistants.settings.name',
-    keywords: ['assistant', 'name'],
-  },
-  {
-    id: 'assistants.default-share',
-    page: 'assistants',
-    titleKey: 'assistants.settings.defaultShare',
-    keywords: ['share', 'default', 'mobile'],
+    keywords: ['bot', 'bots', 'assistant', 'name'],
   },
   {
     id: 'assistants.prompt',

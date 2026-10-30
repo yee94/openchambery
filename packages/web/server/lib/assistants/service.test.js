@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { assignedSessionResumeMessageID, createAssistantsService } from './service.js';
@@ -118,12 +119,54 @@ const toolBatch = (calls, content = '') => ({ completion: { choices: [{ message:
 const sayThen = (text, name, args) => toolBatch([['notify_user', { text }], [name, args]]);
 
 describe('assistants service', () => {
+  it('persists one round capsule-eyed default with only the pigment varying across new Bots', async () => {
+    const directory = root();
+    let service = setup(directory);
+    const randomColor = vi.spyOn(crypto, 'randomInt');
+    try {
+      const created = ['mint', 'iris', 'coral', 'sky', 'sand', 'graphite'].map((color, index) => {
+        randomColor.mockReturnValue(index);
+        const bot = service.createAssistant({ ...assistantInput, name: `Bot ${index + 1}` });
+        expect(bot.avatarSeed).toBe(`yuri-avatar:v1:round:capsule:${color}:neutral:1:${bot.id}`);
+        return bot;
+      });
+      await service.updateAssistant(created[0].id, { expectedRevision: created[0].revision, name: 'Renamed' });
+      service.close();
+      service = setup(directory);
+      const restored = service.snapshot().assistants;
+      for (const bot of created) {
+        expect(restored.find((item) => item.id === bot.id)?.avatarSeed).toBe(bot.avatarSeed);
+      }
+    } finally {
+      randomColor.mockRestore();
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it.each(['drop', 'square', 'cloud', 'flower', 'star', 'heart', 'clover', 'hexagon', 'diamond', 'triangle', 'shield', 'leaf', 'sparkle'])('round-trips the %s avatar recipe through revision-checked persistence and restart', async (shape) => {
+    const directory = root();
+    let service = setup(directory);
+    const recipe = `yuri-avatar:v1:${shape}:oval:iris:curious:0:custom`;
+    try {
+      const created = service.createAssistant({ ...assistantInput, avatarSeed: recipe });
+      expect(created.avatarSeed).toBe(recipe);
+      const updated = await service.updateAssistant(created.id, { expectedRevision: created.revision, name: 'Configured' });
+      expect(updated.avatarSeed).toBe(recipe);
+      await expect(service.updateAssistant(created.id, { expectedRevision: created.revision, avatarSeed: 'lost' })).rejects.toBeDefined();
+      service.close();
+      service = setup(directory);
+      expect(service.snapshot().assistants.find((item) => item.id === created.id)).toMatchObject({ id: created.id, name: 'Configured', avatarSeed: recipe });
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it('migrates legacy avatar seeds and persists edits without changing identity', async () => {
     const directory = root();
     let service = setup(directory);
     try {
       const original = service.createAssistant(assistantInput);
-      expect(original.avatarSeed).toBe(original.id);
+      expect(original.avatarSeed).toMatch(/^yuri-avatar:v1:round:capsule:(mint|iris|coral|sky|sand|graphite):neutral:1:/);
       service.close();
       const Database = require('better-sqlite3');
       const db = new Database(path.join(directory, 'assistants.sqlite'));

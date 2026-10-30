@@ -177,10 +177,10 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   },
   {
     slug: 'assistants',
-    title: 'Assistants',
+    title: 'Bots',
     group: 'opencode',
     kind: 'split',
-    keywords: ['assistant', 'assistants', 'sharing'],
+    keywords: ['bot', 'bots', 'assistant', 'assistants', 'sharing'],
   },
   {
     slug: 'behavior',

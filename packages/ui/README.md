@@ -27,6 +27,15 @@ their existing error feedback, and file previews own their local loading state.
 
 The full-text index startup screen keeps the same transparent 120 × 120 CSS-pixel logo at the viewport center as the desktop/web splash. Its progress ring is concentric with the logo; percentage, description, and background action occupy an independently scrolling area below it. The fullscreen dialog must not scale during entrance or exit, and progress/text changes must never reposition the logo.
 
+## Assistant avatars
+
+Assistant contact faces use a locally bundled, MIT-licensed procedural SVG engine
+with a compact preview/shape-grid/color-swatch picker in Assistant Settings.
+They do not replace app branding or coding-agent faces. All shared UI and native
+PNG share thumbnails resolve the same saved `avatarSeed` recipe. See
+`src/components/assistants/DOCUMENTATION.md#generated-avatars` for persistence,
+animation budgets, source provenance and runtime validation boundaries.
+
 ## Sidebar wordmark
 
 The default sidebar brand is `Yuri`. Whenever the name contains `Yuri`,

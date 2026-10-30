@@ -8,6 +8,23 @@ async function source(path) {
   return readFile(new URL(path, root), 'utf8');
 }
 
+test('English native share copy uses Bot without renaming native resource keys', async () => {
+  const [ios, controller, store, android] = await Promise.all([
+    source('ios/App/YuriShareExtension/en.lproj/Localizable.strings'),
+    source('ios/App/YuriShareExtension/ShareViewController.swift'),
+    source('ios/App/App/YuriShareStore.swift'),
+    source('android/app/src/main/res/values/strings.xml'),
+  ]);
+  assert.match(ios, /"share.destination" = "Bot";/);
+  assert.match(ios, /Choose a default share bot in Yuri\./);
+  assert.match(controller, /localized\("share.destination", "Bot"\)/);
+  assert.match(controller, /localized\("share.missingTarget", "Choose a default share bot in Yuri\."\)/);
+  assert.match(store, /Choose a default share bot in Yuri before sharing\./);
+  assert.match(android, /<string name="share_assistant">Bot<\/string>/);
+  assert.match(android, /<string name="share_opening_assistant">Opening bot…<\/string>/);
+  for (const resource of [ios, android]) assert.doesNotMatch(resource, />[^<]*\bassistant\b|= "[^"]*\bassistant\b/i);
+});
+
 test('share inbox persists relative paths and enforces decoded image upload limits', async () => {
   const [readme, ios, android] = await Promise.all([
     source('README.md'),

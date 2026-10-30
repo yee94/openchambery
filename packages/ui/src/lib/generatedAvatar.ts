@@ -1,7 +1,7 @@
 import { Avatar, Style } from '@dicebear/core';
-import gaze from '@dicebear/styles/gaze.json';
 import botttsNeutral from '@dicebear/styles/bottts-neutral.json';
 import { DualLimitLru } from './dualLimitLru';
+import { assistantAvatarSvg } from './assistant-avatar/recipe';
 
 export type AvatarKind = 'assistant' | 'agent';
 
@@ -14,7 +14,6 @@ export type AvatarColorSet = {
 const FALLBACK_COLORS: AvatarColorSet = { background: '#c1f2c4' };
 
 const styles = {
-  assistant: new Style(gaze),
   agent: new Style(botttsNeutral),
 };
 
@@ -24,12 +23,12 @@ const artwork = new DualLimitLru<string, string>({ maxEntries: 128, maxBytes: 10
 export function generatedAvatarDataUri(
   kind: AvatarKind,
   seed: string | undefined,
-  animated = false,
+  _animated = false,
   colors?: AvatarColorSet,
 ): string {
   const seedValue = kind === 'agent' ? seed?.trim().toLowerCase() || 'default' : seed || 'default';
   const background = kind === 'agent' ? (colors ?? FALLBACK_COLORS).background.replace('#', '') : '00000000';
-  const key = JSON.stringify([kind, seedValue, background, kind === 'assistant' && animated]);
+  const key = JSON.stringify([kind, seedValue, background]);
   const cached = artwork.get(key);
   if (cached !== undefined) return cached;
   let uri: string;
@@ -42,14 +41,7 @@ export function generatedAvatarDataUri(
       backgroundColor: [background],
     }).toDataUri();
   } else {
-    uri = new Avatar(styles.assistant, {
-      seed: seedValue,
-      size: 128,
-      scale: 1.2,
-      backgroundColor: ['00000000'],
-      idRandomization: false,
-      animationVariant: animated ? 'fastest' : 'none',
-    }).toDataUri();
+    uri = `data:image/svg+xml,${encodeURIComponent(assistantAvatarSvg(seedValue))}`;
   }
   artwork.set(key, uri, (key.length + uri.length) * 2);
   return uri;

@@ -6,6 +6,12 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 
 ## Runtime Model
 
+The contact feature is named **Bots** in English, with **Bot** for an individual
+share destination. Only English UI copy changes; other locales, contact names,
+native bridge identifiers and stored share targets retain their existing values.
+Native share text updates require a native rebuild; shared web UI text can update
+with the web bundle.
+
 The Assistant dock icon accepts the UI-owned optional `avatar` SVG data URI.
 It follows the newest enabled contact and uses the same working animation as
 desktop/Android/hosted mobile. iOS renders the local image in a noninteractive

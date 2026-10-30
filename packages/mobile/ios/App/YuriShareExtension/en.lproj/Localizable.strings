@@ -5,8 +5,8 @@
 "share.preparing" = "Preparing shared content…";
 "share.message" = "Message";
 "share.message.placeholder" = "Add a message";
-"share.destination" = "Assistant";
-"share.missingTarget" = "Choose a default share assistant in Yuri.";
+"share.destination" = "Bot";
+"share.missingTarget" = "Choose a default share bot in Yuri.";
 "share.images.single" = "1 image";
 "share.images.multiple" = "%d images";
 "share.avatar.accessibility" = "%@ avatar";

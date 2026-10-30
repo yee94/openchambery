@@ -691,14 +691,15 @@ describe('createContactTools', () => {
     expect(result.terminate).toBe(false);
   });
 
-  it('discloses DiceBear guidance only on demand and validates self avatar mutations', async () => {
+  it('discloses procedural avatar guidance only on demand and validates self avatar mutations', async () => {
     const updateAvatar = vi.fn(async (seed) => ({ updated: true, avatarSeed: seed ?? 'random', previousAvatarSeed: 'old' }));
     const tools = createContactTools({ updateAvatar, readAssistantSettings: async () => ({ id: 'self', avatarSeed: 'old' }) });
     const read = tools.find((tool) => tool.name === GET_ASSISTANT_SETTINGS_TOOL_NAME);
-    expect((await read.execute('read', {})).content[0].text).not.toContain('DiceBear');
+    expect((await read.execute('read', {})).content[0].text).not.toContain('Open Mascot');
     const guide = await read.execute('guide', { topic: 'avatar' });
     expect(guide.details.settings.avatarSeed).toBe('old');
-    expect(guide.content[0].text).toContain('Moods');
+    expect(guide.content[0].text).toContain('Open Mascot');
+    expect(guide.content[0].text).toContain('versioned recipe');
     expect(guide.content[0].text).toContain('not an image prompt');
     const change = tools.find((tool) => tool.name === 'update_avatar');
     expect((await change.execute('random', {})).details.avatarSeed).toBe('random');

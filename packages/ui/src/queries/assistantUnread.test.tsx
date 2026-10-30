@@ -55,7 +55,7 @@ afterEach(async () => {
 });
 
 describe('Assistant shared read contract', () => {
-  test('navigation follows latest messages, animates live work, and clears on runtime or catalog changes', async () => {
+  test('navigation follows latest messages, keeps thumbnails static during work, and clears on runtime or catalog changes', async () => {
     const a = { ...assistant('a', 99), avatarSeed: 'face-a', latestMessagePreview: { ...assistantContractFixtures.assistant.latestMessagePreview, createdAt: 10 } };
     const b = { ...assistant('b', 0), avatarSeed: 'face-b', latestMessagePreview: { ...assistantContractFixtures.assistant.latestMessagePreview, createdAt: 20 } };
     let snapshot = { enabled: true, revision: 1, assistants: [a, b] };
@@ -72,16 +72,20 @@ describe('Assistant shared read contract', () => {
         await new Promise(resolve => setTimeout(resolve, 0));
       });
     };
+    rendered.mockClear();
     snapshot = { ...snapshot, revision: 2, assistants: [a, { ...b, working: true }] };
     await update();
-    await vi.waitFor(() => expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-b', true)));
+    expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-b'));
+    expect(rendered).not.toHaveBeenCalled();
     snapshot = { ...snapshot, revision: 3, assistants: [{ ...a, latestMessagePreview: { ...a.latestMessagePreview, createdAt: 30 } }, b] };
     await update();
     await vi.waitFor(() => expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-a')));
+    rendered.mockClear();
     await act(async () => useAssistantContactWorkingStore.getState().setWorking('a', true));
-    expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-a', true));
+    expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-a'));
     await act(async () => useAssistantContactWorkingStore.getState().setWorking('a', false));
     expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-a'));
+    expect(rendered).not.toHaveBeenCalled();
     const image = host.querySelector('img');
     rendered.mockClear();
     for (let i = 0; i < 50; i++) {

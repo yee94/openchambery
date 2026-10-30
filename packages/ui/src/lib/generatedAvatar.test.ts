@@ -5,7 +5,7 @@ import { generatedAvatarDataUri, type AvatarColorSet } from './generatedAvatar';
 const svg = (uri: string) => decodeURIComponent(uri.slice(uri.indexOf(',') + 1));
 
 describe('local generated avatars', () => {
-  test('reuses artwork across message rows while keeping palette and animation variants distinct', () => {
+  test('reuses artwork across rows; only the live DOM adapter animates Assistant faces', () => {
     const generate = vi.spyOn(Avatar.prototype, 'toDataUri');
     try {
       const colors = { background: '#22c55e' };
@@ -17,10 +17,10 @@ describe('local generated avatars', () => {
       expect(generatedAvatarDataUri('agent', 'shared-row-face', false, { background: '#a855f7' })).not.toBe(first);
       expect(generate).toHaveBeenCalledTimes(2);
       const still = generatedAvatarDataUri('assistant', 'shared-row-face');
-      expect(generatedAvatarDataUri('assistant', 'shared-row-face', true)).not.toBe(still);
-      expect(generate).toHaveBeenCalledTimes(4);
+      expect(generatedAvatarDataUri('assistant', 'shared-row-face', true)).toBe(still);
+      expect(generate).toHaveBeenCalledTimes(2);
       expect(generatedAvatarDataUri('agent', 'shared-row-face', false, colors)).toBe(first);
-      expect(generate).toHaveBeenCalledTimes(4);
+      expect(generate).toHaveBeenCalledTimes(2);
     } finally {
       generate.mockRestore();
     }
@@ -43,10 +43,10 @@ describe('local generated avatars', () => {
     }
   });
 
-  test('Gaze animates only when requested, with reduced-motion support', () => {
+  test('exported SVGs are always static, including native thumbnail requests', () => {
     const active = svg(generatedAvatarDataUri('assistant', 'identity', true));
-    expect(active).toContain('@keyframes');
-    expect(active).toContain('prefers-reduced-motion: no-preference');
+    expect(active).not.toContain('@keyframes');
+    expect(active).toBe(svg(generatedAvatarDataUri('assistant', 'identity', false)));
     expect(svg(generatedAvatarDataUri('assistant', 'identity', false))).not.toContain('@keyframes');
     const agentActive = svg(generatedAvatarDataUri('agent', 'identity', true));
     const agentStill = svg(generatedAvatarDataUri('agent', 'identity', false));
@@ -65,7 +65,7 @@ describe('local generated avatars', () => {
     const gaze = svg(generatedAvatarDataUri('assistant', 'identity'));
     const bot = svg(generatedAvatarDataUri('agent', 'identity'));
     expect(gaze).not.toBe(bot);
-    expect(gaze).toContain('Gaze');
+    expect(gaze).toContain('Open Mascot Studio (MIT)');
     expect(bot).toContain('Pablo Stanley');
     expect(bot).toContain('#c1f2c4');
     expect(generatedAvatarDataUri('agent', undefined)).toBe(generatedAvatarDataUri('agent', 'default'));

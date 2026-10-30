@@ -85,14 +85,14 @@ describe('assistant contact working mount', () => {
     expect(idle.querySelector('[data-assistant-working-dot]')).toBeNull()
   })
 
-  test('header Gaze follows live work without a dot; historical faces remain still', async () => {
+  test('procedural header follows live work without a dot; historical faces remain still', async () => {
     const header = await mount(<AssistantWorkingAvatar name="asst_1" avatarSeed="random-face" size={28} working={false} showWorkingDot={false} />)
     const history = await mount(<AssistantWorkingAvatar name="asst_1" avatarSeed="random-face" size={28} />)
     const src = (host: HTMLElement) => decodeURIComponent(host.querySelector('img')?.getAttribute('src') ?? '')
-    const idle = src(header)
-    expect(idle).not.toContain('@keyframes')
+    const idle = src(history)
+    expect(header.querySelector('[data-avatar-motion]')?.getAttribute('data-avatar-motion')).toBe('idle')
     await act(async () => useAssistantContactWorkingStore.getState().setWorking('asst_1', true))
-    expect(src(header)).toContain('@keyframes')
+    expect(header.querySelector('[data-avatar-motion]')?.getAttribute('data-avatar-motion')).toBe('thinking')
     expect(header.querySelector('[data-assistant-working-dot]')).toBeNull()
     expect(src(history)).toBe(idle)
     const frame = header.querySelector<HTMLElement>('[data-agent-avatar]')!
@@ -100,7 +100,8 @@ describe('assistant contact working mount', () => {
     expect(frame.style.minHeight).toBe(frame.style.maxHeight)
     expect(frame.classList.contains('overflow-clip')).toBe(true)
     await act(async () => useAssistantContactWorkingStore.getState().setWorking('asst_1', false))
-    expect(src(header)).toBe(idle)
+    expect(header.querySelector('[data-avatar-motion]')?.getAttribute('data-avatar-motion')).toBe('idle')
+    expect(src(history)).toBe(idle)
   })
 
   test('contact 3-dot appears for busy snapshot and disappears after idle authority (missed end)', async () => {

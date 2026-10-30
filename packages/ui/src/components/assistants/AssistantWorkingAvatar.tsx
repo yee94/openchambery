@@ -38,7 +38,7 @@ export const AssistantWorkingAvatar: React.FC<AssistantWorkingAvatarProps> = ({
       style={{ width: box, minWidth: box, maxWidth: box, height: box, minHeight: box, maxHeight: box }}
       data-assistant-working-avatar=""
     >
-      <AgentAvatar kind="assistant" animated={animated} name={avatarSeed ?? name} size={size} label={label} shape="rounded" className="rounded-[0.5rem]" />
+      <AgentAvatar kind="assistant" motion={working === undefined ? undefined : animated ? 'thinking' : 'idle'} name={avatarSeed ?? name} size={size} label={label} shape="rounded" className="rounded-[0.5rem]" />
       {working && showWorkingDot ? (
         <span
           className="pointer-events-none absolute right-0 bottom-0 size-2.5 translate-x-0.5 translate-y-0.5 rounded-full bg-[var(--status-success)] ring-2 ring-background"

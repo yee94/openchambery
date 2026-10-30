@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +47,12 @@ describe('settings navigation metadata', () => {
 
   test('renders assistants through the standard split settings shell', () => {
     expect(SETTINGS_PAGE_METADATA.find((page) => page.slug === 'assistants')?.kind).toBe('split');
+  });
+
+  test('uses Bots as the English page name while preserving the route and legacy search terms', () => {
+    const page = SETTINGS_PAGE_METADATA.find((page) => page.slug === 'assistants');
+    expect(page?.title).toBe('Bots');
+    expect(page?.keywords).toEqual(expect.arrayContaining(['bot', 'bots', 'assistant', 'assistants']));
   });
 
   test('exposes every split collection to the shared three-level mobile flow', () => {

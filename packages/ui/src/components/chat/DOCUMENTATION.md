@@ -80,11 +80,14 @@ Only the tiny message-header badge face passes `shape="square"`. Composer faces
 are 20px on desktop/VS Code and 24px on mobile web (22pt in native iOS); other
 surfaces retain their existing sizes.
 Assistant consumers
-explicitly pass `kind="assistant"` to select Gaze. `lib/generatedAvatar.ts` imports
-only those two style definitions, with pinned package versions, deterministic
-seeds and no remote avatar requests. Gaze animates only while working (list,
-conversation header and live processing avatar); idle and native PNG faces are
-static. Avatar frames lock min/max width and height and clip animated artwork.
+explicitly pass `kind="assistant"` to select the procedural Open Mascot adapter.
+`lib/generatedAvatar.ts` imports only the Bottts Neutral DiceBear definition;
+Assistant SVGs come from the pinned MIT core in `lib/assistant-avatar/`.
+Both styles use deterministic seeds and no remote avatar requests. Live Assistant
+list/header/processing faces switch idle/thinking; history and native PNGs stay
+static. The saved animation switch, system reduced motion, document visibility and
+intersection gate the shared animation clock. See `../assistants/DOCUMENTATION.md#generated-avatars`.
+Avatar frames lock min/max width and height and clip animated artwork.
 Assistant IDs, ordinary Agent names, and subagent task IDs
 are the respective seeds. Explicit emoji overrides remain supported. The memoized
 component generates only on seed/style/emoji/palette changes, not draft or streaming
@@ -93,7 +96,8 @@ metadata; see `THIRD_PARTY_NOTICES.md` for artwork credits.
 
 Identical faces also share generated SVGs across row mounts through the existing
 `DualLimitLru` (128 entries / 1 MiB of UTF-16 key + URI payload). Keys include
-normalized identity, kind, resolved background color and applicable animation.
+normalized identity, kind and resolved background color. Exported SVGs are static;
+the live Assistant adapter animates paths independently of this cache.
 Theme changes select another key; style definitions are build-pinned. Artwork is
 pure local data, deliberately reusable across runtimes with the same inputs,
 without retaining session/auth state. Oversized results are returned but not
@@ -103,7 +107,7 @@ semantics; per-component memoization still skips unrelated render work.
 Native iOS composer receives an optional `agentIcon` PNG generated only when its
 Agent identity or palette changes. Late rasterizations are fenced on identity/availability
 changes; text echo does not resend the image. Old shells retain the identicon
-payload fallback. Native Assistant share catalogs carry optional Gaze `avatarPng`
+payload fallback. Native Assistant share catalogs carry optional procedural `avatarPng`
 data, generated serially; a newer publication cancels older work. Native share
 UI and shortcut donations prefer the PNG, retaining emoji and legacy catalog
 fallbacks. A new native build is required for PNG-consuming native surfaces.

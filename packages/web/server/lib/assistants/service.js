@@ -1335,7 +1335,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       }
       if (Number(db.prepare('SELECT COUNT(*) AS count FROM assistant_v2 WHERE tombstone_at IS NULL').get().count) >= 100) fail('assistant_limit');
       effectiveWorkspace({ assistant_id: assistantID, workspace_path: workspacePath });
-      db.prepare('INSERT INTO assistant_v2 (assistant_id,revision,enabled,name,default_prompt,workspace_path,provider_id,model_id,agent,variant,mode,current_session_id,session_generation,created_at,updated_at,tombstone_at,avatar_seed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(assistantID, 1, input.enabled === false ? 0 : 1, string(input.name, 256, true), input.defaultPrompt ? string(input.defaultPrompt, 200_000) : '', workspacePath, string(input.providerID, 256, true), string(input.modelID, 256, true), input.agent == null ? null : string(input.agent, 256), input.variant == null ? null : string(input.variant, 256), mode, null, 0, at, at, null, input.avatarSeed === undefined ? null : string(input.avatarSeed, 256, true));
+      // Default every creation channel to the same face, varying only pigment.
+      // Persist the complete v1 recipe so future defaults cannot change this Bot.
+      const avatarSeed = input.avatarSeed === undefined
+        ? `yuri-avatar:v1:round:capsule:${['mint', 'iris', 'coral', 'sky', 'sand', 'graphite'][crypto.randomInt(6)]}:neutral:1:${assistantID}`
+        : string(input.avatarSeed, 256, true);
+      db.prepare('INSERT INTO assistant_v2 (assistant_id,revision,enabled,name,default_prompt,workspace_path,provider_id,model_id,agent,variant,mode,current_session_id,session_generation,created_at,updated_at,tombstone_at,avatar_seed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(assistantID, 1, input.enabled === false ? 0 : 1, string(input.name, 256, true), input.defaultPrompt ? string(input.defaultPrompt, 200_000) : '', workspacePath, string(input.providerID, 256, true), string(input.modelID, 256, true), input.agent == null ? null : string(input.agent, 256), input.variant == null ? null : string(input.variant, 256), mode, null, 0, at, at, null, avatarSeed);
       bump();
       db.exec('COMMIT');
       return output(assistant(assistantID));

@@ -43,6 +43,12 @@ type AssistantUIState = {
 
 const transport = () => getRuntimeTransportIdentity();
 const nonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+// Catalog order comes from the authoritative Assistant snapshot, not names/IDs
+// or the retired per-client default preference. Disabled contacts cannot receive shares.
+const withFirstShareTarget = (entries: AssistantCatalogEntry[]): AssistantCatalogEntry[] => {
+  const first = entries.find((entry) => entry.enabled);
+  return entries.map((entry) => ({ ...entry, isDefaultShareTarget: entry === first }));
+};
 const parseCatalogEntry = (value: unknown): AssistantCatalogEntry | null => {
   if (!value || typeof value !== 'object') return null;
   const entry = value as Record<string, unknown>;
@@ -57,7 +63,7 @@ const parseCatalogPartitions = (value: unknown): Record<string, AssistantCatalog
     if (!nonEmptyString(partition.serverInstanceID) || !nonEmptyString(partition.connectionKey) || partition.connectionKey !== key || typeof partition.revision !== 'number' || !Number.isFinite(partition.revision) || typeof partition.lastLoadedAt !== 'number' || !Number.isFinite(partition.lastLoadedAt) || !Array.isArray(partition.entries)) return [];
     const entries = partition.entries.map(parseCatalogEntry);
     if (entries.some((entry) => entry === null) || entries.some((entry) => entry?.connectionKey !== key || entry.serverInstanceID !== partition.serverInstanceID)) return [];
-    return [[key, { serverInstanceID: partition.serverInstanceID, connectionKey: partition.connectionKey, revision: partition.revision, lastLoadedAt: partition.lastLoadedAt, entries: entries as AssistantCatalogEntry[] }]];
+    return [[key, { serverInstanceID: partition.serverInstanceID, connectionKey: partition.connectionKey, revision: partition.revision, lastLoadedAt: partition.lastLoadedAt, entries: withFirstShareTarget(entries as AssistantCatalogEntry[]) }]];
   }));
 };
 
@@ -76,14 +82,13 @@ export const useAssistantUIStore = create<AssistantUIState>()(persist((set) => (
     defaultShareAssistant: target,
     assistantCatalogByConnection: Object.fromEntries(Object.entries(state.assistantCatalogByConnection).map(([key, partition]) => [key, {
       ...partition,
-      entries: partition.entries.map((entry) => ({ ...entry, isDefaultShareTarget: Boolean(target && entry.serverInstanceID === target.serverInstanceID && entry.assistantID === target.assistantID) })),
+      entries: withFirstShareTarget(partition.entries),
     }])),
   })),
   replaceCatalogPartition: (partition) => set((state) => {
-    const target = state.defaultShareAssistant;
     return { assistantCatalogByConnection: { ...state.assistantCatalogByConnection, [partition.connectionKey]: {
       ...partition,
-      entries: partition.entries.map((entry) => ({ ...entry, isDefaultShareTarget: Boolean(target && entry.serverInstanceID === target.serverInstanceID && entry.assistantID === target.assistantID) })),
+      entries: withFirstShareTarget(partition.entries),
     } } };
   }),
   removeCatalogPartition: (connectionKey) => set((state) => {

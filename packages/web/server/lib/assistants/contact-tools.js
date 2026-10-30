@@ -44,12 +44,12 @@ const SEARCH_MEMORY_TOOL_NAME = 'search_memory';
 const READ_MEMORY_TOOL_NAME = 'read_memory';
 const UPDATE_AVATAR_TOOL_NAME = 'update_avatar';
 const AVATAR_GUIDE = [
-  'DiceBear avatars are generated locally as SVG; no image upload or external API request is used.',
-  'Assistant contacts use Moods. Coding agents use Bottts Neutral; update_avatar changes this contact only.',
+  'Assistant avatars are generated locally as procedural SVG with the MIT Open Mascot core; no image upload or external API request is used.',
+  'Coding agents still use Bottts Neutral; update_avatar changes this contact only.',
   'The same seed, style, library version and rendering options reproduce the same face. Different seeds can still look alike.',
   'A seed is an opaque randomness key, not an image prompt: "blue cat" does not guarantee a blue cat.',
   'Call update_avatar with no arguments to randomize, or with seed to restore a previous face. Seeds must be nonblank strings of at most 256 characters.',
-  'Only seed is editable here; style, colors, facial features, custom URLs and uploaded images are not supported.',
+  'Only seed is editable through this tool. Assistant Settings previews shape, color, eyes, resting expression and animation and saves a versioned recipe as avatarSeed. Preserve a saved recipe exactly when restoring it. Custom URLs and uploaded images are not supported.',
   'Keep the current avatarSeed to restore it later. Avatar changes preserve identity and conversations.',
 ].join('\n');
 export const NOTIFY_USER_TOOL_NAME = 'notify_user';
@@ -178,7 +178,7 @@ const INTENT_NEGATION = /不要|别|不用|不开|don't|do\s+not/iu;
 const newConversationParameters = typeboxObject({});
 const clearChatHistoryParameters = typeboxObject({});
 const getAssistantSettingsParameters = typeboxObject({
-  topic: typeboxOptional(typeboxString('Use "avatar" to load DiceBear guidance on demand. Omit for ordinary settings.')),
+  topic: typeboxOptional(typeboxString('Use "avatar" to load procedural avatar guidance on demand. Omit for ordinary settings.')),
   to: typeboxOptional(typeboxString('Target assistant display name. Omit to read this contact. Same as message_assistant `to`.')),
   name: typeboxOptional(typeboxString('Target assistant display name if `to` is omitted.')),
   toAssistantID: typeboxOptional(typeboxString('Target assistant id when the display name is ambiguous.')),
@@ -1176,8 +1176,8 @@ export function createContactTools({
     {
       name: UPDATE_AVATAR_TOOL_NAME,
       label: 'Update avatar',
-      description: 'Change this contact’s avatar (给自己换头像). Omit seed to randomize; supply seed to restore a face. For DiceBear capabilities and limitations, read get_assistant_settings with topic="avatar". Only report success after this tool succeeds.',
-      parameters: typeboxObject({ seed: typeboxOptional(typeboxString('Opaque DiceBear seed, not an image prompt. Nonblank, max 256 characters. Omit for random.')) }),
+      description: 'Change this contact’s avatar (给自己换头像). Omit seed to randomize; supply seed to restore a face. For avatar capabilities and limitations, read get_assistant_settings with topic="avatar". Only report success after this tool succeeds.',
+      parameters: typeboxObject({ seed: typeboxOptional(typeboxString('Saved avatar seed or recipe, not an image prompt. Nonblank, max 256 characters. Omit for random.')) }),
       execute: async (_toolCallId, params) => {
         try {
           if (params && Object.keys(params).some((key) => key !== 'seed')) {

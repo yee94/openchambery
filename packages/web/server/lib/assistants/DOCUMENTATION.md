@@ -44,6 +44,15 @@ retain their ID-based face. DTOs return the stored seed or assistant ID. Omitted
 updates preserve the seed, and revision conflicts cannot overwrite it. Avatar
 changes do not reset sessions or alter the assistant identity.
 
+New creates without `avatarSeed` persist a complete
+`yuri-avatar:v1:round:capsule:<color>:neutral:1:<assistantID>` recipe. The six
+pigments are chosen randomly; shape, eye style and rest pose are fixed. This
+service-owned default covers HTTP/API, contact tools and first-run seeding.
+Explicit caller-supplied seeds/recipes remain untouched. Existing null/legacy
+seeds retain their original shape/color mapping; no migration or read-time write
+is introduced. The shared renderer now uses one fixed capsule-eye specification
+regardless of legacy eye/expression fields.
+
 Contacts can call `update_avatar({ seed? })` to change their own avatar through
 the existing revision-checked update path. Omitting seed generates a fresh key;
 an explicit seed restores a face. The server binds the contact ID; other targets
@@ -51,10 +60,15 @@ and unsupported customization arguments are rejected. Results include the old
 and saved seeds; unchanged seeds do not bump revision. Storage failures remain
 tool errors, and revision conflicts retry once.
 
-DiceBear guidance is progressively disclosed: the short tool description points
-to `get_assistant_settings({ topic: 'avatar' })`. Only that result includes the
-local SVG/Moods rendering explanation, deterministic-seed semantics, restoration,
-and limitations (no semantic image prompts, style/color controls, uploads or URLs).
+Procedural-avatar guidance is progressively disclosed: the short tool description
+points to `get_assistant_settings({ topic: 'avatar' })`. Only that result includes
+the local MIT Open Mascot rendering explanation, deterministic-seed semantics,
+restoration and limitations (no semantic image prompts, uploads or URLs).
+Assistant Settings saves a versioned shape/color/eyes/expression/motion recipe in
+the same opaque `avatarSeed` string. The server preserves it byte-for-byte through
+create/update/snapshot/restart; no new column or write path is introduced. The tool
+still edits only seed, not individual customization arguments. Legacy seeds remain
+valid, and UI builds own their visual interpretation.
 Ordinary settings reads expose `avatarSeed` without the full guide. Background
 read-only turns cannot call the mutation tool.
 
