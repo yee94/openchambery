@@ -8,6 +8,7 @@ const gitLibraries = {
   getWorktrees: vi.fn(),
   isGitRepository: vi.fn(),
   resolvePrimaryWorktreeRoot: vi.fn(),
+  getStatus: vi.fn(),
 };
 
 vi.mock('./index.js', () => ({
@@ -18,6 +19,7 @@ vi.mock('./index.js', () => ({
   getWorktrees: gitLibraries.getWorktrees,
   isGitRepository: gitLibraries.isGitRepository,
   resolvePrimaryWorktreeRoot: gitLibraries.resolvePrimaryWorktreeRoot,
+  getStatus: gitLibraries.getStatus,
 }));
 
 const { registerGitRoutes } = await import('./routes.js');
@@ -202,6 +204,80 @@ describe('git routes batch discover', () => {
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: 'directories parameter is required' });
     expect(gitLibraries.isGitRepository).not.toHaveBeenCalled();
+  });
+});
+
+describe('git routes status revision', () => {
+  const statusPayload = (overrides = {}) => ({
+    current: 'main',
+    tracking: null,
+    ahead: 0,
+    behind: 0,
+    files: [{ path: 'a.ts', index: ' ', working_dir: 'M' }],
+    isClean: false,
+    oversized: false,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    gitLibraries.isGitRepository.mockReset();
+    gitLibraries.getStatus.mockReset();
+    gitLibraries.isGitRepository.mockResolvedValue(true);
+  });
+
+  const requestStatus = async (query) => {
+    const { app, getRoute } = createRouteRegistry();
+    registerGitRoutes(app);
+    const response = createMockResponse();
+    await getRoute('GET', '/api/git/status')({ query: { directory: '/repo', ...query } }, response);
+    return response;
+  };
+
+  it('returns the full status with a stable content revision', async () => {
+    gitLibraries.getStatus.mockResolvedValue(statusPayload());
+    const first = await requestStatus();
+    const second = await requestStatus();
+
+    expect(first.statusCode).toBe(200);
+    expect(first.body).toMatchObject(statusPayload());
+    expect(typeof first.body.revision).toBe('string');
+    expect(first.body.revision.length).toBeGreaterThan(0);
+    expect(second.body.revision).toBe(first.body.revision);
+  });
+
+  it('answers unchanged without the file list when the client revision matches', async () => {
+    gitLibraries.getStatus.mockResolvedValue(statusPayload());
+    const { body: full } = await requestStatus();
+
+    const response = await requestStatus({ since: full.revision });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({ unchanged: true, revision: full.revision });
+  });
+
+  it('returns the full status when content changed since the client revision', async () => {
+    gitLibraries.getStatus.mockResolvedValueOnce(statusPayload());
+    const { body: full } = await requestStatus();
+    const changed = statusPayload({ files: [{ path: 'a.ts', index: 'M', working_dir: ' ' }] });
+    gitLibraries.getStatus.mockResolvedValueOnce(changed);
+
+    const response = await requestStatus({ since: full.revision });
+
+    expect(response.body).toMatchObject(changed);
+    expect(response.body.unchanged).toBeUndefined();
+    expect(response.body.revision).not.toBe(full.revision);
+  });
+
+  it('gives light and full payloads distinct revisions', async () => {
+    gitLibraries.getStatus.mockImplementation(async (_directory, options) => (
+      options?.mode === 'light' ? statusPayload() : statusPayload({ diffStats: { 'a.ts': { insertions: 1, deletions: 0 } } })
+    ));
+    const { body: full } = await requestStatus();
+
+    const light = await requestStatus({ mode: 'light', since: full.revision });
+
+    expect(light.body.unchanged).toBeUndefined();
+    expect(light.body.files).toHaveLength(1);
   });
 });
 

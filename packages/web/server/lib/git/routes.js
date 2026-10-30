@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export function registerGitRoutes(app, { messageQueueService = null, createRequestID = () => globalThis.crypto.randomUUID(), broadcastWorktreeTopologyChanged = () => {}, releaseWorktreeLocation } = {}) {
   const normalizeWorktreePath = (value) => typeof value === 'string' ? value.trim().replace(/\\/g, '/').replace(/\/+$/, '') : '';
   const lifecycleOperations = new Map();
@@ -250,7 +252,14 @@ export function registerGitRoutes(app, { messageQueueService = null, createReque
 
       const mode = req.query.mode === 'light' ? 'light' : undefined;
       const status = await getStatus(directory, { mode });
-      res.json(status);
+      // Content revision: clients echo it as `since`; an identical snapshot is
+      // answered without re-sending (and re-parsing) the full file list.
+      const serialized = JSON.stringify(status);
+      const revision = `${mode ?? 'full'}:${createHash('sha1').update(serialized).digest('base64url')}`;
+      if (typeof req.query.since === 'string' && req.query.since === revision) {
+        return res.json({ unchanged: true, revision });
+      }
+      res.json({ ...status, revision });
     } catch (error) {
       const errorText = extractGitErrorText(error);
       if (/not a git repository/i.test(errorText)) {

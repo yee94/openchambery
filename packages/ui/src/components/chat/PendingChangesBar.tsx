@@ -11,6 +11,7 @@ import {
     type GitChangedFile,
     extractGitChangedFiles,
     isGitFile,
+    summarizeGitChangedFiles,
 } from './changedFiles';
 import { ChangedFilesList } from './ChangedFilesList';
 import { changedFilesPopoverClassName, changedFilesPopoverStyle } from './changedFilesPopover';
@@ -49,23 +50,24 @@ export const PendingChangesBar: React.FC = React.memo(() => {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [isExpanded]);
 
-    const gitChangedFiles = React.useMemo<GitChangedFile[]>(() => {
-        if (!currentDirectory || isGitRepo !== true || !gitStatus || gitStatus.isClean) return [];
-        return extractGitChangedFiles(gitStatus.files, gitStatus.diffStats, currentDirectory);
-    }, [isGitRepo, gitStatus, currentDirectory]);
+    const hasChanges = Boolean(currentDirectory && isGitRepo === true && gitStatus && !gitStatus.isClean);
 
-    const { totalAdded, totalRemoved } = React.useMemo(() => {
-        let added = 0;
-        let removed = 0;
-        for (const file of gitChangedFiles) {
-            added += file.insertions;
-            removed += file.deletions;
-        }
-        return { totalAdded: added, totalRemoved: removed };
-    }, [gitChangedFiles]);
+    // 折叠态只做单趟计数；逐文件列表（含绝对路径）仅在展开时构造。
+    const summary = React.useMemo(() => {
+        if (!hasChanges || !gitStatus) return { count: 0, insertions: 0, deletions: 0 };
+        return summarizeGitChangedFiles(gitStatus.files, gitStatus.diffStats);
+    }, [hasChanges, gitStatus]);
+
+    const gitChangedFiles = React.useMemo<GitChangedFile[]>(() => {
+        if (!isExpanded || !hasChanges || !gitStatus || !currentDirectory) return [];
+        return extractGitChangedFiles(gitStatus.files, gitStatus.diffStats, currentDirectory);
+    }, [isExpanded, hasChanges, gitStatus, currentDirectory]);
+
+    const totalAdded = summary.insertions;
+    const totalRemoved = summary.deletions;
 
     if (!currentDirectory || isGitRepo !== true) return null;
-    if (gitChangedFiles.length === 0) return null;
+    if (summary.count === 0) return null;
 
     const handleOpenFile = (file: ChangedFileEntry) => {
         if (!currentDirectory) return;
@@ -100,7 +102,7 @@ export const PendingChangesBar: React.FC = React.memo(() => {
         store.setRightSidebarOpen(false);
     };
 
-    const fileCount = gitChangedFiles.length;
+    const fileCount = summary.count;
     const labelHead = fileCount === 1
         ? t('chat.pendingChanges.fileCountSingle', { count: fileCount })
         : t('chat.pendingChanges.fileCountPlural', { count: fileCount });

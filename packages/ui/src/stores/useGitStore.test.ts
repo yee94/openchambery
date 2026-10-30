@@ -191,6 +191,72 @@ describe('useGitStore', () => {
     expect(lightResult).toBe(fullResult);
   });
 
+  test('keeps the stored status reference when a large identical snapshot arrives', async () => {
+    const createLarge = () => createStatus(undefined, Array.from({ length: 60_000 }, (_, index) => ({
+      path: `src/file-${index}.ts`,
+      index: ' ',
+      working_dir: 'M',
+    })));
+    const initial = createLarge();
+    setDirectoryStatus(initial);
+    const before = useGitStore.getState().getDirectoryState('/repo');
+
+    const changed = await useGitStore.getState().fetchStatus('/repo', createGitApi(async () => createLarge()), { silent: true });
+
+    const after = useGitStore.getState().getDirectoryState('/repo');
+    expect(changed).toBe(false);
+    expect(after?.status).toBe(initial);
+    expect(after?.indexRevision).toBe(before?.indexRevision);
+  });
+
+  test('a transport that re-delivers the same snapshot object skips change detection entirely', async () => {
+    let pathReads = 0;
+    const files = Array.from({ length: 1_000 }, (_, index) => new Proxy(
+      { path: `src/file-${index}.ts`, index: ' ', working_dir: 'M' },
+      {
+        get(target, property, receiver) {
+          if (property === 'path') pathReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    ));
+    const snapshot = createStatus(undefined, files);
+    const git = createGitApi(async () => snapshot);
+    await useGitStore.getState().fetchStatus('/repo', git, { silent: true });
+    const stored = useGitStore.getState().getDirectoryState('/repo')?.status;
+    pathReads = 0;
+
+    const changed = await useGitStore.getState().fetchStatus('/repo', git, { silent: true });
+
+    expect(changed).toBe(false);
+    expect(pathReads).toBe(0);
+    expect(useGitStore.getState().getDirectoryState('/repo')?.status).toBe(stored);
+  });
+
+  test('reports a single-file change inside a large snapshot and invalidates only that diff', async () => {
+    const files = Array.from({ length: 20_000 }, (_, index) => ({ path: `src/file-${index}.ts`, index: ' ', working_dir: 'M' }));
+    const initial = createStatus(undefined, files);
+    useGitStore.setState({
+      directories: new Map([['/repo', {
+        ...createDirectoryState(initial),
+        diffCache: new Map([
+          ['src/file-1.ts', { original: 'a', modified: 'b', fetchedAt: 1 }],
+          ['src/file-2.ts', { original: 'a', modified: 'b', fetchedAt: 1 }],
+        ]),
+      }]]),
+      activeDirectory: '/repo',
+    });
+    const nextFiles = files.map((file) => (file.path === 'src/file-1.ts' ? { ...file, index: 'M', working_dir: ' ' } : { ...file }));
+
+    const changed = await useGitStore.getState().fetchStatus('/repo', createGitApi(async () => createStatus(undefined, nextFiles)), { silent: true });
+
+    const state = useGitStore.getState().getDirectoryState('/repo');
+    expect(changed).toBe(true);
+    expect(state?.indexRevision).toBe(1);
+    expect(state?.diffCache.has('src/file-1.ts')).toBe(false);
+    expect(state?.diffCache.has('src/file-2.ts')).toBe(true);
+  });
+
   test('optimistically stages modified files and preserves untouched file references', () => {
     const target = { path: 'src/index.ts', index: ' ', working_dir: 'M' };
     const untouched = { path: 'README.md', index: ' ', working_dir: 'M' };
@@ -319,6 +385,76 @@ describe('useGitStore', () => {
     useGitStore.getState().restoreStatus('/repo', previousStatus);
 
     expect(useGitStore.getState().getDirectoryState('/repo')?.status).toBe(initialStatus);
+  });
+
+  test('repeated prefetch over a large status does not rescan every status file', async () => {
+    let pathReads = 0;
+    const files = Array.from({ length: 20_000 }, (_, index) => new Proxy(
+      { path: `src/file-${index}.ts`, index: ' ', working_dir: 'M' },
+      {
+        get(target, property, receiver) {
+          if (property === 'path') pathReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    ));
+    setDirectoryStatus(createStatus(undefined, files));
+    const fetched: string[] = [];
+    const git = createGitApi(async () => createStatus());
+    git.getGitFileDiff = async (_directory, options) => {
+      fetched.push(options.path);
+      return { original: 'a\n', modified: 'b\n', path: options.path };
+    };
+    const candidates = Array.from({ length: 20_000 }, (_, index) => `src/file-${index}.ts`);
+
+    const previousHidden = Object.getOwnPropertyDescriptor(document, 'hidden');
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    try {
+      await useGitStore.getState().prefetchDiffs('/repo', git, candidates, { maxFiles: 5 });
+      pathReads = 0;
+      await useGitStore.getState().prefetchDiffs('/repo', git, candidates.slice(5), { maxFiles: 5 });
+    } finally {
+      if (previousHidden) {
+        Object.defineProperty(document, 'hidden', previousHidden);
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- test cleanup
+        delete (document as { hidden?: boolean }).hidden;
+      }
+    }
+
+    expect(fetched).toEqual(candidates.slice(0, 10));
+    expect(pathReads).toBe(0);
+  });
+
+  test('repeating a prefetch larger than the diff cache does not refetch evicted diffs', async () => {
+    const files = Array.from({ length: 100 }, (_, index) => ({ path: `src/file-${index}.ts`, index: 'M', working_dir: ' ' }));
+    setDirectoryStatus(createStatus(undefined, files));
+    const fetched: string[] = [];
+    const git = createGitApi(async () => createStatus());
+    git.getGitFileDiff = async (_directory, options) => {
+      fetched.push(options.path);
+      return { original: 'a\n', modified: 'b\n', path: options.path };
+    };
+    const candidates = files.map((file) => file.path);
+
+    const previousHidden = Object.getOwnPropertyDescriptor(document, 'hidden');
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    try {
+      await useGitStore.getState().prefetchDiffs('/repo', git, candidates, { maxFiles: 40 });
+      const firstPass = fetched.length;
+      fetched.length = 0;
+      await useGitStore.getState().prefetchDiffs('/repo', git, candidates, { maxFiles: 40 });
+
+      expect(firstPass).toBeGreaterThan(0);
+      expect(fetched).toEqual([]);
+    } finally {
+      if (previousHidden) {
+        Object.defineProperty(document, 'hidden', previousHidden);
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- test cleanup
+        delete (document as { hidden?: boolean }).hidden;
+      }
+    }
   });
 
   test('does not cache dual-empty non-binary prefetch results', async () => {

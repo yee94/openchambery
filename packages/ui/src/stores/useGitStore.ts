@@ -112,6 +112,20 @@ const diffFetchGenerationByDirectory = new Map<string, number>();
 const branchesFetchGenerationByDirectory = new Map<string, number>();
 const inFlightStatusFetches = new Map<string, Promise<boolean>>();
 const inFlightEnsureAllByDirectory = new Map<string, Promise<void>>();
+// Last transport snapshot merged per directory. A runtime that answers
+// "unchanged" re-delivers the same object; when the store still holds the
+// status derived from it, change detection is skipped entirely.
+const lastStatusDeliveryByDirectory = new Map<string, { received: GitStatus; stored: GitStatus | null }>();
+// Path index per immutable status snapshot; prefetch runs on every scroll step.
+const statusPathSets = new WeakMap<GitStatus, Set<string>>();
+const getStatusPathSet = (status: GitStatus): Set<string> => {
+  let paths = statusPathSets.get(status);
+  if (!paths) {
+    paths = new Set(status.files.map((file) => file.path));
+    statusPathSets.set(status, paths);
+  }
+  return paths;
+};
 
 const getStatusFetchKey = (directory: string, mode: GitStatusFetchMode): string => `${mode}:${directory}`;
 
@@ -206,31 +220,6 @@ const evictDiffCacheIfNeeded = (
   return newCache;
 };
 
-const haveDiffStatsChanged = (
-  previous?: GitStatus['diffStats'],
-  next?: GitStatus['diffStats']
-): boolean => {
-  if (!previous && !next) return false;
-  if (!previous || !next) return true;
-
-  const paths = new Set([...Object.keys(previous), ...Object.keys(next)]);
-  for (const path of paths) {
-    const prevEntry = previous[path];
-    const nextEntry = next[path];
-
-    if (!prevEntry && !nextEntry) continue;
-    if (!prevEntry || !nextEntry) return true;
-    if (
-      prevEntry.insertions !== nextEntry.insertions ||
-      prevEntry.deletions !== nextEntry.deletions
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
 const haveRemoteComparisonChanged = (
   previous?: GitStatus['upstreamComparison'],
   next?: GitStatus['upstreamComparison']
@@ -246,113 +235,84 @@ const haveRemoteComparisonChanged = (
   );
 };
 
-const hasStatusChanged = (oldStatus: GitStatus | null, newStatus: GitStatus | null): boolean => {
-  if (!oldStatus && !newStatus) return false;
-  if (!oldStatus || !newStatus) return true;
-
-  const oldFiles = oldStatus.files ?? [];
-  const newFiles = newStatus.files ?? [];
-
-  if (oldFiles.length !== newFiles.length) return true;
-  if (oldStatus.ahead !== newStatus.ahead) return true;
-  if (oldStatus.behind !== newStatus.behind) return true;
-  if (oldStatus.current !== newStatus.current) return true;
-  if (oldStatus.tracking !== newStatus.tracking) return true;
-  if (oldStatus.isClean !== newStatus.isClean) return true;
-  if (
-    newStatus.upstreamComparison !== undefined
-    && haveRemoteComparisonChanged(oldStatus.upstreamComparison, newStatus.upstreamComparison)
-  ) {
-    return true;
-  }
-
-  const oldPaths = new Set(oldFiles.map(f => `${f.path}:${f.index}:${f.working_dir}`));
-  for (const file of newFiles) {
-    if (!oldPaths.has(`${file.path}:${file.index}:${file.working_dir}`)) {
-      return true;
-    }
-  }
-
-  // Skip diffStats comparison when light mode omits them (undefined)
-  if (newStatus.diffStats !== undefined && haveDiffStatsChanged(oldStatus.diffStats, newStatus.diffStats)) return true;
-
-  return false;
+type StatusSnapshotDiff = {
+  changed: boolean;
+  /** Paths whose entry was added, removed, changed state, or changed diff stats. */
+  changedPaths: Set<string>;
+  /** Normalized index (staged) state differs for at least one path. */
+  indexChanged: boolean;
 };
 
-const getChangedFilePaths = (oldStatus: GitStatus | null, newStatus: GitStatus | null): Set<string> => {
-  const changed = new Set<string>();
-  if (!newStatus) return changed;
-
-  const oldFiles = oldStatus?.files ?? [];
-  const newFiles = newStatus.files ?? [];
-
-  const oldFileMap = new Map(oldFiles.map((f) => [f.path, f] as const));
-  const newFileMap = new Map(newFiles.map((f) => [f.path, f] as const));
-
-  const allFilePaths = new Set<string>([...oldFileMap.keys(), ...newFileMap.keys()]);
-  for (const filePath of allFilePaths) {
-    const oldFile = oldFileMap.get(filePath);
-    const newFile = newFileMap.get(filePath);
-
-    // Added/removed/renamed
-    if (!oldFile || !newFile) {
-      changed.add(filePath);
-      continue;
-    }
-
-    // Index/worktree state changed (indicates actual content/state changed)
-    if (oldFile.index !== newFile.index || oldFile.working_dir !== newFile.working_dir) {
-      changed.add(filePath);
-      continue;
-    }
-  }
-
-  // Only compare diffStats when light mode provides them (non-undefined)
-  if (newStatus.diffStats !== undefined) {
-    const oldStats = oldStatus?.diffStats ?? {};
-    const newStats = newStatus.diffStats ?? {};
-    const allStatPaths = new Set<string>([...Object.keys(oldStats), ...Object.keys(newStats)]);
-
-    for (const filePath of allStatPaths) {
-      const oldEntry = oldStats[filePath];
-      const newEntry = newStats[filePath];
-
-      if (!oldEntry || !newEntry) {
-        changed.add(filePath);
-        continue;
-      }
-
-      if (oldEntry.insertions !== newEntry.insertions || oldEntry.deletions !== newEntry.deletions) {
-        changed.add(filePath);
-      }
-    }
-  }
-
-  return changed;
+const normalizeIndexStatus = (value?: string | null): string => {
+  const trimmed = value?.trim() ?? '';
+  return trimmed === '?' ? '' : trimmed;
 };
 
-const hasIndexStatusChanged = (oldStatus: GitStatus | null, newStatus: GitStatus | null): boolean => {
-  if (!oldStatus && !newStatus) return false;
-  if (!oldStatus || !newStatus) return true;
+/**
+ * Single pass over both snapshots: header fields, per-path entries, staged
+ * state and (when the new snapshot carries them) diff stats. Light snapshots
+ * omit diffStats/upstreamComparison and never count those as changes.
+ */
+const diffStatusSnapshots = (oldStatus: GitStatus | null, newStatus: GitStatus): StatusSnapshotDiff => {
+  const changedPaths = new Set<string>();
+  let indexChanged = false;
+  let headerChanged = !oldStatus;
 
-  const oldFiles = oldStatus.files ?? [];
-  const newFiles = newStatus.files ?? [];
-  const normalizeIndexStatus = (value?: string | null): string => {
-    const trimmed = value?.trim() ?? '';
-    return trimmed === '?' ? '' : trimmed;
-  };
+  if (oldStatus) {
+    headerChanged = oldStatus.ahead !== newStatus.ahead
+      || oldStatus.behind !== newStatus.behind
+      || oldStatus.current !== newStatus.current
+      || oldStatus.tracking !== newStatus.tracking
+      || oldStatus.isClean !== newStatus.isClean
+      || (
+        newStatus.upstreamComparison !== undefined
+        && haveRemoteComparisonChanged(oldStatus.upstreamComparison, newStatus.upstreamComparison)
+      )
+      // A full snapshot replacing a stats-less one must land even when empty.
+      || (newStatus.diffStats !== undefined && oldStatus.diffStats === undefined);
+  }
 
-  const oldIndexByPath = new Map(oldFiles.map((file) => [file.path, normalizeIndexStatus(file.index)] as const));
-  const newIndexByPath = new Map(newFiles.map((file) => [file.path, normalizeIndexStatus(file.index)] as const));
-  const paths = new Set<string>([...oldIndexByPath.keys(), ...newIndexByPath.keys()]);
+  const unmatchedOld = new Map<string, GitStatus['files'][number]>();
+  for (const file of oldStatus?.files ?? []) unmatchedOld.set(file.path, file);
 
-  for (const path of paths) {
-    if ((oldIndexByPath.get(path) ?? '') !== (newIndexByPath.get(path) ?? '')) {
-      return true;
+  for (const file of newStatus.files ?? []) {
+    const previous = unmatchedOld.get(file.path);
+    if (!previous) {
+      changedPaths.add(file.path);
+      if (normalizeIndexStatus(file.index)) indexChanged = true;
+      continue;
+    }
+    unmatchedOld.delete(file.path);
+    if (previous.index !== file.index || previous.working_dir !== file.working_dir) {
+      changedPaths.add(file.path);
+    }
+    if (!indexChanged && normalizeIndexStatus(previous.index) !== normalizeIndexStatus(file.index)) {
+      indexChanged = true;
     }
   }
 
-  return false;
+  for (const [path, file] of unmatchedOld) {
+    changedPaths.add(path);
+    if (normalizeIndexStatus(file.index)) indexChanged = true;
+  }
+
+  const nextStats = newStatus.diffStats;
+  const previousStats = oldStatus?.diffStats;
+  if (nextStats !== undefined && nextStats !== previousStats) {
+    const oldStats = previousStats ?? {};
+    for (const path in nextStats) {
+      const nextEntry = nextStats[path];
+      const oldEntry = oldStats[path];
+      if (!oldEntry || oldEntry.insertions !== nextEntry.insertions || oldEntry.deletions !== nextEntry.deletions) {
+        changedPaths.add(path);
+      }
+    }
+    for (const path in oldStats) {
+      if (!(path in nextStats)) changedPaths.add(path);
+    }
+  }
+
+  return { changed: headerChanged || changedPaths.size > 0, changedPaths, indexChanged };
 };
 
 const isBlankStatusCode = (value?: string | null): boolean => !value || value.trim().length === 0;
@@ -482,27 +442,21 @@ export const useGitStore = create<GitStore>()(
 
             const newStatus = await git.getGitStatus(directory, options.mode ? { mode: options.mode } : undefined);
 
-            if (hasStatusChanged(dirState.status, newStatus)) {
+            const latestDirState = get().directories.get(directory) ?? createEmptyDirectoryState();
+            const lastDelivery = lastStatusDeliveryByDirectory.get(directory);
+            // The transport re-delivered the snapshot already merged into the store.
+            const isRedelivery = lastDelivery?.received === newStatus && lastDelivery.stored === latestDirState.status;
+            const snapshotDiff = isRedelivery ? null : diffStatusSnapshots(latestDirState.status, newStatus);
+
+            if (snapshotDiff?.changed) {
               statusChanged = true;
               const newDirectories = new Map(get().directories);
               const currentDirState = newDirectories.get(directory) ?? createEmptyDirectoryState();
-
-              const changedPaths = getChangedFilePaths(currentDirState.status, newStatus);
-              const indexStatusChanged = hasIndexStatusChanged(currentDirState.status, newStatus);
-
-              const oldPaths = new Set((currentDirState.status?.files ?? []).map((f) => f.path));
-              const newPaths = new Set((newStatus.files ?? []).map((f) => f.path));
+              const { changedPaths, indexChanged: indexStatusChanged } = snapshotDiff;
 
               const nextDiffCache = new Map(currentDirState.diffCache);
 
-              // Drop cache for removed files
-              for (const oldPath of oldPaths) {
-                if (!newPaths.has(oldPath)) {
-                  nextDiffCache.delete(oldPath);
-                }
-              }
-
-              // Drop cache for files whose state/content changed
+              // Drop cache for removed files and files whose state/content changed
               for (const filePath of changedPaths) {
                 nextDiffCache.delete(filePath);
               }
@@ -536,7 +490,9 @@ export const useGitStore = create<GitStore>()(
                 lastStatusChange: hasFileContentChange ? Date.now() : currentDirState.lastStatusChange,
               });
               set({ directories: newDirectories });
+              lastStatusDeliveryByDirectory.set(directory, { received: newStatus, stored: mergedStatus });
             } else {
+              lastStatusDeliveryByDirectory.set(directory, { received: newStatus, stored: latestDirState.status });
 
               const newDirectories = new Map(get().directories);
               const currentDirState = newDirectories.get(directory) ?? createEmptyDirectoryState();
@@ -837,24 +793,23 @@ export const useGitStore = create<GitStore>()(
         if (!dirState?.status?.files || dirState.status.files.length === 0 || filePaths.length === 0) return;
 
         const { maxFiles = DIFF_PREFETCH_FOCUS_MAX_FILES } = options;
-        const availablePaths = new Set(dirState.status.files.map((file) => file.path));
+        // The priority window is the first eligible candidates; cached and
+        // in-flight paths keep their slot. Filling the window past cached entries
+        // (or beyond the cache capacity) would evict and refetch endlessly when
+        // the candidate list is huge.
+        const windowSize = Math.min(Math.max(1, maxFiles), DIFF_CACHE_MAX_ENTRIES);
+        const availablePaths = getStatusPathSet(dirState.status);
         const diffStats = dirState.status.diffStats;
         const inFlight = getInFlightDiffs(directory);
 
         const dedupedPaths: string[] = [];
         const seen = new Set<string>();
         for (const filePath of filePaths) {
+          if (seen.size >= windowSize) break;
           if (!filePath || seen.has(filePath)) {
             continue;
           }
-          seen.add(filePath);
           if (!availablePaths.has(filePath)) {
-            continue;
-          }
-          if (dirState.diffCache.has(filePath)) {
-            continue;
-          }
-          if (inFlight.has(filePath)) {
             continue;
           }
           // Skip large files during prefetch — they'll be fetched on-demand when user clicks
@@ -862,10 +817,17 @@ export const useGitStore = create<GitStore>()(
           if (stats && (stats.insertions + stats.deletions) > DIFF_PREFETCH_LARGE_FILE_THRESHOLD) {
             continue;
           }
+          seen.add(filePath);
+          if (dirState.diffCache.has(filePath)) {
+            continue;
+          }
+          if (inFlight.has(filePath)) {
+            continue;
+          }
           dedupedPaths.push(filePath);
         }
 
-        const limitedFilePaths = dedupedPaths.slice(0, Math.max(1, maxFiles));
+        const limitedFilePaths = dedupedPaths;
         if (limitedFilePaths.length === 0) return;
 
         const generation = getDiffFetchGeneration(directory);
