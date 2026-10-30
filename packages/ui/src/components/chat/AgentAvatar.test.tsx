@@ -27,6 +27,14 @@ describe('AgentAvatar', () => {
     expect(assistant).toContain('aria-label="Assistant"');
   });
 
+  test('live assistants do not serialize an unused static SVG data URI', () => {
+    vi.mocked(generatedAvatarDataUri).mockClear();
+    renderToStaticMarkup(<AgentAvatar kind="assistant" name="live-only" motion="idle" />);
+    expect(generatedAvatarDataUri).not.toHaveBeenCalled();
+    renderToStaticMarkup(<AgentAvatar kind="assistant" name="history-only" />);
+    expect(generatedAvatarDataUri).toHaveBeenCalledTimes(1);
+  });
+
   test('50 unrelated parent updates perform no avatar generation; identity changes regenerate once', async () => {
     const host = document.createElement('div');
     const root = createRoot(host);

@@ -1,0 +1,22 @@
+GrokBot Animation Anatomy — local research integration
+https://github.com/ArvinYin1/grokbot-animation-anatomy
+Pinned revision: debd41625da89b4c4fde43b3b1f0add6dc113c02
+
+player.js: js/vendor/grok-player.js, with one optional buildBody callback added
+to buildModel. The original fallback is unchanged when no callback is supplied.
+grok-recipes.json: js/vendor/grok-recipes.json, unmodified.
+
+The upstream README labels the repository MIT, but includes no standalone
+LICENSE. Its Source section states that the port is for study/research, that
+recipes are extracted from the Grok Bot application, and that the underlying
+design/data remain their original owners' property. Grok and x.ai trademarks
+belong to their owners. The README's MIT label is NOT evidence of permission
+to redistribute the extracted animation data in a product.
+
+This experimental integration must not be released until distribution rights
+for the source and extracted data are confirmed, or that data is replaced with
+independently authored data. No original application bundle is included here.
+
+Non-sphere geometry in the owning geometry.ts is an independent Yuri implementation
+of the documented solid/extrusion/loft/seat pipeline. It is not an extracted
+renderer and is not asserted to be frame-equivalent to the original app.

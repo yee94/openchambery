@@ -1,5 +1,4 @@
 import { useAssistantSnapshotQuery, type AssistantSnapshot } from '@/queries/assistantQueries';
-import { generatedAvatarDataUri } from '@/lib/generatedAvatar';
 import { sortAssistantContacts } from './sortAssistantContacts';
 
 const selectNavigationContact = (snapshot: AssistantSnapshot) => {
@@ -9,8 +8,8 @@ const selectNavigationContact = (snapshot: AssistantSnapshot) => {
   return { id: contact.id, seed: contact.avatarSeed ?? contact.id };
 };
 
-/** Shared static identity for web/native navigation; activity owns its badge. */
+/** Navigation identity seed; ambient animation is separate from activity badges. */
 export function useAssistantNavigationAvatar(): string | null {
   const { data: contact } = useAssistantSnapshotQuery(selectNavigationContact);
-  return contact ? generatedAvatarDataUri('assistant', contact.seed) : null;
+  return contact?.seed ?? null;
 }

@@ -396,7 +396,7 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
                 selectSettingsAssistant(assistant.id);
                 onItemSelect?.();
               }}
-              icon={<AgentAvatar kind="assistant" name={assistant.avatarSeed ?? assistant.id} size={32} label={presentation.displayName || assistant.name} shape="rounded" className="rounded-[0.5rem]" />}
+              icon={<AgentAvatar kind="assistant" name={assistant.avatarSeed ?? assistant.id} size={32} label={presentation.displayName || assistant.name} />}
             />
           );
         }) : (
@@ -541,7 +541,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
             </>}>
               <div className="flex min-w-0 items-center gap-3">
               <div className="shrink-0">
-                <AgentAvatar kind="assistant" name={draft.avatarSeed ?? selected?.id ?? 'new'} size={40} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} shape="rounded" className="rounded-[0.5rem]" />
+                <AgentAvatar kind="assistant" name={draft.avatarSeed ?? selected?.id ?? 'new'} size={40} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} />
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="truncate typography-ui-header font-semibold text-foreground">{selected ? selectedPresentation?.displayName : t('assistants.settings.create')}</h2>
@@ -622,7 +622,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
           </>
         ) : (
           <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-            <AgentAvatar kind="assistant" name="assistants-empty" size={44} shape="rounded" className="rounded-[0.5rem]" />
+            <AgentAvatar kind="assistant" name="assistants-empty" size={44} />
             <p className="typography-ui">{t('assistants.settings.empty')}</p>
             <Button data-settings-item="assistants.create" size="sm" onClick={startCreate}><Icon name="add" className="size-4" />{t('assistants.settings.create')}</Button>
           </div>

@@ -602,9 +602,10 @@ button svg.yuri-undo-countdown-svg,
 
 /* Fix SVG elements inside buttons - remove any rect/circle backgrounds */
 /* Stroke icons: only clear decorative rects. Do not force path/circle fills —
-   Lucide geometry is stroke-based; solid *-fill glyphs bake their own fill. */
-button svg:not(.yuri-agent-avatar) rect,
-[role="button"] svg:not(.yuri-agent-avatar) rect {
+   Lucide geometry is stroke-based; solid *-fill glyphs bake their own fill.
+   Definition rects belong to masks/clipPaths, not decorative backgrounds. */
+button svg:not(.yuri-agent-avatar) rect:not(defs rect),
+[role="button"] svg:not(.yuri-agent-avatar) rect:not(defs rect) {
   fill: none !important;
 }
 

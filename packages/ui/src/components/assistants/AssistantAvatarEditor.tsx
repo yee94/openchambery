@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import {
-  AVATAR_PICKER_SHAPES, AVATAR_COLORS, assistantAvatarPigment,
+  AVATAR_PICKER_SHAPES, AVATAR_COLORS,
   resolveAssistantAvatar, encodeAssistantAvatar, type AssistantAvatarRecipe,
 } from '@/lib/assistant-avatar/recipe';
+import { assistantAvatarPigment } from '@/lib/assistant-avatar/engine';
 
 type Props = { seed: string; disabled: boolean; onChange: (seed: string) => void };
 

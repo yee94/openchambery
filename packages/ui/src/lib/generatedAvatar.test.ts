@@ -65,7 +65,7 @@ describe('local generated avatars', () => {
     const gaze = svg(generatedAvatarDataUri('assistant', 'identity'));
     const bot = svg(generatedAvatarDataUri('agent', 'identity'));
     expect(gaze).not.toBe(bot);
-    expect(gaze).toContain('Open Mascot Studio (MIT)');
+    expect(gaze).toContain('GrokBot Animation Anatomy');
     expect(bot).toContain('Pablo Stanley');
     expect(bot).toContain('#c1f2c4');
     expect(generatedAvatarDataUri('agent', undefined)).toBe(generatedAvatarDataUri('agent', 'default'));

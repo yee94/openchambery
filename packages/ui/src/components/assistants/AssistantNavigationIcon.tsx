@@ -1,10 +1,11 @@
 import React from 'react';
 import { Icon } from '@/components/icon/Icon';
 import { useAssistantNavigationAvatar } from './useAssistantNavigationAvatar';
+import { ProceduralAssistantAvatar } from './ProceduralAssistantAvatar';
 
-export const AssistantNavigationIcon = React.memo(function AssistantNavigationIcon({ className }: { className: string }) {
+export const AssistantNavigationIcon = React.memo(function AssistantNavigationIcon({ className, size = 16 }: { className: string; size?: number }) {
   const avatar = useAssistantNavigationAvatar();
   return avatar
-    ? <img src={avatar} alt="" aria-hidden="true" draggable={false} data-assistant-navigation-avatar="" className={`${className} rounded-[25%] object-contain`} />
+    ? <span aria-hidden="true" data-assistant-navigation-avatar="" className={`${className} inline-flex`}><ProceduralAssistantAvatar seed={avatar} size={size} motion="idle" randomizeShape /></span>
     : <Icon name="ai-agent" className={className} />;
 });

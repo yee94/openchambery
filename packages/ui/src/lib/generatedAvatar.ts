@@ -1,7 +1,7 @@
 import { Avatar, Style } from '@dicebear/core';
 import botttsNeutral from '@dicebear/styles/bottts-neutral.json';
 import { DualLimitLru } from './dualLimitLru';
-import { assistantAvatarSvg } from './assistant-avatar/recipe';
+import { assistantAvatarSvg } from './assistant-avatar/engine';
 
 export type AvatarKind = 'assistant' | 'agent';
 

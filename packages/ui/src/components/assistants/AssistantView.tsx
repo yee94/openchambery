@@ -113,6 +113,7 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
 }) => {
   const working = useAssistantWorking(assistantID, serverWorking);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const hoverTarget = React.useRef<HTMLButtonElement>(null);
   const handleSelect = useEvent(() => onSelect());
   const handleEdit = useEvent(() => {
     setMenuOpen(false);
@@ -128,6 +129,7 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
       <ContextMenuTrigger
         render={
           <button
+            ref={hoverTarget}
             type="button"
             role="option"
             aria-selected={selected}
@@ -146,7 +148,7 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
           />
         }
       >
-        <AssistantWorkingAvatar name={assistantID} avatarSeed={avatarSeed} size={44} label={displayName} working={working} />
+        <AssistantWorkingAvatar name={assistantID} avatarSeed={avatarSeed} size={44} label={displayName} working={working} hoverTarget={hoverTarget} />
         <span className="min-w-0 flex-1">
           <span className={cn('block truncate typography-ui-label leading-5', selected ? 'font-semibold' : 'font-medium')}>{displayName}</span>
           <span className={cn(ASSISTANT_MESSAGE_PREVIEW_CLASS, 'mt-1 leading-5')}>{summary}</span>

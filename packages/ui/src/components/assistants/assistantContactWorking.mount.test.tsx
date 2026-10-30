@@ -92,7 +92,7 @@ describe('assistant contact working mount', () => {
     const idle = src(history)
     expect(header.querySelector('[data-avatar-motion]')?.getAttribute('data-avatar-motion')).toBe('idle')
     await act(async () => useAssistantContactWorkingStore.getState().setWorking('asst_1', true))
-    expect(header.querySelector('[data-avatar-motion]')?.getAttribute('data-avatar-motion')).toBe('thinking')
+    expect(header.querySelector('[data-avatar-motion]')?.getAttribute('data-avatar-motion')).toBe('working')
     expect(header.querySelector('[data-assistant-working-dot]')).toBeNull()
     expect(src(history)).toBe(idle)
     const frame = header.querySelector<HTMLElement>('[data-agent-avatar]')!

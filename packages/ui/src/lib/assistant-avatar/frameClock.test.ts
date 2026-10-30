@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { subscribeAvatarFrames } from './frameClock';
 
+vi.mock('motion', () => import('../../../../../scripts/test/motion-frame-mock'));
+
 const frames = new Map<number, FrameRequestCallback>();
 const cleanups: Array<() => void> = [];
 let id = 0;
@@ -47,4 +49,16 @@ test('removing one avatar preserves others; a new lifetime starts immediately', 
   cleanups.push(subscribeAvatarFrames(first));
   step(1051);
   expect(first).toHaveBeenCalledTimes(2);
+});
+
+test('all faces measure before any face writes its SVG', () => {
+  const order: string[] = [];
+  for (let i = 0; i < 20; i++) cleanups.push(subscribeAvatarFrames(
+    () => order.push(`paint-${i}`), () => order.push(`measure-${i}`),
+  ));
+  step(1000);
+  expect(order).toEqual([
+    ...Array.from({ length: 20 }, (_, i) => `measure-${i}`),
+    ...Array.from({ length: 20 }, (_, i) => `paint-${i}`),
+  ]);
 });

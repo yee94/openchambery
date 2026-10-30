@@ -1,28 +1,43 @@
+import { cancelFrame, frame } from 'motion';
+
 type FrameListener = (timestamp: number) => void;
-const listeners = new Set<FrameListener>();
-let frame: number | null = null;
+const listeners = new Set<{ paint: FrameListener; measure?: () => void }>();
 let lastPaint = -Infinity;
+let timestamp = 0;
+let due = false;
 
 // One bounded 30fps clock for visible live faces, not a React state update or
 // timer per transcript row. Static/reduced-motion/offscreen faces never join.
-function tick(timestamp: number) {
-  frame = null;
-  if (timestamp - lastPaint >= 1000 / 30 - 0.5) {
-    lastPaint = timestamp;
-    listeners.forEach((listener) => listener(timestamp));
+function readFrame(data: { timestamp: number }) {
+  due = data.timestamp - lastPaint >= 1000 / 30 - 0.5;
+  if (due) {
+    timestamp = lastPaint = data.timestamp;
+    // Batch all geometry reads before any SVG writes to avoid layout thrashing
+    // when several faces track the same pointer or move during scrolling.
+    listeners.forEach((listener) => listener.measure?.());
   }
-  if (listeners.size) frame = requestAnimationFrame(tick);
 }
 
-export function subscribeAvatarFrames(listener: FrameListener): () => void {
+function paintFrame() {
+  if (!due) return;
+  due = false;
+  listeners.forEach((listener) => listener.paint(timestamp));
+}
+
+export function subscribeAvatarFrames(paint: FrameListener, measure?: () => void): () => void {
+  const listener = { paint, measure };
   listeners.add(listener);
-  if (frame === null) frame = requestAnimationFrame(tick);
+  if (listeners.size === 1) {
+    frame.read(readFrame, true);
+    frame.render(paintFrame, true);
+  }
   return () => {
     listeners.delete(listener);
-    if (!listeners.size && frame !== null) {
-      cancelAnimationFrame(frame);
-      frame = null;
+    if (!listeners.size) {
+      cancelFrame(readFrame);
+      cancelFrame(paintFrame);
       lastPaint = -Infinity;
+      due = false;
     }
   };
 }

@@ -29,12 +29,18 @@ The full-text index startup screen keeps the same transparent 120 × 120 CSS-pix
 
 ## Assistant avatars
 
-Assistant contact faces use a locally bundled, MIT-licensed procedural SVG engine
-with a compact preview/shape-grid/color-swatch picker in Assistant Settings.
+Assistant contact faces use the experimental, locally bundled GrokBot Animation
+Anatomy engine plus an independent non-sphere geometry implementation, with the
+existing compact shape-grid/color-swatch picker in Assistant Settings. This
+research integration is not release-cleared: the upstream README's MIT label
+does not establish redistribution rights for its extracted animation data.
 They do not replace app branding or coding-agent faces. All shared UI and native
 PNG share thumbnails resolve the same saved `avatarSeed` recipe. See
 `src/components/assistants/DOCUMENTATION.md#generated-avatars` for persistence,
 animation budgets, source provenance and runtime validation boundaries.
+The reusable Motion-backed animation runtime and independent
+`bun run test:avatar-performance` browser gate are documented in
+`src/lib/assistant-avatar/DOCUMENTATION.md`.
 
 ## Sidebar wordmark
 
