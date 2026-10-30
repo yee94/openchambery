@@ -274,6 +274,8 @@ export class GuiPluginFiles {
                 if (changed) { current.epoch++; void this.sync(path, true).catch(() => {}); }
             });
             current.stop = () => { stop(); observer.destroy(); };
+            // A new lease cannot infer cached content freshness from its first stat baseline.
+            if (this.states.get(path)?.loaded) void this.sync(path, true).catch(() => {});
         }
         watch.count++;
         let active = true;

@@ -139,6 +139,18 @@ the central decorative mark. `assets/brand/yuri/build_wordmark.py` regenerates t
 master artwork and synchronizes this bundled SVG. The welcome's connection/history
 actions retain their existing shared sheet and modal behavior.
 
+## Desktop conversation width
+
+Desktop `ChatWorkspace` keeps the primary conversation (transcript and composer)
+at least 350 CSS pixels wide while a ContextPanel is open. If the requested panel
+width leaves less space, the primary pane hides without unmounting and the panel
+fills the workspace. Window/sidebar resize, live panel dragging, closing, and
+expansion re-evaluate this local layout; exactly 350px restores the primary pane.
+The saved panel width and draft remain unchanged by automatic collapse. Decisions
+use the requested width, not the filled panel width, to avoid resize feedback loops.
+Split width changes do not animate through unreadable intermediate widths. Phone,
+native-mobile and the separate VS Code layout retain their existing behavior.
+
 ## File preview fallback
 
 `FilesView` and `MobileFilesSurface` retain the inline GUI-plugin preview as the

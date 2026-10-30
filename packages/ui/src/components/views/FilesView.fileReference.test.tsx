@@ -229,6 +229,33 @@ describe('binary file fallback', () => {
 });
 
 describe('file reference failure lifecycle', () => {
+  test('panel publishes its requested width while filling the collapsed primary pane, then restores on close', async () => {
+    const onReservedWidthChange = vi.fn();
+    harness.files.readFile.mockResolvedValue({ content: 'file content' });
+    await act(async () => reactRoot.render(<ContextPanel directory="/repo" onReservedWidthChange={onReservedWidthChange} />));
+    expect(onReservedWidthChange).toHaveBeenLastCalledWith(0);
+    await open('/repo/file.ts');
+    await act(async () => useUIStore.getState().setContextPanelWidth('/repo', 700));
+    expect(onReservedWidthChange).toHaveBeenLastCalledWith(700);
+    await act(async () => reactRoot.render(<ContextPanel directory="/repo" onReservedWidthChange={onReservedWidthChange} fillAvailableSpace />));
+    const panel = host.querySelector<HTMLElement>('[data-context-panel]')!;
+    expect(panel.style.width).toBe('100%');
+    expect(panel.style.getPropertyValue('--yuri-context-panel-width')).toBe('700px');
+    expect(useUIStore.getState().contextPanelByDirectory['/repo'].width).toBe(700);
+
+    const separator = host.querySelector('[role="separator"]')!;
+    await act(async () => separator.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 700, pointerId: 1 })));
+    await act(async () => separator.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 800, pointerId: 1 })));
+    expect(onReservedWidthChange).toHaveBeenLastCalledWith(600);
+    await act(async () => separator.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 800, pointerId: 1 })));
+    expect(useUIStore.getState().contextPanelByDirectory['/repo'].width).toBe(600);
+
+    await act(async () => useUIStore.getState().toggleContextPanelExpanded('/repo'));
+    expect(onReservedWidthChange).toHaveBeenLastCalledWith(Infinity);
+    await act(async () => useUIStore.getState().closeContextPanel('/repo'));
+    expect(onReservedWidthChange).toHaveBeenLastCalledWith(0);
+  });
+
   test('an encoded file link uses the decoded filename for its tab title', async () => {
     const path = '30 📚 Learning/📚 Knowledge/相机画幅图解.eficy';
     harness.files.readFile.mockResolvedValue({ content: 'file content' });

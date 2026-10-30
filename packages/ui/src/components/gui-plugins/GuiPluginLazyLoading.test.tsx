@@ -266,6 +266,33 @@ it('defers the CJS bundle until file opening, presents preview preparation, and 
   expect(state.list).toHaveBeenCalledOnce();
 });
 
+it.each([false, true])('renders edits made while closed without reloading the plugin (sheet=%s)', async (sheet) => {
+  const matchMedia = window.matchMedia.bind(window);
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+    const result = matchMedia(query);
+    if (query === '(prefers-reduced-motion: reduce)') Object.defineProperty(result, 'matches', { value: true });
+    return result;
+  });
+  client.setDefaultOptions({ queries: { retry: false, staleTime: 60_000 } });
+  state.gui.mockResolvedValue({ data: bundle });
+  await start(sheet);
+  await click('open-file');
+  await until(() => expect(document.querySelector('[data-gui-file-view] [data-preview]')?.textContent).toBe(source));
+  const host = context.host;
+  await click('close-file');
+  expect(document.querySelector('[data-preview]')).toBeNull();
+  const reads = vi.mocked(state.files!.readFile!).mock.calls.length;
+  const updated = 'Updated while the file preview was closed';
+  vi.mocked(state.files!.readFile!).mockResolvedValue({ path, content: updated });
+  await click('open-file');
+  await until(() => expect(document.querySelector('[data-gui-file-view] [data-preview]')?.textContent).toBe(updated));
+  expect(state.files!.readFile).toHaveBeenCalledTimes(reads + 1);
+  expect(state.gui).toHaveBeenCalledOnce();
+  expect(context.host).toBe(host);
+  expect(context.host!.filePanel(path)).toMatchObject({ pluginId: 'preview', inline: true, file: path });
+  expect(state.toast).not.toHaveBeenCalled();
+});
+
 it('lets users read source during preparation without a late preview taking over', async () => {
   let complete!: (value: { data: typeof bundle }) => void;
   state.gui.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));

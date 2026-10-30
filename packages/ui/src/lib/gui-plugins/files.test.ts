@@ -225,6 +225,80 @@ describe('GUI file model', () => {
         query.clear(); vi.useRealTimers();
     });
 
+    it.each([
+        { consumer: 'api', closedMs: 0 }, { consumer: 'api', closedMs: 35_000 },
+        { consumer: 'host', closedMs: 0 }, { consumer: 'host', closedMs: 35_000 },
+    ])('$consumer reopening revalidates edits after $closedMs ms without leases', async ({ consumer, closedMs }) => {
+        vi.useFakeTimers();
+        let version = 1;
+        const statFile = vi.fn(async () => ({ path: '/work/report.eficy', isFile: true, size: 100, mtimeMs: version }));
+        const readFile = vi.fn(async (path: string) => ({ path, content: `version-${version}` }));
+        const query = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
+        const model = new GuiPluginFiles({ statFile, readFile } as unknown as FilesAPI, query, 'runtime', '/work');
+        try {
+            await model.api.sync('report.eficy');
+            await vi.advanceTimersByTimeAsync(1);
+            expect(model.api.get('report.eficy')?.content?.content).toBe('version-1');
+            model.api.unwatch('report.eficy');
+            await vi.advanceTimersByTimeAsync(closedMs);
+            version = 2;
+            const previousReads = readFile.mock.calls.length;
+            const stopHost = consumer === 'host' ? model.watch('report.eficy') : () => {};
+            await model.api.sync('report.eficy');
+            await vi.advanceTimersByTimeAsync(1);
+            expect(model.api.get('report.eficy')?.content?.content).toBe('version-2');
+            expect(readFile).toHaveBeenCalledTimes(previousReads + 1);
+            await vi.advanceTimersByTimeAsync(6_001);
+            expect(readFile).toHaveBeenCalledTimes(previousReads + 1);
+            stopHost();
+        } finally { model.dispose(); query.clear(); vi.useRealTimers(); }
+    });
+
+    it('revalidates an unchanged reopened file once and preserves its state across shared leases', async () => {
+        vi.useFakeTimers();
+        const statFile = vi.fn(async () => ({ path: '/work/a', isFile: true, size: 4, mtimeMs: 1 }));
+        const readFile = vi.fn(async (path: string) => ({ path, content: 'same' }));
+        const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        const model = new GuiPluginFiles({ statFile, readFile } as unknown as FilesAPI, query, 'runtime', '/work');
+        const stops: Array<() => void> = [];
+        try {
+            await model.api.sync('a');
+            await vi.advanceTimersByTimeAsync(1);
+            model.api.unwatch('a');
+            const original = model.api.get('a');
+            const previousReads = readFile.mock.calls.length;
+            for (let i = 0; i < 50; i++) stops.push(model.watch('a'));
+            await model.api.sync('a');
+            await vi.advanceTimersByTimeAsync(1);
+            expect(readFile).toHaveBeenCalledTimes(previousReads + 1);
+            expect(model.api.get('a')).toBe(original);
+            await vi.advanceTimersByTimeAsync(6_001);
+            expect(readFile).toHaveBeenCalledTimes(previousReads + 1);
+            expect(model.api.get('a')).toBe(original);
+        } finally { stops.forEach(stop => stop()); model.dispose(); query.clear(); vi.useRealTimers(); }
+    });
+
+    it('preserves reopened content on read failure and permits an explicit retry', async () => {
+        vi.useFakeTimers();
+        const statFile = vi.fn(async () => ({ path: '/work/a', isFile: true, size: 4, mtimeMs: 1 }));
+        const readFile = vi.fn(async (path: string) => ({ path, content: 'original' }));
+        const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        const model = new GuiPluginFiles({ statFile, readFile } as unknown as FilesAPI, query, 'runtime', '/work');
+        try {
+            await model.api.sync('a');
+            await vi.advanceTimersByTimeAsync(1);
+            model.api.unwatch('a');
+            readFile.mockRejectedValueOnce(new Error('offline'));
+            await expect(model.api.sync('a')).rejects.toThrow('offline');
+            await vi.advanceTimersByTimeAsync(1);
+            expect(model.api.get('a')).toMatchObject({ loaded: true, loading: false, error: 'Error: offline', content: { content: 'original' } });
+            readFile.mockImplementation(async path => ({ path, content: 'recovered' }));
+            await model.api.sync('a', { force: true });
+            expect(model.api.get('a')).toMatchObject({ loaded: true, loading: false, content: { content: 'recovered' } });
+            expect(model.api.get('a')?.error).toBeUndefined();
+        } finally { model.dispose(); query.clear(); vi.useRealTimers(); }
+    });
+
     it('projects deletion/stat failure without erasing content and forces same-signature recovery', async () => {
         vi.useFakeTimers();
         let status: 'file' | 'missing' | 'error' = 'file';
