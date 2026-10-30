@@ -7,6 +7,7 @@ import {
   resolveSlashCommandIconName,
 } from './icons';
 import type { ComposerAutocompleteListRow } from './types';
+import { scoreMentionTitle, scoreSessionMentionId } from './mention-rank';
 
 export type SlashCommandRowSource = {
   id: string;
@@ -120,18 +121,37 @@ export const buildMentionRows = ({
       agentName: agent.name,
     });
   }
+  for (const session of sessions) {
+    rows.push({
+      id: `session:${session.id}`,
+      title: session.title || untitledSession,
+      badge: sessionBadge,
+      iconName: resolveSessionMentionIconName(),
+    });
+  }
   const query = searchQuery.trim();
-  // Keep TUI name ranking; skill descriptions add a lower-priority recall tier.
-  const matches = query ? fuzzysort.go(query, rows, {
-    keys: ['title', (row) => row.id.startsWith('skill:') ? row.subtitle ?? '' : ''],
+  const sourceOrder = new Map(rows.map((row, index) => [row.id, index]));
+  // Titles share relevance tiers; skill descriptions and session IDs are fallback recall.
+  const rankCandidates = (candidates: readonly ComposerAutocompleteListRow[], limit: number) => fuzzysort.go(query, candidates, {
+    keys: ['title', (row) => row.id.startsWith('skill:') ? row.subtitle ?? '' : '',
+      (row) => row.id.startsWith('session:') ? row.id.slice('session:'.length) : ''],
     threshold: 0.5,
-    limit: 10,
+    limit,
     scoreFn: (result) => {
       const name = result[0];
-      const nameScore = (name?.score ?? 0) * (name?.target.startsWith(`@${query}`) ? 2 : 1);
-      return nameScore >= 0.5 ? 1 + nameScore : result[1]?.score ?? 0;
+      return Math.max(
+        scoreMentionTitle(query, result.obj.title, name?.score ?? 0),
+        result[1]?.score ?? 0,
+        result.obj.id.startsWith('session:') ? scoreSessionMentionId(query, result.obj.id.slice('session:'.length)) : 0,
+      );
     },
-  }).map((result) => result.obj) : rows.slice();
+  });
+  const matches = query ? [
+    ...rankCandidates(rows.filter((row) => !row.id.startsWith('session:')), 10),
+    ...rankCandidates(rows.filter((row) => row.id.startsWith('session:')), Infinity),
+  ].sort((a, b) => b.score - a.score
+    || (sourceOrder.get(a.obj.id) ?? 0) - (sourceOrder.get(b.obj.id) ?? 0))
+    .map((result) => result.obj) : rows.slice();
   rows.length = 0;
   for (const file of recentFiles) {
     rows.push({
@@ -147,13 +167,10 @@ export const buildMentionRows = ({
       iconName: resolveFileMentionIconName(file),
     });
   }
-  for (const session of sessions) {
-    rows.push({
-      id: `session:${session.id}`,
-      title: session.title || untitledSession,
-      badge: sessionBadge,
-      iconName: resolveSessionMentionIconName(),
-    });
+  if (!query) {
+    return [...matches.filter((row) => !row.id.startsWith('session:')), ...rows,
+      ...matches.filter((row) => row.id.startsWith('session:'))];
   }
-  return query ? [...matches, ...rows].slice(0, 10) : [...matches, ...rows];
+  let nonSessionCount = 0;
+  return [...matches, ...rows].filter((row) => row.id.startsWith('session:') || nonSessionCount++ < 10);
 };
