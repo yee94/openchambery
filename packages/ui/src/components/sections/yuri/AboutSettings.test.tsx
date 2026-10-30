@@ -14,9 +14,12 @@ vi.mock('@/lib/i18n', () => ({ getCurrentIntlLocale: () => 'en-US', useI18n: () 
 } }) }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: (...args: unknown[]) => fixture.fetch(...args) }));
 vi.mock('@/components/ui', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-vi.mock('@/lib/runtime-switch', () => ({
+vi.mock('@/lib/runtime-switch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/runtime-switch')>()),
   getRuntimeTransportIdentity: () => fixture.transport,
   getRuntimeGeneration: () => fixture.generation,
+  getRuntimeKey: () => fixture.transport,
+  getRuntimeApiBaseUrl: () => 'http://127.0.0.1:4096',
   subscribeRuntimeEndpointChanged: (listener: () => void) => { fixture.listeners.add(listener); return () => fixture.listeners.delete(listener); },
 }));
 vi.mock('@/stores/useUpdateStore', () => ({ useUpdateStore: (select: (state: unknown) => unknown) => select({ checking: false, available: false }) }));
@@ -24,7 +27,7 @@ vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (state: unknown) =>
 vi.mock('@/lib/device', () => ({ useDeviceInfo: () => ({ isMobile: fixture.mobile }) }));
 vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => fixture.native }));
 vi.mock('@/lib/mobile-updates/native-config', () => ({ readNativeUpdateConfig: () => fixture.nativeConfig() }));
-vi.mock('@/lib/desktop', () => ({ isElectronShell: () => !fixture.native, getDesktopAppVersion: async () => '2.0.7-beta.1' }));
+vi.mock('@/lib/desktop', () => ({ isElectronShell: () => !fixture.native, getDesktopAppVersion: async () => '2.0.7-beta.1', isVSCodeRuntime: () => false, isWebRuntime: () => true, isDesktopShell: () => !fixture.native }));
 vi.mock('@/components/ui/UpdateDialog', () => ({ UpdateDialog: () => null }));
 vi.mock('@/components/chat/MarkdownRenderer', () => ({ SimpleMarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }));
 vi.mock('@/lib/mobileAppVersion', () => ({ getMobileClientVersion: async () => '2.0.0', getMobileClientBuildNumber: async () => null, formatMobileClientVersionLabel: (version: string) => version }));
@@ -111,7 +114,7 @@ it('isolates runtime identities and aborts the old request on switch', async () 
     return Promise.resolve(Response.json(path.includes('system/info') ? { yuriVersion: 'host-b' } : { serveVersion: 'new-serve' }));
   });
   await render();
-  await act(async () => { fixture.transport = 'host-b'; fixture.generation++; fixture.listeners.forEach((notify) => notify()); });
+  await act(async () => { const previousTransport = fixture.transport; fixture.transport = 'host-b'; fixture.generation++; fixture.listeners.forEach((notify) => notify({ apiBaseUrl: 'http://127.0.0.1:4097', previousApiBaseUrl: 'http://127.0.0.1:4096', runtimeKey: fixture.transport, previousRuntimeKey: previousTransport, transportIdentityChanged: true })); });
   await render(); await render();
   expect(oldSignal?.aborted).toBe(true); expect(host.textContent).toContain('new-serve');
 });

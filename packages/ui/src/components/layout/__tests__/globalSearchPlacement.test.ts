@@ -18,7 +18,7 @@ describe('Electron global search placement', () => {
     const brandIndex = brandHeaderSource.indexOf('<SidebarBrandMark className="min-w-0 flex-1" />');
     const searchIndex = brandHeaderSource.indexOf('<GlobalSearchButton className="ml-auto shrink-0" />');
 
-    expect(brandHeaderSource).toContain('isDesktopShellRuntime && hasSidebarBrand');
+    expect(brandHeaderSource).toContain('isDesktopShellRuntime && !isDesktopWindowFullscreen && hasSidebarBrand && !isVSCode && !hasSessionSearchQuery');
     expect(brandHeaderSource).toContain('shrink-0');
     expect(brandHeaderSource).toContain('<div className="flex items-center justify-between">');
     expect(brandIndex).toBeGreaterThan(-1);
@@ -40,7 +40,7 @@ describe('Electron global search placement', () => {
 
   test('keeps the titlebar trigger for collapsed Electron sidebars and logo-less open sidebars', () => {
     expect(titlebarSource).toContain(
-      'const showGlobalSearchInTitlebar = !isDesktopShellRuntime || !isSidebarOpen || !hasSidebarBrand;',
+      'const showGlobalSearchInTitlebar = !isDesktopShellRuntime || isDesktopWindowFullscreen || !isSidebarOpen || !hasSidebarBrand;',
     );
     expect(titlebarSource).toContain(
       '{showGlobalSearchInTitlebar ? <GlobalSearchButton /> : null}',

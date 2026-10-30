@@ -4,7 +4,7 @@ import { useI18n } from '@/lib/i18n';
 import { CSSVariableGenerator } from '@/lib/theme/cssGenerator';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { generatedAvatarDataUri } from '@/lib/generatedAvatar';
-import { createDefaultAssistantAvatarSeed } from '@/lib/assistant-avatar/recipe';
+import { AVATAR_PICKER_SHAPES, createDefaultAssistantAvatarSeed, encodeAssistantAvatar, resolveAssistantAvatar } from '@/lib/assistant-avatar/recipe';
 import { rasterizePngBase64 } from '@/lib/rasterizePng';
 import { AssistantAvatarEditor } from '@/components/assistants/AssistantAvatarEditor';
 import { AssistantWorkingAvatar } from '@/components/assistants/AssistantWorkingAvatar';
@@ -23,6 +23,7 @@ export function AvatarLab() {
   const [working, setWorking] = React.useState(false);
   const [png, setPng] = React.useState<string | null>(null);
   const stress = new URLSearchParams(location.search).has('stress');
+  const mixedShapes = new URLSearchParams(location.search).has('shapes');
   React.useLayoutEffect(() => {
     const themeStyle = document.createElement('style');
     themeStyle.textContent = `:root { ${new CSSVariableGenerator().generate(getDefaultTheme(dark))} }`;
@@ -50,11 +51,17 @@ export function AvatarLab() {
         <Button variant="chip" size="xs" aria-pressed={working} onClick={() => setWorking(!working)}>{t('assistants.avatar.motion.thinking')}</Button>
         <Button size="sm" onClick={() => setSeed(crypto.randomUUID())}>{t('assistants.settings.randomAvatar')}</Button>
       </>}>
-        {Array.from({ length: stress ? 20 : 3 }, (_, index) => (
-          <SettingsRow key={index} label={index === 0 ? 'Yuri' : `Yuri ${index + 1}`}>
-            <AssistantWorkingAvatar name={`lab-${index}`} avatarSeed={index === 0 ? seed : createDefaultAssistantAvatarSeed(`lab-${index}`)} size={44} working={working} label={`Yuri ${index + 1}`} />
-          </SettingsRow>
-        ))}
+        {Array.from({ length: stress ? 20 : 3 }, (_, index) => {
+          const defaultSeed = createDefaultAssistantAvatarSeed(`lab-${index}`);
+          const avatarSeed = index === 0 ? seed : mixedShapes ? encodeAssistantAvatar({
+            ...resolveAssistantAvatar(defaultSeed), shape: AVATAR_PICKER_SHAPES[index % AVATAR_PICKER_SHAPES.length],
+          }) : defaultSeed;
+          return (
+            <SettingsRow key={index} label={index === 0 ? 'Yuri' : `Yuri ${index + 1}`}>
+              <AssistantWorkingAvatar name={`lab-${index}`} avatarSeed={avatarSeed} size={44} working={working} label={`Yuri ${index + 1}`} />
+            </SettingsRow>
+          );
+        })}
       </SettingsGroup>
       <SettingsGroup label={t('assistants.settings.defaultShare')}>
         <SettingsRow label={t('assistants.avatar.preview')}>

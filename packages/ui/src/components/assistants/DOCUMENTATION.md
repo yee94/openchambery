@@ -50,17 +50,16 @@ Agent terminology and the generic chat `assistant` role are separate concepts.
 
 ## Generated avatars
 
-Assistant faces use the locally bundled MIT Open Mascot core through
+Assistant faces use the locally bundled procedural avatar engine through
 `AgentAvatar kind="assistant"` and `ProceduralAssistantAvatar`. This covers list,
 header, transcript, Settings, navigation, recipient picker and native share PNG
 handoff without changing coding-agent Bottts Neutral faces or application branding.
-Names stay intact, including emoji. No third-party avatar API, image model, WebGL,
-or Grok/xAI reference assets are used. Source commit, unmodified MIT license and
-integrity hashes live in `lib/assistant-avatar/vendor/open-mascot/` and
-`THIRD_PARTY_NOTICES.md`.
+Names stay intact, including emoji. No third-party avatar API, image model, WebGL
+or runtime network fetch is used. Pinned engine and data files, including
+the optional geometry callback patch, live in `lib/assistant-avatar/vendor/`.
 
 `lib/assistant-avatar/recipe.ts` owns deterministic seed resolution, whitelist
-validation, nineteen shapes, six fixed artwork pigments and the saved animation
+validation, nineteen shapes, six fixed artwork pigment identifiers and the saved animation
 switch. Legacy eye/expression fields remain valid in stored recipes but no longer
 choose the rendered rest-eye specification. Fixed pigments are artwork, not UI
 theme/status colors. A versioned recipe fits the existing opaque, maximum-256-char
@@ -70,20 +69,29 @@ IDs/random seeds remain deterministic; malformed/future recipes are treated as
 opaque seeds, never executable config or URLs. Old UI builds preserve the string
 but paint their old style until upgraded; restoring a saved seed on a new client
 restores the configured face. `update_avatar` still randomizes/restores this string.
+The recipe module is pure and imports no rendering engine or animation data;
+server-side default seed creation does not initialize geometry, trails or scenes.
 
 The original seven-shape opaque-seed mapping is frozen separately from picker
-order: adding or reordering choices must not change existing contacts. Explicit
-v1 recipes also keep their shape. `silhouettes.ts` adds twelve original connected
-geometric outlines (rounded square, cloud, flower, star, heart, clover, hexagon,
-diamond, triangle, shield, leaf and sparkle), not a vendored third-party character
-catalog. Scattered-dot/crystal bodies are excluded. Each outline is built once at
-module initialization. `buildAssistantAvatarScene` is the shared static/live scene
-entry: legacy shapes retain the upstream renderer byte-for-byte; the new shapes
-reuse upstream eye/motion sampling and deform their complete body/eyes group with
-one affine transform. The full MIT upstream source remains unmodified. Both static
-SVG/native PNG and animated UI use this scene entry, including reduced-motion poses.
-The drop selects the upstream 2D rig for both eyes and body; its body already uses
-that rig, so using projected-3D eyes would let the larger capsules detach on turns.
+order: adding/reordering choices does not reassign contacts. Explicit v1 recipes
+retain their shape selection; the new renderer intentionally replaces the artwork.
+`catalog.ts` owns the nineteen-shape whitelist. `geometry.ts` independently fills
+the upstream player's missing non-sphere branch following the article's pipeline:
+normalized outline -> solid convex envelope / beveled extrusion / loft mesh ->
+quaternion projection -> silhouette -> front or curved surface eye seat. Convex
+hulls are used only for solid bodies; extrusion/loft silhouette edges feed the
+reference radial union so concave valleys survive. Mesh topology and radial
+profiles are lazy, finite, per-shape data, never identity-keyed or built per frame.
+Only vertices on the front/back silhouette boundary are projected, not every
+interior mesh vertex. Compact single-body frames without an active morph bypass
+cross-body outline mixing and angle sorting: solid hulls retain their vertices,
+while concave bodies use the reference 192 base rays. Full-size, morph and
+cross-body frames retain the general reference builder; static exports retain
+its full detail. Compact sample points are tested against that builder.
+Cloud/superellipse/rounded-polygon formulas follow the article; missing contour
+functions (including heart/shield/leaf/drop) are independently authored. This is
+not a claim of original-app frame equivalence for non-sphere bodies. There is no
+fallback that silently turns an unsupported body into a sphere.
 
 New Bot drafts use `createDefaultAssistantAvatarSeed`: round body, capsule eyes,
 neutral rest pose and animation enabled; only pigment and nonce vary. The server
@@ -91,19 +99,31 @@ applies the same complete v1 recipe when create omits `avatarSeed`, covering API
 tool and first-run creation without migrating existing identities. Explicit
 customizations still win.
 
-`AVATAR_EYE_SPEC` is the single rendered eye geometry: width 24, height 58,
-center gap 38 and a slight backslash lean (-10 degrees in SVG coordinates). The
-pair has a fixed rightward offset of 16, vertical offset of -6 and a 14-unit
-left/right height difference. This fuller, closer, staggered pair follows the
-visual relationships studied in DS-Bot, not its character paths or animation code.
-Silhouette-specific seating keeps the same-size eyes inside concave outlines.
-It applies to every
-shape, opaque seed and saved eye-style/expression preference. All expression
-templates use scale 1 and the same eye rotation/offset; only live blinking and
-pose/gaze projection may deform that baseline, never per-Bot random dimensions.
-Static/rest rendering always samples neutral. Legacy metadata is preserved on
-edits rather than destructively rewritten. The active-project comparison and
-measurement references are recorded in the experiment README.
+The reference neutral eye descriptors (`wid: .13`, `tilt: 0`), eye basis, mirror
+flags and base head quaternion are used without screen-space angle overrides.
+Sphere rendering follows the reference spherical mapping / horizon clipping
+pipeline. Non-sphere contours sample that same descriptor and use the reference
+shape metrics to seat it on the front/curved surface before the shared quaternion
+projection; surface normals clip back-facing portions. Body clipping/masking
+prevents detached eyes. No eye dimensions, angles or expressions are randomized
+per Bot. Stored eye/expression fields remain round-trippable but do not select
+different rest eyes. Static/rest always uses the reference neutral settle sequence
+(pause, seek zero, sixty .1-second steps), and the original eye data is unmodified.
+Light pigments use the source cutout mode. Graphite uses the source painted-eye
+mode with a fixed light artwork pigment, preserving contrast on dark surfaces.
+Its eye paths/projection are identical; non-sphere painted eyes are clipped to
+the body. Static SVG, live SVG and PNG use the same pigment policy.
+
+`engine.ts` owns a fixed per-shape artboard derived from the projected rest model,
+not browser measurement. The longest rest dimension fills 94% of the slot.
+Static SVG/native PNG, live SVG and reduced-motion poses use that same viewBox at
+every display size. During an excursion the entire posed scene is uniformly fit
+only if necessary to stay inside the slot; eye proportions are never fit separately.
+Bounds come from model coordinates (including the thinking discs), not per-frame
+DOM measurements or SVG path parsing. Rest models/artboards have at most nineteen
+entries each (at most two paint variants per rest model), independent of seeds
+and runtime identity. No extra rounded CSS mask
+clips the leaf, working wrapper or Settings avatar instances.
 
 The picker offers sixteen shapes through `AVATAR_PICKER_SHAPES`; tall, compact
 and large are retired from selection only. The nineteen-shape recipe whitelist,
@@ -131,21 +151,76 @@ promotes the next eligible entry. Empty/all-disabled catalogs have no target.
 No nonfunctional generation/upload tabs are shown. These selected-entity controls
 are deliberately not indexed in Settings search.
 
-Live list/header/processing faces receive idle or thinking motion from the existing
+Live list/header/processing faces receive idle or working motion from the existing
 live working authority, never from persisted message history. Historical faces,
-pickers, navigation thumbnails and PNG exports remain static. Live SVGs animate
-their three paths directly, without React state updates per frame. Only intersecting,
-foreground, motion-enabled faces subscribe to one shared 30fps clock; offscreen,
+pickers and PNG exports remain static; navigation has its own ambient mode below. Live SVGs use the
+source attribute-diff renderer, mask/clipPath skeleton and decoration-node pool,
+without React state updates per frame. `lib/assistant-avatar/runtime.ts` owns the
+player, SVG, pointer lease and subscriptions behind mount/update/hover/dispose;
+the React leaf only supplies live eligibility and semantic state. The runtime owns
+an isolated DOM subtree and instance-unique definition IDs; React owns only the mounting leaf. Global button
+SVG styles must preserve rect fills inside `defs`: the white mask
+background is functional geometry, not an icon background to clear. This applies
+to desktop list buttons and mobile contact cards as well as plain headers.
+The player and state machine persist through public motion changes, so transitions use the source
+bridge/springs rather than recreating the animation. Only intersecting,
+foreground, motion-enabled faces subscribe to Motion's shared read/render pipeline
+with a 30fps geometry cap; offscreen,
 hidden-document, reduced-motion and unmounted faces release it and paint a stable
-rest pose. Mouse movement over a live face adjusts its gaze without a global pointer
-listener. The saved motion-off switch bypasses live observers altogether. At rest,
+rest pose. Visibility resumes create a bounded player without replaying background
+time. Working wrappers and the legacy `animated` prop select the source `working`
+state (Working_A–F, looking around), not the three-dot `thinking` morph. Explicit
+idle/thinking/happy states remain available independently. Display sizes below
+48px select the source compact clips;
+resizing updates that mode on the same state machine, not the viewBox or eye size.
+The saved motion-off switch bypasses live observers altogether. At rest,
 all static faces share the existing 128-entry / 1 MiB artwork LRU.
 
-Performance contract: 20 visible live faces share exactly one frame request at up
-to 30 paints/second each; static/history faces schedule zero work; 50 unrelated
-parent renders cause zero observer rebinds or frame writes. Focused recipe,
-frame-clock and mounted-component tests guard this. The isolated production-component
-lab and browser checks are documented in `scripts/experiments/assistant-avatar/README.md`.
+Mouse gaze follows the pointer anywhere in the avatar's owning window, using
+the source width-based/upwards-y mapping. `pointerTracker.ts` owns one shared
+pointer sample and one listener per event type (pointermove, window leave, blur)
+per window, acquired only by active live faces. Mouse events only replace that
+sample; they do not measure DOM, render React or schedule additional frames.
+Touch/pen movement, leaving the window and blur clear the sample. The last active
+face releasing it removes all listeners and discards the sample. Historical,
+picker, native-PNG and saved motion-off faces never acquire it.
+
+The shared clock measures all active face rectangles before any SVG writes,
+only when a mouse sample exists. This preserves gaze after scrolling/layout moves
+without a long-lived geometry cache, per-event layout reads or read/write
+interleaving. At twenty visible faces the upper bound is twenty rectangle reads
+per paint (600/second at 30Hz), regardless of pointer-event frequency. Unchanged
+gaze vectors do not call the runtime again.
+
+Mouse hover triggers one .65-second whole-avatar shrink/rebound (down to 82%,
+then up to 104% where containment permits), with a smooth-envelope sway of the
+complete head quaternion composed after the ongoing runtime pose. Scale is
+applied to the complete SVG scene after fitting so the fit cannot cancel the
+shrink; rebound is capped at the available bounds. It does not rotate
+individual eye descriptors, restart working clips, create timers or stack an
+unbounded poke queue. Re-entry during the sway is ignored; completion returns
+exactly to the continuing live pose. Touch, offscreen and reduced-motion faces
+do not trigger it.
+
+Desktop contact rows and mobile contact cards pass their button ref as
+`hoverTarget` through `AssistantWorkingAvatar`/`AgentAvatar` to the live leaf.
+One native `pointerenter` listener on that target covers the name, preview and
+empty card area. Crossing descendants (including entering the face after text)
+does not retrigger it. Standalone live faces default to their own host. The leaf
+owns listener cleanup with visibility/motion and target changes; historical and
+motion-off faces attach none. No hover state, parent rerender, extra timer or
+per-pointermove work is introduced.
+
+Performance contract: 20 visible live faces share one pair of Motion read/render
+callbacks at up to 30 paints/second each; static/history faces schedule zero work;
+50 unrelated parent renders cause zero observer rebinds or frame writes. Live
+faces do not serialize an unused static SVG URI. Focused recipe, frame-clock and
+mounted-component tests guard this. `bun run test:avatar-performance` is a separate,
+serial production-Chromium gate with p95 CPU ceilings of 4ms (one ambient face),
+8ms (20 idle) and 10ms (20 working), plus actual lifecycle/React/pointer checks.
+See `lib/assistant-avatar/DOCUMENTATION.md` for the reusable interface and exact
+measurement limits. The isolated production-component lab and browser evidence
+remain documented in `scripts/experiments/assistant-avatar/README.md`.
 Native PNG generation reuses the same static recipe; actual device share-sheet
 painting, Electron/VS Code and Capacitor runtime acceptance are separate validation.
 
@@ -336,9 +411,25 @@ The contact composer exposes the existing stop control while a contact turn is p
 
 Desktop and mobile contact lists share `sortAssistantContacts`: descending latest visible message `createdAt`, with stable source order for ties. Incoming and outgoing messages both advance interaction time, so a new sent message also ranks ahead of older unread messages. Unread state, unread volume, and configuration `updatedAt` do not rank contacts; marking read preserves the interaction order. Empty histories and legacy missing timestamps stay below timestamped contacts. Each list memoizes the bounded (at most 100 contacts) snapshot sort; no per-contact requests or token-frequency sorting are introduced. Settings catalog order is unchanged.
 
-Navigation uses `useAssistantNavigationAvatar` with the same order among enabled contacts. A narrow snapshot selector exposes only identity/seed/working; the selected contact's live working entry drives the existing Gaze animation, without transcript reads or token-frequency sorting. Desktop uses the adjacent 16px icon slot, mobile 23px, with proportional corner rounding and no list-only green dot. Empty/disabled catalogs restore the default icon. Unread badges remain independent. Native iOS receives the same local SVG data URI through the dock's optional `avatar` field; identity and animation changes participate in bridge equality. The native dock displays it in a noninteractive transparent WebKit image surface aligned to the system icon; clearing restores the system symbol. Older native shells ignore the additive field and keep their symbol until a native update.
+Navigation uses `useAssistantNavigationAvatar` to select an identity seed with the
+same order among enabled contacts. Its narrow selector exposes only identity/seed;
+work, unread counts and unrelated metadata do not restart the animator. React web,
+Electron, VS Code and hosted/Capacitor web-dock navigation use an idle live face
+with `randomizeShape`: every 4–7 seconds of active animation it chooses a different
+shape from the sixteen picker shapes and blends through the existing body
+spring. The most recently contacted Bot still supplies pigment and motion
+preference; no stored recipe, individual contact face or new-Bot default changes.
+This ambient motion is not a work indicator. Empty/disabled catalogs restore the
+default icon, and unread/activity badges retain their independent authority.
 
-Mobile navigation keeps all icon slots at 23px with centered contents, preserving identical label baselines. Only the avatar artwork scales to 125% (28.75px image / approximately 22px painted face) to compensate for its transparent margins; the default glyph, badges, and slot geometry do not scale. Native iOS centers the same 28.75pt image surface on the unchanged system icon slot. Verify painted bounds as well as box sizes.
+The cycle runs inside the existing bounded player advance and shared 30Hz clock,
+not an interval or React update. Hidden/offscreen/reduced-motion faces stop and
+paint their static identity; resume never replays missed changes. `size-full` on
+the live SVG keeps Button's generic 16px icon rule from shrinking mobile artwork.
+The native iOS dock is unchanged: `MobileTabsRoot` continues to send system tabs,
+badges and activity, not per-frame SVGs. Its web fallback uses the ambient face.
+
+Mobile web navigation keeps all icon slots at 23px with centered contents, preserving identical label baselines. Only the avatar artwork scales to 125% (28.75px artwork box) to compensate for its transparent margins; the default glyph, badges, and slot geometry do not scale. Native iOS retains its existing system icon slot. Verify painted bounds as well as box sizes.
 
 Mobile contact cards expose Edit/Delete by left swipe, using the same `useMobileSwipeActions` and `MobileSwipeActionRail` as homepage session rows. Long hold does not open a menu. Vertical gestures keep scrolling, a swipe suppresses navigation, tapping a revealed row closes it, and only one rail stays open across both surfaces. Actions close the rail and reuse existing Settings/delete-confirmation flows. Desktop context actions are unchanged.
 

@@ -1,5 +1,151 @@
 # Assistant procedural avatar experiment
 
+## Current engine: procedural renderer with independent non-sphere geometry
+
+The active implementation uses the vendored player and animation recipes in
+`packages/ui/src/lib/assistant-avatar/vendor/grok-anatomy/`. The Open Mascot runtime and
+hand-authored screen-space eye rotations have been removed. All evidence below
+the historical heading belongs to earlier attempts, not to this engine.
+
+- The engine's eye projection, expression/clip evaluator, state machine,
+  blink tracks, bridge transitions, springs and DOM renderer are reused.
+- `geometry.ts` independently fills the missing non-sphere branch using a
+  solid / extrusion / loft / seat pipeline. Missing contour generators
+  are independently authored; these shapes are not claimed to match the original
+  application frame-for-frame. No original app bundle is needed or included.
+- All nineteen persisted shapes render (sixteen picker choices); default Bots
+  remain round with only pigment variation. Legacy eye/expression preferences
+  remain round-trippable but cannot randomize eye dimensions or angles.
+- Busy wrappers use the source working clips for left/right observation, not the
+  three-dot thinking morph. Explicit idle/thinking/happy states remain available.
+  Live changes preserve the source state machine and springs.
+- Rest faces share pure static SVG/native PNG rendering, reference static settle,
+  and fixed per-shape artboards at 94% longest-axis occupancy. Live excursions
+  uniformly fit the entire scene to the slot, never individual eyes.
+- Meshes are lazy and catalog-bounded (eighteen); rest models/artboards have at
+  most nineteen entries each, with up to two rest paint variants per shape.
+  Graphite uses the source light painted-eye mode; other pigments use cutouts,
+  without changing eye geometry. Static image caching remains 128 entries / 1 MiB.
+  Visible live faces share the existing 30Hz clock, with no per-frame React state,
+  network fetch or SVG path parsing. One window-scoped pointer tracker coalesces
+  mouse movement anywhere in the page; active faces batch geometry reads before
+  paints. The last inactive face removes the tracker. Hover composes one bounded
+  .65-second whole-avatar shrink/rebound plus head sway, without changing the eye
+  descriptors or working clip. Shrink reaches 82%; rebound uses up to 104% where
+  the slot permits, after the ordinary containment fit.
+
+## Motion/runtime and independent performance gate (2026-10-30)
+
+- `lib/assistant-avatar/runtime.ts` now owns the player, renderer, pointer lease
+  and frame subscriptions. The React leaf supplies `{ active, motion, size }`
+  and an optional hover target; work/size updates do not recreate the player.
+  Disposal is idempotent, respects saved motion-off and only removes its own SVG.
+- The private RAF loop is replaced by Motion's shared `frame.read`/`frame.render`
+  phases, still capped at 30 geometry paints/second with all reads before writes.
+  Existing 3D eye/body geometry and hover/working/ambient behavior are unchanged.
+  Live React faces no longer serialize a static image URI that they never use.
+- Run `bun run test:avatar-performance` independently of the workspace suite.
+  It builds the production engine, real CSS and production profiling React facade
+  in isolated Chromium, with no Yuri/OpenCode service or real data. Missing Chrome
+  fails explicitly. One ambient / twenty idle / twenty working batches have p95
+  CPU ceilings of 4/8/10ms for generation + SVG writes; lifecycle, zero per-frame
+  React commits, fifty unrelated updates, pointer coalescing and reduced-motion
+  cleanup are also asserted. Related PRs have a dedicated CI job; CI was not run
+  locally and the native-runtime acceptance caveats below still apply.
+- Before the scheduler extraction, warm p95 samples were .8/3.6/5.5ms; after it,
+  .6/3.7/5.6ms on the same machine. These are effectively unchanged geometry costs,
+  not evidence that Motion made SVG projection faster. The material changes are
+  shared scheduling, simpler ownership and an executable regression budget.
+
+## Global gaze / hover / working follow-up (2026-10-30)
+
+- The navigation face now has an opt-in ambient shape cycle. Every 4–7 seconds
+  of active player time it picks a different allowed shape and uses Anatomy's
+  existing body spring to blend. Stored Bot recipes, color assignment and
+  new-contact defaults do not change. Historical faces remain static; navigation
+  respects saved motion-off, reduced motion, document visibility and intersection.
+  No interval, per-frame React update or activity-derived animation is added.
+- 219 focused tests pass, including every round-to-picker-shape transition,
+  containment, bounded resume, navigation query isolation and lifecycle cleanup.
+  UI/Web type-check, focused ESLint, Web/lab builds and the dead-code scan ran.
+  No navigation/avatar dead-code findings were reported.
+- Production Chromium showed the actual sidebar face changing from round to a
+  shield/other outlines. 207 observed paints stayed inside the SVG; reduced
+  motion left zero further attribute writes. The mobile web dock also changed
+  shape and preserved its 28.75px painted SVG box. An instrumented single-nav
+  frame callback measured median 1.1ms / p95 5.5ms / max 33.7ms (186 warm samples).
+  The unfocused browser was throttled; these are scripting timings, not a frame
+  rate/compositor guarantee. Native iOS system tabs are unchanged; no Electron,
+  VS Code or native-device acceptance/release was performed for this follow-up.
+
+- Contact-row hover also covers text and empty space. Desktop list buttons and
+  mobile cards pass a stable `hoverTarget` ref to the live avatar; one native
+  pointerenter subscription triggers the existing shrink/rebound without hover
+  state or parent rerenders. Moving within the card cannot trigger a second
+  bounce. Mounted tests cover touch/reduced-motion/offscreen cleanup, target
+  replacement and fifty unrelated renders without listener churn or player reset.
+  Production desktop text/whitespace entry and mobile-page whitespace entry were
+  verified: scale fell to about .82 and returned to 1; other cards stayed above
+  .96 and moving within the same card did not retrigger the bounce. This mobile
+  check used a mouse in Chromium, not native touch-device acceptance.
+
+- Mouse movement anywhere in the owning window drives visible live faces. One
+  shared sample coalesces events, and all geometry reads precede all SVG writes.
+  No rectangle reads happen in the pointer event handler. Blur/window leave and
+  touch clear gaze; the last inactive face removes all window input listeners.
+- Hover now visibly shrinks the entire scene by up to 18%, rebounds up to 4% where
+  containment permits, and returns to the ongoing pose in .65 seconds. Scale is
+  applied after containment so fitting cannot erase the shrink. Re-entry cannot
+  stack; touch/reduced-motion faces do not trigger it.
+- Busy wrappers and `animated` select Working_A–F, not the three-dot thinking
+  state. Explicit thinking remains separately available. The working clip keeps
+  running through mouse follow and hover; neither interaction restarts it.
+- CPU profiling exposed redundant non-sphere outline mixing and projection of
+  interior vertices. Only silhouette vertices are now projected; compact,
+  single-body, non-morph frames bypass cross-body mixing/angle sorting, using
+  exact solid hull vertices or the reference 192 base rays for concave bodies.
+  Eighteen shape tests compare those samples against the full reference builder.
+- 164 focused UI tests pass, including shared listeners, event coalescing,
+  read-before-write order, scroll/layout freshness, hover amplitude/return,
+  containment and working transitions. UI/Web type-check, focused ESLint, Web
+  and lab builds pass. The dead-code scan has no avatar-module findings.
+- Production Chromium confirmed page-wide left/right eye movement, twenty active
+  working faces with zero thinking-dot circles, one pointer listener while active
+  and zero under reduced motion. A real hover sampled scale 1 -> .826 -> 1.021 -> 1.
+  Static/live-rest/PNG pixels still match in 38 iris/graphite cases, and 456 compact
+  gaze/hover/working scene samples stayed in-frame.
+- A deterministic twenty-face benchmark with mouse gaze (80 warm samples/state)
+  measured idle median 3.5ms / p95 4.1ms and working median 4.7ms / p95 6.0ms for
+  model generation plus SVG writes. This is not a compositor/frame-rate or native
+  device guarantee. No native runtime acceptance or release was performed.
+
+## Anatomy migration validation (2026-10-30, before global gaze/hover follow-up)
+
+- 138 focused UI tests pass: all 1,824 stored-recipe combinations, source/data
+  integrity, reference sphere frames, all nineteen shape/state transitions,
+  graphite contrast without geometry changes, unique SVG IDs, Strict Mode cleanup,
+  mouse/touch gaze, shared-clock scheduling and fifty unrelated parent updates.
+- Fifteen avatar-related backend service tests pass (171 unrelated tests excluded
+  by the focused name filter). UI/Web type-check, focused ESLint, Web production
+  build and the production-component lab build pass. The dead-code report has no
+  avatar-module findings; unrelated repository findings remain.
+- Chromium: all nineteen shapes in iris and graphite (38 cases) have zero RGBA
+  differences between static SVG, live-rest SVG and the 128px rasterized PNG.
+  Rest artwork fills approximately 94% of its slot, including 16–44px previews.
+  In 741 normal and 513 compact scene samples, rendered bounds stayed in-frame.
+- The production lab exercised shape/color edits, the thinking morph, local
+  save/reload and PNG creation. A 350px viewport has no horizontal overflow.
+  Reduced motion yielded zero active faces and zero sampled SVG mutations.
+- Twenty visible production faces were observed with no recipe network request.
+  A short 25-paint callback sample measured median 7.9ms / p95 10.1ms, excluding
+  browser layout/paint. Later viewport/focus changes and background throttling
+  prevented a sustained frame-rate measurement. These figures do not establish
+  stable 30fps, physical-device battery usage or composer/IME responsiveness.
+- Full Electron, VS Code, Capacitor and native share-sheet runtime acceptance were
+  not run. No release was made in that validation.
+
+## Running the current production-component lab
+
 Run from the repository root, using installed workspace dependencies:
 
 ```sh
@@ -19,20 +165,24 @@ rasterizer. It does not start an OpenCode service, connect to a Yuri backend,
 or modify real assistants. Save persists only `yuri:avatar-lab:seed:v1` on the
 preview origin. The two share previews are the saved SVG and a freshly rasterized
 PNG; edit the recipe, Save, then reload to exercise local recovery. Add `?stress`
-for twenty live-list entries and scroll to verify offscreen suspension.
+for twenty live-list entries and scroll to verify offscreen suspension. Add
+`?stress&shapes` for mixed non-sphere production-component stress coverage.
 
 Production integration lives in `AssistantsSettingsPage` and the shared
 `AgentAvatar kind="assistant"` boundary. Configurations use the existing
 revision-checked `avatarSeed` mutation and SQLite persistence, not this demo key.
 Primary coding-agent faces and app branding remain unchanged.
 
-Browser acceptance: choose shape tiles and color swatches; reset; save and
+Browser acceptance: choose shape tiles and color swatches; randomize; save and
 reload; change light/dark and language; check 350px touch and desktop widths;
 emulate reduced motion; scroll faces out of view; verify that native PNG and the
 saved static face match. Native-device share-sheet painting and full desktop,
 VS Code and Capacitor runtime acceptance remain separate checks.
 
-## Experiment evidence (2026-10-30)
+## Historical evidence — superseded engines (2026-10-30)
+
+The remaining sections record earlier experiments only. They are not the current
+implementation contract, source provenance, validation results or release approval.
 
 - The focused UI tests include all 1,824 recipe
   combinations, malformed/future seeds, vendored-source integrity, one-clock
@@ -179,3 +329,27 @@ body. Every shape's 128×128 native PNG matched its source SVG with zero differi
 channels. The 350px mobile picker retained 16 choices and no horizontal overflow.
 The before/after/reference board is a visual comparison, not user acceptance or
 proof of physical-device animation throughput.
+
+## Centered eyes and full-size artwork (2026-10-30)
+
+The oblique same-direction eye pair was rejected. The shared pair now has a level,
+centered baseline with mirrored -8°/+8° inward lean, rather than two parallel
+slashes or a staggered gaze. Dimensions remain 24×58 with gap 38; no per-Bot eye
+randomization is restored. Expression templates no longer roll the whole face.
+
+The shared 432-unit canvas left the round body at only 65% occupancy (a 36px slot
+painted a roughly 23px body). Recipe-owned per-shape art bounds now give all 19
+outlines approximately 94% occupancy and share one fixed viewBox across static,
+live, navigation and PNG output. Bounds are precomputed source metadata; there
+is no runtime DOM measurement, per-frame path parsing or growing cache. External
+rounded masks have been removed from the leaf, working wrapper and Settings
+avatar instances so small non-round silhouettes are not clipped into circles.
+
+Validation: 77 focused UI tests pass, including static/live framing at 16/28/36/44px,
+mirrored eye direction and unchanged scheduling/visibility guards. UI type-check,
+focused ESLint, Settings audit and full Web build pass; the dead-code scan has no
+avatar-module findings. Chromium measured 93.4–94.0% longest-axis occupancy across
+all 19 shapes. In 342 sampled idle/thinking/happy scenes, body bounds stayed inside
+the fixed frame and eye boundaries stayed inside their bodies. All 19 native PNGs
+match their source SVG at 128×128. These are geometry/contract checks, not measured
+physical-device animation throughput or native share-sheet acceptance.

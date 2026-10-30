@@ -25,6 +25,9 @@ vi.mock('@/lib/yuriEvents', () => ({
     return () => state.listeners.delete(listener);
   },
 }));
+vi.mock('@/components/assistants/ProceduralAssistantAvatar', () => ({
+  ProceduralAssistantAvatar: ({ seed, randomizeShape }: { seed: string; randomizeShape: boolean }) => <img src={generatedAvatarDataUri('assistant', seed)} data-randomize-shape={String(randomizeShape)} />,
+}));
 import { assistantQueryKeys, assistantSnapshotQueryOptions, markAllAssistantsRead, markAssistantContactRead, useAssistantUnreadTotal } from './assistantQueries';
 import { AssistantNavigationIcon } from '@/components/assistants/AssistantNavigationIcon';
 import { useAssistantContactWorkingStore } from '@/components/assistants/assistantWorking';
@@ -55,7 +58,7 @@ afterEach(async () => {
 });
 
 describe('Assistant shared read contract', () => {
-  test('navigation follows latest messages, keeps thumbnails static during work, and clears on runtime or catalog changes', async () => {
+  test('navigation follows latest messages, keeps its ambient animator through work, and clears on runtime or catalog changes', async () => {
     const a = { ...assistant('a', 99), avatarSeed: 'face-a', latestMessagePreview: { ...assistantContractFixtures.assistant.latestMessagePreview, createdAt: 10 } };
     const b = { ...assistant('b', 0), avatarSeed: 'face-b', latestMessagePreview: { ...assistantContractFixtures.assistant.latestMessagePreview, createdAt: 20 } };
     let snapshot = { enabled: true, revision: 1, assistants: [a, b] };
@@ -66,6 +69,7 @@ describe('Assistant shared read contract', () => {
     await act(async () => root!.render(<QueryClientProvider client={state.client!}><React.Profiler id="navigation" onRender={rendered}><AssistantNavigationIcon className="size-4" /></React.Profiler></QueryClientProvider>));
     const src = () => host.querySelector('img')?.getAttribute('src');
     await vi.waitFor(() => expect(src()).toBe(generatedAvatarDataUri('assistant', 'face-b')));
+    expect(host.querySelector('img')?.getAttribute('data-randomize-shape')).toBe('true');
     const update = async () => {
       await act(async () => {
         state.client!.setQueryData(assistantQueryKeys.snapshot(), { ...snapshot });

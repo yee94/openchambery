@@ -12,6 +12,7 @@ type AgentAvatarProps = {
   kind?: AvatarKind;
   animated?: boolean;
   motion?: AvatarMotion;
+  hoverTarget?: React.RefObject<HTMLElement | null>;
   /** Optional glyph used in place of the generated identicon. */
   emoji?: string;
   size?: number;
@@ -104,7 +105,7 @@ const DiceBearAvatar: React.FC<AgentAvatarProps> = React.memo(({
 
 export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(function AgentAvatar(props) {
   if (props.kind === 'assistant' && !props.emoji) {
-    return <ProceduralAssistantAvatar seed={props.name} size={props.size ?? 16} label={props.label} className={props.className} motion={props.motion ?? (props.animated ? 'thinking' : undefined)} />;
+    return <ProceduralAssistantAvatar seed={props.name} size={props.size ?? 16} label={props.label} className={props.className} motion={props.motion ?? (props.animated ? 'working' : undefined)} hoverTarget={props.hoverTarget} />;
   }
   return <DiceBearAvatar {...props} />;
 });

@@ -8,7 +8,7 @@ export default defineConfig({
     name: '@yuriai/ui',
     environment: 'happy-dom',
     isolate: true,
-    exclude: sharedExclude,
+    exclude: [...sharedExclude, '**/assistant-avatar/performance.chrome.test.ts'],
     setupFiles: [fileURLToPath(new URL('../../scripts/test/ui-setup.ts', import.meta.url))],
     // GUI SDK helpers and the host must share the browser Solid owner graph.
     server: { deps: { inline: ['solid-js', '@opencode/plugin'] } },

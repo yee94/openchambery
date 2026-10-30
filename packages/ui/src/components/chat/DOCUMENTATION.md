@@ -92,7 +92,7 @@ Assistant IDs, ordinary Agent names, and subagent task IDs
 are the respective seeds. Explicit emoji overrides remain supported. The memoized
 component generates only on seed/style/emoji/palette changes, not draft or streaming
 updates. SVG images isolate internal definition IDs and preserve attribution
-metadata; see `THIRD_PARTY_NOTICES.md` for artwork credits.
+metadata from their renderer.
 
 Identical faces also share generated SVGs across row mounts through the existing
 `DualLimitLru` (128 entries / 1 MiB of UTF-16 key + URI payload). Keys include

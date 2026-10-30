@@ -149,6 +149,7 @@ function MobileAssistantCard({
 }: MobileAssistantCardProps) {
   const working = useAssistantWorking(assistantID, serverWorking);
   const swipe = useMobileSwipeActions(`assistant:${assistantID}`, onOpen);
+  const hoverTarget = React.useRef<HTMLButtonElement>(null);
 
   return (
       <MobileFloatingSurface className="yuri-mobile-assistant-card-shell relative isolate overflow-hidden">
@@ -157,6 +158,7 @@ function MobileAssistantCard({
           { label: deleteLabel, icon: 'delete-bin', destructive: true, onClick: onDelete },
         ]} />
             <button
+              ref={hoverTarget}
               type="button"
               role="option"
               aria-selected="false"
@@ -178,6 +180,7 @@ function MobileAssistantCard({
               size={44}
               label={displayName}
               working={working}
+              hoverTarget={hoverTarget}
             />
           </span>
           <span className="yuri-mobile-assistant-card-content min-w-0 flex-1">
