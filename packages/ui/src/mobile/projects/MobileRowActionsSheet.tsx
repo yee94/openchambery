@@ -75,7 +75,7 @@ function ActionRow({
       type="button"
       variant={destructive ? 'destructive' : 'ghost'}
       size="lg"
-      className="h-auto min-h-14 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 leading-6 border-b border-[var(--surface-subtle)] last:border-b-0 active:bg-interactive-active dark:active:bg-interactive-active"
+      className="h-auto min-h-14 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 leading-6 border-0 border-b border-[var(--surface-subtle)] last:border-b-0 active:bg-interactive-active dark:active:bg-interactive-active"
       data-mobile-press-feedback="none"
       disabled={disabled}
       onClick={handleClick}
@@ -108,7 +108,7 @@ function renderMenuItems(
   return groups.map((group) => (
     <div
       key={group.items[0]?.id}
-      className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]"
+      className="flex flex-col overflow-hidden rounded-2xl bg-[var(--surface-muted)]"
       data-mobile-action-group={group.separated ? 'separated' : 'standard'}
     >
       {group.items.map((item) => (

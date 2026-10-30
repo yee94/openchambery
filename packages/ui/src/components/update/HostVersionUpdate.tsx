@@ -57,7 +57,36 @@ export function HostVersionUpdate({ version, transport, generation, itemId, chan
     setOpen(false);
     toast.success(successMessage, { id: `host-update:${transport}:${generation}:${watchedOperationId}` });
   }, [completed, query.isError, transport, generation, watchedOperationId, successMessage]);
-  const show = useEvent(() => { setOpen(true); void query.refetch(); });
+  const pendingCheck = React.useRef<string | null>(null);
+  const currentPresentationScope = useEvent(() => presentationScope);
+  const checkForUpdates = useEvent(async () => {
+    if (active) {
+      setOpen(true);
+      void query.refetch({ cancelRefetch: false });
+      return;
+    }
+    if (pendingCheck.current === presentationScope) return;
+    const scope = presentationScope;
+    pendingCheck.current = scope;
+    try {
+      const result = await query.refetch({ cancelRefetch: false });
+      if (scope !== currentPresentationScope() || transport !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration()) return;
+      if (result.isError || !result.data || result.data.checkError) {
+        if (result.error?.message === 'host_update_unsupported') toast.info(t('settings.yuri.about.hostUpdate.unsupported'));
+        else toast.error(t('settings.yuri.about.toast.checkFailed'));
+        return;
+      }
+      if (isHostUpdateActive(result.data.operation)) setOpen(true);
+      else if (!result.data.supported) toast.info(t('settings.yuri.about.hostUpdate.unsupported'));
+      else if (result.data.update) setOpen(true);
+      else {
+        setOpen(false);
+        toast.success(t('settings.yuri.about.toast.latestVersion'));
+      }
+    } finally {
+      if (pendingCheck.current === scope) pendingCheck.current = null;
+    }
+  });
   // During an active task a 404/timeout is the restart gap, not a capability answer.
   const unsupported = snapshot?.supported === false || (!active && query.error?.message === 'host_update_unsupported');
   const failedCheck = query.isError || Boolean(snapshot?.checkError);
@@ -71,7 +100,6 @@ export function HostVersionUpdate({ version, transport, generation, itemId, chan
     updateDetails: presentationPlan?.scope === presentationScope ? presentationPlan.update : undefined,
   }, t);
   const handleAction = useEvent((id: string) => {
-    if (id === 'check') void query.refetch();
     if (id === 'confirm' && snapshot?.update) mutation.mutate({ plan: snapshot, channel });
   });
   return <>
@@ -80,7 +108,7 @@ export function HostVersionUpdate({ version, transport, generation, itemId, chan
         {snapshot?.currentVersion ?? version}
         {snapshot?.update && !active && <span aria-label={t('settings.yuri.about.hostUpdate.available')} className="absolute -right-1.5 -top-0.5 size-1.5 rounded-full bg-[var(--status-error)]" />}
       </span>
-      <Button type="button" size="icon" variant="ghost" onClick={show}
+      <Button type="button" size="icon" variant="ghost" onClick={checkForUpdates} disabled={query.isFetching && !active}
         aria-label={t('settings.yuri.about.hostUpdate.title')} title={t('settings.yuri.about.hostUpdate.title')}>
         <Icon name={active || query.isFetching ? 'loader' : snapshot?.update ? 'download' : 'refresh'} className={active || query.isFetching ? 'size-4 animate-spin' : 'size-4'} />
       </Button>

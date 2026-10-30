@@ -14,11 +14,20 @@ About, Sidebar and mobile OTA notices, adapting them to the shared model.
 `update/hostUpdateDialogModel.ts` converts the Host DTO to that same model;
 `HostVersionUpdate` retains runtime-scoped Query state and exact-plan mutation
 orchestration. Remote updates never dismiss or mutate the local client updater.
+The Host entry first refreshes the existing query: a new release opens the
+confirmation dialog, an authoritative empty result uses the same latest-version
+toast as the client update check, and failed/unsupported checks notify separately.
+An active operation opens its progress directly. The dialog has no second check
+button, and stale runtime/channel check results cannot open it or notify.
 When a Host task observed in the open dialog reports success, its adapter closes
 the dialog and shows one success toast. Historical success, failed tasks and stale
 runtime completions do not trigger that notification.
-Host dialogs opt into a viewport-bounded stable frame with a reserved progress
-slot and a scrolling changelog. The Host adapter retains display-only release
+Host dialogs opt into a viewport-bounded stable frame with a scrolling changelog.
+During submission and active updates, a compact status line and progress bar
+replace the action row; check/update buttons, empty detail rows and footer
+spacers are absent. Reconnect text replaces the status label in that same row.
+Installation method labels are omitted from the Host header.
+The Host adapter retains display-only release
 metadata for the matching plan/version in its runtime/channel scope while busy
 snapshots omit the plan; it never reuses that metadata to authorize an update.
 Submission, download, installation and reconnect do not hide the changelog or

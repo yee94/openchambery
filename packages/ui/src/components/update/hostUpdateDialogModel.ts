@@ -35,21 +35,19 @@ export function toHostUpdateDialogModel(snapshot: HostUpdateSnapshot | undefined
     description: t('settings.yuri.about.hostUpdate.description'),
     currentVersion: snapshot?.currentVersion ?? state.versionFallback,
     version: update?.version ?? operation?.version,
-    methodLabel: details ? t(`settings.yuri.about.hostUpdate.kind.${details.kind}`) : operation ? t(`settings.yuri.about.hostUpdate.kind.${operation.kind}`) : undefined,
     body: details || operation ? details?.releaseNotes || t('settings.yuri.about.hostUpdate.noNotes') : undefined,
     warning: !active && update?.rollback ? t('settings.yuri.about.hostUpdate.downgrade') : undefined,
-    actions: [
-      { id: 'check', variant: 'ghost', label: t('settings.yuri.about.actions.checkForUpdates'), disabled: Boolean(state.checking) },
-      { id: 'confirm', icon: active || state.submitting ? 'loader' : 'download', loading: active || state.submitting,
+    actions: active || state.submitting || state.completed || !update ? [] : [
+      { id: 'confirm', icon: 'download',
         label: t('settings.yuri.about.hostUpdate.confirm'),
-        disabled: !update || !snapshot?.supported || active || state.submitting || Boolean(state.failure) || Boolean(state.checking) },
+        disabled: !snapshot?.supported || Boolean(state.failure) || Boolean(state.checking) },
     ],
   };
   if (active && operation) {
     model.status = {
       kind: operation.status === 'downloading' ? 'download' : 'activity',
-      label: t(`settings.yuri.about.hostUpdate.status.${operation.status}`), progress: overallProgress(operation.status, operation.progress),
-      detail: state.failure === 'disconnected' ? t('settings.yuri.about.hostUpdate.reconnecting') : undefined,
+      label: t(state.failure === 'disconnected' ? 'settings.yuri.about.hostUpdate.reconnecting' : `settings.yuri.about.hostUpdate.status.${operation.status}`),
+      progress: overallProgress(operation.status, operation.progress),
     };
   } else if (state.completed && !update) {
     model.status = { kind: 'download', label: t('settings.yuri.about.hostUpdate.status.succeeded'), progress: 100 };

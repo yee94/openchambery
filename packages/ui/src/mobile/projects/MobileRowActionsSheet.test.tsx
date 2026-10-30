@@ -81,6 +81,9 @@ describe('MobileRowActionsSheet worktree actions', () => {
     expect(standardGroup?.textContent).toContain('New Session');
     expect(separatedGroup?.querySelectorAll('button')).toHaveLength(1);
     expect(separatedGroup?.textContent).toContain('Remove');
+    expect(separatedGroup?.classList.contains('flex')).toBe(true);
+    expect(separatedGroup?.classList.contains('flex-col')).toBe(true);
+    expect(separatedGroup?.querySelector('button')?.classList.contains('border-0')).toBe(true);
     expect(html).toContain('gap-5');
   });
 });

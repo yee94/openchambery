@@ -19,7 +19,7 @@ export type UpdateDialogModel = {
   methodLabel?: string;
   body?: string | null;
   hideChangelog?: boolean;
-  /** Reserve a viewport-bounded frame and progress slot across Host stages. */
+  /** Keep a viewport-bounded frame while progress replaces the Host actions. */
   stableLayout?: boolean;
   dismissible?: boolean;
   status?: { kind: 'activity' | 'download'; label: string; detail?: string; progress?: number | null };
@@ -139,7 +139,7 @@ export function UpdateDialogView({ open, onOpenChange, model, onAction }: {
         {model.description && <DialogDescription className="mt-2">{model.description}</DialogDescription>}
       </div>
       {/* Content Body */}
-      <div className={model.stableLayout ? "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto sm:gap-4" : "space-y-3 sm:space-y-4"}>
+      <div className={model.stableLayout ? "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" : "space-y-3 sm:space-y-4"}>
         {model.message && <p role="status" className="typography-ui-label text-muted-foreground">{model.message}</p>}
         {model.warning && <p className="typography-meta text-[var(--status-warning)]">{model.warning}</p>}
         {/* Changelog Rendering */}
@@ -174,28 +174,28 @@ export function UpdateDialogView({ open, onOpenChange, model, onAction }: {
             </button>
           </div>
         </div>}
-        {/* Update progress: fixed-height rows so stage/detail changes never resize the dialog */}
-        {(model.status || model.stableLayout) && <div role={model.status ? "status" : undefined} className={cn("space-y-2", model.stableLayout && "h-20 shrink-0")}>
+        {/* Host progress occupies the same compact height as the idle action row. */}
+        {model.status && <div role="status" className={cn("space-y-2", model.stableLayout && "min-h-9 shrink-0")}>
           <div className="flex h-5 items-center justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground sm:text-[13px]">
-              {model.status?.kind === 'activity' && <Icon name="loader" className="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--primary-base)]" />}
-              <span className="truncate">{model.status?.label}</span>
+              {model.status.kind === 'activity' && <Icon name="loader" className="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--primary-base)]" />}
+              <span className="truncate" title={model.status.label}>{model.status.label}</span>
             </span>
-            {model.status?.progress != null && <span className="shrink-0 font-mono text-[11px] leading-4 text-foreground tabular-nums sm:text-xs">{Math.round(model.status.progress)}%</span>}
+            {model.status.progress != null && <span className="shrink-0 font-mono text-[11px] leading-4 text-foreground tabular-nums sm:text-xs">{Math.round(model.status.progress)}%</span>}
           </div>
           <div className="h-1 overflow-hidden rounded-full bg-[var(--surface-subtle)] sm:h-1.5">
-            {!model.status || model.status.progress != null
-              ? <div className="h-full rounded-full bg-[var(--primary-base)] transition-[width] duration-500" style={{ width: `${model.status?.progress ?? 0}%` }} />
+            {model.status.progress != null
+              ? <div className="h-full rounded-full bg-[var(--primary-base)] transition-[width] duration-500" style={{ width: `${model.status.progress}%` }} />
               : <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--primary-base)]/60" />}
           </div>
-          <p className={cn("min-h-4 text-xs leading-4 text-muted-foreground", model.stableLayout && "h-8 overflow-y-auto")}>{model.status?.detail}</p>
+          {model.status.detail && <p className="text-xs leading-4 text-muted-foreground">{model.status.detail}</p>}
         </div>}
         {/* Error display */}
         {model.error && <div role="alert" className="p-3 mt-4 bg-[var(--status-error-background)] border border-[var(--status-error-border)] rounded-lg"><p className="text-sm text-[var(--status-error)]">{model.error}</p></div>}
       </div>
       {model.notice && <div className="mt-4 flex items-center gap-2 rounded-lg border border-[var(--status-success-border)] bg-[var(--status-success-background)] px-3 py-2.5 text-sm text-[var(--status-success)]"><Icon name="check" className="h-4 w-4 shrink-0" /><span>{model.notice}</span></div>}
       {/* Action Footer */}
-      <div className="mt-4 flex shrink-0 items-center justify-between gap-4">
+      {(model.releaseLink || model.actions.length > 0) && <div className="mt-4 flex shrink-0 items-center justify-between gap-4">
         {model.releaseLink && <a href={model.releaseLink.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 typography-ui-label text-muted-foreground hover:text-foreground transition-colors shrink-0"><Icon name="external-link" className="h-4 w-4" />{model.releaseLink.label}</a>}
         <div className="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2">
           {model.actions.map((action) => <Button key={action.id} onClick={() => onAction(action.id)} disabled={action.disabled} variant={action.variant ?? 'default'} size="default" className="min-w-0 shrink" title={action.label}>
@@ -203,7 +203,7 @@ export function UpdateDialogView({ open, onOpenChange, model, onAction }: {
             <span className="truncate">{action.label}</span>
           </Button>)}
         </div>
-      </div>
+      </div>}
     </DialogContent>
   </Dialog>;
 }
