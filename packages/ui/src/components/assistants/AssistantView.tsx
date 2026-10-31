@@ -261,7 +261,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const presentation = getAssistantPresentation(assistant.name);
   const warning = !assistant.enabled ? t('assistants.state.assistantDisabled') : snapshotQuery.isError ? t('assistants.state.staleSnapshot') : null;
   return (
-    <div className="relative flex h-full min-h-0 overflow-hidden bg-background" data-presentation="workspace">
+    <div className="relative flex h-full min-h-0 overflow-clip bg-background" data-presentation="workspace">
       {isMobileSurface ? null : (
         <section className="flex h-full min-h-0 w-[clamp(16rem,22vw,20rem)] shrink-0 flex-col overflow-hidden">
           <header className="flex shrink-0 items-center gap-3 px-4 pb-3 pt-4 sm:px-5">
@@ -311,7 +311,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
         open={deleteTarget !== null}
         onOpenChange={handleDeleteDialogOpenChange}
       />
-      <div className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobileSurface && 'border-l border-[var(--surface-subtle)]')}>
+      <div className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-clip bg-background', !isMobileSurface && 'border-l border-[var(--surface-subtle)]')}>
         {isMobileSurface ? (
           <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} onOpenSettings={onMobileOpenSettings} />
         ) : (

@@ -186,6 +186,29 @@ identity; binary transitions disable text refetch. Desktop preserves outside-fil
 read options/grants for stat and content and rejects stale stat completions before
 starting a content read. Binary files keep metadata-only external-change watching.
 
+Mobile text previews show the loading canvas only while no content snapshot exists.
+Background reads keep the existing preview and scroll container mounted, including
+when the previous content is an empty string. External updates replace content in
+place rather than resetting the reader to the top. Refresh failures retain their
+existing error presentation.
+
+Desktop ordinary and fullscreen previews likewise retain the last loaded path and
+content while a same-file background read is pending. Polling starts one guarded
+refresh directly instead of clearing that path to trigger a foreground load;
+editing/saving remains disabled until the read settles. Transient background read
+failures report a toast without clearing the preview; missing files and directory
+errors retain the existing navigation cleanup. New selections reject late refreshes.
+Metadata-only changes do not recreate HTML iframes. Inline HTML still updates its
+document when the source changes; URL-based HTML reloads only for a genuinely
+changed source or its existing navigation/auth lifecycle. GUI-plugin previews remain the
+outermost branch, and their file updates and foreign-DOM lifetime stay plugin-owned.
+
+The refresh tests exercise the real desktop polling/mobile Query paths and guard
+Markdown scroll-node identity, HTML iframe identity on metadata-only changes, and
+plugin frame/control continuity during host source reads. Plugin integration and
+file-model tests cover owner-scoped mounts and in-place content updates; these
+fixtures are not native-device or independent Eficy-runtime acceptance.
+
 The file-reference and mobile binary tests cover skipped reads/writes, explicit
 actions, plugin precedence, stat failures and stale completions. They do not prove
 real OS app opening, native mobile downloads or remote/Relay transfer behavior.

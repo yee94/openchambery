@@ -250,7 +250,10 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
     : readError
       ? readError instanceof Error ? readError.message : t('filesView.error.readFileFailed')
       : null;
-  const isLoadingFile = !fileError && ((needsFileStat && (!fileStatQuery.data || !fileStatQuery.isFetchedAfterMount)) || (shouldReadFile && fileQuery.isFetching));
+  const isLoadingFile = !fileError && (
+    (needsFileStat && (!fileStatQuery.data || !fileStatQuery.isFetchedAfterMount))
+    || (shouldReadFile && fileQuery.isFetching && fileQuery.data === undefined)
+  );
 
   const openDirectory = (directory: string) => {
     setQuery('');

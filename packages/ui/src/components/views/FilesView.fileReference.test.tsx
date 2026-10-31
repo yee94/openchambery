@@ -7,7 +7,7 @@ import { useUIStore } from '@/stores/useUIStore';
 
 const harness = vi.hoisted(() => ({
   files: { readFile: vi.fn(), listDirectory: vi.fn(), statFile: vi.fn(), writeFile: vi.fn(), downloadFile: vi.fn() },
-  runtime: { isDesktop: false },
+  runtime: { isDesktop: false, isVSCode: false },
   local: false,
   pluginPreview: false,
   openDesktopPath: vi.fn(),
@@ -24,11 +24,21 @@ vi.mock('@/lib/desktop', async (importOriginal) => ({
 }));
 vi.mock('@/components/gui-plugins/GuiFileLinkBridge', () => ({
   GuiFileLinkBridge: ({ children }: { children: (view: { preview: React.ReactNode; toggle: React.ReactNode }) => React.ReactNode }) => children({
-    preview: harness.pluginPreview ? <div data-testid="plugin-preview">Plugin preview</div> : null,
+    preview: harness.pluginPreview ? <div data-testid="plugin-preview">Plugin preview<input defaultValue="initial" /><iframe title="plugin-document" /></div> : null,
     toggle: null,
   }),
 }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: vi.fn(async () => new Response('{}')) }));
+vi.mock('@/lib/runtime-file-resource', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/runtime-file-resource')>(),
+  directFileResource: () => ({ url: 'about:blank' }),
+}));
+vi.mock('@/lib/runtime-auth', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/runtime-auth')>(),
+  acquireRuntimeUrlAuthToken: () => harness.noop,
+  refreshRuntimeUrlAuthToken: async () => 'fixture-url-token',
+  subscribeRuntimeUrlAuthToken: () => harness.noop,
+}));
 vi.mock('@/stores/useOpenInAppsStore', () => ({
   useOpenInAppsStore: (selector: (state: unknown) => unknown) => selector({ availableApps: harness.empty, initialize: harness.noop }),
 }));
@@ -46,7 +56,9 @@ vi.mock('@/lib/codemirror/shikiHighlight', () => ({ shikiHighlightExtension: () 
 vi.mock('@/lib/codemirror/languageByExtension', () => ({ languageByExtension: () => [], loadLanguageByExtension: async () => [] }));
 vi.mock('@/stores/useGitStore', () => ({ useGitStatus: () => null }));
 vi.mock('@/hooks/useMessageTTS', () => ({ useMessageTTS: () => ({ isPlaying: false, play: harness.noop, stop: harness.noop }) }));
-vi.mock('@/components/chat/MarkdownRenderer', () => ({ SimpleMarkdownRenderer: () => null }));
+vi.mock('@/components/chat/MarkdownRenderer', () => ({
+  SimpleMarkdownRenderer: ({ content }: { content: string }) => <article data-testid="markdown-preview">{content}</article>,
+}));
 vi.mock('@/components/diagram', () => ({ DiagramEditor: () => null }));
 vi.mock('@/components/views/DiffView', () => ({ DiffView: () => null }));
 vi.mock('@/components/layout/ContextSidebarTab', () => ({ ContextPanelContent: () => null }));
@@ -124,6 +136,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   harness.files.readFile.mockReset();
   harness.runtime.isDesktop = false;
+  harness.runtime.isVSCode = false;
   harness.local = false;
   harness.pluginPreview = false;
   harness.openDesktopPath.mockReset().mockResolvedValue(true);
@@ -135,6 +148,8 @@ beforeEach(() => {
   useFilesViewTabsStore.setState({ byRoot: {} });
   useUIStore.setState({ contextPanelByDirectory: {}, pendingFileFocusPath: null, pendingFileNavigation: null, pendingFileViewerMode: null, mainTabGuard: null });
   window.localStorage.setItem('yuri:files:auto-save-enabled', 'false');
+  window.localStorage.removeItem('yuri:files:md-viewer-mode');
+  window.localStorage.removeItem('yuri:files:html-viewer-mode');
   host = document.createElement('div');
   document.body.append(host);
   reactRoot = createRoot(host);
@@ -225,6 +240,153 @@ describe('binary file fallback', () => {
     expect(harness.files.statFile.mock.calls.length).toBeGreaterThanOrEqual(50);
     expect(harness.files.readFile).not.toHaveBeenCalled();
     expect(harness.files.writeFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('background file preview refresh', () => {
+  const startPreview = async (path: string, mode: 'full' | 'editor-only' = 'editor-only') => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+    window.localStorage.setItem('yuri:files:md-viewer-mode', 'preview');
+    window.localStorage.setItem('yuri:files:html-viewer-mode', 'preview');
+    harness.files.statFile.mockImplementation(async (path: string) => ({ path, isFile: true, size: 2000, mtimeMs: 1, isBinary: false }));
+    await open(path);
+    useUIStore.setState({ pendingFileFocusPath: null });
+    await act(async () => reactRoot.render(<FilesView mode={mode} targetPath={path} />));
+  };
+
+  const detectChange = async (path: string, revision = 2) => {
+    const read = deferred<{ content: string }>();
+    harness.files.readFile.mockReturnValueOnce(read.promise);
+    harness.files.statFile.mockResolvedValue({ path, isFile: true, size: 2000, mtimeMs: revision, isBinary: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    return read;
+  };
+
+  test.each(['panel', 'full', 'fullscreen'] as const)('%s Markdown preview retains its reading position during repeated external updates', async (surface) => {
+    const path = '/repo/report.md';
+    const initial = '# Report\n\n' + 'Paragraph.\n\n'.repeat(200);
+    harness.files.readFile.mockResolvedValue({ content: initial });
+    await startPreview(path, surface === 'panel' ? 'editor-only' : 'full');
+    if (surface === 'fullscreen') {
+      await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="filesView.editor.showControlsAria"]')!.click());
+      await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="filesView.editor.fullscreen"]')!.click());
+    }
+    const article = [...host.querySelectorAll<HTMLElement>('[data-testid="markdown-preview"]')].at(-1)!;
+    expect(article.textContent).toBe(initial);
+    const scroller = article.closest<HTMLElement>('.overflow-auto')!;
+    scroller.scrollTop = 800;
+    for (let revision = 2; revision <= 4; revision += 1) {
+      const read = await detectChange(path, revision);
+      expect(article.isConnected).toBe(true);
+      expect(scroller.scrollTop).toBe(800);
+      const updated = `${initial}\nRevision ${revision}`;
+      await act(async () => read.resolve({ content: updated }));
+      expect(article.isConnected).toBe(true);
+      expect(article.textContent).toBe(updated);
+      expect(scroller.scrollTop).toBe(800);
+    }
+    expect(harness.files.readFile).toHaveBeenCalledTimes(4);
+  });
+
+  test.each([false, true])('HTML preview keeps its iframe for metadata-only updates (inline %s)', async (inline) => {
+    const path = '/repo/report.html';
+    const content = '<!doctype html><html><body>Document</body></html>';
+    harness.runtime.isVSCode = inline;
+    harness.files.readFile.mockResolvedValue({ content });
+    await startPreview(path);
+    const iframe = host.querySelector<HTMLIFrameElement>('iframe[title="filesView.editor.htmlPreviewTitle"]')!;
+    expect(iframe).not.toBeNull();
+    const src = iframe.getAttribute('src');
+    const srcDoc = iframe.getAttribute('srcdoc');
+    const read = await detectChange(path);
+    expect(iframe.isConnected).toBe(true);
+    await act(async () => read.resolve({ content }));
+    expect(host.querySelector('iframe[title="filesView.editor.htmlPreviewTitle"]')).toBe(iframe);
+    expect(iframe.getAttribute('src')).toBe(src);
+    expect(iframe.getAttribute('srcdoc')).toBe(srcDoc);
+  });
+
+  test('Eficy plugin preview retains its iframe and local controls while source refreshes', async () => {
+    const path = '/repo/report.eficy';
+    harness.pluginPreview = true;
+    harness.files.readFile.mockResolvedValue({ content: 'source-v1' });
+    await startPreview(path);
+    const preview = host.querySelector('[data-testid="plugin-preview"]')!;
+    const input = preview.querySelector('input')!;
+    const iframe = preview.querySelector('iframe')!;
+    input.value = 'reader choice';
+    const read = await detectChange(path);
+    expect(preview.isConnected).toBe(true);
+    await act(async () => read.resolve({ content: 'source-v2' }));
+    expect(host.querySelector('[data-testid="plugin-preview"]')).toBe(preview);
+    expect(preview.querySelector('iframe')).toBe(iframe);
+    expect(input.value).toBe('reader choice');
+  });
+
+  test.each([false, true])('HTML still loads genuinely changed source after the background read (inline %s)', async (inline) => {
+    const path = '/repo/report.html';
+    harness.runtime.isVSCode = inline;
+    harness.files.readFile.mockResolvedValue({ content: '<html><body>Original</body></html>' });
+    await startPreview(path);
+    const iframe = host.querySelector<HTMLIFrameElement>('iframe[title="filesView.editor.htmlPreviewTitle"]')!;
+    const read = await detectChange(path);
+    expect(iframe.isConnected).toBe(true);
+    const updated = '<html><body>Changed document</body></html>';
+    await act(async () => read.resolve({ content: updated }));
+    const refreshed = host.querySelector<HTMLIFrameElement>('iframe[title="filesView.editor.htmlPreviewTitle"]')!;
+    if (inline) {
+      expect(refreshed).toBe(iframe);
+      expect(refreshed.getAttribute('srcdoc')).toContain('Changed document');
+    } else {
+      expect(refreshed).not.toBe(iframe);
+      expect(refreshed.getAttribute('src')).toBe(iframe.getAttribute('src'));
+    }
+  });
+
+  test('a failed background read keeps the last successful preview instead of clearing it', async () => {
+    const path = '/repo/report.md';
+    harness.files.readFile.mockResolvedValue({ content: '# Existing report' });
+    await startPreview(path);
+    const article = host.querySelector('[data-testid="markdown-preview"]')!;
+    const read = await detectChange(path);
+    await act(async () => read.reject(new Error('temporarily offline')));
+    expect(host.querySelector('[data-testid="markdown-preview"]')).toBe(article);
+    expect(article.textContent).toBe('# Existing report');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    const recovery = await detectChange(path, 3);
+    await act(async () => recovery.resolve({ content: '# Recovered report' }));
+    expect(article.textContent).toBe('# Recovered report');
+  });
+
+  test('a slow background read is not duplicated and newer metadata is read after it settles', async () => {
+    const path = '/repo/report.md';
+    harness.files.readFile.mockResolvedValue({ content: '# Existing report' });
+    await startPreview(path);
+    const article = host.querySelector('[data-testid="markdown-preview"]')!;
+    const read = await detectChange(path);
+    harness.files.statFile.mockResolvedValue({ path, isFile: true, size: 2000, mtimeMs: 3, isBinary: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(harness.files.readFile).toHaveBeenCalledTimes(2);
+    expect(article.isConnected).toBe(true);
+    await act(async () => read.resolve({ content: '# Intermediate report' }));
+    const recovery = deferred<{ content: string }>();
+    harness.files.readFile.mockReturnValueOnce(recovery.promise);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(harness.files.readFile).toHaveBeenCalledTimes(3);
+    await act(async () => recovery.resolve({ content: '# Latest report' }));
+    expect(article.textContent).toBe('# Latest report');
+  });
+
+  test('a late refresh cannot replace a newly selected file', async () => {
+    const path = '/repo/report.md';
+    harness.files.readFile.mockResolvedValue({ content: '# Existing report' });
+    await startPreview(path);
+    const read = await detectChange(path);
+    harness.files.readFile.mockResolvedValue({ content: '# New file' });
+    await open('/repo/new.md');
+    await act(async () => reactRoot.render(<FilesView mode="editor-only" targetPath="/repo/new.md" />));
+    await act(async () => read.resolve({ content: '# Stale refresh' }));
+    expect(host.querySelector('[data-testid="markdown-preview"]')?.textContent).toBe('# New file');
   });
 });
 

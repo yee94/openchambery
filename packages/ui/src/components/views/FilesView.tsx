@@ -927,6 +927,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const desktopImageBlobUrlRef = React.useRef<string>('');
 
   const [loadedFilePath, setLoadedFilePath] = React.useState<string | null>(null);
+  const showFileLoading = fileLoading && loadedFilePath !== selectedFilePath;
+  const [htmlDocumentRevision, setHtmlDocumentRevision] = React.useState(0);
   const [binaryFilePath, setBinaryFilePath] = React.useState<string | null>(null);
   const isSelectedBinary = Boolean(selectedFilePath && binaryFilePath === selectedFilePath);
   const [failedFilePath, setFailedFilePath] = React.useState<string | null>(null);
@@ -1844,15 +1846,18 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       return activeFileLoadIdRef.current === loadId && currentPath === node.path && transport === getRuntimeTransportIdentity();
     };
 
-    setFileError(null);
-    setFailedFilePath(null);
-    setDesktopImageSrc('');
-    setLoadedFilePath(null);
-
     const selectedIsImage = isImageFile(node.path);
-    setBinaryFilePath(null);
     const isSvg = node.path.toLowerCase().endsWith('.svg');
     const selectedIsPdf = isPdfFile(node.path);
+    const backgroundRefresh = loadedFilePath === node.path && !selectedIsImage && !selectedIsPdf;
+
+    setFileError(null);
+    setFailedFilePath(null);
+    if (!backgroundRefresh) {
+      setDesktopImageSrc('');
+      setLoadedFilePath(null);
+      setBinaryFilePath(null);
+    }
 
     if (isMobile) {
       setShowMobilePageContent(true);
@@ -1912,6 +1917,11 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           return;
         }
         const editorContent = normalizeEditorLineEndings(content);
+        if (backgroundRefresh && isHtmlFile(node.path) && editorContent !== fileContent
+          && !runtime.isVSCode && !isRelayModeActive()) {
+          setHtmlDocumentRevision((revision) => revision + 1);
+        }
+        setBinaryFilePath(null);
         setLoadedFileLineEnding(detectFileLineEnding(content));
         setFileContent(editorContent);
         diagramXmlRef.current = editorContent;
@@ -1923,6 +1933,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       })
       .catch((error) => {
         if (!isCurrentLoad()) {
+          return;
+        }
+        if (backgroundRefresh && !isFileMissingError(error) && !isDirectoryReadError(error)) {
+          toast.error(error instanceof Error ? error.message : t('filesView.error.readFileFailed'));
           return;
         }
         clearFailedFileNavigation(node.path);
@@ -2080,8 +2094,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   isDirtyRef.current = isDirty;
 
   // Poll open file for external changes.
-  // When a change is detected, reset loadedFilePath so the effect above
-  // triggers a single reload — no double-load.
+  // Refresh the selected file directly without clearing its displayed snapshot.
+  // The active load path prevents overlapping reads while polling continues.
   React.useEffect(() => {
     const selectedPath = selectedFile?.path ?? '';
     if (!shouldPollSelectedFile(isActive, selectedPath, loadedFilePath)) {
@@ -2115,13 +2129,12 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
             return;
           }
 
-          if (isDirtyRef.current) {
+          if (isDirtyRef.current || activeFileLoadPathRef.current === selectedPath) {
             return;
           }
 
           lastLoadedFileStatRef.current = latestStat;
-          // Reset loadedFilePath so the effect above triggers a single reload.
-          setLoadedFilePath(null);
+          if (selectedFile) void loadSelectedFile(selectedFile);
         })
         .catch(() => {});
     }, 2000);
@@ -2130,7 +2143,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [isActive, loadedFilePath, readFileStat, selectedFile?.path, selectedFileReadOptions]);
+  }, [isActive, loadedFilePath, readFileStat, selectedFile, selectedFileReadOptions, loadSelectedFile]);
 
   const discardAndContinue = React.useCallback(() => {
     const nextFile = pendingSelectFileRef.current;
@@ -4066,7 +4079,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         {guiPreview ?? <ScrollableOverlay outerClassName="h-full min-w-0" className="h-full min-w-0">
           {!selectedFile ? (
             <div className="p-3 typography-ui text-muted-foreground">{t('filesView.editor.pickFileFromTree')}</div>
-          ) : (fileLoading || isImageAssetAuthLoading || isPdfAssetAuthLoading) ? (
+          ) : (showFileLoading || isImageAssetAuthLoading || isPdfAssetAuthLoading) ? (
             isSelectedImage
               ? <div className="flex h-full items-center justify-center p-3"><ImageLoadingPlaceholder className="size-48 max-w-full rounded-md" /></div>
               : suppressFileLoadingIndicator
@@ -4127,7 +4140,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
             ) : (
             <div className="h-full overflow-hidden">
               <iframe
-                key={htmlPreviewNonce}
+                key={`${selectedFilePath}:${htmlPreviewNonce}:${htmlDocumentRevision}`}
                 src={!htmlPreviewUsesInlineDocument && htmlAssetAuthReadyKey === htmlAssetAuthKey ? (() => {
                   const encoded = selectedFile.path.split('/').map((segment) => encodeURIComponent(segment)).join('/');
                   return directFileResource(`/api/fs/serve${encoded.startsWith('/') ? encoded : `/${encoded}`}`).url;
@@ -4439,7 +4452,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           {renderFloatingFileControls({ exitFullscreenOnly: true })}
         </div>
         <ScrollableOverlay outerClassName="h-full min-w-0" className="h-full min-w-0">
-          {(fileLoading || isImageAssetAuthLoading || isPdfAssetAuthLoading) ? (
+          {(showFileLoading || isImageAssetAuthLoading || isPdfAssetAuthLoading) ? (
             isSelectedImage
               ? <div className="flex h-full items-center justify-center p-4"><ImageLoadingPlaceholder className="size-48 max-w-full rounded-md" /></div>
               : suppressFileLoadingIndicator

@@ -23,6 +23,17 @@ Mobile contact composers reuse the memoized `HoldToTalkComposer` shared with pri
 
 Contact submission keeps the textarea mounted, enabled and focused during admission. Inline send pointer presses preserve input focus; pending admission still blocks duplicate sends and attachment changes, while the next text draft remains editable. Mobile transcript bottom padding reserves an additional 2.75rem outside the content/status slot to clear the composer fade, including with a reduced keyboard viewport. The existing auto-follow hook remains the sole scroll writer.
 
+The Assistant workspace and conversation pane are `overflow-clip` frames, never
+scroll owners. Mobile's generic `overflow-hidden` rewrite would turn these into
+vertical scrollports: the native composer's full-viewport keyboard curtain then
+creates an outer scrollbar during keyboard opening, which can reserve horizontal
+space and reflow messages. Keep scrolling inside the contact transcript (and the
+desktop catalog), not on either frame. `assistantKeyboardGeometry.chrome.test.ts`
+loads production CSS and checks three open/close cycles for Android's composer
+transform, iOS-style shell shrink and hosted-mobile resize, with short and long
+content. It guards outer scroll ownership and horizontal geometry; physical-device
+IME animation and platform scrollbar painting still require device validation.
+
 Assistant Settings resolves model choices through the directory-scoped `providerQueryOptions`, which reuses the complete `providerCatalogQueryOptions` loader and its abort signal. The catalog includes models and thinking variants; the v2 provider-only list is not a model catalog. Favorites and recents remain shortcuts alongside the full provider/model sections.
 
 `AssistantSessionComposer` composes the existing inline `ChatPromptComposer` with a session-only `@` picker. It uses `resolveComposerAutocompleteTrigger`, `getVisibleSessionMentionCandidates`, `ComposerAutocompleteLayer`, and the shared touch-selection controller. Keyboard arrows navigate; Enter/Tab insert; Escape, outside press, and the close button dismiss. IME confirmation retains input ownership. Mobile uses the shared keyboard-aware body portal, scroll bounds, and touch-pan guard. The textarea remains focused after selection.
