@@ -16,6 +16,7 @@ import { NativeGuiError, type NativeGuiErrorCode } from './native-errors';
 import type { ViewExportAPI } from '@/lib/view-export/types';
 import { GuiViewExports, isViewExportContract } from './view-export';
 import { createGuiToasts } from './toast';
+import { saveGuiFile } from './save';
 import { createPreviewActions, PREVIEW_ACTIONS_CONTRACT, PreviewActionsContext } from './preview-actions';
 import type { toast } from 'sonner';
 
@@ -360,7 +361,7 @@ export class GuiPluginHost {
             system: {
                 copy: (text) => navigator.clipboard.writeText(text),
                 openExternal: (url) => { const parsed = new URL(url); if (!['https:', 'http:', 'mailto:'].includes(parsed.protocol)) unsupported('system.openExternal protocol'); window.open(url, '_blank', 'noopener,noreferrer'); },
-                save: async (file) => { const url = URL.createObjectURL(new Blob([file.content], { type: 'text/plain' })); try { const link = document.createElement('a'); link.href = url; link.download = file.name; link.click(); return true; } finally { setTimeout(() => URL.revokeObjectURL(url), 0); } },
+                save: saveGuiFile,
             },
             commands: { run: (key) => { if (instance.controller.signal.aborted || !this.command(key)) return false; void this.runCommand(key); return true; } },
             links: { open: (link) => !instance.controller.signal.aborted && this.navigateLink(instance, link), exists: (link) => untrack(() => { if (instance.controller.signal.aborted) return false; const handler = this.linkHandler(link); try { return Promise.resolve(handler?.value.exists?.(link) ?? false).catch(() => false); } catch { return false; } }) },

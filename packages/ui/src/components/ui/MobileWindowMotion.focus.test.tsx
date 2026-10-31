@@ -66,6 +66,23 @@ async function tap(element: HTMLElement) {
 }
 
 describe('mobile model picker focus through Settings hosts', () => {
+  test('keeps initial focus outside interactive descendants without focusing a field or resize handle', async () => {
+    await act(async () => root.render(<MobileResizableSheet id="export-menu" open onOpenChange={() => undefined}
+      ariaLabel="File preview" closeAriaLabel="Close" resizeAriaLabel="Resize">
+      <details open><summary>Export</summary><button>Export PDF</button></details>
+      <input />
+    </MobileResizableSheet>));
+    const surface = document.querySelector<HTMLElement>('[data-yuri-motion-id="export-menu"]')!;
+    const button = surface.querySelector('button:not([data-mobile-sheet-snap-handle])')!;
+    // iOS retargets taps on details descendants to a tabindex-bearing ancestor.
+    expect(button.closest('[tabindex]')).toBeNull();
+    const initial = document.activeElement as HTMLElement;
+    expect(surface.contains(initial)).toBe(true);
+    expect(initial.tabIndex).toBe(-1);
+    expect(initial.contains(button)).toBe(false);
+    expect(initial.matches('input, [data-mobile-sheet-snap-handle]')).toBe(false);
+  });
+
   test('composer capture permits native focus in a portaled picker while guarding its own toolbar', async () => {
     await act(async () => root.render(<I18nProvider><Host kind="composer" /></I18nProvider>));
     const trigger = document.querySelector<HTMLElement>('[data-testid="model-trigger"]')!;

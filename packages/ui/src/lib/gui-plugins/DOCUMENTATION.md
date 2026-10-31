@@ -12,6 +12,7 @@
 - `native.ts` 负责窗口 IPC codec、响应式 state/live、事件与取消；`native-types.ts` 定义 preload 消息契约。`main-modules.mjs` 仅导出 main 进程使用的固定 ABI 共享模块映射，由 Electron 打包；原生求值、可信代码获取、调用授权与生命周期归 `packages/electron/gui-plugin-host.mjs`，不能导入 renderer bundle。
 - `view-export.ts` 将当前客户端容器的两个 GSAPI 发布为宿主保留的 `yuri.exportPDF`、`yuri.exportLongImage` Contract。实现与跨端传输归 `lib/view-export`；通过 `RuntimeAPIs.viewExport` 注入，不改 `ctx.client`、官方 OpenAPI 或插件 main/IPC。
 - `toast.ts` 实现官方窗口 `ctx.toast` 的纯文本子集；Provider 注入现有全局 Sonner，不创建插件容器、远端调用或 OS 通知。
+- `save.ts` 实现官方 `ctx.system.save` 的客户端文件保存：Capacitor iOS/Android 复用 `YuriMedia.saveFile` 系统文件选择器，按 UTF-8 编码，限制 32 MiB，确认保存后返回 true、取消返回 false、失败拒绝；缺少原生实现明确 unsupported。Web/hosted mobile/Electron/VS Code 保留浏览器下载，不访问连接 Host 的文件路径。这不开放插件 main/IPC，也不依赖 LAN/Relay。
 
 官方 npm SDK 2.2.0 没有公开 `gui/host` 导出。Yuri 的受控依赖 patch 只开放 `gui/yuri-host` 内部 context，让 host 与官方 `usePlugin` / `bindPlugin` 共用真实 `PluginContext`、`PanelContext` 和 lifetime。它是**宿主实现细节**，第三方插件始终只 import 官方公开 SDK。升级 SDK 必须重新验证 patch 与单实例 Solid 语义。
 

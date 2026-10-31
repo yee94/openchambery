@@ -164,7 +164,7 @@ describe('MobileWindowMotion recipe', () => {
     expect(modelControlsSource).toContain('<MobileResizableSheet');
     expect(modelControlsSource).toContain('<ScrollableOverlay');
     expect(mobileWindowMotionSource).toContain("className={cn('yuri-mobile-floating-shell'");
-    expect(mobileWindowMotionSource).toContain("surface?.focus({ preventScroll: true })");
+    expect(mobileWindowMotionSource).toContain("initialFocusRef.current?.focus({ preventScroll: true })");
     expect(mobileWindowMotionSource).not.toContain("(surface?.querySelector<HTMLElement>(FOCUSABLE) ?? surface)?.focus()");
   });
 

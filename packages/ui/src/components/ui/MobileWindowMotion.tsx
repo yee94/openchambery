@@ -78,6 +78,7 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
   const overlayRootRef = React.useRef<HTMLElement | null>(null);
   const scrimRef = React.useRef<HTMLDivElement | null>(null);
   const surfaceRef = React.useRef<HTMLDivElement | null>(null);
+  const initialFocusRef = React.useRef<HTMLSpanElement | null>(null);
   const openRef = React.useRef(open);
   const onOpenChangeRef = React.useRef(onOpenChange);
   const onExitCompleteRef = React.useRef(onExitComplete);
@@ -250,17 +251,18 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
     if (!active || isPreview || !isTop) return;
     const surface = surfaceRef.current;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    // Keep initial focus on the surface shell. Auto-focusing the first FOCUSABLE
+    // Keep initial focus on a separate anchor. Auto-focusing the first FOCUSABLE
     // hits the resize handle (`tabIndex={0}`) or a random button, and re-running
     // this effect (stack top churn) would steal focus from the search field mid-tap.
-    surface?.focus({ preventScroll: true });
+    initialFocusRef.current?.focus({ preventScroll: true });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') mobileWindowStack.closeTop();
       if (event.key !== 'Tab' || !surface) return;
       const focusable = Array.from(surface.querySelectorAll<HTMLElement>(FOCUSABLE))
         .filter((element) => !element.closest('[data-mobile-sheet-snap-handle]'));
-      const first = focusable[0] ?? surface;
-      const last = focusable.at(-1) ?? surface;
+      const first = focusable[0] ?? initialFocusRef.current;
+      const last = focusable.at(-1) ?? initialFocusRef.current;
+      if (!first || !last) return;
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus({ preventScroll: true });
@@ -391,7 +393,8 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
         onOpenChangeRef.current(false);
       }}
     >
-      <div ref={setSurfaceRef} tabIndex={-1} className={cn('yuri-mobile-floating-shell', getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} data-yuri-motion-id={id} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
+      <div ref={setSurfaceRef} className={cn('yuri-mobile-floating-shell', getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} data-yuri-motion-id={id} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
+        <span ref={initialFocusRef} tabIndex={-1} className="sr-only" role="group" aria-label={ariaLabel} />
         <MobileWindowActiveContext.Provider value={isTop}>
           {children}
         </MobileWindowActiveContext.Provider>

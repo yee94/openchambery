@@ -5,8 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { dict as en } from '@/lib/i18n/messages/en';
 import { dict as zh } from '@/lib/i18n/messages/zh-CN';
 import { AboutSettings } from './AboutSettings';
+import type { RuntimeEndpointChangedDetail } from '@/lib/runtime-switch';
 
-const fixture = vi.hoisted(() => ({ locale: 'en', transport: 'host-a', generation: 1, mobile: false, native: false, nativeConfig: vi.fn(), fetch: vi.fn(), listeners: new Set<() => void>() }));
+const fixture = vi.hoisted(() => ({ locale: 'en', transport: 'host-a', generation: 1, mobile: false, native: false, nativeConfig: vi.fn(), fetch: vi.fn(), listeners: new Set<(detail: RuntimeEndpointChangedDetail) => void>() }));
 vi.mock('@/lib/i18n', () => ({ getCurrentIntlLocale: () => 'en-US', useI18n: () => ({ t: (key: keyof typeof en, params?: Record<string, string>) => {
   let text: string = (fixture.locale === 'en' ? en : zh)[key] ?? key;
   for (const [name, value] of Object.entries(params ?? {})) text = text.replace(`{${name}}`, value);
@@ -20,7 +21,7 @@ vi.mock('@/lib/runtime-switch', async (importOriginal) => ({
   getRuntimeGeneration: () => fixture.generation,
   getRuntimeKey: () => fixture.transport,
   getRuntimeApiBaseUrl: () => 'http://127.0.0.1:4096',
-  subscribeRuntimeEndpointChanged: (listener: () => void) => { fixture.listeners.add(listener); return () => fixture.listeners.delete(listener); },
+  subscribeRuntimeEndpointChanged: (listener: (detail: RuntimeEndpointChangedDetail) => void) => { fixture.listeners.add(listener); return () => fixture.listeners.delete(listener); },
 }));
 vi.mock('@/stores/useUpdateStore', () => ({ useUpdateStore: (select: (state: unknown) => unknown) => select({ checking: false, available: false }) }));
 vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (state: unknown) => unknown) => select({ otaChannelOverride: null }) }));
