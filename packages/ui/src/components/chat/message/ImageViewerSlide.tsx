@@ -62,7 +62,7 @@ export function ImageViewerSlide({ url, directory, label, active, returnToSource
             data-preview-transition-target={active ? '' : undefined}
             data-preview-return={returnToSource}
             src={source || undefined} alt={active ? label : ''}
-            className={`block max-w-none object-contain will-change-transform ${active ? 'pointer-events-auto' : ''} ${loaded ? 'opacity-100' : 'opacity-0'}`}
+            className={`block max-w-none touch-none object-contain will-change-transform ${active ? 'pointer-events-auto' : ''} ${loaded ? 'opacity-100' : 'opacity-0'}`}
             style={{ width: `${size.width}px`, height: `${size.height}px` }}
             loading="eager" draggable={false}
             onLoad={(event) => {

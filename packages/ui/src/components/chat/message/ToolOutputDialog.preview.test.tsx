@@ -401,6 +401,14 @@ test('a touch during the release spring catches the track at its current offset 
   expect(viewer.close).not.toHaveBeenCalled();
 });
 
+test('mobile canvas blocks native touch panning so Android cannot pointercancel the drag', async () => {
+  const viewer = await openGestureViewer(1);
+  const move = new Event('touchmove', { bubbles: true, cancelable: true });
+  viewer.canvas.dispatchEvent(move);
+  expect(move.defaultPrevented).toBe(true);
+  expect(document.querySelector('[data-preview-transition-target]')?.classList.contains('touch-none')).toBe(true);
+});
+
 test('a diagonal downward drag still enters pull-to-dismiss', async () => {
   const viewer = await openGestureViewer();
   await viewer.pointer('pointerdown', 200, 200);

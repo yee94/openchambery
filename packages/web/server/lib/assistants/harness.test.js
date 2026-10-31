@@ -907,6 +907,7 @@ describe('runContactTurn', () => {
       expect(options.initialState.systemPrompt).toContain('project-skill')
       expect(options.initialState.systemPrompt).toContain('claude-skill')
       expect(options.initialState.systemPrompt).toContain('global-skill')
+      expect(options.initialState.systemPrompt).toContain('Connected OpenCode built-in skill: fixture instructions')
       expect(options.initialState.systemPrompt).toContain('Never say you have no terminal')
       this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Ready.' }] }] }
       this.prompt = async () => {}
@@ -923,6 +924,7 @@ describe('runContactTurn', () => {
         userText: 'pwd',
         createChatCompletion: vi.fn(),
         skillHomeDir: home,
+        openCodeContext: 'Connected OpenCode built-in skill: fixture instructions',
         AgentImpl,
       })
       expect(result.bubbles).toEqual(['Ready.'])
@@ -1768,6 +1770,7 @@ describe('read-only worker notifications', () => {
       await runContactTurn({
         assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
         readOnly: true,
+        openCodeContext: 'Connected OpenCode built-in skill: interactive CLI context',
         history: [
           { role: 'user', content: '已经完成，够了不要再开会话' },
           { role: 'assistant', content: '[Yuri card context: {"sessionID":"ses_exact","status":"complete"}]' },
@@ -1779,6 +1782,7 @@ describe('read-only worker notifications', () => {
       const payload = JSON.stringify(completions[0])
       expect(payload).toContain('已经完成，够了不要再开会话')
       expect(payload).toContain('ses_exact')
+      expect(payload).not.toContain('interactive CLI context')
       // Tool schemas, not explanatory system-prompt vocabulary, determine capabilities.
       expect(payload).not.toContain('"path": {')
       expect(mutation).not.toHaveBeenCalled()

@@ -92,6 +92,7 @@ const createV2Client = (overrides = {}) => {
     },
     provider: { list: providerList, ...(provider || {}) },
     model: { list: modelList, ...(overrides.model || {}) },
+    ...(overrides.skill ? { skill: overrides.skill } : {}),
     ...(config ? { config } : {}),
   };
 };
@@ -3499,6 +3500,74 @@ describe('assistants service', () => {
       expect(await service.reportScheduledTaskResult(run)).toBe(true);
       expect(backgroundTurns).toHaveLength(1);
       expect(await service.reportScheduledTaskResult({ ...run, id: 'foreign', projectId: 'other' })).toBe(false);
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('injects the connected built-in OpenCode skill into real model context without adding tools', async () => {
+    const directory = root();
+    let skillContent = 'Use the existing OpenCode API for live execution status.';
+    let server = 'upstream.example.test';
+    const list = vi.fn(async () => ({ data: [
+      { id: 'other', path: '<built-in>', content: 'Unrelated skill content' },
+      { id: 'opencode', path: '/custom/SKILL.md', content: 'Not the built-in skill' },
+      { id: 'opencode', path: '<built-in>', content: skillContent },
+    ] }));
+    const createChatCompletion = vi.fn(async ({ body }) => {
+      const system = body.messages.find((message) => message.role === 'system').content;
+      expect(system).toContain(`Connected OpenCode built-in skill:\n${skillContent}`);
+      expect(system).toContain('opencode api --server');
+      expect(system).toContain(`https://${server}/prefix`);
+      expect(system).toContain('GET /api/session/active');
+      expect(system).not.toContain('Unrelated skill content');
+      expect(system).not.toContain('Not the built-in skill');
+      expect(system).not.toContain('secret');
+      expect(body.tools.map((tool) => tool.function.name).filter((name) => /opencode|api/iu.test(name))).toEqual([]);
+      return { text: 'Checked the available OpenCode context.' };
+    });
+    const service = setup(directory, { skill: { list } }, {
+      buildOpenCodeUrl: () => `https://user:secret@${server}/prefix/?token=secret#secret`,
+      runContactTurn: realRunContactTurn,
+      createChatCompletion,
+    });
+    try {
+      const assistant = service.createAssistant(assistantInput);
+      const first = await settleSend(service, assistant.id, { messageID: 'context-1', text: '看看正在运行的任务' });
+      expect(first.settled.status).toBe('complete');
+      skillContent = 'Updated upstream skill instructions.';
+      server = 'second.example.test';
+      const second = await settleSend(service, assistant.id, { messageID: 'context-2', text: '再看看' });
+      expect(second.settled.status).toBe('complete');
+      expect(list).toHaveBeenCalledTimes(2);
+      expect(list.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+      expect(createChatCompletion).toHaveBeenCalledTimes(2);
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['missing', 'failed', 'malformed'])('keeps OpenCode capability discovery available when its skill is %s', async (kind) => {
+    const directory = root();
+    const list = vi.fn(async () => {
+      if (kind === 'failed') throw new Error('secret upstream detail');
+      return { data: kind === 'malformed' ? null : [] };
+    });
+    const runContactTurn = vi.fn(async ({ openCodeContext }) => {
+      expect(openCodeContext).toContain('OpenCode capabilities are available');
+      expect(openCodeContext).toContain('https://opencode.ai/v2/docs/');
+      expect(openCodeContext).not.toContain('secret upstream detail');
+      expect(openCodeContext).toContain(kind === 'missing' ? 'did not include' : 'could not be loaded');
+      return { bubbles: ['Available context checked.'] };
+    });
+    const service = setup(directory, { skill: { list } }, { runContactTurn });
+    try {
+      const assistant = service.createAssistant(assistantInput);
+      const sent = await settleSend(service, assistant.id, { messageID: 'context-fallback', text: '任务进度如何' });
+      expect(sent.settled.status).toBe('complete');
+      expect(runContactTurn).toHaveBeenCalledTimes(1);
     } finally {
       service.close();
       fs.rmSync(directory, { recursive: true, force: true });

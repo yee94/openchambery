@@ -185,6 +185,18 @@ The in-app Assistant is an Yuri-owned **contact**. OpenCode is only the LLM gate
 
 User contact turns retain the Yuri operation tools alongside the four
 pi tools. Skill discovery contributes instructions to this combined tool set.
+Interactive turns also read the connected OpenCode `skill.list` catalog and inject
+the built-in `opencode` skill content directly (its `<built-in>` path is not a local
+file). The context identifies the connected server without credentials and explains
+using the existing `bash` tool with `opencode api --server` and the live OpenAPI
+contract for OpenCode capabilities beyond the contact tools. Current progress uses
+live session activity, never index update times as proof of running or completion.
+Existing contact operations remain preferred for their cards and follow-up.
+Catalog reads have a bounded deadline and turn cancellation; missing/failed skill
+reads remain explicit unknown context with a V2 docs discovery path, not an empty
+capability claim. No extra operation tools, API routes, global config changes or
+OpenCode Agent loop are added. Read-only background reviews receive neither this
+CLI context nor shell tools. All Host-backed surfaces share this server path.
 Assignment intent includes “建个会话” and “再建个会话”. Watch intent includes
 “监听会话”; stop intent includes “停止会话”. The single missed-call
 retry checks for a result from a requested operation tool; a `read` result alone

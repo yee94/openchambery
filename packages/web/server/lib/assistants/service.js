@@ -444,6 +444,34 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
       authHeaders: getOpenCodeAuthHeaders(),
     });
+  const loadContactOpenCodeContext = async (signal) => {
+    const url = new URL(buildOpenCodeUrl('/', ''));
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    const context = [
+      'OpenCode capabilities are available through your existing bash tool and the OpenCode CLI/API; no additional native tool names are needed.',
+      `Connected OpenCode server: ${JSON.stringify(url.href.replace(/\/$/, ''))}. Target this server with opencode api --server <url>, using the existing authentication context. Do not fall back to a different local service if connection or authentication fails. Never expose credentials.`,
+      'Read the OpenCode skill below before using OpenCode capabilities. Use opencode api --help and the connected server OpenAPI contract to discover operations and arguments, rather than guessing.',
+      'For current work, GET /api/session/active provides live activity; inspect the relevant sessions and messages for progress. Session-index titles, update times and historical messages alone do not prove that a session is running or finished. A failed live read means unknown, not idle.',
+      'OpenCode capabilities are not limited to the Yuri contact tool list. Use the documented CLI/API for other requested operations, retaining user authorization, permission confirmations and this turn\'s constraints. Prefer the existing Yuri tools for assignment, watches and other contact-owned operations so their cards and follow-up stay intact.',
+    ];
+    try {
+      const result = await client().skill.list(undefined, {
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(CONTACT_CATALOG_DEADLINE_MS)]) : AbortSignal.timeout(CONTACT_CATALOG_DEADLINE_MS),
+      });
+      if (!Array.isArray(result?.data)) throw new Error('skill_catalog_unavailable');
+      const skill = result.data.find((item) => item?.id === 'opencode' && item?.path === '<built-in>');
+      context.push(typeof skill?.content === 'string' && skill.content.trim()
+        ? `Connected OpenCode built-in skill:\n${skill.content.trim()}`
+        : 'The connected catalog did not include the built-in OpenCode skill. Consult https://opencode.ai/v2/docs/ and discover the current CLI/API contract before use.');
+    } catch {
+      signal?.throwIfAborted();
+      context.push('The built-in OpenCode skill could not be loaded this turn (unknown, not an empty capability catalog). Consult https://opencode.ai/v2/docs/ and verify CLI/API availability before use.');
+    }
+    return context.join('\n\n');
+  };
   const metadata = (row) => buildAssistantSessionMetadata({
     assistantID: row.assistant_id,
     name: row.name,
@@ -3397,6 +3425,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           const generated = await runContactTurn({
             signal: controller.signal,
             assistant: assistantSnapshot,
+            openCodeContext: await loadContactOpenCodeContext(controller.signal),
             history: executionHistory,
             userText,
             userParts: executionParts,
