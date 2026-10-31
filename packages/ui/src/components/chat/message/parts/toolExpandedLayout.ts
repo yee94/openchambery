@@ -11,13 +11,13 @@ export const getToolExpandedContentClassName = (
     }
 
     if (isMobile) {
-        return `relative flex min-w-0 flex-col ${compactGap ? 'gap-1' : 'gap-2'} py-2`;
+        return `relative flex min-w-0 flex-col ${compactGap ? 'gap-0.5' : 'gap-1'} py-1`;
     }
 
-    return 'relative flex flex-col gap-2 pr-2 pb-2 pt-2 pl-4';
+    return 'relative flex min-w-0 flex-col gap-1 py-1 pr-1 pl-2';
 };
 
 export const getToolScrollableSectionPaddingClassName = (isMobile: boolean): string =>
-    isMobile ? 'p-0' : 'p-2';
+    isMobile ? 'p-0' : 'p-1';
 
 export const MOBILE_SHELL_CODE_LINE_HEIGHT = '1.25rem';

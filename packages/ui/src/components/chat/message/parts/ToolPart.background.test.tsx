@@ -39,6 +39,29 @@ let root: ReturnType<typeof createRoot> | undefined;
 afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks(); });
 afterAll(() => { vi.unstubAllGlobals(); });
 
+test.each([false, true])('expanded tool JSON output uses one collapsed code preview (mobile=%s)', async (isMobile) => {
+    live.store = createStore(() => ({ status: { type: 'idle' } as SessionStatus }));
+    live.messages = [];
+    const host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    const part = {
+        id: 'tool-json', sessionID: 'ses_parent', messageID: 'msg_parent',
+        type: 'tool', tool: 'execute', callID: 'call-json',
+        state: {
+            status: 'completed', input: {}, metadata: {},
+            output: '[{"base":"https://example.invalid","activeVersion":"0.2.18"}]',
+            title: 'Execute', time: { start: 100, end: 110 },
+        },
+    } as ToolPartType;
+    await act(async () => root!.render(<ToolPart part={part} isExpanded onToggle={() => {}} isMobile={isMobile} />));
+    const preview = host.querySelector('[data-tool-json-preview]')!;
+    expect(preview).not.toBeNull();
+    expect(preview.querySelectorAll('button')).toHaveLength(1);
+    expect(preview.textContent).toContain('activeVersion');
+    expect(host.querySelector('[data-highlighted-output]')).toBeNull();
+});
+
 test.each([false, true])('shell display drops trailing blank lines without changing raw output (mobile=%s)', async (isMobile) => {
     live.store = createStore(() => ({ status: { type: 'idle' } as SessionStatus }));
     live.messages = [];

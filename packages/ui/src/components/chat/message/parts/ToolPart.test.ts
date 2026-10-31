@@ -213,15 +213,15 @@ describe('shared todo list layout', () => {
 describe('shared expanded tool layout', () => {
     test('all mobile tool content uses the compact Todo boundary and scroll padding', () => {
         expect(TOOL_EXPANDED_TIMELINE_CLASS_NAME).toBe('relative ml-2 pl-3');
-        expect(getToolExpandedContentClassName(true)).toBe('relative flex min-w-0 flex-col gap-2 py-2');
+        expect(getToolExpandedContentClassName(true)).toBe('relative flex min-w-0 flex-col gap-1 py-1');
         expect(getToolExpandedContentClassName(true, 'todo')).toBe('relative flex min-w-0 flex-col gap-1 py-0.5');
         expect(getToolScrollableSectionPaddingClassName(true)).toBe('p-0');
     });
 
-    test('desktop layout stays unchanged and mobile Shell uses compact rhythm', () => {
-        expect(getToolExpandedContentClassName(false)).toBe('relative flex flex-col gap-2 pr-2 pb-2 pt-2 pl-4');
-        expect(getToolScrollableSectionPaddingClassName(false)).toBe('p-2');
-        expect(getToolExpandedContentClassName(true, 'default', true)).toContain('gap-1');
+    test('desktop and mobile use compact token spacing and Shell keeps its tighter rhythm', () => {
+        expect(getToolExpandedContentClassName(false)).toBe('relative flex min-w-0 flex-col gap-1 py-1 pr-1 pl-2');
+        expect(getToolScrollableSectionPaddingClassName(false)).toBe('p-1');
+        expect(getToolExpandedContentClassName(true, 'default', true)).toContain('gap-0.5');
         expect(MOBILE_SHELL_CODE_LINE_HEIGHT).toBe('1.25rem');
     });
 });
