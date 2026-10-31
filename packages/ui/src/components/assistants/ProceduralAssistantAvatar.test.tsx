@@ -225,7 +225,7 @@ test('motion-off navigation images keep opaque eye colors separate in the artwor
 test('small static and live avatars share the fitted artboard without a rounding mask', async () => {
   const seed = encodeAssistantAvatar({ ...resolveAssistantAvatar('framing'), shape: 'square' });
   const expected = assistantAvatarArtboard(resolveAssistantAvatar(seed)).viewBox;
-  for (const size of [16, 28, 36, 44]) {
+  for (const size of [16, 28, 32, 36, 44]) {
     await act(async () => root.render(<AgentAvatar kind="assistant" name={seed} size={size} />));
     const container = host.querySelector<HTMLElement>('[data-procedural-avatar]')!;
     expect(container.className).not.toContain('rounded-');

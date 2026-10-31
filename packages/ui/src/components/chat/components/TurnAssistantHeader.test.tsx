@@ -83,6 +83,43 @@ const bareAssistant = (sessionID: string, id: string) => entry({
 });
 
 describe('TurnAssistantHeader identity priority', () => {
+  test.each([
+    [false, 'assistant-model'], [true, 'assistant-model'],
+    [false, 'uncatalogued-model'], [true, 'uncatalogued-model'],
+  ] as const)('uses assistant thinking intensity without requiring catalog variants (mobile=%s, model=%s)', (isMobile, modelID) => {
+    const html = renderToStaticMarkup(
+      <TurnAssistantHeader
+        assistantMessage={entry({
+          id: 'assistant-variant', sessionID: 'session-1', role: 'assistant',
+          model: { providerID: 'assistant-provider', modelID, variant: 'high' },
+        })}
+        userMessage={entry({
+          id: 'user-variant', sessionID: 'session-1', role: 'user',
+          model: { providerID: 'assistant-provider', modelID, variant: 'low' },
+        })}
+        assistantIsInActiveTurn={false}
+        isMobile={isMobile}
+      />,
+    );
+    expect(html).toContain('High');
+    expect(html).not.toContain('Low');
+  });
+
+  test('shows assistant thinking intensity when the user history has no model metadata', () => {
+    const html = renderToStaticMarkup(
+      <TurnAssistantHeader
+        assistantMessage={entry({
+          id: 'assistant-only-variant', sessionID: 'session-1', role: 'assistant',
+          model: { providerID: 'assistant-provider', modelID: 'assistant-model', variant: 'high' },
+        })}
+        userMessage={bareUser('session-1')}
+        assistantIsInActiveTurn={false}
+        isMobile={false}
+      />,
+    );
+    expect(html).toContain('High');
+  });
+
   test('assistant execution identity wins and catalog display name plus variant remain available', () => {
     const html = renderToStaticMarkup(
       <TurnAssistantHeader

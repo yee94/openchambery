@@ -648,18 +648,18 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                   data-assistant-contact-run-start={message.role === 'assistant' && !sameAssistantRun ? '' : undefined}
                 >
                   {!isUser ? (
-                    <div className="mr-2.5 flex w-8 shrink-0 justify-center pt-0.5">
+                    <div className="mr-2.5 flex w-9 shrink-0 justify-center pt-0.5">
                       {showAvatar ? (
                         <AssistantWorkingAvatar
                           name={sender?.id || message.fromAssistantID || assistant.id}
                           avatarSeed={sender?.avatarSeed ?? (message.fromAssistantID ? undefined : assistant.avatarSeed)}
-                          size={28}
+                          size={32}
                           label={senderName}
                           working={active ? Boolean(sender?.working || sender?.activeContactTurn) : undefined}
                           showWorkingDot={false}
                         />
                       ) : (
-                        <span className="size-7" aria-hidden />
+                        <span className="size-8" aria-hidden />
                       )}
                     </div>
                   ) : null}
@@ -746,7 +746,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                 </React.Fragment>
               )
             })}
-            <div className="pointer-events-none absolute bottom-1 left-[2.625rem] flex h-10 items-center" data-assistant-contact-status-slot="">
+            <div className="pointer-events-none absolute bottom-1 left-[2.875rem] flex h-10 items-center" data-assistant-contact-status-slot="">
               {!sending && sendFlight?.scope !== entryScope && (processing || serverWorking) ? (
                 <motion.div
                   role="status"
@@ -757,11 +757,11 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                   className="relative inline-flex h-9 origin-bottom-left items-center gap-1 rounded-[1.35rem] bg-[var(--surface-muted)] px-4 text-muted-foreground/70"
                   data-assistant-contact-processing=""
                 >
-                  <div className="absolute -left-[2.625rem] top-0.5 flex w-8 justify-center" data-assistant-contact-processing-avatar="">
+                  <div className="absolute -left-[2.875rem] top-0.5 flex w-9 justify-center" data-assistant-contact-processing-avatar="">
                     <AssistantWorkingAvatar
                       name={assistant.id}
                       avatarSeed={assistant.avatarSeed}
-                      size={28}
+                      size={32}
                       label={displayName}
                       working={active ? serverWorking : undefined}
                       showWorkingDot={false}

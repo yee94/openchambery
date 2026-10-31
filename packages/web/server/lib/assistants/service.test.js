@@ -93,6 +93,7 @@ const createV2Client = (overrides = {}) => {
     provider: { list: providerList, ...(provider || {}) },
     model: { list: modelList, ...(overrides.model || {}) },
     ...(overrides.skill ? { skill: overrides.skill } : {}),
+    ...(overrides.websearch ? { websearch: overrides.websearch } : {}),
     ...(config ? { config } : {}),
   };
 };
@@ -3506,25 +3507,64 @@ describe('assistants service', () => {
     }
   });
 
-  it('injects the connected built-in OpenCode skill into real model context without adding tools', async () => {
+  it('runs direct search and live-status tools end to end through contact send without opening a worker', async () => {
+    const directory = root();
+    const query = vi.fn(async () => ({ data: { providerID: 'exa', results: [{ url: 'https://example.test/repository', title: 'Repository evidence', content: 'Actual online findings' }] } }));
+    const active = vi.fn(async () => ({ ses_running: { type: 'running' } }));
+    const create = vi.fn();
+    let round = 0;
+    const service = setup(directory, { create, active, websearch: { query } }, {
+      runContactTurn: realRunContactTurn,
+      createChatCompletion: async ({ body }) => {
+        round++;
+        if (round === 1) return toolBatch([['websearch', { query: 'site:github.com client', providerID: 'exa' }, 'search-live']]);
+        if (round === 2) {
+          expect(body.messages.find((message) => message.tool_call_id === 'search-live')?.content).toContain('Actual online findings');
+          return toolBatch([['list_active_sessions', {}, 'status-live']]);
+        }
+        expect(body.messages.find((message) => message.tool_call_id === 'status-live')?.content).toContain('ses_running');
+        return { text: '已检索来源并查询实时任务。' };
+      },
+    });
+    try {
+      const assistant = service.createAssistant({ ...assistantInput, workspacePath: directory });
+      const sent = await settleSend(service, assistant.id, { messageID: 'direct-tools', text: '联网查一下，并看看任务是否仍在运行' });
+      expect(sent.settled.status).toBe('complete');
+      expect(service.contactMessages(assistant.id).messages.at(-1).text).toBe('已检索来源并查询实时任务。');
+      expect(query).toHaveBeenCalledWith({ location: { directory: fs.realpathSync(directory) }, query: 'site:github.com client', providerID: 'exa' }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+      expect(active).toHaveBeenCalledTimes(1);
+      expect(create).not.toHaveBeenCalled();
+      expect(round).toBe(3);
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['/builtin/opencode.md', '<built-in>'])('injects the connected built-in OpenCode skill at %s alongside direct SDK tools', async (builtinPath) => {
     const directory = root();
     let skillContent = 'Use the existing OpenCode API for live execution status.';
     let server = 'upstream.example.test';
     const list = vi.fn(async () => ({ data: [
       { id: 'other', path: '<built-in>', content: 'Unrelated skill content' },
       { id: 'opencode', path: '/custom/SKILL.md', content: 'Not the built-in skill' },
-      { id: 'opencode', path: '<built-in>', content: skillContent },
+      { id: 'opencode', path: builtinPath, content: skillContent },
     ] }));
     const createChatCompletion = vi.fn(async ({ body }) => {
       const system = body.messages.find((message) => message.role === 'system').content;
       expect(system).toContain(`Connected OpenCode built-in skill:\n${skillContent}`);
-      expect(system).toContain('opencode api --server');
+      expect(system).toContain('use opencode api without --server');
+      expect(system).toContain('First compare opencode service status');
+      expect(system).toContain('there is no universal tool-call endpoint');
+      expect(system).toContain('POST /api/websearch');
+      expect(system).toContain('assign the task to an OpenCode worker session');
+      expect(system).toContain('Only claim a lookup or search after receiving its real results');
       expect(system).toContain(`https://${server}/prefix`);
       expect(system).toContain('GET /api/session/active');
       expect(system).not.toContain('Unrelated skill content');
       expect(system).not.toContain('Not the built-in skill');
       expect(system).not.toContain('secret');
-      expect(body.tools.map((tool) => tool.function.name).filter((name) => /opencode|api/iu.test(name))).toEqual([]);
+      expect(body.tools.map((tool) => tool.function.name)).toEqual(expect.arrayContaining(['websearch', 'list_websearch_providers', 'list_active_sessions', 'list_opencode_capabilities', 'read_opencode_skill']));
       return { text: 'Checked the available OpenCode context.' };
     });
     const service = setup(directory, { skill: { list } }, {

@@ -30,8 +30,8 @@ describe('MessageHeader', () => {
     expect(renderHeader(false)).toContain('High');
   });
 
-  test('hides thinking intensity on mobile', () => {
-    expect(renderHeader(true)).not.toContain('High');
+  test('shows non-default thinking intensity on mobile', () => {
+    expect(renderHeader(true)).toContain('High');
   });
 
   test('mobile model name keeps typography-ui-header so it rides --text-ui-header', () => {

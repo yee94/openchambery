@@ -641,6 +641,8 @@ Chat settings expose `questionAutoDelegateEnabled` (default true) through the ex
 
 Focused coverage: `QuestionCard.autoDelegate.test.tsx`, `QuestionCard.customTextarea.test.tsx`, `lib/questionAutoDelegate.test.ts`, and `sections/yuri/QuestionAutoDelegateSetting.test.tsx`. Browser/native visual, network, and bridge integration require their owning runtime checks.
 
+Assistant model headers show recorded non-default thinking intensity on desktop and mobile. Both turn-owned and standalone headers prefer the assistant execution message's `model.variant`, falling back to stamped user/pending metadata only when absent. Historical variants do not depend on the current model catalog or composer selection; missing values and `default` remain hidden. Projection-to-render coverage includes assistant history arriving before its user row and an unavailable model catalog.
+
 The first-prompt establishing draft uses the same overlay Composer foot and swap scope as the final transcript. The idle draft keeps the in-flow Composer contract.
 
 `ChatPromptComposer` inline layout keeps a 48px single-line rail and always measures the textarea `scrollHeight`, including soft wrapping with no authored newline. Wrapped or explicit multiline content grows with 24px line-height and 12px vertical padding up to `max-h-32`; overflow then scrolls inside the textarea. A measured height above 48px bottom-aligns the fixed 48px attach/send rails, while compact inline consumers retain centered controls at the idle height.

@@ -654,6 +654,24 @@ describe('new conversation assistant header continuity', () => {
     expect(container.querySelectorAll('h3')).toHaveLength(1);
   });
 
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('keeps wire thinking intensity before and after user history arrives without a model catalog (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    const reply = normalizeSessionProjectionMessage(sessionID, {
+      id: 'assistant-1', type: 'assistant', agent: 'build',
+      model: { id: 'gpt-5.6', providerID: 'openai', variant: 'high' },
+      time: { created: 2, completed: 10 }, finish: 'stop',
+      content: [{ type: 'text', text: 'Recorded reply' }],
+    });
+    expect(reply).not.toBeNull();
+    await renderMessages([reply!], false);
+    expect(container.querySelector('h3')?.textContent).toContain('High');
+    await renderMessages([userMessage(), reply!], false);
+    expect(container.querySelector('h3')?.textContent).toContain('High');
+  });
+
   test.each(['live', 'sorted'] as const)('renders an execution failure inside its turn below the model header (%s)', async (mode) => {
     mocks.uiState.chatRenderMode = mode;
     mocks.errorAt = 100;

@@ -25,10 +25,9 @@ const resolveVariantSuffix = (variant?: string) => {
     return formatEffortLabel(trimmed);
 };
 
-const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, providerID, modelID, agentName, modelName, variant }) => {
-    // Mobile omits the suffix: per-turn variant is not in the message snapshot,
-    // so a local-only badge would disappear after switching devices.
-    const variantSuffix = !isUser && !isMobile ? resolveVariantSuffix(variant) : null;
+const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, modelID, agentName, modelName, variant }) => {
+    // Persisted message variants are available across devices and layouts.
+    const variantSuffix = !isUser ? resolveVariantSuffix(variant) : null;
     const displayModelName = modelName || 'Assistant';
 
     return (

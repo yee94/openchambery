@@ -430,23 +430,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return getProviderModelDisplayName(provider, stableModelID) || undefined;
     }, [isUser, stableProviderID, stableModelID, providers]);
 
-    const modelHasVariants = React.useMemo(() => {
-        if (isUser) return false;
-        if (!providerID || !modelID) return false;
-
-        const provider = providers.find((p) => p.id === providerID);
-        if (!provider?.models || !Array.isArray(provider.models)) {
-            return false;
-        }
-
-        const model = provider.models.find((m: Record<string, unknown>) => (m as Record<string, unknown>).id === modelID) as
-            | { variants?: Record<string, unknown> }
-            | undefined;
-
-        const variants = model?.variants;
-        return Boolean(variants && Object.keys(variants).length > 0);
-    }, [isUser, modelID, providerID, providers]);
-
     const displayAgentName = useStickyDisplayValue<string>(stableAgentName);
     const displayProviderIDValue = useStickyDisplayValue<string>(stableProviderID ?? undefined);
     const displayModelIDValue = useStickyDisplayValue<string>(stableModelID ?? undefined);
@@ -696,8 +679,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     // Only surface a non-empty thinking depth on the message header; default is hidden
     // (same rule as the composer model-label suffix — no dedicated thinking badge).
-    const headerVariantRaw = !isUser ? (turnGroupingContext?.userMessageVariant ?? previousUserMetadata?.variant) : undefined;
-    const headerVariant = !isUser && modelHasVariants && typeof headerVariantRaw === 'string' && headerVariantRaw.trim().length > 0
+    const headerVariantRaw = !isUser ? (messageIdentity?.variant ?? turnGroupingContext?.userMessageVariant ?? previousUserMetadata?.variant) : undefined;
+    const headerVariant = !isUser && typeof headerVariantRaw === 'string' && headerVariantRaw.trim().length > 0
         ? headerVariantRaw
         : undefined;
 

@@ -78,6 +78,8 @@ import {
   sanitizeAssignFileParts,
 } from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
+import { createOpenCodeContactTools } from './opencode-tools.js';
+import { resolveAssistantCwd } from './pi-tools.js';
 import { loadConnectedCatalog, parseModelRef } from '../llm/catalog.js';
 import { buildAssistantSessionMetadata } from '../session-metadata/system-session.js';
 
@@ -451,18 +453,20 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     url.search = '';
     url.hash = '';
     const context = [
-      'OpenCode capabilities are available through your existing bash tool and the OpenCode CLI/API; no additional native tool names are needed.',
-      `Connected OpenCode server: ${JSON.stringify(url.href.replace(/\/$/, ''))}. Target this server with opencode api --server <url>, using the existing authentication context. Do not fall back to a different local service if connection or authentication fails. Never expose credentials.`,
+      'OpenCode capabilities are available as direct tools: websearch, list_websearch_providers, list_active_sessions, list_opencode_capabilities and read_opencode_skill. Prefer these tools: the Host supplies current server authentication and workspace scope, without CLI discovery or another model round-trip. Existing read/write/edit/bash and session-management tools remain available.',
+      `Connected OpenCode server: ${JSON.stringify(url.href.replace(/\/$/, ''))}. First compare opencode service status with this server. When they match, use opencode api without --server so the CLI discovers the registered service authentication (for example: opencode api get /api/info). An explicit --server does not automatically reuse those credentials. For a different/external server, use only an already-configured authenticated connection; if unavailable, report the blocker rather than switching servers or exposing credentials.`,
       'Read the OpenCode skill below before using OpenCode capabilities. Use opencode api --help and the connected server OpenAPI contract to discover operations and arguments, rather than guessing.',
+      'For large CLI JSON responses such as /openapi.json or /api/skill, redirect output to a temporary file before parsing; piped CLI output may be truncated.',
       'For current work, GET /api/session/active provides live activity; inspect the relevant sessions and messages for progress. Session-index titles, update times and historical messages alone do not prove that a session is running or finished. A failed live read means unknown, not idle.',
       'OpenCode capabilities are not limited to the Yuri contact tool list. Use the documented CLI/API for other requested operations, retaining user authorization, permission confirmations and this turn\'s constraints. Prefer the existing Yuri tools for assignment, watches and other contact-owned operations so their cards and follow-up stay intact.',
+      'API access is not arbitrary native/MCP tool execution: there is no universal tool-call endpoint in the current API. Discover available web search providers with GET /api/websearch/provider, then POST /api/websearch with {"query":"...","providerID":"..."}; a listed provider can still fail. For native/MCP tools without an API operation, assign the task to an OpenCode worker session through assign_session. Only claim a lookup or search after receiving its real results; reading instructions or listing providers is not execution.',
     ];
     try {
       const result = await client().skill.list(undefined, {
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(CONTACT_CATALOG_DEADLINE_MS)]) : AbortSignal.timeout(CONTACT_CATALOG_DEADLINE_MS),
       });
       if (!Array.isArray(result?.data)) throw new Error('skill_catalog_unavailable');
-      const skill = result.data.find((item) => item?.id === 'opencode' && item?.path === '<built-in>');
+      const skill = result.data.find((item) => item?.id === 'opencode' && (item?.path === '/builtin/opencode.md' || item?.path === '<built-in>'));
       context.push(typeof skill?.content === 'string' && skill.content.trim()
         ? `Connected OpenCode built-in skill:\n${skill.content.trim()}`
         : 'The connected catalog did not include the built-in OpenCode skill. Consult https://opencode.ai/v2/docs/ and discover the current CLI/API contract before use.');
@@ -3431,7 +3435,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             userParts: executionParts,
             language,
             createChatCompletion,
-            tools,
+            tools: [...tools, ...createOpenCodeContactTools({ resolveClient: client, directory: resolveAssistantCwd(assistantSnapshot) })],
             projects: registeredProjects,
             ...modelContext,
             globalEventHub,

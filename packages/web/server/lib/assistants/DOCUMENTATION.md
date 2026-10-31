@@ -185,17 +185,63 @@ The in-app Assistant is an Yuri-owned **contact**. OpenCode is only the LLM gate
 
 User contact turns retain the Yuri operation tools alongside the four
 pi tools. Skill discovery contributes instructions to this combined tool set.
+`opencode-tools.js` additionally attaches five direct native-function schemas on
+interactive turns: `websearch`, `list_websearch_providers`, `list_active_sessions`,
+`list_opencode_capabilities`, and `read_opencode_skill`. They call the current
+authenticated official SDK client at execution time, with the contact's effective
+pi directory (including user-home semantics for managed contacts). There is no CLI
+subprocess, additional HTTP route, global config mutation, or second LLM request
+for execution. Web, Electron, hosted mobile and Capacitor use the same Host path;
+extension-only VS Code does not gain a separate Host implementation.
+
+Search results include real source URLs and bounded excerpts, plus `partial` when
+truncated. Provider discovery is not search success; failed/unsupported/malformed
+reads return tool errors rather than authoritative empty results. There is no
+silent provider switching or automatic retry. The model may explicitly choose
+another discovered provider after failure. SDK errors expose only an allowlisted
+HTTP status and fixed error category, never raw upstream bodies or credentials.
+Requests have cancellation and a 30-second deadline, including uncooperative SDK
+flights. The owning pi loop retains its sequential and terminal-operation gates.
+
+Live activity comes only from `session.active()` membership. Missing membership
+means `not_active`, not successful completion. IDs can be matched with the index
+or inspected using `read_session`; the new tool does not create a watch or prompt.
+Active/catalog pages are bounded with `nextOffset` and are fresh snapshots rather
+than durable pagination. Capability discovery projects only skill/agent/command/
+reference names/descriptions and MCP connection status, excluding agent system
+prompts, request configuration and raw MCP error bodies. Skill reads use exact
+catalog IDs and bounded content chunks, including virtual built-in paths.
+Native/MCP tools without a public execution API still run in an assigned worker
+with normal OpenCode permissions; catalogs never pretend to be direct executors.
+The new tools are absent from read-only background reviews.
+
+`opencode-tools.test.js` covers the official SDK wire boundary, real pi native-tool
+loop, scope/auth/signal fidelity, cancellation/deadlines, failure versus empty data,
+bounded pages and private-field projections. Service tests cover contact admission
+through native search and activity calls without opening a worker. Live acceptance
+also exercised the real provider: the contact selected provider discovery and
+`websearch`, then returned actual source links, without a CLI or worker session.
+
 Interactive turns also read the connected OpenCode `skill.list` catalog and inject
-the built-in `opencode` skill content directly (its `<built-in>` path is not a local
-file). The context identifies the connected server without credentials and explains
-using the existing `bash` tool with `opencode api --server` and the live OpenAPI
-contract for OpenCode capabilities beyond the contact tools. Current progress uses
+the built-in `opencode` skill content directly (`/builtin/opencode.md`, or the
+`<built-in>` catalog marker, is not a local file). The context identifies the
+connected server without credentials. After `opencode service status` confirms the
+same server, the existing `bash` tool uses `opencode api` without `--server` to retain
+registered-service authentication. Explicit servers need an already-configured
+authenticated connection; authentication failure never permits switching servers.
+Large CLI JSON reads redirect to temporary files before parsing to avoid truncated
+pipe output. The live OpenAPI contract exposes capabilities beyond the contact
+tools, including provider discovery and web search. A listed search provider can
+still fail. There is no universal native/MCP tool-call API; tools without a direct
+API operation run through an assigned OpenCode worker session. Lookup/search claims
+require actual results, not skill loads or provider listings. Current progress uses
 live session activity, never index update times as proof of running or completion.
 Existing contact operations remain preferred for their cards and follow-up.
 Catalog reads have a bounded deadline and turn cancellation; missing/failed skill
 reads remain explicit unknown context with a V2 docs discovery path, not an empty
-capability claim. No extra operation tools, API routes, global config changes or
-OpenCode Agent loop are added. Read-only background reviews receive neither this
+capability claim. Direct SDK tools are preferred over the retained CLI fallback;
+no API routes, global config changes or OpenCode Agent loop are added.
+Read-only background reviews receive neither this
 CLI context nor shell tools. All Host-backed surfaces share this server path.
 Assignment intent includes “建个会话” and “再建个会话”. Watch intent includes
 “监听会话”; stop intent includes “停止会话”. The single missed-call

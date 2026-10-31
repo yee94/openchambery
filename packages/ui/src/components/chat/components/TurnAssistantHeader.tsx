@@ -106,11 +106,7 @@ const TurnAssistantHeader: React.FC<TurnAssistantHeaderProps> = ({
     const modelName = getProviderModelDisplayName(provider, stableModelID ?? null)
         || pendingPresentation?.modelName
         || undefined;
-    const model = provider?.models?.find((candidate) => candidate.id === stableModelID);
-    const modelHasVariants = Boolean(model?.variants && Object.keys(model.variants).length > 0);
-    const variant = modelHasVariants
-        ? userIdentity?.variant ?? pendingPresentation?.variant
-        : undefined;
+    const variant = assistantIdentity?.variant ?? userIdentity?.variant ?? pendingPresentation?.variant;
 
     return (
         <MessageHeader

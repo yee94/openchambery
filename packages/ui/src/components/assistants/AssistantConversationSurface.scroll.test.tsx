@@ -152,7 +152,7 @@ vi.mock('./AssistantAssistantCard', () => ({ AssistantAssistantCard: () => null 
 vi.mock('./AssistantScheduleCard', () => ({ AssistantScheduleCard: () => null }));
 vi.mock('./AssistantSessionCard', () => ({ AssistantSessionCard: () => null }));
 vi.mock('@/components/chat/AgentAvatar', () => ({
-  AgentAvatar: ({ name, motion }: { name?: string; motion?: string }) => <span data-test-avatar={name} data-avatar-motion={motion} />,
+  AgentAvatar: ({ name, motion, size }: { name?: string; motion?: string; size?: number }) => <span data-test-avatar={name} data-avatar-motion={motion} data-test-avatar-size={size} />,
 }));
 
 import { AssistantConversationSurface } from './AssistantConversationSurface';
@@ -226,6 +226,23 @@ afterEach(async () => {
 });
 
 describe('AssistantConversationSurface scroll ownership', () => {
+  test('message and processing avatars share the larger 32px size and aligned gutter', async () => {
+    contactQueryState.extraMessages = 1;
+    const { host } = await mountSurface();
+    const message = host.querySelector('[data-message-id="assistant-a:refetch:0"] [data-assistant-working-avatar]')!;
+    expect(message.querySelector('[data-test-avatar]')?.getAttribute('data-test-avatar-size')).toBe('32');
+    expect(message.parentElement?.classList.contains('w-9')).toBe(true);
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-turn-start', assistantID: 'assistant-a', turnID: 'larger-avatar', occurredAt: 4,
+    }));
+    const processing = host.querySelector('[data-assistant-contact-processing-avatar]')!;
+    expect(processing.querySelector('[data-test-avatar]')?.getAttribute('data-test-avatar-size')).toBe('32');
+    expect(processing.classList.contains('w-9')).toBe(true);
+    expect(processing.classList.contains('-left-[2.875rem]')).toBe(true);
+    expect(host.querySelector('[data-assistant-contact-status-slot]')?.classList.contains('left-[2.875rem]')).toBe(true);
+    expect(host.querySelector('[data-assistant-working-dot]')).toBeNull();
+  });
+
   test('settled transcript avatars follow the same live idle and working states as the header', async () => {
     contactQueryState.extraMessages = 1;
     const { host, root } = await mountSurface();

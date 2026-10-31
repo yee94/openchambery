@@ -400,7 +400,7 @@ The send transition (`contactSendFlight.ts`) uses Telegram-iOS `ChatMessageTrans
 
 The three-dot status renders inside an assistant-style `surface-muted` bubble (36px tall) that scales in from its bottom-left; it stays absolutely positioned in the reserved 48px bottom padding.
 
-The typing bubble includes the contact's 28px working avatar in the same left gutter as assistant messages, without the list-only green dot. Avatar and dots share visibility and entry animation on desktop and mobile; the avatar does not add transcript height.
+Transcript message avatars and the typing bubble use 32px artwork in a shared 36px left gutter, with a 10px gap before message/status bubbles, without the list-only green dot. Avatar and dots share visibility and entry animation on desktop and mobile; the typing avatar does not add transcript height. Header and catalog avatar sizes are unchanged.
 
 Desktop send flights start beside the typed text with a compact shell: target bubble width plus 32px, at least 120px and capped by the composer width. Mobile retains the full composer starting frame. Both land on the same measured target bubble.
 
