@@ -20,6 +20,7 @@ import { registerScheduledTaskSessionSkill } from '../scheduled-tasks/session-sk
 import { registerConversationRoutes } from '../conversations/routes.js';
 import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';
 import { registerAssistantRoutes } from '../assistants/routes.js';
+import { createProjectRegistry } from '../projects/registry.js';
 import { registerLlmRoutes } from '../llm/routes.js';
 import { registerMessageQueueRoutes } from '../message-queue/routes.js';
 import { getBrowserProviderHost } from '../browser-provider/host.js';
@@ -283,6 +284,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         .filter((value) => typeof value === 'string'));
     };
     await refreshAssistantAllowedRoots();
+    const projectRegistry = createProjectRegistry({ persistSettings, validateDirectoryPath });
+    const registerAssistantProject = async (input) => {
+      const result = await projectRegistry.register(input);
+      await refreshAssistantAllowedRoots();
+      // Full settings may contain credentials; only return the affected resource.
+      return { project: result.project, created: result.created };
+    };
     const broadcastAssistantRevisionTip = createYuriEventBroadcaster({
       getYuriEventClients,
       writeSseEvent,
@@ -305,6 +313,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenCodeAuthHeaders,
       getServerId,
       getAllowedRoots: () => assistantAllowedRoots,
+      registerProject: registerAssistantProject,
       listProjects: async () => {
         const settings = await readSettingsFromDiskMigrated();
         return sanitizeProjects(settings?.projects ?? [])

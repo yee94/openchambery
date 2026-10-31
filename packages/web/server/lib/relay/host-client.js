@@ -9,12 +9,10 @@ import { RELAY_PROTOCOL_VERSION, RelayCloseCode, createHostHandshake } from './e
 import { createOutboundFrameBatcher, decodeFrameBatch } from './tunnel-codec.js';
 import { createTunnelHost } from './tunnel-host.js';
 
-const BACKOFF_BASE_MS = 1000;
+const BACKOFF_BASE_MS = 3000;
 const BACKOFF_CAP_MS = 30000;
-// Do not clear reconnect backoff on WebSocket `open`. A host that connects
-// then drops in ~1s (the observed control-channel storm) would otherwise retry
-// forever at 1s. Only a control socket that stays up this long is treated as
-// a healthy registration.
+// Keep retry cadence fixed, and clear failure history only after the control
+// socket remains stable rather than treating a brief open as healthy.
 const CONTROL_STABLE_MS = 15_000;
 const DATA_SOCKET_OPEN_TIMEOUT_MS = 15000;
 // Clients send a tunnel Ping at least every ~30s when idle, so a data socket
@@ -300,7 +298,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
 
   const scheduleReconnect = () => {
     if (stopped || reconnectTimer) return;
-    const delay = Math.min(backoffBaseMs * 2 ** consecutiveFailures, backoffCapMs);
+    const delay = Math.min(backoffBaseMs, backoffCapMs);
     consecutiveFailures += 1;
     setState('reconnecting');
     reconnectTimer = setTimeout(() => {

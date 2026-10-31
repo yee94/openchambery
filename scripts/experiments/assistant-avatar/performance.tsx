@@ -24,9 +24,9 @@ Element.prototype.getBoundingClientRect = function () {
 };
 const recipeFor = (index: number) => ({ ...resolveAssistantAvatar('performance'), shape: AVATAR_PICKER_SHAPES[index % AVATAR_PICKER_SHAPES.length] });
 const frames = async (count: number) => { for (let i = 0; i < count; i++) await new Promise(requestAnimationFrame); };
-const render = (count: number, draft: number, motion: 'idle' | 'working' = 'working') => flushSync(() => root.render(<div data-draft={draft} style={{ display: 'flex', gap: 4 }}>
+const render = (count: number, draft: number, motion: 'idle' | 'working' = 'working', followPointer = true, synchronized = false) => flushSync(() => root.render(<div data-draft={draft} style={{ display: 'flex', gap: 4 }}>
   {Array.from({ length: count }, (_, i) => <React.Profiler key={i} id={`face-${i}`} onRender={() => { commits++; }}>
-    <ProceduralAssistantAvatar seed={encodeAssistantAvatar(recipeFor(i))} size={44} motion={motion} />
+    <ProceduralAssistantAvatar seed={encodeAssistantAvatar(recipeFor(synchronized ? 0 : i))} size={44} motion={motion} followPointer={followPointer} animationKey={synchronized ? 'shared-bot' : `bot-${i}`} />
   </React.Profiler>)}
 </div>));
 
@@ -68,9 +68,22 @@ Object.assign(window, { avatarPerformance: {
     for (let i = 0; i < 1000; i++) window.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', clientX: i, clientY: 100 }));
     return { reads: reads - before.reads, writes: writes - before.writes, commits: commits - before.commits };
   },
-  async mount(count: number, draft = 0, motion: 'idle' | 'working' = 'working') {
-    render(count, draft, motion);
+  async mount(count: number, draft = 0, motion: 'idle' | 'working' = 'working', followPointer = true) {
+    render(count, draft, motion, followPointer);
     await frames(3);
+  },
+  async synchronized() {
+    render(1, 0, 'working', false, true);
+    await frames(20);
+    render(20, 0, 'working', false, true);
+    await frames(3);
+    const samples: boolean[] = [];
+    for (let i = 0; i < 20; i++) {
+      await frames(1);
+      const poses = [...host.querySelectorAll('svg')].map((svg) => [...svg.querySelectorAll('path')].map((path) => path.getAttribute('d')).join('|'));
+      samples.push(poses.length === 20 && poses.every((pose) => pose === poses[0]));
+    }
+    return samples;
   },
   async steady() {
     const before = { commits, writes };

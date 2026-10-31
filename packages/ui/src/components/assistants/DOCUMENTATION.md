@@ -199,10 +199,13 @@ an isolated DOM subtree and instance-unique definition IDs; React owns only the 
 SVG styles must preserve rect fills inside `defs`: the white mask
 background is functional geometry, not an icon background to clear. This applies
 to desktop list buttons and mobile contact cards as well as plain headers.
-Ordinary idle faces hold the reference static up-right pose without continuous
-animation or mouse gaze. They allocate no player, pointer lease or frame callback
+List/header faces follow the mouse, including while idle, when the reactive
+`(any-hover: hover) and (any-pointer: fine)` capability query matches. Without
+that capability they hold the reference static up-right idle pose. Transcript,
+processing, empty and error faces explicitly disable pointer following on every
+device. These static-idle faces allocate no player, pointer lease or frame callback
 until hover; its bounded resting player is released after restoring the exact
-static pose. Work completion also returns to that pose and releases live work.
+static pose. Work completion also returns them to that pose and releases live work.
 The player and state machine persist through continuous non-idle motion changes,
 so those transitions use the source bridge/springs. Only intersecting,
 foreground, motion-enabled faces subscribe to Motion's shared read/render pipeline
@@ -217,16 +220,23 @@ resizing updates that mode on the same state machine, not the viewBox or eye siz
 The saved motion-off switch bypasses live observers altogether. At rest,
 all static faces share the existing 128-entry / 1 MiB artwork LRU.
 
-During non-idle work and ambient navigation, mouse gaze follows the pointer
+For pointer-enabled list/header faces and ambient navigation, mouse gaze follows the pointer
 anywhere in the avatar's owning window, using
 the source width-based/upwards-y mapping. `pointerTracker.ts` owns one shared
 pointer sample and one listener per event type (pointermove, window leave, blur)
 per window, acquired only by active live faces. Mouse events only replace that
 sample; they do not measure DOM, render React or schedule additional frames.
 Touch/pen movement, leaving the window and blur clear the sample. The last active
-face releasing it removes all listeners and discards the sample. Ordinary idle,
-standalone
-historical, picker, native-PNG and saved motion-off faces never acquire it.
+face releasing it removes all listeners and discards the sample. Transcript,
+touch-only, standalone historical, picker, native-PNG and saved motion-off faces
+never acquire it.
+
+Working transcript/processing faces share the same window-scoped timeline for
+their assistant ID, saved recipe and compact mode. New messages and returning
+visible rows immediately join the current pose rather than starting a separate
+clip. Timeline evaluation runs once per shared paint; SVG rendering and hover
+remain instance-local. Pointer-following list/header faces stay independent.
+The last eligible consumer releases its timeline, with no background replay.
 
 The shared clock measures all active face rectangles before any SVG writes,
 only when a mouse sample exists. This preserves gaze after scrolling/layout moves
@@ -256,7 +266,7 @@ motion-off faces attach none. No hover state, parent rerender, extra timer or
 per-pointermove work is introduced.
 
 Performance contract: 20 visible live faces share one pair of Motion read/render
-callbacks at up to 30 paints/second each; ordinary idle faces outside hover and
+callbacks at up to 30 paints/second each; pointer-disabled idle faces outside hover and
 static/standalone history faces schedule zero work;
 50 unrelated parent renders cause zero observer rebinds or frame writes. Live
 faces do not serialize an unused static SVG URI. Focused recipe, frame-clock and
@@ -394,7 +404,7 @@ Standalone inline Markdown images have no bubble padding or painted bubble backg
 
 Contact history starts with the query-owned latest 20 messages. The surface consumes `data.messages`, `fetchPreviousPage`, `hasPreviousPage`, `isFetchingPreviousPage`, `previousPageError`, `hasMessageGap`, `isFillingMessageGap`, and `retryMessageGap`. A quiet top button and upward gestures within 80px share one in-flight request; failed paging preserves rows and waits for explicit Retry. Gap recovery has a visible status and the same request gate. Initial loading and initial failure have accessible feedback and retry.
 
-A fresh user send (not a same-ID retry) re-attaches bottom follow through `followLatest`, so the transcript scrolls to the new bubble even from a released reading position. Text-only sends clear the field immediately (iMessage behavior) and hand the text back on failure unless the user typed something new; sends with attachments keep their previews until admission.
+A fresh user send (not a same-ID retry) re-attaches bottom follow through `followLatest`, so the transcript scrolls to the new bubble even from a released reading position. All sends clear the text field immediately (iMessage behavior), independently of animation eligibility or upload/admission latency, and hand the text back on failure unless the user typed something new. Admission completion never clears the next draft, even when it matches the sent text. Sends with attachments keep their previews until admission; failure retains previews and the existing upload/message retry identity.
 
 The send transition (`contactSendFlight.ts`) uses Telegram-iOS `ChatMessageTransitionNode` text-input → bubble bezier parameters: 300ms; horizontal edges on `cubic-bezier(0.23, 1, 0.32, 1)`, bottom edge and height on `cubic-bezier(0.199, 0.011, 0.279, 0.910)`. One `aria-hidden` fixed overlay starts at the composer surface's exact frame and corner radii and morphs, bottom-anchored, into the bubble's frame and radii. Only the outer shell paints a background: its computed composer color transitions directly to the computed message color over 150ms, without overlapping translucent background layers. The typed text travels from the field's text origin (including its scroll offset) into the bubble while fading out over 100ms and the bubble text fades in over 80ms. The follow scroll uses the same vertical curve and duration (Telegram's `verticalListCurve`). The real bubble keeps its layout and is only `visibility: hidden`; its rectangle is re-read every frame so the overlay lands wherever the scroll owner moved it. The flown row skips the generic append fade. Voice, attachment, retry and reduced-motion sends do not morph. Deactivation, Assistant/runtime switches and unmount remove the overlay.
 

@@ -17,10 +17,16 @@ the historical heading belongs to earlier attempts, not to this engine.
   remain round with only pigment variation. Legacy eye/expression preferences
   remain round-trippable but cannot randomize eye dimensions or angles.
 - Busy wrappers use the source working clips for left/right observation, not the
-  three-dot thinking morph. Ordinary idle faces hold the reference up-right static
-  pose with zero frame/gaze work. Hover briefly animates that settled pose and
-  releases its player on completion; navigation retains ambient shape cycling.
+  three-dot thinking morph. Mouse-capable list/header faces retain pointer gaze
+  even while idle. Without a mouse, and always in transcript/processing faces,
+  idle holds the reference up-right static pose with zero frame/gaze work. Hover
+  briefly animates that settled pose and releases its player on completion;
+  navigation retains ambient shape cycling.
   Continuous non-idle changes preserve the source state machine and springs.
+  Working chat faces share a window/assistant/recipe/compact-mode timeline so
+  newly mounted messages immediately join the current pose. Hover stays local;
+  last-consumer release removes shared state. Mouse-following list/header faces
+  remain independent so their gaze does not change transcript poses.
 - Rest faces share pure static SVG/native PNG rendering, reference static settle,
   and fixed per-shape artboards at 94% longest-axis occupancy. Live excursions
   uniformly fit the entire scene to the slot, never individual eyes.
@@ -39,7 +45,7 @@ the historical heading belongs to earlier attempts, not to this engine.
 ## Motion/runtime and independent performance gate (2026-10-30)
 
 - `lib/assistant-avatar/runtime.ts` now owns the player, renderer, pointer lease
-  and frame subscriptions. The React leaf supplies `{ active, motion, size }`
+  and frame subscriptions. The React leaf supplies `{ active, motion, size, followPointer }`
   and an optional hover target; continuous non-idle work/size updates do not recreate the player.
   Disposal is idempotent, respects saved motion-off and only removes its own SVG.
 - The private RAF loop is replaced by Motion's shared `frame.read`/`frame.render`
@@ -51,7 +57,8 @@ the historical heading belongs to earlier attempts, not to this engine.
   in isolated Chromium, with no Yuri/OpenCode service or real data. Missing Chrome
   fails explicitly. One ambient / twenty idle / twenty working batches have p95
   CPU ceilings of 4/8/10ms for generation + SVG writes; lifecycle, zero per-frame
-  React commits, fifty unrelated updates, pointer coalescing and reduced-motion
+  React commits, fifty unrelated updates, pointer coalescing, desktop versus
+  touch/transcript idle policy, late-mounted working synchronization and reduced-motion
   cleanup are also asserted. Related PRs have a dedicated CI job; CI was not run
   locally and the native-runtime acceptance caveats below still apply.
 - Before the scheduler extraction, warm p95 samples were .8/3.6/5.5ms; after it,

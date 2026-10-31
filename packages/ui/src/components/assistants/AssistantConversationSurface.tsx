@@ -416,7 +416,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     if (!begun.ok) return
     setContactWorking(sentAssistantID, true)
     retrySendRef.current = { assistantID: sentAssistantID, text, attachments: staged, messageID: begun.messageID }
-    // Text-only sends leave the field at once, like iMessage; attachment previews
+    // All sends leave the field at once, like iMessage; attachment previews
     // keep their composer-owned blob leases until admission.
     const textOnly = staged.length === 0
     // A retry reuses its mounted row; only a fresh text bubble morphs out of the field.
@@ -426,11 +426,10 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     setSendFlight(flightSource ? { scope: entryScope, messageID: begun.messageID } : null)
     flownMessageIDRef.current = flightSource ? begun.messageID : flownMessageIDRef.current
     followLatest(flightSource ? { duration: CONTACT_SEND_FLIGHT_DURATION_S, ease: CONTACT_SEND_FLIGHT_VERTICAL_EASE } : undefined)
-    if (textOnly) setDraft((current) => current === text ? '' : current)
+    setDraft((current) => current === text ? '' : current)
     setOptimisticTurns((current) => [...current.filter((turn) => turn.messageID !== begun.messageID), begun.turn])
     setSendError(null)
     const clearSentDraft = () => {
-      setDraft((current) => current === text ? '' : current)
       setAttachments((current) => current.filter((attachment) => !staged.includes(attachment)))
       staged.forEach((attachment) => uploadedRef.current.delete(`${sentAssistantID}:${attachment.id}`))
       retrySendRef.current = null
@@ -497,7 +496,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       })
       setOptimisticTurns((current) => markContactOptimisticFailed(current, begun.messageID, detail))
       // Hand an early-cleared draft back for retry unless the user typed something new.
-      if (textOnly) setDraft((current) => current === '' ? text : current)
+      setDraft((current) => current === '' ? text : current)
       setSendError(detail)
     } finally {
       sendGate.release()
@@ -553,6 +552,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                 label={displayName}
                 working={active ? serverWorking : undefined}
                 showWorkingDot={false}
+                followPointer={false}
               />
               <span aria-hidden className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-[var(--surface-elevated)] text-[var(--status-error)] ring-2 ring-background">
                 <Icon name="error-warning" className="size-3" />
@@ -572,6 +572,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               className="opacity-90"
               working={active ? serverWorking : undefined}
               showWorkingDot={false}
+              followPointer={false}
             />
             <p className="mt-5 typography-ui-header font-medium tracking-[-0.01em] text-foreground">{t('assistants.conversation.emptyTitle', { name: displayName })}</p>
             <p className="mt-2 max-w-xs typography-ui leading-6 text-muted-foreground/80">{t('assistants.contact.empty')}</p>
@@ -657,6 +658,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                           label={senderName}
                           working={active ? Boolean(sender?.working || sender?.activeContactTurn) : undefined}
                           showWorkingDot={false}
+                          followPointer={false}
                         />
                       ) : (
                         <span className="size-8" aria-hidden />
@@ -765,6 +767,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       label={displayName}
                       working={active ? serverWorking : undefined}
                       showWorkingDot={false}
+                      followPointer={false}
                     />
                   </div>
                   <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.45s] [animation-duration:1.4s] motion-reduce:animate-none" />

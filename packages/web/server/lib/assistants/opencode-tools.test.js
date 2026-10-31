@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
-import { createOpenCodeContactTools } from './opencode-tools.js';
+import { createOpenCodeContactToolGroups, createOpenCodeContactTools } from './opencode-tools.js';
 import { runContactTurn } from './harness.js';
+import { createYuriContactTools } from './yuri-tools.js';
+
+const nativeCall = (name, args) => ({ completion: { choices: [{ message: { tool_calls: [{ id: `call_${name}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] } }] } });
 
 const setup = (api, options = {}) => {
   const resolveClient = vi.fn(() => api);
@@ -10,6 +13,23 @@ const setup = (api, options = {}) => {
 };
 
 describe('direct OpenCode contact tools', () => {
+  it('describes three deferred groups using existing tool objects without resolving a client or reading skills', () => {
+    const { tools, resolveClient } = setup({});
+    const groups = createOpenCodeContactToolGroups(tools);
+    expect(groups.map(({ id, tools: members }) => ({ id, names: members.map((tool) => tool.name) }))).toEqual([
+      { id: 'opencode.web', names: ['list_websearch_providers', 'websearch'] },
+      { id: 'opencode.activity', names: ['list_active_sessions'] },
+      { id: 'opencode.catalog', names: ['list_opencode_capabilities', 'read_opencode_skill'] },
+    ]);
+    for (const group of groups) {
+      for (const tool of group.tools) expect(tool).toBe(tools.find((original) => original.name === tool.name));
+    }
+    expect(groups.flatMap((group) => group.tools)).toHaveLength(tools.length);
+    expect(resolveClient).not.toHaveBeenCalled();
+    expect(createOpenCodeContactToolGroups([])).toEqual([]);
+    expect(createOpenCodeContactToolGroups(tools.filter((tool) => tool.name === 'websearch')).map((group) => group.id)).toEqual(['opencode.web']);
+  });
+
   it('executes a search through the official authenticated SDK with location and signal', async () => {
     const fetchImpl = vi.fn(async (input, init) => {
       const request = new Request(input, init);
@@ -41,6 +61,57 @@ describe('direct OpenCode contact tools', () => {
     current = second;
     expect((await search.execute('two', { query: 'research', providerID: 'exa' })).details.results).toEqual([]);
     expect(second.websearch.query).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [401, 'UnauthorizedError', 'authentication_required', /authentication|sign.in/i],
+    [403, 'ForbiddenError', 'permission_denied', /permission|access/i],
+    [503, 'ServiceUnavailableError', 'opencode_failed', /retry/i],
+  ])('preserves SDK failure %s without exposing its private body', async (status, tag, category, guidance) => {
+    const fetchImpl = vi.fn(async () => Response.json({ _tag: tag, message: 'PRIVATE_SENTINEL', headers: { authorization: 'PRIVATE_SENTINEL' } }, { status }));
+    const api = makeOpenCodeV2Client({ baseUrl: 'https://upstream.example.test', fetchImpl });
+    const { call } = setup(api);
+    const output = await call('websearch', { query: 'research' });
+    expect(output).toMatchObject({ isError: true, details: { error: category, status } });
+    const visible = JSON.parse(output.content[0].text);
+    expect(visible).toMatchObject({ error: category, status, message: expect.stringMatching(guidance) });
+    if (status === 503) expect(visible.message).toMatch(/list_websearch_providers before.*retry/);
+    expect(JSON.stringify(output)).not.toContain('PRIVATE_SENTINEL');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { status: 401 }, { cause: { status: 401 } },
+  ])('classifies status-only authentication errors as well as SDK tags (%j)', async (error) => {
+    const { call } = setup({ websearch: { query: async () => { throw error; } } });
+    expect(await call('websearch', { query: 'research' })).toMatchObject({ isError: true, details: { error: 'authentication_required', status: 401 } });
+  });
+
+  it.each(['authentication', 'timeout'])('delivers %s failure and safe guidance to the model through the real Agent', async (scenario) => {
+    const fetchImpl = vi.fn(async () => scenario === 'authentication'
+      ? Response.json({ _tag: 'UnauthorizedError', message: 'PRIVATE_SENTINEL' }, { status: 401 })
+      : new Promise(() => {}));
+    const api = makeOpenCodeV2Client({ baseUrl: 'https://upstream.example.test', fetchImpl });
+    const { tools } = setup(api, { timeoutMs: 20 });
+    let round = 0;
+    await runContactTurn({ assistant: { providerID: 'p', modelID: 'm' }, history: [], userText: 'Search once; if it times out, do not retry.', tools,
+      createChatCompletion: async ({ body }) => {
+        round++;
+        if (round === 1) return nativeCall('load_tools', { domain: 'opencode.web' });
+        if (round === 2) return nativeCall('websearch', { query: 'research' });
+        const message = body.messages.find((item) => item.role === 'tool' && item.tool_call_id === 'call_websearch');
+        const envelope = JSON.parse(message.content);
+        expect(envelope.isError).toBe(true);
+        const visible = JSON.parse(envelope.content);
+        expect(visible.error).toBe(scenario === 'authentication' ? 'authentication_required' : 'timeout');
+        expect(visible.message).toMatch(scenario === 'authentication' ? /authentication|sign.in/i : /timed out/i);
+        expect(visible.message).toMatch(scenario === 'authentication' ? /do not.*provider|do not.*switch/i : /user.*retry|retry.*user/i);
+        expect(message.content).not.toContain('PRIVATE_SENTINEL');
+        return { text: 'Failure acknowledged.' };
+      },
+    });
+    expect(round).toBe(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('bounds source excerpts and explicitly marks truncated results', async () => {
@@ -129,8 +200,14 @@ describe('direct OpenCode contact tools', () => {
     let round = 0;
     const createChatCompletion = vi.fn(async ({ body }) => {
       round++;
+      if (round === 1) {
+        expect(body.tools.map((tool) => tool.function.name)).toEqual(['load_tools', 'notify_user']);
+        expect(query).not.toHaveBeenCalled();
+        return { completion: { choices: [{ message: { tool_calls: [{ id: 'load-1', type: 'function', function: { name: 'load_tools', arguments: JSON.stringify({ domain: 'opencode.web' }) } }] } }] } };
+      }
       expect(body.tools.map((tool) => tool.function.name)).toContain('websearch');
-      if (round === 1) return { completion: { choices: [{ message: { content: '', tool_calls: [{ id: 'search-1', type: 'function', function: { name: 'websearch', arguments: JSON.stringify({ query: 'site:github.com iOS', providerID: 'exa' }) } }] } }] } };
+      expect(body.tools.map((tool) => tool.function.name)).not.toContain('read_opencode_skill');
+      if (round === 2) return { completion: { choices: [{ message: { content: '', tool_calls: [{ id: 'search-1', type: 'function', function: { name: 'websearch', arguments: JSON.stringify({ query: 'site:github.com iOS', providerID: 'exa' }) } }] } }] } };
       const evidence = body.messages.find((message) => message.role === 'tool' && message.tool_call_id === 'search-1');
       expect(evidence.content).toContain('Actual source content');
       expect(evidence.content).toContain('https://example.test/repo');
@@ -139,7 +216,7 @@ describe('direct OpenCode contact tools', () => {
     const output = await runContactTurn({ assistant: { providerID: 'p', modelID: 'm' }, history: [], userText: '帮我联网找一下', tools, createChatCompletion });
     expect(output.bubbles).toEqual(['找到了来源。']);
     expect(query).toHaveBeenCalledTimes(1);
-    expect(createChatCompletion).toHaveBeenCalledTimes(2);
+    expect(createChatCompletion).toHaveBeenCalledTimes(3);
   });
 
   it('does not offer the new execution tools to a read-only background review', async () => {
@@ -151,5 +228,68 @@ describe('direct OpenCode contact tools', () => {
       },
     });
     expect(resolveClient).not.toHaveBeenCalled();
+  });
+
+  it('uses one loader for Yuri and OpenCode, keeps unrelated groups hidden and resets both on the next contact turn', async () => {
+    const query = vi.fn(async () => ({ data: { providerID: 'exa', results: [] } }));
+    const list = vi.fn();
+    const { tools: openCodeTools } = setup({ websearch: { query }, skill: { list } });
+    const registerProject = vi.fn(async () => ({ project: { id: 'p', path: '/workspace' }, created: true }));
+    const tools = [...createYuriContactTools({ registerProject }), ...openCodeTools];
+    let round = 0;
+    const input = { assistant: { providerID: 'p', modelID: 'm' }, history: [], userText: 'Search, then register the requested project.', tools };
+    await runContactTurn({ ...input, createChatCompletion: async ({ body }) => {
+      round++;
+      const names = body.tools.map((item) => item.function.name);
+      expect(names.filter((name) => name.startsWith('load_'))).toEqual(['load_tools']);
+      expect(names).not.toContain('read_opencode_skill');
+      expect(names).not.toContain('list_active_sessions');
+      if (round === 1) {
+        expect(names).toEqual(['load_tools', 'notify_user']);
+        expect(body.tools[0].function.parameters.properties.domain.enum).toEqual(['yuri.projects', 'opencode.web', 'opencode.activity', 'opencode.catalog']);
+        return nativeCall('load_tools', { domain: 'opencode.web' });
+      }
+      if (round === 2) {
+        expect(names).not.toContain('register_project');
+        return nativeCall('websearch', { query: 'research' });
+      }
+      if (round === 3) return nativeCall('load_tools', { domain: 'yuri.projects' });
+      if (round === 4) {
+        expect(names).toContain('websearch');
+        expect(names).toContain('register_project');
+        return nativeCall('register_project', { path: '/workspace' });
+      }
+      return { text: 'Done.' };
+    } });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(registerProject).toHaveBeenCalledTimes(1);
+    expect(list).not.toHaveBeenCalled();
+    await runContactTurn({ ...input, createChatCompletion: async ({ body }) => {
+      expect(body.tools.map((item) => item.function.name)).toEqual(['load_tools', 'notify_user']);
+      return { text: 'New turn.' };
+    } });
+  });
+
+  it.each([false, true])('rejects an unloaded OpenCode call before SDK execution (batched with loader=%s)', async (batched) => {
+    const query = vi.fn(async () => ({ data: { providerID: 'exa', results: [] } }));
+    const { tools } = setup({ websearch: { query } });
+    let round = 0;
+    await runContactTurn({ assistant: { providerID: 'p', modelID: 'm' }, history: [], userText: 'Search online.', tools,
+      createChatCompletion: async () => {
+        round++;
+        if (round === 1) {
+          const response = nativeCall('websearch', { query: 'research' });
+          if (batched) response.completion.choices[0].message.tool_calls.unshift(nativeCall('load_tools', { domain: 'opencode.web' }).completion.choices[0].message.tool_calls[0]);
+          return response;
+        }
+        if (round === 2) {
+          expect(query).not.toHaveBeenCalled();
+          return nativeCall('load_tools', { domain: 'opencode.web' });
+        }
+        if (round === 3) return nativeCall('websearch', { query: 'research' });
+        return { text: 'Searched.' };
+      },
+    });
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

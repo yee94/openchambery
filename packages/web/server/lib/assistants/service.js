@@ -71,6 +71,7 @@ import {
   extractSessionDirectory,
   extractSessionTitle,
   hasAssignImageParts,
+  isManagedAssistantWorkspace,
   mapSessionToWatchStatus,
   resolveAssignDirectory,
   extractAssignSessionModel,
@@ -79,6 +80,7 @@ import {
 } from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
 import { createOpenCodeContactTools } from './opencode-tools.js';
+import { createYuriContactTools } from './yuri-tools.js';
 import { resolveAssistantCwd } from './pi-tools.js';
 import { loadConnectedCatalog, parseModelRef } from '../llm/catalog.js';
 import { buildAssistantSessionMetadata } from '../session-metadata/system-session.js';
@@ -245,7 +247,7 @@ const awaitWithDeadline = async (work, ms = CONTACT_CATALOG_DEADLINE_MS, code = 
   }
 };
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, patchScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, /** Host archive op: ({ sessionID, directory, archivedAt }) => Promise */ archiveSessionHost = null, /** Idempotent Host metadata drop after successful SDK delete */ forgetSessionHost = null, /** Host store write: (sessionId, patch) => Promise */ persistSessionMetadata = null, /** After Host isolation metadata is committed. */ onSystemSessionPersisted = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], registerProject = null, readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, patchScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, /** Host archive op: ({ sessionID, directory, archivedAt }) => Promise */ archiveSessionHost = null, /** Idempotent Host metadata drop after successful SDK delete */ forgetSessionHost = null, /** Host store write: (sessionId, patch) => Promise */ persistSessionMetadata = null, /** After Host isolation metadata is committed. */ onSystemSessionPersisted = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -446,36 +448,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
       authHeaders: getOpenCodeAuthHeaders(),
     });
-  const loadContactOpenCodeContext = async (signal) => {
-    const url = new URL(buildOpenCodeUrl('/', ''));
-    url.username = '';
-    url.password = '';
-    url.search = '';
-    url.hash = '';
-    const context = [
-      'OpenCode capabilities are available as direct tools: websearch, list_websearch_providers, list_active_sessions, list_opencode_capabilities and read_opencode_skill. Prefer these tools: the Host supplies current server authentication and workspace scope, without CLI discovery or another model round-trip. Existing read/write/edit/bash and session-management tools remain available.',
-      `Connected OpenCode server: ${JSON.stringify(url.href.replace(/\/$/, ''))}. First compare opencode service status with this server. When they match, use opencode api without --server so the CLI discovers the registered service authentication (for example: opencode api get /api/info). An explicit --server does not automatically reuse those credentials. For a different/external server, use only an already-configured authenticated connection; if unavailable, report the blocker rather than switching servers or exposing credentials.`,
-      'Read the OpenCode skill below before using OpenCode capabilities. Use opencode api --help and the connected server OpenAPI contract to discover operations and arguments, rather than guessing.',
-      'For large CLI JSON responses such as /openapi.json or /api/skill, redirect output to a temporary file before parsing; piped CLI output may be truncated.',
-      'For current work, GET /api/session/active provides live activity; inspect the relevant sessions and messages for progress. Session-index titles, update times and historical messages alone do not prove that a session is running or finished. A failed live read means unknown, not idle.',
-      'OpenCode capabilities are not limited to the Yuri contact tool list. Use the documented CLI/API for other requested operations, retaining user authorization, permission confirmations and this turn\'s constraints. Prefer the existing Yuri tools for assignment, watches and other contact-owned operations so their cards and follow-up stay intact.',
-      'API access is not arbitrary native/MCP tool execution: there is no universal tool-call endpoint in the current API. Discover available web search providers with GET /api/websearch/provider, then POST /api/websearch with {"query":"...","providerID":"..."}; a listed provider can still fail. For native/MCP tools without an API operation, assign the task to an OpenCode worker session through assign_session. Only claim a lookup or search after receiving its real results; reading instructions or listing providers is not execution.',
-    ];
-    try {
-      const result = await client().skill.list(undefined, {
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(CONTACT_CATALOG_DEADLINE_MS)]) : AbortSignal.timeout(CONTACT_CATALOG_DEADLINE_MS),
-      });
-      if (!Array.isArray(result?.data)) throw new Error('skill_catalog_unavailable');
-      const skill = result.data.find((item) => item?.id === 'opencode' && (item?.path === '/builtin/opencode.md' || item?.path === '<built-in>'));
-      context.push(typeof skill?.content === 'string' && skill.content.trim()
-        ? `Connected OpenCode built-in skill:\n${skill.content.trim()}`
-        : 'The connected catalog did not include the built-in OpenCode skill. Consult https://opencode.ai/v2/docs/ and discover the current CLI/API contract before use.');
-    } catch {
-      signal?.throwIfAborted();
-      context.push('The built-in OpenCode skill could not be loaded this turn (unknown, not an empty capability catalog). Consult https://opencode.ai/v2/docs/ and verify CLI/API availability before use.');
-    }
-    return context.join('\n\n');
-  };
   const metadata = (row) => buildAssistantSessionMetadata({
     assistantID: row.assistant_id,
     name: row.name,
@@ -2976,7 +2948,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           steerSession: (params) => mutateSessionWork('steer', params),
           archiveSession: (params) => mutateSessionWork('archive', params),
           deleteSession: (params) => mutateSessionWork('delete', params),
-          createAssistant: (toolInput) => createAssistant({ ...toolInput, language: contactTurnLanguages.get(assistantID) || 'en' }),
+           createAssistant: (toolInput) => createAssistant({ ...toolInput, avatarSeed: randomAvatarSeed(id()), language: contactTurnLanguages.get(assistantID) || 'en' }),
           scheduleTask: (params) => scheduleWork(live, params),
           listScheduledTasks: (params) => listScheduledTaskWork(params),
           updateScheduledTask: (params) => updateScheduledTaskWork(live, params, controller.signal),
@@ -3335,7 +3307,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             steerSession: (params) => mutateSessionWork('steer', params),
             archiveSession: (params) => mutateSessionWork('archive', params),
             deleteSession: (params) => mutateSessionWork('delete', params),
-            createAssistant: (toolInput) => createAssistant({ ...toolInput, language: language || 'en' }),
+             createAssistant: (toolInput) => createAssistant({ ...toolInput, avatarSeed: randomAvatarSeed(id()), language: language || 'en' }),
             scheduleTask: (params) => scheduleWork(row, params),
             listScheduledTasks: (params) => listScheduledTaskWork(params),
             updateScheduledTask: (params) => updateScheduledTaskWork(row, params, controller.signal),
@@ -3425,11 +3397,23 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             turnFileParts,
             turnAttachmentScope,
           });
+          tools.push(...createYuriContactTools({
+            registerProject: typeof registerProject === 'function' ? async (input, signal) => {
+              signal?.throwIfAborted();
+              if (!path.isAbsolute(input.path)) {
+                throw new AssignError(ASSIGN_CODES.WORKSPACE_FORBIDDEN, 'Choose an existing absolute workspace outside assistant-workspaces.');
+              }
+              const directory = fs.realpathSync(input.path);
+              if (isManagedAssistantWorkspace(directory, path.resolve(dataDir, 'assistant-workspaces'))) {
+                throw new AssignError(ASSIGN_CODES.WORKSPACE_FORBIDDEN, 'Choose an existing workspace outside assistant-workspaces.');
+              }
+              return registerProject({ ...input, path: directory });
+            } : null,
+          }));
           controller.signal.throwIfAborted();
           const generated = await runContactTurn({
             signal: controller.signal,
             assistant: assistantSnapshot,
-            openCodeContext: await loadContactOpenCodeContext(controller.signal),
             history: executionHistory,
             userText,
             userParts: executionParts,
@@ -3893,7 +3877,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       )),
     };
   };
-  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId(), sharingAvailable: false, archiveMetadataAvailable: typeof archiveSessionHost === 'function', sessionMetadataAvailable: false }), snapshot, ensureDefaultAssistant, createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); return { enabled: true, revision: revision() }; }, removeAssistant: (assistantID, expectedRevision) => {
+  const removeAssistant = (assistantID, expectedRevision) => {
     db.exec('BEGIN IMMEDIATE');
     try {
       const result = db.prepare('UPDATE assistant_v2 SET tombstone_at=?,revision=revision+1,updated_at=? WHERE assistant_id=? AND revision=? AND tombstone_at IS NULL').run(now(), now(), assistantID, expectedRevision);
@@ -3915,7 +3899,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, markContactRead, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, reportScheduledTaskResult, putAssistantContactAttachment, getAssistantContactAttachment, migrateContactAttachments, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile,   close: () => {
+  };
+  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId(), sharingAvailable: false, archiveMetadataAvailable: typeof archiveSessionHost === 'function', sessionMetadataAvailable: false }), snapshot, ensureDefaultAssistant, createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); return { enabled: true, revision: revision() }; }, removeAssistant, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, markContactRead, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, reportScheduledTaskResult, putAssistantContactAttachment, getAssistantContactAttachment, migrateContactAttachments, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile,   close: () => {
     cancelAssignedResumes({});
     sessionAbortInflight.clear();
     pendingAssignMessageIDs.clear();

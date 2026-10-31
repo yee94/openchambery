@@ -339,6 +339,7 @@ const setupClient = async (
   client: RelayTunnelClient;
   connectionCount: () => number;
   killWire: () => void;
+  rejectWire: (code: number) => void;
   sendTextToClient: (text: string) => void;
   clientBinaryCount: () => number;
   hostEncPubJwk: JsonWebKey;
@@ -359,7 +360,7 @@ const setupClient = async (
     reconnectBaseDelayMs: 20,
     reconnectMaxDelayMs: 80,
     ...clientOverrides,
-    createWireSocket: () => {
+    createWireSocket: clientOverrides.createWireSocket ?? (() => {
       count += 1;
       const clientEndpoint = new FakeEndpoint();
       const hostEndpoint = new FakeEndpoint();
@@ -373,12 +374,13 @@ const setupClient = async (
       attachMiniHost(hostEndpoint, hostKeyPair.privateKey, hostOptions);
       queueMicrotask(() => clientEndpoint.onopen?.());
       return clientEndpoint;
-    },
+    }),
   });
   return {
     client,
     connectionCount: () => count,
     killWire: () => lastClientEndpoint?.close(1006, 'killed'),
+    rejectWire: (code) => lastClientEndpoint?.close(code, 'simulated relay rejection'),
     sendTextToClient: (text: string) => lastHostEndpoint?.send(text),
     clientBinaryCount: () => lastClientEndpoint?.binarySent ?? 0,
     hostEncPubJwk: hostPubJwk,
@@ -575,6 +577,130 @@ describe('createRelayTunnelClient', () => {
     expect(connectionCount()).toBeGreaterThan(1);
     const status = client.getStatus();
     expect(['reconnecting', 'connecting', 'connected', 'error']).toContain(status.state);
+  });
+
+  test('retries after a transient relay capacity eviction instead of requiring an app restart', async () => {
+    const { client, rejectWire, connectionCount } = await setupClient();
+    track(client);
+    expect((await client.fetch('/health')).status).toBe(200);
+    rejectWire(4029);
+    await wait(20);
+    const abort = new AbortController();
+    let outcome = 'loading';
+    const request = client.fetch('/health', { signal: abort.signal }).then(
+      () => { outcome = 'recovered'; },
+      () => { outcome = 'failed'; },
+    );
+    try {
+      await wait(300);
+      expect({ outcome, connections: connectionCount(), state: client.getStatus().state })
+        .toEqual({ outcome: 'recovered', connections: 2, state: 'connected' });
+    } finally {
+      abort.abort();
+      await request;
+    }
+  });
+
+  test('detects a silently dead return path even while the client keeps sending', async () => {
+    const { client, connectionCount } = await setupClient({ silent: true }, { pingIntervalMs: 100, pingTimeoutMs: 50 });
+    track(client);
+    await vi.waitFor(() => expect(client.getStatus().state).toBe('connected'), { interval: 1 });
+    const abort = new AbortController();
+    const pending: Promise<unknown>[] = [];
+    const traffic = setInterval(() => {
+      pending.push(client.fetch('/health', { signal: abort.signal }).catch(() => undefined));
+    }, 10);
+    try {
+      await wait(350);
+      expect(connectionCount()).toBeGreaterThan(1);
+    } finally {
+      clearInterval(traffic);
+      abort.abort();
+      await Promise.all(pending);
+    }
+  });
+
+  test('keeps retrying capacity rejections at a fixed interval', async () => {
+    const attempts: number[] = [];
+    const { client } = await setupClient({}, { reconnectBaseDelayMs: 25, createWireSocket: () => {
+      attempts.push(Date.now());
+      const endpoint = new FakeEndpoint();
+      queueMicrotask(() => endpoint.close(4029, 'temporarily full'));
+      return endpoint;
+    } });
+    track(client);
+    await vi.waitFor(() => expect(attempts.length).toBeGreaterThanOrEqual(5), { timeout: 600, interval: 5 });
+    const gaps = attempts.slice(1, 5).map((at, index) => at - attempts[index]);
+    expect(gaps.every(gap => gap >= 20 && gap < 80)).toBe(true);
+  });
+
+  test('authentication rejection fails later requests instead of leaving them loading', async () => {
+    const { client, rejectWire, connectionCount } = await setupClient();
+    track(client);
+    await client.fetch('/health');
+    rejectWire(4010);
+    await vi.waitFor(() => expect(client.getStatus().state).toBe('error'));
+    await expect(client.fetch('/health')).rejects.toThrow('authentication failed');
+    expect(connectionCount()).toBe(1);
+  });
+
+  test('foreground interrupts the slow background retry, while disposal prevents further reconnects', async () => {
+    const runtimeDocument = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    vi.stubGlobal('document', runtimeDocument);
+    const { client, rejectWire, connectionCount } = await setupClient({}, { hiddenOrOfflineMaxDelayMs: 60_000 });
+    track(client);
+    await client.fetch('/health');
+    runtimeDocument.visibilityState = 'hidden';
+    rejectWire(4029);
+    await vi.waitFor(() => expect(client.getStatus().state).toBe('reconnecting'));
+    expect(connectionCount()).toBe(1);
+    runtimeDocument.visibilityState = 'visible';
+    runtimeDocument.dispatchEvent(new Event('visibilitychange'));
+    await vi.waitFor(() => expect(client.getStatus().state).toBe('connected'), { timeout: 500 });
+    expect((await client.fetch('/health')).status).toBe(200);
+    client.close();
+    const stoppedCount = connectionCount();
+    runtimeDocument.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('yuri:system-resume'));
+    await wait(100);
+    expect(connectionCount()).toBe(stoppedCount);
+  });
+
+  test('keeps the Host alive during inbound-only SSE traffic', async () => {
+    const eventsFixture = createEventsFixture();
+    const frames: TunnelFrame[] = [];
+    const { client } = await setupClient({ eventsFixture, recordFrame: frame => frames.push(frame) });
+    track(client);
+    const abort = new AbortController();
+    await client.fetch('/api/yuri/events', { signal: abort.signal });
+    const traffic = setInterval(() => eventsFixture.pushEvent({ type: 'yuri:event-stream-ready' }), 10);
+    try {
+      await wait(180);
+      expect(frames.some(frame => frame.frameType === TunnelFrameType.Ping)).toBe(true);
+    } finally {
+      clearInterval(traffic);
+      abort.abort();
+    }
+  });
+
+  test('probes an apparently connected tunnel on system resume and fails stale streams', async () => {
+    let probes = 0;
+    const hostOptions = { silent: false, eventsFixture: createEventsFixture(), recordFrame: (frame: TunnelFrame) => {
+      if (frame.frameType === TunnelFrameType.Ping) probes += 1;
+    } };
+    const runtimeWindow = new EventTarget();
+    vi.stubGlobal('window', runtimeWindow);
+    const resumed = await setupClient(hostOptions, { pingIntervalMs: 60_000, pingTimeoutMs: 30 });
+    track(resumed.client);
+    const response = await resumed.client.fetch('/api/yuri/events');
+    const read = response.body!.getReader().read().then(() => 'done', () => 'reset');
+    hostOptions.silent = true;
+    for (let index = 0; index < 50; index += 1) runtimeWindow.dispatchEvent(new Event('yuri:system-resume'));
+    expect(await read).toBe('reset');
+    expect(probes).toBe(1);
+    hostOptions.silent = false;
+    await vi.waitFor(() => expect(resumed.connectionCount()).toBeGreaterThan(1));
+    expect((await resumed.client.fetch('/health')).status).toBe(200);
   });
 
   test('survives duplicate ready frames from a slow first handshake (first-request 500 regression)', async () => {

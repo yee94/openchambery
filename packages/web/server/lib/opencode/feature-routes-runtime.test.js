@@ -31,6 +31,18 @@ describe('feature routes runtime composition', () => {
     expect(source).toMatch(/label: project\.label\.trim\(\)/);
   });
 
+  it('wires only project registration and live roots into the assistant extension tools', async () => {
+    const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
+    const routes = await fs.readFile(new URL('../assistants/routes.js', import.meta.url), 'utf8');
+    expect(source).toContain('createProjectRegistry({ persistSettings, validateDirectoryPath })');
+    expect(source).toMatch(/projectRegistry.register\(input\);\s*await refreshAssistantAllowedRoots\(\)/);
+    expect(source).toContain('registerProject: registerAssistantProject');
+    expect(routes).toContain('registerProject: dependencies.registerProject');
+    for (const name of ['updateProject', 'removeProject', 'runScheduledTask', 'deleteScheduledTask']) {
+      expect(routes).not.toContain(`${name}: dependencies.${name}`);
+    }
+  });
+
   it('fans contact turn events out on the Yuri SSE bus separately from revision tips', async () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toMatch(/const broadcastContactTurnEvent = createYuriEventBroadcaster\(/);

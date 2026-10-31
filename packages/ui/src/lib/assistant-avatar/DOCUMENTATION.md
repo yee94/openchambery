@@ -16,10 +16,16 @@ optional row hover target. Inactive contact surfaces omit live motion. The
 navigation facade opts into ambient shape cycling. No persisted
 recipe or visual geometry changes as a result of this runtime extraction.
 
-`runtime.ts` is the non-React seam. `mountAvatarAnimation(host, { id, seed,
-randomizeShape?, eyeColor? })` returns only:
+List/header faces default to `followPointer`; the React leaf enables gaze only
+when `(any-hover: hover) and (any-pointer: fine)` matches, updating on capability
+changes rather than using viewport width. Transcript/processing/empty/error faces
+pass `followPointer={false}` on every device. `AssistantWorkingAvatar` supplies
+the assistant ID as `animationKey`, independently of its saved recipe seed.
 
-- `update({ active, motion, size })`: update live state, preserving the player
+`runtime.ts` is the non-React seam. `mountAvatarAnimation(host, { id, seed,
+animationKey?, randomizeShape?, eyeColor? })` returns only:
+
+- `update({ active, motion, size, followPointer? })`: update live state, preserving the player
   during continuous non-idle work/size changes. `active` is the view's intersecting, foreground,
   non-reduced-motion eligibility. Saved recipe motion-off is also enforced here.
 - `hover()`: trigger the bounded existing shrink/rebound; eligible idle faces
@@ -29,10 +35,11 @@ randomizeShape?, eyeColor? })` returns only:
 
 The React leaf owns standard observer/media/document Hooks; the runtime owns all
 imperative resources and per-frame DOM work. Mount paints a still face once.
-Inactive instances allocate no player or frame subscription. Ordinary idle faces
-hold the exact reference static pose (looking up-right), with no player, pointer
-lease or frame work. Hover briefly animates that settled pose, then restores it
-and releases the player/clock. Returning from work to idle does the same cleanup.
+Inactive instances allocate no player or frame subscription. Idle faces without
+pointer following hold the exact reference static pose (looking up-right), with
+no player, pointer lease or frame work. Hover briefly animates that settled pose,
+then restores it and releases the player/clock. Returning from work to idle does
+the same cleanup. Mouse-capable list/header faces retain live gaze even when idle.
 Ambient navigation keeps its existing continuous shape cycle. Static React faces
 serialize their image only when needed; live faces do not generate an unused URI.
 Navigation alone supplies an optional `eyeColor` (`white` or `black`) from the
@@ -62,6 +69,15 @@ Those remain the existing engine. Hover geometry, eye descriptors, source clips,
 containment and the source body's spring interpolation are unchanged. This is a
 shared scheduler and ownership simplification, not a claim that SVG morphing has
 become GPU/compositor-only animation.
+
+Working faces without pointer following share a window-scoped timeline keyed by
+`[animationKey, seed, compact]`. It advances once per shared frame timestamp;
+newly mounted or returning visible faces immediately paint its current pose.
+Each instance still renders its own SVG and composes hover locally. List/header
+faces with mouse gaze retain independent timelines so gaze cannot affect chat
+poses. Last consumer release removes the timeline; if all consumers go inactive,
+resume starts a fresh bounded timeline instead of replaying background time.
+Different assistant IDs, recipes and compact modes never share mutable state.
 
 ## Independent performance gate
 
@@ -94,9 +110,11 @@ review, not automatic relaxation to pass CI.
 The same browser test verifies twenty active production faces, zero React commits
 per animation frame, zero SVG writes for fifty unrelated parent updates, one
 shared pointer listener, zero reads/writes/commits during a thousand pointer
-events, zero ongoing writes/listeners for twenty ordinary idle faces, and zero
-ongoing writes/listeners under reduced motion. Unit tests guard
-30Hz cadence, read-before-write, visibility/identity/hover lifecycle and cleanup.
+events, desktop idle gaze, zero ongoing writes/listeners for twenty idle transcript
+or touch-only faces, late-mounted working synchronization, and zero ongoing
+writes/listeners under reduced motion. Unit tests guard 30Hz cadence,
+read-before-write, visibility/identity/hover lifecycle, one timeline advance per
+shared paint and last-consumer cleanup.
 
 `.github/workflows/avatar-performance.yml` runs this gate independently on related
 PRs. `YURI_TEST_EVIDENCE_DIR` retains a JSON measurement report and local fixture;

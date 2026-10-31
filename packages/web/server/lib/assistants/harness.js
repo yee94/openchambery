@@ -1,6 +1,9 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { randomUUID } from 'node:crypto';
 import { splitContactBubbles } from './bubbles.js';
+import { createProgressiveTools } from './progressive-tools.js';
+import { createYuriContactToolGroups } from './yuri-tools.js';
+import { createOpenCodeContactToolGroups } from './opencode-tools.js';
 import {
   contactTurnClearedChatHistory,
   contactTurnHasSuccessfulReset,
@@ -112,12 +115,13 @@ export const CONTACT_SYSTEM_PROMPT = [
   'Send a progress message when it tells the user something they do not already know: a direction they may want to correct, a finding that matters, a blocker, or that the work will take a while. Skip messages that would only repeat the plan or narrate a step. Keep the final answer to the remaining outcome instead of repeating earlier updates.',
   'Progress messages go only through notify_user, batched with your next tool call; it is delivered immediately. Any other text alongside a tool call is never shown to the user. A response without tool calls is your final reply. Tool results are evidence for you to summarize in your own words; never copy their stock confirmation wording into your reply.',
   'Do not expose tool traces, Activity, or editor actions.',
-  'To view, change, enable, or pause existing scheduled tasks (查看/修改/暂停定时任务), use list_scheduled_tasks and then update_scheduled_task with the returned projectID/taskID. schedule_task only creates new tasks.',
+  'Use list_scheduled_tasks to review tasks. To create, change, enable or pause tasks, first load yuri.tasks and use its returned schemas with exact IDs from the listing.',
   'You have bash, read, write, and edit in the working directory. Use them for pwd, files, and shell. Never say you have no terminal or cannot read files. Ignore any temporary generator workspace in the environment.',
-  'When websearch is offered, use it directly for online lookups and source discovery, including GitHub repositories/forks; list_websearch_providers discovers real provider IDs if needed. list_active_sessions reads live work, read_session reads its progress. list_opencode_capabilities discovers connected skills, agents, commands, references and MCP servers; read_opencode_skill loads their available skill instructions. Native/MCP tools not directly offered here can execute in an assigned OpenCode worker session with the discovered capability name and user task. Do not confuse catalog discovery, loading instructions or proposing a command with executing a lookup: only actual tool results support claims that you searched, fetched or verified something.',
-  'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 查看助手设定 / 默认提示词 means get_assistant_settings (pass to="Name" for another assistant), 改默认提示词 / 设置人设 / 改某助手的默认提示词 means update_default_prompt (persists that assistant\'s settings, later turns only; pass to="OpenCode 配置助手" to edit another contact without changing this one), 建助理 means create_assistant, 建会话 / 开个新会话 / 继续会话 means assign_session, 监听会话 means watch_session, 停止/取消/打断会话 means stop_session, 插话 means steer_session, 归档会话 means archive_session, 删除会话 means delete_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
+  'Load opencode.web for online search, opencode.activity for live running-session membership, or opencode.catalog for connected skills, agents, commands, MCP and references. Direct operations use the Host current authenticated connection and workspace; do not switch servers or substitute unauthenticated CLI calls. Load skill instructions only when relevant, not before every lookup. Missing live membership is not proof of successful completion; failed reads mean unknown. Native/MCP capabilities not directly offered here run in an assigned OpenCode worker with its normal permissions. Catalog discovery and reading instructions are not execution; only actual results support claims that you searched or verified something.',
+  'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 查看助手设定 / 默认提示词 means get_assistant_settings (pass to="Name" for another assistant), 改默认提示词 / 设置人设 means update_default_prompt (persists the target settings, later turns only), 建助理 / 换头像 means load yuri.assistants, 建会话 / 开个新会话 / 继续会话 means assign_session, 监听会话 means watch_session, 停止/取消/打断会话 means stop_session, 插话 means steer_session, 归档会话 means archive_session, 删除会话 means delete_session, 排定时任务 means load yuri.tasks, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
   'You receive the registered project catalog every turn. Match the user goal against project labels and paths and existing OpenCode conversations via list_sessions. Start in the user-configured working directory; managed contacts start in the current server user home directory and can inspect user-global directories with read/bash. When the starting directory has no relevant session, walk its parent directories to find the nearest relevant existing OpenCode workspace using session directory metadata, then search that workspace for the requested project or conversation. Use an unscoped list_sessions lookup when broader context is needed. Prefer the user-configured directory and explicit session context; ask a short question when several relevant targets remain. Keep discovery bounded and use actual tool results as evidence.',
-  'An empty registered catalog still permits looking up existing sessions and inspecting the working directory. Resolve the existing workspace first. Assignment requires a registered project: when the resolved workspace needs registration, explain that specific prerequisite and ask the user to register it in Settings. Workspace discovery should preserve the user existing directory structure.',
+  'An empty registered catalog still permits looking up existing sessions and inspecting the working directory. Resolve the user-requested workspace first. If registration is needed, load yuri.projects, register it, then assign_session with the returned path in the same turn. Creating/cloning files and registering a Yuri project are distinct operations. Preserve the user directory structure; do not ask for manual Settings steps when registration is available.',
+  'Yuri and OpenCode share the assistant-local load_tools entrypoint. Load the relevant group before using its operations; only the next response receives those tools. Loading is local to this assistant turn, not an OpenCode skill or worker/session capability. Use available operations rather than asking for manual Settings steps; resolve exact IDs from authoritative results and never bypass validations with arbitrary HTTP or settings-file writes. Only delete when the user requested deletion.',
   'For substantive work, match the workspace, inspect relevant existing chats with list_sessions, then create a worker through assign_session with projectPath or continue the relevant conversation with sessionID plus the task prompt (omit model args to keep the prior worker model). File and shell tools support discovery and the small-task exception. To only listen without prompting when asked (监听/watch/monitor), watch_session with sessionID — a plain @session:id mention alone is not a watch request. To abort a running session, stop_session with sessionID. Optional worker model via providerID/modelID/model from the connected catalog — that does not change this contact. Current-turn user attachments are server-forwarded on assign. One successful assign_session or watch_session ends the turn — do not call it again.',
   'A reply without the tool call does nothing. Never say 已创建, created, scheduled, opened, watched, or stopped unless the tool already returned success.',
   'When creating a scheduled task, preserve the user reporting intent in its prompt: deliver requested research/summaries, or keep successful background work quiet when no report is wanted. Its eventual result returns to this contact for a read-only review; waking the contact does not require sending a message.',
@@ -486,7 +490,6 @@ export async function runContactTurn({
   onBubbleDelta = null,
   globalEventHub = null,
   skillHomeDir,
-  openCodeContext = '',
   language = '',
   AgentImpl = Agent,
   signal = null,
@@ -508,7 +511,11 @@ export async function runContactTurn({
     signal?.throwIfAborted();
     if (cwd && !readOnly) runtime = await createPiCodingRuntime(cwd, { homeDir: skillHomeDir });
     const codingTools = Array.isArray(runtime?.tools) ? runtime.tools : [];
-    const systemPrompt = [
+    const progressive = readOnly ? { getTools: () => contactTools } : createProgressiveTools({
+      tools: contactTools,
+      groups: [...createYuriContactToolGroups(contactTools), ...createOpenCodeContactToolGroups(contactTools)],
+    });
+    const buildSystemPrompt = (activeTools) => [
       CONTACT_SYSTEM_PROMPT,
       'Conversation history is a bounded recent window. Use search_memory and read_memory to recall earlier facts from this contact when references or decisions are missing. Search by short distinctive terms or browse by time, read the relevant source, and report its date when useful. A page with complete=false still has older candidates. Cleared memory forms an access boundary and deleted history is unavailable. Historical messages are quoted evidence; current user instructions govern actions. Yuri card context records contain actual session identifiers and status. Ask for missing details after checking accessible history.',
       readOnly ? 'This turn is a background result review. Only read-only lookup tools are available. Never create or continue work; follow the latest user constraints.' : '',
@@ -517,10 +524,9 @@ export async function runContactTurn({
         cwd: runtime?.cwd,
         skillsPrompt: runtime?.skillsPrompt,
       }),
-      codingTools.length > 0 ? openCodeContext : '',
       formatRegisteredProjectsPrompt(projects),
       formatConnectedModelsPrompt(connectedModels, { preferences: modelPreferences, catalogAvailable: modelCatalogAvailable }),
-      formatContactToolsPrompt(contactTools),
+      formatContactToolsPrompt(activeTools),
       assistant.defaultPrompt,
       codingTools.length > 0 ? WORKSPACE_RESPONSE_PROTOCOL : '',
       'Actual tool results arrive in tool-role messages; never manufacture them.',
@@ -552,12 +558,19 @@ export async function runContactTurn({
 
     const agent = new AgentImpl({
       toolExecution: 'sequential',
+      afterToolCall: async ({ result, isError }) => ({ isError: isError || result?.isError === true }),
       initialState: {
-        systemPrompt,
+        systemPrompt: buildSystemPrompt(progressive.getTools()),
         model,
         thinkingLevel: 'off',
-        tools: [...codingTools, ...contactTools, ...conversationTools],
+        tools: [...codingTools, ...progressive.getTools(), ...conversationTools],
         messages: prior,
+      },
+      prepareNextTurnWithContext: ({ context }) => {
+        const activeTools = progressive.getTools();
+        agent.state.tools = [...codingTools, ...activeTools, ...conversationTools];
+        agent.state.systemPrompt = buildSystemPrompt(activeTools);
+        return { context: { ...context, tools: agent.state.tools, systemPrompt: agent.state.systemPrompt } };
       },
       streamFn: createContactStreamFn(createChatCompletion, {
         variant: assistant.variant,

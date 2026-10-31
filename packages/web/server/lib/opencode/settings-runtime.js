@@ -851,10 +851,15 @@ export const createSettingsRuntime = (deps) => {
   };
 
   const persistSettings = async (changes) => runPersistedWrite(async () => {
+    const updateCurrent = typeof changes === 'function';
+    const current = updateCurrent
+      ? await readSettingsFromDiskStrict()
+      : await readSettingsFromDisk();
+    if (updateCurrent && Array.isArray(current)) throw new Error('Settings file is malformed (array payload)');
+    if (typeof changes === 'function') changes = await changes(current);
     // Log field names only — changes can carry credentials (UI password,
     // client tokens) that must never reach the log file.
     console.log('[persistSettings] Updating fields:', Object.keys(changes || {}).join(', ') || '(none)');
-    const current = await readSettingsFromDisk();
     const sanitized = sanitizeSettingsUpdate(changes);
     let next = mergePersistedSettings(current, sanitized);
 
@@ -882,7 +887,7 @@ export const createSettingsRuntime = (deps) => {
     // Validating project paths hits the filesystem for every entry, so only
     // do it when the incoming update actually touches the projects list —
     // not on every theme/window-state/etc. save.
-    if (Object.prototype.hasOwnProperty.call(sanitized, 'projects') && Array.isArray(next.projects)) {
+    if (!updateCurrent && Object.prototype.hasOwnProperty.call(sanitized, 'projects') && Array.isArray(next.projects)) {
       const validated = await validateProjectEntries(next.projects);
       next = { ...next, projects: validated };
     }

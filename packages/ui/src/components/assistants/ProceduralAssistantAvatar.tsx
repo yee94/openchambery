@@ -5,30 +5,32 @@ import { mountAvatarAnimation } from '@/lib/assistant-avatar/runtime';
 import { generatedAvatarDataUri } from '@/lib/generatedAvatar';
 import { cn } from '@/lib/utils';
 
-type Props = { seed?: string; size: number; label?: string; className?: string; motion?: AvatarMotion; hoverTarget?: React.RefObject<HTMLElement | null>; randomizeShape?: boolean; eyeColor?: AvatarEyeColor };
+type Props = { seed?: string; size: number; label?: string; className?: string; motion?: AvatarMotion; hoverTarget?: React.RefObject<HTMLElement | null>; randomizeShape?: boolean; eyeColor?: AvatarEyeColor; followPointer?: boolean; animationKey?: string };
 
 // This leaf owns observers and delegates DOM/frame work to the runtime. Historical/static
 // faces use the cached image path and allocate no animation Hooks or clock work.
-function LiveFace({ seed, motion, size, hoverTarget, randomizeShape = false, eyeColor }: { seed?: string; motion: AvatarMotion; size: number; hoverTarget?: React.RefObject<HTMLElement | null>; randomizeShape?: boolean; eyeColor?: AvatarEyeColor }) {
+function LiveFace({ seed, motion, size, hoverTarget, randomizeShape = false, eyeColor, followPointer = true, animationKey }: { seed?: string; motion: AvatarMotion; size: number; hoverTarget?: React.RefObject<HTMLElement | null>; randomizeShape?: boolean; eyeColor?: AvatarEyeColor; followPointer?: boolean; animationKey?: string }) {
   const host = React.useRef<HTMLSpanElement>(null);
   const animation = React.useRef<ReturnType<typeof mountAvatarAnimation> | null>(null);
   const id = React.useId();
   const [intersecting, setIntersecting] = React.useState(false);
   const visibility = useDocumentVisibility('visible');
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)', true);
+  const mouseAvailable = useMediaQuery('(any-hover: hover) and (any-pointer: fine)', false);
+  const pointerGaze = followPointer && mouseAvailable;
   const active = intersecting && visibility === 'visible' && !reducedMotion;
   useIntersectionObserver(host, ([entry]) => setIntersecting(Boolean(entry?.isIntersecting)));
 
   React.useLayoutEffect(() => {
     if (!host.current) return;
-    const mounted = mountAvatarAnimation(host.current, { id: `avatar-${id.replace(/[^a-zA-Z0-9-]/g, '')}`, seed, randomizeShape, eyeColor });
+    const mounted = mountAvatarAnimation(host.current, { id: `avatar-${id.replace(/[^a-zA-Z0-9-]/g, '')}`, seed, randomizeShape, eyeColor, animationKey });
     animation.current = mounted;
     return () => { mounted.dispose(); animation.current = null; };
-  }, [id, seed, randomizeShape, eyeColor]);
+  }, [id, seed, randomizeShape, eyeColor, animationKey]);
 
   React.useEffect(() => {
-    animation.current?.update({ active, motion, size });
-  }, [active, motion, size, seed, randomizeShape, eyeColor]);
+    animation.current?.update({ active, motion, size, followPointer: pointerGaze });
+  }, [active, motion, size, seed, randomizeShape, eyeColor, animationKey, pointerGaze]);
 
   useEventListener('pointerenter', (event: PointerEvent) => {
     if (event.pointerType === 'mouse') animation.current?.hover();
@@ -39,7 +41,7 @@ function LiveFace({ seed, motion, size, hoverTarget, randomizeShape = false, eye
   );
 }
 
-export const ProceduralAssistantAvatar = React.memo(function ProceduralAssistantAvatar({ seed, size, label, className, motion, hoverTarget, randomizeShape, eyeColor }: Props) {
+export const ProceduralAssistantAvatar = React.memo(function ProceduralAssistantAvatar({ seed, size, label, className, motion, hoverTarget, randomizeShape, eyeColor, followPointer, animationKey }: Props) {
   const box = `calc(${size}px * var(--dpt-n, 1))`;
   const recipe = React.useMemo(() => resolveAssistantAvatar(seed), [seed]);
   const live = Boolean(motion && recipe.animate);
@@ -57,7 +59,7 @@ export const ProceduralAssistantAvatar = React.memo(function ProceduralAssistant
       aria-hidden={label ? undefined : true}
     >
       {live && motion
-        ? <LiveFace seed={seed} motion={motion} size={size} hoverTarget={hoverTarget} randomizeShape={randomizeShape} eyeColor={eyeColor} />
+        ? <LiveFace seed={seed} motion={motion} size={size} hoverTarget={hoverTarget} randomizeShape={randomizeShape} eyeColor={eyeColor} followPointer={followPointer} animationKey={animationKey} />
         : <img src={image} alt="" draggable={false} className="block h-full w-full object-contain" aria-hidden="true" />}
     </span>
   );

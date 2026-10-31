@@ -107,7 +107,7 @@ export function assistantAvatarArtboard(recipe: AssistantAvatarRecipe) {
   return board;
 }
 
-export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed: string, motion: AvatarMotion, compact = false, { randomizeShape = false, eyeColor, resting = false }: { randomizeShape?: boolean; eyeColor?: AvatarEyeColor; resting?: boolean } = {}) {
+export function createAssistantAvatarTimeline(recipe: AssistantAvatarRecipe, seed: string, motion: AvatarMotion, compact = false, { randomizeShape = false, resting = false }: { randomizeShape?: boolean; resting?: boolean } = {}) {
   const runtime = createRuntime(config, { body: AVATAR_BODY_NAMES[recipe.shape], isGazeAlways: true });
   let hash = 2166136261;
   for (let i = 0; i < seed.length; i++) hash = Math.imul(hash ^ seed.charCodeAt(i), 16777619) >>> 0;
@@ -117,16 +117,13 @@ export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed:
     runtime.seek(0);
     for (let i = 0; i < 60; i++) runtime.advance(0.1);
   }
-  const theme = themeFor(recipe, eyeColor);
-  let hoverTime: number | null = null;
   let shape = recipe.shape;
   let nextShapeIn = randomizeShape ? 4 + Math.random() * 3 : Infinity;
   return {
     setMotion: (next: AvatarMotion) => machine.setState(next),
-    setCompact: (next: boolean) => { compact = next; machine.setCompact(next); },
+    setCompact: (next: boolean) => machine.setCompact(next),
     setGaze: (point: Point | null) => runtime.setGaze(point),
     blink: () => runtime.blink(),
-    hover: () => { hoverTime ??= 0; },
     advance(dt: number) {
       // Bounded fixed substeps keep springs deterministic at 30Hz and prevent
       // a resumed/late frame from replaying an unbounded wall-clock backlog.
@@ -141,10 +138,33 @@ export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed:
         }
         machine.advance(step);
         runtime.advance(step);
-        if (hoverTime !== null) hoverTime += step;
         left -= step;
       }
-      const frame = runtime.frame();
+      return runtime.frame();
+    },
+  };
+}
+
+export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed: string, motion: AvatarMotion, compact = false, { randomizeShape = false, eyeColor, resting = false }: { randomizeShape?: boolean; eyeColor?: AvatarEyeColor; resting?: boolean } = {}) {
+  const timeline = createAssistantAvatarTimeline(recipe, seed, motion, compact, { randomizeShape, resting });
+  const theme = themeFor(recipe, eyeColor);
+  let hoverTime: number | null = null;
+  return {
+    setMotion: timeline.setMotion,
+    setCompact: (next: boolean) => { compact = next; timeline.setCompact(next); },
+    setGaze: timeline.setGaze,
+    blink: timeline.blink,
+    hover: () => { hoverTime ??= 0; },
+    advance(dt: number, sharedFrame?: Frame) {
+      const frame = sharedFrame ? { ...sharedFrame } : timeline.advance(dt);
+      if (hoverTime !== null) {
+        let left = Math.min(0.1, Math.max(0, dt));
+        while (left > 1e-8) {
+          const step = Math.min(left, 1 / 60);
+          hoverTime += step;
+          left -= step;
+        }
+      }
       let hoverScale = 1;
       if (hoverTime !== null) {
         const phase = hoverTime / 0.65;

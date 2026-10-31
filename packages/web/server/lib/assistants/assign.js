@@ -81,7 +81,8 @@ export function requireProvidedString(value, { field, max }) {
 
 const promptAdmitted = (result) => (
   !result?.error
-  && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true)
+  && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true
+    || (typeof result?.id === 'string' && result.id.length > 0 && result.type === 'user'))
 );
 
 const isTransportError = (error) => {

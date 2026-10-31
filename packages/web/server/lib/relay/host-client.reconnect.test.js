@@ -38,7 +38,7 @@ describe('relay host-client control reconnect', () => {
     relay = null;
   });
 
-  it('does not reset control reconnect backoff on a brief open', async () => {
+  it('keeps retrying a brief-open control failure at a fixed interval', async () => {
     relay = await startDroppingRelay();
     host = startRelayHost({
       relayUrl: relay.url,
@@ -58,6 +58,7 @@ describe('relay host-client control reconnect', () => {
     const firstGap = relay.openedAt[1] - relay.openedAt[0];
     const secondGap = relay.openedAt[2] - relay.openedAt[1];
     expect(firstGap).toBeGreaterThanOrEqual(50);
-    expect(secondGap).toBeGreaterThan(firstGap + 20);
+    expect(secondGap).toBeGreaterThanOrEqual(50);
+    expect(Math.abs(secondGap - firstGap)).toBeLessThan(60);
   });
 });

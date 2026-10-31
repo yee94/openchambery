@@ -59,7 +59,11 @@ changes do not reset sessions or alter the assistant identity.
 New creates without `avatarSeed` persist a complete
 `yuri-avatar:v1:round:capsule:<color>:neutral:1:<assistantID>` recipe. The twelve
 pigments are chosen randomly; shape, eye style and rest pose are fixed. This
-service-owned default covers HTTP/API, contact tools and first-run seeding.
+service-owned default covers HTTP/API and first-run seeding. The contact's
+`create_assistant` tool instead supplies a fresh complete recipe from the existing
+random-avatar generator (shape and twelve-color pigment), on both user and
+automatic follow-up turns. It is persisted atomically with the new contact and
+greeting; reloads never randomize it again. Manual creation keeps the round default.
 Explicit caller-supplied seeds/recipes remain untouched. Existing null/legacy
 seeds retain their original shape/color mapping; no migration or read-time write
 is introduced. The shared renderer now uses one fixed capsule-eye specification
@@ -172,22 +176,110 @@ storage/session meaning. Only the contact pi working directory changes.
 Discovery starts in the configured directory, checks existing session metadata,
 and walks parent directories to locate the nearest relevant workspace; broader
 `list_sessions` lookups can find related conversations. Ambiguous targets need
-clarification. An empty registered catalog still allows discovery; assigning a
-discovered workspace requires its registration through existing Settings.
+clarification. An empty registered catalog still allows discovery. On interactive
+turns, `register_project` registers the user-requested existing directory through
+the shared Host project registry, then `assign_session` can open it in the same
+turn. Missing registration support remains an explicit Settings prerequisite.
+
+### Assistant-only progressive tools
+
+`progressive-tools.js` owns a turn-local `load_tools` entrypoint shared by Yuri and
+OpenCode. Each owner declares groups of existing tool objects; the shared module
+only manages disclosure, never business execution, authentication or SDK calls.
+`yuri-tools.js` declares Yuri groups and the registration adapter;
+`opencode-tools.js` declares OpenCode groups and its SDK adapters. The harness
+applies its allowed-tool policy before building these groups, and the shared
+loader intersects group members with that granted set. Default interactive
+requests retain the existing high-frequency session, project/task lookup, memory,
+persona/settings and peer-message tools. The loader's schema contains only the
+available domain names and short descriptions, not every deferred schema:
+
+| Domain | Deferred tools | Owning behavior |
+| --- | --- | --- |
+| `yuri.projects` | `register_project` | Register an existing directory through shared `projects/registry.js` |
+| `yuri.assistants` | `create_assistant`, `update_avatar` | Existing Bot creation and avatar owners |
+| `yuri.tasks` | `schedule_task`, `update_scheduled_task` | Existing task creation/update/pause/resume owners |
+| `opencode.web` | `websearch`, `list_websearch_providers` | Existing authenticated SDK search; provider listing is optional, not a search prerequisite |
+| `opencode.activity` | `list_active_sessions` | Authoritative live execution membership, not history-derived completion |
+| `opencode.catalog` | `list_opencode_capabilities`, `read_opencode_skill` | Remote capability metadata and bounded, on-demand skill instructions |
+
+Of the previous eleven-tool expansion, only project registration remains. Project
+rename/removal, Bot listing/settings/deletion, session rename, full task read,
+manual task run/deletion and the redundant full capability directory were removed
+from this assistant extension. Their ordinary UI/API behavior is unchanged.
+There is no arbitrary HTTP, credential, pairing or global settings proxy.
+
+The native Agent's `prepareNextTurnWithContext` hook applies the selected tools
+and prompt to both the executor context and the next model request. Updating
+`agent.state.tools` alone is insufficient because pi snapshots the execution
+context. Hidden names are rejected by the existing native-call allowlist before
+execution; loading and invoking a hidden operation in the same response cannot
+bypass that check. Duplicate loads do not duplicate tools or execute operations.
+Unknown groups/arguments fail explicitly. The harness uses pi's `afterToolCall`
+hook to retain an adapter's returned `isError: true` as an actual Agent tool-result
+failure; thrown failures remain errors and successful returns remain successes.
+Only public tool text is sent to the model, never arbitrary internal `details`.
+One business operation per response and existing terminal assignment/watch
+behavior remain. Missed-operation detection
+still uses the available business operations, not a loader result as evidence of
+completing the requested mutation. Loading never changes business validations.
+
+Every `runContactTurn` creates its own loader state, including concurrent contacts;
+subsequent contact turns must load again. Read-only background reviews receive
+only their existing read allowlist, without any loader or deferred mutation tools.
+
+**Isolation:** this is a capability of the Yuri assistant harness, not a global or
+project Skill. No `SKILL.md`, OpenCode plugin/tool registration, skill attachment,
+session system instruction or global config entry is created. Ordinary Session
+conversations, assigned workers, CLI/TUI and other OpenCode clients do not receive
+or inherit the loader or its schemas. It has no skill catalog ID/path to discover
+or reference from a Session. Existing user-installed skills are unchanged.
+
+Project registration canonicalizes the absolute Host directory and rejects
+`assistant-workspaces`, including symlink aliases. Successful writes refresh the
+Host allowed roots before returning, so assignment does not wait for a UI request
+or reconnect. No existing registered-directory assignment gate is relaxed. A later
+assignment failure leaves the valid project and cloned files intact for retry.
+Full settings and private fields are not returned to the model. Registration
+failure remains an explicit tool error, not authoritative empty success.
+
+These new tools are absent from read-only background reviews. Web, Electron,
+hosted mobile and Capacitor use the connected Host's implementation and filesystem,
+not the phone/browser filesystem. Extension-only VS Code does not gain an assistant
+Host. No shared UI API contract or transport is added.
+
+`yuri-project.http.test.js` exercises real HTTP admission, the native Agent/tool
+loop, settings persistence, same-turn root refresh and session-card persistence,
+replacing only external model and upstream SDK execution. It also checks the
+existing UI directory API reuses the saved project identity and an ordinary Session
+created afterward does not inherit assistant tools/skills/instructions. Tool and
+harness tests cover deferred schema/executor activation, guessed-call rejection,
+repeat loads, per-turn reset, group isolation, cancellation and read-only limits.
+These automated checks are not live-provider decision-quality or mobile evidence.
+Separate live acceptance on the shared authenticated OpenCode service also ran
+the previous Yuri-only loader → `register_project` → `assign_session` autonomously,
+created one worker and persisted one card. The real OpenCode skill
+catalog was readable and contained neither assistant entry. The temporary registry,
+worker and files were cleaned up without changing the user's project list.
 
 Worker submission uses one admission path for new and existing sessions.
+Admission recognizes the official V2 raw user-inbox item (`id`, `type:user`),
+as well as the existing confirmed HTTP/envelope forms. A confirmed raw SDK result
+must not be downgraded into ambiguous admission or lose the session card.
 Definite rejection cleans up only a session created by that call. Ambiguous
 admission keeps the worker and confirms the exact message ID before reporting
 success. Attachment deduplication uses ordered content digests; reordering
 attachments is a different request.
 
-The in-app Assistant is an Yuri-owned **contact**. OpenCode is only the LLM gateway (`POST /api/yuri/llm/chat/completions`) using already-connected `{providerID, modelID}`. Composer send runs `@earendil-works/pi-agent-core` with `thinkingLevel: 'off'`. When the assistant has an effective workspace, the harness attaches pi's four coding tools (`read`, `write`, `edit`, `bash`) via `NodeExecutionEnv` in that directory, applies `defaultPrompt`, and merges skills from `~/.claude/skills`, `~/.agents/skills`, plus the project's `.claude/skills` and `.agents/skills` (project wins on name). Yuri API tools remain (`new_conversation`, `clear_chat_history`, `list_projects`, `list_sessions`, `get_assistant_settings`, `update_default_prompt`, `create_assistant`, `schedule_task`, `message_assistant`, `assign_session`, `watch_session`, `read_session`, `steer_session`, `stop_session`, `archive_session`, `delete_session`). It does not use `SessionPrompt` / `session.prompt` as the conversation engine. The LLM gateway throwaway session still denies OpenCode tools (`session.create` PermissionRuleset deny-all + `session.prompt` tools map + hidden `yuri-llm` agent `permission: { "*": deny }`); file and shell work runs in-process through pi. The contact system prompt includes **full argument schemas** for both pi coding tools and Yuri contact tools. Skill directory entries are instructions loaded via `read`, not native/MCP tool names.
+The in-app Assistant is a Yuri-owned **contact**. OpenCode is only the LLM gateway (`POST /api/yuri/llm/chat/completions`) using already-connected `{providerID, modelID}`. Composer send runs `@earendil-works/pi-agent-core` with `thinkingLevel: 'off'`. When the assistant has an effective workspace, the harness attaches pi's four coding tools (`read`, `write`, `edit`, `bash`) via `NodeExecutionEnv` in that directory, applies `defaultPrompt`, and merges skills from `~/.claude/skills`, `~/.agents/skills`, plus the project's `.claude/skills` and `.agents/skills` (project wins on name). Yuri API tools follow the progressive policy above. It does not use `SessionPrompt` / `session.prompt` as the conversation engine. File and shell work runs in-process through pi. Native-function schemas include only currently mounted tools; deferred tools are absent until loaded. Skill directory entries are instructions loaded via `read`, not native/MCP tool names.
 
 User contact turns retain the Yuri operation tools alongside the four
 pi tools. Skill discovery contributes instructions to this combined tool set.
-`opencode-tools.js` additionally attaches five direct native-function schemas on
+`opencode-tools.js` supplies five direct tools to the shared progressive policy on
 interactive turns: `websearch`, `list_websearch_providers`, `list_active_sessions`,
-`list_opencode_capabilities`, and `read_opencode_skill`. They call the current
+`list_opencode_capabilities`, and `read_opencode_skill`. Their schemas and executors
+are mounted only after their group is loaded. Loading resolves no SDK client and
+performs no network read. Actual operations call the current
 authenticated official SDK client at execution time, with the contact's effective
 pi directory (including user-home semantics for managed contacts). There is no CLI
 subprocess, additional HTTP route, global config mutation, or second LLM request
@@ -198,8 +290,17 @@ Search results include real source URLs and bounded excerpts, plus `partial` whe
 truncated. Provider discovery is not search success; failed/unsupported/malformed
 reads return tool errors rather than authoritative empty results. There is no
 silent provider switching or automatic retry. The model may explicitly choose
-another discovered provider after failure. SDK errors expose only an allowlisted
-HTTP status and fixed error category, never raw upstream bodies or credentials.
+another discovered provider after a provider failure, respecting user retry limits.
+SDK errors expose only an allowlisted HTTP status and fixed error category, never
+raw upstream bodies or credentials. Declared `UnauthorizedError`, `ForbiddenError`
+and `ServiceUnavailableError` tags retain their known status even when the Promise
+SDK omits the HTTP status. Status-only errors retain the same classification.
+The public error text contains JSON with the category, optional status and safe
+guidance, so the model sees `authentication_required`, `permission_denied`,
+`timeout`, `validation_error` or `opencode_failed` rather than losing the type in
+internal `details`. Authentication/access failures require checking the existing
+connection, not switching providers/servers or bypassing controls. Timeouts are
+reported explicitly and any retry must respect the user's constraints.
 Requests have cancellation and a 30-second deadline, including uncooperative SDK
 flights. The owning pi loop retains its sequential and terminal-operation gates.
 
@@ -215,34 +316,59 @@ Native/MCP tools without a public execution API still run in an assigned worker
 with normal OpenCode permissions; catalogs never pretend to be direct executors.
 The new tools are absent from read-only background reviews.
 
-`opencode-tools.test.js` covers the official SDK wire boundary, real pi native-tool
-loop, scope/auth/signal fidelity, cancellation/deadlines, failure versus empty data,
-bounded pages and private-field projections. Service tests cover contact admission
-through native search and activity calls without opening a worker. Live acceptance
+`progressive-tools.test.js` covers granted membership, base tools, independent
+turns, overlapping/repeated loads and cancellation. `opencode-tools.test.js` covers
+the official SDK wire boundary, real pi native-tool loop, one shared Yuri/OpenCode
+loader, hidden-call rejection, scope/auth/signal fidelity, cancellation/deadlines,
+failure versus empty data, declared SDK error tags, model-visible typed failure
+guidance, bounded pages and private-field projections. Harness tests exercise
+returned failures, thrown failures and success through the real Agent while
+asserting internal-only details stay private. Service tests cover ordinary chat
+without any skill-catalog fetch, explicit on-demand skill
+reads (including missing/failed/malformed catalogs), and native search/activity
+after group loading without opening a worker. Earlier live acceptance
 also exercised the real provider: the contact selected provider discovery and
 `websearch`, then returned actual source links, without a CLI or worker session.
 
-Interactive turns also read the connected OpenCode `skill.list` catalog and inject
-the built-in `opencode` skill content directly (`/builtin/opencode.md`, or the
-`<built-in>` catalog marker, is not a local file). The context identifies the
-connected server without credentials. After `opencode service status` confirms the
-same server, the existing `bash` tool uses `opencode api` without `--server` to retain
-registered-service authentication. Explicit servers need an already-configured
-authenticated connection; authentication failure never permits switching servers.
-Large CLI JSON reads redirect to temporary files before parsing to avoid truncated
-pipe output. The live OpenAPI contract exposes capabilities beyond the contact
-tools, including provider discovery and web search. A listed search provider can
-still fail. There is no universal native/MCP tool-call API; tools without a direct
-API operation run through an assigned OpenCode worker session. Lookup/search claims
-require actual results, not skill loads or provider listings. Current progress uses
-live session activity, never index update times as proof of running or completion.
-Existing contact operations remain preferred for their cards and follow-up.
-Catalog reads have a bounded deadline and turn cancellation; missing/failed skill
-reads remain explicit unknown context with a V2 docs discovery path, not an empty
-capability claim. Direct SDK tools are preferred over the retained CLI fallback;
-no API routes, global config changes or OpenCode Agent loop are added.
-Read-only background reviews receive neither this
-CLI context nor shell tools. All Host-backed surfaces share this server path.
+Interactive turns no longer fetch or inject the OpenCode built-in skill by default.
+The permanent prompt retains only short routing and evidence/authorization rules;
+CLI authentication instructions, endpoint URLs and skill bodies are not duplicated
+there. Load `opencode.catalog`, discover the applicable skill ID, and call
+`read_opencode_skill` when instructions are relevant. The virtual
+`/builtin/opencode.md` / `<built-in>` markers are not local files. A skill result is
+instruction content, not tool registration or evidence of execution. Local skill
+indexes and `read` retain their existing separate instruction-loading behavior.
+
+The existing SDK adapters retain per-call current-client resolution, effective
+workspace scope, cancellation, deadlines and safe error projections. No automatic
+CLI fallback, service discovery/switch, generic HTTP/RPC executor, API routes,
+global config writes or OpenCode Agent loop are introduced. Unoffered native/MCP
+operations still belong to an assigned worker and its normal permissions; existing
+contact operations retain their cards and follow-up. Read-only background reviews
+receive neither the loader nor OpenCode execution/shell tools. All Host-backed
+surfaces share this server path. Assistant-only disclosure is not a filesystem or
+shell security sandbox. Separate live acceptance of the unified loader against the
+authenticated shared service and a connected OpenAI model completed all three
+OpenCode groups: web search with a real source link, explicit skill discovery/read,
+and live session membership. The first request contained only `load_tools` and
+`notify_user`; no skill read occurred before explicit use. A failed search was
+followed by model-selected provider discovery and an explicit successful retry,
+not a silent adapter fallback. No Session mutation occurred. This bounded run is
+not evidence for every provider, account, project scope or mobile transport.
+
+After the typed-error and Agent failure-flag fixes, a separate real-model run
+passed 13 read-only acceptance scenarios: search/skill/activity success, first
+search-provider failure followed by discovery and successful retry, all search
+providers unavailable, authentication failure, unavailable/malformed live state,
+absent membership versus completion, missing skill, unavailable catalog, timeout
+with a user no-retry constraint, invalid group correction, hidden-call correction,
+and cancellation. HTTP faults were injected at the official SDK fetch boundary;
+the two protocol scenarios injected only the first proposed call, with subsequent
+decisions made by the real model. Authentication prompted connection checks without
+provider discovery/retry; timeout produced one search and an explicit timeout
+report. No real Session/project/task mutation was performed. These are bounded
+decision-quality observations, not a guarantee across all models or transports.
+
 Assignment intent includes “建个会话” and “再建个会话”. Watch intent includes
 “监听会话”; stop intent includes “停止会话”. The single missed-call
 retry checks for a result from a requested operation tool; a `read` result alone

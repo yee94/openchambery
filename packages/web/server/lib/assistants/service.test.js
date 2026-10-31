@@ -2325,6 +2325,70 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('registers a discovered workspace and opens its session in the same native-tool turn', async () => {
+    const directory = root();
+    const workspace = path.join(directory, 'cloned-repository');
+    fs.mkdirSync(workspace);
+    const projects = [];
+    const creates = [];
+    const prompts = [];
+    const registerProject = vi.fn(async ({ path: projectPath }) => {
+      const project = { id: 'new-project', path: fs.realpathSync(projectPath) };
+      projects.push(project);
+      return { project, created: true };
+    });
+    const replies = [
+      toolBatch([['load_tools', { domain: 'yuri.projects' }]]),
+      toolBatch([['register_project', { path: workspace }]]),
+      toolBatch([['assign_session', { projectPath: workspace, prompt: 'hello' }]]),
+    ];
+    const service = setup(directory, {
+      create: async (input) => { creates.push(input); return { id: 'ses_registered' }; },
+      prompt: async (input) => { prompts.push(input); return { id: 'inbox_hello', type: 'user' }; },
+    }, {
+      getAllowedRoots: () => projects.map((project) => project.path),
+      listProjects: async () => projects,
+      registerProject,
+      runContactTurn: (input) => realRunContactTurn({ ...input,
+        createChatCompletion: async () => replies.shift() ?? { text: 'Opened.' },
+      }),
+    });
+    try {
+      const assistant = service.createAssistant(assistantInput);
+      const sent = await settleSend(service, assistant.id, { messageID: 'register_then_assign', parts: [{ type: 'text', text: `Add ${workspace} as a project, open a session and say hello` }] });
+      expect(sent.settled.status).toBe('complete');
+      expect(registerProject).toHaveBeenCalledTimes(1);
+      expect(creates).toHaveLength(1);
+      expect(creates[0].location.directory).toBe(fs.realpathSync(workspace));
+      expect(prompts).toHaveLength(1);
+      expect(JSON.stringify(prompts[0])).toContain('hello');
+      expect(service.contactMessages(assistant.id).messages.flatMap((message) => message.cards).some((card) => card.cardType === 'session')).toBe(true);
+    } finally { service.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it('rejects assistant-workspaces registration even through a symlink before registry mutation', async () => {
+    const directory = root();
+    const managed = path.join(directory, 'assistant-workspaces');
+    fs.mkdirSync(managed);
+    const alias = path.join(directory, 'alias');
+    fs.symlinkSync(managed, alias);
+    const registerProject = vi.fn();
+    const results = [];
+    const service = setup(directory, {}, { registerProject,
+      runContactTurn: async ({ tools }) => {
+        const tool = tools.find((item) => item.name === 'register_project');
+        for (const target of [managed, alias, 'relative/path']) results.push(await tool.execute('bad', { path: target }));
+        return { text: 'Rejected', bubbles: ['Rejected'] };
+      },
+    });
+    try {
+      const host = service.createAssistant(assistantInput);
+      await settleSend(service, host.id, { messageID: 'bad-registration', text: 'Register workspace' });
+      expect(results.every((result) => result.details.error === 'workspace_forbidden')).toBe(true);
+      expect(registerProject).not.toHaveBeenCalled();
+    } finally { service.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+  });
+
   it('assigns a registered project session and persists the session card', async () => {
     const directory = root();
     const project = path.join(directory, 'app');
@@ -3174,6 +3238,45 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('gives tool-created assistants random shapes and pigments without changing manual defaults or existing faces', async () => {
+    const directory = root();
+    let result;
+    let service = setup(directory, {}, {
+      runContactTurn: async ({ tools }) => {
+        result = await tools.find((tool) => tool.name === 'create_assistant').execute('create', { name: 'New Bot' });
+        return { text: 'Created.', bubbles: ['Created.'] };
+      },
+    });
+    const host = service.createAssistant(assistantInput);
+    const peer = service.createAssistant({ ...assistantInput, avatarSeed: 'existing-face' });
+    const random = vi.spyOn(crypto, 'randomInt');
+    const created = [];
+    try {
+      for (const [index, color] of AVATAR_COLORS.entries()) {
+        random.mockImplementation((max) => max === AVATAR_COLORS.length ? index : 1);
+        await settleSend(service, host.id, { messageID: `create-${color}`, parts: [{ type: 'text', text: '创建一个助理' }] });
+        expect(result.isError).not.toBe(true);
+        const bot = result.details.assistant;
+        expect(resolveAssistantAvatar(bot.avatarSeed)).toMatchObject({ shape: 'soft', color, eyes: 'capsule', expression: 'neutral', animate: true });
+        expect(service.snapshot().assistants.find((item) => item.id === bot.id)?.avatarSeed).toBe(bot.avatarSeed);
+        created.push(bot);
+      }
+      expect(new Set(created.map((bot) => bot.avatarSeed)).size).toBe(AVATAR_COLORS.length);
+      const manual = service.createAssistant(assistantInput);
+      expect(resolveAssistantAvatar(manual.avatarSeed)).toMatchObject({ shape: 'round' });
+      service.close();
+      service = setup(directory);
+      const restored = service.snapshot().assistants;
+      for (const bot of [...created, manual, host, peer]) {
+        expect(restored.find((item) => item.id === bot.id)?.avatarSeed).toBe(bot.avatarSeed);
+      }
+    } finally {
+      random.mockRestore();
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('reads and persists defaultPrompt via get_assistant_settings / update_default_prompt', async () => {
     const directory = root();
     const tips = [];
@@ -3460,6 +3563,7 @@ describe('assistants service', () => {
     const backgroundTurns = [];
     const runContactTurn = async (input) => {
       if (input.readOnly) {
+        expect(input.tools.some((tool) => ['register_project', 'update_project', 'remove_project', 'update_assistant', 'delete_assistant', 'run_scheduled_task', 'delete_scheduled_task', 'rename_session'].includes(tool.name))).toBe(false);
         backgroundTurns.push(input);
         return realRunContactTurn({
           ...input,
@@ -3507,6 +3611,30 @@ describe('assistants service', () => {
     }
   });
 
+  it('does not fetch OpenCode catalogs or expose deferred schemas on an ordinary contact turn', async () => {
+    const directory = root();
+    const list = vi.fn(() => new Promise(() => {}));
+    const query = vi.fn();
+    const service = setup(directory, { skill: { list }, websearch: { query } }, {
+      runContactTurn: realRunContactTurn,
+      createChatCompletion: async ({ body }) => {
+        const names = body.tools.map((tool) => tool.function.name);
+        expect(names.filter((name) => name.startsWith('load_'))).toEqual(['load_tools']);
+        for (const name of ['websearch', 'list_websearch_providers', 'list_active_sessions', 'list_opencode_capabilities', 'read_opencode_skill']) expect(names).not.toContain(name);
+        const prompt = body.messages.find((message) => message.role === 'system').content;
+        expect(prompt).not.toContain('Connected OpenCode built-in skill:');
+        expect(prompt).not.toContain('opencode api --help');
+        return { text: '你好。' };
+      },
+    });
+    try {
+      const assistant = service.createAssistant(assistantInput);
+      expect((await settleSend(service, assistant.id, { messageID: 'no-eager-catalog', text: '你好' })).settled.status).toBe('complete');
+      expect(list).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
+    } finally { service.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+  });
+
   it('runs direct search and live-status tools end to end through contact send without opening a worker', async () => {
     const directory = root();
     const query = vi.fn(async () => ({ data: { providerID: 'exa', results: [{ url: 'https://example.test/repository', title: 'Repository evidence', content: 'Actual online findings' }] } }));
@@ -3517,11 +3645,13 @@ describe('assistants service', () => {
       runContactTurn: realRunContactTurn,
       createChatCompletion: async ({ body }) => {
         round++;
-        if (round === 1) return toolBatch([['websearch', { query: 'site:github.com client', providerID: 'exa' }, 'search-live']]);
-        if (round === 2) {
+        if (round === 1) return toolBatch([['load_tools', { domain: 'opencode.web' }]]);
+        if (round === 2) return toolBatch([['websearch', { query: 'site:github.com client', providerID: 'exa' }, 'search-live']]);
+        if (round === 3) {
           expect(body.messages.find((message) => message.tool_call_id === 'search-live')?.content).toContain('Actual online findings');
-          return toolBatch([['list_active_sessions', {}, 'status-live']]);
+          return toolBatch([['load_tools', { domain: 'opencode.activity' }]]);
         }
+        if (round === 4) return toolBatch([['list_active_sessions', {}, 'status-live']]);
         expect(body.messages.find((message) => message.tool_call_id === 'status-live')?.content).toContain('ses_running');
         return { text: '已检索来源并查询实时任务。' };
       },
@@ -3534,41 +3664,48 @@ describe('assistants service', () => {
       expect(query).toHaveBeenCalledWith({ location: { directory: fs.realpathSync(directory) }, query: 'site:github.com client', providerID: 'exa' }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
       expect(active).toHaveBeenCalledTimes(1);
       expect(create).not.toHaveBeenCalled();
-      expect(round).toBe(3);
+      expect(round).toBe(5);
     } finally {
       service.close();
       fs.rmSync(directory, { recursive: true, force: true });
     }
   });
 
-  it.each(['/builtin/opencode.md', '<built-in>'])('injects the connected built-in OpenCode skill at %s alongside direct SDK tools', async (builtinPath) => {
+  it.each(['/builtin/opencode.md', '<built-in>'])('reads the connected built-in OpenCode skill at %s only after loading and requesting it', async (builtinPath) => {
     const directory = root();
     let skillContent = 'Use the existing OpenCode API for live execution status.';
-    let server = 'upstream.example.test';
     const list = vi.fn(async () => ({ data: [
       { id: 'other', path: '<built-in>', content: 'Unrelated skill content' },
-      { id: 'opencode', path: '/custom/SKILL.md', content: 'Not the built-in skill' },
+      { id: 'custom-opencode', path: '/custom/SKILL.md', content: 'Not the built-in skill' },
       { id: 'opencode', path: builtinPath, content: skillContent },
     ] }));
+    let round = 0;
     const createChatCompletion = vi.fn(async ({ body }) => {
+      round++;
       const system = body.messages.find((message) => message.role === 'system').content;
-      expect(system).toContain(`Connected OpenCode built-in skill:\n${skillContent}`);
-      expect(system).toContain('use opencode api without --server');
-      expect(system).toContain('First compare opencode service status');
-      expect(system).toContain('there is no universal tool-call endpoint');
-      expect(system).toContain('POST /api/websearch');
-      expect(system).toContain('assign the task to an OpenCode worker session');
-      expect(system).toContain('Only claim a lookup or search after receiving its real results');
-      expect(system).toContain(`https://${server}/prefix`);
-      expect(system).toContain('GET /api/session/active');
+      expect(system).not.toContain(skillContent);
+      expect(system).not.toContain('opencode api without --server');
       expect(system).not.toContain('Unrelated skill content');
       expect(system).not.toContain('Not the built-in skill');
       expect(system).not.toContain('secret');
-      expect(body.tools.map((tool) => tool.function.name)).toEqual(expect.arrayContaining(['websearch', 'list_websearch_providers', 'list_active_sessions', 'list_opencode_capabilities', 'read_opencode_skill']));
+      const names = body.tools.map((tool) => tool.function.name);
+      if (round === 1) {
+        for (const name of ['websearch', 'list_websearch_providers', 'list_active_sessions', 'list_opencode_capabilities', 'read_opencode_skill']) expect(names).not.toContain(name);
+        expect(list).not.toHaveBeenCalled();
+        return toolBatch([['load_tools', { domain: 'opencode.catalog' }]]);
+      }
+      expect(names).toContain('read_opencode_skill');
+      expect(names).not.toContain('websearch');
+      if (round === 2) {
+        expect(list).not.toHaveBeenCalled();
+        return toolBatch([['read_opencode_skill', { id: 'opencode' }, 'read-skill']]);
+      }
+      const evidence = body.messages.find((message) => message.tool_call_id === 'read-skill');
+      expect(evidence.content).toContain(skillContent);
       return { text: 'Checked the available OpenCode context.' };
     });
     const service = setup(directory, { skill: { list } }, {
-      buildOpenCodeUrl: () => `https://user:secret@${server}/prefix/?token=secret#secret`,
+      buildOpenCodeUrl: () => 'https://user:secret@upstream.example.test/prefix/?token=secret#secret',
       runContactTurn: realRunContactTurn,
       createChatCompletion,
     });
@@ -3577,12 +3714,13 @@ describe('assistants service', () => {
       const first = await settleSend(service, assistant.id, { messageID: 'context-1', text: '看看正在运行的任务' });
       expect(first.settled.status).toBe('complete');
       skillContent = 'Updated upstream skill instructions.';
-      server = 'second.example.test';
+      round = 0;
+      list.mockClear();
       const second = await settleSend(service, assistant.id, { messageID: 'context-2', text: '再看看' });
       expect(second.settled.status).toBe('complete');
-      expect(list).toHaveBeenCalledTimes(2);
+      expect(list).toHaveBeenCalledTimes(1);
       expect(list.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
-      expect(createChatCompletion).toHaveBeenCalledTimes(2);
+      expect(createChatCompletion).toHaveBeenCalledTimes(6);
     } finally {
       service.close();
       fs.rmSync(directory, { recursive: true, force: true });
@@ -3595,19 +3733,28 @@ describe('assistants service', () => {
       if (kind === 'failed') throw new Error('secret upstream detail');
       return { data: kind === 'malformed' ? null : [] };
     });
-    const runContactTurn = vi.fn(async ({ openCodeContext }) => {
-      expect(openCodeContext).toContain('OpenCode capabilities are available');
-      expect(openCodeContext).toContain('https://opencode.ai/v2/docs/');
-      expect(openCodeContext).not.toContain('secret upstream detail');
-      expect(openCodeContext).toContain(kind === 'missing' ? 'did not include' : 'could not be loaded');
-      return { bubbles: ['Available context checked.'] };
+    let round = 0;
+    const service = setup(directory, { skill: { list } }, { runContactTurn: realRunContactTurn,
+      createChatCompletion: async ({ body }) => {
+        round++;
+        if (round === 1) {
+          expect(list).not.toHaveBeenCalled();
+          return toolBatch([['load_tools', { domain: 'opencode.catalog' }]]);
+        }
+        if (round === 2) return toolBatch([['read_opencode_skill', { id: 'opencode' }, 'missing-skill']]);
+        const evidence = body.messages.find((message) => message.tool_call_id === 'missing-skill');
+        expect(evidence.content).toContain('isError');
+        expect(evidence.content).not.toContain('secret upstream detail');
+        expect(body.tools.some((tool) => tool.function.name === 'list_opencode_capabilities')).toBe(true);
+        return { text: 'Skill unavailable; discovery can still be requested.' };
+      },
     });
-    const service = setup(directory, { skill: { list } }, { runContactTurn });
     try {
       const assistant = service.createAssistant(assistantInput);
       const sent = await settleSend(service, assistant.id, { messageID: 'context-fallback', text: '任务进度如何' });
       expect(sent.settled.status).toBe('complete');
-      expect(runContactTurn).toHaveBeenCalledTimes(1);
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(round).toBe(3);
     } finally {
       service.close();
       fs.rmSync(directory, { recursive: true, force: true });

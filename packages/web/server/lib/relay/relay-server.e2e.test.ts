@@ -38,6 +38,7 @@ import { refreshRuntimeUrlAuthToken } from '../../../../ui/src/lib/runtime-auth.
 import { requestSpeechSession } from '../../../../ui/src/lib/voice/direct-session.ts';
 import { createGuiClient } from '../../../../ui/src/lib/opencode/gui.ts';
 import { createWebFilesAPI } from '../../../src/api/files.ts';
+import { createEventPipeline } from '../../../../ui/src/sync/event-pipeline.ts';
 
 // Web's source aliases are not exported Node package subpaths. Forward them to
 // the real implementations so this Node E2E exercises the same transport singleton.
@@ -166,7 +167,7 @@ const readBody = async (req: http.IncomingMessage) => {
   return Buffer.concat(chunks).toString('utf8');
 };
 
-const startOrigin = async () => {
+const startOrigin = async (options: { recoveryEvents?: boolean } = {}) => {
   const mediaDirectory = await mkdtemp(path.join(os.tmpdir(), 'relay-video-'));
   const videoPath = path.join(mediaDirectory, 'clip.mp4');
   await fsPromises.writeFile(videoPath, Buffer.from('0123456789'));
@@ -204,6 +205,7 @@ const startOrigin = async () => {
   registerTtsRoutes(speech, { sayTTSCapability: null });
   const broadcast = createGlobalUiEventBroadcaster({ sseClients: new Set(), wsClients: new Set(), writeSseEvent() {} });
   let hostSubscriptions = 0;
+  let recoveryRevision = 0;
   registerOpenCodeProxy(proxy, {
     fs: { promises: { realpath: async (value: string) => value } }, os: {}, path: {},
     getRuntime: () => ({ isOpenCodeReady: true, openCodePort: 4096 }),
@@ -222,6 +224,15 @@ const startOrigin = async () => {
       const pathname = new URL(req.url ?? '/', 'http://origin').pathname;
       if (pathname === '/fixture-event') {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
+        if (options.recoveryEvents) {
+          const emit = () => res.write(`data: ${JSON.stringify({ type: 'session.status', properties: {
+            sessionID: `ses_recovery_${recoveryRevision}`, status: { type: 'idle' },
+          } })}\n\n`);
+          emit();
+          const timer = setInterval(emit, 30);
+          res.on('close', () => clearInterval(timer));
+          return;
+        }
         res.write('data: {"type":"session.execution.started","data":{"sessionID":"ses_relay"}}\n\n');
         await wait(70);
         broadcast({ type: 'session.updated', properties: { info: { id: 'ses_relay', title: 'Relay title', time: { created: 1, updated: 2 } } } }, { directory: '/repo' });
@@ -338,6 +349,7 @@ const startOrigin = async () => {
   const port = (server.address() as net.AddressInfo).port;
   return {
     port, videoPath, previewPath, previewContent, guiBundle, pluginInventory, guiRequests, bearerRequests, observedOrigins, getHostSubscriptions: () => hostSubscriptions,
+    advanceRecoveryRevision: () => { recoveryRevision += 1; return `ses_recovery_${recoveryRevision}`; },
     stop: async () => {
       dictation.stop();
       for (const client of wss.clients) client.terminate();
@@ -429,6 +441,137 @@ async function verifyStreamingAsrOverRelay() {
 describe('private relay compiled-process boundary', () => {
   let cleanup: (() => Promise<void>) | undefined;
   afterEach(async () => { try { await cleanup?.(); } finally { cleanup = undefined; vi.unstubAllEnvs(); } });
+
+  it('recovers HTTP and the retained SDK event pipeline after phone, Host, and combined disconnects', { timeout: 60_000 }, async () => {
+    const temp = await mkdtemp(path.join(os.tmpdir(), 'yuri-relay-recovery-'));
+    const binary = path.join(temp, 'yuri-relay');
+    let relay: Awaited<ReturnType<typeof startCompiledRelay>> | undefined;
+    let origin: Awaited<ReturnType<typeof startOrigin>> | undefined = undefined;
+    let host: ReturnType<typeof startRelayHost> | undefined;
+    let client: ReturnType<typeof createRelayTunnelClient> | undefined = undefined;
+    let pipeline: ReturnType<typeof createEventPipeline> | undefined = undefined;
+    let phoneWire: WebSocket | undefined;
+    let capacityBlocker: WebSocket | undefined = undefined;
+    let discardWireMessages = false;
+    const previousResolver = getRuntimeUrlResolver();
+    const runtimeWindow = Object.assign(new EventTarget(), { location: new URL('https://relay-runtime.example') });
+    const runtimeDocument = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    vi.stubGlobal('window', runtimeWindow);
+    vi.stubGlobal('document', runtimeDocument);
+    cleanup = async () => {
+      pipeline?.cleanup();
+      deactivateRelayTunnel();
+      client?.close();
+      capacityBlocker?.terminate();
+      host?.stop();
+      setRuntimeBearerToken(null);
+      setRuntimeUrlResolver(previousResolver);
+      vi.unstubAllGlobals();
+      await Promise.all([origin?.stop(), stopRelay(relay)]);
+      await rm(temp, { recursive: true, force: true });
+    };
+    const entrypoint = fileURLToPath(new URL('../../../../relay-server/bin/yuri-relay.js', import.meta.url));
+    const compile = spawn('bun', ['build', '--compile', entrypoint, '--outfile', binary], { stdio: 'ignore' });
+    expect((await once(compile, 'exit'))[0]).toBe(0);
+    const port = await freePort();
+    vi.stubEnv('YURI_RELAY_SERVER_MAX_CLIENTS_PER_HOST', '1');
+    relay = await startCompiledRelay(binary, port);
+    origin = await startOrigin({ recoveryEvents: true });
+    const identity = await buildIdentity();
+    const startHost = () => startRelayHost({ relayUrl: relay!.url, identity, getLocalPort: () => origin!.port,
+      onStatus() {}, logger: { warn() {}, info() {} }, reconnectBaseDelayMs: 30, reconnectMaxDelayMs: 100 });
+    host = startHost();
+    await eventually(() => host!.getStatus().state === 'connected', 'Host did not register');
+    capacityBlocker = new WebSocket(`${relay.url}?v=1&role=client&serverId=${identity.serverId}`);
+    await once(capacityBlocker, 'open');
+    client = createRelayTunnelClient({ relayUrl: relay.url, serverId: identity.serverId, hostEncPubJwk: identity.hostEncPubJwk,
+      helloRetryMs: 20, helloTimeoutMs: 500, pingIntervalMs: 100, pingTimeoutMs: 50,
+      reconnectBaseDelayMs: 20, reconnectMaxDelayMs: 100, batchWindowMs: 0,
+      createWireSocket: (url) => {
+        const socket = new WebSocket(url);
+        phoneWire = socket;
+        const wire = {
+          get readyState() { return socket.readyState; },
+          send: (data: string | ArrayBuffer | Uint8Array) => socket.send(data),
+          close: (code?: number, reason?: string) => socket.close(code, reason),
+          onopen: null as (() => void) | null,
+          onmessage: null as ((event: { data: unknown }) => void) | null,
+          onclose: null as ((event: { code: number; reason: string }) => void) | null,
+          onerror: null as (() => void) | null,
+        };
+        socket.on('open', () => wire.onopen?.());
+        socket.on('message', (data, binary) => {
+          if (!discardWireMessages) wire.onmessage?.({ data: binary ? new Uint8Array(data as Buffer) : data.toString() });
+        });
+        socket.on('close', (code, reason) => wire.onclose?.({ code, reason: reason.toString() }));
+        socket.on('error', () => wire.onerror?.());
+        return wire;
+      },
+    });
+    await eventually(() => client!.getStatus().lastError === 'relay connection limit reached', 'real Relay did not reject the capacity-limited client');
+    capacityBlocker.terminate();
+    configureRuntimeUrlResolver({ apiBaseUrl: 'https://relay-runtime.example' });
+    setRuntimeBearerToken('client-token');
+    adoptRelayTunnel({ relayUrl: relay.url, serverId: identity.serverId, hostEncPubJwk: identity.hostEncPubJwk }, client);
+    opencodeClient.reconnectToRuntimeBaseUrl();
+    const observed = new Set<string>();
+    let compensations = 0;
+    pipeline = createEventPipeline({ sdk: opencodeClient.getSdkClient(), transport: 'sse', heartbeatTimeoutMs: 300,
+      reconnectDelayMs: 20, onCompensation: () => { compensations += 1; },
+      onEvent: (_directory, payload) => {
+        if (payload.type === 'session.status') observed.add(payload.properties.sessionID);
+      },
+    });
+    await eventually(() => observed.has('ses_recovery_0'), 'initial session event was not received');
+    for (const scenario of ['phone', 'host', 'phone-then-host', 'host-then-phone', 'relay-restart', 'lock-screen', 'silent-return-path'] as const) {
+      const before = compensations;
+      const expected = origin.advanceRecoveryRevision();
+      if (scenario === 'phone' || scenario === 'phone-then-host') phoneWire!.terminate();
+      if (scenario === 'host' || scenario === 'phone-then-host' || scenario === 'host-then-phone') {
+        host.stop();
+        if (scenario === 'host-then-phone') phoneWire!.terminate();
+        await wait(60);
+        host = startHost();
+      }
+      if (scenario === 'relay-restart') {
+        const old = relay;
+        relay = undefined;
+        await stopRelay(old);
+        relay = await startCompiledRelay(binary, port);
+      }
+      if (scenario === 'lock-screen') {
+        runtimeDocument.visibilityState = 'hidden';
+        runtimeDocument.dispatchEvent(new Event('visibilitychange'));
+        discardWireMessages = true;
+        phoneWire!.terminate();
+        await wait(100);
+        discardWireMessages = false;
+        runtimeDocument.visibilityState = 'visible';
+        runtimeDocument.dispatchEvent(new Event('visibilitychange'));
+        runtimeWindow.dispatchEvent(new Event('yuri:system-resume'));
+      }
+      if (scenario === 'silent-return-path') {
+        const staleWire = phoneWire;
+        discardWireMessages = true;
+        const traffic = setInterval(() => {
+          void client!.fetch('/api/e2e/http', { method: 'POST', headers: { authorization: 'Bearer client-token' }, body: 'still-sending' })
+            .catch(() => undefined);
+        }, 10);
+        try {
+          await eventually(() => phoneWire !== staleWire, 'outbound traffic concealed the dead return path');
+        } finally {
+          clearInterval(traffic);
+          discardWireMessages = false;
+        }
+      }
+      await eventually(() => client!.getStatus().state === 'connected' && compensations > before,
+        `${scenario}: tunnel or SDK event subscription did not reconnect`);
+      const response = await client.fetch('/api/e2e/http', { method: 'POST', headers: { authorization: 'Bearer client-token' }, body: scenario });
+      expect(await response.json()).toEqual({ body: scenario, hasRelayConnection: true });
+      await eventually(() => observed.has(expected) && compensations > before, `${scenario}: HTTP recovered but session events or compensation remained stuck`);
+      expect(origin.getHostSubscriptions()).toBe(1);
+    }
+  });
 
   it('carries authenticated HTTP, SSE, URL-token WebSocket, restart recovery, and cleanup across compiled Relay', { timeout: 60_000 }, async () => {
     const temp = await mkdtemp(path.join(os.tmpdir(), 'yuri-relay-e2e-'));

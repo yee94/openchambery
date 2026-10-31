@@ -179,12 +179,10 @@ const WS_OPEN = 1;
 const WS_CLOSING = 2;
 const WS_CLOSED = 3;
 
-// Relay close codes that a reconnect can never resolve — surface a terminal error
-// instead of looping forever (auth failed, duplicate client, limit exceeded).
+// Authentication rejection requires new credentials. Capacity and replacement
+// closures are transient and must keep retrying without an app restart.
 const TERMINAL_RELAY_CLOSE_CODES = new Set<number>([
   RelayCloseCode.AuthFailed,
-  RelayCloseCode.DuplicateClient,
-  RelayCloseCode.LimitExceeded,
 ]);
 
 const RELAY_CLOSE_MESSAGES: Record<number, string> = {
@@ -230,7 +228,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
   // wire bytes on JSON). Keep it capability-gated, never unconditional: clients
   // without DecompressionStream and old Hosts must stay on uncompressed framing.
   const acceptGzip = typeof DecompressionStream === 'function';
-  const reconnectBaseDelayMs = options.reconnectBaseDelayMs ?? 1_000;
+  const reconnectBaseDelayMs = options.reconnectBaseDelayMs ?? 3_000;
   const reconnectMaxDelayMs = options.reconnectMaxDelayMs ?? 30_000;
   const hiddenOrOfflineMaxDelayMs = options.hiddenOrOfflineMaxDelayMs ?? 60_000;
 
@@ -248,6 +246,8 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let channelWaiters: ChannelWaiter[] = [];
   let wakeListenersInstalled = false;
+  let terminalError: Error | null = null;
+  let probeCurrentAttempt: (() => void) | null = null;
 
   const setStatus = (next: RelayTunnelStatus): void => {
     if (status.state === next.state && status.lastError === next.lastError) return;
@@ -294,10 +294,13 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
   };
 
   const onWake = (): void => {
-    if (closed || reconnectTimer === null || isOfflineOrHidden()) return;
-    clearReconnectTimer();
-    removeWakeListeners();
-    void connect();
+    if (closed || terminalError || isOfflineOrHidden()) return;
+    if (reconnectTimer !== null) {
+      clearReconnectTimer();
+      void connect();
+    } else {
+      probeCurrentAttempt?.();
+    }
   };
 
   const onVisibilityWake = (): void => {
@@ -308,6 +311,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     if (wakeListenersInstalled || typeof window === 'undefined') return;
     wakeListenersInstalled = true;
     window.addEventListener('online', onWake);
+    window.addEventListener('yuri:system-resume', onWake);
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibilityWake);
   };
 
@@ -315,22 +319,20 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     if (!wakeListenersInstalled || typeof window === 'undefined') return;
     wakeListenersInstalled = false;
     window.removeEventListener('online', onWake);
+    window.removeEventListener('yuri:system-resume', onWake);
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibilityWake);
   };
 
   const scheduleReconnect = (): void => {
     if (closed || reconnectTimer !== null) return;
-    const attemptIndex = Math.max(0, consecutiveFailures - 1);
-    const base = reconnectBaseDelayMs * 2 ** Math.min(attemptIndex, 10);
-    // Per CLAUDE.md reconnect pacing: offline/hidden expect recovery from the
-    // online/visibility events (interruptible wait below), so back off to the
-    // long cap instead of probing a dead network.
-    const cap = isOfflineOrHidden() ? hiddenOrOfflineMaxDelayMs : reconnectMaxDelayMs;
-    const delay = Math.min(cap, base);
+    // Keep retrying at a fixed cadence; hidden/offline clients use the slower
+    // interval and foreground/online signals interrupt that wait immediately.
+    const delay = isOfflineOrHidden()
+      ? hiddenOrOfflineMaxDelayMs
+      : Math.min(reconnectBaseDelayMs, reconnectMaxDelayMs);
     addWakeListeners();
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
-      removeWakeListeners();
       void connect();
     }, delay);
   };
@@ -384,9 +386,10 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     let cryptoChannel: EstablishedChannelCrypto | null = null;
     let batchNegotiated = false;
     let batcher: OutboundFrameBatcher | null = null;
-    // Idle tracking: updated on any non-Ping/Pong frame in EITHER direction.
-    // Ping/Pong are excluded so the keepalive can't sustain itself.
-    let lastActivityAt = Date.now();
+    // Sending alone does not prove the return path works. Conversely, a pure
+    // inbound SSE stream still needs outbound pings for the Host's idle reaper.
+    let lastReceivedAt = Date.now();
+    let lastSentAt = Date.now();
 
     const cleanupTimers = (): void => {
       if (helloInterval !== null) {
@@ -416,6 +419,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
       if (settled || generation !== attemptGeneration) return;
       settled = true;
       cleanupTimers();
+      probeCurrentAttempt = null;
       if (channel) {
         activeChannel = null;
         failChannelStreams(channel, new Error(`relay tunnel reset: ${error.message}`));
@@ -429,9 +433,8 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
       if (currentWire === wire) currentWire = null;
       if (closed) return;
       consecutiveFailures += 1;
-      // A permanent rejection (auth failed, duplicate, limit) won't resolve by
-      // retrying — surface a terminal error instead of reconnecting forever.
       if (terminal) {
+        terminalError = error;
         setStatus({ state: 'error', lastError: error.message });
         return;
       }
@@ -489,7 +492,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
           if (channelObj.dead) return;
           const frameType = frame[0] & ~TUNNEL_FRAGMENT_FLAG;
           if (frameType !== TunnelFrameType.Ping && frameType !== TunnelFrameType.Pong) {
-            lastActivityAt = Date.now();
+            lastSentAt = Date.now();
           }
           if (localBatcher) localBatcher.enqueue(frame);
           else sendEncryptedPlaintext(frame);
@@ -498,22 +501,23 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
       channel = channelObj;
       activeChannel = channelObj;
       consecutiveFailures = 0;
-      lastActivityAt = Date.now();
+      lastReceivedAt = Date.now();
+      lastSentAt = lastReceivedAt;
       setStatus({ state: 'connected' });
       resolveWaiters(channelObj);
+      const probe = (): void => {
+        if (settled || channelObj.dead || pongDeadline !== null) return;
+        channelObj.send(encodeTunnelFrame(TunnelFrameType.Ping, 0, EMPTY_PAYLOAD));
+        pongDeadline = setTimeout(() => {
+          pongDeadline = null;
+          failAttemptLocal(new Error('relay keepalive timeout'));
+        }, pingTimeoutMs);
+      };
+      probeCurrentAttempt = probe;
       pingTimer = setInterval(() => {
         const now = Date.now();
-        // Only ping when the tunnel has actually been idle; streaming traffic
-        // keeps lastActivityAt fresh, so sustained bursts send zero pings.
-        if (now - lastActivityAt < pingIntervalMs) return;
-        channelObj.send(encodeTunnelFrame(TunnelFrameType.Ping, 0, EMPTY_PAYLOAD));
-        // Expect a Pong (or any frame) before the deadline; otherwise it's dead.
-        if (pongDeadline === null) {
-          pongDeadline = setTimeout(() => {
-            pongDeadline = null;
-            failAttemptLocal(new Error('relay keepalive timeout'));
-          }, pingTimeoutMs);
-        }
+        if (now - lastReceivedAt < pingIntervalMs && now - lastSentAt < pingIntervalMs) return;
+        probe();
       }, pingIntervalMs);
     };
 
@@ -526,6 +530,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
         return;
       }
       // Any received frame proves the tunnel is alive — clear the pong deadline.
+      lastReceivedAt = Date.now();
       if (pongDeadline !== null) {
         clearTimeout(pongDeadline);
         pongDeadline = null;
@@ -535,9 +540,6 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
         return;
       }
       if (frame.frameType === TunnelFrameType.Pong) return;
-      // Non-keepalive inbound traffic counts as activity (suppresses our ping).
-      lastActivityAt = Date.now();
-
       let payload = frame.payload;
       if (frame.frameType === TunnelFrameType.WsText || frame.frameType === TunnelFrameType.WsBinary) {
         let complete: Uint8Array | null;
@@ -660,6 +662,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
 
   const waitForChannel = (signal?: AbortSignal): Promise<ActiveChannel> => {
     if (closed) return Promise.reject(new Error('relay tunnel closed'));
+    if (terminalError) return Promise.reject(terminalError);
     if (signal?.aborted) return Promise.reject(abortError());
     if (activeChannel && !activeChannel.dead) return Promise.resolve(activeChannel);
     return new Promise<ActiveChannel>((resolve, reject) => {
@@ -1012,6 +1015,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     removeWakeListeners();
     currentAttemptCleanup?.();
     currentAttemptCleanup = null;
+    probeCurrentAttempt = null;
     const channel = activeChannel;
     activeChannel = null;
     const error = new Error('relay tunnel closed');
@@ -1026,6 +1030,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     setStatus({ state: 'idle' });
   };
 
+  addWakeListeners();
   void connect();
 
   return {

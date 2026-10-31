@@ -152,7 +152,7 @@ vi.mock('./AssistantAssistantCard', () => ({ AssistantAssistantCard: () => null 
 vi.mock('./AssistantScheduleCard', () => ({ AssistantScheduleCard: () => null }));
 vi.mock('./AssistantSessionCard', () => ({ AssistantSessionCard: () => null }));
 vi.mock('@/components/chat/AgentAvatar', () => ({
-  AgentAvatar: ({ name, motion, size }: { name?: string; motion?: string; size?: number }) => <span data-test-avatar={name} data-avatar-motion={motion} data-test-avatar-size={size} />,
+  AgentAvatar: ({ name, motion, size, followPointer = true }: { name?: string; motion?: string; size?: number; followPointer?: boolean }) => <span data-test-avatar={name} data-avatar-motion={motion} data-test-avatar-size={size} data-test-follow-pointer={String(followPointer)} />,
 }));
 
 import { AssistantConversationSurface } from './AssistantConversationSurface';
@@ -231,12 +231,14 @@ describe('AssistantConversationSurface scroll ownership', () => {
     const { host } = await mountSurface();
     const message = host.querySelector('[data-message-id="assistant-a:refetch:0"] [data-assistant-working-avatar]')!;
     expect(message.querySelector('[data-test-avatar]')?.getAttribute('data-test-avatar-size')).toBe('32');
+    expect(message.querySelector('[data-test-avatar]')?.getAttribute('data-test-follow-pointer')).toBe('false');
     expect(message.parentElement?.classList.contains('w-9')).toBe(true);
     await act(async () => contactEvents.handler?.({
       type: 'contact-turn-start', assistantID: 'assistant-a', turnID: 'larger-avatar', occurredAt: 4,
     }));
     const processing = host.querySelector('[data-assistant-contact-processing-avatar]')!;
     expect(processing.querySelector('[data-test-avatar]')?.getAttribute('data-test-avatar-size')).toBe('32');
+    expect(processing.querySelector('[data-test-avatar]')?.getAttribute('data-test-follow-pointer')).toBe('false');
     expect(processing.classList.contains('w-9')).toBe(true);
     expect(processing.classList.contains('-left-[2.875rem]')).toBe(true);
     expect(host.querySelector('[data-assistant-contact-status-slot]')?.classList.contains('left-[2.875rem]')).toBe(true);
@@ -525,6 +527,65 @@ describe('AssistantConversationSurface scroll ownership', () => {
     expect(host.querySelector('[data-assistant-contact-turn-status="sending"]')?.textContent).toContain('Ship it');
     await act(async () => fail(new Error('offline')));
     expect(textarea.value).toBe('Ship it');
+  });
+
+  test.each(['Next message', 'Look at this'])('image sends clear text before upload/admission finishes and preserve the next draft (%s)', async (nextDraft) => {
+    const descriptor = { type: 'file', attachmentID: 'attachment-a', sha256: 'a'.repeat(64), size: 3, mime: 'image/png', filename: 'shot.png' };
+    let finishUpload!: (value: typeof descriptor) => void;
+    let admit!: (value: { revision: number }) => void;
+    attachmentIO.upload.mockReset().mockImplementationOnce(() => new Promise((resolve) => { finishUpload = resolve; }));
+    attachmentIO.send.mockReset().mockImplementationOnce(() => new Promise((resolve) => { admit = resolve; }));
+    attachmentIO.display.mockResolvedValue({ url: 'blob:cached', release: attachmentIO.release });
+    const { host } = await mountSurface();
+    const textarea = host.querySelector('textarea')!;
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    await act(async () => {
+      textarea.value = 'Look at this'; textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      Object.defineProperty(input, 'files', { value: [new File(['img'], 'shot.png', { type: 'image/png' })] });
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-send]')!.click());
+    expect(attachmentIO.upload).toHaveBeenCalledTimes(1);
+    expect(textarea.value).toBe('');
+    expect(host.querySelector('[data-assistant-contact-turn-status="sending"]')?.textContent).toContain('Look at this');
+    expect(host.querySelector('[data-preview]')).not.toBeNull();
+    await act(async () => finishUpload(descriptor));
+    expect(attachmentIO.send).toHaveBeenCalledTimes(1);
+    expect(textarea.value).toBe('');
+    await act(async () => {
+      textarea.value = nextDraft; textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => admit({ revision: 1 }));
+    expect(textarea.value).toBe(nextDraft);
+    expect(host.querySelector('[data-preview]')).toBeNull();
+  });
+
+  test.each([
+    ['upload', ''], ['send', ''], ['upload', 'Next message'], ['send', 'Next message'],
+  ] as const)('image %s failure restores cleared text without replacing a newer draft (%s)', async (stage, nextDraft) => {
+    const descriptor = { type: 'file', attachmentID: 'attachment-a', sha256: 'a'.repeat(64), size: 3, mime: 'image/png', filename: 'shot.png' };
+    let fail!: (error: Error) => void;
+    attachmentIO.upload.mockReset().mockResolvedValue(descriptor);
+    attachmentIO.send.mockReset().mockResolvedValue({ revision: 1 });
+    attachmentIO[stage].mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    attachmentIO.display.mockResolvedValue({ url: 'blob:cached', release: attachmentIO.release });
+    const { host } = await mountSurface();
+    const textarea = host.querySelector('textarea')!;
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    await act(async () => {
+      textarea.value = 'Look at this'; textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      Object.defineProperty(input, 'files', { value: [new File(['img'], 'shot.png', { type: 'image/png' })] });
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-send]')!.click());
+    expect(textarea.value).toBe('');
+    if (nextDraft) await act(async () => {
+      textarea.value = nextDraft; textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => fail(new Error('offline')));
+    expect(textarea.value).toBe(nextDraft || 'Look at this');
+    expect(host.querySelector('[data-preview]')).not.toBeNull();
+    expect(host.querySelector<HTMLButtonElement>('[data-send]')!.disabled).toBe(false);
   });
 
   test('gap recovery shows its status and disables retry while filling', async () => {

@@ -23,17 +23,22 @@ let host: HTMLDivElement;
 let nextID = 0;
 let visible = 'visible';
 let reduced = false;
+let mouseAvailable = false;
 const frames = new Map<number, FrameRequestCallback>();
 const observers = new Set<{ callback: IntersectionObserverCallback; observer: IntersectionObserver }>();
 const media = new EventTarget();
+const mouseMedia = new EventTarget();
 const observe = vi.fn();
 const disconnect = vi.fn();
 
 beforeEach(() => {
   visible = 'visible';
   reduced = false;
+  mouseAvailable = false;
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visible as DocumentVisibilityState);
-  vi.stubGlobal('matchMedia', vi.fn(() => Object.assign(media, { matches: reduced, media: '(prefers-reduced-motion: reduce)' })));
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => query.includes('any-pointer')
+    ? Object.assign(mouseMedia, { matches: mouseAvailable, media: query })
+    : Object.assign(media, { matches: reduced, media: query })));
   vi.stubGlobal('IntersectionObserver', class {
     constructor(callback: IntersectionObserverCallback) { observers.add({ callback, observer: this as unknown as IntersectionObserver }); }
     observe = observe;
@@ -65,6 +70,115 @@ function frame(timestamp: number) {
   frames.clear();
   pending.forEach((callback) => callback(timestamp));
 }
+
+test('list and header idle faces follow an available mouse while transcript idle faces stay still', async () => {
+  mouseAvailable = true;
+  const original = avatarEngine.createAssistantAvatarPlayer;
+  const gazes = new Map<string, ReturnType<typeof vi.fn>>();
+  vi.spyOn(avatarEngine, 'createAssistantAvatarPlayer').mockImplementation((...args) => {
+    const player = original(...args), gaze = vi.fn(player.setGaze);
+    gazes.set(args[1], gaze);
+    return { ...player, setGaze: gaze };
+  });
+  await act(async () => root.render(<>
+    <AssistantWorkingAvatar name="list" working={false} />
+    <AssistantWorkingAvatar name="header" working={false} showWorkingDot={false} />
+    <AssistantWorkingAvatar name="transcript" working={false} followPointer={false} showWorkingDot={false} />
+  </>));
+  const transcript = host.querySelectorAll('[data-procedural-avatar]')[2];
+  const transcriptPose = () => [...transcript.querySelectorAll('svg path')].map((path) => path.getAttribute('d'));
+  const initial = transcriptPose();
+  await intersect(true);
+  host.querySelectorAll('[data-avatar-motion]').forEach((element) => vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 44, height: 44 } as DOMRect));
+  window.dispatchEvent(Object.assign(new Event('pointermove'), { pointerType: 'mouse', clientX: 33, clientY: 11 }));
+  frame(performance.now() + 34);
+  expect(gazes.get('list')).toHaveBeenLastCalledWith([0.125, 0.125]);
+  expect(gazes.get('header')).toHaveBeenLastCalledWith([0.125, 0.125]);
+  expect(gazes.has('transcript')).toBe(false);
+  expect(transcriptPose()).toEqual(initial);
+  Object.assign(mouseMedia, { matches: false });
+  await act(async () => mouseMedia.dispatchEvent(new Event('change')));
+  expect(frames.size).toBe(0);
+  Object.assign(mouseMedia, { matches: true });
+  await act(async () => mouseMedia.dispatchEvent(new Event('change')));
+  expect(frames.size).toBe(1);
+});
+
+test('late-mounted working transcript faces join the same pose and keep hover local', async () => {
+  const render = (count: number, first = true) => root.render(<>{Array.from({ length: count }, (_, i) => first || i !== 0
+    ? <div key={i} data-face={i}><AssistantWorkingAvatar name="shared-bot" avatarSeed="shared-face" size={i === 0 ? 44 : 32} working followPointer={false} showWorkingDot={false} /></div>
+    : null)}</>);
+  const pose = (i: number) => [...host.querySelectorAll(`[data-face="${i}"] svg path`)].map((path) => path.getAttribute('d'));
+  await act(async () => render(1));
+  await intersect(true);
+  const start = performance.now();
+  for (let i = 1; i <= 20; i++) frame(start + i * 34);
+  const existing = pose(0);
+  await act(async () => render(2));
+  await intersect(true);
+  expect(pose(1)).toEqual(existing);
+  for (let i = 21; i <= 40; i++) { frame(start + i * 34); expect(pose(1)).toEqual(pose(0)); }
+  host.querySelector('[data-face="0"] [data-avatar-motion]')!.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+  frame(start + 41 * 34);
+  expect(pose(0)).not.toEqual(pose(1));
+  for (let i = 42; i <= 65; i++) frame(start + i * 34);
+  expect(pose(0)).toEqual(pose(1));
+  await act(async () => render(2, false));
+  for (let i = 66; i <= 75; i++) frame(start + i * 34);
+  const survivor = pose(1);
+  await act(async () => render(2));
+  await intersect(true);
+  expect(pose(0)).toEqual(survivor);
+  await act(async () => root.render(null));
+  expect(frames.size).toBe(0);
+});
+
+test('working timelines advance once per shared paint, isolate identities and release the last consumer', () => {
+  const original = avatarEngine.createAssistantAvatarTimeline;
+  const advances: ReturnType<typeof vi.fn>[] = [];
+  const create = vi.spyOn(avatarEngine, 'createAssistantAvatarTimeline').mockImplementation((...args) => {
+    const timeline = original(...args), advance = vi.fn(timeline.advance);
+    advances.push(advance);
+    return { ...timeline, advance };
+  });
+  const mount = (id: string, animationKey = 'bot-a', seed = 'same-face', size = 32) => {
+    const node = document.createElement('span');
+    host.append(node);
+    const animation = mountAvatarAnimation(node, { id, seed, animationKey });
+    const update = (active: boolean) => animation.update({ active, motion: 'working', size, followPointer: false });
+    update(true);
+    return { ...animation, update, pose: () => [...node.querySelectorAll('path')].map((path) => path.getAttribute('d')) };
+  };
+  const faces: ReturnType<typeof mount>[] = [];
+  try {
+    const first = mount('first'), second = mount('second');
+    faces.push(first, second);
+    expect(create).toHaveBeenCalledTimes(1);
+    const start = performance.now();
+    for (let i = 1; i <= 20; i++) frame(start + i * 34);
+    expect(advances[0]).toHaveBeenCalledTimes(21);
+    expect(second.pose()).toEqual(first.pose());
+    first.update(false);
+    for (let i = 21; i <= 30; i++) frame(start + i * 34);
+    first.update(true);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(first.pose()).toEqual(second.pose());
+    faces.push(mount('other-identity', 'bot-b'), mount('other-recipe', 'bot-a', 'other-face'), mount('other-mode', 'bot-a', 'same-face', 64));
+    expect(create).toHaveBeenCalledTimes(4);
+    advances.forEach((advance) => advance.mockClear());
+    frame(start + 31 * 34);
+    advances.forEach((advance) => expect(advance).toHaveBeenCalledTimes(1));
+    first.dispose();
+    first.dispose();
+    second.update(false);
+    second.update(true);
+    expect(create).toHaveBeenCalledTimes(5);
+    faces.forEach((face) => face.dispose());
+    expect(frames.size).toBe(0);
+  } finally {
+    faces.forEach((face) => face.dispose());
+  }
+});
 
 test('ordinary idle faces keep the reference static pose without frames, gaze listeners or pointer writes', async () => {
   const add = vi.spyOn(window, 'addEventListener');
@@ -258,6 +372,7 @@ test('50 unrelated parent renders cause no new observers or frame writes; live s
 });
 
 test('twenty visible production avatars share one clock and unique SVG definition IDs', async () => {
+  mouseAvailable = true;
   const add = vi.spyOn(window, 'addEventListener'), remove = vi.spyOn(window, 'removeEventListener');
   await act(async () => root.render(<>{Array.from({ length: 20 }, (_, i) => <AgentAvatar key={i} kind="assistant" name={`many-${i}`} motion="working" />)}</>));
   await intersect(true);
@@ -291,10 +406,11 @@ test('Strict Mode and identity changes remove imperative renderers rather than s
 });
 
 test('mouse gaze follows outside the avatar, coalesces to frames and refreshes after layout moves', async () => {
+  mouseAvailable = true;
   const original = avatarEngine.createAssistantAvatarPlayer;
   const gaze = vi.fn();
   vi.spyOn(avatarEngine, 'createAssistantAvatarPlayer').mockImplementation((...args) => ({ ...original(...args), setGaze: gaze }));
-  await act(async () => root.render(<AgentAvatar kind="assistant" name="gaze" motion="working" />));
+  await act(async () => root.render(<AgentAvatar kind="assistant" name="gaze" motion="idle" />));
   await intersect(true);
   const live = host.querySelector<HTMLElement>('[data-avatar-motion]')!;
   const bounds = vi.spyOn(live, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 44, height: 44 } as DOMRect);

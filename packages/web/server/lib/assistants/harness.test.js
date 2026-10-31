@@ -26,6 +26,25 @@ const toolCall = (name, args, id) => toolBatch([[name, args, id]])
 const notifyCall = (text, id) => ['notify_user', { text }, id]
 
 describe('createContactStreamFn', () => {
+  it.each(['success', 'returned-error', 'thrown-error'])('preserves the %s tool outcome through the real Agent without exposing internal details', async (outcome) => {
+    const execute = vi.fn(async () => {
+      if (outcome === 'thrown-error') throw new Error('Operation failed.');
+      return { content: [{ type: 'text', text: 'Public outcome.' }], details: { internal: 'PRIVATE_SENTINEL' }, isError: outcome === 'returned-error', terminate: false };
+    });
+    let round = 0;
+    await runContactTurn({ assistant: { providerID: 'p', modelID: 'm' }, history: [], userText: 'Run the probe once.',
+      tools: [{ name: 'probe', description: 'Probe.', parameters: { type: 'object', properties: {} }, execute }],
+      createChatCompletion: async ({ body }) => {
+        if (++round === 1) return toolCall('probe', {});
+        const message = body.messages.find((item) => item.role === 'tool' && item.tool_call_id === 'call_probe');
+        expect(JSON.parse(message.content)).toEqual({ isError: outcome !== 'success', content: outcome === 'thrown-error' ? 'Operation failed.' : 'Public outcome.' });
+        expect(message.content).not.toContain('PRIVATE_SENTINEL');
+        return { text: 'Acknowledged.' };
+      },
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it('offers scheduled-task lookup but no mutation or shell tools in read-only turns', async () => {
     const seen = [];
     const tools = createContactTools({ listScheduledTasks: vi.fn(), updateScheduledTask: vi.fn() });
@@ -44,11 +63,15 @@ describe('createContactStreamFn', () => {
     const completion = input => gatewayCompletion({ ...input,
       loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'm' }] }),
       generateText: async ({ messages, tools: schemas }) => {
-        expect(schemas.map(tool => tool.name)).toEqual(expect.arrayContaining(['list_scheduled_tasks', 'update_scheduled_task']));
         round++;
-        if (round === 1) return { text: '', toolCalls: [{ id: 'list1', name: 'list_scheduled_tasks', arguments: {} }] };
+        if (round === 1) {
+          expect(schemas.map(tool => tool.name)).not.toContain('update_scheduled_task');
+          return { text: '', toolCalls: [{ id: 'load1', name: 'load_tools', arguments: { domain: 'yuri.tasks' } }] };
+        }
+        expect(schemas.map(tool => tool.name)).toEqual(expect.arrayContaining(['list_scheduled_tasks', 'update_scheduled_task']));
+        if (round === 2) return { text: '', toolCalls: [{ id: 'list1', name: 'list_scheduled_tasks', arguments: {} }] };
         expect(messages.some(message => message.role === 'tool' && message.tool_call_id === 'list1')).toBe(true);
-        if (round === 2) return { text: '', toolCalls: [{ id: 'update1', name: 'update_scheduled_task', arguments: { taskID: 'task1', projectID: 'project1', model: 'p/m' } }] };
+        if (round === 3) return { text: '', toolCalls: [{ id: 'update1', name: 'update_scheduled_task', arguments: { taskID: 'task1', projectID: 'project1', model: 'p/m' } }] };
         return { text: '任务已更新。', toolCalls: [] };
       },
     });
@@ -56,7 +79,7 @@ describe('createContactStreamFn', () => {
     expect(result.text).toBe('任务已更新。');
     expect(listScheduledTasks).toHaveBeenCalledTimes(1);
     expect(updateScheduledTask).toHaveBeenCalledExactlyOnceWith({ taskID: 'task1', projectID: 'project1', model: 'p/m' });
-    expect(round).toBe(3);
+    expect(round).toBe(4);
   });
   it('normalizes native shell aliases through the production gateway and preserves call identity', async () => {
     const completion = input => gatewayCompletion({ ...input,
@@ -709,7 +732,7 @@ describe('runContactTurn', () => {
     }
   })
 
-  it('keeps all twelve tools and assigns a session after reading a skill', async () => {
+  it('keeps core tools and assigns a session after reading a skill without loading unrelated groups', async () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'yuri-contact-mixed-'))
     const home = path.join(workspace, 'home')
     const skillDir = path.join(workspace, '.agents', 'skills', 'docs')
@@ -743,7 +766,7 @@ describe('runContactTurn', () => {
         history: [], userText: '再建个会话去修这个问题', tools,
         projects: [{ id: 'project', path: workspace }], skillHomeDir: home, createChatCompletion,
       })
-      expect(result.tools.map((tool) => tool.name)).toEqual([...PI_CODING_TOOL_NAMES, ...tools.map((tool) => tool.name), 'notify_user'])
+      expect(result.tools.map((tool) => tool.name)).toEqual([...PI_CODING_TOOL_NAMES, ...tools.map((tool) => tool.name).filter((name) => !['create_assistant', 'update_avatar', 'schedule_task', 'update_scheduled_task'].includes(name)), 'load_tools', 'notify_user'])
       expect(assignWork).toHaveBeenCalledTimes(1)
       expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_mixed' })])
       // Assignment terminates mutations; a tools-disabled completion summarizes the result.
@@ -907,7 +930,7 @@ describe('runContactTurn', () => {
       expect(options.initialState.systemPrompt).toContain('project-skill')
       expect(options.initialState.systemPrompt).toContain('claude-skill')
       expect(options.initialState.systemPrompt).toContain('global-skill')
-      expect(options.initialState.systemPrompt).toContain('Connected OpenCode built-in skill: fixture instructions')
+      expect(options.initialState.systemPrompt).not.toContain('Connected OpenCode built-in skill:')
       expect(options.initialState.systemPrompt).toContain('Never say you have no terminal')
       this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Ready.' }] }] }
       this.prompt = async () => {}
@@ -924,7 +947,6 @@ describe('runContactTurn', () => {
         userText: 'pwd',
         createChatCompletion: vi.fn(),
         skillHomeDir: home,
-        openCodeContext: 'Connected OpenCode built-in skill: fixture instructions',
         AgentImpl,
       })
       expect(result.bubbles).toEqual(['Ready.'])
@@ -1025,7 +1047,7 @@ describe('runContactTurn', () => {
       expect(options.initialState.tools.map((tool) => tool.name)).toEqual(['assign_session', 'notify_user'])
       expect(options.initialState.tools.some((tool) => ['bash', 'edit', 'read', 'write'].includes(tool.name))).toBe(false)
       expect(options.initialState.systemPrompt).toContain('assign_session')
-      expect(options.initialState.systemPrompt).toContain('create_assistant')
+      expect(options.initialState.systemPrompt).not.toContain('create_assistant')
       expect(options.initialState.systemPrompt).toContain('message_assistant')
       expect(options.initialState.systemPrompt).toContain('new_conversation')
       expect(options.initialState.systemPrompt).toContain('list_projects')
@@ -1274,6 +1296,8 @@ describe('runContactTurn', () => {
         prompts.push(text)
         this.state.messages.push({ role: 'user', content: text, timestamp: Date.now() })
         if (text === MISSED_FENCE_RETRY_USER_TEXT) {
+          await this.state.tools.find((item) => item.name === 'load_tools').execute('load_retry', { domain: 'yuri.assistants' })
+          await options.prepareNextTurnWithContext({ context: { messages: this.state.messages } })
           const tool = this.state.tools.find((item) => item.name === CREATE_ASSISTANT_TOOL_NAME)
           const result = await tool.execute('call_retry', { name: 'FlowNL', model: 'opencode-go/deepseek-v4-flash' })
           this.state.messages.push(
@@ -1735,6 +1759,7 @@ describe('runContactTurn bubble index continuity', () => {
     }))
     const createChatCompletion = completionFromReplies([
       '好的，我来创建。',
+      toolCall('load_tools', { domain: 'yuri.assistants' }),
       sayThen('这就建好', 'create_assistant', { name: 'MissRetry', model: 'p/m' }),
     ])
     const result = await runContactTurn({
@@ -1770,7 +1795,6 @@ describe('read-only worker notifications', () => {
       await runContactTurn({
         assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
         readOnly: true,
-        openCodeContext: 'Connected OpenCode built-in skill: interactive CLI context',
         history: [
           { role: 'user', content: '已经完成，够了不要再开会话' },
           { role: 'assistant', content: '[Yuri card context: {"sessionID":"ses_exact","status":"complete"}]' },
