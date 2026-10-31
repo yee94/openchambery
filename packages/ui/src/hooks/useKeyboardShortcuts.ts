@@ -651,6 +651,10 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
+      if (e.isComposing || e.keyCode === 229) {
+        return;
+      }
+
       // The terminal capture handler owns Cmd/Ctrl+W before Ghostty consumes it.
       if (eventMatchesShortcut(e, combo('close_context_panel_tab'))) {
         if (requestEmbeddedSessionChatTabClose() || handleCloseContextPanelTabOrWindow()) {

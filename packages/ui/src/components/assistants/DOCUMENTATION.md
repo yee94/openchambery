@@ -419,6 +419,10 @@ with `randomizeShape`: every 4–7 seconds of active animation it chooses a diff
 shape from the sixteen picker shapes and blends through the existing body
 spring. The most recently contacted Bot still supplies pigment and motion
 preference; no stored recipe, individual contact face or new-Bot default changes.
+Navigation eyes are opaque fixed artwork colors: pure white in the app's light
+theme and pure black in its dark theme, never holes showing the dock/selection
+behind them. Live animation, reduced motion and saved motion-off use the same
+policy; ordinary contact faces and exported share thumbnails remain unchanged.
 This ambient motion is not a work indicator. Empty/disabled catalogs restore the
 default icon, and unread/activity badges retain their independent authority.
 
@@ -429,7 +433,7 @@ the live SVG keeps Button's generic 16px icon rule from shrinking mobile artwork
 The native iOS dock is unchanged: `MobileTabsRoot` continues to send system tabs,
 badges and activity, not per-frame SVGs. Its web fallback uses the ambient face.
 
-Mobile web navigation keeps all icon slots at 23px with centered contents, preserving identical label baselines. Only the avatar artwork scales to 125% (28.75px artwork box) to compensate for its transparent margins; the default glyph, badges, and slot geometry do not scale. Native iOS retains its existing system icon slot. Verify painted bounds as well as box sizes.
+Mobile web navigation keeps all icon slots at 23px with centered contents, preserving identical label baselines. The filled avatar artwork uses a centered 23px box with gentle 105% scaling (24.15px artwork box) to balance its visual weight against the outline icons; idle morphing and hover shrink/bounce remain unchanged. The default glyph, badges, and slot geometry do not scale. Native iOS retains its existing system icon slot. Verify painted bounds as well as box sizes.
 
 Mobile contact cards expose Edit/Delete by left swipe, using the same `useMobileSwipeActions` and `MobileSwipeActionRail` as homepage session rows. Long hold does not open a menu. Vertical gestures keep scrolling, a swipe suppresses navigation, tapping a revealed row closes it, and only one rail stays open across both surfaces. Actions close the rail and reuse existing Settings/delete-confirmation flows. Desktop context actions are unchanged.
 

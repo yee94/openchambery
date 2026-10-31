@@ -15,7 +15,7 @@ target. The navigation facade opts into ambient shape cycling. No persisted
 recipe or visual geometry changes as a result of this runtime extraction.
 
 `runtime.ts` is the non-React seam. `mountAvatarAnimation(host, { id, seed,
-randomizeShape? })` returns only:
+randomizeShape?, eyeColor? })` returns only:
 
 - `update({ active, motion, size })`: update live state without recreating the
   player on work/size changes. `active` is the view's intersecting, foreground,
@@ -28,6 +28,12 @@ The React leaf owns standard observer/media/document Hooks; the runtime owns all
 imperative resources and per-frame DOM work. Mount paints a still face once.
 Inactive instances allocate no player or frame subscription. Static React faces
 serialize their image only when needed; live faces do not generate an unused URI.
+Navigation alone supplies an optional `eyeColor` (`white` or `black`) from the
+application theme. The same painted-eye mode is used for live, reduced-motion
+and saved-motion-off artwork; static image cache keys include the override.
+It does not change saved recipes, eye geometry, ordinary contact cutouts or the
+bounded per-shape rest-model cache. Theme changes recreate only the affected
+navigation renderer, with no new frame clock or per-frame React work.
 
 ## Motion boundary
 

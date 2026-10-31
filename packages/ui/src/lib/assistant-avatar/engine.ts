@@ -4,7 +4,7 @@ import {
 } from './vendor/grok-anatomy/player.js';
 import recipes from './vendor/grok-anatomy/grok-recipes.json';
 import { buildAvatarBody, compactAvatarOutline } from './geometry';
-import { AVATAR_PICKER_SHAPES, resolveAssistantAvatar, type AssistantAvatarRecipe, type AvatarMotion } from './recipe';
+import { AVATAR_PICKER_SHAPES, resolveAssistantAvatar, type AssistantAvatarRecipe, type AvatarMotion, type AvatarEyeColor } from './recipe';
 import { AVATAR_BODY_NAMES, type AvatarShape } from './catalog';
 
 const AVATAR_RENDER_SIZE = 256;
@@ -16,10 +16,10 @@ const trail = makeTrail(config);
 const pigments = { mint: '#9ed8bf', iris: '#c4b9ee', coral: '#edb0a0', sky: '#a5cbe7', sand: '#e2c99b', graphite: '#555c67' } as const;
 export const assistantAvatarPigment = (color: AssistantAvatarRecipe['color']): string => pigments[color];
 const rgb = (hex: string): Vector => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as Vector;
-const themeFor = (recipe: AssistantAvatarRecipe): Theme => ({
+const themeFor = (recipe: AssistantAvatarRecipe, eyeColor?: AvatarEyeColor): Theme => ({
   ink: rgb(pigments[recipe.color]),
-  spot: recipe.color === 'graphite' ? rgb('#f2f4f7') : [0, 0, 0],
-  cutout: recipe.color !== 'graphite',
+  spot: eyeColor ? (eyeColor === 'white' ? [1, 1, 1] : [0, 0, 0]) : recipe.color === 'graphite' ? rgb('#f2f4f7') : [0, 0, 0],
+  cutout: !eyeColor && recipe.color !== 'graphite',
 });
 const unsupportedBody = (body: string): never => { throw new Error(`Avatar body was not implemented: ${body}`); };
 const hex = (color: Vector) => `#${color.map((value) => Math.round(value * 255).toString(16).padStart(2, '0')).join('')}`;
@@ -37,7 +37,7 @@ function modelFor(frame: Frame, theme: Theme, compact = false): Model {
 }
 const restModels = new Map<AvatarShape, { frame: Frame; cutout: Model; painted?: Model }>();
 
-export function assistantAvatarStillModel(recipe: AssistantAvatarRecipe): Model {
+export function assistantAvatarStillModel(recipe: AssistantAvatarRecipe, eyeColor?: AvatarEyeColor): Model {
   let rest = restModels.get(recipe.shape);
   if (!rest) {
     const runtime = createRuntime(config, { body: AVATAR_BODY_NAMES[recipe.shape] });
@@ -50,9 +50,9 @@ export function assistantAvatarStillModel(recipe: AssistantAvatarRecipe): Model 
     rest = { frame, cutout: modelFor(frame, { ink: [0, 0, 0], spot: [0, 0, 0], cutout: true }) };
     restModels.set(recipe.shape, rest);
   }
-  const theme = themeFor(recipe);
+  const theme = themeFor(recipe, eyeColor);
   const model = theme.cutout ? rest.cutout : (rest.painted ??= modelFor(rest.frame, { ...theme, ink: [0, 0, 0] }));
-  return { ...model, inkPaint: pigments[recipe.color] };
+  return { ...model, inkPaint: pigments[recipe.color], spotPaint: hex(theme.spot) };
 }
 
 type Bounds = { x0: number; y0: number; x1: number; y1: number };
@@ -103,12 +103,12 @@ export function assistantAvatarArtboard(recipe: AssistantAvatarRecipe) {
   return board;
 }
 
-export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed: string, motion: AvatarMotion, compact = false, { randomizeShape = false }: { randomizeShape?: boolean } = {}) {
+export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed: string, motion: AvatarMotion, compact = false, { randomizeShape = false, eyeColor }: { randomizeShape?: boolean; eyeColor?: AvatarEyeColor } = {}) {
   const runtime = createRuntime(config, { body: AVATAR_BODY_NAMES[recipe.shape], isGazeAlways: true });
   let hash = 2166136261;
   for (let i = 0; i < seed.length; i++) hash = Math.imul(hash ^ seed.charCodeAt(i), 16777619) >>> 0;
   const machine = createStateMachine(config, runtime, motion, { seed: hash, firstPhase: 0, isCompact: compact });
-  const theme = themeFor(recipe);
+  const theme = themeFor(recipe, eyeColor);
   let hoverTime: number | null = null;
   let shape = recipe.shape;
   let nextShapeIn = randomizeShape ? 4 + Math.random() * 3 : Infinity;
@@ -157,7 +157,7 @@ export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed:
   };
 }
 
-export function mountAssistantAvatarRenderer(doc: Document, uid: string, recipe: AssistantAvatarRecipe) {
+export function mountAssistantAvatarRenderer(doc: Document, uid: string, recipe: AssistantAvatarRecipe, eyeColor?: AvatarEyeColor) {
   const renderer = createRenderer(doc, uid, AVATAR_RENDER_SIZE, config);
   const board = assistantAvatarArtboard(recipe);
   renderer.svg.setAttribute('viewBox', board.viewBox);
@@ -170,7 +170,7 @@ export function mountAssistantAvatarRenderer(doc: Document, uid: string, recipe:
   fit.append(content);
   const still = () => {
     fit.removeAttribute('transform');
-    renderer.render(assistantAvatarStillModel(recipe));
+    renderer.render(assistantAvatarStillModel(recipe, eyeColor));
   };
   still();
   return {
@@ -193,9 +193,9 @@ export function mountAssistantAvatarRenderer(doc: Document, uid: string, recipe:
 const path = (points: Point[]) => points.length ? `M${points.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join('L')}Z` : '';
 
 /** Pure export: works in server/SSR as well as browser/native PNG generation. */
-export function assistantAvatarSvg(seed: string | undefined): string {
+export function assistantAvatarSvg(seed: string | undefined, eyeColor?: AvatarEyeColor): string {
   const recipe = resolveAssistantAvatar(seed);
-  const model = assistantAvatarStillModel(recipe), board = assistantAvatarArtboard(recipe);
+  const model = assistantAvatarStillModel(recipe, eyeColor), board = assistantAvatarArtboard(recipe);
   const start = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="${board.viewBox}">`;
   if (model.mode === 'sphere') return `${start}<path d="${model.bodyD}" fill="${model.inkPaint}" fill-rule="evenodd"/>${model.eyesD ? `<path d="${model.eyesD}" fill="${model.spotPaint}"/>` : ''}</svg>`;
   const eyes = model.eyesPts.map(path).join('');

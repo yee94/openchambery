@@ -150,6 +150,41 @@ test('saved motion-off and historical faces allocate no observers or animation f
   expect(host.querySelectorAll('img')).toHaveLength(3);
 });
 
+test('opaque eye colors survive live frames, theme changes and reduced motion without extra players', async () => {
+  const seed = encodeAssistantAvatar({ ...resolveAssistantAvatar('navigation-eyes'), shape: 'heart', color: 'sky' });
+  const render = (eyeColor: 'white' | 'black') => root.render(<ProceduralAssistantAvatar seed={seed} size={23} motion="idle" randomizeShape eyeColor={eyeColor} />);
+  const eyes = () => host.querySelector('svg path[fill="#ffffff"], svg path[fill="#000000"]');
+  await act(async () => render('white'));
+  expect(eyes()?.getAttribute('d')).toBeTruthy();
+  await intersect(true);
+  frame(performance.now() + 34);
+  expect(eyes()?.getAttribute('fill')).toBe('#ffffff');
+  await act(async () => render('black'));
+  frame(performance.now() + 68);
+  expect(eyes()?.getAttribute('fill')).toBe('#000000');
+  expect(host.querySelectorAll('svg')).toHaveLength(1);
+  expect(frames.size).toBe(1);
+  Object.assign(media, { matches: true });
+  await act(async () => media.dispatchEvent(new Event('change')));
+  expect(eyes()?.getAttribute('fill')).toBe('#000000');
+  expect(frames.size).toBe(0);
+});
+
+test('motion-off navigation images keep opaque eye colors separate in the artwork cache', async () => {
+  const seed = encodeAssistantAvatar({ ...resolveAssistantAvatar('static-eyes'), shape: 'heart', animate: false, color: 'sky' });
+  const render = (eyeColor?: 'white' | 'black') => root.render(<ProceduralAssistantAvatar seed={seed} size={23} motion="idle" eyeColor={eyeColor} />);
+  for (const eyeColor of ['white', 'black', undefined] as const) {
+    await act(async () => render(eyeColor));
+    const svg = decodeURIComponent(host.querySelector('img')!.src);
+    if (eyeColor) {
+      expect(svg).toContain(`fill="${eyeColor === 'white' ? '#ffffff' : '#000000'}"`);
+      expect(svg).not.toContain('mask="url(');
+    } else expect(svg).toContain('mask="url(');
+  }
+  expect(observe).not.toHaveBeenCalled();
+  expect(frames.size).toBe(0);
+});
+
 test('small static and live avatars share the fitted artboard without a rounding mask', async () => {
   const seed = encodeAssistantAvatar({ ...resolveAssistantAvatar('framing'), shape: 'square' });
   const expected = assistantAvatarArtboard(resolveAssistantAvatar(seed)).viewBox;

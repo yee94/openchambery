@@ -138,6 +138,29 @@ describe('Assistant avatar recipe', () => {
 });
 
 describe('Anatomy animation integration', () => {
+  test.each(AVATAR_SHAPES)('%s navigation eyes are opaque white or black in static and animated artwork', (shape) => {
+    const recipe = { ...resolveAssistantAvatar('solid-eyes'), shape, color: 'sky' as const };
+    const original = assistantAvatarStillModel(recipe);
+    for (const eyeColor of ['white', 'black'] as const) {
+      const paint = eyeColor === 'white' ? '#ffffff' : '#000000';
+      const still = assistantAvatarStillModel(recipe, eyeColor);
+      expect(still.cutout).toBe(false);
+      expect(still.spotPaint).toBe(paint);
+      expect(geometry(still)).toBe(geometry(original));
+      const svg = assistantAvatarSvg(encodeAssistantAvatar(recipe), eyeColor);
+      expect(svg).toContain(`fill="${paint}"`);
+      expect(svg).not.toContain('mask="url(');
+      const player = createAssistantAvatarPlayer(recipe, 'solid-eyes', 'idle', true, { eyeColor, randomizeShape: true });
+      for (let i = 0; i < 60; i++) {
+        const { model } = player.advance(0.1);
+        expect(model.cutout).toBe(false);
+        expect(model.spotPaint).toBe(paint);
+      }
+    }
+    expect(assistantAvatarStillModel(recipe).cutout).toBe(true);
+    expect(assistantAvatarStillModel({ ...recipe, color: 'graphite' }).spotPaint).toBe('#f2f4f7');
+  });
+
   test.each(AVATAR_SHAPES)('%s graphite uses light eyes without changing eye geometry or its artboard', (shape) => {
     const base = { ...resolveAssistantAvatar('contrast'), shape, color: 'iris' as const };
     const dark = { ...base, color: 'graphite' as const };

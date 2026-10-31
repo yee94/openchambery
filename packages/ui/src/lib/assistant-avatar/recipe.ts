@@ -10,6 +10,7 @@ export const AVATAR_EYES = ['capsule', 'oval'] as const;
 export const AVATAR_COLORS = ['mint', 'iris', 'coral', 'sky', 'sand', 'graphite'] as const;
 export const AVATAR_EXPRESSIONS = ['neutral', 'curious', 'focused', 'beaming'] as const;
 export type AvatarMotion = 'idle' | 'working' | 'thinking' | 'happy';
+export type AvatarEyeColor = 'white' | 'black';
 export type AssistantAvatarRecipe = {
   shape: typeof AVATAR_SHAPES[number];
   eyes: typeof AVATAR_EYES[number];

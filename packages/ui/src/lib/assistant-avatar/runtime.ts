@@ -1,12 +1,12 @@
 import { createAssistantAvatarPlayer, mountAssistantAvatarRenderer } from './engine';
 import { subscribeAvatarFrames } from './frameClock';
 import { acquireAvatarPointer } from './pointerTracker';
-import { resolveAssistantAvatar, type AvatarMotion } from './recipe';
+import { resolveAssistantAvatar, type AvatarMotion, type AvatarEyeColor } from './recipe';
 
 /** One DOM owner. React and non-React callers only supply identity and live state. */
-export function mountAvatarAnimation(host: HTMLElement, { id, seed, randomizeShape = false }: { id: string; seed?: string; randomizeShape?: boolean }) {
+export function mountAvatarAnimation(host: HTMLElement, { id, seed, randomizeShape = false, eyeColor }: { id: string; seed?: string; randomizeShape?: boolean; eyeColor?: AvatarEyeColor }) {
   const recipe = resolveAssistantAvatar(seed);
-  const renderer = mountAssistantAvatarRenderer(host.ownerDocument, id, recipe);
+  const renderer = mountAssistantAvatarRenderer(host.ownerDocument, id, recipe, eyeColor);
   host.append(renderer.svg);
   let player: ReturnType<typeof createAssistantAvatarPlayer> | null = null;
   let stop: (() => void) | null = null;
@@ -29,7 +29,7 @@ export function mountAvatarAnimation(host: HTMLElement, { id, seed, randomizeSha
       }
       const win = host.ownerDocument.defaultView;
       if (!win) return;
-      const live = createAssistantAvatarPlayer(recipe, seed ?? 'default', motion, size < 48, { randomizeShape });
+      const live = createAssistantAvatarPlayer(recipe, seed ?? 'default', motion, size < 48, { randomizeShape, eyeColor });
       player = live;
       const pointer = acquireAvatarPointer(win);
       let gaze: [number, number] | null = null;

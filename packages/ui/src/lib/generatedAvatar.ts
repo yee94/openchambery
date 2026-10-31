@@ -2,6 +2,7 @@ import { Avatar, Style } from '@dicebear/core';
 import botttsNeutral from '@dicebear/styles/bottts-neutral.json';
 import { DualLimitLru } from './dualLimitLru';
 import { assistantAvatarSvg } from './assistant-avatar/engine';
+import type { AvatarEyeColor } from './assistant-avatar/recipe';
 
 export type AvatarKind = 'assistant' | 'agent';
 
@@ -25,10 +26,11 @@ export function generatedAvatarDataUri(
   seed: string | undefined,
   _animated = false,
   colors?: AvatarColorSet,
+  eyeColor?: AvatarEyeColor,
 ): string {
   const seedValue = kind === 'agent' ? seed?.trim().toLowerCase() || 'default' : seed || 'default';
   const background = kind === 'agent' ? (colors ?? FALLBACK_COLORS).background.replace('#', '') : '00000000';
-  const key = JSON.stringify([kind, seedValue, background]);
+  const key = JSON.stringify([kind, seedValue, background, kind === 'assistant' ? eyeColor : null]);
   const cached = artwork.get(key);
   if (cached !== undefined) return cached;
   let uri: string;
@@ -41,7 +43,7 @@ export function generatedAvatarDataUri(
       backgroundColor: [background],
     }).toDataUri();
   } else {
-    uri = `data:image/svg+xml,${encodeURIComponent(assistantAvatarSvg(seedValue))}`;
+    uri = `data:image/svg+xml,${encodeURIComponent(assistantAvatarSvg(seedValue, eyeColor))}`;
   }
   artwork.set(key, uri, (key.length + uri.length) * 2);
   return uri;

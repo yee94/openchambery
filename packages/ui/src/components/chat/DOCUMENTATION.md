@@ -655,6 +655,8 @@ Sorted compaction turns use the turn-owned Activity visual language with a dedic
 
 Global keyboard shortcut dropdown gating distinguishes popup presence from inline listboxes. Select popups use `data-slot="select-content"`; the prompt navigator rail and Assistant list only own keys targeted inside their listbox. With Composer focus, the visible prompt rail allows double-Escape abort. An explicitly opened prompt navigator panel consumes the first Escape to close, then a fresh double Escape can abort. `useKeyboardShortcuts.escape.test.tsx` exercises the real shortcut Hook and prompt rail across a session switch.
 
+Global bubble-phase shortcuts ignore IME events (`isComposing` or WebKit's `keyCode === 229`), just like ChatInput. Returning early from the textarea does not stop propagation, so the global listener must retain this guard. Text input and pasted tab characters never cycle agents; plain Tab and Shift+Tab remain forward/backward shortcuts outside composition. `useKeyboardShortcuts.input.test.tsx` covers these boundaries and already-consumed events.
+
 Desktop model/agent pickers cancel Base UI `trigger-hover` dismiss (`searchableSelectorDismiss.ts`): keyboard/imperative opens are not click-like, so filter typing that shrinks the list under the cursor (or IME candidate pointer leave) must not close the popup. Esc, outside press, item select, and controlled close still dismiss.
 
 Primary composer catalogs expose independent `modelsReady` / `agentsReady` gates.

@@ -103,7 +103,7 @@ export function MobileTabBar({ activeTab, onTabChange, className, tabMarks }: Mo
           >
             <span className="relative inline-flex size-[23px] shrink-0 items-center justify-center overflow-visible">
               {tab.id === 'assistant'
-                ? <AssistantNavigationIcon size={23} className="size-[23px] shrink-0 [&[data-assistant-navigation-avatar]]:scale-125" />
+                ? <AssistantNavigationIcon size={23} className="size-[23px] shrink-0 items-center justify-center [&[data-assistant-navigation-avatar]]:scale-105" />
                 : <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />}
               {markId ? (
                 <span
