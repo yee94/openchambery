@@ -3,6 +3,8 @@ package com.yuri.app;
 import android.app.Activity;
 import android.app.Instrumentation;
 import android.content.Intent;
+import android.content.ContentUris;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -12,6 +14,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
+import android.provider.MediaStore;
 import android.util.Base64;
 import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
@@ -43,33 +46,42 @@ public final class ViewExportInstrumentation extends Instrumentation {
             require(capabilities.value.getInteger("version") == 1 && capabilities.value.getBoolean("exportPDF")
                 && capabilities.value.getBoolean("exportLongImage"), "independent native capabilities");
             Call png = request("png-task", false, null);
+            String imageName = "view-export-" + java.util.UUID.randomUUID() + ".png";
+            png.getData().put("filename", imageName);
             Call busy = request("busy-task", false, null);
             plugin.exportLongImage(png);
             plugin.exportLongImage(busy);
             await(busy.done);
             require("EXPORT_BUSY".equals(busy.code), "concurrent export must be busy");
-            await(plugin.presented);
+            await(png.done);
             require(png.getData().length() == 1 && png.getData().has("taskId"), "Binder payload was not stripped");
-            File imageFile = stagedFile();
-            Bitmap image = BitmapFactory.decodeFile(imageFile.getAbsolutePath());
+            require(png.value != null && "saved".equals(png.value.getString("status")), "PNG must save to gallery");
+            require(plugin.presented.getCount() == 1, "PNG must not open a document picker");
+            Uri imageUri = galleryImage(imageName);
+            Bitmap image;
+            try (InputStream input = getTargetContext().getContentResolver().openInputStream(imageUri)) {
+                image = BitmapFactory.decodeStream(input);
+            }
             require(image != null && image.getWidth() == WIDTH && image.getHeight() == HEIGHT, "PNG must retain full dimensions");
             require(image.getPixel(10, 10) == Color.RED, "offscreen PNG top is blank/scaled");
             require(image.getPixel(10, 210) == Color.BLUE, "inline data image did not render");
             require(image.getPixel(10, HEIGHT - 10) == Color.GREEN, "offscreen PNG bottom is blank/truncated");
             image.recycle();
-            Call cancel = new Call("cancel", new JSObject().put("taskId", "png-task"));
-            plugin.cancel(cancel);
-            await(png.done);
-            require("cancelled".equals(png.value.getString("status")), "owner cancellation status");
-            require(!imageFile.exists(), "cancel must delete the staged image");
-            pickerCancelled(png);
+            getTargetContext().getContentResolver().delete(imageUri, null, null);
+            require(cacheFiles().length == 0, "gallery save must delete the staged image");
+            Call cancelledImage = request("cancel-image", false, null);
+            plugin.cancelOnSave = true;
+            plugin.exportLongImage(cancelledImage);
+            await(cancelledImage.done);
+            require("cancelled".equals(cancelledImage.value.getString("status")), "gallery cancellation status");
+            plugin.cancelOnSave = false;
             testPDF(false);
             testPDF(true);
             testPDF(false, 1600);
             testPDF(true, 1600);
             plugin.presented = new CountDownLatch(1);
-            Call failedSave = request("failed-save", false, null);
-            plugin.exportLongImage(failedSave);
+            Call failedSave = request("failed-save", true, null);
+            plugin.exportPDF(failedSave);
             await(plugin.presented);
             pickerResult(failedSave, new ActivityResult(Activity.RESULT_OK, new Intent().setData(destination("unavailable"))));
             await(failedSave.done);
@@ -94,6 +106,18 @@ public final class ViewExportInstrumentation extends Instrumentation {
 
     private void testPDF(boolean letter) throws Exception {
         testPDF(letter, WIDTH);
+    }
+
+    private Uri galleryImage(String name) {
+        Uri collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+        try (Cursor cursor = getTargetContext().getContentResolver().query(collection,
+                new String[] { MediaStore.Images.Media._ID, MediaStore.Images.Media.IS_PENDING, MediaStore.Images.Media.RELATIVE_PATH },
+                MediaStore.Images.Media.DISPLAY_NAME + " = ?", new String[] { name }, null)) {
+            require(cursor != null && cursor.moveToFirst(), "saved PNG missing from MediaStore");
+            require(cursor.getInt(1) == 0, "saved PNG must not remain pending");
+            require("Pictures/Yuri/".equals(cursor.getString(2)), "PNG must be in the Yuri photo album");
+            return ContentUris.withAppendedId(collection, cursor.getLong(0));
+        }
     }
 
     private void testPDF(boolean letter, int snapshotWidth) throws Exception {
@@ -231,6 +255,13 @@ public final class ViewExportInstrumentation extends Instrumentation {
 
     private static final class TestPlugin extends YuriViewExportPlugin {
         CountDownLatch presented = new CountDownLatch(1);
+        boolean cancelOnSave;
+        @Override protected void notifyListeners(String event, JSObject data) {
+            if (cancelOnSave && "saving".equals(data.optString("stage"))) {
+                cancel(new Call("cancel", new JSObject().put("taskId", data.optString("taskId"))));
+            }
+            super.notifyListeners(event, data);
+        }
         @Override public void startActivityForResult(PluginCall call, Intent intent, String name) {
             require(Intent.ACTION_CREATE_DOCUMENT.equals(intent.getAction()), "native document picker intent");
             presented.countDown();

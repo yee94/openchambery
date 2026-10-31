@@ -143,7 +143,8 @@ required; hosted browsers and old shells without the plugin hide both actions.
 
 The caller supplies a static HTML snapshot with embedded assets and CSS-pixel
 dimensions. Native code independently validates the payload and renders in a
-separate script/network-disabled WebView, then opens the system document picker.
+separate script/network-disabled WebView. PNG is saved to the device photo library;
+PDF opens the system document picker. HTML exports keep the file-save path.
 Generated files stay in native temporary storage rather than crossing the bridge
 as base64. PDF defaults to paginated A4, optionally Letter, with 24-point margins
 and 96 CSS pixels per inch (shrinking to fit, never enlarging); PNG uses one output
@@ -157,7 +158,11 @@ composes viewport-sized tiles; PDF uses `WKWebView.createPDF` and CoreGraphics
 pagination to retain native text/vector output. Temporary views, files and
 listeners are released on completion or cancellation. An in-flight ImageIO
 encode drains before the owner becomes available for another export. The
-system export-as-copy picker owns file placement and reports completion.
+system export-as-copy picker owns PDF placement and reports completion. PNG reuses
+`YuriMediaPlugin`'s add-only Photos authorization and imports the generated file
+without passing base64 through JavaScript. Permission denial rejects the export;
+it does not silently switch to Files. A Photos transaction retains its temporary
+file and busy reservation until completion; a committed save wins over late cancel.
 WebKit can map some Chinese PDF glyphs to radical code points; visual output
 remains intact, but exact text search for those characters is not guaranteed.
 
@@ -169,7 +174,16 @@ entering activity-state Binder serialization. Cancelled/failed writes attempt to
 remove their incomplete destination and always release private staging files;
 the task cannot report saved before the output stream closes. A pending native
 picker retains its reservation until its result arrives, so a late result cannot
-be assigned to another export.
+be assigned to another export. PNG instead streams the generated file to the existing
+`YuriMediaPlugin` gallery destination (`Pictures/Yuri`) and publishes the MediaStore
+entry only after the stream closes. Failed/cancelled writes remove the pending
+entry and release staging files. Android 10+ needs no library-read permission;
+Android 7–9 requests legacy storage-write permission (manifest-capped at API 28),
+and denial rejects without falling back to a document picker. Permission prompts
+retain their task reservation until the callback or owner teardown.
+
+This PNG destination change requires an updated native iOS/Android build; an OTA
+alone cannot change the save destination in an already-installed exporter.
 
 See `packages/ui/src/lib/view-export/DOCUMENTATION.md` for the full public
 contract. `test/view-export-android.test.mjs` runs production Java validation;
@@ -182,6 +196,11 @@ simulator UDID). Its bridge test also needs `YURI_IOS_TEST_PRODUCTS`, the existi
 simulator build-products directory containing Capacitor and Cordova frameworks.
 It compiles the production Swift into isolated probe apps, installs/runs them,
 and removes them afterward; it does not change signing or install the product app.
+The bridge probe saves actual PNG assets with add-only authorization and checks
+their filename/dimensions in the simulator's Photos database from the host. It
+also verifies denial, late cancellation, busy-slot retention and PDF picker completion.
+Run simulator-backed test files with `--no-file-parallelism`: concurrent probe
+apps on one simulator can background each other and suspend WebKit rendering.
 
 ## Native Image Save Compatibility
 

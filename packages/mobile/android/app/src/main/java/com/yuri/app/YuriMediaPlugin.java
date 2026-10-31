@@ -354,6 +354,22 @@ public class YuriMediaPlugin extends Plugin {
 
     private Uri insertImage(byte[] bytes, String filename, String mimeType) throws Exception {
         ContentResolver resolver = getContext().getContentResolver();
+        Uri uri = createGalleryImage(resolver, filename, mimeType);
+        try {
+            try (OutputStream out = resolver.openOutputStream(uri)) {
+                if (out == null) throw new java.io.IOException("Could not open gallery image");
+                out.write(bytes);
+                out.flush();
+            }
+            publishGalleryImage(resolver, uri);
+            return uri;
+        } catch (Exception error) {
+            resolver.delete(uri, null, null);
+            throw error;
+        }
+    }
+
+    static Uri createGalleryImage(ContentResolver resolver, String filename, String mimeType) throws java.io.IOException {
         ContentValues values = new ContentValues();
         values.put(MediaStore.Images.Media.DISPLAY_NAME, filename);
         values.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
@@ -368,26 +384,16 @@ public class YuriMediaPlugin extends Plugin {
         }
 
         Uri uri = resolver.insert(collection, values);
-        if (uri == null) return null;
+        if (uri == null) throw new java.io.IOException("Could not create gallery image");
+        return uri;
+    }
 
-        try (OutputStream out = resolver.openOutputStream(uri)) {
-            if (out == null) {
-                resolver.delete(uri, null, null);
-                return null;
-            }
-            out.write(bytes);
-            out.flush();
-        } catch (Exception error) {
-            resolver.delete(uri, null, null);
-            throw error;
-        }
-
+    static void publishGalleryImage(ContentResolver resolver, Uri uri) throws java.io.IOException {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ContentValues done = new ContentValues();
             done.put(MediaStore.Images.Media.IS_PENDING, 0);
-            resolver.update(uri, done, null, null);
+            if (resolver.update(uri, done, null, null) != 1) throw new java.io.IOException("Could not publish gallery image");
         }
-        return uri;
     }
 
     private static int clampJpegQuality(Double raw) {

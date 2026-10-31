@@ -20,6 +20,8 @@ final class YuriViewExportPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
     private var picker: UIDocumentPickerViewController?
     private var ownerLoading: NSKeyValueObservation?
     private var terminating = false
+    private var photoSavePending = false
+    private var cancelRequested = false
 
     @objc func capabilities(_ call: CAPPluginCall) {
         call.resolve(["version": 1, "exportPDF": true, "exportLongImage": true, "limits": YuriViewExportRequest.limits])
@@ -42,7 +44,7 @@ final class YuriViewExportPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
             catch let error as YuriViewExportError { call.reject(error.message, error.code); return }
             catch { call.reject("Invalid export input", "EXPORT_INVALID_INPUT"); return }
             guard let presenter = self.bridge?.viewController, presenter.view.window != nil,
-                  presenter.presentedViewController == nil else {
+                  !request.pdf || presenter.presentedViewController == nil else {
                 call.reject("Save presenter is unavailable", "EXPORT_SAVE_FAILED"); return
             }
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("yuri-view-export-" + UUID().uuidString, isDirectory: true)
@@ -70,7 +72,8 @@ final class YuriViewExportPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
             }, completion: { [weak self] result in
                 guard let self, self.taskId == request.taskId, !self.terminating else { return }
                 switch result {
-                case .success(let url): self.presentSave(url)
+                case .success(let url):
+                    if request.pdf { self.presentSave(url) } else { self.saveToPhotos(url) }
                 case .failure(let error): self.finish(error: error)
                 }
             })
@@ -107,6 +110,26 @@ final class YuriViewExportPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
         presenter.present(picker, animated: true)
     }
 
+    private func saveToPhotos(_ url: URL) {
+        guard let call = activeCall, !terminating else { return }
+        renderer = nil
+        notifyListeners("progress", data: ["taskId": taskId!, "stage": "saving"])
+        guard activeCall === call, !terminating else { return }
+        photoSavePending = true
+        YuriMediaPlugin.saveImageFile(at: url, canSave: { [weak self] in
+            guard let self else { return false }
+            return self.activeCall === call && !self.cancelRequested
+        }, completion: { [weak self] saved, message in
+            guard let self, self.activeCall === call else { return }
+            self.photoSavePending = false
+            // Photos cannot abort an in-flight transaction. Keep its file and
+            // busy slot alive, and let a committed save win over a late cancel.
+            if saved { self.finish(status: "saved") }
+            else if self.cancelRequested || message == nil { self.finish(status: "cancelled") }
+            else { self.finish(error: YuriViewExportError(code: "EXPORT_SAVE_FAILED", message: message!)) }
+        })
+    }
+
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard controller === picker else { return }
         if urls.isEmpty {
@@ -127,6 +150,7 @@ final class YuriViewExportPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
 
     private func finish(status: String = "cancelled", error: YuriViewExportError? = nil) {
         guard let call = activeCall, !terminating else { return }
+        if photoSavePending { cancelRequested = true; return }
         terminating = true
         ownerLoading?.invalidate()
         ownerLoading = nil
@@ -138,6 +162,7 @@ final class YuriViewExportPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
             self.activeCall = nil
             self.taskId = nil
             self.terminating = false
+            self.cancelRequested = false
             if let error { call.reject(error.message, error.code) } else { call.resolve(["status": status]) }
             self.bridge?.releaseCall(call)
         }

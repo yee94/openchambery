@@ -1,5 +1,6 @@
 package com.yuri.app;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -8,6 +9,7 @@ import android.graphics.Color;
 import android.graphics.pdf.PdfDocument;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.Build;
 import android.os.Looper;
 import android.provider.DocumentsContract;
 import androidx.activity.result.ActivityResult;
@@ -15,8 +17,11 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -28,7 +33,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONObject;
 
-@CapacitorPlugin(name = "YuriViewExport")
+@CapacitorPlugin(name = "YuriViewExport", permissions = {
+    @Permission(alias = "gallery", strings = { Manifest.permission.WRITE_EXTERNAL_STORAGE })
+})
 public class YuriViewExportPlugin extends Plugin {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -42,6 +49,7 @@ public class YuriViewExportPlugin extends Plugin {
         volatile boolean cancelled;
         boolean committed;
         boolean working;
+        boolean awaitingPermission;
         boolean finished;
         File file;
         ViewExportRenderer renderer;
@@ -219,8 +227,69 @@ public class YuriViewExportPlugin extends Plugin {
             task.working = false;
             if (task.cancelled || destroyed) finish(task, "cancelled");
             else if (failure != null) fail(task, "EXPORT_RENDER_FAILED", failure);
-            else presentPicker(task);
+            else if (task.request.pdf) presentPicker(task);
+            else saveToGallery(task);
         });
+    }
+
+    private void saveToGallery(Task task) {
+        if (!live(task)) return;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && getPermissionState("gallery") != PermissionState.GRANTED) {
+            task.awaitingPermission = true;
+            try { requestPermissionForAlias("gallery", task.call, "galleryPermission"); }
+            catch (RuntimeException error) {
+                task.awaitingPermission = false;
+                fail(task, "EXPORT_SAVE_FAILED", "Could not request photo saving permission");
+            }
+            return;
+        }
+        progress(task, "saving", null, null);
+        if (!live(task)) return;
+        task.working = true;
+        worker.execute(() -> {
+            Uri uri = null;
+            try {
+                checkCancelled(task);
+                uri = YuriMediaPlugin.createGalleryImage(getContext().getContentResolver(), task.request.filename, "image/png");
+                try (OutputStream output = getContext().getContentResolver().openOutputStream(uri);
+                     FileInputStream input = new FileInputStream(task.file)) {
+                    if (output == null) throw new IOException("No gallery output stream");
+                    byte[] buffer = new byte[64 * 1024];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        checkCancelled(task);
+                        output.write(buffer, 0, count);
+                    }
+                    output.flush();
+                }
+                synchronized (task) {
+                    checkCancelled(task);
+                    YuriMediaPlugin.publishGalleryImage(getContext().getContentResolver(), uri);
+                    task.committed = true;
+                }
+            } catch (Exception error) {
+                if (uri != null) {
+                    try { getContext().getContentResolver().delete(uri, null, null); }
+                    catch (Exception ignored) { /* Preserve the original failed/cancelled result. */ }
+                }
+            }
+            main.post(() -> {
+                task.working = false;
+                if (task.committed) finish(task, "saved");
+                else if (task.cancelled || destroyed) finish(task, "cancelled");
+                else fail(task, "EXPORT_SAVE_FAILED", "Could not save image to gallery");
+            });
+        });
+    }
+
+    @PermissionCallback private void galleryPermission(PluginCall call) {
+        Task task = active;
+        if (task == null || task.call != call) return;
+        task.awaitingPermission = false;
+        if (task.cancelled || destroyed) { finish(task, "cancelled"); return; }
+        if (getPermissionState("gallery") != PermissionState.GRANTED) {
+            fail(task, "EXPORT_SAVE_FAILED", "Photo saving permission denied");
+        } else saveToGallery(task);
     }
 
     private void presentPicker(Task task) {
@@ -316,7 +385,7 @@ public class YuriViewExportPlugin extends Plugin {
             task.cancelled = true;
         }
         closeRenderer(task);
-        if (!task.working) finish(task, "cancelled");
+        if (!task.working && !task.awaitingPermission) finish(task, "cancelled");
         // Keep the picker reservation until its result arrives. Capacitor stores
         // a single last-call ID; a second picker would misassociate late results.
     }
@@ -329,7 +398,10 @@ public class YuriViewExportPlugin extends Plugin {
     @Override protected void handleOnDestroy() {
         main.post(() -> {
             destroyed = true;
-            if (active != null) cancelTask(active);
+            if (active != null) {
+                active.awaitingPermission = false;
+                cancelTask(active);
+            }
             worker.shutdown();
         });
     }

@@ -6,9 +6,10 @@ private final class ExportBridgeController: CAPBridgeViewController {
     var onPicker: (() -> Void)?
     override func capacitorDidLoad() { bridge?.registerPluginInstance(exporter) }
     override func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
+        let onPicker = self.onPicker
         super.present(viewControllerToPresent, animated: flag) {
             completion?()
-            if viewControllerToPresent is UIDocumentPickerViewController { self.onPicker?() }
+            if viewControllerToPresent is UIDocumentPickerViewController { onPicker?() }
         }
     }
 }
@@ -23,6 +24,7 @@ final class ViewExportBridgeProbe: UIResponder, UIApplicationDelegate {
     private var initialFiles: Set<String> = []
     private var busyRejected = false
     private var encodingBusyRejected = false
+    private var photoBusyRejected = false
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let window = UIWindow(frame: UIScreen.main.bounds)
@@ -40,7 +42,7 @@ final class ViewExportBridgeProbe: UIResponder, UIApplicationDelegate {
         CAPPluginCall(callbackId: UUID().uuidString, methodName: method, options: options, success: { result, _ in
             success(result?.data ?? [:])
         }, error: { error in
-            if let failure { failure(error!) } else { self.fail("unexpected error: \(error!.code ?? "none")") }
+            if let failure { failure(error!) } else { self.fail("unexpected error at step \(self.step): \(error!.code ?? "none"): \(error!.message)") }
         })!
     }
 
@@ -50,7 +52,17 @@ final class ViewExportBridgeProbe: UIResponder, UIApplicationDelegate {
     }
 
     private func begin() {
-        controller.onPicker = { if self.step != 5 { self.handlePicker() } }
+        if CommandLine.arguments.contains("--photos-denied") {
+            controller.onPicker = { self.fail("denied Photos save must not fall back to Files") }
+            controller.exporter.exportLongImage(call("exportLongImage", options: options("denied"), success: { _ in
+                self.fail("denied Photos save reported success")
+            }, failure: { error in
+                self.require(error.code == "EXPORT_SAVE_FAILED", "Photos denial error code")
+                self.require(self.temporaryExports() == self.initialFiles, "denied Photos save leaked staging file")
+                print("VIEW_EXPORT_PHOTOS_DENIED_PASSED"); fflush(stdout); exit(0)
+            }))
+            return
+        }
         controller.exporter.capabilities(call("capabilities", success: { value in
             self.require(value["version"] as? Int == 1 && value["exportPDF"] as? Bool == true
                          && value["exportLongImage"] as? Bool == true, "capability shape")
@@ -73,30 +85,43 @@ final class ViewExportBridgeProbe: UIResponder, UIApplicationDelegate {
             if self.step == 5 && stage == "saving" {
                 self.controller.exporter.cancel(self.call("cancel", options: ["taskId": "task-5"]))
             }
+            if self.step == 7 && stage == "saving" {
+                self.controller.exporter.cancel(self.call("cancel", options: ["taskId": "task-7"]))
+                self.controller.exporter.exportPDF(self.call("exportPDF", options: self.options("photo-concurrent"), failure: { error in
+                    self.require(error.code == "EXPORT_BUSY", "Photos transaction did not retain busy slot")
+                    self.photoBusyRejected = true
+                }))
+            }
         }))
         runNext()
     }
 
     private func runNext() {
+        controller.onPicker = { [step = self.step] in
+            if step == self.step && step != 5 { self.handlePicker() }
+        }
         resolved = false
         stages = []
         let id = "task-\(step)"
-        let export = call(step == 2 ? "exportPDF" : "exportLongImage", options: options(id, tall: step == 0 || step == 3), success: { value in
+        let pdf = step == 1 || step == 2 || step == 5
+        let export = call(pdf ? "exportPDF" : "exportLongImage", options: options(id, tall: step == 0 || step == 3), success: { value in
             self.require(!self.resolved, "double completion")
             self.resolved = true
-            self.require(value["status"] as? String == (self.step == 2 ? "saved" : "cancelled"), "terminal status")
+            self.require(value["status"] as? String == (self.step == 2 || self.step >= 6 ? "saved" : "cancelled"), "terminal status")
             self.require(self.temporaryExports() == self.initialFiles, "temporary export leaked")
             self.require(self.step != 0 || self.busyRejected, "concurrent call was not rejected")
             self.require(self.step != 4 || self.encodingBusyRejected, "encoder cancellation admitted concurrent task")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if self.step == 5 {
+                if self.step == 7 {
+                    self.require(self.photoBusyRejected, "Photos cancellation admitted concurrent task")
+                    print("VIEW_EXPORT_PHOTOS_PASSED")
                     print("VIEW_EXPORT_BRIDGE_PASSED"); fflush(stdout); exit(0)
                 }
                 self.step += 1
                 self.runNext()
             }
         })
-        if step == 2 { controller.exporter.exportPDF(export) } else { controller.exporter.exportLongImage(export) }
+        if pdf { controller.exporter.exportPDF(export) } else { controller.exporter.exportLongImage(export) }
         if step == 0 {
             controller.exporter.exportPDF(call("exportPDF", options: options("concurrent"), success: { _ in self.fail("concurrent accepted") }, failure: { error in
                 self.require(error.code == "EXPORT_BUSY", "concurrency code")
@@ -115,6 +140,7 @@ final class ViewExportBridgeProbe: UIResponder, UIApplicationDelegate {
     }
 
     private func handlePicker() {
+        require(step == 1 || step == 2 || step == 5, "PNG must not present a document picker")
         require(!resolved, "export resolved before save picker completion")
         require(stages.contains("encoding") && stages.last == "saving", "save stage ordering")
         guard let picker = controller.presentedViewController as? UIDocumentPickerViewController else {

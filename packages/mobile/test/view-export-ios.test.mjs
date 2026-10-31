@@ -82,11 +82,17 @@ test.skipIf(process.platform !== 'darwin' || !device || !snapshot || !artifacts)
   }
 }, 300_000);
 
-test.skipIf(process.platform !== 'darwin' || !device || !products)('production Capacitor plugin owns picker completion, cancellation and cleanup', async () => {
+test.skipIf(process.platform !== 'darwin' || !device || !products)('production Capacitor plugin saves PNG to Photos and PDF through the picker with cancellation and cleanup', async () => {
   const work = await mkdtemp(join(tmpdir(), 'yuri-view-export-bridge-'));
   const app = join(work, 'ViewExportBridgeProbe.app');
   const bundle = 'com.yuri.view-export-bridge-regression';
   const simctl = (...args) => execFileSync('xcrun', ['simctl', ...args], { encoding: 'utf8', timeout: 90_000 });
+  // Inspect only this fixture's generated assets from the host, so the app under
+  // test needs add-only access, never permission to read the user's library.
+  const photoDatabase = join(simctl('getenv', device, 'HOME').trim(), 'Media/PhotoData/Photos.sqlite');
+  const photoCount = () => Number(execFileSync('sqlite3', ['-readonly', photoDatabase,
+    "SELECT count(*) FROM ZASSET a JOIN ZADDITIONALASSETATTRIBUTES d ON d.ZASSET=a.Z_PK WHERE a.ZWIDTH=600 AND a.ZHEIGHT=1000 AND d.ZORIGINALFILENAME='snapshot.png';"], { encoding: 'utf8' }).trim());
+  const initialPhotos = photoCount();
   try {
     await mkdir(join(app, 'Frameworks'), { recursive: true });
     for (const [directory, name] of [['Capacitor', 'Capacitor'], ['CapacitorCordova', 'Cordova']]) {
@@ -98,6 +104,7 @@ test.skipIf(process.platform !== 'darwin' || !device || !products)('production C
       '-Xlinker', '-rpath', '-Xlinker', '@executable_path/Frameworks',
       fileURLToPath(new URL('../ios/App/App/YuriViewExportRenderer.swift', import.meta.url)),
       fileURLToPath(new URL('../ios/App/App/YuriViewExportPlugin.swift', import.meta.url)),
+      fileURLToPath(new URL('../ios/App/App/YuriMediaPlugin.swift', import.meta.url)),
       fileURLToPath(new URL('./view-export-ios-bridge-probe.swift', import.meta.url)), '-o', join(app, 'ViewExportBridgeProbe')], { timeout: 120_000 });
     await mkdir(join(app, 'public'));
     await writeFile(join(app, 'public', 'index.html'), '<!doctype html><html><body>Export probe owner</body></html>');
@@ -109,11 +116,20 @@ test.skipIf(process.platform !== 'darwin' || !device || !products)('production C
       <key>CFBundlePackageType</key><string>APPL</string>
       <key>CFBundleVersion</key><string>1</string>
       <key>UILaunchScreen</key><dict/>
+      <key>NSPhotoLibraryAddUsageDescription</key><string>Save exported image regression test</string>
     </dict></plist>`);
     simctl('install', device, app);
+    simctl('privacy', device, 'grant', 'photos-add', bundle);
     const output = simctl('launch', '--console', device, bundle);
     expect(output).toContain('VIEW_EXPORT_BRIDGE_PASSED');
+    expect(output).toContain('VIEW_EXPORT_PHOTOS_PASSED');
     expect(output).not.toContain('VIEW_EXPORT_BRIDGE_FAILED');
+    expect(photoCount(), 'two complete PNG images must actually be committed to Photos').toBe(initialPhotos + 2);
+    simctl('privacy', device, 'revoke', 'photos-add', bundle);
+    const denied = simctl('launch', '--console', device, bundle, '--photos-denied');
+    expect(denied).toContain('VIEW_EXPORT_PHOTOS_DENIED_PASSED');
+    expect(denied).not.toContain('VIEW_EXPORT_BRIDGE_FAILED');
+    expect(photoCount(), 'denied Photos saves must not create an asset').toBe(initialPhotos + 2);
   } finally {
     try { simctl('uninstall', device, bundle); } catch { /* Installation may not have completed. */ }
     await rm(work, { recursive: true, force: true });

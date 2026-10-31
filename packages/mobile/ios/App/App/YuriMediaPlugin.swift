@@ -56,7 +56,7 @@ class YuriMediaPlugin: CAPPlugin, CAPBridgedPlugin {
             image = normalized
         }
 
-        ensureAddOnlyAuthorization { [weak self] granted, errorMessage in
+        Self.ensureAddOnlyAuthorization { [weak self] granted, errorMessage in
             guard let self else { return }
             if !granted {
                 call.reject(errorMessage ?? "Photo library permission denied")
@@ -66,7 +66,21 @@ class YuriMediaPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func ensureAddOnlyAuthorization(completion: @escaping (Bool, String?) -> Void) {
+    static func saveImageFile(at url: URL, canSave: @escaping () -> Bool, completion: @escaping (Bool, String?) -> Void) {
+        ensureAddOnlyAuthorization { granted, errorMessage in
+            guard canSave() else { completion(false, nil); return }
+            guard granted else { completion(false, errorMessage ?? "Photo library permission denied"); return }
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetCreationRequest.forAsset().addResource(with: .photo, fileURL: url, options: nil)
+            }, completionHandler: { saved, error in
+                DispatchQueue.main.async {
+                    completion(saved, saved ? nil : error?.localizedDescription ?? "Could not save image to Photos")
+                }
+            })
+        }
+    }
+
+    private static func ensureAddOnlyAuthorization(completion: @escaping (Bool, String?) -> Void) {
         let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
         switch status {
         case .authorized, .limited:
