@@ -109,8 +109,8 @@ final class ViewExportRealProbe: UIResponder, UIApplicationDelegate, WKNavigatio
     private func checkPNG(_ url: URL, request: YuriViewExportRequest) throws {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { fail("PNG decode"); return }
-        require(image.width == request.width && image.height == request.height, "PNG dimensions")
-        let cropHeight = min(600, image.height)
+        require(image.width == request.width * 2 && image.height == request.height * 2, "PNG 2x dimensions")
+        let cropHeight = min(1200, image.height)
         let bottom = image.cropping(to: CGRect(x: 0, y: image.height - cropHeight, width: image.width, height: cropHeight))!
         try UIImage(cgImage: bottom).pngData()!.write(to: directory.appendingPathComponent("ios-bottom.png"))
         let format = UIGraphicsImageRendererFormat()
@@ -125,7 +125,7 @@ final class ViewExportRealProbe: UIResponder, UIApplicationDelegate, WKNavigatio
         let text = (ocr.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
         try text.write(to: directory.appendingPathComponent("ios-bottom-ocr.txt"), atomically: true, encoding: .utf8)
         evidence["pngFooterOCR"] = text
-        // At the required 1x output the original footer is only 9.9px text.
+        // The original 9.9 CSS-pixel footer now has 19.8 output pixels at 2x.
         // Keep the crop for visual inspection and use several stable OCR anchors;
         // the native PDF below separately checks the complete exact footer text.
         require(normalized(text).contains("口径") && text.contains("2026-10-28") && text.contains("ITERATION-REPORT.md"),

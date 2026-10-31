@@ -147,11 +147,16 @@ separate script/network-disabled WebView. PNG is saved to the device photo libra
 PDF opens the system document picker. HTML exports keep the file-save path.
 Generated files stay in native temporary storage rather than crossing the bridge
 as base64. PDF defaults to paginated A4, optionally Letter, with 24-point margins
-and 96 CSS pixels per inch (shrinking to fit, never enlarging); PNG uses one output
-pixel per CSS pixel. Android advertises 16 MiB HTML, width 8192, height 32768 and
+and 96 CSS pixels per inch (shrinking to fit, never enlarging); PNG renders at 2x
+resolution in both axes (four output pixels per CSS pixel). Layout and tile progress
+stay in CSS coordinates; the renderer captures/draws at 2x before encoding, rather
+than enlarging a finished 1x image. Android advertises 16 MiB HTML, width 8192, height 32768 and
 16,777,216 pixels. iOS advertises 100 MiB HTML (UTF-8 bytes), width 2048, height
 32768 and 8,388,608 pixels. Consumers use the returned limits; exceeding a limit
-fails rather than truncating output.
+fails rather than truncating output. These are input CSS-pixel limits; 2x output
+keeps a single bounded RGBA canvas (iOS at most 128 MiB, Android at most 256 MiB),
+plus renderer/tile/encoder overhead. Allocation failure rejects rather than silently
+falling back to blurry 1x. PDF layout, margins and vector/text output are unchanged.
 
 iOS attaches a task-owned WKWebView beneath the app content. PNG captures and
 composes viewport-sized tiles; PDF uses `WKWebView.createPDF` and CoreGraphics
@@ -182,8 +187,8 @@ Android 7–9 requests legacy storage-write permission (manifest-capped at API 2
 and denial rejects without falling back to a document picker. Permission prompts
 retain their task reservation until the callback or owner teardown.
 
-This PNG destination change requires an updated native iOS/Android build; an OTA
-alone cannot change the save destination in an already-installed exporter.
+The PNG destination and 2x rendering changes require an updated native iOS/Android
+build; an OTA alone cannot replace the already-installed exporter.
 
 See `packages/ui/src/lib/view-export/DOCUMENTATION.md` for the full public
 contract. `test/view-export-android.test.mjs` runs production Java validation;
@@ -199,6 +204,9 @@ and removes them afterward; it does not change signing or install the product ap
 The bridge probe saves actual PNG assets with add-only authorization and checks
 their filename/dimensions in the simulator's Photos database from the host. It
 also verifies denial, late cancellation, busy-slot retention and PDF picker completion.
+The renderer probe checks 2x dimensions, half-CSS-pixel stripe detail, full-height
+tile alignment and unchanged searchable PDF pages. Pixel probes crop a single
+sample instead of allocating another full-size canvas for every assertion.
 Run simulator-backed test files with `--no-file-parallelism`: concurrent probe
 apps on one simulator can background each other and suspend WebKit rendering.
 

@@ -75,7 +75,9 @@ final class ViewExportProbe: UIResponder, UIApplicationDelegate {
         try rejected(bad, "EXPORT_INVALID_INPUT")
         bad = input(); bad["pageSize"] = "legal"
         try rejected(bad, "EXPORT_INVALID_INPUT", pdf: true)
-        _ = try YuriViewExportRequest(input(width: 2048, height: 4096), pdf: false)
+        let largest = try YuriViewExportRequest(input(width: 2048, height: 4096), pdf: false)
+        require(largest.imageWidth == 4096 && largest.imageHeight == 8192, "bounded 2x image dimensions")
+        require(largest.imageWidth * largest.imageHeight * 4 == 128 * 1024 * 1024, "2x canvas must remain within 128 MiB")
         print("INPUT_VALIDATION_PASSED")
     }
 
@@ -90,6 +92,7 @@ final class ViewExportProbe: UIResponder, UIApplicationDelegate {
         <div style="position:absolute;left:1100px;top:0;width:100px;height:4300px;background:rgb(255,255,0)"></div>
         <p style="position:absolute;left:30px;top:100px;font:24px sans-serif">SEARCHABLE_FIRST_PAGE</p>
         <p style="position:absolute;left:30px;top:2000px;font:24px sans-serif">SEARCHABLE_MIDDLE_PAGE</p>
+        <div style="position:absolute;left:30px;top:300px;width:40px;height:40px;background:repeating-linear-gradient(90deg,#000 0px,#000 0.5px,#fff 0.5px,#fff 1px)"></div>
         <p style="position:absolute;left:30px;top:4200px;font:24px sans-serif">SEARCHABLE_LAST_PAGE 数据口径</p>
         <img src="http://127.0.0.1:\(port)/forbidden" onerror="document.body.innerHTML='script executed'" style="position:absolute;top:0;left:0;width:1px;height:1px">
         </div>
@@ -126,11 +129,15 @@ final class ViewExportProbe: UIResponder, UIApplicationDelegate {
         if variant == 0 {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                   let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { fail("PNG decode"); return }
-            require(image.width == 1200 && image.height == 4300, "PNG must be 1 CSS pixel = 1 pixel")
+            require(image.width == 2400 && image.height == 8600, "PNG must render at 2x resolution, not 1x")
             for (y, expected) in [(10, [255,0,0]), (600, [255,0,0]), (1700, [0,255,0]), (3201, [0,0,255]), (4299, [0,0,255])] {
-                checkPixel(image, x: 600, y: y, expected: expected)
-                checkPixel(image, x: 1199, y: y, expected: [255,255,0])
+                checkPixel(image, x: 1200, y: y * 2, expected: expected)
+                checkPixel(image, x: 2398, y: y * 2, expected: [255,255,0])
             }
+            // Retina sampling may antialias a half-CSS-pixel edge; alternating
+            // dark/light output pixels still rule out a flat 1x raster enlarged 2x.
+            for x in 60..<68 { checkPixel(image, x: x, y: 640, expected: x % 2 == 0 ? [0,0,0] : [255,255,255], tolerance: 80) }
+            print("LONG_IMAGE_2X_DETAIL_PASSED")
             print("LONG_IMAGE_PIXELS_PASSED")
         } else {
             guard let document = CGPDFDocument(url as CFURL) else { fail("PDF decode"); return }
@@ -158,15 +165,15 @@ final class ViewExportProbe: UIResponder, UIApplicationDelegate {
         }
     }
 
-    private func checkPixel(_ image: CGImage, x: Int, y: Int, expected: [Int]) {
-        let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
-                                bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+    private func checkPixel(_ image: CGImage, x: Int, y: Int, expected: [Int], tolerance: Int = 3) {
+        let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8,
+                                bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        context.draw(image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1))!, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         let bytes = context.data!.assumingMemoryBound(to: UInt8.self)
-        let offset = (y * image.width + x) * 4
+        let offset = 0
         for channel in 0..<3 {
-            require(abs(Int(bytes[offset + channel]) - expected[channel]) <= 3, "pixel \(x),\(y) channel \(channel): \(bytes[offset + channel]) != \(expected[channel])")
+            require(abs(Int(bytes[offset + channel]) - expected[channel]) <= tolerance, "pixel \(x),\(y) channel \(channel): \(bytes[offset + channel]) != \(expected[channel])")
         }
     }
 

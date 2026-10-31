@@ -6,6 +6,7 @@ import java.util.regex.Pattern;
 
 /** Native validation is independent of the caller's capability/limit checks. */
 final class ViewExportRequest {
+    static final int IMAGE_SCALE = 2;
     static final int MAX_HTML_BYTES = 16 * 1024 * 1024;
     static final int MAX_WIDTH = 8192;
     static final int MAX_HEIGHT = 32768;
@@ -26,6 +27,9 @@ final class ViewExportRequest {
     final boolean pdf;
     final boolean letter;
     String html;
+
+    int imageWidth() { return width * IMAGE_SCALE; }
+    int imageHeight() { return height * IMAGE_SCALE; }
 
     ViewExportRequest(Object taskId, Object html, Object width, Object height,
                       Object filename, Object pageSize, boolean pdf) throws Failure {

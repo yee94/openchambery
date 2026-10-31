@@ -33,6 +33,7 @@ test.skipIf(process.platform !== 'darwin' || !device)('production iOS view expor
     simctl('install', device, app);
     const output = simctl('launch', '--console', device, bundle);
     expect(output).toContain('LONG_IMAGE_PIXELS_PASSED');
+    expect(output).toContain('LONG_IMAGE_2X_DETAIL_PASSED');
     expect(output).toContain('A4_PAGINATION_PASSED');
     expect(output).toContain('LETTER_PAGINATION_PASSED');
     expect(output).toContain('PDF_SEARCHABLE_TAIL_PASSED');
@@ -91,7 +92,7 @@ test.skipIf(process.platform !== 'darwin' || !device || !products)('production C
   // test needs add-only access, never permission to read the user's library.
   const photoDatabase = join(simctl('getenv', device, 'HOME').trim(), 'Media/PhotoData/Photos.sqlite');
   const photoCount = () => Number(execFileSync('sqlite3', ['-readonly', photoDatabase,
-    "SELECT count(*) FROM ZASSET a JOIN ZADDITIONALASSETATTRIBUTES d ON d.ZASSET=a.Z_PK WHERE a.ZWIDTH=600 AND a.ZHEIGHT=1000 AND d.ZORIGINALFILENAME='snapshot.png';"], { encoding: 'utf8' }).trim());
+    "SELECT count(*) FROM ZASSET a JOIN ZADDITIONALASSETATTRIBUTES d ON d.ZASSET=a.Z_PK WHERE a.ZWIDTH=1200 AND a.ZHEIGHT=2000 AND d.ZORIGINALFILENAME='snapshot.png';"], { encoding: 'utf8' }).trim());
   const initialPhotos = photoCount();
   try {
     await mkdir(join(app, 'Frameworks'), { recursive: true });

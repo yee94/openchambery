@@ -62,10 +62,15 @@ public final class ViewExportInstrumentation extends Instrumentation {
             try (InputStream input = getTargetContext().getContentResolver().openInputStream(imageUri)) {
                 image = BitmapFactory.decodeStream(input);
             }
-            require(image != null && image.getWidth() == WIDTH && image.getHeight() == HEIGHT, "PNG must retain full dimensions");
-            require(image.getPixel(10, 10) == Color.RED, "offscreen PNG top is blank/scaled");
-            require(image.getPixel(10, 210) == Color.BLUE, "inline data image did not render");
-            require(image.getPixel(10, HEIGHT - 10) == Color.GREEN, "offscreen PNG bottom is blank/truncated");
+            require(image != null && image.getWidth() == WIDTH * 2 && image.getHeight() == HEIGHT * 2, "PNG must retain full 2x dimensions");
+            require(image.getPixel(20, 20) == Color.RED, "offscreen PNG top is blank/scaled");
+            require(image.getPixel(20, 420) == Color.BLUE, "inline data image did not render");
+            require(image.getPixel(20, HEIGHT * 2 - 20) == Color.GREEN, "offscreen PNG bottom is blank/truncated");
+            for (int x = 60; x < 68; x++) {
+                int color = image.getPixel(x, 640);
+                require(x % 2 == 0 ? Color.red(color) < 96 : Color.red(color) > 159,
+                    "half-CSS-pixel stripes must retain detail instead of enlarging a 1x raster");
+            }
             image.recycle();
             getTargetContext().getContentResolver().delete(imageUri, null, null);
             require(cacheFiles().length == 0, "gallery save must delete the staged image");
@@ -240,7 +245,9 @@ public final class ViewExportInstrumentation extends Instrumentation {
             double secondPageTop = (("letter".equals(pageSize) ? 792 : 842) - 48) / scale + 40;
             html += "<div style='position:absolute;left:0;top:0;width:4px;height:6000px;background:#ff8800'></div>"
                 + "<p style='position:absolute;left:60px;top:" + secondPageTop + "px;margin:0;color:#000'>YuriExportSecondPage</p>"
-                + "<p style='position:absolute;left:60px;top:5968px;margin:0;font-size:14px;color:#000'>YuriExportLastPage</p>";
+                 + "<p style='position:absolute;left:60px;top:5968px;margin:0;font-size:14px;color:#000'>YuriExportLastPage</p>";
+        } else {
+            html += "<div style='position:absolute;left:30px;top:300px;width:40px;height:40px;background:repeating-linear-gradient(90deg,#000 0px,#000 0.5px,#fff 0.5px,#fff 1px)'></div>";
         }
         JSObject data = new JSObject().put("taskId", id).put("filename", "runtime-evidence")
             .put("snapshot", new JSObject().put("html", html).put("width", snapshotWidth).put("height", HEIGHT));

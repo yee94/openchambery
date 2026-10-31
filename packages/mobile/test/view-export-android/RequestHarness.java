@@ -12,7 +12,11 @@ public final class RequestHarness {
         return new ViewExportRequest("task-1", html, width, height, "report", null, false);
     }
     public static void main(String[] args) throws Exception {
-        request("a", 8192, 2048);
+        ViewExportRequest largest = request("a", 8192, 2048);
+        if (largest.imageWidth() != 16384 || largest.imageHeight() != 4096
+            || (long) largest.imageWidth() * largest.imageHeight() * 4 != 256L * 1024 * 1024) {
+            throw new AssertionError("2x canvas must remain within 256 MiB");
+        }
         request("a", 512, 32768);
         request("a".repeat(16 * 1024 * 1024), 1, 1);
         rejected("EXPORT_TOO_LARGE", () -> request("a", 8193, 1));
@@ -34,6 +38,7 @@ public final class RequestHarness {
             rejected("EXPORT_FORBIDDEN", () -> request(html, 1, 1));
         }
         ViewExportRequest png = request("<div style='color:red'>静态</div>", 320, 6000);
+        if (png.imageWidth() != 640 || png.imageHeight() != 12000) throw new AssertionError("PNG 2x dimensions");
         if (!png.filename.equals("report.png")) throw new AssertionError("PNG filename");
         String document = png.document();
         if (document.indexOf("Content-Security-Policy") > document.indexOf("静态")

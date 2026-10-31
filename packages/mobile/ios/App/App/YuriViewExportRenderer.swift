@@ -10,6 +10,7 @@ struct YuriViewExportError: Error {
 }
 
 struct YuriViewExportRequest {
+    static let imageScale = 2
     static let limits = ["maxHTMLBytes": 100 * 1024 * 1024, "maxWidth": 2048,
                          "maxHeight": 32768, "maxPixels": 8 * 1024 * 1024]
     let taskId: String
@@ -19,6 +20,9 @@ struct YuriViewExportRequest {
     let filename: String
     let pdf: Bool
     let letter: Bool
+
+    var imageWidth: Int { width * Self.imageScale }
+    var imageHeight: Int { height * Self.imageScale }
 
     init(_ input: [String: Any], pdf: Bool) throws {
         func invalid(_ message: String) -> YuriViewExportError {
@@ -90,7 +94,7 @@ struct YuriViewExportRequest {
 }
 
 /// A task-owned renderer. All WebKit/UIKit work is main-thread confined; one
-/// viewport tile is retained at a time. PNG has one bounded 32 MiB RGBA canvas.
+/// viewport tile is retained at a time. PNG has one bounded 128 MiB 2x RGBA canvas.
 final class YuriViewExportRenderer: NSObject, WKNavigationDelegate {
     private let request: YuriViewExportRequest
     private let directory: URL
@@ -192,12 +196,12 @@ final class YuriViewExportRenderer: NSObject, WKNavigationDelegate {
             guard pdfContext != nil else { fail("Could not create PDF output"); return }
             captureNextPDFPage()
         } else {
-            bitmap = CGContext(data: nil, width: request.width, height: request.height, bitsPerComponent: 8,
-                               bytesPerRow: request.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmap = CGContext(data: nil, width: request.imageWidth, height: request.imageHeight, bitsPerComponent: 8,
+                               bytesPerRow: request.imageWidth * 4, space: CGColorSpaceCreateDeviceRGB(),
                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
             guard let bitmap else { fail("Could not allocate image output"); return }
             bitmap.setFillColor(UIColor.white.cgColor)
-            bitmap.fill(CGRect(x: 0, y: 0, width: request.width, height: request.height))
+            bitmap.fill(CGRect(x: 0, y: 0, width: request.imageWidth, height: request.imageHeight))
             captureNextTile()
         }
     }
@@ -269,14 +273,15 @@ final class YuriViewExportRenderer: NSObject, WKNavigationDelegate {
             guard let self, !self.stopped, let webView else { return }
             let configuration = WKSnapshotConfiguration()
             configuration.rect = CGRect(x: 0, y: self.y - scrollY, width: self.request.width, height: tileHeight)
-            configuration.snapshotWidth = NSNumber(value: Double(self.request.width) / Double(webView.window?.screen.scale ?? 1))
+            configuration.snapshotWidth = NSNumber(value: Double(self.request.imageWidth) / Double(webView.window?.screen.scale ?? 1))
             configuration.afterScreenUpdates = true
             webView.takeSnapshot(with: configuration) { [weak self] image, error in
                 guard let self, !self.stopped else { return }
                 guard error == nil, let image = image?.cgImage else { self.fail("Could not capture snapshot tile"); return }
                 autoreleasepool {
-                    self.bitmap?.draw(image, in: CGRect(x: 0, y: self.request.height - self.y - tileHeight,
-                                                      width: self.request.width, height: tileHeight))
+                    self.bitmap?.draw(image, in: CGRect(x: 0,
+                        y: (self.request.height - self.y - tileHeight) * YuriViewExportRequest.imageScale,
+                        width: self.request.imageWidth, height: tileHeight * YuriViewExportRequest.imageScale))
                 }
                 self.y += tileHeight
                 self.progress("rendering", self.y, self.request.height)

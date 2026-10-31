@@ -143,9 +143,10 @@ public class YuriViewExportPlugin extends Plugin {
     private void renderPNG(Task task) {
         Bitmap bitmap = null;
         try {
-            bitmap = Bitmap.createBitmap(task.request.width, task.request.height, Bitmap.Config.ARGB_8888);
+            bitmap = Bitmap.createBitmap(task.request.imageWidth(), task.request.imageHeight(), Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             canvas.drawColor(Color.WHITE);
+            canvas.scale(ViewExportRequest.IMAGE_SCALE, ViewExportRequest.IMAGE_SCALE);
             task.renderer.draw(canvas);
             closeRenderer(task);
             progress(task, "encoding", null, null);
