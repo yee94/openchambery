@@ -1,6 +1,6 @@
 {
   "name": "@yuriai/relay-server",
-  "version": "0.2.18",
+  "version": "0.2.19-beta.1",
   "description": "Self-hosted private relay server for Yuri",
   "private": false,
   "type": "module",

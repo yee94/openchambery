@@ -166,7 +166,8 @@ describe('Assistant unread UI', () => {
     const snapshot = { enabled: true, revision: 1, assistants: [{ id: 'a', unreadCount: 3, readTip }] } as AssistantSnapshot;
     await render(<AssistantMarkAllReadButton snapshot={snapshot} />);
     const button = host.querySelector('button')!;
-    expect(button.textContent).toBe('assistants.unread.markAll');
+    expect(button.textContent).toBe('');
+    expect(button.getAttribute('aria-label')).toBe('assistants.unread.markAll');
     expect(button.disabled).toBe(true);
     await act(async () => button.click());
     expect(state.all).not.toHaveBeenCalled();
@@ -235,15 +236,20 @@ describe('Assistant unread UI', () => {
     expect(button.disabled).toBe(false);
   });
 
-  test('compact header action retains its button when unread clears', async () => {
+  test.each([false, true])('icon header action retains its button when unread clears (mobile=%s)', async (mobile) => {
     const unread = { enabled: true, revision: 1, assistants: [{ id: 'a', unreadCount: 1, readTip: position }] } as AssistantSnapshot;
-    await render(<AssistantMarkAllReadButton snapshot={unread} compact />);
+    await render(<AssistantMarkAllReadButton snapshot={unread} compact mobile={mobile} />);
     const button = host.querySelector('button')!;
     expect(button.disabled).toBe(false);
-    await render(<AssistantMarkAllReadButton snapshot={{ ...unread, assistants: [{ ...unread.assistants[0], unreadCount: 0 }] }} compact />);
+    expect(button.textContent).toBe('');
+    expect(button.getAttribute('aria-label')).toBe('assistants.unread.markAll');
+    expect(button.title).toBe('assistants.unread.markAll');
+    expect(button.querySelector('use')?.getAttribute('href')).toBe('#yuri-check-double');
+    expect(button.className).toContain(mobile ? 'size-10' : 'size-9');
+    await render(<AssistantMarkAllReadButton snapshot={{ ...unread, assistants: [{ ...unread.assistants[0], unreadCount: 0 }] }} compact mobile={mobile} />);
     expect(host.querySelector('button')).toBe(button);
     expect(button.disabled).toBe(true);
-    expect(button.textContent).toBe('assistants.unread.markAll');
+    expect(button.textContent).toBe('');
     expect(button.parentElement?.style.visibility).toBe('hidden');
   });
 });

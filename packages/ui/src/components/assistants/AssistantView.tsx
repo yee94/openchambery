@@ -266,7 +266,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
         <section className="flex h-full min-h-0 w-[clamp(16rem,22vw,20rem)] shrink-0 flex-col overflow-hidden">
           <header className="flex shrink-0 items-center gap-3 px-4 pb-3 pt-4 sm:px-5">
             <h1 className="min-w-0 truncate typography-ui-label font-semibold text-foreground">{t('assistants.title')}</h1>
-            <AssistantMarkAllReadButton snapshot={snapshot} compact rowClassName="min-w-0 flex-1" />
+            <AssistantMarkAllReadButton snapshot={snapshot} compact rowClassName="flex min-w-0 flex-1 justify-end" />
             <Button
               type="button"
               variant="ghost"

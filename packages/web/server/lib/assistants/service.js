@@ -110,6 +110,11 @@ const json = (value) => JSON.stringify(value);
 const parse = (value) => JSON.parse(value);
 const hash = (value) => crypto.createHash('sha256').update(json(value)).digest('hex');
 const id = () => crypto.randomUUID();
+// Plain-Node mirror of the shared UI recipe catalog; service tests enforce parity.
+const AVATAR_COLORS = ['mint', 'orange', 'iris', 'jade', 'coral', 'blue', 'sky', 'violet', 'sand', 'rose', 'cyan', 'graphite'];
+const RANDOM_AVATAR_SHAPES = ['round', 'soft', 'tall', 'wide', 'compact', 'large', 'drop'];
+const randomAvatarSeed = (nonce, shape = RANDOM_AVATAR_SHAPES[crypto.randomInt(RANDOM_AVATAR_SHAPES.length)]) =>
+  `yuri-avatar:v1:${shape}:capsule:${AVATAR_COLORS[crypto.randomInt(AVATAR_COLORS.length)]}:neutral:1:${nonce}`;
 export class AssistantError extends Error {
   constructor(code, message) {
     super(typeof message === 'string' && message.trim() ? message.trim() : code);
@@ -1308,7 +1313,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   };
   const unsubscribeEvents = typeof globalEventHub?.subscribeEvent === 'function' ? globalEventHub.subscribeEvent(processEvent) : null;
   const updateContactAvatar = async (assistantID, seed) => {
-    const avatarSeed = seed === undefined ? id() : string(seed, 256, true);
+    const avatarSeed = seed === undefined ? randomAvatarSeed(id()) : string(seed, 256, true);
     for (let attempt = 0; attempt < 2; attempt++) {
       const current = output(editable(assistantID));
       if (current.avatarSeed === avatarSeed) return { updated: false, avatarSeed, previousAvatarSeed: current.avatarSeed };
@@ -1340,7 +1345,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       // Default every creation channel to the same face, varying only pigment.
       // Persist the complete v1 recipe so future defaults cannot change this Bot.
       const avatarSeed = input.avatarSeed === undefined
-        ? `yuri-avatar:v1:round:capsule:${['mint', 'iris', 'coral', 'sky', 'sand', 'graphite'][crypto.randomInt(6)]}:neutral:1:${assistantID}`
+        ? randomAvatarSeed(assistantID, 'round')
         : string(input.avatarSeed, 256, true);
       db.prepare('INSERT INTO assistant_v2 (assistant_id,revision,enabled,name,default_prompt,workspace_path,provider_id,model_id,agent,variant,mode,current_session_id,session_generation,created_at,updated_at,tombstone_at,avatar_seed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(assistantID, 1, input.enabled === false ? 0 : 1, string(input.name, 256, true), input.defaultPrompt ? string(input.defaultPrompt, 200_000) : '', workspacePath, string(input.providerID, 256, true), string(input.modelID, 256, true), input.agent == null ? null : string(input.agent, 256), input.variant == null ? null : string(input.variant, 256), mode, null, 0, at, at, null, avatarSeed);
       insertContactMessage(db, {

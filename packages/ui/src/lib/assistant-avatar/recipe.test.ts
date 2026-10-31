@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AVATAR_SHAPES, AVATAR_EYES, AVATAR_COLORS, AVATAR_EXPRESSIONS, AVATAR_PICKER_SHAPES, resolveAssistantAvatar, encodeAssistantAvatar, createDefaultAssistantAvatarSeed } from './recipe';
-import { assistantAvatarArtboard, assistantAvatarStillModel, createAssistantAvatarPlayer, assistantAvatarSvg, mountAssistantAvatarRenderer } from './engine';
+import { AVATAR_SHAPES, AVATAR_EYES, AVATAR_COLORS, AVATAR_EXPRESSIONS, AVATAR_PICKER_SHAPES, resolveAssistantAvatar, encodeAssistantAvatar, createDefaultAssistantAvatarSeed, createRandomAssistantAvatarSeed } from './recipe';
+import { assistantAvatarArtboard, assistantAvatarStillModel, createAssistantAvatarPlayer, assistantAvatarSvg, assistantAvatarPigment, mountAssistantAvatarRenderer } from './engine';
 import { buildAvatarBody, compactAvatarOutline } from './geometry';
 import { AVATAR_BODY_NAMES } from './catalog';
 import { buildModel, createRuntime, createStateMachine, makeConfig, makeMorphGenerators, makeTrail, lb, type Frame, type Model } from './vendor/grok-anatomy/player.js';
@@ -91,13 +91,53 @@ describe('Assistant avatar recipe', () => {
   });
 
   test('new Bots all use the first round neutral face, varying only pigment', () => {
-    const defaults = Array.from({ length: 64 }, (_, i) => createDefaultAssistantAvatarSeed(`bot-${i}`));
-    expect(new Set(defaults.map((s) => resolveAssistantAvatar(s).color)).size).toBe(6);
+    const defaults = Array.from({ length: 256 }, (_, i) => createDefaultAssistantAvatarSeed(`bot-${i}`));
+    expect(new Set(defaults.map((s) => resolveAssistantAvatar(s).color))).toEqual(new Set(AVATAR_COLORS));
     const first = geometry(assistantAvatarStillModel(resolveAssistantAvatar(defaults[0])));
     for (const seed of defaults) {
       const recipe = resolveAssistantAvatar(seed);
       expect(recipe).toMatchObject({ shape: 'round', eyes: 'capsule', expression: 'neutral', animate: true });
       expect(geometry(assistantAvatarStillModel(recipe))).toBe(first);
+    }
+  });
+
+  test('randomize can reach every pigment without changing the legacy random shape assignment', () => {
+    const colors = new Set<string>();
+    for (let i = 0; i < 256; i++) {
+      const nonce = `random-${i}`;
+      const seed = createRandomAssistantAvatarSeed(nonce);
+      const recipe = resolveAssistantAvatar(seed);
+      colors.add(recipe.color);
+      expect(seed).toBe(createRandomAssistantAvatarSeed(nonce));
+      expect(seed).toMatch(/^yuri-avatar:v1:/);
+      expect(seed.length).toBeLessThanOrEqual(256);
+      expect(recipe).toMatchObject({ ...resolveAssistantAvatar(nonce), color: recipe.color });
+    }
+    expect(colors).toEqual(new Set(AVATAR_COLORS));
+  });
+
+  test('uses the approved mixed palette, preserving all six existing pigments', () => {
+    expect(Object.fromEntries(AVATAR_COLORS.map((color) => [color, assistantAvatarPigment(color)]))).toEqual({
+      mint: '#9ed8bf', orange: '#f58332', iris: '#c4b9ee', jade: '#35bb81',
+      coral: '#edb0a0', blue: '#4b8fe8', sky: '#a5cbe7', violet: '#9469e4',
+      sand: '#e2c99b', rose: '#e76b9f', cyan: '#32b6ad', graphite: '#555c67',
+    });
+  });
+
+  test.each(AVATAR_COLORS)('%s paints the same pigment in static and live SVG without changing geometry', (color) => {
+    for (const shape of ['round', 'cloud'] as const) {
+      const recipe = { ...resolveAssistantAvatar('palette'), shape, color };
+      const pigment = assistantAvatarPigment(color);
+      const still = assistantAvatarStillModel(recipe);
+      expect(still.inkPaint).toBe(pigment);
+      expect(still.cutout).toBe(color !== 'graphite');
+      expect(geometry(still)).toBe(geometry(assistantAvatarStillModel({ ...recipe, color: 'mint' })));
+      expect(assistantAvatarSvg(encodeAssistantAvatar(recipe))).toContain(`fill="${pigment}"`);
+      const renderer = mountAssistantAvatarRenderer(document, `palette-${shape}-${color}`, recipe);
+      const sample = createAssistantAvatarPlayer(recipe, 'palette', 'working').advance(1 / 30);
+      renderer.paint(sample);
+      expect(sample.model.inkPaint).toBe(pigment);
+      expect(renderer.svg.outerHTML).toContain(`fill="${pigment}"`);
     }
   });
 

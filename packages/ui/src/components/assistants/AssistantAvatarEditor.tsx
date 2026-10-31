@@ -7,7 +7,7 @@ import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import {
   AVATAR_PICKER_SHAPES, AVATAR_COLORS,
-  resolveAssistantAvatar, encodeAssistantAvatar, type AssistantAvatarRecipe,
+  resolveAssistantAvatar, encodeAssistantAvatar, createRandomAssistantAvatarSeed, type AssistantAvatarRecipe,
 } from '@/lib/assistant-avatar/recipe';
 import { assistantAvatarPigment } from '@/lib/assistant-avatar/engine';
 
@@ -34,7 +34,7 @@ export function AssistantAvatarEditor({ seed, disabled, onChange }: Props) {
               disabled={disabled}
               aria-label={t('assistants.settings.randomAvatar')}
               title={t('assistants.settings.randomAvatar')}
-              onClick={() => onChange(crypto.randomUUID())}
+              onClick={() => onChange(createRandomAssistantAvatarSeed(crypto.randomUUID()))}
             >
               <Icon name="refresh" className="size-3.5 sm:size-2.5" />
               {t('assistants.settings.randomAvatar')}
@@ -59,7 +59,7 @@ export function AssistantAvatarEditor({ seed, disabled, onChange }: Props) {
               </Button>
             ))}
           </div>
-          <div className="flex flex-wrap justify-center gap-1" role="group" aria-label={t('assistants.avatar.color')}>
+          <div className="grid grid-cols-6 justify-items-center gap-1" role="group" aria-label={t('assistants.avatar.color')}>
             {AVATAR_COLORS.map((color) => (
               <Button
                 key={color}

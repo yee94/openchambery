@@ -61,6 +61,11 @@ function Activation({ host, id, transport, report, schedule }: {
     }).catch((error) => { native?.dispose(); throw error; });
     const bridge = getDesktopGuiPluginBridge();
     const windowBridge = getDesktopGuiPluginWindowBridge();
+    if (query.data && !bridge && host.getSnapshot().plugins.some((plugin) =>
+      plugin.id === id && plugin.status === 'active' && plugin.revision === query.data.revision)) {
+      setActivationState({ loading: false, error: null });
+      return;
+    }
     if (!query.data || (!bridge && !windowBridge)) {
       if (!query.data) { setActivationState({ loading: false, error: null }); return; }
       setActivationState({ loading: true, error: null });
@@ -94,8 +99,8 @@ function Activation({ host, id, transport, report, schedule }: {
     return () => { cancelled = true; controller.abort(); };
   }, [host, id, transport, query.data, query.dataUpdatedAt, schedule]);
   React.useEffect(() => {
-    report(host, id, { loading: activationState.loading || query.isPending || query.isFetching, error: activationState.error ?? message(query.error) });
-  }, [host, id, activationState, query.error, query.isPending, query.isFetching, report]);
+    report(host, id, { loading: activationState.loading || query.isPending, error: activationState.error ?? message(query.error) });
+  }, [host, id, activationState, query.error, query.isPending, report]);
   React.useEffect(() => () => { host.uninstall(id); report(host, id, null); }, [host, id, report]);
   return null;
 }
@@ -106,15 +111,15 @@ export function GuiPluginsProvider({ children, ready = true }: { children: React
   const transport = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeTransportIdentity, getRuntimeTransportIdentity);
   const preferenceKey = guiPreferencesKey(getRuntimeKey());
   const [paintedTransport, setPaintedTransport] = React.useState<string | null>(null);
-  const painted = ready && paintedTransport === transport;
+  const painted = paintedTransport === transport;
   React.useEffect(() => {
-    if (!ready) return;
+    if (!ready || painted) return;
     const controller = new AbortController();
     void afterGuiPaint(controller.signal).then(() => {
       if (!controller.signal.aborted && getRuntimeTransportIdentity() === transport) setPaintedTransport(transport);
     }).catch(() => {});
-    return () => { controller.abort(); setPaintedTransport(null); };
-  }, [ready, transport]);
+    return () => { controller.abort(); };
+  }, [ready, transport, painted]);
   const inventoryQuery = useQuery({ ...guiInventoryOptions(transport), enabled: painted });
   const installQueue = React.useMemo(() => ({ transport, run: createGuiInstallQueue() }), [transport]);
   const [preferences, setPreferences] = React.useState<{ key: string; disabled: readonly string[] | null; error: string | null } | null>(null);

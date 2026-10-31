@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,7 @@ const markdownCoreSource = readFileSync(join(sourceDirectory, 'markdown/markdown
 const stylesSource = readFileSync(join(sourceDirectory, '../../index.css'), 'utf8');
 const attachmentSource = readFileSync(join(sourceDirectory, 'FileAttachment.tsx'), 'utf8');
 const dialogSource = readFileSync(join(sourceDirectory, 'message/ToolOutputDialog.tsx'), 'utf8');
+const slideSource = readFileSync(join(sourceDirectory, 'message/ImageViewerSlide.tsx'), 'utf8');
 
 describe('resolveImageSource', () => {
   test('resolves relative POSIX and Windows paths from the effective directory', () => {
@@ -227,9 +228,11 @@ describe('image source contracts', () => {
     expect(attachmentSource).toContain("import { useResolvedImageResource,");
     expect(attachmentSource).toContain('source={file.url}');
     expect(attachmentSource).toContain('url: file.url');
-    expect(dialogSource).toContain("import { useResolvedImageResource } from '../imageSource'");
-    expect(dialogSource).toContain("effectiveDirectory, 'preview'");
-    expect(dialogSource).toContain('src={displayImageSource || undefined}');
+    expect(dialogSource).toContain('<ImageViewerSlide key=');
+    expect(dialogSource).toContain('url={item.url} directory={effectiveDirectory}');
+    expect(slideSource).toContain("import { useResolvedImageResource } from '../imageSource'");
+    expect(slideSource).toContain("useResolvedImageResource(url, directory, 'preview')");
+    expect(slideSource).toContain('src={source || undefined}');
   });
 
   test('keeps immersive image viewer gestures split by mobile and desktop contracts', () => {
@@ -238,7 +241,7 @@ describe('image source contracts', () => {
     expect(dialogSource).toContain("if (event.pointerType !== 'mouse') event.preventDefault();");
     expect(dialogSource).toContain('targetWasCanvas: event.target === event.currentTarget');
     expect(dialogSource).toContain('pointerType: remainingPointer.pointerType');
-    expect(dialogSource).not.toContain('lastTapRef');
+    expect(dialogSource).toContain('isImageViewerDoubleTap(lastTapRef.current, tap)');
     expect(dialogSource).not.toContain('chat.toolOutputDialog.image.closeAria');
     expect(dialogSource).not.toContain('chat.toolOutputDialog.image.previewTitle');
   });
@@ -251,13 +254,14 @@ describe('image source contracts', () => {
     expect(pointerDownSource.match(/event\.preventDefault\(\);/g)).toHaveLength(1);
     expect(dialogSource).toContain('<MediaPreviewToolbar isMobile={isMobile}>');
 
-    const resetStart = dialogSource.indexOf('React.useEffect(() => {\n        if (pendingFrameRef.current !== null)');
-    const resetEnd = dialogSource.indexOf('React.useLayoutEffect(() => {', resetStart);
+    const resetStart = dialogSource.indexOf('React.useLayoutEffect(() => {\n        cancelFrame(renderViewer);');
+    const resetEnd = dialogSource.indexOf('React.useLayoutEffect(() => {', resetStart + 1);
     const resetSource = dialogSource.slice(resetStart, resetEnd);
-    expect(resetSource).toContain('window.cancelAnimationFrame(pendingFrameRef.current)');
-    expect(resetSource).toContain('pendingFrameRef.current = null');
+    expect(resetSource).toContain('cancelSettling();');
+    expect(resetSource).toContain('offsets.trackX.jump(0);');
     expect(resetSource).toContain('pendingTransformRef.current = null');
-    expect(resetSource.indexOf('pendingTransformRef.current = null')).toBeLessThan(resetSource.indexOf("imageRef.current.style.transform = 'translate3d(0, 0, 0) scale(1)'"));
+    expect(resetSource).toContain("image.style.transform = 'translate3d(0, 0, 0) scale(1)'");
+    expect(resetSource.indexOf('pendingTransformRef.current = null')).toBeLessThan(resetSource.indexOf("image.style.transform = 'translate3d(0, 0, 0) scale(1)'"));
   });
 
   test('arms the native trailing-click guard before a mobile tap unmounts the viewer', () => {
@@ -268,9 +272,12 @@ describe('image source contracts', () => {
     expect(viewerSource).toContain('event.preventDefault()');
     expect(viewerSource).toContain('event.stopPropagation()');
     expect(viewerSource).toContain('onClick={consumeViewerClick}');
-    expect(viewerSource).toContain("if (isMobile && gesture.pointerType !== 'mouse')");
-    expect(viewerSource).toContain('closeImageViewerAfterMobileTap(point, () => onOpenChange(false))');
-    expect(viewerSource).toMatch(/closeImageViewerAfterMobileTap\(point, \(\) => onOpenChange\(false\)\);\s*return;/);
+    expect(viewerSource).toContain("if (isMobile && gesture?.pointerType !== 'mouse')");
+    expect(viewerSource).toContain('closeImageViewerAfterMobileTap(closePoint, () => onOpenChange(false))');
+    const finishStart = viewerSource.indexOf('const finishPointer');
+    const finishEnd = viewerSource.indexOf('const handleContextMenu', finishStart);
+    const finishSource = viewerSource.slice(finishStart, finishEnd);
+    expect(finishSource.indexOf('releasePointerCapture(event.pointerId)')).toBeLessThan(finishSource.indexOf('closeImageViewerAfterMobileTap('));
   });
 
   test('keeps image saving in the fullscreen control without long-press actions', () => {

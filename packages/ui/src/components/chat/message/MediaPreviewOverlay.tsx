@@ -59,6 +59,7 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
     const close = useEvent(() => {
         if (closingRef.current) return;
         closingRef.current = true;
+        if (viewerRef.current) viewerRef.current.dataset.mediaPreviewClosing = 'true';
         cancelRef.current?.();
         const target = viewerRef.current?.querySelector<HTMLElement>('[data-preview-transition-target]') ?? null;
         cancelRef.current = animateMediaPreview(
@@ -74,6 +75,7 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
         if (!open) { setClosed(false); closingRef.current = false; return; }
         if (closed) return;
         const viewer = viewerRef.current;
+        if (viewer) delete viewer.dataset.mediaPreviewClosing;
         const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         const removeModal = isMobile ? mobileWindowStack.add({ id: modalId, onClose: close }, document.body) : undefined;
         viewer?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
@@ -93,10 +95,14 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
         data-media-preview={kind} data-page-scroll-lock="true" tabIndex={-1}
         className="fixed inset-0 z-[80] overflow-hidden select-none [-webkit-touch-callout:none]"
         style={{
-            backgroundColor: isMobile ? 'var(--yuri-media-preview-background)' : `color-mix(in srgb, var(--yuri-media-preview-background) ${kind === 'mermaid' ? 90 : 70}%, transparent)`,
             color: 'var(--yuri-media-preview-foreground)',
         }}
         onClick={(event) => { event.stopPropagation(); }}
+        onPointerDownCapture={(event) => {
+            if (closingRef.current) { event.preventDefault(); event.stopPropagation(); return; }
+            cancelRef.current?.();
+            cancelRef.current = null;
+        }}
         onKeyDown={(event) => {
             if (!event.currentTarget.contains(event.target as Node)) return;
             if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
@@ -107,5 +113,7 @@ export function MediaPreviewOverlay({ open, title, kind, source, isMobile, onOpe
             if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }}
-    >{children(close)}</div>, document.body);
+    ><div data-media-preview-backdrop="" aria-hidden="true" className="pointer-events-none absolute inset-0"
+        style={{ backgroundColor: isMobile ? 'var(--yuri-media-preview-background)' : `color-mix(in srgb, var(--yuri-media-preview-background) ${kind === 'mermaid' ? 90 : 70}%, transparent)` }} />
+        {children(close)}</div>, document.body);
 }

@@ -57,7 +57,7 @@ updates preserve the seed, and revision conflicts cannot overwrite it. Avatar
 changes do not reset sessions or alter the assistant identity.
 
 New creates without `avatarSeed` persist a complete
-`yuri-avatar:v1:round:capsule:<color>:neutral:1:<assistantID>` recipe. The six
+`yuri-avatar:v1:round:capsule:<color>:neutral:1:<assistantID>` recipe. The twelve
 pigments are chosen randomly; shape, eye style and rest pose are fixed. This
 service-owned default covers HTTP/API, contact tools and first-run seeding.
 Explicit caller-supplied seeds/recipes remain untouched. Existing null/legacy
@@ -66,7 +66,10 @@ is introduced. The shared renderer now uses one fixed capsule-eye specification
 regardless of legacy eye/expression fields.
 
 Contacts can call `update_avatar({ seed? })` to change their own avatar through
-the existing revision-checked update path. Omitting seed generates a fresh key;
+the existing revision-checked update path. Omitting seed generates a complete v1
+recipe with a fresh nonce, one of the twelve mixed pigments and the existing
+seven-shape random pool; the Node-only catalog mirror is checked against the UI
+recipe catalog by service tests. No renderer or animation data is loaded on the Host;
 an explicit seed restores a face. The server binds the contact ID; other targets
 and unsupported customization arguments are rejected. Results include the old
 and saved seeds; unchanged seeds do not bump revision. Storage failures remain

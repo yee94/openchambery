@@ -152,7 +152,7 @@ function MobileAssistantCard({
   const hoverTarget = React.useRef<HTMLButtonElement>(null);
 
   return (
-      <MobileFloatingSurface className="yuri-mobile-assistant-card-shell relative isolate overflow-hidden">
+      <MobileFloatingSurface className="yuri-mobile-assistant-card-shell relative isolate overflow-clip">
         <MobileSwipeActionRail swipe={swipe} actions={[
           { label: editLabel, icon: 'edit', onClick: onEdit },
           { label: deleteLabel, icon: 'delete-bin', destructive: true, onClick: onDelete },
@@ -245,19 +245,21 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
         surface={false}
         scrollsWithPage
         trailing={(
-          <Button
-            type="button"
-            variant="mobileGlass"
-            size="mobileIcon"
-            className="yuri-mobile-inverse-action"
-            aria-label={t('assistants.settings.create')}
-            onClick={handleCreate}
-          >
-            <Icon name="add" className="size-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <AssistantMarkAllReadButton snapshot={snapshot.data} compact mobile />
+            <Button
+              type="button"
+              variant="mobileGlass"
+              size="mobileIcon"
+              className="yuri-mobile-inverse-action"
+              aria-label={t('assistants.settings.create')}
+              onClick={handleCreate}
+            >
+              <Icon name="add" className="size-5" />
+            </Button>
+          </div>
         )}
       >
-        <AssistantMarkAllReadButton snapshot={snapshot.data} rowClassName="flex justify-end pb-2" />
         <div
           className="yuri-mobile-assistant-catalog"
           role="listbox"

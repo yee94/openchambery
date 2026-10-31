@@ -2292,7 +2292,13 @@ Provider/integration/model events invalidate connection/model catalogs; agent,
 command, skill, MCP and plugin events invalidate their own Query families. Only
 active observers refetch. Existing composer store projections are refreshed for
 known directories, not the project catalog. Connection recovery invalidates all
-configuration families to recover events missed while offline. Failed pulls keep
+configuration families to recover events missed while offline. GUI inventory and
+bundles without successful data participate in recovery, but already loaded GUI
+bundles stay valid on ordinary reconnects. Only actual plugin/config update events
+or explicit refresh revalidate those bundles; batched/trailing update events keep
+that intent independently of reconnect events. Missed GUI code-only changes take
+effect on the next such update/refresh or transport re-entry rather than every
+foreground resume. Failed pulls keep
 prior snapshots; successful authoritative empty Provider catalogs may clear a
 disconnected provider. Config-updated is not a claim that every domain has finished
 activation: later domain events close that gap. No event restarts the process or

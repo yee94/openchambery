@@ -13,7 +13,11 @@ const config = makeConfig(recipes);
 // generators for each contact or each rendered frame.
 const generators = makeMorphGenerators(config);
 const trail = makeTrail(config);
-const pigments = { mint: '#9ed8bf', iris: '#c4b9ee', coral: '#edb0a0', sky: '#a5cbe7', sand: '#e2c99b', graphite: '#555c67' } as const;
+const pigments = {
+  mint: '#9ed8bf', orange: '#f58332', iris: '#c4b9ee', jade: '#35bb81',
+  coral: '#edb0a0', blue: '#4b8fe8', sky: '#a5cbe7', violet: '#9469e4',
+  sand: '#e2c99b', rose: '#e76b9f', cyan: '#32b6ad', graphite: '#555c67',
+} as const satisfies Record<AssistantAvatarRecipe['color'], string>;
 export const assistantAvatarPigment = (color: AssistantAvatarRecipe['color']): string => pigments[color];
 const rgb = (hex: string): Vector => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as Vector;
 const themeFor = (recipe: AssistantAvatarRecipe, eyeColor?: AvatarEyeColor): Theme => ({

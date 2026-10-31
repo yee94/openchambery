@@ -4,7 +4,7 @@ import { useI18n } from '@/lib/i18n';
 import { CSSVariableGenerator } from '@/lib/theme/cssGenerator';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { generatedAvatarDataUri } from '@/lib/generatedAvatar';
-import { AVATAR_PICKER_SHAPES, createDefaultAssistantAvatarSeed, encodeAssistantAvatar, resolveAssistantAvatar } from '@/lib/assistant-avatar/recipe';
+import { AVATAR_PICKER_SHAPES, createDefaultAssistantAvatarSeed, createRandomAssistantAvatarSeed, encodeAssistantAvatar, resolveAssistantAvatar } from '@/lib/assistant-avatar/recipe';
 import { rasterizePngBase64 } from '@/lib/rasterizePng';
 import { AssistantAvatarEditor } from '@/components/assistants/AssistantAvatarEditor';
 import { AssistantWorkingAvatar } from '@/components/assistants/AssistantWorkingAvatar';
@@ -49,7 +49,7 @@ export function AvatarLab() {
       <AssistantAvatarEditor seed={seed} disabled={false} onChange={setSeed} />
       <SettingsGroup label={t('assistants.title')} actions={<>
         <Button variant="chip" size="xs" aria-pressed={working} onClick={() => setWorking(!working)}>{t('assistants.avatar.motion.thinking')}</Button>
-        <Button size="sm" onClick={() => setSeed(crypto.randomUUID())}>{t('assistants.settings.randomAvatar')}</Button>
+        <Button size="sm" onClick={() => setSeed(createRandomAssistantAvatarSeed(crypto.randomUUID()))}>{t('assistants.settings.randomAvatar')}</Button>
       </>}>
         {Array.from({ length: stress ? 20 : 3 }, (_, index) => {
           const defaultSeed = createDefaultAssistantAvatarSeed(`lab-${index}`);

@@ -65,7 +65,7 @@ const Demand = () => {
   React.useEffect(() => { if (!requested) requestLoad(); }, [requested, requestLoad]);
   return null;
 };
-const draw = (requesters = 0) => root.render(<QueryClientProvider client={client}><GuiPluginsProvider><Probe />
+const draw = (requesters = 0, ready = true) => root.render(<QueryClientProvider client={client}><GuiPluginsProvider ready={ready}><Probe />
   {Array.from({ length: requesters }, (_, index) => <Demand key={index} />)}
 </GuiPluginsProvider></QueryClientProvider>);
 const settle = async () => {
@@ -125,6 +125,18 @@ it('keeps initial render light across 50 rerenders before idle preload starts', 
   expect(state.gui).not.toHaveBeenCalled();
   expect(state.hostImports).not.toHaveBeenCalled();
   expect(state.hosts).toHaveLength(0);
+});
+
+it('uses application readiness only as an initial gate and retains the host during later config recovery', async () => {
+  await load();
+  const host = context.host;
+  await act(async () => draw(0, false)); await settle();
+  expect(context.host).toBe(host);
+  expect(context.loading).toBe(false);
+  expect(state.hosts[0].dispose).not.toHaveBeenCalled();
+  await act(async () => draw()); await settle();
+  expect(state.hosts).toHaveLength(1);
+  expect(state.gui).toHaveBeenCalledOnce();
 });
 
 it('keeps slow plugin loading silent across instance switches', async () => {
@@ -345,6 +357,30 @@ it('finishes failed loading, exposes per-plugin errors, and retries without remo
   expect(host.dispose).not.toHaveBeenCalled();
   expect(host.uninstall).not.toHaveBeenCalled();
   expect(state.hosts).toHaveLength(1);
+});
+
+it('keeps a working host ready during a slow background refresh and after refresh failure', async () => {
+  await load();
+  const host = context.host;
+  let complete!: (value: { data: typeof bundle }) => void;
+  state.gui.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+  await act(async () => context.refresh()); await settle();
+  expect(state.gui).toHaveBeenCalledTimes(2);
+  try {
+    expect(context.loading).toBe(false);
+    expect(context.host).toBe(host);
+    expect(state.hosts[0].dispose).not.toHaveBeenCalled();
+    expect(state.hosts[0].uninstall).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => complete({ data: bundle })); await settle();
+  }
+  state.gui.mockRejectedValue(new Error('refresh unavailable'));
+  await act(async () => context.refresh()); await settle(); await settle();
+  expect(context.inventory[0].error).toBe('refresh unavailable');
+  expect(context.loading).toBe(false);
+  expect(context.host).toBe(host);
+  expect(state.hosts).toHaveLength(1);
+  expect(state.hosts[0].uninstall).not.toHaveBeenCalled();
 });
 
 it('finishes failed inventory and preference reads, and refresh recovers without implicitly requesting', async () => {

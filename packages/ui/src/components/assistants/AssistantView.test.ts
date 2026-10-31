@@ -130,11 +130,15 @@ describe('AssistantView contact surface', () => {
     }
     expect(desktopHeader).toContain('size="icon"')
     expect(desktopHeader).toContain('min-w-0 truncate')
-    expect(desktopHeader).toContain('<AssistantMarkAllReadButton snapshot={snapshot} compact rowClassName="min-w-0 flex-1" />')
+    expect(desktopHeader).toContain('<AssistantMarkAllReadButton snapshot={snapshot} compact rowClassName="flex min-w-0 flex-1 justify-end" />')
     expect(desktopHeader).toContain('onClick={openCreateSettings}')
     expect(mobileHeader).toContain('trailing={(')
     expect(mobileHeader).toContain('size="mobileIcon"')
     expect(mobileHeader).toContain('onClick={handleCreate}')
+    const trailing = mobileHeader.slice(mobileHeader.indexOf('trailing={('), mobileHeader.indexOf('\n        )}'))
+    expect(trailing).toContain('<AssistantMarkAllReadButton snapshot={snapshot.data} compact mobile />')
+    expect(mobileHeader.match(/<AssistantMarkAllReadButton/g)).toHaveLength(1)
+    expect(mobileHeader).not.toContain('rowClassName="flex justify-end pb-2"')
   })
 
   test('does not ensure an OpenCode session to show the contact transcript', async () => {

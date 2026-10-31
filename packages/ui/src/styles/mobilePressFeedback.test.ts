@@ -98,13 +98,16 @@ describe('mobile press feedback scale policy', () => {
     expect(projectCardSource).not.toContain('data-mobile-press-feedback="none"');
   });
 
-  test('swipeable assistant cards scale their interactive foreground without scaling the action rail', () => {
+  test('swipeable assistant cards retain press growth and clip rather than scroll their action rail', () => {
     expect(assistantCardSource).toContain('useMobileSwipeActions(`assistant:${assistantID}`, onOpen)');
     expect(assistantCardSource).toContain('<MobileSwipeActionRail swipe={swipe}');
     expect(assistantCardSource).toContain('data-mobile-press-feedback="soft"');
     expect(assistantCardSource).toContain('onClick={swipe.handleSelect}');
     expect(assistantCardSource).not.toContain('data-mobile-press-surface-trigger');
     expect(assistantCardSource).not.toContain('data-mobile-press-surface="soft"');
+    expect(assistantCardSource).toContain('yuri-mobile-assistant-card-shell relative isolate overflow-clip');
+    expect(mobileCss).toMatch(/\.yuri-mobile-assistant-card-shell\s*\{[^}]*overflow:\s*clip/s);
+    expect(mobileCss).not.toMatch(/\.yuri-mobile-assistant-card\s*\{[^}]*scale:\s*1\s*!important/s);
     expect(assistantCardSource).not.toContain('data-mobile-press-feedback="none"');
   });
 

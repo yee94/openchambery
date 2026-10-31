@@ -2,7 +2,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { AssistantAvatarEditor } from './AssistantAvatarEditor';
-import { AVATAR_PICKER_SHAPES, AVATAR_COLORS, encodeAssistantAvatar, resolveAssistantAvatar } from '@/lib/assistant-avatar/recipe';
+import { AVATAR_PICKER_SHAPES, AVATAR_COLORS, encodeAssistantAvatar, resolveAssistantAvatar, createRandomAssistantAvatarSeed } from '@/lib/assistant-avatar/recipe';
 
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/chat/AgentAvatar', () => ({ AgentAvatar: ({ name }: { name: string }) => <span data-preview-seed={name} /> }));
@@ -10,7 +10,7 @@ vi.mock('@/components/chat/AgentAvatar', () => ({ AgentAvatar: ({ name }: { name
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); });
 
 test('shows visual shape tiles, color swatches and randomize without a separate preview, title or reset', async () => {
   await act(async () => root.render(<AssistantAvatarEditor seed="saved" disabled={false} onChange={vi.fn()} />));
@@ -26,12 +26,22 @@ test('shows visual shape tiles, color swatches and randomize without a separate 
 
 test('randomize updates the draft with a new valid seed', async () => {
   const change = vi.fn();
+  const nonce = '00000000-0000-4000-8000-000000000007';
+  vi.spyOn(crypto, 'randomUUID').mockReturnValue(nonce);
   await act(async () => root.render(<AssistantAvatarEditor seed="saved" disabled={false} onChange={change} />));
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="assistants.settings.randomAvatar"]')!.click());
   const seed = change.mock.lastCall?.[0];
-  expect(seed).toMatch(/^[0-9a-f-]{36}$/);
+  expect(seed).toBe(createRandomAssistantAvatarSeed(nonce));
   expect(seed).not.toBe('saved');
   expect(resolveAssistantAvatar(seed)).toBeDefined();
+});
+
+test.each(AVATAR_COLORS)('selecting %s changes only the draft pigment and preserves hidden preferences', async (color) => {
+  const original = { shape: 'cloud', color: 'mint', eyes: 'oval', expression: 'beaming', animate: false } as const;
+  const change = vi.fn();
+  await act(async () => root.render(<AssistantAvatarEditor seed={encodeAssistantAvatar(original)} disabled={false} onChange={change} />));
+  await act(async () => host.querySelector<HTMLButtonElement>(`[data-avatar-color-option="${color}"]`)!.click());
+  expect(resolveAssistantAvatar(change.mock.lastCall?.[0])).toEqual({ ...original, color });
 });
 
 test('tile changes preserve hidden preferences', async () => {

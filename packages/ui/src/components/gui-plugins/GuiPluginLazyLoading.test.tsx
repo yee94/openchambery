@@ -8,6 +8,7 @@ import { useGuiPlugins } from '@/lib/gui-plugins/react';
 import { GuiFileLinkBridge } from './GuiFileLinkBridge';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { mobileWindowStack } from '@/components/ui/MobileWindowStack';
+import { createConfigLiveRefresh } from '@/sync/config-live-refresh';
 
 const state = vi.hoisted(() => ({
   transport: 'lazy-runtime',
@@ -150,6 +151,79 @@ afterEach(async () => {
   client.clear();
   container.remove();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+it.each([false, true])('keeps the real preview and its logic alive across reconnects and unchanged refreshes (sheet=%s)', async (sheet) => {
+  const matchMedia = window.matchMedia.bind(window);
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+    const result = matchMedia(query);
+    if (query === '(prefers-reduced-motion: reduce)') Object.defineProperty(result, 'matches', { value: true });
+    return result;
+  });
+  const evidence = { setup: vi.fn(), cleanup: vi.fn(), render: vi.fn(), clicks: 0 };
+  vi.stubGlobal('__guiResumeEvidence', evidence);
+  const tracked = {
+    ...bundle,
+    code: bundle.code
+      .replace('setup(ctx) {', 'setup(ctx) { globalThis.__guiResumeEvidence.setup(); S.onCleanup(() => globalThis.__guiResumeEvidence.cleanup());')
+      .replace('render(props) {', 'render(props) { globalThis.__guiResumeEvidence.render();')
+      .replace("node.setAttribute('data-preview', '');", "node.setAttribute('data-preview', ''); node.addEventListener('click', () => { globalThis.__guiResumeEvidence.clicks++; });"),
+  };
+  state.gui.mockResolvedValue({ data: tracked });
+  await start(sheet);
+  await click('open-file');
+  await until(() => {
+    expect(document.querySelector('[data-gui-file-view] [data-preview]')?.textContent).toBe(source);
+    expect(context.loading).toBe(false);
+  });
+  const preview = document.querySelector<HTMLElement>('[data-gui-file-view] [data-preview]')!;
+  const host = context.host!;
+  const install = vi.spyOn(host, 'install');
+  const refresh = createConfigLiveRefresh({
+    client, identity: () => ({ transport: state.transport, generation: 0 }),
+    refreshProjections: async () => {}, onError: (error) => { throw error; },
+  });
+  try {
+    for (let round = 0; round < 3; round++) {
+      await act(async () => {
+        for (let index = 0; index < 50; index++) refresh.event('server.connected');
+      });
+      await until(() => expect(state.list).toHaveBeenCalledTimes(round + 2));
+      expect(state.gui).toHaveBeenCalledOnce();
+      expect(context.host).toBe(host);
+      expect(context.loading).toBe(false);
+      expect(document.querySelector('[data-preview]')).toBe(preview);
+      await act(async () => preview.click());
+      expect(evidence.clicks).toBe(round + 1);
+    }
+    let complete!: (value: { data: typeof bundle }) => void;
+    state.gui.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+    await act(async () => { refresh.event('plugin.updated'); });
+    await until(() => expect(state.gui).toHaveBeenCalledTimes(2));
+    expect(context.loading).toBe(false);
+    expect(document.querySelector('[data-preview]')).toBe(preview);
+    await act(async () => complete({ data: tracked }));
+    await until(() => expect(client.getQueryState([state.transport, 'plugins', 'gui', null, 'bundle', 'preview'])?.fetchStatus).toBe('idle'));
+    expect(install).not.toHaveBeenCalled();
+    expect(evidence.setup).toHaveBeenCalledOnce();
+    expect(evidence.render).toHaveBeenCalledOnce();
+    expect(evidence.cleanup).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-preview]')).toBe(preview);
+
+    state.gui.mockResolvedValue({ data: { ...tracked, revision: 'updated' } });
+    await act(async () => { refresh.event('config.updated'); });
+    await until(() => {
+      expect(context.snapshot.plugins).toMatchObject([{ revision: 'updated', status: 'active' }]);
+      expect(document.querySelector('[data-preview]')?.textContent).toBe(source);
+      expect(context.loading).toBe(false);
+    });
+    expect(evidence.setup).toHaveBeenCalledTimes(2);
+    expect(evidence.cleanup).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-preview]')).not.toBe(preview);
+    await act(async () => document.querySelector<HTMLElement>('[data-preview]')!.click());
+    expect(evidence.clicks).toBe(4);
+  } finally { refresh.dispose(); }
 });
 
 it.each([false, true])('removes mounted plugin DOM and contributions when switching to an instance without GUI (sheet=%s)', async (sheet) => {

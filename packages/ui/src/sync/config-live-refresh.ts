@@ -39,6 +39,7 @@ export function createConfigLiveRefresh(deps: {
   onError: (error: unknown) => void;
 }) {
   let pending = new Map<string | undefined, Set<Domain>>();
+  let pendingPluginChange = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let captured = deps.identity();
   let running = false;
@@ -51,10 +52,12 @@ export function createConfigLiveRefresh(deps: {
     timer = setTimeout(() => { timer = undefined; void flush(); }, 100);
   };
   const flush = async () => {
-    if (!current(captured)) { pending.clear(); return; }
+    if (!current(captured)) { pending.clear(); pendingPluginChange = false; return; }
     const batch = pending;
+    const pluginChanged = pendingPluginChange;
     const identity = captured;
     pending = new Map();
+    pendingPluginChange = false;
     const globalDomains = batch.get(undefined);
     if (globalDomains) {
       for (const [directory, domains] of batch) {
@@ -68,6 +71,9 @@ export function createConfigLiveRefresh(deps: {
       await deps.client.invalidateQueries({
         predicate: (query) => {
           if (query.queryKey[0] !== identity.transport) return false;
+          // A stream reconnect is not a GUI code change; retain already validated bundles.
+          if (!pluginChanged && query.queryKey[1] === 'plugins' && query.queryKey[2] === 'gui'
+            && query.queryKey[4] === 'bundle' && query.state.data !== undefined) return false;
           const scope = catalogScope(query.queryKey);
           if (!scope) return false;
           return [...batch].some(([directory, domains]) => domains.has(scope.domain)
@@ -88,7 +94,8 @@ export function createConfigLiveRefresh(deps: {
     event(type: string, directory?: string): boolean {
       const domains = type === 'server.connected' ? allDomains : Object.hasOwn(domainsByEvent, type) ? domainsByEvent[type] : undefined;
       if (!domains) return false;
-      if (!current(captured)) { pending.clear(); captured = deps.identity(); }
+      if (!current(captured)) { pending.clear(); pendingPluginChange = false; captured = deps.identity(); }
+      if (type === 'plugin.updated' || type === 'config.updated') pendingPluginChange = true;
       const scope = type.startsWith('credential.') || !directory || directory === 'global'
         ? undefined : normalize(directory) ?? undefined;
       const bucket = pending.get(scope) ?? new Set<Domain>();
@@ -101,6 +108,7 @@ export function createConfigLiveRefresh(deps: {
       if (timer) clearTimeout(timer);
       timer = undefined;
       pending.clear();
+      pendingPluginChange = false;
     },
   };
 }

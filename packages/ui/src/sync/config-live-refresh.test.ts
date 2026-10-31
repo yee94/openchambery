@@ -158,4 +158,41 @@ describe('V2 configuration event refresh', () => {
     expect(keys.every((key) => s.client.getQueryState(key)?.isInvalidated)).toBe(true);
     s.refresh.dispose(); s.client.clear();
   });
+
+  it('does not carry a plugin change into a trailing reconnect batch', async () => {
+    const s = setup();
+    const key = ['runtime-a', 'plugins', 'gui', null, 'bundle', 'preview'];
+    s.client.setQueryData(key, { revision: 'one' });
+    let release!: (value: { revision: string }) => void;
+    const queryFn = vi.fn(() => new Promise<{ revision: string }>((resolve) => { release = resolve; }));
+    const stop = new QueryObserver(s.client, { queryKey: key, queryFn }).subscribe(() => {});
+    s.refresh.event('plugin.updated');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(queryFn).toHaveBeenCalledOnce();
+    s.refresh.event('server.connected');
+    release({ revision: 'two' });
+    await vi.advanceTimersByTimeAsync(120);
+    expect(s.invalidate).toHaveBeenCalledTimes(2);
+    expect(queryFn).toHaveBeenCalledOnce();
+    expect(s.client.getQueryState(key)?.isInvalidated).toBe(false);
+    stop(); s.refresh.dispose(); s.client.clear();
+  });
+
+  it('retains a real plugin update queued during a reconnect pull', async () => {
+    const s = setup();
+    const key = ['runtime-a', 'plugins', 'gui', null, 'bundle', 'preview'];
+    s.client.setQueryData(key, { revision: 'one' });
+    const queryFn = vi.fn(async () => ({ revision: 'two' }));
+    const stop = new QueryObserver(s.client, { queryKey: key, queryFn }).subscribe(() => {});
+    let release!: () => void;
+    s.invalidate.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    s.refresh.event('server.connected');
+    await vi.advanceTimersByTimeAsync(100);
+    s.refresh.event('plugin.updated');
+    release();
+    await vi.advanceTimersByTimeAsync(120);
+    expect(queryFn).toHaveBeenCalledOnce();
+    expect(s.client.getQueryData(key)).toEqual({ revision: 'two' });
+    stop(); s.refresh.dispose(); s.client.clear();
+  });
 });

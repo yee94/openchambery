@@ -84,7 +84,7 @@ or runtime network fetch is used. Pinned engine and data files, including
 the optional geometry callback patch, live in `lib/assistant-avatar/vendor/`.
 
 `lib/assistant-avatar/recipe.ts` owns deterministic seed resolution, whitelist
-validation, nineteen shapes, six fixed artwork pigment identifiers and the saved animation
+validation, nineteen shapes, twelve fixed artwork pigment identifiers and the saved animation
 switch. Legacy eye/expression fields remain valid in stored recipes but no longer
 choose the rendered rest-eye specification. Fixed pigments are artwork, not UI
 theme/status colors. A versioned recipe fits the existing opaque, maximum-256-char
@@ -97,7 +97,7 @@ restores the configured face. `update_avatar` still randomizes/restores this str
 The recipe module is pure and imports no rendering engine or animation data;
 server-side default seed creation does not initialize geometry, trails or scenes.
 
-The original seven-shape opaque-seed mapping is frozen separately from picker
+The original seven-shape/six-color opaque-seed mapping is frozen separately from picker
 order: adding/reordering choices does not reassign contacts. Explicit v1 recipes
 retain their shape selection; the new renderer intentionally replaces the artwork.
 `catalog.ts` owns the nineteen-shape whitelist. `geometry.ts` independently fills
@@ -123,6 +123,16 @@ neutral rest pose and animation enabled; only pigment and nonce vary. The server
 applies the same complete v1 recipe when create omits `avatarSeed`, covering API,
 tool and first-run creation without migrating existing identities. Explicit
 customizations still win.
+
+The twelve-color pool mixes the unchanged mint, iris, coral, sky, sand and graphite
+artwork with orange, jade, blue, violet, rose and cyan. New defaults and explicit
+randomization can choose every pigment. `createRandomAssistantAvatarSeed` persists
+the selected color in a complete v1 recipe instead of a fresh opaque UUID, so
+expanding the pool does not reassign any saved opaque seed. Randomization retains
+the existing seven-shape random distribution; the shape picker is unchanged.
+The compact color picker uses two six-column rows on desktop and mobile. All
+pigments share the same static/live/native-PNG paint path and existing graphite
+eye-contrast policy. These pigments are avatar artwork, not UI/status theme tokens.
 
 The reference neutral eye descriptors (`wid: .13`, `tilt: 0`), eye basis, mirror
 flags and base head quaternion are used without screen-space angle overrides.
@@ -278,6 +288,15 @@ The contact transcript inserts a centered, muted timestamp before the first visi
 
 ## Homepage message previews
 
+Mobile catalog cards retain the shared soft touch press-grow feedback. Their
+swipe shell uses `overflow-clip`, never `overflow-hidden` (which mobile-pointer
+rewrites into a vertical scrollport). The foreground still grows while pressed
+without introducing a nested scrollbar; horizontal swipe actions and the
+independent mouse-only avatar hover rebound remain intact. The existing soft
+feedback marker also enables native tap haptics. The catalog/page owns scrolling.
+`assistantMessagePreview.chrome.test.ts` loads production CSS and source-derived
+card classes/feedback to guard touch press, clipping, swipe and long-list scroll.
+
 Assistant avatar frames have transparent backgrounds; desktop selection keeps
 the existing elevated row background. `AssistantContactStatus` owns
 the desktop and mobile header subtitle: live local/snapshot work displays the
@@ -294,7 +313,7 @@ Preview freshness follows the existing snapshot revision/events, foreground reco
 
 ## Shared unread and read visibility
 
-Desktop mark-all-read uses the compact, background-free action beside the Assistant heading, with no separator below the header. When unread reaches zero the compact button is disabled and hidden with `visibility: hidden`, retaining its space so read updates do not shift the list. Mobile retains the separate conditional action row described below.
+Desktop and mobile mark-all-read use the shared double-check icon action in the catalog header, immediately before the add button. Desktop uses a ghost icon button; mobile uses the shared glass icon button. The translated action remains available through its accessible label and title, not visible text or a separate row. When unread reaches zero the compact button is disabled and hidden with `visibility: hidden`, retaining its horizontal space so read updates do not shift the header or list.
 
 `AssistantDTO.unreadCount`, `readWatermark`, and `readTip` come from the server snapshot. The shared watermark is scoped to the Assistant on that runtime and persists across clients. Legacy DTOs with missing fields normalize to zero/null. Desktop list rows and mobile catalog cards display `AssistantUnreadBadge`; the sidebar and mobile dock share a Query-selected catalog total (`useAssistantUnreadTotal` / `selectAssistantUnreadTotal` over the snapshot — no extra request). Positive counts display through `99`, larger counts display `99+`, and zero hides the badge. The selected assistant root tab still shows the dock total; only authoritative read/mark-all clears it. Web, Android, and hosted-mobile paint `AssistantNavigationUnreadBadge` on the floating dock icon with overflow-visible so the bubble is not clipped; native iOS still receives the same total via the dock bridge. A loading badge replaces that unread bubble only when the catalog unread total is zero and an assistant is working. The scheduled tab uses the same loading badge while a task is `running`; it has no unread count. Native iOS receives that mark as `activity` (spinner badge plus `activityLabel`) and never combines it with `badge`. Badge colors pair the solid status-info fill with status-info-foreground text and a subtle foreground-derived inset outline for light/dark legibility. All ten dictionaries own the unread label, mark-all action and partial-failure message.
 
@@ -304,7 +323,7 @@ The marker requires a visible document, focused web/Electron/VS Code window or C
 
 `markAssistantContactRead` sends the exact `{ generation, ordinal, messageID }` through `runtimeFetch` to `POST /api/yuri/assistants/:id/contact/read`, with a 15-second timeout and runtime fencing. Authoritative complete snapshot GETs own count reconciliation after both success and failure; failed GETs preserve prior counts. The shared Assistant revision subscription is reference-counted per transport. Other-client reads converge through `assistants-changed`, focus/reconnect and the existing foreground reconcile interval.
 
-Desktop and mobile catalogs keep `AssistantMarkAllReadButton` mounted and pass their existing row layout through `rowClassName`. After all Hooks, the component renders the entire right-aligned action row only while an assistant has a positive unread count; empty catalogs, zero counts, and legacy missing counts render null. Positive unread counts with missing read tips keep the action visible and disabled until an actionable target exists. Component-owned pending and flight state survives unread → zero → unread transitions, keeping a single batch active until its promise settles. It freezes each target's click-time tip, runs at most four independent requests concurrently, and collects all failures. Successful targets stay committed on the server and refresh independently of failed targets. The action stays disabled during its flight, then exposes a translated error for partial failure and permits retry. New arrivals after the captured tip remain unread. Long action labels wrap in a separate right-aligned row beneath the catalog header.
+Desktop and mobile catalogs keep `AssistantMarkAllReadButton` mounted in compact header mode. Empty catalogs, zero counts, and legacy missing counts hide the action; positive unread counts with missing read tips keep it visible and disabled until an actionable target exists. Component-owned pending and flight state survives unread → zero → unread transitions, keeping a single batch active until its promise settles. It freezes each target's click-time tip, runs at most four independent requests concurrently, and collects all failures. Successful targets stay committed on the server and refresh independently of failed targets. The action stays disabled during its flight, then exposes a translated error for partial failure and permits retry. New arrivals after the captured tip remain unread.
 
 The UI native-iOS bridge includes nullable `badge` values and a boolean `activity` flag, and compares both when updating the dock. The Swift plugin in `packages/mobile` currently parses id/title only; its badge parsing and `UITabBarItem.badgeValue` rendering remain a native-owner integration task. Web, Android and hosted-mobile docks render the shared badge directly. UI tests verify bridge delivery and clearing; physical-device native painting remains separate validation.
 

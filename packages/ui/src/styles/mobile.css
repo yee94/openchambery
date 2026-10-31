@@ -1225,7 +1225,7 @@ button.yuri-mobile-worktree-label-trigger:active,
 }
 
 .yuri-mobile-assistant-card-shell {
-  overflow: hidden;
+  overflow: clip;
   border-radius: var(--yuri-mobile-surface-radius);
 }
 
@@ -1243,8 +1243,8 @@ button.yuri-mobile-worktree-label-trigger:active,
   text-align: left;
   outline: none;
   touch-action: manipulation;
-  /* Keep transparent — press scale lives on the floating shell, not a row fill.
-     feedback=none skips the global tap-highlight rule, so set it here. */
+  /* The foreground retains shared soft press growth inside its clip shell;
+     avatar hover owns its separate rebound. */
   -webkit-tap-highlight-color: transparent;
   background: transparent;
   background-color: transparent;

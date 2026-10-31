@@ -168,6 +168,7 @@ export const ICON_NAME_MAP = {
   },
   "chat-thread": { custom: ROUND_CHAT_THREAD_SVG },
   "check": { lucide: "check", fill: false },
+  "check-double": { lucide: "check-check", fill: false },
   "checkbox": { lucide: "square-check", fill: false },
   "checkbox-blank": { lucide: "square", fill: false },
   "checkbox-blank-circle-fill": { lucide: "circle", fill: true },

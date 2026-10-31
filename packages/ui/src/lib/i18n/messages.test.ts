@@ -10,7 +10,7 @@ import { dict as ptBrDict } from './messages/pt-BR';
 import { dict as ukDict } from './messages/uk';
 import { dict as zhCnDict } from './messages/zh-CN';
 import { dict as zhTwDict } from './messages/zh-TW';
-import { AVATAR_SHAPES } from '../assistant-avatar/recipe';
+import { AVATAR_SHAPES, AVATAR_COLORS } from '../assistant-avatar/recipe';
 
 const localeDictionaries = {
   en: enDict,
@@ -45,6 +45,14 @@ describe('i18n dictionaries', () => {
     for (const dictionary of Object.values(localeDictionaries)) {
       for (const shape of AVATAR_SHAPES) {
         expect(dictionary[`assistants.avatar.shape.${shape}`]).toBeTruthy();
+      }
+    }
+  });
+
+  test('every avatar pigment has an accessible name in every locale', () => {
+    for (const dictionary of Object.values(localeDictionaries)) {
+      for (const color of AVATAR_COLORS) {
+        expect(dictionary[`assistants.avatar.color.${color}`]).toBeTruthy();
       }
     }
   });

@@ -41,18 +41,27 @@ describe('GUI plugin snapshots', () => {
     client.clear();
   });
 
-  it('the existing plugin.updated/reconnect pipeline invalidates active bundles without polling', async () => {
+  it('reconnect refreshes inventory without reloading cached bundles, while real updates still reload them', async () => {
     vi.useFakeTimers();
     const gui = vi.fn().mockResolvedValue({ data: { code: 'exports.default={setup(){}}', revision: 'one', options: {} } });
-    const api = { plugin: { gui } } as unknown as OpenCodeClient;
+    const list = vi.fn().mockResolvedValue({ data: [] });
+    const api = { plugin: { gui, list } } as unknown as OpenCodeClient;
     const client = new QueryClient();
     const options = guiBundleOptions('host-a', 'dsl', api);
+    const inventory = guiInventoryOptions('host-a', api);
     await client.fetchQuery(options);
+    await client.fetchQuery(inventory);
     const observer = new QueryObserver(client, options);
     const stop = observer.subscribe(() => {});
+    const stopInventory = new QueryObserver(client, inventory).subscribe(() => {});
     const refresh = createConfigLiveRefresh({
       client, identity: () => ({ transport: 'host-a', generation: 1 }), refreshProjections: async () => {}, onError: () => {},
     });
+    for (let index = 0; index < 50; index++) refresh.event('server.connected');
+    await vi.advanceTimersByTimeAsync(120);
+    expect(gui).toHaveBeenCalledOnce();
+    expect(list).toHaveBeenCalledTimes(2);
+    refresh.event('server.connected');
     refresh.event('plugin.updated', '/project');
     refresh.event('plugin.updated', '/project');
     await vi.advanceTimersByTimeAsync(120);
@@ -60,7 +69,31 @@ describe('GUI plugin snapshots', () => {
     expect(gui.mock.calls[1][0]).toEqual({ id: 'dsl' });
     refresh.event('server.connected');
     await vi.advanceTimersByTimeAsync(120);
+    expect(gui).toHaveBeenCalledTimes(2);
+    refresh.event('config.updated', '/project');
+    await vi.advanceTimersByTimeAsync(120);
     expect(gui).toHaveBeenCalledTimes(3);
+    refresh.dispose();
+    stop();
+    stopInventory();
+    client.clear();
+  });
+
+  it('reconnect retries a bundle that has never loaded successfully', async () => {
+    vi.useFakeTimers();
+    const gui = vi.fn().mockRejectedValueOnce(new Error('offline'));
+    const client = new QueryClient();
+    const options = { ...guiBundleOptions('host-a', 'dsl', { plugin: { gui } } as unknown as OpenCodeClient), retry: false, retryOnMount: false };
+    await expect(client.fetchQuery(options)).rejects.toThrow('offline');
+    const stop = new QueryObserver(client, options).subscribe(() => {});
+    gui.mockResolvedValue({ data: { code: 'exports.default={setup(){}}', revision: 'one', options: {} } });
+    const refresh = createConfigLiveRefresh({
+      client, identity: () => ({ transport: 'host-a', generation: 1 }), refreshProjections: async () => {}, onError: () => {},
+    });
+    refresh.event('server.connected');
+    await vi.advanceTimersByTimeAsync(120);
+    expect(gui).toHaveBeenCalledTimes(2);
+    expect(client.getQueryData(options.queryKey)).toMatchObject({ revision: 'one' });
     refresh.dispose();
     stop();
     client.clear();

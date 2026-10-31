@@ -11,6 +11,7 @@ import {
   NEW_CONVERSATION_CONFIRM_BUBBLE,
 } from './contact-tools.js';
 import { runContactTurn as realRunContactTurn } from './harness.js';
+import { AVATAR_COLORS, resolveAssistantAvatar } from '../../../../ui/src/lib/assistant-avatar/recipe.ts';
 
 const require = createRequire(import.meta.url);
 const root = () => fs.mkdtempSync(path.join(os.tmpdir(), 'assistants-'));
@@ -190,10 +191,11 @@ describe('assistants service', () => {
     let service = setup(directory);
     const randomColor = vi.spyOn(crypto, 'randomInt');
     try {
-      const created = ['mint', 'iris', 'coral', 'sky', 'sand', 'graphite'].map((color, index) => {
+      const created = AVATAR_COLORS.map((color, index) => {
         randomColor.mockReturnValue(index);
         const bot = service.createAssistant({ ...assistantInput, name: `Bot ${index + 1}` });
         expect(bot.avatarSeed).toBe(`yuri-avatar:v1:round:capsule:${color}:neutral:1:${bot.id}`);
+        expect(randomColor).toHaveBeenLastCalledWith(AVATAR_COLORS.length);
         return bot;
       });
       await service.updateAssistant(created[0].id, { expectedRevision: created[0].revision, name: 'Renamed' });
@@ -232,7 +234,8 @@ describe('assistants service', () => {
     let service = setup(directory);
     try {
       const original = service.createAssistant(assistantInput);
-      expect(original.avatarSeed).toMatch(/^yuri-avatar:v1:round:capsule:(mint|iris|coral|sky|sand|graphite):neutral:1:/);
+      expect(resolveAssistantAvatar(original.avatarSeed)).toMatchObject({ shape: 'round', eyes: 'capsule', expression: 'neutral', animate: true });
+      expect(AVATAR_COLORS).toContain(resolveAssistantAvatar(original.avatarSeed).color);
       service.close();
       const Database = require('better-sqlite3');
       const db = new Database(path.join(directory, 'assistants.sqlite'));
@@ -379,6 +382,38 @@ describe('assistants service', () => {
     const reopened = setup(directory);
     expect(reopened.snapshot().assistants.find((a) => a.id === own.id).avatarSeed).toBe(own.avatarSeed);
     reopened.close();
+  });
+
+  it('self avatar randomization reaches every mixed pigment and persists recipes across restart', async () => {
+    const directory = root();
+    let result;
+    let service = setup(directory, {}, {
+      runContactTurn: async ({ tools }) => {
+        result = await tools.find((tool) => tool.name === 'update_avatar').execute('avatar', {});
+        return { text: 'done', bubbles: ['done'] };
+      },
+    });
+    const own = service.createAssistant(assistantInput);
+    const peer = service.createAssistant({ ...assistantInput, avatarSeed: 'legacy-peer' });
+    const random = vi.spyOn(crypto, 'randomInt');
+    try {
+      for (const [index, color] of AVATAR_COLORS.entries()) {
+        random.mockImplementation((max) => max === AVATAR_COLORS.length ? index : 0);
+        await settleSend(service, own.id, { messageID: `avatar-${color}`, parts: [{ type: 'text', text: '换个头像' }] });
+        expect(result.details.updated).toBe(true);
+        expect(result.details.avatarSeed).toMatch(/^yuri-avatar:v1:/);
+        expect(resolveAssistantAvatar(result.details.avatarSeed)).toMatchObject({ color, shape: 'round', eyes: 'capsule', expression: 'neutral', animate: true });
+        expect(service.snapshot().assistants.find((bot) => bot.id === peer.id).avatarSeed).toBe('legacy-peer');
+      }
+      service.close();
+      service = setup(directory);
+      expect(service.snapshot().assistants.find((bot) => bot.id === own.id).avatarSeed).toBe(result.details.avatarSeed);
+      expect(service.snapshot().assistants.find((bot) => bot.id === peer.id).avatarSeed).toBe('legacy-peer');
+    } finally {
+      random.mockRestore();
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('explicit stop cancels only its worker watch even when the upstream emits no event', async () => {

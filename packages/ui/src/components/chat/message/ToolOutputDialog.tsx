@@ -1,5 +1,4 @@
 import React from 'react';
-import { ImageLoadingPlaceholder } from '@/components/ui/ImageLoadingPlaceholder';
 import { useEvent } from '@reactuses/core';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -32,19 +31,32 @@ import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { readRuntimeFile } from '@/lib/runtime-file-resource';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { useResolvedImageResource } from '../imageSource';
+import { ImageViewerSlide, type ImageViewerSlideState } from './ImageViewerSlide';
+import { animate as animateMotionValue, cancelFrame, frame, motionValue, type AnimationPlaybackControls, type MotionValue } from 'motion';
 import {
+    IMAGE_VIEWER_DISMISS_X_FOLLOW,
+    IMAGE_VIEWER_DOUBLE_TAP_MS,
+    IMAGE_VIEWER_DOUBLE_TAP_SCALE,
     IMAGE_VIEWER_MAX_SCALE,
     IMAGE_VIEWER_TAP_MOVE_THRESHOLD,
+    IMAGE_VIEWER_VELOCITY_WINDOW_MS,
     clampImageViewerTransform,
+    dragImageViewer,
+    estimateImageViewerVelocity,
     getFittedImageSize,
+    getImageViewerDismissStyle,
+    isImageViewerDoubleTap,
     panImageViewer,
     pinchImageViewer,
     resolveImageViewerPointerRelease,
+    resolveImageViewerDragRelease,
     zoomImageViewerAtPoint,
     type ImageViewerGeometry,
     type ImageViewerPoint,
+    type ImageViewerPointerSample,
     type ImageViewerTransform,
+    type ImageViewerDragAxis,
+    type ImageViewerDragFrame,
 } from './imageViewerTransform';
 import { closeImageViewerAfterMobileTap } from './imageViewerTapGuard';
 import { MediaPreviewOverlay, MediaPreviewToolbar, PreviewCloseButton } from './MediaPreviewOverlay';
@@ -54,6 +66,13 @@ import { isVideoSource } from '../video';
 
 /** Ignore accidental close from the same gesture / history thrash that opened the viewer. */
 const IMAGE_VIEWER_OPEN_CLOSE_GUARD_MS = 400;
+
+type ImageViewerOffsets = { trackX: MotionValue<number>; dismissX: MotionValue<number>; dismissY: MotionValue<number> };
+
+/** Skip identical writes so per-frame drag rendering only invalidates styles that changed. */
+const writeStyle = (element: HTMLElement | null, property: 'transform' | 'opacity', value: string) => {
+    if (element && element.style[property] !== value) element.style[property] = value;
+};
 
 interface ToolOutputDialogProps {
     popup: ToolPopupContent;
@@ -234,15 +253,21 @@ const ImagePreviewDialog: React.FC<{
         return index >= 0 && index < gallery.length ? index : 0;
     });
     const sourceElement = popup.previewSource instanceof HTMLImageElement ? popup.previewSource : undefined;
-    const sourceSize = sourceElement?.naturalWidth && sourceElement.naturalHeight
-        ? { width: sourceElement.naturalWidth, height: sourceElement.naturalHeight } : null;
-    const [imageNaturalSize, setImageNaturalSize] = React.useState<{ width: number; height: number } | null>(sourceSize);
-    const [imageLoaded, setImageLoaded] = React.useState(Boolean(sourceSize));
+    const [activeSlide, setActiveSlide] = React.useState<ImageViewerSlideState | null>(null);
+    const imageNaturalSize = activeSlide?.naturalSize;
     const isRendered = popup.open;
     const viewport = usePreviewViewport(popup.open);
     const canvasRef = React.useRef<HTMLDivElement | null>(null);
     const viewerRef = React.useRef<HTMLDivElement | null>(null);
     const imageRef = React.useRef<HTMLImageElement | null>(null);
+    const galleryTrackRef = React.useRef<HTMLDivElement | null>(null);
+    const dismissRef = React.useRef<HTMLDivElement | null>(null);
+    const controlsRef = React.useRef<HTMLDivElement | null>(null);
+    const backdropRef = React.useRef<HTMLElement | null>(null);
+    const [offsets] = React.useState<ImageViewerOffsets>(() => ({ trackX: motionValue(0), dismissX: motionValue(0), dismissY: motionValue(0) }));
+    const settleRef = React.useRef<{ animations: AnimationPlaybackControls[] } | null>(null);
+    const lastTapRef = React.useRef<ImageViewerPointerSample | null>(null);
+    const tapCloseTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const zoomLabelRef = React.useRef<HTMLSpanElement | null>(null);
     const transformRef = React.useRef<ImageViewerTransform>({ scale: 1, x: 0, y: 0 });
     const geometryRef = React.useRef<ImageViewerGeometry>({
@@ -259,13 +284,14 @@ const ImagePreviewDialog: React.FC<{
         moved: boolean;
         targetWasCanvas: boolean;
         suppressTap: boolean;
+        axis: ImageViewerDragAxis;
+        samples: ImageViewerPointerSample[];
     } | null>(null);
     const pinchGestureRef = React.useRef<{
         distance: number;
         midpoint: ImageViewerPoint;
         transform: ImageViewerTransform;
     } | null>(null);
-    const pendingFrameRef = React.useRef<number | null>(null);
     const pendingTransformRef = React.useRef<{ transform: ImageViewerTransform; animate: boolean } | null>(null);
 
     const openedAtRef = React.useRef(0);
@@ -298,14 +324,20 @@ const ImagePreviewDialog: React.FC<{
     }, [gallery, popup.image?.index, popup.image?.url, popup.open]);
 
     const currentImage = gallery[currentIndex] ?? gallery[0] ?? popup.image;
-    const imageResource = useResolvedImageResource(currentImage?.url ?? '', effectiveDirectory, 'preview');
-    const displayImageSource = imageResource.source || (currentImage?.url === popup.image?.url ? sourceElement?.currentSrc : '') || '';
-    const imageDisplayKey = `${imageResource.key}\n${displayImageSource}`;
-    const [failedImageKey, setFailedImageKey] = React.useState('');
-    const hasImageError = Boolean(imageResource.error || failedImageKey === imageDisplayKey);
-    const handleImageError = useEvent(() => setFailedImageKey(imageDisplayKey));
-    const imageAccessibleLabel = currentImage?.filename || popup.title;
+    const displayImageSource = activeSlide?.source ?? '';
+    const imageResourceKey = activeSlide?.resourceKey ?? '';
     const hasMultipleImages = gallery.length > 1;
+    const visibleIndices = isMobile && hasMultipleImages
+        ? Array.from(new Set([(currentIndex - 1 + gallery.length) % gallery.length, currentIndex, (currentIndex + 1) % gallery.length]))
+        : [currentIndex];
+
+    const handleActiveImage = (state: ImageViewerSlideState) => {
+        imageRef.current = state.element;
+        setActiveSlide((previous) => previous?.element === state.element && previous.source === state.source
+            && previous.resourceKey === state.resourceKey && previous.loaded === state.loaded && previous.error === state.error
+            && previous.naturalSize?.width === state.naturalSize?.width && previous.naturalSize?.height === state.naturalSize?.height
+            ? previous : state);
+    };
 
     const showPrevious = useEvent(() => {
         if (gallery.length <= 1) return;
@@ -333,36 +365,114 @@ const ImagePreviewDialog: React.FC<{
         maxScale: IMAGE_VIEWER_MAX_SCALE,
     }), [imageDisplaySize, viewport.height, viewport.width]);
 
-    const writeTransform = useEvent((next: ImageViewerTransform, animate = false) => {
-        const transform = clampImageViewerTransform(next, geometryRef.current);
-        transformRef.current = transform;
-        pendingTransformRef.current = { transform, animate };
-        if (pendingFrameRef.current !== null || typeof window === 'undefined') {
-            return;
-        }
-
-        pendingFrameRef.current = window.requestAnimationFrame(() => {
-            pendingFrameRef.current = null;
-            const pending = pendingTransformRef.current;
-            pendingTransformRef.current = null;
-            if (!pending) return;
-
+    const renderViewer = useEvent(() => {
+        const pending = pendingTransformRef.current;
+        pendingTransformRef.current = null;
+        if (pending) {
             if (imageRef.current) {
                 imageRef.current.style.transition = pending.animate
                     ? 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)'
                     : 'none';
                 imageRef.current.style.transform = `translate3d(${pending.transform.x}px, ${pending.transform.y}px, 0) scale(${pending.transform.scale})`;
             }
-            if (zoomLabelRef.current) {
-                zoomLabelRef.current.textContent = `${Math.round(pending.transform.scale * 100)}%`;
+            if (zoomLabelRef.current) zoomLabelRef.current.textContent = `${Math.round(pending.transform.scale * 100)}%`;
+            if (canvasRef.current) canvasRef.current.style.cursor = pending.transform.scale > 1 ? 'grab' : 'zoom-in';
+        }
+        const trackX = offsets.trackX.get();
+        const dismissY = offsets.dismissY.get();
+        const dismiss = getImageViewerDismissStyle(dismissY, geometryRef.current.viewport.height);
+        const track = galleryTrackRef.current;
+        writeStyle(track, 'transform', `translate3d(${trackX}px, 0, 0)`);
+        if (track && gallery.length === 2) {
+            const neighbor = track.querySelector<HTMLElement>('[data-image-viewer-slide]:not([data-image-viewer-slide="0"])');
+            writeStyle(neighbor, 'transform', `translate3d(${(trackX > 0 ? -1 : 1) * (viewport.width + 16)}px, 0, 0)`);
+        }
+        writeStyle(dismissRef.current, 'transform', `translate3d(${offsets.dismissX.get()}px, ${dismissY}px, 0) scale(${dismiss.scale})`);
+        writeStyle(backdropRef.current, 'opacity', `${dismiss.opacity}`);
+        writeStyle(controlsRef.current, 'opacity', `${dismiss.opacity}`);
+    });
+
+    // Motion batches pointer writes and spring updates into one render step per frame.
+    const scheduleRender = useEvent(() => frame.render(renderViewer));
+
+    const flushTransform = useEvent(() => {
+        cancelFrame(renderViewer);
+        renderViewer();
+    });
+
+    const writeTransform = useEvent((next: ImageViewerTransform, animate = false, drag: ImageViewerDragFrame | null = null) => {
+        const transform = clampImageViewerTransform(next, geometryRef.current);
+        transformRef.current = transform;
+        pendingTransformRef.current = { transform, animate };
+        offsets.trackX.jump(drag?.galleryX ?? 0);
+        offsets.dismissX.jump(drag?.dismissX ?? 0);
+        offsets.dismissY.jump(drag?.dismissY ?? 0);
+        scheduleRender();
+    });
+
+    /** Stops an in-flight release at its current offsets so a new touch can take it over. */
+    const cancelSettling = useEvent(() => {
+        const settle = settleRef.current;
+        settleRef.current = null;
+        settle?.animations.forEach((animation) => animation.stop());
+    });
+
+    const clearPendingTapClose = useEvent(() => {
+        if (tapCloseTimerRef.current !== null) clearTimeout(tapCloseTimerRef.current);
+        tapCloseTimerRef.current = null;
+    });
+
+    const settleDrag = useEvent((action: 'none' | 'previous' | 'next', velocity: ImageViewerPoint = { x: 0, y: 0 }) => {
+        cancelSettling();
+        flushTransform();
+        const targetX = action === 'next' ? -(viewport.width + 16) : action === 'previous' ? viewport.width + 16 : 0;
+        const complete = () => {
+            if (action === 'next') showNext();
+            else if (action === 'previous') showPrevious();
+            else {
+                writeTransform(transformRef.current);
+                flushTransform();
             }
-            if (canvasRef.current) {
-                canvasRef.current.style.cursor = pending.transform.scale > 1 ? 'grab' : 'zoom-in';
-            }
+        };
+        const moving = ([
+            [offsets.trackX, targetX, velocity.x],
+            [offsets.dismissX, 0, velocity.x * IMAGE_VIEWER_DISMISS_X_FOLLOW],
+            [offsets.dismissY, 0, velocity.y],
+        ] as const).filter(([value, target]) => Math.abs(value.get() - target) > 0.5);
+        if (moving.length === 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            complete();
+            return;
+        }
+        const animations = moving.map(([value, target, speed]) => {
+            // Carry finger momentum only toward the target; opposing velocity would overshoot.
+            const towardTarget = speed * (target - value.get()) > 0 ? speed * 1000 : 0;
+            return animateMotionValue(value, target, {
+                type: 'spring',
+                bounce: 0,
+                visualDuration: action === 'none' ? 0.32 : 0.26,
+                velocity: towardTarget,
+                // Cut the imperceptible spring tail so a committed page change is not delayed by sub-pixel creep.
+                restDelta: 1,
+                restSpeed: 60,
+                onUpdate: scheduleRender,
+            });
+        });
+        const settle = { animations };
+        settleRef.current = settle;
+        void Promise.all(animations.map((animation) => animation.finished)).then(() => {
+            if (settleRef.current !== settle) return;
+            settleRef.current = null;
+            if (!viewerRef.current?.closest('[data-media-preview-closing]')) complete();
+        }, () => {
+            if (settleRef.current !== settle) return;
+            settleRef.current = null;
+            writeTransform(transformRef.current);
+            flushTransform();
         });
     });
 
     const resetTransform = useEvent((animate = true) => {
+        cancelSettling();
         writeTransform({ scale: 1, x: 0, y: 0 }, animate);
     });
 
@@ -372,6 +482,7 @@ const ImagePreviewDialog: React.FC<{
     }));
 
     const zoomAtPoint = useEvent((nextScale: number, point: ImageViewerPoint, animate = false) => {
+        cancelSettling();
         writeTransform(zoomImageViewerAtPoint(
             transformRef.current,
             nextScale,
@@ -386,7 +497,24 @@ const ImagePreviewDialog: React.FC<{
             resetTransform(true);
             return;
         }
-        zoomAtPoint(2, point, true);
+        zoomAtPoint(IMAGE_VIEWER_DOUBLE_TAP_SCALE, point, true);
+    });
+
+    /** A mobile tap waits out the double-tap window: a second nearby tap zooms at that point instead of closing. */
+    const handleMobileTap = useEvent((tap: ImageViewerPointerSample) => {
+        clearPendingTapClose();
+        if (isImageViewerDoubleTap(lastTapRef.current, tap)) {
+            lastTapRef.current = null;
+            toggleZoom(tap);
+            return;
+        }
+        lastTapRef.current = tap;
+        if (isWithinOpenCloseGuard()) return;
+        tapCloseTimerRef.current = setTimeout(() => {
+            tapCloseTimerRef.current = null;
+            lastTapRef.current = null;
+            closeImageViewerAfterMobileTap(tap, () => onOpenChange(false));
+        }, IMAGE_VIEWER_DOUBLE_TAP_MS);
     });
 
     const handleKeyDown = useEvent((event: KeyboardEvent) => {
@@ -435,29 +563,37 @@ const ImagePreviewDialog: React.FC<{
     }, [popup.open]);
 
 
-    React.useEffect(() => {
-        if (pendingFrameRef.current !== null) {
-            window.cancelAnimationFrame(pendingFrameRef.current);
-        }
-        pendingFrameRef.current = null;
+    React.useLayoutEffect(() => {
+        cancelFrame(renderViewer);
         pendingTransformRef.current = null;
-        const source = currentImage?.url === popup.image?.url ? sourceElement : undefined;
-        setImageNaturalSize(source?.naturalWidth && source.naturalHeight
-            ? { width: source.naturalWidth, height: source.naturalHeight } : null);
-        setImageLoaded(Boolean(source?.naturalWidth));
+        cancelSettling();
+        clearPendingTapClose();
+        lastTapRef.current = null;
+        offsets.trackX.jump(0);
+        offsets.dismissX.jump(0);
+        offsets.dismissY.jump(0);
         transformRef.current = { scale: 1, x: 0, y: 0 };
         pointersRef.current.clear();
         singleGestureRef.current = null;
         pinchGestureRef.current = null;
-        if (imageRef.current) {
-            imageRef.current.style.transform = 'translate3d(0, 0, 0) scale(1)';
-        }
+        galleryTrackRef.current?.querySelectorAll('img').forEach((image) => {
+            image.style.transition = 'none';
+            image.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        });
+        if (galleryTrackRef.current) galleryTrackRef.current.style.transform = 'translate3d(0, 0, 0)';
+        if (dismissRef.current) dismissRef.current.style.transform = 'none';
+        backdropRef.current = viewerRef.current?.closest('[data-media-preview]')?.querySelector<HTMLElement>('[data-media-preview-backdrop]') ?? null;
+        if (backdropRef.current) backdropRef.current.style.opacity = '1';
+        if (controlsRef.current) controlsRef.current.style.opacity = '1';
         if (zoomLabelRef.current) {
             zoomLabelRef.current.textContent = '100%';
         }
-    }, [currentImage?.url, displayImageSource, popup.image?.url, sourceElement]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the slide identity controls this reset; useEvent supplies the latest callbacks.
+    }, [currentIndex, effectiveDirectory, popup.image?.url, offsets]);
 
     React.useLayoutEffect(() => {
+        const resized = geometryRef.current.viewport.width !== geometry.viewport.width
+            || geometryRef.current.viewport.height !== geometry.viewport.height;
         geometryRef.current = geometry;
         const transform = clampImageViewerTransform(transformRef.current, geometryRef.current);
         transformRef.current = transform;
@@ -465,14 +601,22 @@ const ImagePreviewDialog: React.FC<{
             imageRef.current.style.transition = 'none';
             imageRef.current.style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`;
         }
-    }, [geometry]);
+        if (resized) {
+            cancelSettling();
+            pointersRef.current.clear();
+            singleGestureRef.current = null;
+            pinchGestureRef.current = null;
+            writeTransform(transform);
+            flushTransform();
+        }
+    }, [geometry, cancelSettling, writeTransform, flushTransform]);
 
     React.useEffect(() => () => {
-        if (pendingFrameRef.current !== null) {
-            window.cancelAnimationFrame(pendingFrameRef.current);
-        }
-        pendingFrameRef.current = null;
+        cancelSettling();
+        clearPendingTapClose();
+        cancelFrame(renderViewer);
         pendingTransformRef.current = null;
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup; useEvent supplies the latest callbacks.
     }, []);
 
     const handleWheel = useEvent((event: WheelEvent) => {
@@ -507,16 +651,37 @@ const ImagePreviewDialog: React.FC<{
         event.currentTarget.setPointerCapture(event.pointerId);
         const point = { x: event.clientX, y: event.clientY };
         pointersRef.current.set(event.pointerId, { point, pointerType: event.pointerType });
+        const interrupted = settleRef.current !== null;
+        cancelSettling();
+        clearPendingTapClose();
 
         if (pointersRef.current.size === 1) {
+            let start = point;
+            let axis: ImageViewerDragAxis = null;
+            const trackX = offsets.trackX.get();
+            const dismissY = offsets.dismissY.get();
+            const canCatch = interrupted && isMobile && event.pointerType !== 'mouse' && transformRef.current.scale <= 1.01;
+            if (canCatch && Math.abs(trackX) > 0.5) {
+                axis = 'x';
+                start = { x: point.x - trackX, y: point.y };
+            } else if (canCatch && dismissY > 0.5) {
+                axis = 'y';
+                start = { x: point.x - offsets.dismissX.get() / IMAGE_VIEWER_DISMISS_X_FOLLOW, y: point.y - dismissY };
+            } else if (interrupted) {
+                writeTransform(transformRef.current);
+                flushTransform();
+            }
+            // A caught release continues from its current offset instead of jumping or being ignored.
             singleGestureRef.current = {
                 pointerId: event.pointerId,
                 pointerType: event.pointerType,
-                start: point,
+                start,
                 transform: transformRef.current,
-                moved: false,
+                moved: axis !== null,
                 targetWasCanvas: event.target === event.currentTarget,
                 suppressTap: false,
+                axis,
+                samples: [{ ...point, time: event.timeStamp }],
             };
             if (canvasRef.current && transformRef.current.scale > 1) {
                 canvasRef.current.style.cursor = 'grabbing';
@@ -527,6 +692,8 @@ const ImagePreviewDialog: React.FC<{
         if (singleGestureRef.current) {
             singleGestureRef.current.suppressTap = true;
         }
+        writeTransform(transformRef.current);
+        flushTransform();
 
         const points = Array.from(pointersRef.current.values()).slice(0, 2).map((pointer) => pointer.point);
         const dx = points[1].x - points[0].x;
@@ -566,10 +733,18 @@ const ImagePreviewDialog: React.FC<{
         const gesture = singleGestureRef.current;
         if (!gesture || gesture.pointerId !== event.pointerId) return;
         const delta = { x: point.x - gesture.start.x, y: point.y - gesture.start.y };
+        gesture.samples.push({ ...point, time: event.timeStamp });
+        while (gesture.samples.length > 2 && event.timeStamp - gesture.samples[0].time > IMAGE_VIEWER_VELOCITY_WINDOW_MS) {
+            gesture.samples.shift();
+        }
         if (Math.hypot(delta.x, delta.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD) {
             gesture.moved = true;
         }
-        if (gesture.transform.scale > 1.01) {
+        if (isMobile && gesture.pointerType !== 'mouse' && !gesture.suppressTap) {
+            const frame = dragImageViewer(gesture.transform, delta, geometryRef.current, gesture.axis, hasMultipleImages);
+            gesture.axis = frame.axis;
+            writeTransform(frame.transform, false, frame);
+        } else if (gesture.transform.scale > 1.01) {
             writeTransform(panImageViewer(gesture.transform, delta, geometryRef.current));
         }
     });
@@ -577,32 +752,39 @@ const ImagePreviewDialog: React.FC<{
     const finishPointer = useEvent((event: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
         const gesture = singleGestureRef.current;
         const trackedPointer = pointersRef.current.get(event.pointerId);
+        if (!trackedPointer) return;
         const point = trackedPointer ? { x: event.clientX, y: event.clientY } : undefined;
         pointersRef.current.delete(event.pointerId);
+        let closePoint: ImageViewerPoint | undefined;
 
         if (gesture?.pointerId === event.pointerId) {
             if (point) {
-                const action = resolveImageViewerPointerRelease({
-                    isMobile,
-                    pointerType: gesture.pointerType,
-                    cancelled,
-                    moved: gesture.moved || Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD,
-                    suppressTap: gesture.suppressTap,
-                    targetWasCanvas: gesture.targetWasCanvas,
-                    start: gesture.start,
-                    end: point,
-                    startScale: gesture.transform.scale,
-                    hasMultipleImages,
-                });
-                if (action === 'next') showNext();
-                if (action === 'previous') showPrevious();
-                if (action === 'close') {
-                    if (isWithinOpenCloseGuard()) return;
-                    if (isMobile && gesture.pointerType !== 'mouse') {
-                        closeImageViewerAfterMobileTap(point, () => onOpenChange(false));
-                        return;
-                    }
-                    onOpenChange(false);
+                const delta = { x: point.x - gesture.start.x, y: point.y - gesture.start.y };
+                const moved = gesture.moved || Math.hypot(delta.x, delta.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD;
+                if (isMobile && gesture.pointerType !== 'mouse' && !gesture.suppressTap && moved) {
+                    const frame = dragImageViewer(gesture.transform, delta, geometryRef.current, gesture.axis, hasMultipleImages);
+                    writeTransform(frame.transform, false, frame);
+                    const velocity = estimateImageViewerVelocity([...gesture.samples, { ...point, time: event.timeStamp }]);
+                    const action = cancelled ? 'none' : resolveImageViewerDragRelease(frame, velocity, geometryRef.current.viewport);
+                    if (action === 'close' && !isWithinOpenCloseGuard()) closePoint = point;
+                    else settleDrag(action === 'close' ? 'none' : action, velocity);
+                } else {
+                    const action = resolveImageViewerPointerRelease({
+                        isMobile,
+                        pointerType: gesture.pointerType,
+                        cancelled,
+                        moved,
+                        suppressTap: gesture.suppressTap,
+                        targetWasCanvas: gesture.targetWasCanvas,
+                        start: gesture.start,
+                        end: point,
+                        startScale: gesture.transform.scale,
+                        hasMultipleImages,
+                    });
+                    if (action === 'next') showNext();
+                    if (action === 'previous') showPrevious();
+                    if (action === 'close' && isMobile && gesture.pointerType !== 'mouse') handleMobileTap({ ...point, time: event.timeStamp });
+                    else if (action === 'close' && !isWithinOpenCloseGuard()) closePoint = point;
                 }
             }
         }
@@ -617,6 +799,8 @@ const ImagePreviewDialog: React.FC<{
                 moved: false,
                 targetWasCanvas: false,
                 suppressTap: true,
+                axis: null,
+                samples: [{ ...remainingPointer.point, time: event.timeStamp }],
             };
             pinchGestureRef.current = null;
         } else if (pointersRef.current.size === 0) {
@@ -630,6 +814,12 @@ const ImagePreviewDialog: React.FC<{
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
         }
+        if (closePoint) {
+            flushTransform();
+            if (isMobile && gesture?.pointerType !== 'mouse') {
+                closeImageViewerAfterMobileTap(closePoint, () => onOpenChange(false));
+            } else onOpenChange(false);
+        }
     });
 
     const handleContextMenu = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
@@ -638,17 +828,6 @@ const ImagePreviewDialog: React.FC<{
         if (singleGestureRef.current) {
             singleGestureRef.current.suppressTap = true;
         }
-    });
-
-    const handleImageLoad = useEvent((event: React.SyntheticEvent<HTMLImageElement>) => {
-        const element = event.currentTarget;
-        if (element.naturalWidth > 0 && element.naturalHeight > 0) {
-            setImageNaturalSize((previous) => {
-                if (previous?.width === element.naturalWidth && previous.height === element.naturalHeight) return previous;
-                return { width: element.naturalWidth, height: element.naturalHeight };
-            });
-        }
-        setImageLoaded(true);
     });
 
     if (!isRendered || !currentImage || typeof document === 'undefined') {
@@ -667,9 +846,9 @@ const ImagePreviewDialog: React.FC<{
             tabIndex={-1}
             onClick={consumeViewerClick}
         >
-            <PreviewCloseButton onClose={() => onOpenChange(false)} isMobile={isMobile} size={imageDisplaySize} />
             <div
                 ref={canvasRef}
+                data-image-viewer-canvas=""
                 className="absolute inset-0 flex items-center justify-center overflow-hidden touch-none [overscroll-behavior:none]"
                 onDoubleClick={isMobile ? undefined : handleDoubleClick}
                 onContextMenu={handleContextMenu}
@@ -679,34 +858,25 @@ const ImagePreviewDialog: React.FC<{
                 onPointerCancel={(event) => finishPointer(event, true)}
                 onLostPointerCapture={(event) => finishPointer(event, true)}
             >
-                {!imageLoaded && !hasImageError && (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center" role="status">
-                        <ImageLoadingPlaceholder className="aspect-square w-64 max-w-[80vw] rounded-xl" />
+                <div ref={dismissRef} data-image-viewer-dismiss="" className="pointer-events-none absolute inset-0 will-change-transform">
+                    <div ref={galleryTrackRef} data-image-viewer-track="" className="pointer-events-none absolute inset-0 will-change-transform">
+                        {visibleIndices.map((index) => {
+                            const item = gallery[index];
+                            if (!item) return null;
+                            const active = index === currentIndex;
+                            const position = active ? 0 : gallery.length === 2 || index === (currentIndex + 1) % gallery.length ? 1 : -1;
+                            return <ImageViewerSlide key={`${index}\n${item.url}`} url={item.url} directory={effectiveDirectory}
+                                label={item.filename || popup.title} active={active} returnToSource={item.url === popup.image?.url}
+                                sourceElement={item.url === popup.image?.url ? sourceElement : undefined}
+                                viewport={viewport} isMobile={isMobile} position={position} onActiveImage={handleActiveImage} />;
+                        })}
                     </div>
-                )}
-                {hasImageError ? (
-                    <p role="status" className="px-6 text-center typography-ui-label">
-                        {t('filesView.error.readFileFailed')}
-                    </p>
-                ) : <img
-                    ref={imageRef}
-                    data-preview-transition-target=""
-                    data-preview-return={currentImage?.url === popup.image?.url}
-                    src={displayImageSource || undefined}
-                    alt={imageAccessibleLabel ?? ''}
-                    className={cn(
-                        'block max-w-none object-contain will-change-transform',
-                        imageLoaded ? 'opacity-100' : 'opacity-0',
-                    )}
-                    style={{ width: `${imageDisplaySize.width}px`, height: `${imageDisplaySize.height}px` }}
-                    loading="lazy"
-                    draggable={false}
-                    onLoad={handleImageLoad}
-                    onError={handleImageError}
-                />}
+                </div>
             </div>
 
-            <MediaPreviewToolbar isMobile={isMobile}>
+            <div ref={controlsRef} className="pointer-events-none absolute inset-0 [&_button]:pointer-events-auto">
+                <PreviewCloseButton onClose={() => onOpenChange(false)} isMobile={isMobile} size={imageDisplaySize} />
+                <MediaPreviewToolbar isMobile={isMobile}>
                     {hasMultipleImages && (
                         <span data-media-gallery-counter="" className="min-w-10 px-1 text-center typography-micro tabular-nums opacity-80">
                             {currentIndex + 1} / {gallery.length}
@@ -745,12 +915,13 @@ const ImagePreviewDialog: React.FC<{
                     >
                         <Icon name="add" weight="medium" className={isMobile ? 'size-4' : 'size-6'} />
                     </Button>
-                <MediaSaveButton isMobile={isMobile} key={imageResource.key} target={{
-                sourceUrl: currentImage.url || displayImageSource, displayUrl: displayImageSource || undefined,
-                filename: currentImage.filename || popup.image?.filename || popup.title,
-                mimeType: currentImage.mimeType || popup.image?.mimeType, effectiveDirectory,
-                }} />
-            </MediaPreviewToolbar>
+                    <MediaSaveButton isMobile={isMobile} key={imageResourceKey} target={{
+                        sourceUrl: currentImage.url || displayImageSource, displayUrl: displayImageSource || undefined,
+                        filename: currentImage.filename || popup.image?.filename || popup.title,
+                        mimeType: currentImage.mimeType || popup.image?.mimeType, effectiveDirectory,
+                    }} />
+                </MediaPreviewToolbar>
+            </div>
         </div>
     );
 
