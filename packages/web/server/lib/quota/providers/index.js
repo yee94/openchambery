@@ -158,12 +158,16 @@ export const fetchQuotaForProvider = async (providerId) => {
   try {
     return await provider.fetchQuota();
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Request failed';
+    // Credential source unreachable means we cannot know whether the provider is configured;
+    // never report it as a configured provider failure.
+    const credentialSourceUnavailable = message === 'Unable to read OpenCode credentials';
     return buildResult({
       providerId: provider.providerId,
       providerName: provider.providerName,
       ok: false,
-      configured: true,
-      error: error instanceof Error ? error.message : 'Request failed'
+      configured: !credentialSourceUnavailable,
+      error: message
     });
   }
 };

@@ -40,6 +40,7 @@ import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { formatQuotaValueLabel, formatQuotaResetLabel, formatWindowLabel, quotaProviders, calculatePace, calculateExpectedUsagePercent } from '@/lib/quota';
 import { UsageProgressBar } from '@/components/sections/usage/UsageProgressBar';
 import { PaceIndicator } from '@/components/sections/usage/PaceIndicator';
+import { accountHeadingAt } from '@/lib/quota/accountGroups';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { formatTimeForPreference } from '@/lib/timeFormat';
 import { eventMatchesShortcut, formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
@@ -443,7 +444,8 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {group.entries.map(([label, window]) => {
+                        {group.entries.map(([label, window], index) => {
+                          const accountHeading = accountHeadingAt(group.entries, index);
                           const displayPercent = quotaDisplayMode === 'remaining' ? window.remainingPercent : window.usedPercent;
                           const paceInfo = window.disablePace ? null : calculatePace(window.usedPercent, window.resetAt, window.windowSeconds, label);
                           const expectedMarker = paceInfo?.dailyAllocationPercent != null
@@ -454,7 +456,11 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
                           const metricLabel = formatQuotaValueLabel(window.valueLabel, displayPercent);
                           const resetLabel = formatQuotaResetLabel(window.resetAt, window.resetAfterFormatted ?? window.resetAtFormatted, timeFormatPreference);
                           return (
-                            <div key={`${group.providerId}-${label}`} className="flex flex-col gap-1.5">
+                            <React.Fragment key={`${group.providerId}-${label}`}>
+                            {accountHeading ? (
+                              <div className={cn('typography-micro font-medium uppercase tracking-wide text-muted-foreground', index > 0 && 'mt-5 border-t border-[var(--surface-subtle)] pt-3')}>{accountHeading}</div>
+                            ) : null}
+                            <div className="flex flex-col gap-1.5">
                               <div className="flex min-w-0 items-center justify-between gap-3">
                                 <div className="min-w-0 flex flex-1 flex-col gap-0.5">
                                   <span className="typography-ui-label text-foreground break-words">{formatWindowLabel(window.label ?? label)}</span>
@@ -476,6 +482,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
                               />
                               {paceInfo && showPredValues ? <PaceIndicator paceInfo={paceInfo} compact /> : null}
                             </div>
+                            </React.Fragment>
                           );
                         })}
                         {group.modelFamilies && group.modelFamilies.length > 0 ? (
@@ -2110,7 +2117,8 @@ export const Header: React.FC<HeaderProps> = ({
                             ) : (
                               <div className="space-y-3 px-4 pb-2">
                                 {/* Window-level entries */}
-                                {group.entries.map(([label, window]) => {
+                                {group.entries.map(([label, window], index) => {
+                                  const accountHeading = accountHeadingAt(group.entries, index);
                                   const displayPercent = quotaDisplayMode === 'remaining'
                                     ? window.remainingPercent
                                     : window.usedPercent;
@@ -2123,7 +2131,11 @@ export const Header: React.FC<HeaderProps> = ({
                                   const metricLabel = formatQuotaValueLabel(window.valueLabel, displayPercent);
                                   const resetLabel = formatQuotaResetLabel(window.resetAt, window.resetAfterFormatted ?? window.resetAtFormatted, timeFormatPreference);
                                   return (
-                                    <div key={`${group.providerId}-${label}`} className="flex flex-col gap-1.5">
+                                    <React.Fragment key={`${group.providerId}-${label}`}>
+                                    {accountHeading ? (
+                                      <div className={cn('typography-micro font-medium uppercase tracking-wide text-muted-foreground', index > 0 && 'mt-5 border-t border-[var(--surface-subtle)] pt-3')}>{accountHeading}</div>
+                                    ) : null}
+                                    <div className="flex flex-col gap-1.5">
                                       <div className="flex min-w-0 items-center justify-between gap-3">
                                         <div className="min-w-0 flex flex-1 flex-col gap-0.5">
                                           <span className="typography-ui-label text-foreground break-words">{formatWindowLabel(window.label ?? label)}</span>
@@ -2147,6 +2159,7 @@ export const Header: React.FC<HeaderProps> = ({
                                         <PaceIndicator paceInfo={paceInfo} compact />
                                       ) : null}
                                     </div>
+                                    </React.Fragment>
                                   );
                                 })}
 

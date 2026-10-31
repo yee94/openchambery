@@ -29,6 +29,7 @@ export interface UsageWindow {
   resetAfterFormatted: string | null;
   valueLabel?: string | null;
   label?: string;
+  accountName?: string;
   disablePace?: boolean;
 }
 
