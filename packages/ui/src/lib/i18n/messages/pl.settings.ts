@@ -823,7 +823,7 @@ export const settingsDict = {
   'settings.yuri.about.actions.checkUpdates': 'Sprawdź aktualizacje',
   'settings.yuri.about.actions.update': 'Aktualizuj',
   'settings.yuri.about.actions.updateToVersion': 'Aktualizuj do wersji {version}',
-  'settings.yuri.about.actions.applyOtaToVersion': 'Aktualizuj teraz do {version}',
+  'settings.yuri.about.actions.applyOtaToVersion': 'Aktualizuj do {version}',
   'settings.yuri.about.actions.installNativeToVersion': 'Zainstaluj {version}',
   'settings.yuri.about.field.version': 'Wersja',
   'settings.yuri.about.field.clientVersion': 'Klient',

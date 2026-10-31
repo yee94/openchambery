@@ -402,7 +402,7 @@ export const settingsDict = {
   'settings.yuri.about.actions.checkUpdates': '업데이트 확인',
   'settings.yuri.about.actions.update': '업데이트',
   'settings.yuri.about.actions.updateToVersion': '{version}으로 업데이트',
-  'settings.yuri.about.actions.applyOtaToVersion': '{version}으로 지금 업데이트',
+  'settings.yuri.about.actions.applyOtaToVersion': '{version}으로 업데이트',
   'settings.yuri.about.actions.installNativeToVersion': '{version} 설치',
   'settings.yuri.about.actions.checkForUpdates': '업데이트 확인',
   'settings.yuri.about.actions.submitFeedback': '피드백 제출',

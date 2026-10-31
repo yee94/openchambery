@@ -400,7 +400,7 @@
   'settings.yuri.about.actions.checkUpdates': '檢查更新',
   'settings.yuri.about.actions.update': '更新',
   'settings.yuri.about.actions.updateToVersion': '更新到 {version}',
-  'settings.yuri.about.actions.applyOtaToVersion': '一鍵更新到 {version}',
+  'settings.yuri.about.actions.applyOtaToVersion': '更新到 {version}',
   'settings.yuri.about.actions.installNativeToVersion': '安裝 {version}',
   'settings.yuri.about.actions.checkForUpdates': '檢查更新',
   'settings.yuri.about.actions.submitFeedback': '提交反饋',

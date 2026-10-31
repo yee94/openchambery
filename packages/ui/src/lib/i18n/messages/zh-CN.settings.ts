@@ -402,7 +402,7 @@ export const settingsDict = {
   'settings.yuri.about.actions.checkUpdates': '检查更新',
   'settings.yuri.about.actions.update': '更新',
   'settings.yuri.about.actions.updateToVersion': '更新到 {version}',
-  'settings.yuri.about.actions.applyOtaToVersion': '一键更新到 {version}',
+  'settings.yuri.about.actions.applyOtaToVersion': '更新到 {version}',
   'settings.yuri.about.actions.installNativeToVersion': '安装 {version}',
   'settings.yuri.about.actions.checkForUpdates': '检查更新',
   'settings.yuri.about.actions.submitFeedback': '提交反馈',

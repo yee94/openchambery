@@ -435,7 +435,7 @@ export const settingsDict = {
   'settings.yuri.about.actions.checkUpdates': 'Check updates',
   'settings.yuri.about.actions.update': 'Update',
   'settings.yuri.about.actions.updateToVersion': 'Update to {version}',
-  'settings.yuri.about.actions.applyOtaToVersion': 'Update now to {version}',
+  'settings.yuri.about.actions.applyOtaToVersion': 'Update to {version}',
   'settings.yuri.about.actions.installNativeToVersion': 'Install {version}',
   'settings.yuri.about.actions.checkForUpdates': 'Check updates',
   'settings.yuri.about.actions.submitFeedback': 'Feedback',
