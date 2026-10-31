@@ -303,6 +303,7 @@ describe('createContactTools', () => {
       NEW_CONVERSATION_TOOL_NAME,
       CLEAR_CHAT_HISTORY_TOOL_NAME,
       LIST_PROJECTS_TOOL_NAME,
+      'list_models',
       LIST_SESSIONS_TOOL_NAME,
       'read_session',
       GET_ASSISTANT_SETTINGS_TOOL_NAME,
@@ -321,6 +322,26 @@ describe('createContactTools', () => {
       'delete_session',
     ]);
     expect(tools.some((tool) => ['bash', 'edit', 'read', 'write'].includes(tool.name))).toBe(false);
+
+    const listModels = vi.fn(async () => ({
+      connectedModels: [
+        { providerID: 'xai', modelID: 'grok-4.6', name: 'Grok 4.6', providerName: 'xAI', acceptsImages: true },
+        { providerID: 'openai', modelID: 'gpt-5', name: 'GPT 5', providerName: 'OpenAI' },
+      ],
+      modelCatalogAvailable: true,
+      modelPreferences: { favoriteModels: [{ providerID: 'xai', modelID: 'grok-4.6' }], recentModels: [] },
+    }));
+    const modelTool = createContactTools({ listModels }).find((tool) => tool.name === 'list_models');
+    const allModels = await modelTool.execute('call_m', {});
+    expect(allModels.content[0].text).toContain('grok-4.6');
+    expect(allModels.content[0].text).toContain('gpt-5');
+    expect(allModels.details.count).toBe(2);
+    const filtered = await modelTool.execute('call_m2', { query: 'GROK' });
+    expect(filtered.content[0].text).toContain('grok-4.6');
+    expect(filtered.content[0].text).not.toContain('gpt-5');
+    expect((await modelTool.execute('call_m3', { query: 'nope' })).content[0].text).toContain('No connected models matched');
+    listModels.mockRejectedValueOnce(new Error('catalog down'));
+    expect((await modelTool.execute('call_m4', {})).details.error).toBeTruthy();
 
     const reset = await tools.find((tool) => tool.name === NEW_CONVERSATION_TOOL_NAME).execute('call_0', {});
     expect(clearContactMemory).toHaveBeenCalledTimes(1);

@@ -46,7 +46,7 @@ export function projectMagpieQuotas(payload, source, now = Date.now()) {
         usedPercent: w.unlimited ? null : percent(w.used), remainingPercent: w.unlimited ? null : percent(w.remaining),
         resetAt, resetAfterSeconds: resetAt === null ? null : Math.max(0, Math.ceil((resetAt - now) / 1000)),
         valueLabel: w.unlimited ? '∞' : text(w.display) || (Number.isFinite(w.amount) && Number.isFinite(w.limit) && w.limit > 0 ? `${w.amount} / ${w.limit}${text(w.unit) ? ` ${w.unit}` : ''}` : null),
-        label: w.name, accountName: account.name, disablePace: true,
+        label: w.name, disablePace: true,
       };
       account.windows[`${i}:${w.name}`] = window;
       // Magpie serializes this informational window as used: 0 without its
@@ -57,7 +57,7 @@ export function projectMagpieQuotas(payload, source, now = Date.now()) {
       result.usage.windows[key] = window;
     }
     if (account.balance) {
-      const window = { ...emptyWindow(), valueLabel: account.balance, label: 'credits_balance', accountName: account.name, disablePace: true };
+      const window = { ...emptyWindow(), valueLabel: account.balance, label: 'credits_balance', disablePace: true };
       account.windows.balance = window;
       result.usage.windows[`${account.name} · ${q.kind} (${result.usage.accounts.length + 1})`] = window;
     }

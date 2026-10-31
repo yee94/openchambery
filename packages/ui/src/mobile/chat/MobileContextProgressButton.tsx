@@ -14,6 +14,7 @@ import {
   quotaProviders,
 } from '@/lib/quota';
 import { getDisplayModelName } from '@/lib/quota/model-families';
+import { accountHeadingForWindows, tagWindowsWithAccount } from '@/lib/quota/accountGroups';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { cn } from '@/lib/utils';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -118,7 +119,8 @@ const MobileUsageLimits: React.FC<{
             </div>
             {group.rows.length > 0 ? (
               <div className="mt-1.5 space-y-1">
-                {group.rows.map((row) => {
+                {group.rows.map((row, index) => {
+                  const accountHeading = accountHeadingForWindows(group.rows.map((entry) => entry.window), index);
                   const displayPercent = displayMode === 'remaining' ? row.window.remainingPercent : row.window.usedPercent;
                   const metricLabel = formatQuotaValueLabel(row.window.valueLabel, displayPercent);
                   const resetLabel = formatQuotaResetLabel(
@@ -127,7 +129,11 @@ const MobileUsageLimits: React.FC<{
                     timeFormatPreference,
                   );
                   return (
-                    <div key={row.key} className="flex min-w-0 items-baseline justify-between gap-3">
+                    <React.Fragment key={row.key}>
+                    {accountHeading ? (
+                      <div className={cn('typography-micro font-medium uppercase tracking-wide text-muted-foreground', index > 0 && 'mt-3 border-t border-[var(--surface-subtle)] pt-2')}>{accountHeading}</div>
+                    ) : null}
+                    <div className="flex min-w-0 items-baseline justify-between gap-3">
                       <span className="inline-flex min-w-0 flex-1 items-baseline gap-1.5">
                         <span className="truncate typography-ui-label text-muted-foreground">
                           {row.subtitle ? `${row.subtitle} · ${row.label}` : row.label}
@@ -140,6 +146,7 @@ const MobileUsageLimits: React.FC<{
                         {metricLabel === '-' ? '' : metricLabel}
                       </span>
                     </div>
+                    </React.Fragment>
                   );
                 })}
               </div>
@@ -407,7 +414,7 @@ export function MobileContextProgressButton({
         const result = resultsByProvider.get(providerMeta.id)!;
         const rows: MobileUsageLimitRow[] = [];
 
-        for (const [label, window] of Object.entries(result?.usage?.windows ?? {})) {
+        for (const [label, window] of tagWindowsWithAccount(Object.entries(result?.usage?.windows ?? {}), result?.usage?.accounts)) {
           rows.push({
             key: `window-${label}`,
             label: formatWindowLabel(window.label ?? label),

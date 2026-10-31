@@ -8,6 +8,7 @@ import { createContactMemoryReader } from './memory.js';
 import { getContactGreeting } from './contact-greeting.js';
 import { getWorktrees as defaultListWorktrees } from '../git/service.js';
 import { contactCardIdentity, parseContactCard, parseContactPart } from './cards.js';
+import { ensureContactSummary } from './summary.js';
 import {
   CONTACT_PAGE_DEFAULT_LIMIT,
   CONTACT_PAGE_MAX_LIMIT,
@@ -247,7 +248,7 @@ const awaitWithDeadline = async (work, ms = CONTACT_CATALOG_DEADLINE_MS, code = 
   }
 };
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], registerProject = null, readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, patchScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, /** Host archive op: ({ sessionID, directory, archivedAt }) => Promise */ archiveSessionHost = null, /** Idempotent Host metadata drop after successful SDK delete */ forgetSessionHost = null, /** Host store write: (sessionId, patch) => Promise */ persistSessionMetadata = null, /** After Host isolation metadata is committed. */ onSystemSessionPersisted = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], registerProject = null, readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, patchScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, /** Host archive op: ({ sessionID, directory, archivedAt }) => Promise */ archiveSessionHost = null, /** Idempotent Host metadata drop after successful SDK delete */ forgetSessionHost = null, /** Host store write: (sessionId, patch) => Promise */ persistSessionMetadata = null, /** After Host isolation metadata is committed. */ onSystemSessionPersisted = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -1707,12 +1708,69 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   };
   // Serialize contact turns per assistant so rapid sends do not interleave persist.
   const contactTurnLanes = new Map();
+  // Rolling memory summary runs off the turn path: after the lane drains,
+  // debounced, at most one job per assistant. Requests arriving while a job runs
+  // coalesce into a single rerun. The summary lands for the next turn.
+  const CONTACT_SUMMARY_DEBOUNCE_MS = 3_000;
+  const contactSummaryJobs = new Map();
+  const runContactSummaryJob = async (assistantID, job) => {
+    job.timer = null;
+    // A turn started meanwhile: its own lane end reschedules.
+    if (closed || contactTurnLanes.has(assistantID)) { contactSummaryJobs.delete(assistantID); return; }
+    job.running = true;
+    job.dirty = false;
+    job.controller = new AbortController();
+    try {
+      const live = assistant(assistantID);
+      if (!live || live.tombstone_at) return;
+      const snapshot = output(live);
+      await ensureContactSummary(db, assistantID, {
+        signal: job.controller.signal,
+        complete: async ({ system, user, signal }) => {
+          const result = await createChatCompletion({
+            signal,
+            timeoutMs: 60_000,
+            cacheKey: `yuri-contact-summary-${assistantID}`,
+            body: {
+              model: `${snapshot.providerID}/${snapshot.modelID}`,
+              providerID: snapshot.providerID,
+              modelID: snapshot.modelID,
+              ...(snapshot.variant ? { variant: snapshot.variant } : {}),
+              messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+            },
+            validateToolCalls: false,
+          });
+          const content = result?.completion?.choices?.[0]?.message?.content ?? result?.text ?? '';
+          return typeof content === 'string' ? content : '';
+        },
+      });
+    } catch (error) {
+      // Previous summary stays; the next lane end retries.
+      if (!job.controller.signal.aborted) console.warn('[assistants] memory summary skipped:', error?.code || error?.message || error);
+    } finally {
+      job.running = false;
+      job.controller = null;
+      if (!closed && job.dirty) { contactSummaryJobs.delete(assistantID); scheduleContactSummary(assistantID); } else contactSummaryJobs.delete(assistantID);
+    }
+  };
+  const scheduleContactSummary = (assistantID) => {
+    if (closed || typeof createChatCompletion !== 'function') return;
+    let job = contactSummaryJobs.get(assistantID);
+    if (!job) { job = { timer: null, running: false, dirty: false, controller: null }; contactSummaryJobs.set(assistantID, job); }
+    if (job.running) { job.dirty = true; return; }
+    if (job.timer) clearTimeoutFn(job.timer);
+    job.timer = setTimeoutFn(() => { void runContactSummaryJob(assistantID, job); }, CONTACT_SUMMARY_DEBOUNCE_MS);
+    job.timer?.unref?.();
+  };
   const inContactTurnLane = (assistantID, task) => {
     const previous = contactTurnLanes.get(assistantID) ?? Promise.resolve();
     let tail;
     const run = previous.catch(() => {}).then(task);
     tail = run.catch(() => {}).finally(() => {
-      if (contactTurnLanes.get(assistantID) === tail) contactTurnLanes.delete(assistantID);
+      if (contactTurnLanes.get(assistantID) === tail) {
+        contactTurnLanes.delete(assistantID);
+        scheduleContactSummary(assistantID);
+      }
     });
     contactTurnLanes.set(assistantID, tail);
     return run;
@@ -2865,7 +2923,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       } catch {
         registeredProjects = [];
       }
-      const modelContext = await loadContactModelContext(controller.signal);
 
       let workerText = '';
       try {
@@ -2941,6 +2998,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         const memory = createContactMemoryReader(db, assistantID, { assertAvailable: () => editable(assistantID) });
         const tools = createContactTools({
           searchMemory: memory.search,
+          listModels: () => loadContactModelContext(controller.signal),
           readMemory: memory.read,
           assignWork: (params) => assignWork(live, params),
           watchSession: (params) => watchSessionWork(live, params),
@@ -3039,7 +3097,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           createChatCompletion,
           tools,
           projects: registeredProjects,
-          ...modelContext,
           globalEventHub,
           onBubbleDelta: (bubbleIndex, delta, done) => {
             if (contactResetThisTurn || scheduledRun) return;
@@ -3272,7 +3329,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           spokenByIndex.clear();
           assignedCards.length = 0;
         };
-        const modelContext = await loadContactModelContext(controller.signal);
         try {
           // Materialize inside turn try so failures emit live feedback and settle working.
           // DB/UI keep descriptors; harness + assign get execution-time data URLs under budget.
@@ -3300,6 +3356,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           });
           const tools = createContactTools({
             searchMemory: memory.search,
+            listModels: () => loadContactModelContext(controller.signal),
             readMemory: memory.read,
             assignWork: (params) => assignWork(row, params),
             watchSession: (params) => watchSessionWork(row, params),
@@ -3421,7 +3478,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             createChatCompletion,
             tools: [...tools, ...createOpenCodeContactTools({ resolveClient: client, directory: resolveAssistantCwd(assistantSnapshot) })],
             projects: registeredProjects,
-            ...modelContext,
             globalEventHub,
             onBubbleDelta: (bubbleIndex, delta, done) => {
               if (contactResetThisTurn) return;
@@ -3907,6 +3963,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     for (const turn of contactControllers.values()) turn.controller.abort();
     if (!closed) {
       closed = true;
+      for (const job of contactSummaryJobs.values()) { if (job.timer) clearTimeoutFn(job.timer); job.controller?.abort(); }
+      contactSummaryJobs.clear();
       try { contactAttachmentMigration.controller.abort(); } catch { /* ignore */ }
       clearActiveContactTurns();
       contactTurnLanguages.clear();

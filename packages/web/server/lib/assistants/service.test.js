@@ -674,6 +674,44 @@ describe('assistants service', () => {
     const service = setup(); const assistant = service.createAssistant(assistantInput); const current = await service.ensure(assistant.id); const next = await service.createNew(assistant.id); expect(next.sessionGeneration).toBe(current.sessionGeneration + 1); await expect(service.compact(assistant.id, current)).rejects.toMatchObject({ code: 'revision_conflict' }); expect(await service.compact(assistant.id, next)).toMatchObject({ binding: next, summarized: true }); service.close();
   });
 
+  it('rolls the memory summary off the turn path: after the lane drains, debounced and deduped', async () => {
+    const timers = [];
+    const histories = [];
+    const createChatCompletion = vi.fn(async () => ({ text: 'rolled summary' }));
+    const service = setup(root(), {}, {
+      createChatCompletion,
+      setTimeoutFn: (fn, ms) => { const timer = { fn, ms, cleared: false, unref() {} }; timers.push(timer); return timer; },
+      clearTimeoutFn: (timer) => { timer.cleared = true; },
+      runContactTurn: async ({ history, userText }) => { histories.push(history); return { text: `ok ${userText}`, bubbles: [`ok ${userText}`] }; },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const current = await service.ensure(assistant.id);
+    for (let index = 0; index < 40; index += 1) {
+      await settleSend(service, assistant.id, { ...current, messageID: `m_${index}`, parts: [{ type: 'text', text: `msg ${index}` }] });
+    }
+    // Settlement resolves inside the lane task; let the lane tail finish scheduling.
+    await new Promise((resolve) => setImmediate(resolve));
+    // Forty lane ends collapse into one pending timer; no model call ran on the turn path.
+    const pending = timers.filter((timer) => !timer.cleared);
+    expect(pending).toHaveLength(1);
+    expect(createChatCompletion).not.toHaveBeenCalled();
+    expect(histories.at(-1)[0].content).not.toContain('rolled summary');
+
+    pending[0].fn();
+    await vi.waitFor(() => expect(createChatCompletion).toHaveBeenCalledTimes(1));
+    expect(createChatCompletion.mock.calls[0][0].body).toMatchObject({ providerID: 'p', modelID: 'm' });
+
+    // The summary lands for the next turn; nothing is left to summarize afterwards.
+    await vi.waitFor(async () => {
+      await settleSend(service, assistant.id, { ...current, messageID: `next_${histories.length}`, parts: [{ type: 'text', text: 'next' }] });
+      expect(histories.at(-1)[0].content).toContain('rolled summary');
+    });
+    for (const timer of timers.filter((item) => !item.cleared)) timer.fn();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(createChatCompletion).toHaveBeenCalledTimes(1);
+    service.close();
+  });
+
   it('stores composer turns in the Yuri contact transcript, not OpenCode session history', async () => {
     const directory = root();
     const service = setup(directory, {}, {
@@ -2622,8 +2660,9 @@ describe('assistants service', () => {
         ] }),
       },
     }, {
-      runContactTurn: async ({ tools, userText, connectedModels }) => {
-        expect(connectedModels.some((entry) => entry.providerID === 'xai' && entry.modelID === 'grok-4.6' && entry.acceptsImages)).toBe(true);
+      runContactTurn: async ({ tools, userText }) => {
+        const listed = await tools.find((tool) => tool.name === 'list_models').execute('call_0', { query: 'grok' });
+        expect(listed.content[0].text).toMatch(/modelID="grok-4.6".*acceptsImages=true/);
         const assign = tools.find((tool) => tool.name === 'assign_session');
         const result = await assign.execute('call_1', {
           prompt: userText,
@@ -5146,15 +5185,17 @@ describe('contact current-instance model context', () => {
       { providerID: 'disconnected', id: 'hidden', name: 'Hidden' },
     ] }) },
   });
+  const listModelsText = async (context, params = {}) => (await context.tools.find((tool) => tool.name === 'list_models').execute('call_models', params)).content[0].text;
 
-  it('refreshes catalog and ordered preferences every turn without crossing instances', async () => {
+  it('keeps the catalog out of the turn input and reads it live per list_models call without crossing instances', async () => {
     let instance = 'one';
     let refs = [{ providerID: 'one', modelID: 'model', variant: 'high' }];
+    const texts = [];
     const seen = [];
     const options = {
       clientFactory: () => catalogClient(instance),
       readModelPreferences: () => ({ favoriteModels: refs, recentModels: [...refs].reverse(), unrelatedSetting: 'not prompt data' }),
-      runContactTurn: async (context) => { seen.push(context); return { text: 'ready', bubbles: ['ready'] }; },
+      runContactTurn: async (context) => { seen.push(context); texts.push(await listModelsText(context)); return { text: 'ready', bubbles: ['ready'] }; },
     };
     const service = setup(root(), {}, options);
     const assistant = service.createAssistant(assistantInput);
@@ -5162,46 +5203,48 @@ describe('contact current-instance model context', () => {
     instance = 'two';
     refs = [{ providerID: 'two', modelID: 'model' }, { providerID: 'one', modelID: 'model' }];
     await settleSend(service, assistant.id, { messageID: 'model_context_two', parts: [{ type: 'text', text: 'Which models now?' }] });
-    expect(seen[0].connectedModels).toEqual([{ providerID: 'one', providerName: 'Provider one', modelID: 'model', name: 'Model one', acceptsImages: false }]);
-    expect(seen[1].connectedModels.map(model => model.providerID)).toEqual(['two']);
-    expect(seen[1].modelPreferences).toEqual({ favoriteModels: refs, recentModels: [...refs].reverse() });
-    expect(seen.every(context => context.modelCatalogAvailable)).toBe(true);
+    expect(seen.every((context) => context.connectedModels === undefined && context.modelPreferences === undefined)).toBe(true);
+    expect(texts[0]).toContain('providerID="one"');
+    expect(texts[0]).not.toContain('disconnected');
+    expect(texts[0]).not.toContain('not prompt data');
+    expect(texts[1]).toContain('providerID="two"');
+    expect(texts[1]).not.toContain('providerName="Provider one"');
+    expect(texts[1]).toContain('Favorite models (saved order):');
     service.close();
   });
 
   it.each(['throw', 'reject'])('preserves a valid catalog when preferences %s and reports preferences as unknown', async (failure) => {
-    const seen = [];
+    const texts = [];
     const service = setup(root(), catalogClient('live'), {
       readModelPreferences: () => { if (failure === 'throw') throw new Error('unreadable settings'); return Promise.reject(new Error('unreadable settings')); },
-      runContactTurn: async (context) => { seen.push(context); return { text: 'ready', bubbles: ['ready'] }; },
+      runContactTurn: async (context) => { texts.push(await listModelsText(context)); return { text: 'ready', bubbles: ['ready'] }; },
     });
     const assistant = service.createAssistant(assistantInput);
     const result = await settleSend(service, assistant.id, { messageID: `preferences_${failure}`, parts: [{ type: 'text', text: 'Which models?' }] });
     expect(result.settled.status).not.toBe('error');
-    expect(seen).toHaveLength(1);
-    expect(seen[0].modelCatalogAvailable).toBe(true);
-    expect(seen[0].connectedModels[0].providerID).toBe('live');
-    expect(seen[0].modelPreferences).toBeNull();
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).toContain('providerID="live"');
+    expect(texts[0]).toContain('Model preferences unavailable');
     service.close();
   });
 
   it('distinguishes failed catalog lookup from a successful empty instance', async () => {
-    const seen = [];
+    const texts = [];
     let failed = true;
     const service = setup(root(), {
       provider: { list: async () => { if (failed) throw new Error('unavailable'); return { data: [] }; } },
       model: { list: async () => { if (failed) throw new Error('unavailable'); return { data: [] }; } },
     }, {
       readModelPreferences: async () => ({ favoriteModels: [], recentModels: [] }),
-      runContactTurn: async (context) => { seen.push(context); return { text: 'ready', bubbles: ['ready'] }; },
+      runContactTurn: async (context) => { texts.push(await listModelsText(context)); return { text: 'ready', bubbles: ['ready'] }; },
     });
     const assistant = service.createAssistant(assistantInput);
     await settleSend(service, assistant.id, { messageID: 'catalog_failed', parts: [{ type: 'text', text: 'Which models?' }] });
     failed = false;
     await settleSend(service, assistant.id, { messageID: 'catalog_empty', parts: [{ type: 'text', text: 'Try again' }] });
-    expect(seen.map(context => context.modelCatalogAvailable)).toEqual([false, true]);
-    expect(seen.map(context => context.connectedModels)).toEqual([[], []]);
-    expect(seen[1].modelPreferences).toEqual({ favoriteModels: [], recentModels: [] });
+    expect(texts[0]).toContain('catalog unavailable');
+    expect(texts[1]).toContain('none discoverable');
+    expect(texts[1]).toContain('Favorite models (saved order): none');
     service.close();
   });
 });

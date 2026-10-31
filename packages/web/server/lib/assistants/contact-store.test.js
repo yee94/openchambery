@@ -33,6 +33,8 @@ import {
   getContactGeneration,
   getContactReadTip,
   getContactReadWatermark,
+  getContactSummary,
+  getContactSummaryScope,
   getContactUnreadSnapshots,
   getLatestContactMessagePreview,
   getLatestContactMessagePreviews,
@@ -45,6 +47,7 @@ import {
   projectActiveContactTurn,
   resetContactReadWatermarkForGeneration,
   sanitizeContactPreviewText,
+  saveContactSummary,
   trimContactHistoryForLlm,
 } from './contact-store.js';
 
@@ -95,12 +98,51 @@ describe('contact LLM history trim', () => {
       insert(db, assistantID, { role: 'assistant', text: `assistant-${index}` });
     }
     const history = contactHistoryForLlm(db, assistantID);
-    expect(history).toHaveLength(CONTACT_LLM_MAX_TURNS * 2);
-    expect(history[0]).toEqual({ role: 'user', content: 'user-4' });
+    // Budget alone would start at user-4 (ordinal 9); the cache-friendly window
+    // start snaps to the next multiple of CONTACT_LLM_ALIGN_STEP (16) → user-8.
+    expect(history).toHaveLength((36 - 8) * 2);
+    expect(history.length).toBeLessThanOrEqual(CONTACT_LLM_MAX_TURNS * 2);
+    expect(history[0]).toEqual({ role: 'user', content: 'user-8' });
     expect(history.at(-1)).toEqual({ role: 'assistant', content: 'assistant-35' });
     const page = listContactMessages(db, assistantID, { limit: 100 });
     expect(page.messages).toHaveLength(72);
     expect(page.messages[0].text).toBe('user-0');
+    db.close();
+  });
+
+  it('keeps the window start stable across turns until the next alignment step', () => {
+    const db = openDb();
+    const assistantID = 'asst_stable';
+    const starts = [];
+    for (let index = 0; index < 60; index += 1) {
+      insert(db, assistantID, { role: 'user', text: `user-${index}` });
+      starts.push(contactHistoryForLlm(db, assistantID)[0].content);
+      insert(db, assistantID, { role: 'assistant', text: `assistant-${index}` });
+    }
+    // A pure sliding window would change the first item on every turn past 32.
+    expect(new Set(starts.slice(32)).size).toBeLessThanOrEqual(5);
+    db.close();
+  });
+
+  it('prepends a valid rolling summary and drops it once memory is cleared', () => {
+    const db = openDb();
+    const assistantID = 'asst_summary';
+    for (let index = 0; index < 40; index += 1) {
+      insert(db, assistantID, { role: 'user', text: `user-${index}` });
+      insert(db, assistantID, { role: 'assistant', text: `assistant-${index}` });
+    }
+    const scope = getContactSummaryScope(db, assistantID);
+    expect(saveContactSummary(db, assistantID, { text: 'prefers tabs', coversThroughOrdinal: 15, expected: scope })).toBe(true);
+    const history = contactHistoryForLlm(db, assistantID);
+    expect(history[0].role).toBe('user');
+    expect(history[0].content).toContain('prefers tabs');
+    expect(getContactSummary(db, assistantID)).toMatchObject({ text: 'prefers tabs', coversThroughOrdinal: 15 });
+
+    // A write computed under stale boundaries is discarded.
+    clearContactMemory(db, assistantID);
+    expect(saveContactSummary(db, assistantID, { text: 'stale', coversThroughOrdinal: 15, expected: scope })).toBe(false);
+    expect(getContactSummary(db, assistantID)).toBeNull();
+    expect(JSON.stringify(contactHistoryForLlm(db, assistantID))).not.toContain('prefers tabs');
     db.close();
   });
 

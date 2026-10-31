@@ -40,7 +40,7 @@ import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { formatQuotaValueLabel, formatQuotaResetLabel, formatWindowLabel, quotaProviders, calculatePace, calculateExpectedUsagePercent } from '@/lib/quota';
 import { UsageProgressBar } from '@/components/sections/usage/UsageProgressBar';
 import { PaceIndicator } from '@/components/sections/usage/PaceIndicator';
-import { accountHeadingAt } from '@/lib/quota/accountGroups';
+import { accountHeadingAt, tagWindowsWithAccount } from '@/lib/quota/accountGroups';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { formatTimeForPreference } from '@/lib/timeFormat';
 import { eventMatchesShortcut, formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
@@ -873,7 +873,7 @@ export const Header: React.FC<HeaderProps> = ({
       const result = quotaResults.find((entry) => entry?.providerId === provider.id);
       const windows = (result?.usage?.windows ?? {}) as Record<string, UsageWindow>;
       const models = result?.usage?.models;
-      const entries = Object.entries(windows);
+      const entries = tagWindowsWithAccount(Object.entries(windows), result?.usage?.accounts);
 
       const group: RateLimitGroup = {
         providerId: provider.id,

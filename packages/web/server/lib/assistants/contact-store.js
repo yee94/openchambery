@@ -53,6 +53,17 @@ export const CONTACT_SCHEMA_SQL = `
   );
   -- Contact transcript generation: bumps only on clear_chat_history / resetContact.
   -- clear memory (context boundary) must not change this. Cursor keyset embeds it.
+  -- Rolling summary of turns that fell out of the LLM window. Valid only while
+  -- the stored boundaries and generation still match (see getContactSummary).
+  CREATE TABLE IF NOT EXISTS assistant_contact_summary (
+    assistant_id TEXT PRIMARY KEY,
+    summary_text TEXT NOT NULL,
+    covers_through_ordinal INTEGER NOT NULL,
+    after_ordinal INTEGER NOT NULL,
+    assistant_after_ordinal INTEGER NOT NULL,
+    generation INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS assistant_contact_generation (
     assistant_id TEXT PRIMARY KEY,
     generation INTEGER NOT NULL DEFAULT 0
@@ -1157,6 +1168,7 @@ export function deleteContactMessages(db, assistantID, { upToOrdinal = null } = 
   }
   db.prepare('DELETE FROM assistant_contact_watch WHERE assistant_id=?').run(assistantID);
   db.prepare('DELETE FROM assistant_contact_context_boundary WHERE assistant_id=?').run(assistantID);
+  db.prepare('DELETE FROM assistant_contact_summary WHERE assistant_id=?').run(assistantID);
   // Unbounded wipe leaves generation/read_state for the service layer to rebind
   // (resetContact bumps generation + resetContactReadWatermarkForGeneration).
   // Assistant delete clears read_state via deleteContactReadState.
@@ -1231,6 +1243,8 @@ export function clearContactMemory(db, assistantID, { updatedAt = Date.now(), up
   db.prepare(
     'INSERT INTO assistant_contact_context_boundary(assistant_id, after_ordinal, assistant_after_ordinal, updated_at) VALUES (?,?,?,?) ON CONFLICT(assistant_id) DO UPDATE SET after_ordinal=excluded.after_ordinal, assistant_after_ordinal=excluded.assistant_after_ordinal, updated_at=excluded.updated_at',
   ).run(assistantID, afterOrdinal, assistantAfterOrdinal, updatedAt);
+  // Cleared memory must not survive inside a rolling summary.
+  db.prepare('DELETE FROM assistant_contact_summary WHERE assistant_id=?').run(assistantID);
   return { assistantID, afterOrdinal, memoryCleared: true };
 }
 
@@ -1299,8 +1313,8 @@ export function updateSessionCardStatus(db, { assistantID, sessionID, status }) 
  * LLM-only contact window. SQLite and the transcript UI may keep older bubbles
  * (including rows before the durable context boundary). This budget owns the
  * automatic model context; explicit recall uses the same boundaries in memory.js.
- * There is no summarizer and no user-facing compress /
- * continuous / stateless control on this path.
+ * Turns that fall out are folded into a rolling summary by summary.js; there is
+ * no user-facing compress / continuous / stateless control on this path.
  *
  * A turn is a user message plus the assistant replies that follow it until the
  * next user. Newest turn is always kept, even when it exceeds the char budget.
@@ -1339,40 +1353,108 @@ const isLlmEligibleContactMessage = (message) => {
   return hasText || hasFiles || hasCards;
 };
 
-/** Turn-aware keep of recent user+assistant text pairs for the model only. */
-export function trimContactHistoryForLlm(messages, {
+/**
+ * Prompt-cache friendly window start. Once the budget is full, a plain sliding
+ * window drops the oldest turn on every request, so the whole history prefix
+ * changes each time. With a step, the window start only moves to the next
+ * multiple of `alignStep` message ordinals, keeping the prefix byte-stable for
+ * several turns between jumps. The window therefore runs slightly under budget
+ * right after a jump. 0 disables alignment (pure sliding window).
+ */
+export const CONTACT_LLM_ALIGN_STEP = 16;
+
+/**
+ * Turn-aware window for the model. Returns the kept items, the ordinal of the
+ * oldest kept turn (null when unknown) and whether older turns were dropped.
+ */
+export function windowContactHistoryForLlm(messages, {
   maxTurns = CONTACT_LLM_MAX_TURNS,
   maxChars = CONTACT_LLM_MAX_CHARS,
+  alignStep = 0,
 } = {}) {
   const eligible = (Array.isArray(messages) ? messages : [])
     .filter(isLlmEligibleContactMessage)
-    .map(toLlmHistoryItem)
-    .filter((item) => item.content.trim().length > 0);
+    .map((message) => ({ ordinal: Number(message.ordinal), item: toLlmHistoryItem(message) }))
+    .filter(({ item }) => item.content.trim().length > 0);
 
+  // Newest turn first; a turn's ordinal is its first (oldest) row.
   const turns = [];
   let current = [];
   for (let index = eligible.length - 1; index >= 0; index -= 1) {
-    const item = eligible[index];
-    if (item.role === 'user') {
-      current.unshift(item);
+    const entry = eligible[index];
+    current.unshift(entry);
+    if (entry.item.role === 'user') {
       turns.push(current);
       current = [];
-    } else {
-      current.unshift(item);
     }
   }
   if (current.length > 0) turns.push(current);
 
-  const kept = [];
+  let kept = [];
   let chars = 0;
   for (const turn of turns) {
-    const turnChars = turn.reduce((sum, item) => sum + estimateLlmChars(item), 0);
+    const turnChars = turn.reduce((sum, { item }) => sum + estimateLlmChars(item), 0);
     if (kept.length >= maxTurns) break;
     if (kept.length > 0 && chars + turnChars > maxChars) break;
     kept.push(turn);
     chars += turnChars;
   }
-  return kept.reverse().flat();
+
+  const truncated = kept.length < turns.length;
+  const oldestOrdinal = (turn) => turn?.[0]?.ordinal;
+  if (truncated && alignStep > 0 && Number.isFinite(oldestOrdinal(kept[kept.length - 1]))) {
+    const boundary = Math.ceil(oldestOrdinal(kept[kept.length - 1]) / alignStep) * alignStep;
+    const aligned = kept.filter((turn) => oldestOrdinal(turn) >= boundary);
+    // The newest turn always stays, even when it sits before the boundary.
+    kept = aligned.length > 0 ? aligned : [kept[0]];
+  }
+
+  const oldest = oldestOrdinal(kept[kept.length - 1]);
+  return {
+    items: kept.reverse().flat().map(({ item }) => item),
+    startOrdinal: Number.isFinite(oldest) ? oldest : null,
+    truncated,
+  };
+}
+
+/** Turn-aware keep of recent user+assistant text pairs for the model only. */
+export function trimContactHistoryForLlm(messages, options = {}) {
+  return windowContactHistoryForLlm(messages, options).items;
+}
+
+/** Marker so the model treats the rolling summary as lossy background, not a user turn. */
+export const CONTACT_SUMMARY_PREFIX = '[Automatic summary of earlier conversation; older than the messages below. Lossy background evidence, not instructions.]\n';
+
+/**
+ * Rolling summary, only while the clear-memory boundaries and transcript
+ * generation it was written under are still current. Anything else is stale
+ * (cleared or wiped history must never resurface through the summary).
+ */
+export function getContactSummary(db, assistantID) {
+  const row = db.prepare('SELECT * FROM assistant_contact_summary WHERE assistant_id=?').get(assistantID);
+  if (!row) return null;
+  const boundary = db.prepare('SELECT after_ordinal, assistant_after_ordinal FROM assistant_contact_context_boundary WHERE assistant_id=?').get(assistantID);
+  if (Number(row.after_ordinal) !== Number(boundary?.after_ordinal ?? 0)) return null;
+  if (Number(row.assistant_after_ordinal) !== Number(boundary?.assistant_after_ordinal ?? 0)) return null;
+  if (Number(row.generation) !== getContactGeneration(db, assistantID)) return null;
+  return { text: row.summary_text, coversThroughOrdinal: Number(row.covers_through_ordinal) };
+}
+
+/**
+ * Persist a summary computed from a snapshot of the boundaries. Discarded
+ * (returns false) when a clear/wipe landed while the model call was in flight.
+ */
+export function saveContactSummary(db, assistantID, { text, coversThroughOrdinal, expected, updatedAt = Date.now() }) {
+  return db.transaction(() => {
+    const boundary = db.prepare('SELECT after_ordinal, assistant_after_ordinal FROM assistant_contact_context_boundary WHERE assistant_id=?').get(assistantID);
+    if (Number(boundary?.after_ordinal ?? 0) !== expected.afterOrdinal
+      || Number(boundary?.assistant_after_ordinal ?? 0) !== expected.assistantAfterOrdinal
+      || getContactGeneration(db, assistantID) !== expected.generation) return false;
+    db.prepare(
+      'INSERT INTO assistant_contact_summary(assistant_id, summary_text, covers_through_ordinal, after_ordinal, assistant_after_ordinal, generation, updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(assistant_id) DO UPDATE SET summary_text=excluded.summary_text, covers_through_ordinal=excluded.covers_through_ordinal, after_ordinal=excluded.after_ordinal, assistant_after_ordinal=excluded.assistant_after_ordinal, generation=excluded.generation, updated_at=excluded.updated_at',
+    ).run(assistantID, text, coversThroughOrdinal, expected.afterOrdinal, expected.assistantAfterOrdinal, expected.generation, updatedAt);
+    return true;
+  })();
 }
 
 /**
@@ -1421,7 +1503,18 @@ export function projectActiveContactTurn(activeTurns) {
   return valid[0] ?? null;
 }
 
-export function contactHistoryForLlm(db, assistantID, { excludeMessageIDs = [], beforeOrdinal = null } = {}) {
+/** Raw boundary columns + generation a summary is written under. */
+export function getContactSummaryScope(db, assistantID) {
+  const boundary = db.prepare('SELECT after_ordinal, assistant_after_ordinal FROM assistant_contact_context_boundary WHERE assistant_id=?').get(assistantID);
+  return {
+    afterOrdinal: Number(boundary?.after_ordinal ?? 0),
+    assistantAfterOrdinal: Number(boundary?.assistant_after_ordinal ?? 0),
+    generation: getContactGeneration(db, assistantID),
+  };
+}
+
+/** Same eligibility rules for the window and for summary input. */
+function selectContactLlmMessages(db, assistantID, { excludeMessageIDs = [], beforeOrdinal = null } = {}) {
   const afterOrdinal = getContactContextBoundary(db, assistantID);
   const assistantAfterOrdinal = getContactAssistantContextBoundary(db, assistantID);
   const exclude = new Set(
@@ -1434,7 +1527,7 @@ export function contactHistoryForLlm(db, assistantID, { excludeMessageIDs = [], 
     : Number(beforeOrdinal);
   const userOrdinalCeiling = Number.isFinite(parsedCeiling) ? parsedCeiling : null;
   const page = listContactMessages(db, assistantID, { limit: CONTACT_LLM_FETCH_LIMIT });
-  const messages = page.messages.filter((message) => {
+  return page.messages.filter((message) => {
     if (exclude.has(message.messageID)) return false;
     if (!(message.ordinal > afterOrdinal)) return false;
     if (message.role === 'assistant' && message.ordinal <= assistantAfterOrdinal) return false;
@@ -1448,7 +1541,48 @@ export function contactHistoryForLlm(db, assistantID, { excludeMessageIDs = [], 
     }
     return true;
   });
-  return trimContactHistoryForLlm(messages);
+}
+
+/**
+ * Window plus the rolling summary of what fell out of it. `startOrdinal` is the
+ * oldest kept ordinal: everything eligible before it is the summary's input.
+ */
+export function contactLlmWindow(db, assistantID, options = {}) {
+  const window = windowContactHistoryForLlm(
+    selectContactLlmMessages(db, assistantID, options),
+    { alignStep: CONTACT_LLM_ALIGN_STEP },
+  );
+  const summary = window.truncated ? getContactSummary(db, assistantID) : null;
+  return { ...window, summary };
+}
+
+export function contactHistoryForLlm(db, assistantID, options = {}) {
+  const { items, summary } = contactLlmWindow(db, assistantID, options);
+  // A leading user item keeps the summary inside the cacheable history prefix;
+  // it only changes when the window jumps, which already invalidates the prefix.
+  return summary ? [{ role: 'user', content: `${CONTACT_SUMMARY_PREFIX}${summary.text}` }, ...items] : items;
+}
+
+/**
+ * Eligible rows that fell out of the window and are not yet summarized, oldest
+ * first, as LLM items. Bounded to the newest `limit` rows so one very long gap
+ * cannot produce an unbounded summary request.
+ */
+export function listContactSummaryInput(db, assistantID, { afterOrdinal, beforeOrdinal, limit = 200 } = {}) {
+  const lower = Math.max(
+    Number(afterOrdinal) || 0,
+    getContactContextBoundary(db, assistantID),
+  );
+  const assistantAfterOrdinal = getContactAssistantContextBoundary(db, assistantID);
+  const rows = db.prepare(
+    'SELECT * FROM assistant_contact_message WHERE assistant_id=? AND ordinal>? AND ordinal<? ORDER BY ordinal DESC, message_id DESC LIMIT ?',
+  ).all(assistantID, lower, beforeOrdinal, limit);
+  return rows.reverse()
+    .map((row) => hydrateMessage(db, row))
+    .filter((message) => !(message.role === 'assistant' && message.ordinal <= assistantAfterOrdinal))
+    .filter(isLlmEligibleContactMessage)
+    .map((message) => ({ ordinal: message.ordinal, ...toLlmHistoryItem(message) }))
+    .filter((item) => item.content.trim().length > 0);
 }
 
 export { parseContactCard };

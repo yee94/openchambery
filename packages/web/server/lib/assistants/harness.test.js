@@ -297,7 +297,9 @@ describe('createContactStreamFn', () => {
       expect(system).toContain('default to finding the relevant existing OpenCode workspace')
       expect(system).toContain('small, clearly scoped configuration changes directly')
       expect(system).toContain('walk its parent directories')
-      expect(system).toContain('Look up existing OpenCode conversations with list_sessions')
+      // Volatile catalog guidance rides with the latest user message, not the cached system prompt.
+      expect(system).not.toContain('Look up existing OpenCode conversations with list_sessions')
+      expect(JSON.stringify(body.messages)).toContain('Look up existing OpenCode conversations with list_sessions')
       const result = body.messages.find((message) => message.role === 'tool' && message.name === 'read')
       if (result) {
         expect(result.content).toContain('configured value')
@@ -1255,24 +1257,38 @@ describe('runContactTurn', () => {
     expect(result.bubbles.join('\n')).not.toContain('Referenced conversation data')
   })
 
-  it('injects the registered projects catalog into the system prompt every turn', async () => {
+  it('injects the registered projects catalog with the user message, not the cached system prompt', async () => {
+    let promptText = ''
+    const createChatCompletion = vi.fn(async ({ body }) => {
+      promptText = JSON.stringify(body.messages)
+      return { text: 'Found it.' }
+    })
     function AgentImpl(options) {
-      expect(options.initialState.systemPrompt).toContain('Registered projects')
-      expect(options.initialState.systemPrompt).toContain('Yuri Yee')
-      expect(options.initialState.systemPrompt).toContain('/repo/sample-app')
-      expect(options.initialState.systemPrompt).toContain('never say you cannot see registered projects')
+      expect(options.initialState.systemPrompt).not.toContain('Registered projects')
+      expect(options.initialState.systemPrompt).not.toContain('Connected OpenCode')
       this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Found it.' }] }] }
-      this.prompt = async () => {}
+      this.prompt = async (text) => {
+        await options.streamFn({ provider: 'openai', id: 'gpt-5.2', name: 'openai/gpt-5.2' }, {
+          systemPrompt: options.initialState.systemPrompt,
+          messages: [{ role: 'user', content: text }],
+          tools: [],
+        }).result()
+      }
     }
     const result = await runContactTurn({
       assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
       history: [],
       userText: '找 yuri yee',
-      createChatCompletion: vi.fn(),
+      createChatCompletion,
       projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'Yuri Yee' }],
       AgentImpl,
     })
     expect(result.bubbles).toEqual(['Found it.'])
+    expect(promptText).toContain('Registered projects')
+    expect(promptText).toContain('Yuri Yee')
+    expect(promptText).toContain('/repo/sample-app')
+    expect(promptText).toContain('never say you cannot see registered projects')
+    expect(promptText.indexOf('Registered projects')).toBeLessThan(promptText.indexOf('找 yuri yee'))
   })
 
   it('retries a missed fence once and then executes create_assistant', async () => {
