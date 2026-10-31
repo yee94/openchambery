@@ -115,10 +115,76 @@ const settleSend = async (service, assistantID, body) => {
   return { ...sent, settled };
 };
 const assistantInput = { name: 'A', providerID: 'p', modelID: 'm' };
+const greetingText = "Hi, I'm A. How can I help you?";
 const toolBatch = (calls, content = '') => ({ completion: { choices: [{ message: { content, tool_calls: calls.map(([name, args, id = `call_${name}`]) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })) } }] } });
 const sayThen = (text, name, args) => toolBatch([['notify_user', { text }], [name, args]]);
 
 describe('assistants service', () => {
+  it.each([
+    ['en', "Hi, I'm A. How can I help you?"],
+    ['zh-CN', '你好，我是A，有什么可以帮你的吗？'],
+    ['zh-TW', '你好，我是A，有什麼可以幫你的嗎？'],
+    ['es', 'Hola, soy A. ¿En qué puedo ayudarte?'],
+    ['fr', "Bonjour, je m'appelle A. Comment puis-je vous aider ?"],
+    ['ja', 'こんにちは、Aです。何かお手伝いできることはありますか？'],
+    ['ko', '안녕하세요, A입니다. 무엇을 도와드릴까요?'],
+    ['pl', 'Cześć, jestem A. W czym mogę pomóc?'],
+    ['pt-BR', 'Olá, sou A. Como posso ajudar?'],
+    ['uk', 'Привіт, я A. Чим можу допомогти?'],
+    ['unknown', "Hi, I'm A. How can I help you?"],
+    ['__proto__', "Hi, I'm A. How can I help you?"],
+  ])('persists the %s welcome message', (language, text) => {
+    const directory = root();
+    const service = setup(directory);
+    try {
+      const created = service.createAssistant({ ...assistantInput, language });
+      expect(service.contactMessages(created.id).messages).toEqual([expect.objectContaining({ role: 'assistant', text })]);
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it('rolls back contact creation when its welcome message cannot be persisted', () => {
+    const directory = root();
+    const service = setup(directory);
+    const db = new (require('better-sqlite3'))(path.join(directory, 'assistants.sqlite'));
+    try {
+      const revision = service.snapshot().revision;
+      db.exec(`CREATE TRIGGER reject_greeting BEFORE INSERT ON assistant_contact_message
+        BEGIN SELECT RAISE(ABORT, 'greeting write failed'); END`);
+      expect(() => service.createAssistant(assistantInput)).toThrow('greeting write failed');
+      expect(service.snapshot()).toMatchObject({ revision, assistants: [] });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_contact_part').get().count).toBe(0);
+    } finally {
+      db.close();
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it('creates one durable localized greeting without a user turn or model call', async () => {
+    const directory = root();
+    const runContactTurn = vi.fn();
+    let service = setup(directory, {}, { runContactTurn });
+    try {
+      const created = service.createAssistant({ ...assistantInput, name: '小雨', language: 'zh-CN' });
+      const messages = service.contactMessages(created.id).messages;
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({ role: 'assistant', status: 'complete', text: '你好，我是小雨，有什么可以帮你的吗？' });
+      expect(created.latestMessagePreview.text).toBe(messages[0].text);
+      expect(runContactTurn).not.toHaveBeenCalled();
+      await service.updateAssistant(created.id, { expectedRevision: created.revision, name: 'Renamed' });
+      service.close();
+      service = setup(directory, {}, { runContactTurn });
+      expect(service.contactMessages(created.id).messages).toEqual(messages);
+      service.resetContact(created.id, {});
+      expect(service.contactMessages(created.id).messages).toHaveLength(0);
+      service.snapshot();
+      expect(service.contactMessages(created.id).messages).toHaveLength(0);
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it('persists one round capsule-eyed default with only the pigment varying across new Bots', async () => {
     const directory = root();
     let service = setup(directory);
@@ -582,12 +648,14 @@ describe('assistants service', () => {
     expect(sent).toEqual({ binding: current, messageID: 'client_1', admitted: true, revision: expect.any(Number) });
     // Admission resolves before the async turn persists assistant bubbles.
     expect(service.contactMessages(assistant.id, { limit: 50 }).messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'assistant', text: greetingText },
       { role: 'user', text: 'hello' },
     ]);
     await service.whenContactTurnSettled('client_1');
     const page = service.contactMessages(assistant.id, { limit: 50 });
     expect(page.complete).toBe(true);
     expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'assistant', text: greetingText },
       { role: 'user', text: 'hello' },
       { role: 'assistant', text: 'ok hello' },
     ]);
@@ -609,10 +677,11 @@ describe('assistants service', () => {
     });
     const created = service.createAssistant(assistantInput);
     expect(created).toMatchObject({
-      unreadCount: 0,
+      unreadCount: 1,
       readWatermark: { generation: 0, ordinal: 0, messageID: '' },
-      readTip: { generation: 0, ordinal: 0, messageID: '' },
+      readTip: { generation: 0, ordinal: 1, messageID: `${created.id}:greeting` },
     });
+    service.markContactRead(created.id, created.readTip);
 
     await settleSend(service, created.id, { messageID: 'ur_u1', parts: [{ type: 'text', text: 'hi' }] });
     const after = service.snapshot().assistants[0];
@@ -620,7 +689,7 @@ describe('assistants service', () => {
     expect(after.unreadCount).toBe(2);
     expect(after.readTip.ordinal).toBeGreaterThan(0);
     expect(after.readTip.messageID).toBeTruthy();
-    expect(after.readWatermark.ordinal).toBe(0);
+    expect(after.readWatermark.ordinal).toBe(created.readTip.ordinal);
 
     const tipBefore = tips.length;
     const marked = service.markContactRead(created.id, {
@@ -702,7 +771,7 @@ describe('assistants service', () => {
     });
     const assistant = first.createAssistant(assistantInput);
     await settleSend(first, assistant.id, { messageID: 'mig_u1', parts: [{ type: 'text', text: 'legacy' }] });
-    expect(first.snapshot().assistants[0].unreadCount).toBe(1);
+    expect(first.snapshot().assistants[0].unreadCount).toBe(2);
     first.close();
 
     const db = new Database(dbPath);
@@ -732,8 +801,8 @@ describe('assistants service', () => {
       runContactTurn: async ({ userText }) => ({ text: `ok ${userText}`, bubbles: [`ok ${userText}`] }),
     });
     const created = service.createAssistant(assistantInput);
-    expect(created.latestMessagePreview).toBeNull();
-    expect(service.snapshot().assistants[0].latestMessagePreview).toBeNull();
+    expect(created.latestMessagePreview).toMatchObject({ role: 'assistant', text: greetingText });
+    expect(service.snapshot().assistants[0].latestMessagePreview).toEqual(created.latestMessagePreview);
 
     await settleSend(service, created.id, { messageID: 'prev_u1', parts: [{ type: 'text', text: 'hello preview' }] });
     const afterUser = service.snapshot().assistants[0].latestMessagePreview;
@@ -829,6 +898,7 @@ describe('assistants service', () => {
     expect(creates).toBe(1);
     const page = service.contactMessages(assistant.id, { limit: 50 });
     expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'assistant', text: greetingText },
       { role: 'user', text: 'remember this secret' },
       { role: 'assistant', text: 'reply:remember this secret' },
       { role: 'user', text: 'and this too' },
@@ -876,6 +946,7 @@ describe('assistants service', () => {
     await settleSend(service, assistant.id, { messageID: 'reset_leftover', parts: [{ type: 'text', text: '开新对话' }] });
     const page = service.contactMessages(assistant.id, { limit: 50 });
     expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'assistant', text: greetingText },
       { role: 'user', text: 'look at these' },
       { role: 'assistant', text: 'reply:look at these' },
       { role: 'user', text: '开新对话' },
@@ -1351,7 +1422,7 @@ describe('assistants service', () => {
     expect(harness.userParts[0]).toEqual({ type: 'text', text: 'look' });
     expect(harness.userParts[1]).toMatchObject({ type: 'file', mime: 'image/png', filename: 'shot.png', url: expect.stringMatching(/^data:image\/png;base64,/) });
     expect(harness.userParts[2]).toMatchObject({ type: 'file', mime: 'text/plain', filename: 'notes.txt', url: expect.stringMatching(/^data:text\/plain;base64,/) });
-    expect(service.contactMessages(assistant.id, { limit: 50 }).messages[0]).toMatchObject({
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages.find((message) => message.messageID === 'mixed_1')).toMatchObject({
       role: 'user',
       parts: [
         { type: 'text', text: 'look' },
@@ -1363,7 +1434,7 @@ describe('assistants service', () => {
     const restarted = setup(directory, {}, {
       runContactTurn: async () => ({ text: 'again', bubbles: ['again'] }),
     });
-    expect(restarted.contactMessages(assistant.id, { limit: 50 }).messages[0].parts).toEqual([
+    expect(restarted.contactMessages(assistant.id, { limit: 50 }).messages.find((message) => message.messageID === 'mixed_1').parts).toEqual([
       { type: 'text', text: 'look' },
       expect.objectContaining({ type: 'file', mime: 'image/png', filename: 'shot.png', attachmentID: expect.stringMatching(/^att_/) }),
       expect.objectContaining({ type: 'file', mime: 'text/plain', filename: 'notes.txt', attachmentID: expect.stringMatching(/^att_/) }),
@@ -1660,7 +1731,7 @@ describe('assistants service', () => {
     expect(second.binding.sessionID).toBe(first.sessionID);
     expect(creates).toBe(1);
     expect(service.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual([
-      'one', 'reply:one', 'two', 'reply:two',
+      greetingText, 'one', 'reply:one', 'two', 'reply:two',
     ]);
     service.close();
   });
@@ -1673,6 +1744,7 @@ describe('assistants service', () => {
     await settleSend(service, assistant.id, { messageID: 'msg_stateless_2', parts: [{ type: 'text', text: 'two' }] });
     const page = service.contactMessages(assistant.id, { limit: 10 });
     expect(page.messages.map((message) => [message.messageID, message.text])).toEqual([
+      [`${assistant.id}:greeting`, greetingText],
       ['msg_stateless_1', 'one'],
       ['msg_stateless_1:bubble:1', 'reply:one'],
       ['msg_stateless_2', 'two'],
@@ -1684,6 +1756,7 @@ describe('assistants service', () => {
 
     const restarted = setup(directory);
     expect(restarted.contactMessages(assistant.id, { limit: 10 }).messages.map((message) => message.messageID)).toEqual([
+      `${assistant.id}:greeting`,
       'msg_stateless_1',
       'msg_stateless_1:bubble:1',
       'msg_stateless_2',
@@ -1739,7 +1812,7 @@ describe('assistants service', () => {
     const sent = await settleSend(service, assistant.id, { ...binding, messageID: 'continuous-1', parts: [{ type: 'text', text: 'hello' }] });
     expect(sent.binding).toEqual(binding);
     expect(creates).toBe(1);
-    expect(service.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual(['hello', 'reply:hello']);
+    expect(service.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual([greetingText, 'hello', 'reply:hello']);
     service.close();
   });
 
@@ -2265,7 +2338,7 @@ describe('assistants service', () => {
     })]);
     expect(archives).toEqual([]);
     const page = service.contactMessages(assistant.id);
-    expect(page.messages.map((message) => message.role)).toEqual(['user', 'assistant', 'assistant']);
+    expect(page.messages.map((message) => message.role)).toEqual(['assistant', 'user', 'assistant', 'assistant']);
     expect(page.messages.some((message) => message.role === 'peer')).toBe(false);
     expect(page.messages.some((message) => message.text === 'Opened the login session.')).toBe(true);
     const cardPart = page.messages.flatMap((message) => message.parts).find((part) => part.type === 'card');
@@ -3607,7 +3680,7 @@ describe('assistants service', () => {
     expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual([]);
     expect(service.snapshot().assistants[0].working).toBe(false);
     const page = service.contactMessages(assistant.id);
-    expect(page.messages.map((message) => message.parts[0]?.cardType)).toEqual(['assistant', 'schedule']);
+    expect(page.messages.flatMap((message) => message.cards).map((card) => card.cardType)).toEqual(['assistant', 'schedule']);
     service.close();
   });
 
@@ -4189,8 +4262,8 @@ describe('assistants service', () => {
       title: 'Fix login',
     });
     const page = service.contactMessages(assistant.id);
-    expect(page.messages).toHaveLength(1);
-    expect(page.messages[0].parts[0]).toMatchObject({
+    expect(page.messages).toHaveLength(2);
+    expect(page.messages[1].parts[0]).toMatchObject({
       type: 'card',
       cardType: 'session',
       sessionID: 'ses_real',
@@ -4222,6 +4295,8 @@ describe('assistants service', () => {
     });
     expect(prompts).toEqual([]);
     expect(service.contactMessages(recipient.id).messages).toEqual([expect.objectContaining({
+      role: 'assistant', text: "Hi, I'm PeerQA. How can I help you?",
+    }), expect.objectContaining({
       role: 'peer',
       fromAssistantID: sender.id,
       fromAssistantName: 'DeepSeekQA',
@@ -4253,14 +4328,16 @@ describe('assistants service', () => {
     });
     expect(prompts).toEqual([]);
     const page = service.contactMessages(recipient.id);
-    expect(page.messages).toHaveLength(1);
-    expect(page.messages[0]).toMatchObject({
+    expect(page.messages).toHaveLength(2);
+    expect(page.messages[1]).toMatchObject({
       role: 'peer',
       fromAssistantID: sender.id,
       fromAssistantName: 'Sender',
       text: 'Can you watch the login session?',
     });
-    expect(service.contactMessages(sender.id).messages).toEqual([]);
+    expect(service.contactMessages(sender.id).messages).toEqual([expect.objectContaining({
+      role: 'assistant', text: "Hi, I'm Sender. How can I help you?",
+    })]);
     service.close();
   });
 
@@ -4279,7 +4356,7 @@ describe('assistants service', () => {
     });
     expect(sent.admitted).toBe(true);
     const roles = service.contactMessages(recipient.id).messages.map((message) => message.role);
-    expect(roles).toEqual(['peer', 'user', 'assistant']);
+    expect(roles).toEqual(['assistant', 'peer', 'user', 'assistant']);
     service.close();
   });
 
@@ -4367,6 +4444,7 @@ describe('assistants service', () => {
     });
     const page = service.contactMessages(assistant.id);
     expect(page.messages.map((message) => message.messageID)).toEqual([
+      `${assistant.id}:greeting`,
       'turn_stream_1',
       'turn_stream_1:bubble:1',
     ]);
@@ -4400,6 +4478,7 @@ describe('assistants service', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     expect(page.messages.map((message) => ({ id: message.messageID, text: message.text }))).toEqual([
+      { id: `${assistant.id}:greeting`, text: greetingText },
       { id: 'mid_turn_1', text: 'hi' },
       { id: 'mid_turn_1:bubble:1', text: '我去找一下' },
     ]);
@@ -4411,6 +4490,7 @@ describe('assistants service', () => {
     await service.whenContactTurnSettled('mid_turn_1');
     page = service.contactMessages(assistant.id);
     expect(page.messages.map((message) => message.messageID)).toEqual([
+      `${assistant.id}:greeting`,
       'mid_turn_1',
       'mid_turn_1:bubble:1',
       'mid_turn_1:bubble:2',
@@ -4479,6 +4559,7 @@ describe('assistants service', () => {
     await service.whenContactTurnSettled('fail_persist_1');
     const page = service.contactMessages(assistant.id);
     expect(page.messages.map((message) => ({ role: message.role, status: message.status, text: message.text }))).toEqual([
+      { role: 'assistant', status: 'complete', text: greetingText },
       { role: 'user', status: 'complete', text: 'hi' },
     ]);
     expect(service.snapshot().assistants[0]).toMatchObject({ working: false, activeContactTurn: null });
@@ -4490,12 +4571,12 @@ describe('assistants service', () => {
     const restarted = setup(directory, {}, {
       runContactTurn: async () => ({ text: 'ok', bubbles: ['ok'] }),
     });
-    expect(restarted.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual(['hi']);
+    expect(restarted.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual([greetingText, 'hi']);
     await restarted.send(assistant.id, {
       messageID: 'after_failure', parts: [{ type: 'text', text: 'again' }],
     });
     await restarted.whenContactTurnSettled('after_failure');
-    expect(restarted.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual(['hi', 'again', 'ok']);
+    expect(restarted.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual([greetingText, 'hi', 'again', 'ok']);
     restarted.close();
   });
 
@@ -4626,7 +4707,7 @@ describe('assistants service', () => {
       parts: [{ type: 'text', text: 'hello' }],
     });
     expect(sent).toMatchObject({ admitted: true, messageID: 'client_no_provider' });
-    expect(service.contactMessages(assistant.id).messages.map((message) => message.role)).toEqual(['user']);
+    expect(service.contactMessages(assistant.id).messages.map((message) => message.role)).toEqual(['assistant', 'user']);
     expect(service.snapshot().assistants[0].working).toBe(true);
     const settled = await service.whenContactTurnSettled('client_no_provider');
     expect(settled).toMatchObject({ status: 'error', code: 'no_provider' });
@@ -4643,6 +4724,7 @@ describe('assistants service', () => {
     ))).toBe(true);
     // User row stays; error feedback is delivered only through the live event.
     expect(service.contactMessages(assistant.id).messages.map((message) => ({ role: message.role, status: message.status }))).toEqual([
+      { role: 'assistant', status: 'complete' },
       { role: 'user', status: 'complete' },
     ]);
     service.close();
@@ -4715,7 +4797,8 @@ describe('assistants service', () => {
     expect(third.messages.length).toBeGreaterThanOrEqual(5);
     expect(third.complete).toBe(true);
     expect(third.nextCursor).toBeNull();
-    expect(third.messages[0].text).toBe('u-0');
+    expect(third.messages[0].text).toBe(greetingText);
+    expect(third.messages[1].text).toBe('u-0');
 
     // Concurrent append does not break a prior cursor keyset for older pages.
     await settleSend(service, assistant.id, {
@@ -5025,10 +5108,10 @@ describe('read_session referenced conversation', () => {
       expect(service.snapshot().assistants.find((a) => a.id === assistant.id).working).toBe(true);
       expect(events.some((e) => e.type === 'yuri:contact-turn-end')).toBe(false);
       // A fresh snapshot/history read while the actual tool is pending restores the same message.
-      expect(service.contactMessages(assistant.id).messages.filter((m) => m.role === 'assistant').map((m) => m.text)).toEqual(['我先读一下会话，确认目前的进展。']);
+      expect(service.contactMessages(assistant.id).messages.filter((m) => m.role === 'assistant').map((m) => m.text)).toEqual([greetingText, '我先读一下会话，确认目前的进展。']);
       releaseTool();
       await service.whenContactTurnSettled('live_public');
-      expect(service.contactMessages(assistant.id).messages.filter((m) => m.role === 'assistant').map((m) => m.text)).toEqual(['我先读一下会话，确认目前的进展。', '这个会话目前为空。']);
+      expect(service.contactMessages(assistant.id).messages.filter((m) => m.role === 'assistant').map((m) => m.text)).toEqual([greetingText, '我先读一下会话，确认目前的进展。', '这个会话目前为空。']);
       const deltas = events.filter((e) => e.type === 'yuri:contact-bubble-delta' && e.properties.done);
       expect(deltas.map((e) => e.properties.bubbleIndex)).toEqual([0, 1]);
     } finally {
@@ -5139,6 +5222,7 @@ describe('read_session referenced conversation', () => {
     const page = service.contactMessages(assistant.id, { limit: 50 });
     expect(page.generation).toBe(genBefore);
     expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'assistant', text: greetingText },
       { role: 'user', text: 'remember me' },
       { role: 'assistant', text: 'reply:remember me' },
       { role: 'user', text: '开新对话' },

@@ -56,3 +56,8 @@ precedence over a retained new-session draft. Selecting an Assistant writes
 without selecting an OpenCode session. Changing or clearing the Assistant drops
 the previous Assistant's focused child-session suffix. Returning to Chat restores
 `/session/new` when its draft is still open and no session is selected.
+
+The phone navigation store separately captures an Assistant-origin chat return
+target (contact ID and root tab). Popping the worker restores the contact page,
+not the root catalog; explicit nested chat routes pop first. This target is
+runtime-local navigation metadata, not a persisted URL or session association.

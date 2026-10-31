@@ -12,6 +12,7 @@ const contactQueryState = vi.hoisted(() => ({ cardSharingBubble: false, extraMes
 const attachmentIO = vi.hoisted(() => ({ upload: vi.fn(), send: vi.fn(), abort: vi.fn(), display: vi.fn(), blob: vi.fn(), release: vi.fn() }));
 const unreadUI = vi.hoisted(() => ({ settingsOpen: false }));
 const failureUI = vi.hoisted(() => ({ failed: false }));
+const avatarUI = vi.hoisted(() => ({ empty: false, loadFailed: false, peer: false, peerWorking: false }));
 const previewIO = vi.hoisted(() => ({
   flagCalls: [] as boolean[],
   markdownOnShowPopup: null as ((content: Record<string, unknown>) => void) | null,
@@ -70,7 +71,7 @@ vi.mock('@/queries/assistantQueries', () => ({
   useAssistantCapabilityQuery: () => ({ data: null }),
   useAssistantContactMessagesQuery: (assistantID: string) => ({
     data: {
-      messages: [
+      messages: avatarUI.empty ? [] : [
         ...Array.from({ length: contactQueryState.earlier }, (_, index) => ({
           messageID: `earlier:${index}`, assistantID, role: 'assistant', turnID: `earlier:${index}`, bubbleIndex: 0, createdAt: 0, ordinal: index, status: 'complete', fromAssistantID: null, fromAssistantName: null, parts: [{ type: 'text', text: `older ${index}` }], text: '', cards: [],
         })),
@@ -115,14 +116,14 @@ vi.mock('@/queries/assistantQueries', () => ({
         ...Array.from({ length: contactQueryState.extraMessages }, (_, index) => ({
           messageID: `${assistantID}:refetch:${index}`,
           assistantID,
-          role: 'assistant',
+          role: avatarUI.peer ? 'peer' : 'assistant',
           turnID: `${assistantID}:refetch-turn:${index}`,
           bubbleIndex: 0,
           createdAt: index + 2,
           ordinal: index + 1,
           status: failureUI.failed && index === 0 ? 'error' : 'complete',
-          fromAssistantID: null,
-          fromAssistantName: null,
+          fromAssistantID: avatarUI.peer ? 'peer-b' : null,
+          fromAssistantName: avatarUI.peer ? 'Peer' : null,
           parts: [{ type: 'text', text: `refetched ${index}` }],
           text: `refetched ${index}`,
           cards: [],
@@ -132,8 +133,8 @@ vi.mock('@/queries/assistantQueries', () => ({
       complete: true,
       generation: 0,
     },
-    isError: false,
-    isSuccess: true,
+    isError: avatarUI.loadFailed,
+    isSuccess: !avatarUI.loadFailed,
     hasPreviousPage: contactQueryState.hasPreviousPage,
     isFetchingPreviousPage: contactQueryState.isFetchingPreviousPage,
     previousPageError: contactQueryState.previousPageError,
@@ -142,7 +143,7 @@ vi.mock('@/queries/assistantQueries', () => ({
     isFillingMessageGap: contactQueryState.isFillingMessageGap,
     retryMessageGap: contactQueryState.retryMessageGap,
   }),
-  useAssistantSnapshotQuery: () => ({ data: { assistants: [] } }),
+  useAssistantSnapshotQuery: () => ({ data: { assistants: avatarUI.peer ? [{ id: 'peer-b', name: 'Peer', working: avatarUI.peerWorking }] : [] } }),
 }));
 vi.mock('./assistantPresentation', () => ({
   getAssistantPresentation: (name: string) => ({ displayName: name, avatarEmoji: null }),
@@ -150,10 +151,13 @@ vi.mock('./assistantPresentation', () => ({
 vi.mock('./AssistantAssistantCard', () => ({ AssistantAssistantCard: () => null }));
 vi.mock('./AssistantScheduleCard', () => ({ AssistantScheduleCard: () => null }));
 vi.mock('./AssistantSessionCard', () => ({ AssistantSessionCard: () => null }));
-vi.mock('./AssistantWorkingAvatar', () => ({ AssistantWorkingAvatar: () => null }));
+vi.mock('@/components/chat/AgentAvatar', () => ({
+  AgentAvatar: ({ name, motion }: { name?: string; motion?: string }) => <span data-test-avatar={name} data-avatar-motion={motion} />,
+}));
 
 import { AssistantConversationSurface } from './AssistantConversationSurface';
 import { AssistantContactAttachment } from './AssistantContactAttachment';
+import { AssistantWorkingAvatar } from './AssistantWorkingAvatar';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -215,12 +219,74 @@ afterEach(async () => {
   contactQueryState.isFillingMessageGap = false;
   unreadUI.settingsOpen = false;
   failureUI.failed = false;
+  Object.assign(avatarUI, { empty: false, loadFailed: false, peer: false, peerWorking: false });
   previewIO.flagCalls.length = 0;
   previewIO.markdownOnShowPopup = null;
   vi.clearAllMocks();
 });
 
 describe('AssistantConversationSurface scroll ownership', () => {
+  test('settled transcript avatars follow the same live idle and working states as the header', async () => {
+    contactQueryState.extraMessages = 1;
+    const { host, root } = await mountSurface();
+    const render = (working: boolean) => root.render(<>
+      <div data-test-header=""><AssistantWorkingAvatar name="assistant-a" working={working} showWorkingDot={false} /></div>
+      <AssistantConversationSurface assistant={{ ...assistant('assistant-a'), working }} active />
+    </>);
+    await act(async () => render(false));
+    const header = () => host.querySelector('[data-test-header] [data-avatar-motion]');
+    const transcript = () => host.querySelector('[data-message-id="assistant-a:refetch:0"] [data-avatar-motion]');
+    expect(header()?.getAttribute('data-avatar-motion')).toBe('idle');
+    expect(transcript()?.getAttribute('data-avatar-motion')).toBe('idle');
+    await act(async () => render(true));
+    expect(header()?.getAttribute('data-avatar-motion')).toBe('working');
+    expect(transcript()?.getAttribute('data-avatar-motion')).toBe('working');
+    await act(async () => render(false));
+    expect(header()?.getAttribute('data-avatar-motion')).toBe('idle');
+    expect(transcript()?.getAttribute('data-avatar-motion')).toBe('idle');
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-turn-start', assistantID: 'assistant-a', turnID: 'live-work', occurredAt: 4,
+    }));
+    expect(header()?.getAttribute('data-avatar-motion')).toBe('working');
+    expect(transcript()?.getAttribute('data-avatar-motion')).toBe('working');
+    expect(host.querySelector('[data-assistant-contact-processing-avatar] [data-avatar-motion]')?.getAttribute('data-avatar-motion')).toBe('working');
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-turn-end', assistantID: 'assistant-a', turnID: 'live-work', status: 'complete', occurredAt: 5,
+    }));
+    expect(header()?.getAttribute('data-avatar-motion')).toBe('idle');
+    expect(transcript()?.getAttribute('data-avatar-motion')).toBe('idle');
+    expect(host.querySelector('[data-assistant-working-dot]')).toBeNull();
+    await act(async () => root.render(<AssistantConversationSurface assistant={assistant('assistant-a')} active={false} />));
+    expect(transcript()).toBeNull();
+  });
+
+  test.each(['empty', 'error'])('%s contact avatar uses the same live motion without a working dot', async (state) => {
+    avatarUI.empty = true;
+    avatarUI.loadFailed = state === 'error';
+    const { host, root } = await mountSurface();
+    const face = () => host.querySelector(`[data-assistant-contact-${state}] [data-avatar-motion]`);
+    expect(face()?.getAttribute('data-avatar-motion')).toBe('idle');
+    await act(async () => root.render(<AssistantConversationSurface assistant={{ ...assistant('assistant-a'), working: true }} active />));
+    expect(face()?.getAttribute('data-avatar-motion')).toBe('working');
+    expect(host.querySelector('[data-assistant-working-dot]')).toBeNull();
+  });
+
+  test('peer avatars follow their sender rather than the open contact or stored message status', async () => {
+    contactQueryState.extraMessages = 1;
+    avatarUI.peer = true;
+    const { host, root } = await mountSurface();
+    const face = () => host.querySelector('[data-assistant-contact-role="peer"] [data-avatar-motion]');
+    expect(face()?.getAttribute('data-avatar-motion')).toBe('idle');
+    await act(async () => root.render(<AssistantConversationSurface assistant={{ ...assistant('assistant-a'), working: true }} active />));
+    expect(face()?.getAttribute('data-avatar-motion')).toBe('idle');
+    avatarUI.peerWorking = true;
+    await act(async () => root.render(<AssistantConversationSurface assistant={assistant('assistant-a')} active />));
+    expect(face()?.getAttribute('data-avatar-motion')).toBe('working');
+    avatarUI.peerWorking = false;
+    await act(async () => root.render(<AssistantConversationSurface assistant={assistant('assistant-a')} active />));
+    expect(face()?.getAttribute('data-avatar-motion')).toBe('idle');
+  });
+
   test.each([
     ['![photo](https://example.com/photo.png)', true],
     ['  ![photo](</workspace/my photo.png> "Photo")\n', true],

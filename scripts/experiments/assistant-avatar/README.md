@@ -17,8 +17,10 @@ the historical heading belongs to earlier attempts, not to this engine.
   remain round with only pigment variation. Legacy eye/expression preferences
   remain round-trippable but cannot randomize eye dimensions or angles.
 - Busy wrappers use the source working clips for left/right observation, not the
-  three-dot thinking morph. Explicit idle/thinking/happy states remain available.
-  Live changes preserve the source state machine and springs.
+  three-dot thinking morph. Ordinary idle faces hold the reference up-right static
+  pose with zero frame/gaze work. Hover briefly animates that settled pose and
+  releases its player on completion; navigation retains ambient shape cycling.
+  Continuous non-idle changes preserve the source state machine and springs.
 - Rest faces share pure static SVG/native PNG rendering, reference static settle,
   and fixed per-shape artboards at 94% longest-axis occupancy. Live excursions
   uniformly fit the entire scene to the slot, never individual eyes.
@@ -38,11 +40,11 @@ the historical heading belongs to earlier attempts, not to this engine.
 
 - `lib/assistant-avatar/runtime.ts` now owns the player, renderer, pointer lease
   and frame subscriptions. The React leaf supplies `{ active, motion, size }`
-  and an optional hover target; work/size updates do not recreate the player.
+  and an optional hover target; continuous non-idle work/size updates do not recreate the player.
   Disposal is idempotent, respects saved motion-off and only removes its own SVG.
 - The private RAF loop is replaced by Motion's shared `frame.read`/`frame.render`
   phases, still capped at 30 geometry paints/second with all reads before writes.
-  Existing 3D eye/body geometry and hover/working/ambient behavior are unchanged.
+  Existing 3D eye/body geometry and working/ambient clips are unchanged.
   Live React faces no longer serialize a static image URI that they never use.
 - Run `bun run test:avatar-performance` independently of the workspace suite.
   It builds the production engine, real CSS and production profiling React facade

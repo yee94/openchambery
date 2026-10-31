@@ -2,6 +2,18 @@
 
 Owning module for global CSS under `packages/ui/src/styles/`, including touch-mode adaptations in `mobile.css`.
 
+## Native QR scanner backdrop
+
+Android's bundled CameraX fallback renders behind the WebView. While
+`yuri-barcode-scanner-active` is on the Capacitor root, the document and body
+must be transparent, application content hidden, and scanner cancel chrome visible.
+The scanner transparency selectors must outrank the important
+`:root.yuri-capacitor-app` theme canvas rules; hiding content alone leaves an
+opaque white/dark canvas over the camera. Removing the scan marker restores the
+normal theme background without changing theme tokens. The production-CSS
+Chromium regression is `apps/mobileQrScan.chrome.test.ts`; native camera startup
+still requires device validation.
+
 ## Compact Settings rows
 
 `settings.css` keeps ordinary Settings labels and values side by side, including

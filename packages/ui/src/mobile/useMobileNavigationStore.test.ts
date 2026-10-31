@@ -1,8 +1,68 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { useMobileNavigationStore } from './useMobileNavigationStore';
-import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
+import { getSelectedAssistantID, useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { useSessionUIStore } from '@/sync/session-ui-store';
+
+describe('Assistant worker return navigation', () => {
+  beforeEach(() => {
+    useMobileNavigationStore.getState().reset();
+    vi.spyOn(useSessionUIStore.getState(), 'setCurrentSession').mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    useMobileNavigationStore.getState().reset();
+    vi.restoreAllMocks();
+  });
+
+  test('nested chats, btw and replacement preserve the exact Assistant origin', () => {
+    const store = useMobileNavigationStore.getState();
+    store.setActiveTab('assistant');
+    store.openAssistant('asst_origin');
+    store.openSession({ sessionId: 'ses_worker', directory: '/workspace' });
+    store.reconcileChatPredecessor({ sessionId: 'ses_unvisited_parent', directory: '/workspace' });
+    const first = useMobileNavigationStore.getState().secondary;
+    expect(first).toMatchObject({
+      kind: 'chat',
+      routes: [{ sessionId: 'ses_worker' }],
+      returnTo: { tab: 'assistant', assistantID: 'asst_origin' },
+    });
+    store.pushSession({ sessionId: 'ses_child', directory: '/workspace' });
+    store.pushBtw({ sessionId: 'ses_child', directory: '/workspace' });
+    store.popBtw();
+    store.popChatSession();
+    expect(useMobileNavigationStore.getState().secondary).toEqual(first);
+    store.replaceChatSession({ sessionId: 'ses_other', directory: '/other' });
+    useAssistantUIStore.getState().selectAssistant('asst_other');
+    store.popChatSession();
+    expect(getSelectedAssistantID()).toBe('asst_origin');
+    expect(useMobileNavigationStore.getState()).toMatchObject({ activeTab: 'assistant', secondary: { kind: 'assistant' } });
+    store.closeSecondary();
+    expect(useMobileNavigationStore.getState().secondary).toBeNull();
+  });
+
+  test.each(['tab', 'runtime'] as const)('%s switch drops the previous return destination', (kind) => {
+    const store = useMobileNavigationStore.getState();
+    store.setActiveTab('assistant');
+    store.openAssistant('asst_origin');
+    store.openSession({ sessionId: 'ses_worker', directory: '/workspace' });
+    if (kind === 'tab') store.setActiveTab('projects');
+    else store.reset();
+    store.openSession({ sessionId: 'ses_fresh', directory: '/new-workspace' });
+    store.closeSecondary();
+    expect(useMobileNavigationStore.getState()).toMatchObject({ activeTab: 'projects', secondary: null });
+  });
+
+  test('project and cold-link entry still reconcile parents and return to their root', () => {
+    const store = useMobileNavigationStore.getState();
+    store.openSession({ sessionId: 'ses_child', directory: '/workspace' });
+    store.reconcileChatPredecessor({ sessionId: 'ses_parent', directory: '/workspace' });
+    store.popChatSession();
+    expect(useMobileNavigationStore.getState().secondary).toMatchObject({ kind: 'chat', routes: [{ sessionId: 'ses_parent' }] });
+    store.popChatSession();
+    expect(useMobileNavigationStore.getState()).toMatchObject({ activeTab: 'projects', secondary: null });
+  });
+});
 
 describe('assistant Settings push page', () => {
   afterEach(() => useMobileNavigationStore.getState().reset());

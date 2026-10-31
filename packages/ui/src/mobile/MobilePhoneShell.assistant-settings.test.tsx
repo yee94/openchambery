@@ -6,7 +6,7 @@ vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 vi.mock('@/sync/session-ui-store', async () => {
   const { create } = await import('zustand');
-  return { useSessionUIStore: create(() => ({ currentSessionId: null, getDirectoryForSession: () => null })) };
+  return { useSessionUIStore: create(() => ({ currentSessionId: null, getDirectoryForSession: () => null, setCurrentSession: vi.fn() })) };
 });
 vi.mock('@/queries/assistantQueries', () => ({
   useAssistantUnreadTotal: () => 0,
@@ -112,5 +112,33 @@ describe('phone Assistant Settings route', () => {
     }
     await act(async () => { expect(systemBack?.()).toBe(true); });
     expect(useMobileNavigationStore.getState()).toMatchObject({ activeTab: 'assistant', secondary: null });
+  });
+
+  test.each(['header', 'system', 'gesture'] as const)('%s Back from a worker returns to the same mounted Assistant', async (backKind) => {
+    const store = useMobileNavigationStore.getState();
+    store.setActiveTab('assistant');
+    store.openAssistant('asst_1');
+    await act(async () => root.render(<MobilePhoneShell
+      onAddProject={() => undefined}
+      onEnableAssistants={() => undefined}
+      registerSecondaryBackHandler={registerBack}
+      renderChat={() => <button data-chat-back onClick={() => mobileBackNavigationCoordinator.requestAnimatedBack('root')}>Back</button>}
+    />));
+    const conversation = host.querySelector<HTMLElement>('[data-conversation-active]')!;
+    const draft = host.querySelector<HTMLInputElement>('[data-conversation-draft]')!;
+    draft.value = 'keep this draft';
+    await act(async () => store.openSession({ sessionId: 'ses_worker', directory: '/workspace' }));
+    expect(host.querySelector('[data-chat-back]')).not.toBeNull();
+    expect(host.querySelector('[data-conversation-active]')).toBe(conversation);
+    expect(conversation.dataset.conversationActive).toBe('false');
+
+    await act(async () => {
+      if (backKind === 'header') host.querySelector<HTMLButtonElement>('[data-chat-back]')!.click();
+      else if (backKind === 'system') expect(systemBack?.()).toBe(true);
+      else expect(mobileBackNavigationCoordinator.backImmediately('root')).toBe(true);
+    });
+    expect(useMobileNavigationStore.getState()).toMatchObject({ activeTab: 'assistant', secondary: { kind: 'assistant' } });
+    expect(host.querySelector('[data-conversation-active]')).toBe(conversation);
+    expect(draft.value).toBe('keep this draft');
   });
 });

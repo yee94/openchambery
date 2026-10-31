@@ -66,6 +66,43 @@ function frame(timestamp: number) {
   pending.forEach((callback) => callback(timestamp));
 }
 
+test('ordinary idle faces keep the reference static pose without frames, gaze listeners or pointer writes', async () => {
+  const add = vi.spyOn(window, 'addEventListener');
+  const create = vi.spyOn(avatarEngine, 'createAssistantAvatarPlayer');
+  await act(async () => root.render(<>{Array.from({ length: 20 }, (_, i) => <AssistantWorkingAvatar key={i} name={`rest-${i}`} working={false} />)}</>));
+  const poses = () => [...host.querySelectorAll('svg path')].map((path) => path.getAttribute('d'));
+  const initial = poses();
+  await intersect(true);
+  expect(frames.size).toBe(0);
+  expect(create).not.toHaveBeenCalled();
+  expect(add.mock.calls.filter(([type]) => String(type) === 'pointermove')).toHaveLength(0);
+  const writes = vi.spyOn(Element.prototype, 'setAttribute');
+  for (let i = 0; i < 500; i++) window.dispatchEvent(Object.assign(new Event('pointermove'), { pointerType: 'mouse', clientX: i, clientY: i }));
+  frame(performance.now() + 1000);
+  expect(poses()).toEqual(initial);
+  expect(writes).not.toHaveBeenCalled();
+});
+
+test('idle hover briefly animates then restores the exact static pose and releases its clock', async () => {
+  await act(async () => root.render(<AssistantWorkingAvatar name="rest-hover" working={false} />));
+  const paths = () => [...host.querySelectorAll('svg path')].map((path) => path.getAttribute('d'));
+  const initial = paths();
+  await intersect(true);
+  const enter = () => host.querySelector('[data-avatar-motion]')!.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+  enter();
+  const start = performance.now();
+  frame(start + 34);
+  expect(paths()).not.toEqual(initial);
+  for (let i = 2; i < 30; i++) frame(start + i * 34);
+  expect(paths()).toEqual(initial);
+  expect(frames.size).toBe(0);
+  enter();
+  expect(frames.size).toBe(1);
+  await intersect(false);
+  expect(frames.size).toBe(0);
+  expect(paths()).toEqual(initial);
+});
+
 test.each(['button', 'role-button'])('button resets exclude mask definitions used by non-round contacts inside a %s', async (kind) => {
   const seed = encodeAssistantAvatar({ ...resolveAssistantAvatar('button-mask'), shape: 'soft', color: 'sand' });
   const face = <><AssistantWorkingAvatar name="mask-contact" avatarSeed={seed} size={44} working={false} /><svg data-decoration=""><rect /></svg></>;
@@ -117,7 +154,7 @@ test('only visible live faces animate; offscreen, hidden-tab and unmounted faces
 });
 
 test('system reduced motion switches dynamically to a static pose', async () => {
-  await act(async () => root.render(<AgentAvatar kind="assistant" name="motion" motion="idle" />));
+  await act(async () => root.render(<AgentAvatar kind="assistant" name="motion" motion="working" />));
   await intersect(true);
   expect(frames.size).toBe(1);
   Object.assign(media, { matches: true });
@@ -203,6 +240,8 @@ test('50 unrelated parent renders cause no new observers or frame writes; live s
   const render = (n: number, working = false) => root.render(<div data-draft={n}><AssistantWorkingAvatar name="active" avatarSeed="stable" size={44} working={working} /></div>);
   await act(async () => render(0));
   await intersect(true);
+  const still = () => [...host.querySelectorAll('svg path')].map((path) => path.getAttribute('d'));
+  const initial = still();
   const writes = vi.spyOn(Element.prototype, 'setAttribute');
   for (let i = 1; i <= 50; i++) await act(async () => render(i));
   expect(observe).toHaveBeenCalledTimes(1);
@@ -212,11 +251,15 @@ test('50 unrelated parent renders cause no new observers or frame writes; live s
   expect(host.querySelector('[data-avatar-motion]')?.getAttribute('data-avatar-motion')).toBe('working');
   expect(host.querySelector('[data-assistant-working-dot]')).not.toBeNull();
   expect(frames.size).toBe(1);
+  frame(performance.now() + 34);
+  await act(async () => render(52, false));
+  expect(still()).toEqual(initial);
+  expect(frames.size).toBe(0);
 });
 
 test('twenty visible production avatars share one clock and unique SVG definition IDs', async () => {
   const add = vi.spyOn(window, 'addEventListener'), remove = vi.spyOn(window, 'removeEventListener');
-  await act(async () => root.render(<>{Array.from({ length: 20 }, (_, i) => <AgentAvatar key={i} kind="assistant" name={`many-${i}`} motion="idle" />)}</>));
+  await act(async () => root.render(<>{Array.from({ length: 20 }, (_, i) => <AgentAvatar key={i} kind="assistant" name={`many-${i}`} motion="working" />)}</>));
   await intersect(true);
   expect(frames.size).toBe(1);
   expect(host.querySelectorAll('svg')).toHaveLength(20);
@@ -235,7 +278,7 @@ test('twenty visible production avatars share one clock and unique SVG definitio
 });
 
 test('Strict Mode and identity changes remove imperative renderers rather than stacking SVGs', async () => {
-  await act(async () => root.render(<React.StrictMode><AgentAvatar kind="assistant" name="one" motion="idle" /></React.StrictMode>));
+  await act(async () => root.render(<React.StrictMode><AgentAvatar kind="assistant" name="one" motion="working" /></React.StrictMode>));
   expect(host.querySelectorAll('svg')).toHaveLength(1);
   await intersect(true);
   expect(frames.size).toBe(1);
@@ -251,7 +294,7 @@ test('mouse gaze follows outside the avatar, coalesces to frames and refreshes a
   const original = avatarEngine.createAssistantAvatarPlayer;
   const gaze = vi.fn();
   vi.spyOn(avatarEngine, 'createAssistantAvatarPlayer').mockImplementation((...args) => ({ ...original(...args), setGaze: gaze }));
-  await act(async () => root.render(<AgentAvatar kind="assistant" name="gaze" motion="idle" />));
+  await act(async () => root.render(<AgentAvatar kind="assistant" name="gaze" motion="working" />));
   await intersect(true);
   const live = host.querySelector<HTMLElement>('[data-avatar-motion]')!;
   const bounds = vi.spyOn(live, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 44, height: 44 } as DOMRect);
@@ -352,7 +395,7 @@ test('navigation shape cycling shares the live clock and stays disabled offscree
   expect(create).not.toHaveBeenCalled();
   await intersect(true);
   expect(create).toHaveBeenCalledTimes(1);
-  expect(create.mock.calls[0][4]).toEqual({ randomizeShape: true });
+  expect(create.mock.calls[0][4]).toEqual({ randomizeShape: true, resting: false });
   expect(frames.size).toBe(1);
   for (let i = 1; i <= 50; i++) await act(async () => render(i));
   expect(create).toHaveBeenCalledTimes(1);

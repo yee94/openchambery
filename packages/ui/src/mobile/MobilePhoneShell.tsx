@@ -248,23 +248,24 @@ export function MobilePhoneShell({
   const secondaryKind = navigation.secondary?.kind ?? null;
   const secondaryPages = React.useMemo(() => {
     if (!secondaryKind) return null;
+    const assistantPage = (active: boolean) => ({
+      key: 'assistant-secondary',
+      depth: 1,
+      ariaLabel: t('assistants.title'),
+      onBack: handleSecondaryBack,
+      content: (
+        <AssistantView
+          activeOverride={active}
+          onMobileBack={() => mobileBackNavigationCoordinator.requestAnimatedBack('root')}
+          onMobileOpenSettings={pushAssistantSettings}
+        />
+      ),
+    });
     if (secondaryKind === 'assistant') {
       const settingsAssistantID = navigation.secondary?.kind === 'assistant'
         ? navigation.secondary.settingsAssistantID
         : undefined;
-      return [{
-        key: 'assistant-secondary',
-        depth: 1,
-        ariaLabel: t('assistants.title'),
-        onBack: handleSecondaryBack,
-        content: (
-          <AssistantView
-            activeOverride={!settingsAssistantID}
-            onMobileBack={() => mobileBackNavigationCoordinator.requestAnimatedBack('root')}
-            onMobileOpenSettings={pushAssistantSettings}
-          />
-        ),
-      }, ...(settingsAssistantID ? [{
+      return [assistantPage(!settingsAssistantID), ...(settingsAssistantID ? [{
         key: `assistant-settings:${settingsAssistantID}`,
         depth: 2,
         ariaLabel: t('assistants.conversation.openSettings'),
@@ -299,9 +300,10 @@ export function MobilePhoneShell({
     }
     if (navigation.secondary?.kind !== 'chat') return [];
     const routeStack = navigation.secondary.routes;
+    const originPages = navigation.secondary.returnTo ? [assistantPage(false)] : [];
     const btw = navigation.secondary.btw;
     const routes = routeStack.slice(btw ? -1 : -2);
-    const firstVisibleDepth = routeStack.length - routes.length + 1;
+    const firstVisibleDepth = routeStack.length - routes.length + 1 + originPages.length;
     const chatPages = routes.map((route, index) => {
       const active = !btw && index === routes.length - 1;
       return {
@@ -317,13 +319,13 @@ export function MobilePhoneShell({
         }),
       };
     });
-    return btw ? [...chatPages, {
+    return btw ? [...originPages, ...chatPages, {
       key: 'chat-btw',
-      depth: routeStack.length + 1,
+      depth: routeStack.length + 1 + originPages.length,
       ariaLabel: t('chat.btw.title'),
       onBack: handleSecondaryBack,
       content: <MobileBtwPage route={btw} />,
-    }] : chatPages;
+    }] : [...originPages, ...chatPages];
   }, [secondaryKind, navigation.secondary, handleSecondaryBack, pushAssistantSettings, instancesSecondaryPage, renderChat, t]);
 
   return (

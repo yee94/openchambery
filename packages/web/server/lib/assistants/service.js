@@ -5,6 +5,7 @@ import path from 'node:path';
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
 import { createContactMemoryReader } from './memory.js';
+import { getContactGreeting } from './contact-greeting.js';
 import { getWorktrees as defaultListWorktrees } from '../git/service.js';
 import { contactCardIdentity, parseContactCard, parseContactPart } from './cards.js';
 import {
@@ -1320,8 +1321,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
   };
   const createAssistant = (input, { onlyIfEmpty = false } = {}) => {
-    const allowed = new Set(['enabled', 'name', 'avatarSeed', 'defaultPrompt', 'providerID', 'modelID', 'agent', 'variant', 'mode', 'workspacePath']);
+    const allowed = new Set(['enabled', 'name', 'avatarSeed', 'defaultPrompt', 'providerID', 'modelID', 'agent', 'variant', 'mode', 'workspacePath', 'language']);
     if (!plainObject(input) || Object.keys(input).some((key) => !allowed.has(key))) fail('validation_error');
+    const language = input.language == null ? 'en' : string(input.language, 64, true);
     const mode = input.mode == null ? 'continuous' : input.mode === 'stateless' || input.mode === 'continuous' ? input.mode : fail('validation_error');
     const assistantID = id();
     const workspacePath = input.workspacePath == null ? null : workspace(input.workspacePath, assistantID);
@@ -1341,6 +1343,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         ? `yuri-avatar:v1:round:capsule:${['mint', 'iris', 'coral', 'sky', 'sand', 'graphite'][crypto.randomInt(6)]}:neutral:1:${assistantID}`
         : string(input.avatarSeed, 256, true);
       db.prepare('INSERT INTO assistant_v2 (assistant_id,revision,enabled,name,default_prompt,workspace_path,provider_id,model_id,agent,variant,mode,current_session_id,session_generation,created_at,updated_at,tombstone_at,avatar_seed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(assistantID, 1, input.enabled === false ? 0 : 1, string(input.name, 256, true), input.defaultPrompt ? string(input.defaultPrompt, 200_000) : '', workspacePath, string(input.providerID, 256, true), string(input.modelID, 256, true), input.agent == null ? null : string(input.agent, 256), input.variant == null ? null : string(input.variant, 256), mode, null, 0, at, at, null, avatarSeed);
+      insertContactMessage(db, {
+        messageID: `${assistantID}:greeting`, assistantID, role: 'assistant',
+        turnID: `${assistantID}:greeting`, bubbleIndex: 0, createdAt: at,
+        ordinal: nextContactOrdinal(db, assistantID), status: 'complete',
+        parts: [{ type: 'text', text: getContactGreeting(assistant(assistantID).name, language) }],
+      });
       bump();
       db.exec('COMMIT');
       return output(assistant(assistantID));
@@ -2931,7 +2939,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           steerSession: (params) => mutateSessionWork('steer', params),
           archiveSession: (params) => mutateSessionWork('archive', params),
           deleteSession: (params) => mutateSessionWork('delete', params),
-          createAssistant: (toolInput) => createAssistant(toolInput),
+          createAssistant: (toolInput) => createAssistant({ ...toolInput, language: contactTurnLanguages.get(assistantID) || 'en' }),
           scheduleTask: (params) => scheduleWork(live, params),
           listScheduledTasks: (params) => listScheduledTaskWork(params),
           updateScheduledTask: (params) => updateScheduledTaskWork(live, params, controller.signal),
@@ -3290,7 +3298,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             steerSession: (params) => mutateSessionWork('steer', params),
             archiveSession: (params) => mutateSessionWork('archive', params),
             deleteSession: (params) => mutateSessionWork('delete', params),
-            createAssistant: (toolInput) => createAssistant(toolInput),
+            createAssistant: (toolInput) => createAssistant({ ...toolInput, language: language || 'en' }),
             scheduleTask: (params) => scheduleWork(row, params),
             listScheduledTasks: (params) => listScheduledTaskWork(params),
             updateScheduledTask: (params) => updateScheduledTaskWork(row, params, controller.signal),

@@ -4164,8 +4164,8 @@ button.yuri-mobile-worktree-label-trigger:active,
 
 /* CameraX pairing scanner: the native preview sits behind the WebView, so the
    page must go transparent and hide chrome until a code is read or cancelled. */
-html.yuri-barcode-scanner-active,
-html.yuri-barcode-scanner-active body {
+:root.yuri-capacitor-app.yuri-barcode-scanner-active,
+:root.yuri-capacitor-app.yuri-barcode-scanner-active body {
   background: transparent !important;
 }
 

@@ -23,6 +23,7 @@ export type MobileSecondaryState =
       /** Chat routes are metadata-only; the phone host renders the top two. */
       kind: 'chat';
       routes: MobileChatRoute[];
+      returnTo?: { tab: MobileTabId; assistantID: string };
       /** Page above the top chat route; any chat route change drops it. */
       btw?: MobileBtwRoute;
     }

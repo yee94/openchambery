@@ -551,6 +551,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                 avatarSeed={assistant.avatarSeed}
                 size={44}
                 label={displayName}
+                working={active ? serverWorking : undefined}
+                showWorkingDot={false}
               />
               <span aria-hidden className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-[var(--surface-elevated)] text-[var(--status-error)] ring-2 ring-background">
                 <Icon name="error-warning" className="size-3" />
@@ -568,6 +570,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               size={48}
               label={displayName}
               className="opacity-90"
+              working={active ? serverWorking : undefined}
+              showWorkingDot={false}
             />
             <p className="mt-5 typography-ui-header font-medium tracking-[-0.01em] text-foreground">{t('assistants.conversation.emptyTitle', { name: displayName })}</p>
             <p className="mt-2 max-w-xs typography-ui leading-6 text-muted-foreground/80">{t('assistants.contact.empty')}</p>
@@ -651,7 +655,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                           avatarSeed={sender?.avatarSeed ?? (message.fromAssistantID ? undefined : assistant.avatarSeed)}
                           size={28}
                           label={senderName}
-                            working={message.status === 'streaming' ? true : undefined}
+                          working={active ? Boolean(sender?.working || sender?.activeContactTurn) : undefined}
                           showWorkingDot={false}
                         />
                       ) : (
@@ -759,7 +763,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       avatarSeed={assistant.avatarSeed}
                       size={28}
                       label={displayName}
-                      working
+                      working={active ? serverWorking : undefined}
                       showWorkingDot={false}
                     />
                   </div>

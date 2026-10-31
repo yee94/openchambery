@@ -339,7 +339,7 @@ describe('contact attachment materialize failure terminal settle', () => {
     expect(snap.activeContactTurn).toBeNull();
 
     const page = service.contactMessages(assistant.id, { limit: 20 });
-    expect(page.messages.some((m) => m.status === 'error' || (m.role === 'assistant' && m.text))).toBe(false);
+    expect(page.messages.filter((m) => m.turnID === 'msg_mat_fail').some((m) => m.status === 'error' || (m.role === 'assistant' && m.text))).toBe(false);
     const pageJson = JSON.stringify(page);
     expect(pageJson).not.toMatch(/data:image\/png;base64,[A-Za-z0-9+/]{40,}/);
 

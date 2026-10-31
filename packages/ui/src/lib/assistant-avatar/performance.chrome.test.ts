@@ -60,6 +60,11 @@ test('standalone avatar CPU budgets and production lifecycle', async () => {
     const live = await page.evaluate<{ commits: number; writes: number; active: number }>('avatarPerformance.steady()');
     expect(live.commits).toBe(0);
     expect(live.writes).toBeGreaterThan(0);
+    await page.evaluate('avatarPerformance.mount(20,0,"idle")');
+    expect(await pointerListeners()).toBe(0);
+    expect(await page.evaluate('avatarPerformance.pointerBurst()')).toEqual({ reads: 0, writes: 0, commits: 0 });
+    expect(await page.evaluate('avatarPerformance.steady()')).toEqual({ commits: 0, writes: 0, active: 20 });
+    await page.evaluate('avatarPerformance.mount(20)');
     await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     await page.evaluate('avatarPerformance.steady()');
     expect(await page.evaluate('avatarPerformance.steady()')).toEqual({ commits: 0, writes: 0, active: 0 });

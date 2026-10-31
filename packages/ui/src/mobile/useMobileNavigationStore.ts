@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
+import { getSelectedAssistantID, useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { isCapacitorApp, isIPadApp } from '@/lib/platform';
 import { normalizePath } from '@/lib/pathNormalization';
 
@@ -165,10 +165,15 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set, get)
     return returnTo;
   },
   openSession: (target) => {
+    const state = get();
+    const assistantID = state.secondary?.kind === 'assistant' ? getSelectedAssistantID() : null;
+    const returnTo = assistantID ? { tab: state.activeTab, assistantID }
+      : state.secondary?.kind === 'chat' ? state.secondary.returnTo : undefined;
     set({
       secondary: {
         kind: 'chat',
         routes: [createChatRoute(target, 'root')],
+        ...(returnTo ? { returnTo } : {}),
       },
     });
     mirrorCurrentSession(target);
@@ -179,16 +184,21 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set, get)
       const routes = state.secondary?.kind === 'chat'
         ? pushMobileChatRoute(state.secondary.routes, route)
         : [route];
-      return { secondary: { kind: 'chat', routes } };
+      return { secondary: { kind: 'chat', routes, ...(state.secondary?.kind === 'chat' && state.secondary.returnTo ? { returnTo: state.secondary.returnTo } : {}) } };
     });
     mirrorCurrentSession(target);
   },
   popChatSession: () => {
+    const current = get().secondary;
+    if (current?.kind === 'chat' && current.routes.length <= 1) {
+      get().closeSecondary();
+      return;
+    }
     set((state) => {
       if (state.secondary?.kind !== 'chat') return state;
       const routes = popMobileChatRoute(state.secondary.routes);
       return routes.length > 0
-        ? { secondary: { kind: 'chat', routes } }
+        ? { secondary: { kind: 'chat', routes, ...(state.secondary.returnTo ? { returnTo: state.secondary.returnTo } : {}) } }
         : { secondary: null };
     });
     const secondary = useMobileNavigationStore.getState().secondary;
@@ -199,6 +209,7 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set, get)
   },
   reconcileChatPredecessor: (target) => set((state) => {
     if (state.secondary?.kind !== 'chat') return state;
+    if (state.secondary.returnTo && state.secondary.routes.length === 1) return state;
     const routes = reconcileMobileChatPredecessor(
       state.secondary.routes,
       createChatRoute(target, 'parent'),
@@ -213,6 +224,7 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set, get)
       secondary: {
         kind: 'chat',
         routes: replaceMobileChatRoute(state.secondary.routes, createChatRoute(target, 'root')),
+        ...(state.secondary.returnTo ? { returnTo: state.secondary.returnTo } : {}),
       },
     };
   }),
@@ -252,7 +264,8 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set, get)
   },
   popBtw: () => set((state) => {
     if (state.secondary?.kind !== 'chat' || !state.secondary.btw) return state;
-    return { secondary: { kind: 'chat', routes: state.secondary.routes } };
+    const { btw: _btw, ...secondary } = state.secondary;
+    return { secondary };
   }),
   pushAssistantSettings: (assistantID) => set((state) => {
     if (state.secondary?.kind !== 'assistant' || state.secondary.settingsAssistantID === assistantID) return state;
@@ -264,6 +277,12 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set, get)
   }),
   closeSecondary: () => {
     resetMobileSessionMirror();
+    const secondary = get().secondary;
+    if (secondary?.kind === 'chat' && secondary.returnTo) {
+      useAssistantUIStore.getState().selectAssistant(secondary.returnTo.assistantID);
+      set({ activeTab: secondary.returnTo.tab, secondary: { kind: 'assistant' } });
+      return;
+    }
     set((state) => (state.secondary ? { ...state, secondary: null } : state));
   },
   reset: () => {

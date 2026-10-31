@@ -1,5 +1,19 @@
 # Assistant UI
 
+## Creation and session return
+
+Creating a Bot forwards the current UI locale to the Host. The Host stores its
+single welcome message in the contact transcript and returns its preview in the
+creation DTO; the UI does not inject a fake user prompt or repeat it on mounting.
+
+Phone session-card navigation captures the originating Assistant ID and root tab
+in the mobile chat route. Header, system, browser and gesture Back restore that
+contact instead of dismissing to the catalog. The immediate Assistant underlay
+stays mounted and inactive, preserving its draft while the worker is open. Nested
+chat, replacement and `/btw` routes retain the return target; tab/runtime changes
+discard it. An unvisited worker parent cannot displace this explicit entry point.
+Desktop/iPad and standalone VS Code keep their existing session/URL navigation.
+
 ## File resource ownership
 
 `assistant-attachment-cache.ts` is a descriptor/error/display adapter over `runtime-file-resource.ts`. Its former independent body LRU and Assistant body databases (both Yuri and legacy brand namespaces) are retired; disposable bodies are deleted without blocking operations and are never imported into the shared store. The shared file owner verifies size/SHA-256 and owns singleflight, retention budgets, persistence and independent cancellation. Display URL leases and pending UI state remain in the Assistant adapter. Bearer descriptors can persist in the shared store; cookie-only descriptor reads retain their previous process-local authorization behavior. Captured scope/bearer tags allow explicit forget to remove the matching durable bytes, while runtime switches preserve durable partitions. Auth changes cancel live reads. The existing descriptor/upload limits and error codes remain protocol rules, not cache-budget rules.
@@ -162,8 +176,10 @@ promotes the next eligible entry. Empty/all-disabled catalogs have no target.
 No nonfunctional generation/upload tabs are shown. These selected-entity controls
 are deliberately not indexed in Settings search.
 
-Live list/header/processing faces receive idle or working motion from the existing
-live working authority, never from persisted message history. Historical faces,
+Live list/header/contact faces, including settled transcript rows and empty/error
+states, receive idle or working motion from the same existing live working
+authority, never from persisted message status. Peer faces follow their own
+sender's live authority. Inactive contact surfaces, standalone historical faces,
 pickers and PNG exports remain static; navigation has its own ambient mode below. Live SVGs use the
 source attribute-diff renderer, mask/clipPath skeleton and decoration-node pool,
 without React state updates per frame. `lib/assistant-avatar/runtime.ts` owns the
@@ -173,8 +189,12 @@ an isolated DOM subtree and instance-unique definition IDs; React owns only the 
 SVG styles must preserve rect fills inside `defs`: the white mask
 background is functional geometry, not an icon background to clear. This applies
 to desktop list buttons and mobile contact cards as well as plain headers.
-The player and state machine persist through public motion changes, so transitions use the source
-bridge/springs rather than recreating the animation. Only intersecting,
+Ordinary idle faces hold the reference static up-right pose without continuous
+animation or mouse gaze. They allocate no player, pointer lease or frame callback
+until hover; its bounded resting player is released after restoring the exact
+static pose. Work completion also returns to that pose and releases live work.
+The player and state machine persist through continuous non-idle motion changes,
+so those transitions use the source bridge/springs. Only intersecting,
 foreground, motion-enabled faces subscribe to Motion's shared read/render pipeline
 with a 30fps geometry cap; offscreen,
 hidden-document, reduced-motion and unmounted faces release it and paint a stable
@@ -187,14 +207,16 @@ resizing updates that mode on the same state machine, not the viewBox or eye siz
 The saved motion-off switch bypasses live observers altogether. At rest,
 all static faces share the existing 128-entry / 1 MiB artwork LRU.
 
-Mouse gaze follows the pointer anywhere in the avatar's owning window, using
+During non-idle work and ambient navigation, mouse gaze follows the pointer
+anywhere in the avatar's owning window, using
 the source width-based/upwards-y mapping. `pointerTracker.ts` owns one shared
 pointer sample and one listener per event type (pointermove, window leave, blur)
 per window, acquired only by active live faces. Mouse events only replace that
 sample; they do not measure DOM, render React or schedule additional frames.
 Touch/pen movement, leaving the window and blur clear the sample. The last active
-face releasing it removes all listeners and discards the sample. Historical,
-picker, native-PNG and saved motion-off faces never acquire it.
+face releasing it removes all listeners and discards the sample. Ordinary idle,
+standalone
+historical, picker, native-PNG and saved motion-off faces never acquire it.
 
 The shared clock measures all active face rectangles before any SVG writes,
 only when a mouse sample exists. This preserves gaze after scrolling/layout moves
@@ -210,7 +232,8 @@ applied to the complete SVG scene after fitting so the fit cannot cancel the
 shrink; rebound is capped at the available bounds. It does not rotate
 individual eye descriptors, restart working clips, create timers or stack an
 unbounded poke queue. Re-entry during the sway is ignored; completion returns
-exactly to the continuing live pose. Touch, offscreen and reduced-motion faces
+exactly to the continuing live pose, or the reference static pose for idle faces.
+Touch, offscreen and reduced-motion faces
 do not trigger it.
 
 Desktop contact rows and mobile contact cards pass their button ref as
@@ -218,12 +241,13 @@ Desktop contact rows and mobile contact cards pass their button ref as
 One native `pointerenter` listener on that target covers the name, preview and
 empty card area. Crossing descendants (including entering the face after text)
 does not retrigger it. Standalone live faces default to their own host. The leaf
-owns listener cleanup with visibility/motion and target changes; historical and
+owns listener cleanup with visibility/motion and target changes; standalone historical and
 motion-off faces attach none. No hover state, parent rerender, extra timer or
 per-pointermove work is introduced.
 
 Performance contract: 20 visible live faces share one pair of Motion read/render
-callbacks at up to 30 paints/second each; static/history faces schedule zero work;
+callbacks at up to 30 paints/second each; ordinary idle faces outside hover and
+static/standalone history faces schedule zero work;
 50 unrelated parent renders cause zero observer rebinds or frame writes. Live
 faces do not serialize an unused static SVG URI. Focused recipe, frame-clock and
 mounted-component tests guard this. `bun run test:avatar-performance` is a separate,

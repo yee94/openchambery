@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { useI18nStore } from '@/lib/i18n/store';
+// @ts-expect-error Shared server fixture is JavaScript.
+import { assistantContractFixtures } from '../../../web/server/lib/assistants/contracts.js';
 
 let runtimeKey = 'runtime-a';
 let runtimeGeneration = 1;
@@ -23,6 +26,9 @@ mock.module('@/lib/runtime-fetch', () => ({
   runtimeFetch: async (path: string, init?: RequestInit) => {
     fetchCalls.push(path);
     lastFetchInit = init;
+    if (path === '/api/yuri/assistants' && init?.method === 'POST') {
+      return new Response(JSON.stringify(assistantContractFixtures.assistant), { status: 201 });
+    }
     if (path.includes('/session/ensure')) {
       return new Response(JSON.stringify({ sessionID: 'ses_1', directory: '/workspace', sessionGeneration: 1 }), { status: 200 });
     }
@@ -92,6 +98,7 @@ const {
   assistantHistoryInfiniteQueryOptions,
   assistantSnapshotQueryOptions,
   confirmContactAdmissionByMessageID,
+  createAssistant,
   CONTACT_SEND_TIMEOUT_MS,
   CONTACT_WORKING_SNAPSHOT_POLL_MS,
   ensureAssistantSession,
@@ -125,6 +132,19 @@ describe('Assistant history and ensure startup gate', () => {
 
   afterEach(() => {
     releaseBarrier();
+  });
+
+  test('creates a contact with the current UI language for its first greeting', async () => {
+    const locale = useI18nStore.getState().locale;
+    useI18nStore.setState({ locale: 'zh-CN' });
+    try {
+      const draft = { enabled: true, name: '小雨', defaultPrompt: '', workspacePath: null, providerID: 'p', modelID: 'm' };
+      await createAssistant(draft);
+      expect(JSON.parse(String(lastFetchInit?.body))).toEqual({ ...draft, language: 'zh-CN' });
+      expect(fetchCalls).toEqual(['/api/yuri/assistants']);
+    } finally {
+      useI18nStore.setState({ locale });
+    }
   });
 
   test('history queryFn waits for the session startup barrier before requesting', async () => {

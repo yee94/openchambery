@@ -1,5 +1,17 @@
 # Assistants Module
 
+## New-contact greeting
+
+Every successful create (HTTP, contact tool, or first-run seed) atomically inserts
+one completed assistant welcome message with the contact's name. It uses the
+optional create-only `language` (the UI locale, or the creating contact turn's
+locale); supported app locales are translated, with English as the default for
+missing/unknown languages. This is a fixed greeting, not a model turn: it creates
+no synthetic user message, tool execution, notification or upstream request.
+It participates in the ordinary preview, unread and contact-history projections.
+The contact and greeting roll back together on write failure. Existing contacts
+are not backfilled; reopening, renaming and clearing history do not greet again.
+
 ## Contact activity ordering
 
 Both individual and batched latest-message previews carry the persisted message's

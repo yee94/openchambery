@@ -103,11 +103,16 @@ export function assistantAvatarArtboard(recipe: AssistantAvatarRecipe) {
   return board;
 }
 
-export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed: string, motion: AvatarMotion, compact = false, { randomizeShape = false, eyeColor }: { randomizeShape?: boolean; eyeColor?: AvatarEyeColor } = {}) {
+export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed: string, motion: AvatarMotion, compact = false, { randomizeShape = false, eyeColor, resting = false }: { randomizeShape?: boolean; eyeColor?: AvatarEyeColor; resting?: boolean } = {}) {
   const runtime = createRuntime(config, { body: AVATAR_BODY_NAMES[recipe.shape], isGazeAlways: true });
   let hash = 2166136261;
   for (let i = 0; i < seed.length; i++) hash = Math.imul(hash ^ seed.charCodeAt(i), 16777619) >>> 0;
-  const machine = createStateMachine(config, runtime, motion, { seed: hash, firstPhase: 0, isCompact: compact });
+  const machine = createStateMachine(config, runtime, motion, { seed: hash, firstPhase: 0, isCompact: compact, isResting: resting });
+  if (resting) {
+    runtime.pause();
+    runtime.seek(0);
+    for (let i = 0; i < 60; i++) runtime.advance(0.1);
+  }
   const theme = themeFor(recipe, eyeColor);
   let hoverTime: number | null = null;
   let shape = recipe.shape;
@@ -152,7 +157,7 @@ export function createAssistantAvatarPlayer(recipe: AssistantAvatarRecipe, seed:
         }
       }
       const model = modelFor(frame, theme, compact);
-      return { model, bounds: model.mode === 'sphere' ? sphereBounds(frame) : morphBounds(model), hoverScale };
+      return { model, bounds: model.mode === 'sphere' ? sphereBounds(frame) : morphBounds(model), hoverScale, hovering: hoverTime !== null };
     },
   };
 }
